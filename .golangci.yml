@@ -1,0 +1,22 @@
+# golangci-lint v2 configuration. The linter itself is pinned via the go.mod
+# tool directive; invoke with `go run mage.go lint` (or `go tool golangci-lint run`).
+version: "2"
+
+linters:
+  # Standard defaults: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - intrange
+    - misspell
+    - nolintlint
+    - revive
+    - sqlclosecheck
+    - unconvert
+    - unparam
+
+formatters:
+  enable:
+    - gofumpt
