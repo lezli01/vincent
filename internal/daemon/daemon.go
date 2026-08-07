@@ -17,8 +17,10 @@ import (
 
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/version"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // ErrAlreadyRunning is returned when another daemon holds the single-instance
@@ -86,6 +88,19 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	defer func() { _ = st.Close() }()
 
+	// git availability is probed once and logged; a missing or old git warns
+	// rather than fails — the daemon still serves (phase 1 decision).
+	git := gitx.New()
+	if raw, major, minor, err := git.Version(ctx); err != nil {
+		logger.Warn("git not detected; project registration and worktrees will fail", "error", err)
+	} else {
+		logger.Info("git detected", "version", raw)
+		if major < gitx.MinMajor || (major == gitx.MinMajor && minor < gitx.MinMinor) {
+			logger.Warn("git is older than recommended",
+				"version", raw, "recommended", fmt.Sprintf("%d.%d+", gitx.MinMajor, gitx.MinMinor))
+		}
+	}
+
 	token, err := EnsureToken(dirs.Data)
 	if err != nil {
 		logger.Error("startup failed: token", "error", err)
@@ -116,6 +131,9 @@ func Run(ctx context.Context, opts Options) error {
 		ListenAddr:  ln.Addr().String(),
 		RequestStop: requestStop,
 		Logger:      logger,
+		Store:       st,
+		Git:         git,
+		Worktrees:   worktree.NewManager(git, dirs.Data),
 	})
 
 	if err := config.Watch(ctx, logger, dirs.Config, func(next config.Config) {
