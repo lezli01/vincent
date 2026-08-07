@@ -218,8 +218,9 @@ func (r *Runner) canceling(taskID int64) bool {
 }
 
 // stop ends a live run for a cancel: §6's graceful term, then kill after the
-// grace period. It returns once the actor has finished or the grace has
-// elapsed, so the caller does not outrun the process it just stopped.
+// grace period. It blocks for as long as that takes, so it runs off the
+// request path — the task is durably aborted before this is called, and
+// reaping the process tree is bookkeeping the client need not wait for.
 func (lr *liveRun) stop(grace time.Duration, log *slog.Logger) {
 	lr.mu.Lock()
 	lr.canceling = true
