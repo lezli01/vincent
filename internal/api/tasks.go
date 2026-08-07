@@ -11,9 +11,27 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
-	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
+
+// firstNonBlank returns the first value that is not empty after trimming.
+func firstNonBlank(values ...string) string {
+	for _, v := range values {
+		if t := strings.TrimSpace(v); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// ptrValue dereferences an optional string field, treating nil as empty.
+func ptrValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
 
 // taskResponse is the JSON shape of a task (spec §5.3). Optional fields
 // render as null.
@@ -131,10 +149,11 @@ type taskCreateRequest struct {
 	Effort      *string           `json:"effort"`
 }
 
-// handleTaskCreate implements POST /v1/tasks (spec §13.2). M1 accepts only
-// the synthesized adhoc workflow; the optional agent/model/effort override
-// is validated per the T1.7–T1.9 decision: the agent must name a registered
-// adapter, model/effort are free text until T2.11's catalog validation.
+// handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
+// resolved through the registry and snapshotted onto the task (§5.3); the
+// optional agent/model/effort override is validated per the T1.7–T1.9
+// decision: the agent must name a registered adapter, model/effort are free
+// text until T2.11's catalog validation.
 func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var req taskCreateRequest
 	if !decodeJSON(w, r, &req) {
@@ -156,13 +175,19 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
 		return
 	}
-	workflow := "adhoc"
-	if req.Workflow != nil && *req.Workflow != "" {
-		workflow = *req.Workflow
-	}
-	if workflow != "adhoc" {
+	// Workflow resolution (§5.3): the named workflow, else the project's
+	// default, else the built-in adhoc. The entry's source becomes the
+	// task's snapshot, so later edits to the file never touch this task.
+	workflowName := firstNonBlank(ptrValue(req.Workflow), project.DefaultWorkflow, workflow.AdhocName)
+	entry, ok := s.deps.Workflows.Lookup(project.ID, workflowName)
+	if !ok {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("workflow %q not found: the workflow registry arrives in M2; only the built-in \"adhoc\" workflow exists", workflow))
+			fmt.Sprintf("workflow %q not found for project %d", workflowName, project.ID))
+		return
+	}
+	if !entry.Valid() {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("workflow %q is invalid: %s", workflowName, entry.Errors.Error()))
 		return
 	}
 	baseBranch := project.DefaultBranch
@@ -190,8 +215,8 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	t := store.Task{
 		ProjectID:        project.ID,
 		Title:            title,
-		WorkflowName:     workflow,
-		WorkflowSnapshot: taskrun.AdhocSnapshot,
+		WorkflowName:     entry.Name,
+		WorkflowSnapshot: entry.Source,
 		BaseBranch:       baseBranch,
 		Fields:           req.Fields,
 		AgentOverride:    agentOverride,
