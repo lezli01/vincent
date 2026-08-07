@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/version"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // Deps are the daemon facilities the API serves from.
@@ -28,6 +31,12 @@ type Deps struct {
 	RequestStop func()
 	// Logger receives request and panic logs.
 	Logger *slog.Logger
+	// Store is the persistence layer.
+	Store *store.Store
+	// Git runs git commands for registration validation.
+	Git *gitx.Git
+	// Worktrees removes task worktrees during forced project deletion.
+	Worktrees *worktree.Manager
 }
 
 // Server is the vincent HTTP API server.
@@ -75,6 +84,11 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
+	rt.handle(http.MethodGet, "/v1/projects", s.handleProjectList)
+	rt.handle(http.MethodPost, "/v1/projects", s.handleProjectCreate)
+	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
+	rt.handle(http.MethodPatch, "/v1/projects/{id}", s.handleProjectPatch)
+	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
