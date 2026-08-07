@@ -242,7 +242,7 @@ nullable — not all agents report cost), input wait time (ms spent in `awaiting
 | Action | Valid from | Effect |
 |---|---|---|
 | `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted` |
-| `pause` | queued, running | `running`: finishes the current step, then holds; → `paused` |
+| `pause` | queued, running | `running`: finishes the current step, then holds; → `paused`. The request is persisted, so it survives a daemon crash; every other human action clears it |
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step (fresh attempt, retry counter reset); → `queued` |
 | `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun |
@@ -682,7 +682,9 @@ defaults:
 
 ## 11. Scheduler and concurrency
 
-- Two caps, both counting tasks in state `running`:
+- Two caps, both counting tasks in a **slot-holding** state — `running` and
+  `awaiting_input` (§6; the latter's agent process is alive, merely idle on its
+  stdin, so it costs a slot exactly like a running one):
   - **global** `max_parallel_tasks` (config file, default 3),
   - **per-project** `max_parallel_tasks` (project setting, default unlimited).
 - A `queued` task is admitted when both caps have headroom. Admission order:
@@ -692,7 +694,12 @@ defaults:
   hours without starving the queue. After approve/retry/skip/resume, the task
   re-enters `queued` and competes under the normal ordering (its original
   `created_at` naturally favors it).
-- The scheduler re-evaluates on every state change and on config reload.
+- The scheduler re-evaluates on every state change, on config reload, and when a
+  project's cap changes. It is a single goroutine and the only place `queued → running`
+  happens, so the caps cannot race.
+- A `queued` task whose pause was requested while it was running (§6) is not admitted:
+  the scheduler moves it straight to `paused` instead. A pause therefore survives a
+  crash, which re-queues the task without clearing the request.
 
 ## 12. The daemon
 
@@ -781,6 +788,12 @@ edited via `PATCH /v1/projects/{id}`.
 - Versioning: path-prefixed (`/v1`); additive changes only within a version.
 - Errors: `{"error": {"code": "task_not_found", "message": "…"}}` with proper HTTP
   status codes. Invalid state transitions return `409` with the current state.
+- The envelope carries an optional `details` object for values a client must branch
+  on rather than parse out of prose. A `409` from a state conflict sets
+  `details.state` to the state actually found:
+  `{"error": {"code": "invalid_state", "message": "task 7 is running, not queued",
+  "details": {"state": "running"}}}`. `details` is omitted when empty, so responses
+  that carry no structured detail are unchanged.
 
 ### 13.2 Endpoints
 
@@ -812,8 +825,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                           base_branch?, priority?, agent?, model?, effort? }
                                         → task (state=queued); agent/model/effort form the
                                         task-level override (§8.6), validated per §8.2
-GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4)
-PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only)
+GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
+                                        Every task representation carries `available_actions`
+                                        (the §6 human actions valid right now) and
+                                        `pause_requested`, so clients never restate the FSM
+PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only);
+                                        emits task.priority_changed and re-runs admission
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
@@ -822,7 +839,10 @@ POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
 POST   /v1/tasks/{id}/answer           { answers?, allow? }        (awaiting_input only, §7.4)
-POST   /v1/tasks/{id}/archive          { force? }                  (done/aborted only)
+POST   /v1/tasks/{id}/archive          { force? } or ?force        (done/aborted only);
+                                        the worktree is removed before the transition, so a
+                                        dirty worktree without force is a 409 and the task
+                                        stays done/aborted
 
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
 GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=   raw JSONL transcript, ranged
@@ -885,6 +905,9 @@ CREATE TABLE tasks (
   state               TEXT NOT NULL,          -- §6
   current_step        INTEGER NOT NULL DEFAULT 0,
   block_reason        TEXT,                   -- set while state='blocked'
+  pause_requested     INTEGER NOT NULL DEFAULT 0, -- §6 pause accepted, not yet taken effect
+  retry_cursor_at     TEXT,                   -- last human `retry`; the retry budget counts failures after it (§7.2)
+  pending_override_json TEXT,                 -- edit+retry text awaiting the next attempt's step_run
   pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
@@ -912,6 +935,8 @@ CREATE TABLE step_runs (
   check_exit_code     INTEGER,
   failure_reason      TEXT,
   result_summary      TEXT,                   -- agent result text / command stdout tail
+  prompt_override     TEXT,                   -- edit+retry: the prompt a human supplied for this attempt (§6)
+  run_override        TEXT,                   -- edit+retry: the command a human supplied for this attempt (§6)
   transcript_path     TEXT,
   input_tokens        INTEGER,
   output_tokens       INTEGER,
