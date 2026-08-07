@@ -3,19 +3,27 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/lezli01/vincent/internal/version"
 )
 
-// Execute runs the root command and returns the process exit code.
+// Execute runs the root command and returns the process exit code. Errors
+// are printed here (not by cobra) so exitError can exit silently with its
+// specific code after the command already reported the situation.
 func Execute() int {
-	if err := newRootCmd().Execute(); err != nil {
-		return 1
+	root := newRootCmd()
+	root.SilenceErrors = true
+	err := root.Execute()
+	var ee exitError
+	if err != nil && !errors.As(err, &ee) {
+		fmt.Fprintln(os.Stderr, "Error:", err)
 	}
-	return 0
+	return asExitCode(err)
 }
 
 func newRootCmd() *cobra.Command {
@@ -30,17 +38,6 @@ func newRootCmd() *cobra.Command {
 	}
 	root.AddCommand(newDaemonCmd(), newVersionCmd())
 	return root
-}
-
-func newDaemonCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "daemon",
-		Short: "Run the vincent daemon in the foreground",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "The vincent daemon is not implemented yet (Phase 1).")
-			return err
-		},
-	}
 }
 
 func newVersionCmd() *cobra.Command {
