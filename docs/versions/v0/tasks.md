@@ -17,11 +17,11 @@ implementation progress; the executing agent updates it in place as work proceed
 | Phase | Scope | Done | Status |
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
-| 1 — Spine (M1) | 9 tasks | 2/9 | 🔨 in progress |
+| 1 — Spine (M1) | 9 tasks | 4/9 | 🔨 in progress |
 | 2 — Workflow engine (M2) | 12 tasks | 0/12 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **6/39** | |
+| **Total** | | **8/39** | |
 
 ---
 
@@ -115,10 +115,10 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
 - *`/v1/config`:* effective config as snake_case JSON mirroring `config.yaml`; durations rendered as Go duration strings.
 - *Token:* 32 bytes `crypto/rand` as hex, written atomically (temp+rename) 0600 at first start, reused unchanged on later starts.
 
-- [~] **T1.3 — Daemon lifecycle.** `vincent daemon` (foreground); `daemon start/stop/status` (detached start, graceful stop, status via `daemon.json`); single-instance lock file; bearer token generated 0600 at first start; structured logging with rotation. (§12.1, §12.2, §13.1)
-  *Done when:* start/status/stop cycle works on all 3 OSes; second daemon refuses to start; token/`daemon.json` created with correct permissions.
-- [~] **T1.4 — API foundation.** `net/http` server bound `127.0.0.1`; bearer-auth middleware (health exempt); JSON error envelope with stable codes; `GET /v1/health`, `/v1/info` (agent availability wired later), `/v1/config`. (§13.1–13.2)
-  *Done when:* auth rejection, health-without-auth, and error-shape tests pass.
+- [x] **T1.3 — Daemon lifecycle.** `vincent daemon` (foreground); `daemon start/stop/status` (detached start, graceful stop, status via `daemon.json`); single-instance lock file; bearer token generated 0600 at first start; structured logging with rotation. (§12.1, §12.2, §13.1) ✓ 2026-08-07
+  *Done when:* start/status/stop cycle works on all 3 OSes; second daemon refuses to start; token/`daemon.json` created with correct permissions. *(Verified: PR #10 matrix green on ubuntu/macos/windows — binary e2e drives the full start/status/stop cycle incl. idempotency and exit codes; in-process tests cover second-instance refusal, API stop, context cancel, fatal invalid config; token 0600 asserted on POSIX, existence on Windows.)*
+- [x] **T1.4 — API foundation.** `net/http` server bound `127.0.0.1`; bearer-auth middleware (health exempt); JSON error envelope with stable codes; `GET /v1/health`, `/v1/info` (agent availability wired later), `/v1/config`. (§13.1–13.2) ✓ 2026-08-07
+  *Done when:* auth rejection, health-without-auth, and error-shape tests pass. *(Verified: PR #10 — httptest suite covers auth rejection (missing/wrong token), health without auth, 404/405/401/500 envelope shapes incl. Allow header, panic recovery, and the stop endpoint with and without auth.)*
 - [ ] **T1.5 — Projects API.** `GET/POST /v1/projects`, `GET/PATCH/DELETE /v1/projects/{id}`; registration validation (path exists, is git repo); `default_branch` auto-detection with fallback (§5.1); delete guarded by non-archived tasks.
   *Done when:* endpoint tests against temp git repos cover happy path + each validation failure.
 - [ ] **T1.6 — Worktree manager.** Create worktree + branch `vincent/{id}-{slug}` from base (§10); slug rules (§5.3); remove + prune on archive with dirty detection and `force`; error taxonomy for missing base branch, pre-existing branch, missing project path (§18).
