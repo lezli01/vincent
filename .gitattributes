@@ -1,0 +1,7 @@
+# Normalize all text files to LF so lint, gofumpt, and diffs behave
+# identically on Windows, macOS, and Linux checkouts.
+* text=auto eol=lf
+
+# Windows shell scripts genuinely need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
