@@ -17,11 +17,11 @@ implementation progress; the executing agent updates it in place as work proceed
 | Phase | Scope | Done | Status |
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
-| 1 — Spine (M1) | 9 tasks | 4/9 | 🔨 in progress |
+| 1 — Spine (M1) | 9 tasks | 6/9 | 🔨 in progress |
 | 2 — Workflow engine (M2) | 12 tasks | 0/12 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **8/39** | |
+| **Total** | | **10/39** | |
 
 ---
 
@@ -131,10 +131,10 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
 - *Error surfacing:* one vocabulary — `worktree.Error.Reason` snake_case strings (`base_branch_missing`, `branch_exists`, `worktree_dirty`, `worktree_missing`, `worktree_path_occupied`, `project_path_missing`, `git_error`) double as future task `block_reason` values; HTTP layer reuses the existing code set (400 `validation_failed`, 409 `invalid_state`, 404 `not_found`) — no new codes.
 - *gitx:* `internal/gitx` run/capture helper with typed exec errors; context-scoped timeouts (30 s queries, 5 min worktree ops); git version probed and logged at daemon start, warn below 2.31 (phase 1 decision, lands here as first git use).
 
-- [~] **T1.5 — Projects API.** `GET/POST /v1/projects`, `GET/PATCH/DELETE /v1/projects/{id}`; registration validation (path exists, is git repo); `default_branch` auto-detection with fallback (§5.1); delete guarded by non-archived tasks.
-  *Done when:* endpoint tests against temp git repos cover happy path + each validation failure.
-- [~] **T1.6 — Worktree manager.** Create worktree + branch `vincent/{id}-{slug}` from base (§10); slug rules (§5.3); remove + prune on archive with dirty detection and `force`; error taxonomy for missing base branch, pre-existing branch, missing project path (§18).
-  *Done when:* integration tests with temp repos cover create/remove/dirty/each error case.
+- [x] **T1.5 — Projects API.** `GET/POST /v1/projects`, `GET/PATCH/DELETE /v1/projects/{id}`; registration validation (path exists, is git repo); `default_branch` auto-detection with fallback (§5.1); delete guarded by non-archived tasks. ✓ 2026-08-07
+  *Done when:* endpoint tests against temp git repos cover happy path + each validation failure. *(Verified: PR #11 matrix green on ubuntu/macos/windows — happy path, every registration failure (relative/nonexistent/non-repo/bare/subdir/linked-worktree/branch-missing/zero-cap), alias-duplicate via os.SameFile, name conflict, full detection-chain table incl. detached/unborn rejection, PATCH null-clears + repoint matrix, DELETE guard/force matrix with real worktree removal.)*
+- [x] **T1.6 — Worktree manager.** Create worktree + branch `vincent/{id}-{slug}` from base (§10); slug rules (§5.3); remove + prune on archive with dirty detection and `force`; error taxonomy for missing base branch, pre-existing branch, missing project path (§18). ✓ 2026-08-07
+  *Done when:* integration tests with temp repos cover create/remove/dirty/each error case. *(Verified: PR #11 — lifecycle (branch survives removal, idempotent re-remove), slug/branch-name tables incl. empty-slug edge, all taxonomy errors, untracked + tracked dirty, project-gone force fallback, outside-root deletion refusal. New `internal/gitx` with version probe logged at daemon start.)*
 - [ ] **T1.7 — AgentAdapter + Claude Code adapter.** Interface per §9.1 (incl. `Options()`, `RunSpec.Model`/`Effort`, and the §7.4 input-request surface shaped final: `InputRequest`/`InputResponse` types, `Respond()` on RunHandle, `RunSpec.OnInput`, `supports_input` in `Detect()` — claude may report `false` until T2.12 lands the engine); Claude implementation: prompt via stdin, `stream-json` event parsing, full-auto flag, `--model`/`--effort` passthrough, usage/cost extraction, kill support; `Options()` help-probe (effort enum + model aliases parsed from `--help`, merged with the curated catalog, §9.6); `Detect()` wired into `/v1/info`. Include a **fake agent** test binary emitting scripted stream-json so CI never calls a real API.
   *Done when:* adapter unit tests against the fake binary cover success, error event, nonzero exit, kill, and usage parsing; options probe parses a captured `--help` fixture and falls back to curated-only on an unparseable one; the input-request interface compiles and is stubbed (behavior exercised in T2.12).
 - [ ] **T1.8 — Minimal task run.** `POST /v1/tasks` (validation, snapshot placeholder, immediate queue, optional `agent`/`model`/`effort` task-level override persisted to the `*_override` columns via a new migration) with a hardcoded single-agent-step execution path: worktree create → adapter run (agent/model/effort resolved per §8.6, recorded on the StepRun) → StepRun + transcript file → `done`/`blocked`; `GET /v1/tasks[,/{id}]`, `/steps`, `/steps/{run_id}/transcript`, `/diff` (§13.2). Depends: T1.2, T1.5–T1.7.
