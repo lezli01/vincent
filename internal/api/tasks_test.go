@@ -1,0 +1,418 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/worktree"
+)
+
+// taskHarness is a full M1 spine: API server + store + worktrees + runner +
+// the claude adapter pointed at the fakeagent binary via the config knob.
+type taskHarness struct {
+	*projectHarness
+	runner    *taskrun.Runner
+	repo      string
+	projectID int64
+}
+
+// newTaskHarness builds the spine. agentTimeout 0 keeps the default; the
+// runner is started unless withRunner is false.
+func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *taskHarness {
+	t.Helper()
+	fake := agenttest.BuildFakeAgent(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	git := gitx.New()
+	dataDir := t.TempDir()
+	wt := worktree.NewManager(git, dataDir)
+	reg := agent.NewRegistry(claude.New(func() string { return fake }))
+	cfg := func() config.Config {
+		c := config.Default()
+		if agentTimeout > 0 {
+			c.Defaults.AgentTimeout = config.Duration(agentTimeout)
+		}
+		return c
+	}
+	runner := taskrun.New(taskrun.Deps{
+		Store:     st,
+		Config:    cfg,
+		Worktrees: wt,
+		Agents:    reg,
+		DataDir:   dataDir,
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if withRunner {
+		runner.Start(t.Context())
+		t.Cleanup(runner.Stop)
+	}
+	s := New(Deps{
+		Token:       testToken,
+		Config:      cfg,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Git:         git,
+		Worktrees:   wt,
+		Agents:      reg,
+		AgentStatus: []AgentStatus{{Name: "claude", Available: true, Path: fake, Version: "2.1.224"}},
+		WakeRunner:  runner.Wake,
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	h := &taskHarness{projectHarness: &projectHarness{ts: ts, store: st, wt: wt}, runner: runner}
+
+	h.repo = testrepo.Init(t, "main")
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/projects", map[string]any{"path": h.repo})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register project: %d %s", resp.StatusCode, body)
+	}
+	var p struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatalf("project body: %v", err)
+	}
+	h.projectID = p.ID
+	return h
+}
+
+func (h *taskHarness) createTask(t *testing.T, req map[string]any) taskResponse {
+	t.Helper()
+	if _, ok := req["project_id"]; !ok {
+		req["project_id"] = h.projectID
+	}
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", req)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create task: %d %s", resp.StatusCode, body)
+	}
+	var tr taskResponse
+	if err := json.Unmarshal(body, &tr); err != nil {
+		t.Fatalf("task body: %v", err)
+	}
+	return tr
+}
+
+// sval renders an optional string field for assertions.
+func sval(p *string) string {
+	if p == nil {
+		return "<nil>"
+	}
+	return *p
+}
+
+// waitForState polls the task until it reaches want or the deadline hits.
+func (h *taskHarness) waitForState(t *testing.T, id int64, want string) taskResponse {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d", id), nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("get task: %d %s", resp.StatusCode, body)
+		}
+		var tr taskResponse
+		if err := json.Unmarshal(body, &tr); err != nil {
+			t.Fatalf("task body: %v", err)
+		}
+		if tr.State == want {
+			return tr
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task %d stuck in %q (block_reason %s), want %q", id, tr.State, sval(tr.BlockReason), want)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestTaskEndToEnd(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "success")
+	t.Setenv("FAKEAGENT_EDIT_FILE", "README.md")
+	h := newTaskHarness(t, 0, true)
+
+	created := h.createTask(t, map[string]any{
+		"title":       "Add login page",
+		"description": "Build the login page.",
+		"model":       "sonnet",
+		"effort":      "high",
+	})
+	if created.State != "queued" && created.State != "running" {
+		t.Errorf("created state = %q", created.State)
+	}
+	wantBranch := fmt.Sprintf("vincent/%d-add-login-page", created.ID)
+	if created.BranchName != wantBranch {
+		t.Errorf("branch = %q, want %q", created.BranchName, wantBranch)
+	}
+	if created.ModelOverride == nil || *created.ModelOverride != "sonnet" ||
+		created.EffortOverride == nil || *created.EffortOverride != "high" {
+		t.Errorf("overrides not echoed: %+v", created)
+	}
+
+	done := h.waitForState(t, created.ID, "done")
+	if done.WorktreePath == nil || done.StartedAt == nil || done.FinishedAt == nil {
+		t.Errorf("done task missing worktree/timestamps: %+v", done)
+	}
+	if len(done.Steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(done.Steps))
+	}
+	step := done.Steps[0]
+	if step.State != "succeeded" || step.Attempt != 1 || step.StepType != "agent" {
+		t.Errorf("step = %+v", step)
+	}
+	if step.Agent == nil || *step.Agent != "claude" ||
+		step.Model == nil || *step.Model != "sonnet" ||
+		step.Effort == nil || *step.Effort != "high" {
+		t.Errorf("override did not round-trip into the StepRun: %+v", step)
+	}
+	if step.ExitCode == nil || *step.ExitCode != 0 ||
+		step.InputTokens == nil || *step.InputTokens != 100 ||
+		step.OutputTokens == nil || *step.OutputTokens != 42 ||
+		step.CostUSD == nil || *step.CostUSD != 0.0123 {
+		t.Errorf("usage/exit not recorded: %+v", step)
+	}
+	if !strings.Contains(step.ResultSummary, "Add login page") {
+		t.Errorf("result summary %q does not echo the prompt", step.ResultSummary)
+	}
+
+	// Branch was created in the registered repo and survives (§10).
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+wantBranch)
+
+	// Transcript: verbatim agent lines + namespaced vincent lines, ranged.
+	resp, body := h.doJSON(t, http.MethodGet,
+		fmt.Sprintf("/v1/tasks/%d/steps/%d/transcript", created.ID, step.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("transcript: %d %s", resp.StatusCode, body)
+	}
+	transcript := string(body)
+	for _, want := range []string{"vincent.step_started", "vincent.step_finished", `"type":"result"`, "fake_marker"} {
+		if !strings.Contains(transcript, want) {
+			t.Errorf("transcript missing %q", want)
+		}
+	}
+	next := resp.Header.Get("X-Next-Offset")
+	if next != fmt.Sprint(len(body)) {
+		t.Errorf("X-Next-Offset = %s, want %d", next, len(body))
+	}
+	resp, body = h.doJSON(t, http.MethodGet,
+		fmt.Sprintf("/v1/tasks/%d/steps/%d/transcript?offset=%s", created.ID, step.ID, next), nil)
+	if resp.StatusCode != http.StatusOK || len(body) != 0 {
+		t.Errorf("ranged read from the end: %d, %d bytes; want 200 with empty body", resp.StatusCode, len(body))
+	}
+	if step.TranscriptPath == nil {
+		t.Fatal("transcript_path not set")
+	}
+	if _, err := os.Stat(*step.TranscriptPath); err != nil {
+		t.Errorf("transcript file: %v", err)
+	}
+
+	// Diff: the fakeagent edit to a tracked file shows against merge-base.
+	resp, body = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/diff", created.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("diff: %d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "fakeagent was here") || !strings.Contains(string(body), "README.md") {
+		t.Errorf("diff missing the fakeagent edit:\n%s", body)
+	}
+
+	// Steps endpoint mirrors the detail view.
+	resp, body = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/steps", created.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("steps: %d %s", resp.StatusCode, body)
+	}
+	var steps []stepRunResponse
+	if err := json.Unmarshal(body, &steps); err != nil || len(steps) != 1 {
+		t.Errorf("steps endpoint: %v, %d rows", err, len(steps))
+	}
+}
+
+func TestTaskBlockedOnAgentError(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "error-event")
+	h := newTaskHarness(t, 0, true)
+	created := h.createTask(t, map[string]any{"title": "doomed"})
+	blocked := h.waitForState(t, created.ID, "blocked")
+	if sval(blocked.BlockReason) != "agent_error" {
+		t.Errorf("block_reason = %s, want agent_error", sval(blocked.BlockReason))
+	}
+	if len(blocked.Steps) != 1 {
+		t.Fatalf("steps = %d, want 1", len(blocked.Steps))
+	}
+	step := blocked.Steps[0]
+	if step.State != "failed" || sval(step.FailureReason) != "agent_error" {
+		t.Errorf("step state=%s reason=%s, want failed/agent_error", step.State, sval(step.FailureReason))
+	}
+	if !strings.Contains(step.ResultSummary, "fake agent failed on purpose") {
+		t.Errorf("summary %q missing the error text", step.ResultSummary)
+	}
+}
+
+func TestTaskBlockedOnNonzeroExit(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "nonzero-exit")
+	h := newTaskHarness(t, 0, true)
+	created := h.createTask(t, map[string]any{"title": "crasher"})
+	blocked := h.waitForState(t, created.ID, "blocked")
+	if sval(blocked.BlockReason) != "nonzero_exit" {
+		t.Errorf("block_reason = %s, want nonzero_exit", sval(blocked.BlockReason))
+	}
+	step := blocked.Steps[0]
+	if step.ExitCode == nil || *step.ExitCode != 3 {
+		t.Errorf("exit_code = %v, want 3", step.ExitCode)
+	}
+}
+
+func TestTaskTimeout(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "hang")
+	h := newTaskHarness(t, 500*time.Millisecond, true)
+	created := h.createTask(t, map[string]any{"title": "sleeper"})
+	blocked := h.waitForState(t, created.ID, "blocked")
+	if sval(blocked.BlockReason) != "timeout" {
+		t.Errorf("block_reason = %s, want timeout (defaults.agent_timeout enforced in M1)", sval(blocked.BlockReason))
+	}
+	step := blocked.Steps[0]
+	if sval(step.FailureReason) != "timeout" {
+		t.Errorf("step failure_reason = %s, want timeout", sval(step.FailureReason))
+	}
+}
+
+func TestRunnerStopInterrupts(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "hang")
+	h := newTaskHarness(t, 0, true)
+	created := h.createTask(t, map[string]any{"title": "interrupted"})
+	// Wait until the agent process is live (step run has a pid) so the stop
+	// deterministically interrupts a running step, not worktree creation.
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		runs, err := h.store.ListStepRuns(t.Context(), created.ID)
+		if err != nil {
+			t.Fatalf("ListStepRuns: %v", err)
+		}
+		if len(runs) == 1 && runs[0].PID != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("agent process never came up")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	h.runner.Stop()
+	got, err := h.store.GetTask(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.State != store.TaskBlocked || got.BlockReason != "interrupted" {
+		t.Errorf("after stop: %s/%q, want blocked/interrupted", got.State, got.BlockReason)
+	}
+	runs, err := h.store.ListStepRuns(t.Context(), created.ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("ListStepRuns: %v, %d rows", err, len(runs))
+	}
+	if runs[0].State != store.StepInterrupted {
+		t.Errorf("step run = %s, want interrupted", runs[0].State)
+	}
+}
+
+func TestTaskCreateValidation(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	tests := []struct {
+		name string
+		req  map[string]any
+		want string // substring of the error message
+	}{
+		{"missing title", map[string]any{}, "title is required"},
+		{"unknown project", map[string]any{"project_id": int64(9999), "title": "x"}, "project 9999 not found"},
+		{"unknown workflow", map[string]any{"title": "x", "workflow": "feature-pr"}, "only the built-in"},
+		{"unknown agent", map[string]any{"title": "x", "agent": "gemini"}, "available: claude"},
+		{"missing base branch", map[string]any{"title": "x", "base_branch": "nope"}, "does not resolve"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := tt.req
+			if _, ok := req["project_id"]; !ok {
+				req["project_id"] = h.projectID
+			}
+			resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", req)
+			wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+			if !strings.Contains(string(body), tt.want) {
+				t.Errorf("message %s missing %q", body, tt.want)
+			}
+		})
+	}
+}
+
+func TestTaskListFilters(t *testing.T) {
+	h := newTaskHarness(t, 0, false) // no runner: tasks stay queued
+	first := h.createTask(t, map[string]any{"title": "one"})
+	h.createTask(t, map[string]any{"title": "two"})
+
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks?project_id=%d&state=queued", h.projectID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: %d %s", resp.StatusCode, body)
+	}
+	var tasks []taskResponse
+	if err := json.Unmarshal(body, &tasks); err != nil || len(tasks) != 2 {
+		t.Fatalf("list = %v, %d rows, want 2", err, len(tasks))
+	}
+	resp, body = h.doJSON(t, http.MethodGet, "/v1/tasks?limit=1&offset=1", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list paged: %d %s", resp.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &tasks); err != nil || len(tasks) != 1 || tasks[0].ID != first.ID {
+		t.Errorf("paged list = %d rows (first id %v), want the older task", len(tasks), tasks)
+	}
+	resp, body = h.doJSON(t, http.MethodGet, "/v1/tasks?limit=x", nil)
+	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+}
+
+func TestTaskDiffWithoutWorktree(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	created := h.createTask(t, map[string]any{"title": "not started"})
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/diff", created.ID), nil)
+	wantError(t, resp, body, http.StatusConflict, CodeInvalidState)
+}
+
+func TestTranscriptNotFound(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	created := h.createTask(t, map[string]any{"title": "no steps"})
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/steps/42/transcript", created.ID), nil)
+	wantError(t, resp, body, http.StatusNotFound, CodeNotFound)
+
+	resp, body = h.doJSON(t, http.MethodGet, "/v1/tasks/9999", nil)
+	wantError(t, resp, body, http.StatusNotFound, CodeNotFound)
+}
+
+func TestInfoReportsAgents(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	resp, body := h.doJSON(t, http.MethodGet, "/v1/info", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("info: %d %s", resp.StatusCode, body)
+	}
+	var info struct {
+		Agents []AgentStatus `json:"agents"`
+	}
+	if err := json.Unmarshal(body, &info); err != nil {
+		t.Fatalf("info body: %v", err)
+	}
+	if len(info.Agents) != 1 || info.Agents[0].Name != "claude" || !info.Agents[0].Available {
+		t.Errorf("agents = %+v, want claude available", info.Agents)
+	}
+}

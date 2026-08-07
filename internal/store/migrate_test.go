@@ -17,6 +17,10 @@ func openTest(t *testing.T) *Store {
 	return s
 }
 
+// latestSchemaVersion tracks the newest migration file; bump alongside new
+// migrations.
+const latestSchemaVersion = 2
+
 func schemaVersion(t *testing.T, s *Store) int {
 	t.Helper()
 	var v int
@@ -39,8 +43,8 @@ func TestOpenAppliesSchema(t *testing.T) {
 			t.Errorf("table %s missing after migration", table)
 		}
 	}
-	if v := schemaVersion(t, s); v != 1 {
-		t.Errorf("schema version = %d, want 1", v)
+	if v := schemaVersion(t, s); v != latestSchemaVersion {
+		t.Errorf("schema version = %d, want %d", v, latestSchemaVersion)
 	}
 }
 
@@ -74,8 +78,8 @@ func TestMigrateIdempotent(t *testing.T) {
 	if err := migrate(s.db); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if v := schemaVersion(t, s); v != 1 {
-		t.Errorf("schema version after re-migrate = %d, want 1", v)
+	if v := schemaVersion(t, s); v != latestSchemaVersion {
+		t.Errorf("schema version after re-migrate = %d, want %d", v, latestSchemaVersion)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -87,8 +91,8 @@ func TestMigrateIdempotent(t *testing.T) {
 		t.Fatalf("second Open: %v", err)
 	}
 	defer func() { _ = s.Close() }()
-	if v := schemaVersion(t, s); v != 1 {
-		t.Errorf("schema version after reopen = %d, want 1", v)
+	if v := schemaVersion(t, s); v != latestSchemaVersion {
+		t.Errorf("schema version after reopen = %d, want %d", v, latestSchemaVersion)
 	}
 }
 

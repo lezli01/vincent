@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, state, agent, pid,
+const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
 	proc_started_at, exit_code, check_exit_code, failure_reason, result_summary, transcript_path,
 	input_tokens, output_tokens, cost_usd, started_at, finished_at`
 
@@ -20,12 +20,13 @@ func (s *Store) CreateStepRun(ctx context.Context, r *StepRun) error {
 		r.StartedAt = time.Now()
 	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, pid,
+		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
 			proc_started_at, exit_code, check_exit_code, failure_reason, result_summary, transcript_path,
 			input_tokens, output_tokens, cost_usd, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, string(r.State),
-		nullString(r.Agent), r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
+		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
+		r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.ResultSummary), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
 	if err != nil {
@@ -43,12 +44,13 @@ func (s *Store) CreateStepRun(ctx context.Context, r *StepRun) error {
 // ErrNotFound when the row does not exist.
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `
-		UPDATE step_runs SET state = ?, agent = ?, pid = ?, proc_started_at = ?, exit_code = ?,
-			check_exit_code = ?, failure_reason = ?, result_summary = ?, transcript_path = ?,
+		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
+			exit_code = ?, check_exit_code = ?, failure_reason = ?, result_summary = ?, transcript_path = ?,
 			input_tokens = ?, output_tokens = ?, cost_usd = ?, finished_at = ?
 		WHERE id = ?`,
-		string(r.State), nullString(r.Agent), r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode,
-		r.CheckExitCode, nullString(r.FailureReason), nullString(r.ResultSummary), nullString(r.TranscriptPath),
+		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
+		r.PID, formatTimePtr(r.ProcStartedAt),
+		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.ResultSummary), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, formatTimePtr(r.FinishedAt),
 		r.ID)
 	if err != nil {
@@ -96,18 +98,21 @@ func (s *Store) ListStepRuns(ctx context.Context, taskID int64) ([]StepRun, erro
 func scanStepRun(row rowScanner) (*StepRun, error) {
 	var (
 		r                                       StepRun
-		agent, failure, summary, transcript     sql.NullString
+		agent, model, effort                    sql.NullString
+		failure, summary, transcript            sql.NullString
 		pid, exitCode, checkExit, inTok, outTok sql.NullInt64
 		cost                                    sql.NullFloat64
 		procStarted, finished                   sql.NullString
 		started                                 string
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
-		(*string)(&r.State), &agent, &pid, &procStarted, &exitCode, &checkExit,
+		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &exitCode, &checkExit,
 		&failure, &summary, &transcript, &inTok, &outTok, &cost, &started, &finished); err != nil {
 		return nil, err
 	}
 	r.Agent = agent.String
+	r.Model = model.String
+	r.Effort = effort.String
 	r.FailureReason = failure.String
 	r.ResultSummary = summary.String
 	r.TranscriptPath = transcript.String
