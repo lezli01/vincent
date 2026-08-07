@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/version"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -40,12 +41,18 @@ type Deps struct {
 	Worktrees *worktree.Manager
 	// Agents is the adapter registry, for task-override validation.
 	Agents *agent.Registry
+	// Workflows is the workflow registry (§5.2), serving /v1/workflows.
+	Workflows *workflow.Registry
 	// AgentStatus is the per-adapter availability probed at daemon start
 	// (§9.5); /v1/agents adds on-demand re-probing in T2.11.
 	AgentStatus []AgentStatus
 	// WakeRunner nudges task admission after a task is created; it must not
 	// block. Nil is tolerated (tests without a runner).
 	WakeRunner func()
+	// OnProjectsChanged is called after a project is registered, re-pointed,
+	// or deleted, so the workflow registry can follow the project scopes
+	// (§5.2). Nil is tolerated.
+	OnProjectsChanged func()
 }
 
 // AgentStatus is one adapter's availability as reported by /v1/info
@@ -69,6 +76,11 @@ type Server struct {
 // New assembles the server: routes wrapped in recover → log → auth
 // middleware (outermost first; phase 1 decision).
 func New(deps Deps) *Server {
+	if deps.Workflows == nil {
+		// Tests and early boot get a registry with no scopes on disk: the
+		// built-in ad-hoc workflow is still served.
+		deps.Workflows = workflow.NewRegistry("", workflow.Options{}, deps.Logger)
+	}
 	s := &Server{deps: deps}
 	s.handler = s.buildHandler()
 	s.httpSrv = &http.Server{
@@ -109,6 +121,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
 	rt.handle(http.MethodPatch, "/v1/projects/{id}", s.handleProjectPatch)
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
+	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
+	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
 	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)

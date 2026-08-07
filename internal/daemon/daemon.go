@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -136,6 +137,23 @@ func Run(ctx context.Context, opts Options) error {
 	)
 	agentStatus := probeAgents(ctx, logger, agents)
 
+	// Workflow registry: global scope from {config_dir}/workflows, project
+	// scopes from every registered repo's .vincent/workflows (§5.2). Both
+	// are watched; a repo that has no such directory is picked up if one
+	// appears later.
+	workflows := workflow.NewRegistry(
+		filepath.Join(dirs.Config, workflow.GlobalDirName),
+		workflow.Options{KnownAgents: agents.Names()},
+		logger,
+	)
+	workflows.ReloadGlobal()
+	if err := syncWorkflowProjects(ctx, st, workflows); err != nil {
+		logger.Warn("project workflow scopes unavailable", "error", err)
+	}
+	if err := workflows.Watch(ctx); err != nil {
+		logger.Warn("workflow hot-reload unavailable", "error", err)
+	}
+
 	worktrees := worktree.NewManager(git, dirs.Data)
 	runner := taskrun.New(taskrun.Deps{
 		Store:     st,
@@ -159,7 +177,15 @@ func Run(ctx context.Context, opts Options) error {
 		Worktrees:   worktrees,
 		Agents:      agents,
 		AgentStatus: agentStatus,
+		Workflows:   workflows,
 		WakeRunner:  runner.Wake,
+		OnProjectsChanged: func() {
+			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := syncWorkflowProjects(pctx, st, workflows); err != nil {
+				logger.Warn("project workflow scopes not refreshed", "error", err)
+			}
+		},
 	})
 
 	if err := config.Watch(ctx, logger, dirs.Config, func(next config.Config) {
@@ -211,6 +237,21 @@ func Run(ctx context.Context, opts Options) error {
 	// for their interrupted state to be persisted (T1.7–T1.9 decision).
 	runner.Stop()
 	logger.Info("daemon stopped")
+	return nil
+}
+
+// syncWorkflowProjects points the registry at the current set of registered
+// repos, so their .vincent/workflows scopes are loaded and watched.
+func syncWorkflowProjects(ctx context.Context, st *store.Store, reg *workflow.Registry) error {
+	projects, err := st.ListProjects(ctx)
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+	roots := make(map[int64]string, len(projects))
+	for i := range projects {
+		roots[projects[i].ID] = projects[i].Path
+	}
+	reg.SetProjects(roots)
 	return nil
 }
 
