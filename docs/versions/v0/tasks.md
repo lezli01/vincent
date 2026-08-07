@@ -16,12 +16,12 @@ implementation progress; the executing agent updates it in place as work proceed
 
 | Phase | Scope | Done | Status |
 |---|---|---|---|
-| 0 — Scaffolding | 4 tasks | 2/4 | 🟨 in progress |
+| 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 0/9 | ⬜ not started |
 | 2 — Workflow engine (M2) | 10 tasks | 0/10 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **0/37** | |
+| **Total** | | **4/37** | |
 
 ---
 
@@ -44,10 +44,10 @@ Repo foundation the spec assumes but doesn't itemize. Module path: `github.com/l
   *Done when:* `go build ./...` succeeds; `vincent version` prints version/commit/date. *(Verified: `vincent version 9ad1de4-dirty (commit 9ad1de4, built 2026-08-06)`; also added `internal/version` with a unit test.)*
 - [x] **T0.2 — Dev tooling.** `.gitignore`, `.editorconfig`, `golangci-lint` config, Makefile (or magefile) with `build` / `test` / `lint` targets. ✓ 2026-08-06
   *Done when:* `make lint test build` passes clean locally. *(Verified as `go run mage.go lint test build` — 0 lint issues, tests pass, binary built. Scope addition: `.gitattributes` LF normalization.)*
-- [~] **T0.3 — CI.** GitHub Actions: build + test + lint matrix on ubuntu-latest, macos-latest, windows-latest.
-  *Done when:* workflow green on all three OSes for a PR touching Go code.
-- [ ] **T0.4 — Phase gate.** Fresh clone → `make build` → working `vincent version` on all 3 OSes (via CI matrix).
-  *Done when:* gate verified; dashboard updated.
+- [x] **T0.3 — CI.** GitHub Actions: build + test + lint matrix on ubuntu-latest, macos-latest, windows-latest. ✓ 2026-08-06
+  *Done when:* workflow green on all three OSes for a PR touching Go code. *(Verified: PR #6 matrix green on all three OSes. CI runs the same mage targets as local, with `-race`.)*
+- [x] **T0.4 — Phase gate.** Fresh clone → `make build` → working `vincent version` on all 3 OSes (via CI matrix). ✓ 2026-08-06
+  *Done when:* gate verified; dashboard updated. *(Verified on PR #6: each matrix job does a fresh checkout, `go run mage.go build`, and smoke-tests `vincent version` output.)*
 
 ## Phase 1 — Spine (M1)
 
