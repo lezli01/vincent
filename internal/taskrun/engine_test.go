@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -27,6 +28,7 @@ import (
 type engineHarness struct {
 	store     *store.Store
 	runner    *Runner
+	sched     *scheduler.Scheduler
 	repo      string
 	dataDir   string
 	projectID int64
@@ -60,11 +62,26 @@ func newEngineHarness(t *testing.T) *engineHarness {
 	return &engineHarness{store: st, runner: runner, repo: repo, dataDir: dataDir, projectID: project.ID}
 }
 
-// start runs the admission loop for the test's lifetime.
+// start runs the runner and a real scheduler for the test's lifetime, so
+// tasks reach the engine the same way they do in the daemon.
 func (h *engineHarness) start(t *testing.T) {
 	t.Helper()
+	sched := scheduler.New(scheduler.Deps{
+		Store:    h.store,
+		Config:   config.Default,
+		Admitter: h.runner,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	h.store.SetEventHook(func(e *store.Event) {
+		if scheduler.WakeOn(e) {
+			sched.Wake()
+		}
+	})
 	h.runner.Start(t.Context())
+	sched.Start(t.Context())
+	h.sched = sched
 	t.Cleanup(h.runner.Stop)
+	t.Cleanup(sched.Stop)
 }
 
 // createTask inserts a queued task carrying the given workflow snapshot.
