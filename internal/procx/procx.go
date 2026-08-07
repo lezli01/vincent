@@ -45,6 +45,18 @@ func (p *Proc) Kill() error {
 	return p.killErr
 }
 
+// Terminate asks the process tree to exit, giving a well-behaved child the
+// chance to clean up — the graceful half of spec §6's "graceful term, then
+// kill after 10 s". The caller waits and calls Kill if the tree is still
+// alive.
+//
+// On POSIX this signals the process group with SIGTERM. On Windows there is
+// no graceful counterpart: a Job object offers only TerminateJobObject, and
+// §6's own `taskkill /T /F` is that same abrupt termination, so Terminate
+// and Kill do the same thing there. The grace period still elapses on both
+// platforms, so behaviour differs only in how much warning a child gets.
+func (p *Proc) Terminate() error { return p.platform.terminate() }
+
 // Release frees platform resources (Job object handles) once the process has
 // been waited for. Safe to call multiple times.
 func (p *Proc) Release() {
@@ -53,12 +65,22 @@ func (p *Proc) Release() {
 
 // platformProc is the per-OS tree-kill mechanism.
 type platformProc interface {
+	terminate() error
 	kill() error
 	release()
 }
 
 // directKill is the fallback when tree containment could not be set up.
 type directKill struct{ cmd *exec.Cmd }
+
+func (d directKill) terminate() error {
+	if d.cmd.Process == nil {
+		return nil
+	}
+	// Signal only the child: without tree containment there is no group to
+	// signal, and Kill has the same reach.
+	return signalProcess(d.cmd)
+}
 
 func (d directKill) kill() error {
 	if d.cmd.Process == nil {

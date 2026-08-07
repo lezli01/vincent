@@ -26,6 +26,7 @@ const (
 	ReasonTemplateError    = "template_error"
 	ReasonInvalidSnapshot  = "invalid_snapshot"
 	ReasonRejected         = "rejected"
+	ReasonCanceled         = "canceled"
 	ReasonInternalError    = "internal_error"
 )
 
@@ -218,6 +219,16 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	defer tr.Close()
 	run.TranscriptPath = tr.Path()
 
+	// An `edit + retry` left its text on the task, because the handler ran
+	// while the task was blocked and this row did not exist yet (§6). Taking
+	// it clears it, so it marks the attempt the human edited and not the
+	// automatic retries that may follow.
+	if ov, err := r.deps.Store.TakePendingOverride(r.persistCtx(), env.task.ID); err != nil {
+		env.log.Warn("read pending override", "error", err)
+	} else if !ov.Empty() {
+		run.PromptOverride, run.RunOverride = ov.Prompt, ov.Run
+	}
+
 	if err := r.deps.Store.CreateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("create step run", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -242,6 +253,11 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	}
 	if outcome.state == store.StepSucceeded && env.step.Check != "" {
 		outcome = r.runCheck(ctx, env, rc, tr, outcome)
+	}
+	// A cancel reaches the step as an interruption; recording it as one
+	// would lose the fact that a human ended this deliberately (§6).
+	if outcome.state == store.StepInterrupted && r.canceling(env.task.ID) {
+		outcome.reason = ReasonCanceled
 	}
 
 	r.finishStepRun(run, outcome, env.log)
@@ -331,14 +347,13 @@ func (r *Runner) enterGate(ctx context.Context, env *stepEnv) {
 // transition applies an engine action through the §6 state machine and
 // persists it with its durable event.
 func (r *Runner) transition(task *store.Task, action taskstate.Action, ch store.TaskChange, log *slog.Logger) bool {
-	from := taskstate.State(task.State)
+	from := task.State
 	tr, ok := taskstate.Next(from, action)
 	if !ok {
 		log.Error("engine attempted an invalid transition", "from", from, "action", action)
 		return false
 	}
-	updated, _, err := r.deps.Store.TransitionTask(r.persistCtx(), task.ID,
-		task.State, store.TaskState(tr.To), ch)
+	updated, _, err := r.deps.Store.TransitionTask(r.persistCtx(), task.ID, task.State, tr.To, ch)
 	if err != nil {
 		if conflict, isConflict := store.AsStateConflict(err); isConflict {
 			// A human acted first (cancel, for instance); their transition wins.
