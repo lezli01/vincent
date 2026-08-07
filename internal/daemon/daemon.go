@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -15,10 +16,13 @@ import (
 
 	"github.com/gofrs/flock"
 
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -116,6 +120,7 @@ func Run(ctx context.Context, opts Options) error {
 	// current is the effective configuration, swapped whole on hot-reload.
 	var current atomic.Pointer[config.Config]
 	current.Store(&cfg)
+	currentConfig := func() config.Config { return *current.Load() }
 
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
@@ -123,17 +128,38 @@ func Run(ctx context.Context, opts Options) error {
 	var stopOnce sync.Once
 	requestStop := func() { stopOnce.Do(func() { close(stopRequested) }) }
 
+	// Agent adapters: paths ride the live config so hot-reloaded paths reach
+	// future runs; availability is probed once at startup and served from
+	// /v1/info (on-demand re-probing arrives with /v1/agents, T2.11).
+	agents := agent.NewRegistry(
+		claude.New(func() string { return currentConfig().Agents.Claude.Path }),
+	)
+	agentStatus := probeAgents(ctx, logger, agents)
+
+	worktrees := worktree.NewManager(git, dirs.Data)
+	runner := taskrun.New(taskrun.Deps{
+		Store:     st,
+		Config:    currentConfig,
+		Worktrees: worktrees,
+		Agents:    agents,
+		DataDir:   dirs.Data,
+		Logger:    logger,
+	})
+
 	startedAt := time.Now()
 	srv := api.New(api.Deps{
 		Token:       token,
-		Config:      func() config.Config { return *current.Load() },
+		Config:      currentConfig,
 		StartedAt:   startedAt,
 		ListenAddr:  ln.Addr().String(),
 		RequestStop: requestStop,
 		Logger:      logger,
 		Store:       st,
 		Git:         git,
-		Worktrees:   worktree.NewManager(git, dirs.Data),
+		Worktrees:   worktrees,
+		Agents:      agents,
+		AgentStatus: agentStatus,
+		WakeRunner:  runner.Wake,
 	})
 
 	if err := config.Watch(ctx, logger, dirs.Config, func(next config.Config) {
@@ -159,6 +185,8 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	defer func() { _ = RemoveRuntimeInfo(dirs.Data) }()
 
+	runner.Start(ctx)
+
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 	logger.Info("daemon ready", "addr", ln.Addr().String())
@@ -170,6 +198,7 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Info("shutting down: stop requested via API")
 	case err := <-serveErr:
 		logger.Error("http server failed", "error", err)
+		runner.Stop()
 		return fmt.Errorf("http server: %w", err)
 	}
 
@@ -178,6 +207,34 @@ func Run(ctx context.Context, opts Options) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http shutdown incomplete", "error", err)
 	}
+	// After the HTTP drain: kill in-flight agent runs (tree-kill) and wait
+	// for their interrupted state to be persisted (T1.7–T1.9 decision).
+	runner.Stop()
 	logger.Info("daemon stopped")
 	return nil
+}
+
+// probeAgents runs Detect on every registered adapter and logs the outcome.
+func probeAgents(ctx context.Context, logger *slog.Logger, agents *agent.Registry) []api.AgentStatus {
+	out := make([]api.AgentStatus, 0, len(agents.Names()))
+	for _, a := range agents.All() {
+		av, err := a.Detect(ctx)
+		if err != nil {
+			av = agent.Availability{Error: err.Error()}
+		}
+		if av.Found {
+			logger.Info("agent detected", "agent", a.Name(), "path", av.Path, "version", av.Version)
+		} else {
+			logger.Warn("agent not available", "agent", a.Name(), "error", av.Error)
+		}
+		out = append(out, api.AgentStatus{
+			Name:          a.Name(),
+			Available:     av.Found,
+			Path:          av.Path,
+			Version:       av.Version,
+			SupportsInput: av.SupportsInput,
+			Error:         av.Error,
+		})
+	}
+	return out
 }
