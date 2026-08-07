@@ -791,7 +791,10 @@ GET    /v1/projects                     list
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
 GET    /v1/projects/{id}
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
-DELETE /v1/projects/{id}                only when no non-archived tasks; ?force cascades archive
+DELETE /v1/projects/{id}                hard-deletes the project and its task history (rows);
+                                        only when no non-archived tasks; ?force first archives
+                                        them (worktrees force-removed; refused while any task
+                                        is running). Branches are never deleted (§10)
 
 GET    /v1/workflows?project_id=        merged registry view: global + that project's (shadowing applied);
                                         each entry: { name, scope, file, description, steps[], error? }
