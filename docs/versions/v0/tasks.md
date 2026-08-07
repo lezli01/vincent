@@ -17,11 +17,11 @@ implementation progress; the executing agent updates it in place as work proceed
 | Phase | Scope | Done | Status |
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
-| 1 — Spine (M1) | 9 tasks | 0/9 | ⬜ not started |
+| 1 — Spine (M1) | 9 tasks | 2/9 | 🔨 in progress |
 | 2 — Workflow engine (M2) | 10 tasks | 0/10 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **4/37** | |
+| **Total** | | **6/37** | |
 
 ---
 
@@ -77,10 +77,10 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
 - *Diff endpoint:* `git -C {worktree} diff <merge-base(base, HEAD)>` — committed + staged + unstaged tracked changes; untracked files excluded (documented limitation).
 - *M1 gate:* `scripts/m1-gate.sh` (bash + curl + jq) run in CI on all 3 OSes (Git Bash on Windows): build vincent+fakeagent → temp dirs via env overrides → start daemon → register temp repo → create task → poll to done → assert branch/diff/transcript → stop daemon.
 
-- [ ] **T1.1 — Config & platform dirs.** Platform-native config/data dir resolution (§12.2); `config.yaml` load with defaults + strict validation (§12.3); hot-reload via fsnotify.
-  *Done when:* unit tests cover defaults, overrides, invalid config rejection, and live reload.
-- [ ] **T1.2 — SQLite store & migrations.** Pure-Go driver; WAL + busy_timeout; embedded migrations applying schema §14; typed store layer (CRUD + scheduler query) for projects, tasks, step_runs, events.
-  *Done when:* migration idempotence test + CRUD round-trip tests pass on all 3 OSes in CI.
+- [x] **T1.1 — Config & platform dirs.** Platform-native config/data dir resolution (§12.2); `config.yaml` load with defaults + strict validation (§12.3); hot-reload via fsnotify. ✓ 2026-08-07
+  *Done when:* unit tests cover defaults, overrides, invalid config rejection, and live reload. *(Verified: 28 unit tests — defaults, partial/full overrides, 13 invalid-config rejections, live reload incl. invalid-edit keep-last-good, per-OS data-dir table, generated default file loads back to `Default()`.)*
+- [x] **T1.2 — SQLite store & migrations.** Pure-Go driver; WAL + busy_timeout; embedded migrations applying schema §14; typed store layer (CRUD + scheduler query) for projects, tasks, step_runs, events. ✓ 2026-08-07
+  *Done when:* migration idempotence test + CRUD round-trip tests pass on all 3 OSes in CI. *(Verified: PR #7 matrix green on ubuntu/macos/windows — idempotence via re-migrate + reopen, pragma checks, CRUD round-trips incl. nullable columns, scheduler ordering, FK enforcement.)*
 - [ ] **T1.3 — Daemon lifecycle.** `vincent daemon` (foreground); `daemon start/stop/status` (detached start, graceful stop, status via `daemon.json`); single-instance lock file; bearer token generated 0600 at first start; structured logging with rotation. (§12.1, §12.2, §13.1)
   *Done when:* start/status/stop cycle works on all 3 OSes; second daemon refuses to start; token/`daemon.json` created with correct permissions.
 - [ ] **T1.4 — API foundation.** `net/http` server bound `127.0.0.1`; bearer-auth middleware (health exempt); JSON error envelope with stable codes; `GET /v1/health`, `/v1/info` (agent availability wired later), `/v1/config`. (§13.1–13.2)
