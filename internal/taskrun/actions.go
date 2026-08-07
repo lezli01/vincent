@@ -46,14 +46,23 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 	}
 	log := r.deps.Logger.With("task", id)
 	if lr, ok := r.lookupRun(id); ok {
-		lr.stop(cancelGrace, log)
-		// The actor closes its own step run: it is that row's only writer.
+		// Tearing the process tree down takes up to the §6 grace period, and
+		// the caller has already got its answer: the task is durably aborted.
+		// Blocking the response on it would stall a client for ten seconds to
+		// tell it something it already knows. The actor closes its own step
+		// run — it is that row's only writer.
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			lr.stop(cancelGrace, log)
+		}()
 		return task, nil
 	}
 	// No actor: nothing else will close the rows this task left open — the
 	// manual row an `awaiting_gate` task is parked on, or a row orphaned by
-	// a crash (§6).
-	if n, err := r.deps.Store.TerminalizeOpenStepRuns(ctx, id,
+	// a crash (§6). This write outlives the request: the transition it
+	// belongs with has already committed.
+	if n, err := r.deps.Store.TerminalizeOpenStepRuns(r.persistCtx(), id,
 		store.StepInterrupted, ReasonCanceled); err != nil {
 		log.Error("cancel: close open step runs", "error", err)
 	} else if n > 0 {
