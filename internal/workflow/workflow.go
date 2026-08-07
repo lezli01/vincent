@@ -161,6 +161,22 @@ func Parse(src []byte, opts Options) (*Workflow, error) {
 	return &wf, nil
 }
 
+// Marshal re-encodes a workflow as YAML. It exists for `edit + retry`, which
+// rewrites one step inside a task's own snapshot (spec §5.3, §6).
+//
+// The output is canonical rather than faithful: comments and field order
+// from the original file are lost, and fields left unset are written out
+// empty. That is acceptable because a snapshot is machine-owned — only Parse
+// ever reads it — and validation judges a step by the values it carries, not
+// by which keys are present.
+func Marshal(wf *Workflow) ([]byte, error) {
+	out, err := yaml.Marshal(wf)
+	if err != nil {
+		return nil, fmt.Errorf("encode workflow: %w", err)
+	}
+	return out, nil
+}
+
 // asErrors extracts the validation failures from an error returned by Parse.
 func asErrors(err error, target *Errors) bool { return errors.As(err, target) }
 

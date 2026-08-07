@@ -1,17 +1,19 @@
 // Package taskrun is the workflow execution engine: one goroutine per
 // admitted task walks its workflow snapshot step by step and is the sole
-// writer of that task's state (phase 2 decision). An actor lives for exactly
-// one admission — reaching a gate, blocking, or pausing releases the task's
-// concurrency slot and ends the goroutine; the scheduler admits it again
-// when a human unblocks it.
+// writer of that task's state and of its step_run rows (phase 2 decision).
+// An actor lives for exactly one admission — reaching a gate, blocking, or
+// pausing releases the task's concurrency slot and ends the goroutine; the
+// scheduler admits it again when a human unblocks it.
 //
-// Admission here is still the M1 interim loop bounded by the global
-// max_parallel_tasks; T2.5 replaces it with the real scheduler (per-project
-// caps, priority ordering, re-evaluation on every state change).
+// Admission itself belongs to internal/scheduler, which is the only place
+// `queued → running` happens (§11). This package implements its Admitter,
+// and hosts the human actions of §6, which reach a live run through the
+// control map below.
 package taskrun
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -26,12 +28,17 @@ import (
 // workflow defaults name an agent.
 const DefaultAgent = "claude"
 
-// tickInterval is the admission safety net: Wake normally drives the loop,
-// but a tick also picks up config hot-reloads of max_parallel_tasks.
-const tickInterval = 5 * time.Second
-
 // stopGrace bounds how long Stop waits for actors after cancellation.
 const stopGrace = 20 * time.Second
+
+// cancelGrace is §6's window between asking a process tree to exit and
+// killing it.
+const cancelGrace = 10 * time.Second
+
+// ErrRunnerStopped is returned by Admit once the runner is shutting down;
+// the scheduler returns the task to the queue rather than leaving it running
+// with nobody executing it.
+var ErrRunnerStopped = errors.New("task runner is stopping")
 
 // Deps are the daemon facilities the engine works with.
 type Deps struct {
@@ -44,29 +51,47 @@ type Deps struct {
 	Logger    *slog.Logger
 }
 
-// Runner admits queued tasks and runs them.
+// Runner executes admitted tasks and applies the §6 human actions.
 type Runner struct {
 	deps   Deps
-	wake   chan struct{}
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
+	// base is the parent of every task's run context; canceling it stops
+	// every actor. nil until Start.
+	base context.Context //nolint:containedctx // the runner's own lifetime
 	// persist is a context detached from shutdown: a task's final state must
 	// still reach the database after the run context is canceled.
 	persist context.Context //nolint:containedctx // deliberately outlives the run
 
-	// live tracks running tasks so human actions and shutdown can reach the
-	// process (phase 2 decision); T2.6 delivers cancel/pause/answer through it.
 	mu   sync.Mutex
 	live map[int64]*liveRun
 }
 
-// liveRun is one task's in-flight execution. T2.6 adds the agent handle to
-// it, so cancel and answer can reach the live process.
+// stopper is the part of a live process the human actions need: ask it to
+// exit, then insist. Both a procx.Proc and an agent run satisfy it.
+type stopper interface {
+	Terminate() error
+	Kill() error
+}
+
+// liveRun is one task's in-flight execution — the channel through which a
+// human action reaches a running process.
 type liveRun struct {
-	// pauseRequested is set by a pause action and read at the next step
-	// boundary (§6: a running task finishes its current step first).
+	// cancel ends the task's run context, which unwinds the actor.
+	cancel context.CancelFunc
+	// done closes when the actor has finished.
+	done chan struct{}
+
+	mu sync.Mutex
+	// pauseRequested mirrors the persisted flag for the live path; the actor
+	// reads it at the next step boundary (§6).
 	pauseRequested bool
+	// canceling marks that the interruption about to happen is a human
+	// cancel, so the attempt records `canceled` rather than `interrupted`.
+	canceling bool
+	// proc is the process currently executing this task's step, if any.
+	proc stopper
 }
 
 // New returns a stopped runner.
@@ -74,25 +99,15 @@ func New(deps Deps) *Runner {
 	if deps.Shells == nil {
 		deps.Shells = NewShells(deps.Logger)
 	}
-	return &Runner{
-		deps: deps,
-		wake: make(chan struct{}, 1),
-		live: map[int64]*liveRun{},
-	}
+	return &Runner{deps: deps, live: map[int64]*liveRun{}}
 }
 
-// Start sweeps leftovers from a previous run and begins admitting queued
-// tasks until ctx is canceled or Stop is called.
+// Start prepares the runner to accept admissions until ctx is canceled or
+// Stop is called.
 func (r *Runner) Start(ctx context.Context) {
 	r.persist = context.WithoutCancel(ctx)
 	ctx, r.cancel = context.WithCancel(ctx)
-	if n, err := r.deps.Store.SweepInterrupted(ctx); err != nil {
-		r.deps.Logger.Error("startup sweep failed", "error", err)
-	} else if n > 0 {
-		r.deps.Logger.Warn("swept interrupted tasks from a previous run", "tasks", n)
-	}
-	r.wg.Add(1)
-	go r.loop(ctx)
+	r.base = ctx
 }
 
 // Stop cancels in-flight runs (tree-killing their processes) and waits for
@@ -111,96 +126,44 @@ func (r *Runner) Stop() {
 	}
 }
 
-// Wake nudges the admission loop; safe from any goroutine, never blocks.
-func (r *Runner) Wake() {
-	select {
-	case r.wake <- struct{}{}:
-	default:
+// Admit implements scheduler.Admitter: it takes ownership of a task the
+// scheduler has already moved to running and starts its actor. It returns
+// immediately.
+func (r *Runner) Admit(_ context.Context, task *store.Task) error {
+	if r.base == nil || r.base.Err() != nil {
+		return ErrRunnerStopped
 	}
-}
+	taskCtx, cancel := context.WithCancel(r.base)
+	lr := &liveRun{cancel: cancel, done: make(chan struct{})}
 
-// persistCtx returns the context for writes that must survive shutdown.
-func (r *Runner) persistCtx() context.Context {
-	if r.persist == nil {
-		return context.Background()
-	}
-	return r.persist
-}
-
-func (r *Runner) loop(ctx context.Context) {
-	defer r.wg.Done()
-	ticker := time.NewTicker(tickInterval)
-	defer ticker.Stop()
-	for {
-		r.admit(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-r.wake:
-		case <-ticker.C:
-		}
-	}
-}
-
-// admit starts queued tasks while the global cap has room, in scheduler
-// order (priority DESC, created_at ASC). Per-project caps and re-evaluation
-// semantics arrive with T2.5.
-func (r *Runner) admit(ctx context.Context) {
-	if ctx.Err() != nil {
-		return
-	}
-	limit := r.deps.Config().MaxParallelTasks
-	running, err := r.deps.Store.CountRunning(ctx)
-	if err != nil {
-		r.deps.Logger.Error("admission: count running", "error", err)
-		return
-	}
-	if running >= limit {
-		return
-	}
-	queued, err := r.deps.Store.ListQueuedInOrder(ctx)
-	if err != nil {
-		r.deps.Logger.Error("admission: list queued", "error", err)
-		return
-	}
-	for i := range queued {
-		if running >= limit || ctx.Err() != nil {
-			return
-		}
-		task := queued[i]
-		log := r.deps.Logger.With("task", task.ID)
-		admitted, _, err := r.deps.Store.TransitionTask(ctx, task.ID,
-			store.TaskQueued, store.TaskRunning, store.TaskChange{})
-		if err != nil {
-			if _, conflict := store.AsStateConflict(err); conflict {
-				continue // someone acted on it between the query and now
-			}
-			log.Error("admission: mark running", "error", err)
-			return
-		}
-		running++
-		r.trackRun(admitted.ID)
-		r.wg.Add(1)
-		go func() {
-			defer r.wg.Done()
-			defer r.forgetRun(admitted.ID)
-			defer r.Wake() // slot freed → re-admit
-			r.execute(ctx, admitted)
-		}()
-	}
-}
-
-// trackRun registers a task as live so actions can reach it.
-func (r *Runner) trackRun(taskID int64) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.live[taskID] = &liveRun{}
+	if _, exists := r.live[task.ID]; exists {
+		// Two actors for one task would both claim to be its sole writer.
+		r.mu.Unlock()
+		cancel()
+		return errors.New("task is already running")
+	}
+	r.live[task.ID] = lr
+	r.mu.Unlock()
+
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer cancel()
+		defer r.forgetRun(task.ID)
+		r.execute(taskCtx, task)
+	}()
+	return nil
 }
 
 func (r *Runner) forgetRun(taskID int64) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	lr := r.live[taskID]
 	delete(r.live, taskID)
+	r.mu.Unlock()
+	if lr != nil {
+		close(lr.done)
+	}
 }
 
 func (r *Runner) lookupRun(taskID int64) (*liveRun, bool) {
@@ -210,29 +173,85 @@ func (r *Runner) lookupRun(taskID int64) (*liveRun, bool) {
 	return lr, ok
 }
 
-// RequestPause marks a running task to stop at its next step boundary (§6).
-// It reports whether the task is live; a task that is not running needs no
-// deferral and transitions immediately.
-func (r *Runner) RequestPause(taskID int64) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	lr, ok := r.live[taskID]
-	if !ok {
-		return false
-	}
-	lr.pauseRequested = true
-	return true
-}
-
-func (r *Runner) pauseRequested(taskID int64) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	lr, ok := r.live[taskID]
-	return ok && lr.pauseRequested
-}
-
 // Running reports whether the engine currently holds a live run for a task.
 func (r *Runner) Running(taskID int64) bool {
 	_, ok := r.lookupRun(taskID)
 	return ok
+}
+
+// setProc registers the process executing the current step, so cancel can
+// reach it. The returned function unregisters it.
+func (r *Runner) setProc(taskID int64, p stopper) func() {
+	lr, ok := r.lookupRun(taskID)
+	if !ok {
+		return func() {}
+	}
+	lr.mu.Lock()
+	lr.proc = p
+	lr.mu.Unlock()
+	return func() {
+		lr.mu.Lock()
+		lr.proc = nil
+		lr.mu.Unlock()
+	}
+}
+
+func (r *Runner) pauseRequested(taskID int64) bool {
+	lr, ok := r.lookupRun(taskID)
+	if !ok {
+		return false
+	}
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	return lr.pauseRequested
+}
+
+// canceling reports whether this task's interruption is a human cancel.
+func (r *Runner) canceling(taskID int64) bool {
+	lr, ok := r.lookupRun(taskID)
+	if !ok {
+		return false
+	}
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	return lr.canceling
+}
+
+// stop ends a live run for a cancel: §6's graceful term, then kill after the
+// grace period. It returns once the actor has finished or the grace has
+// elapsed, so the caller does not outrun the process it just stopped.
+func (lr *liveRun) stop(grace time.Duration, log *slog.Logger) {
+	lr.mu.Lock()
+	lr.canceling = true
+	proc := lr.proc
+	lr.mu.Unlock()
+
+	if proc != nil {
+		if err := proc.Terminate(); err != nil {
+			log.Warn("cancel: terminate failed; killing", "error", err)
+		}
+	}
+	select {
+	case <-lr.done:
+	case <-time.After(grace):
+		lr.mu.Lock()
+		proc = lr.proc
+		lr.mu.Unlock()
+		if proc != nil {
+			if err := proc.Kill(); err != nil {
+				log.Warn("cancel: kill failed", "error", err)
+			}
+		}
+	}
+	// Unblock the actor even if no process was running — it may be between
+	// steps, or waiting on git.
+	lr.cancel()
+}
+
+// persistCtx returns the context for writes that must survive shutdown.
+func (r *Runner) persistCtx() context.Context {
+	if r.persist == nil {
+		return context.Background()
+	}
+	return r.persist
 }

@@ -14,6 +14,10 @@ import (
 // Job object assigned in attach.
 func setSysProcAttr(*exec.Cmd) {}
 
+// signalProcess has no graceful equivalent on Windows for a console-less
+// child, so the fallback path kills outright.
+func signalProcess(cmd *exec.Cmd) error { return cmd.Process.Kill() }
+
 // attach creates a Job object with kill-on-close and assigns the child to
 // it. Every process the child spawns joins the job, so TerminateJobObject
 // reaps the whole tree — and so does handle cleanup if the daemon dies.
@@ -50,6 +54,11 @@ func attach(cmd *exec.Cmd) (platformProc, error) {
 
 // jobKill terminates every process in the Job object.
 type jobKill struct{ job windows.Handle }
+
+// terminate has no gentler form here: a Job object exposes only
+// TerminateJobObject, which is what spec §6's `taskkill /T /F` does too.
+// The caller's grace period still elapses; the tree simply gets no warning.
+func (j *jobKill) terminate() error { return j.kill() }
 
 func (j *jobKill) kill() error {
 	if err := windows.TerminateJobObject(j.job, 1); err != nil {

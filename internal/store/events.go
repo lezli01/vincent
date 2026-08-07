@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+// SetEventHook registers fn to run after an event's transaction commits.
+// It is the daemon's single notification seam: the scheduler wakes from it
+// (spec §11) and T2.7's SSE broker will publish from it, which is why it
+// fires strictly post-commit — a subscriber must never observe an event the
+// database has not durably recorded.
+//
+// fn runs synchronously on the writing goroutine and must not block.
+func (s *Store) SetEventHook(fn func(*Event)) { s.eventHook.Store(&fn) }
+
+// notify runs the event hook, if one is registered.
+func (s *Store) notify(e *Event) {
+	if fn := s.eventHook.Load(); fn != nil && *fn != nil {
+		(*fn)(e)
+	}
+}
+
 // AppendEvent inserts e and assigns its ID (the SSE Last-Event-ID cursor).
 // A zero TS means now; a nil Payload is stored as "{}".
 func (s *Store) AppendEvent(ctx context.Context, e *Event) error {
@@ -29,6 +45,7 @@ func (s *Store) AppendEvent(ctx context.Context, e *Event) error {
 		return fmt.Errorf("insert event: %w", err)
 	}
 	e.ID = id
+	s.notify(e)
 	return nil
 }
 
