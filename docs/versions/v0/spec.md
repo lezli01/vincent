@@ -35,6 +35,8 @@ steps.
 - Unlimited projects, workflows, and tasks; every task isolated in its own worktree.
 - Workflow-defined delivery: agent, command, and manual-gate step types; linear execution.
 - Two agent adapters — Claude Code and Codex — behind one interface.
+- Agent, model, and effort selectable per workflow, per step, and per task at
+  creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
 - Monitoring: live task board, per-task live output tail, per-step duration/token/cost metrics, durable transcripts.
 - Crash-safe: daemon restart recovers and resumes interrupted work automatically.
@@ -75,6 +77,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 18 | Daemon lifecycle | TUI auto-starts daemon; `vincent daemon start/stop/status`; optional OS service install; interrupted steps re-run on restart |
 | 19 | Name | `vincent` |
 | 20 | v1 scope | Everything above, both agent adapters |
+| 21 | Agent/model/effort selection | Adapter-native values; per-step resolution `step > task override > workflow defaults > adapter default` with agent-scoped inheritance; options probed ad hoc from the installed CLIs, merged with a curated catalog, free text always allowed (§8.6, §9.6) |
 
 ## 4. Architecture
 
@@ -167,6 +170,7 @@ A unit of work delivered by running a workflow against a project.
 | `branch_name` | `vincent/{id}-{slug}` (slug: lowercase title, `[a-z0-9-]`, max 40 chars) |
 | `worktree_path` | assigned when the worktree is created |
 | `priority` | integer, default 0; higher runs first |
+| `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `state` | §6 |
 | `current_step` | index into the snapshot's step list |
 
@@ -176,7 +180,7 @@ One attempt at executing one step of one task. Every attempt (including retries 
 re-runs after interruption) is a distinct StepRun row — history is append-only.
 
 Records: step id/index/type, attempt number, state (`running`, `succeeded`, `failed`,
-`interrupted`, `approved`, `rejected`, `skipped`), timestamps, agent used, exit code,
+`interrupted`, `approved`, `rejected`, `skipped`), timestamps, agent/model/effort used (as resolved per §8.6), exit code,
 check exit code, failure reason, transcript file path, input/output tokens, cost (USD,
 nullable — not all agents report cost).
 
@@ -296,7 +300,8 @@ description: Implement, test, review, then push and open a PR.
 
 defaults:                             # optional; per-step values override
   agent: claude                       # claude | codex
-  model: ""                           # passed through to the adapter if set
+  model: ""                           # adapter-native id/alias (e.g. sonnet); options via GET /v1/agents (§9.6)
+  effort: ""                          # adapter-native effort (claude: low…max; codex: minimal…high) (§8.6)
   permission_mode: full-auto          # full-auto | restricted   (§9.4)
   max_retries: 1
   timeout: 60m
@@ -321,7 +326,8 @@ steps:
 
   - id: self-review
     type: agent
-    agent: codex                      # per-step agent override
+    agent: codex                      # per-step agent override — defaults.model/effort
+    effort: high                      # don't follow across the agent switch (§8.6)
     prompt: |
       Review the diff of this branch against {{.Task.BaseBranch}} for bugs and
       missed requirements. The implementation summary was:
@@ -347,7 +353,7 @@ Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
 
 | Type | Required | Optional |
 |---|---|---|
-| `agent` | `prompt` | `agent`, `model`, `permission_mode`, `check`, `check_timeout` |
+| `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `check`, `check_timeout` |
 | `command` | `run` | `shell`, `env` (map), `check`, `check_timeout` |
 | `manual` | `instructions` | — |
 
@@ -355,6 +361,11 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
   parse as Go durations; unknown keys are errors (strict decoding) to catch typos.
+- `agent` values must name a known adapter. Each step's resolved
+  (agent, model, effort) triple (§8.6) is checked against that adapter's option
+  catalog (§9.6): a known-invalid value (e.g. a claude-only effort reaching a
+  codex step) is a validation error; values the catalog doesn't know (free-text
+  models) pass with a warning — the CLI stays the final authority at run time.
 
 ### 8.3 Command steps and shells
 
@@ -403,6 +414,26 @@ VINCENT_WORKTREE, VINCENT_BRANCH, VINCENT_BASE_BRANCH, VINCENT_STEP_ID,
 VINCENT_STEP_ATTEMPT, VINCENT_WORKFLOW
 ```
 
+### 8.6 Agent, model, and effort resolution
+
+For each `agent` step, the effective agent, model, and effort resolve in this
+order (first hit wins):
+
+1. explicit step field (`agent` / `model` / `effort`)
+2. task-level override chosen at creation (§13.2) — replaces workflow
+   `defaults`, never an explicit step field
+3. workflow `defaults`
+4. adapter default (empty = the CLI's own default)
+
+**Agent-scoped inheritance:** `model` and `effort` only inherit from a level
+whose resolved agent matches the step's resolved agent. When a step (or a task
+override) switches agent without setting them, they reset to the new adapter's
+default rather than leaking across — a claude alias like `sonnet` must never
+reach codex.
+
+The resolved triple is recorded on every StepRun (§5.4, §14) and passed to the
+adapter via `RunSpec` (§9.1).
+
 ## 9. Agent adapters
 
 ### 9.1 Interface
@@ -411,13 +442,15 @@ VINCENT_STEP_ATTEMPT, VINCENT_WORKFLOW
 type AgentAdapter interface {
     Name() string                                   // "claude", "codex"
     Detect(ctx context.Context) (Availability, error) // found on PATH? version? logged in (best effort)?
+    Options(ctx context.Context) (AgentOptions, error) // selectable models/efforts, probed ad hoc (§9.6)
     Start(ctx context.Context, spec RunSpec) (RunHandle, error)
 }
 
 type RunSpec struct {
     Prompt         string
     WorkDir        string            // the task worktree
-    Model          string            // optional passthrough
+    Model          string            // resolved per §8.6; "" = CLI default
+    Effort         string            // resolved per §8.6; adapter-native; "" = CLI default
     PermissionMode PermissionMode    // FullAuto | Restricted
     Env            []string
 }
@@ -435,6 +468,18 @@ type RunResult struct {
     OutputTokens int64
     CostUSD      *float64 // nil if unreported (e.g. codex)
 }
+
+type AgentOptions struct {
+    Models        []Option // known model ids/aliases; never exhaustive — free text is always accepted
+    Efforts       []Option // adapter-native effort levels
+    DefaultModel  string   // "" = the CLI decides
+    DefaultEffort string   // "" = the CLI decides
+}
+
+type Option struct {
+    Value  string
+    Source string // "cli" (probed from the installed binary) | "curated" (catalog shipped with vincent)
+}
 ```
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
@@ -451,12 +496,20 @@ adapter with zero core changes.
   result event.
 - Restricted mode maps to Claude's allowlist flags (`--allowedTools` with an
   edit/read/git/test set).
+- Model and effort pass through as `--model` / `--effort`.
+- `Options()` probes `claude --help` ad hoc: the `--effort` enum (`low, medium,
+  high, xhigh, max` as of 2.1.x) and the documented model aliases are parsed
+  from the help text (source `cli`) and merged with the curated catalog (§9.6).
 
 ### 9.3 Codex adapter
 
 - Invocation: `codex exec --json` with full-access sandbox flags in full-auto mode,
   cwd = worktree, prompt via stdin.
 - Normalizes Codex's JSONL events; token usage parsed when present; `CostUSD` is nil.
+- Model and effort pass through as `-c model=…` / `-c model_reasoning_effort=…`.
+- The CLI enumerates nothing (`--help` documents only `-c key=value`), so
+  `Options()` returns the curated catalog (source `curated`; efforts
+  `minimal, low, medium, high`).
 
 ### 9.4 Permission modes
 
@@ -474,6 +527,32 @@ Set at workflow `defaults` or per step; there is no daemon-global hardcoded poli
 `GET /v1/info` reports, per adapter: found/not-found, path, version. The TUI surfaces
 missing agents at task-creation time (a workflow whose steps need an unavailable agent
 is flagged).
+
+### 9.6 Option discovery (`GET /v1/agents`)
+
+`GET /v1/agents` returns, per adapter, the availability data of §9.5 plus the
+selectable options — models and efforts with provenance, and the adapter
+defaults:
+
+```json
+{ "agents": [ {
+    "name": "claude", "available": true, "path": "…", "version": "2.1.224",
+    "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
+    "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
+    "default_model": "", "default_effort": "",
+    "probed_at": "2026-08-07T10:00:00Z", "probe_error": null } ] }
+```
+
+- **Always dynamic, never slow:** probes run on demand and results are cached
+  keyed by *binary identity* (resolved path + mtime + version). Help output is
+  a pure function of the installed binary, so the cache is never stale by
+  construction: updating the CLI invalidates it and the next request re-probes.
+  `?refresh=true` forces a re-probe.
+- **Probe failure degrades, never blocks:** if the CLI is missing or its help
+  output can't be parsed, the endpoint serves the curated catalog with
+  `probe_error` set; free-text entry is unaffected.
+- Catalogs are advisory: pickers (§15) always accept free text, and validation
+  treats catalog membership per §8.2.
 
 ## 10. Worktree management
 
@@ -601,6 +680,8 @@ edited via `PATCH /v1/projects/{id}`.
 GET    /v1/health                       liveness (also unauthenticated) → { status, version }
 GET    /v1/info                         daemon version, uptime, agent availability, caps in effect
 GET    /v1/config                       effective global config (read-only)
+GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
+                                        ?refresh=true forces a re-probe
 
 GET    /v1/projects                     list
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
@@ -614,7 +695,9 @@ POST   /v1/workflows/validate           { yaml } → { valid, errors[] }
 
 GET    /v1/tasks?project_id=&state=&limit=&offset=
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
-                                          base_branch?, priority? } → task (state=queued)
+                                          base_branch?, priority?, agent?, model?, effort? }
+                                        → task (state=queued); agent/model/effort form the
+                                        task-level override (§8.6), validated per §8.2
 GET    /v1/tasks/{id}                   full task incl. step runs summary
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only)
 POST   /v1/tasks/{id}/cancel
@@ -679,6 +762,9 @@ CREATE TABLE tasks (
   branch_name         TEXT NOT NULL,
   worktree_path       TEXT,
   priority            INTEGER NOT NULL DEFAULT 0,
+  agent_override      TEXT,                   -- task-level selection (§8.6); NULL = none
+  model_override      TEXT,
+  effort_override     TEXT,
   state               TEXT NOT NULL,          -- §6
   current_step        INTEGER NOT NULL DEFAULT 0,
   block_reason        TEXT,                   -- set while state='blocked'
@@ -700,6 +786,8 @@ CREATE TABLE step_runs (
   state               TEXT NOT NULL,          -- running | succeeded | failed | interrupted
                                               -- | approved | rejected | skipped
   agent               TEXT,                   -- adapter name, agent steps only
+  model               TEXT,                   -- resolved model as passed to the adapter (§8.6)
+  effort              TEXT,                   -- resolved effort as passed to the adapter (§8.6)
   pid                 INTEGER,                -- while running
   proc_started_at     TEXT,
   exit_code           INTEGER,
@@ -753,7 +841,9 @@ stream for the live tail.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
    `$EDITOR`) → custom fields (key/value) → base branch (default prefilled) →
-   priority → create.
+   priority → optional agent/model/effort override (pickers fed by
+   `GET /v1/agents` with provenance-tagged options and free-text entry;
+   replaces workflow defaults, never explicit step fields, §8.6) → create.
 4. **Projects.** List/add/edit/remove; per-project cap and defaults.
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
@@ -798,6 +888,8 @@ stream for the live tail.
 | Workflow file edited mid-task | Irrelevant — execution uses the task's snapshot |
 | Workflow deleted before task creation | Creation fails: `workflow_not_found` |
 | Agent CLI missing at step start | Step fails (retry policy applies) with a `agent_unavailable` reason; typically → blocked |
+| Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
+| Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch `vincent/{id}-{slug}` already exists | Task blocked with clear reason (never reuse) |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives |
@@ -812,8 +904,8 @@ stream for the live tail.
 
 | Milestone | Contents | Acceptance |
 |---|---|---|
-| **M1 — Spine** | Daemon skeleton, SQLite + migrations, config, token auth, projects CRUD, task creation with worktree, Claude adapter, single hardcoded-format one-step run, transcripts, health/info | `curl` can register a repo, create a 1-step agent task, watch it finish, and see the branch/diff |
-| **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter | Multi-step workflow incl. gate + command publish step runs unattended to the gate; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
+| **M1 — Spine** | Daemon skeleton, SQLite + migrations, config, token auth, projects CRUD, task creation with worktree (incl. optional agent/model/effort override), Claude adapter (model/effort passthrough + options probe), single hardcoded-format one-step run, transcripts, health/info | `curl` can register a repo, create a 1-step agent task, watch it finish, and see the branch/diff |
+| **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation | Multi-step workflow incl. gate + command publish step runs unattended to the gate; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
 | **M3 — TUI** | All six views, live tail, diff view, all actions, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow → run 3 parallel tasks → approve gate → archive) is doable without leaving the TUI |
 | **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries) | Fresh-machine install to first completed task in under 10 minutes on each OS |
 
