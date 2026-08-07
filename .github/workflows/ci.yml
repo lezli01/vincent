@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     runs-on: ${{ matrix.os }}
@@ -16,32 +20,23 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      # The repo is docs-only until Phase 0 (T0.1) lands go.mod; every step
-      # below no-ops gracefully so this check can be required from day one.
-      - name: Detect Go module
-        id: gomod
-        shell: bash
-        run: echo "exists=$([[ -f go.mod ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-go@v5
-        if: steps.gomod.outputs.exists == 'true'
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      - name: Build
-        if: steps.gomod.outputs.exists == 'true'
-        run: go build ./...
-
-      - name: Test
-        if: steps.gomod.outputs.exists == 'true'
-        run: go test ./...
-
+      # CI runs the exact targets developers run locally (see magefile.go);
+      # the only deliberate difference is the race detector.
       - name: Lint
-        if: steps.gomod.outputs.exists == 'true'
-        uses: golangci/golangci-lint-action@v6
+        run: go run mage.go lint
 
-      - name: No Go module yet
-        if: steps.gomod.outputs.exists == 'false'
-        run: echo "go.mod not present yet — skipping build/test/lint (Phase 0 pending)"
+      - name: Test (race)
+        run: go run mage.go testrace
+
+      - name: Build
+        run: go run mage.go build
+
+      - name: Smoke-test vincent version
+        shell: bash
+        run: ./bin/vincent* version

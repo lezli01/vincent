@@ -16,12 +16,12 @@ implementation progress; the executing agent updates it in place as work proceed
 
 | Phase | Scope | Done | Status |
 |---|---|---|---|
-| 0 — Scaffolding | 4 tasks | 0/4 | ⬜ not started |
+| 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 0/9 | ⬜ not started |
 | 2 — Workflow engine (M2) | 10 tasks | 0/10 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **0/37** | |
+| **Total** | | **4/37** | |
 
 ---
 
@@ -29,14 +29,25 @@ implementation progress; the executing agent updates it in place as work proceed
 
 Repo foundation the spec assumes but doesn't itemize. Module path: `github.com/lezli01/vincent`.
 
-- [ ] **T0.1 — Go module & repo layout.** `go mod init github.com/lezli01/vincent`; directory skeleton: `cmd/vincent/`, `internal/{config,store,daemon,api,workflow,agent,worktree,scheduler,taskrun,tui,cli}/`; root command routing (`vincent`, `vincent daemon`, `vincent version` stubs); build info injected via ldflags. (§12.1)
-  *Done when:* `go build ./...` succeeds; `vincent version` prints version/commit/date.
-- [ ] **T0.2 — Dev tooling.** `.gitignore`, `.editorconfig`, `golangci-lint` config, Makefile (or magefile) with `build` / `test` / `lint` targets.
-  *Done when:* `make lint test build` passes clean locally.
-- [ ] **T0.3 — CI.** GitHub Actions: build + test + lint matrix on ubuntu-latest, macos-latest, windows-latest.
-  *Done when:* workflow green on all three OSes for a PR touching Go code.
-- [ ] **T0.4 — Phase gate.** Fresh clone → `make build` → working `vincent version` on all 3 OSes (via CI matrix).
-  *Done when:* gate verified; dashboard updated.
+**Phase 0 decisions (grill session, 2026-08-06):**
+
+- *Go version:* latest stable minor, minor-only directive (`go 1.26`); CI reads `go-version-file: go.mod`; bumped manually each Go release. No multi-version matrix.
+- *CLI framework:* `spf13/cobra` for the §12.1 command tree.
+- *Task runner:* Mage, zero-install. Both `go run mage.go <target>` (committed bootstrap `mage.go`) and `go tool mage <target>` work; mage is pinned via a `go.mod` `tool` directive so tidy can never prune it. Wherever T0.2/T0.4 say `make X`, read `go run mage.go X`.
+- *Lint:* golangci-lint v2 pinned as a `go.mod` `tool` directive — `go tool golangci-lint run` is the single invocation path locally and in CI (no golangci-lint-action). Curated strict set (v2 standard defaults + errorlint, gocritic, revive, copyloopvar, intrange, misspell, unconvert, unparam, nolintlint, sqlclosecheck) + `gofumpt` formatter.
+- *CI:* runs the same mage targets as local; `-race` enabled in CI only (local Windows may lack a C toolchain); docs-only `go.mod` gating removed; `checkout`/`setup-go` bumped to v7 in-branch (supersedes the dependabot PRs; the lint-action bump becomes moot); PR runs cancel superseded runs.
+- *Skeleton:* placeholder packages carry a `doc.go` stating their future role; `internal/cli` and `internal/version` are real from T0.1.
+- *Repo hygiene:* `.gitattributes` forces LF on source files (scope addition to T0.2). `vincent version` prints one line (`vincent version X (commit Y, built Z)`) with `debug.ReadBuildInfo` fallback so plain `go build` binaries never print empty fields.
+- *Local toolchain:* Go installed via winget (1.26.5 at time of writing); no other global tools required — lint and mage ride the `go.mod` tool directives.
+
+- [x] **T0.1 — Go module & repo layout.** `go mod init github.com/lezli01/vincent`; directory skeleton: `cmd/vincent/`, `internal/{config,store,daemon,api,workflow,agent,worktree,scheduler,taskrun,tui,cli}/`; root command routing (`vincent`, `vincent daemon`, `vincent version` stubs); build info injected via ldflags. (§12.1) ✓ 2026-08-06
+  *Done when:* `go build ./...` succeeds; `vincent version` prints version/commit/date. *(Verified: `vincent version 9ad1de4-dirty (commit 9ad1de4, built 2026-08-06)`; also added `internal/version` with a unit test.)*
+- [x] **T0.2 — Dev tooling.** `.gitignore`, `.editorconfig`, `golangci-lint` config, Makefile (or magefile) with `build` / `test` / `lint` targets. ✓ 2026-08-06
+  *Done when:* `make lint test build` passes clean locally. *(Verified as `go run mage.go lint test build` — 0 lint issues, tests pass, binary built. Scope addition: `.gitattributes` LF normalization.)*
+- [x] **T0.3 — CI.** GitHub Actions: build + test + lint matrix on ubuntu-latest, macos-latest, windows-latest. ✓ 2026-08-06
+  *Done when:* workflow green on all three OSes for a PR touching Go code. *(Verified: PR #6 matrix green on all three OSes. CI runs the same mage targets as local, with `-race`.)*
+- [x] **T0.4 — Phase gate.** Fresh clone → `make build` → working `vincent version` on all 3 OSes (via CI matrix). ✓ 2026-08-06
+  *Done when:* gate verified; dashboard updated. *(Verified on PR #6: each matrix job does a fresh checkout, `go run mage.go build`, and smoke-tests `vincent version` output.)*
 
 ## Phase 1 — Spine (M1)
 
