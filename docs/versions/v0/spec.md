@@ -146,8 +146,11 @@ supported). The repo itself is never modified by registration.
 ### 5.2 Workflow
 
 A named, ordered list of steps defined in YAML (§8). Workflows live in files, not the
-DB; the daemon maintains a registry of parsed workflows from two scopes:
+DB; the daemon maintains a registry of parsed workflows from three scopes:
 
+- **Built-in:** shipped in the binary; currently only `adhoc`, the single-step agent
+  workflow used when a task is created without naming one (§5.3). Lowest precedence —
+  a global or project file of the same name shadows it.
 - **Global:** `{config_dir}/workflows/*.yaml` — available to every project.
 - **Project:** `{repo}/.vincent/workflows/*.yaml` — available to that project only,
   git-versioned and shareable with a team. A project workflow **shadows** a global
@@ -381,7 +384,7 @@ steps:
       # {{.Task.Title}}
       {{.Task.Description}}
 
-      {{ with .Task.Fields.ticket }}Related ticket: {{ . }}{{ end }}
+      {{ with index .Task.Fields "ticket" }}Related ticket: {{ . }}{{ end }}
     check: go test ./...              # optional; must exit 0 in the worktree
     max_retries: 2
     timeout: 45m
@@ -442,8 +445,11 @@ steps is the workflow author's responsibility; the spec makes no attempt to tran
 
 ### 8.4 Template context
 
-Templates are Go `text/template`. Rendering failures (bad field references) fail the
-step *before* any process is started, with a clear error.
+Templates are Go `text/template`, rendered with `missingkey=error`. Rendering failures
+(bad field references, and unknown `.Task.Fields` keys) fail the step *before* any
+process is started, with a clear error — a typo never renders a silent hole into a
+prompt. Because `Fields` is free-form per task, an *optional* field must be read
+defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 
 | Variable | Contents |
 |---|---|
@@ -796,8 +802,9 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
                                         them (worktrees force-removed; refused while any task
                                         is running). Branches are never deleted (§10)
 
-GET    /v1/workflows?project_id=        merged registry view: global + that project's (shadowing applied);
-                                        each entry: { name, scope, file, description, steps[], error? }
+GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
+                                        (shadowing applied); each entry:
+                                        { name, scope, project_id, file, description, steps[], errors[]?, error? }
 POST   /v1/workflows/validate           { yaml } → { valid, errors[] }
 
 GET    /v1/tasks?project_id=&state=&limit=&offset=
