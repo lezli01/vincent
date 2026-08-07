@@ -11,7 +11,8 @@ import (
 )
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-	base_branch, branch_name, worktree_path, priority, state, current_step, block_reason,
+	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+	state, current_step, block_reason,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // CreateTask inserts t and assigns its ID and timestamps. A caller-set
@@ -28,12 +29,14 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-			base_branch, branch_name, worktree_path, priority, state, current_step, block_reason,
+			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+			state, current_step, block_reason,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority, string(t.State),
-		t.CurrentStep, nullString(t.BlockReason),
+		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
+		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -107,12 +110,14 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET title = ?, description = ?, fields_json = ?, workflow_name = ?,
 			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?,
-			priority = ?, state = ?, current_step = ?, block_reason = ?,
+			priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
+			state = ?, current_step = ?, block_reason = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
 		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath),
-		t.Priority, string(t.State), t.CurrentStep, nullString(t.BlockReason),
+		t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		formatTime(t.UpdatedAt), formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 		t.ID)
 	if err != nil {
@@ -149,6 +154,28 @@ func (s *Store) CountNonArchivedTasks(ctx context.Context, projectID int64) (int
 		projectID, string(TaskArchived))
 }
 
+// SweepInterrupted marks every running step run `interrupted` and every
+// running task `blocked` (block_reason "interrupted") — the M1 interim for
+// daemon stop/crash leftovers until T2.8 lands real re-queue semantics
+// (T1.7–T1.9 decision). Returns how many tasks were swept.
+func (s *Store) SweepInterrupted(ctx context.Context) (int64, error) {
+	now := formatTime(time.Now())
+	if _, err := s.db.ExecContext(ctx, `UPDATE step_runs SET state = ?, finished_at = ?
+		WHERE state = ?`, string(StepInterrupted), now, string(StepRunning)); err != nil {
+		return 0, fmt.Errorf("sweep step runs: %w", err)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state = ?, block_reason = ?, updated_at = ?
+		WHERE state = ?`, string(TaskBlocked), "interrupted", now, string(TaskRunning))
+	if err != nil {
+		return 0, fmt.Errorf("sweep tasks: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("sweep tasks: %w", err)
+	}
+	return n, nil
+}
+
 func (s *Store) countTasks(ctx context.Context, q string, args ...any) (int, error) {
 	var n int
 	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
@@ -182,17 +209,22 @@ func scanTask(r rowScanner) (*Task, error) {
 		t                           Task
 		fields                      string
 		worktree, blockReason       sql.NullString
+		agentOv, modelOv, effortOv  sql.NullString
 		created, updated            string
 		started, finished, archived sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &t.Priority,
+		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
 	t.WorktreePath = worktree.String
 	t.BlockReason = blockReason.String
+	t.AgentOverride = agentOv.String
+	t.ModelOverride = modelOv.String
+	t.EffortOverride = effortOv.String
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)
 	}
