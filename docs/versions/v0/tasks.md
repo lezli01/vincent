@@ -53,6 +53,30 @@ Repo foundation the spec assumes but doesn't itemize. Module path: `github.com/l
 
 Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a one-step agent task, watch it finish, see the branch and diff.
 
+**Phase 1 decisions (grill session, 2026-08-07):**
+
+- *Delivery:* 4 grouped PRs along dependency seams — (1) T1.1+T1.2 config+store, (2) T1.3+T1.4 daemon+API, (3) T1.5+T1.6 projects+worktrees, (4) T1.7–T1.9 adapter+run+gate. Each independently green in CI; tasks.md updated per PR.
+- *Git access:* git CLI only (no go-git) — `exec` via one internal `gitx` helper (run/capture/error-mapping). git version logged at daemon start; warn (not fail) below 2.31.
+- *Platform dirs:* `os.UserConfigDir()` for config; hand-rolled ~30-line data-dir resolver (`XDG_DATA_HOME`/`~/.local/share`, `%LOCALAPPDATA%`, `~/Library/Application Support/vincent/data`). `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` env overrides (used by tests and the T1.9 gate). No xdg dependency.
+- *YAML:* `goccy/go-yaml` everywhere (strict decode now; its line/column-annotated errors are what T2.1 needs later).
+- *Config bootstrap/reload:* first start writes a fully-commented `config.yaml` with §12.3 defaults. Invalid config at startup = fatal; invalid on hot-reload = keep last-good + log rejection; `listen:` changes ignored until restart (warn). fsnotify watches the config *directory* (survives rename-on-save), ~100 ms debounce.
+- *SQLite:* `modernc.org/sqlite` via `database/sql`; WAL + `busy_timeout` via DSN pragmas; `MaxOpenConns(1)` (single connection — zero SQLITE_BUSY surface; revisit only if profiling demands).
+- *Migrations:* hand-rolled embedded runner — `embed.FS` of `NNNN_name.sql`, applied in-transaction at startup into the spec §14 `schema_migrations` table. Up-only; no library.
+- *Store:* hand-written repository-style `database/sql` code (no sqlc/ORM); queries as consts beside their methods; covered by CRUD round-trip tests.
+- *Daemon lifecycle:* detached start = self-exec `vincent daemon` with platform `SysProcAttr` (DETACHED_PROCESS / setsid). Single-instance via `gofrs/flock` on `daemon.lock` (auto-releases on death). **Spec addition:** authenticated `POST /v1/daemon/stop` endpoint — `daemon stop` calls it, waits for exit, `--force` kills as fallback; same graceful path (§12.4) on all 3 OSes. `token` + `daemon.json` written atomically (temp+rename); `daemon.json` removed on graceful shutdown.
+- *Token perms:* 0600 enforced + tested on POSIX; Windows relies on `%LOCALAPPDATA%` per-user ACL inheritance (documented; no DACL code in v1) — test asserts existence/location there.
+- *Logging:* `slog` TextHandler everywhere (file + foreground stderr); rotation via `natefinch/lumberjack`.
+- *API:* stdlib `net/http` ServeMux with Go 1.22+ method/wildcard patterns (no chi); middleware chain auth → log → recover; constant-time token compare (`crypto/subtle`); `/v1/health` exempt; CORS disabled; stable `snake_case` error codes.
+- *default_branch detection:* `origin/HEAD` → local `main` → local `master` → current HEAD branch → reject registration with clear error (detached/unborn HEAD requires explicit `default_branch`).
+- *Worktree slug edge:* title sanitizing to empty → branch `vincent/{id}` (no trailing dash); otherwise §5.3 rules.
+- *Agent CLI location:* **spec addition** to §12.3 — `agents: { claude: { path }, codex: { path } }`; empty = `exec.LookPath`. `Detect()` reports the resolved path in `/v1/info`. Tests/gate substitute the fake via this knob (no PATH surgery).
+- *Fake agent:* committed `cmd/fakeagent` main package — scenario-driven (success / error-event / nonzero-exit / hang-until-killed / big-usage) via env/flag, emits Claude-style stream-json, prompt from stdin. Always compiled by `./...`; excluded from release packaging in T4.5; grows a codex dialect for T2.9.
+- *Transcripts:* agent stream-json written verbatim (lossless/replayable); vincent's own annotations as namespaced `{"type":"vincent.…"}` JSONL lines. Parsing is tolerant — unknown event types transcripted but not normalized; exact CLI flags pinned at implementation time (§9.2).
+- *M1 task shape:* `workflow` param optional (default `"adhoc"`); daemon synthesizes a real one-step workflow YAML (agent step; prompt = fixed template embedding title+description) stored as `workflow_snapshot` — DB rows shape-final; T2.3 swaps synthesis for registry lookup.
+- *M1 admission:* interim FIFO (`created_at`) runner bounded by global `max_parallel_tasks`; priority ignored until T2.5 replaces it wholesale. Real agents cost money — no unbounded spawn even in M1.
+- *Diff endpoint:* `git -C {worktree} diff <merge-base(base, HEAD)>` — committed + staged + unstaged tracked changes; untracked files excluded (documented limitation).
+- *M1 gate:* `scripts/m1-gate.sh` (bash + curl + jq) run in CI on all 3 OSes (Git Bash on Windows): build vincent+fakeagent → temp dirs via env overrides → start daemon → register temp repo → create task → poll to done → assert branch/diff/transcript → stop daemon.
+
 - [ ] **T1.1 — Config & platform dirs.** Platform-native config/data dir resolution (§12.2); `config.yaml` load with defaults + strict validation (§12.3); hot-reload via fsnotify.
   *Done when:* unit tests cover defaults, overrides, invalid config rejection, and live reload.
 - [ ] **T1.2 — SQLite store & migrations.** Pure-Go driver; WAL + busy_timeout; embedded migrations applying schema §14; typed store layer (CRUD + scheduler query) for projects, tasks, step_runs, events.
