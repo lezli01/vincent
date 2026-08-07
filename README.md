@@ -1,4 +1,6 @@
-<h1 align="center">vincent</h1>
+<p align="center">
+  <img src="docs/assets/logo.png" alt="vincent" width="520">
+</p>
 
 <p align="center">
   <strong>Vendor-independent control plane for executing native agent tooling.</strong>
