@@ -19,7 +19,8 @@ steps sequentially inside a dedicated **git worktree**, so parallel tasks never
 collide. Agent steps run locally installed agent CLIs (Claude Code and Codex in v1)
 headlessly. The daemon schedules tasks under configurable global and per-project
 concurrency caps, records full transcripts and run metrics, streams live progress over
-SSE, and pauses for human input when a step fails or a manual gate is reached.
+SSE, and pauses for human input when a step fails, a manual gate is reached, or a
+running agent asks a structured question (§7.4).
 
 **Nothing about delivery is hardcoded.** Whether a finished task pushes a branch,
 opens a PR, or just leaves a diff for review is entirely determined by the workflow's
@@ -39,6 +40,7 @@ steps.
   creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
 - Monitoring: live task board, per-task live output tail, per-step duration/token/cost metrics, durable transcripts.
+- Human-in-the-loop when needed: gates, blocked tasks, and mid-run agent questions alert in the client; a question is answered into the still-live agent session (§7.4).
 - Crash-safe: daemon restart recovers and resumes interrupted work automatically.
 
 ### Non-goals (v1) — explicitly deferred
@@ -78,6 +80,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 19 | Name | `vincent` |
 | 20 | v1 scope | Everything above, both agent adapters |
 | 21 | Agent/model/effort selection | Adapter-native values; per-step resolution `step > task override > workflow defaults > adapter default` with agent-scoped inheritance; options probed ad hoc from the installed CLIs, merged with a curated catalog, free text always allowed (§8.6, §9.6) |
+| 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15) |
 
 ## 4. Architecture
 
@@ -173,6 +176,7 @@ A unit of work delivered by running a workflow against a project.
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `state` | §6 |
 | `current_step` | index into the snapshot's step list |
+| `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 
 ### 5.4 StepRun
 
@@ -182,7 +186,8 @@ re-runs after interruption) is a distinct StepRun row — history is append-only
 Records: step id/index/type, attempt number, state (`running`, `succeeded`, `failed`,
 `interrupted`, `approved`, `rejected`, `skipped`), timestamps, agent/model/effort used (as resolved per §8.6), exit code,
 check exit code, failure reason, transcript file path, input/output tokens, cost (USD,
-nullable — not all agents report cost).
+nullable — not all agents report cost), input wait time (ms spent in `awaiting_input`,
+§7.4 — excluded from duration metrics).
 
 ## 6. Task lifecycle
 
@@ -190,26 +195,29 @@ nullable — not all agents report cost).
                  create
                    │
                    ▼
-              ┌────────┐   slot free    ┌─────────┐
-   ┌─────────►│ queued ├───────────────►│ running │◄────────────┐
-   │          └────────┘  (scheduler)   └──┬──┬──┬┘             │
-   │   approve ▲   ▲ retry/skip            │  │  │              │
-   │           │   │                       │  │  │ all steps    │
-   │      ┌────┴───┴─┐   manual step       │  │  │ succeeded    │
-   │      │          │◄────────────────────┘  │  ▼              │
-   │      │ awaiting │                        │ ┌──────┐        │
-   │      │  _gate   │      step failed,      │ │ done │        │
-   │      └────┬─────┘      retries exhausted ▼ └──┬───┘        │
-   │           │ reject   ┌─────────┐              │            │
-   │           └─────────►│ blocked │              │            │
-   │                      └──┬──────┘              │            │
-   │ resume                  │ abort               │ archive    │
-┌──┴─────┐  pause            ▼                     ▼            │
-│ paused │◄───────┐      ┌─────────┐          ┌──────────┐      │
-└────────┘ (from  │      │ aborted ├─────────►│ archived │      │
-           queued/│      └─────────┘  archive └──────────┘      │
-           running┘                                             │
-                          interrupted step re-run on restart ───┘
+              ┌────────┐   slot free    ┌─────────┐  input request  ┌────────────────┐
+   ┌─────────►│ queued ├───────────────►│ running │◄───────────────►│ awaiting_input │
+   │          └────────┘  (scheduler)   └──┬──┬──┬┘    answer*      └────────────────┘
+   │   approve ▲   ▲ retry/skip            │  │  │
+   │           │   │                       │  │  │ all steps
+   │      ┌────┴───┴─┐   manual step       │  │  │ succeeded
+   │      │          │◄────────────────────┘  │  ▼
+   │      │ awaiting │                        │ ┌──────┐
+   │      │  _gate   │      step failed,      │ │ done │
+   │      └────┬─────┘      retries exhausted ▼ └──┬───┘
+   │           │ reject   ┌─────────┐              │
+   │           └─────────►│ blocked │              │
+   │                      └──┬──────┘              │
+   │ resume                  │ abort               │ archive
+┌──┴─────┐  pause            ▼                     ▼
+│ paused │◄───────┐      ┌─────────┐          ┌──────────┐
+└────────┘ (from  │      │ aborted ├─────────►│ archived │
+           queued/│      └─────────┘  archive └──────────┘
+           running┘
+
+* answer resumes the step in place; input_timeout fails the attempt (normal
+  retry/blocked policy §7.2). On daemon restart, an interrupted step re-runs
+  as a fresh attempt and the task is re-queued (§12.4).
 ```
 
 ### States
@@ -219,6 +227,7 @@ nullable — not all agents report cost).
 | `queued` | Ready to run; waiting for scheduler admission | no |
 | `running` | A step process is executing (or about to) | **yes** |
 | `awaiting_gate` | Paused at a `manual` step, waiting for approval | no |
+| `awaiting_input` | The running agent emitted a structured input request (§7.4); its live process is idle, waiting for the answer | **yes** |
 | `blocked` | A step failed and retries are exhausted; waiting for a human decision | no |
 | `paused` | Engineer-requested soft pause (takes effect at the next step boundary) | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
@@ -229,12 +238,13 @@ nullable — not all agents report cost).
 
 | Action | Valid from | Effect |
 |---|---|---|
-| `cancel` (abort) | queued, running, awaiting_gate, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted` |
+| `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted` |
 | `pause` | queued, running | `running`: finishes the current step, then holds; → `paused` |
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step (fresh attempt, retry counter reset); → `queued` |
 | `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped`, advances to the next step; → `queued` |
+| `answer` | awaiting_input | Delivers the answer to the pending input request into the live agent session (§7.4); → `running` (step clock resumes) |
 | `approve` | awaiting_gate | Gate step → `approved`; advances; → `queued` |
 | `reject` | awaiting_gate | Gate step → `rejected`; → `blocked` (from which: retry earlier via edit, skip, or abort) |
 | `set priority` | queued, paused | Reorders scheduler admission |
@@ -287,6 +297,56 @@ between steps or attempts. Durable state flows between steps through:
 This keeps steps individually re-runnable, keeps context windows small, and avoids
 coupling to any one agent's session semantics.
 
+### 7.4 Interactive input requests
+
+While an `agent` step runs, an input-capable adapter (§9.1, §9.5) may surface a
+structured **input request** from the agent:
+
+- **`question`** — the agent asks the user something (e.g. Claude Code's
+  AskUserQuestion tool): one or more questions, each optionally with predefined
+  options and multi-select; free-text answers are always accepted.
+- **`permission`** — in `restricted` mode, the agent requests approval for a
+  denied action (tool/command summary included).
+
+Only machine-readable requests from the agent's event stream qualify; vincent never
+infers "the agent seems to be asking something" from output text.
+
+Behavior with `on_input: wait` (the default):
+
+1. The task moves `running` → `awaiting_input`, **keeping its concurrency slot**
+   (the agent process is alive mid-step, idle on its stdin — killing or re-queuing
+   it would lose the very session the answer belongs to). The normalized request
+   (§9.1 `InputRequest`; the adapter-native payload is preserved in `raw`) is
+   stored on the task as `pending_input` and a durable `task.awaiting_input`
+   event is emitted (§13.3) — this is the alert clients key off.
+2. The step `timeout` clock **pauses** — it measures agent work, not human
+   latency. A separate `input_timeout` (global default 24h, §12.3; overridable in
+   workflow `defaults` and per step) bounds the wait: on expiry the process is
+   killed and the attempt fails with reason `input_timeout` (normal retry/blocked
+   policy, §7.2), freeing the slot.
+3. The engineer answers via `POST /v1/tasks/{id}/answer` or the TUI answer form
+   (§15). The adapter translates the answer back to its native protocol and
+   writes it to the live process; the task returns to `running` and the step
+   clock resumes. Requests are serial — an agent blocks on its pending request,
+   so at most one `pending_input` exists per task.
+
+`on_input: deny` (workflow `defaults` or per step) keeps runs strictly unattended:
+the adapter immediately auto-responds — questions get a canned "no user is
+available; decide with your best judgment" answer, permission requests are denied
+— and the task never leaves `running`.
+
+Adapters without mid-run input support (`supports_input: false`, §9.5 — codex in
+v1) never produce input requests; their steps behave exactly as today. Requests
+and answers are appended to the step transcript as namespaced `vincent.*` lines;
+time spent waiting is recorded per StepRun (`input_wait_ms`) and excluded from
+duration metrics (§17). Crash recovery treats `awaiting_input` like `running`: on
+restart the attempt is `interrupted` and re-runs as a fresh session (§12.4) — the
+pending request is discarded and the fresh run may re-ask.
+
+Full-auto note: in `full-auto`, permission prompts are bypassed at the CLI level,
+so `permission` requests should not occur; `question` requests can occur in any
+permission mode.
+
 ## 8. Workflow definition (YAML)
 
 ### 8.1 File format
@@ -303,6 +363,8 @@ defaults:                             # optional; per-step values override
   model: ""                           # adapter-native id/alias (e.g. sonnet); options via GET /v1/agents (§9.6)
   effort: ""                          # adapter-native effort (claude: low…max; codex: minimal…high) (§8.6)
   permission_mode: full-auto          # full-auto | restricted   (§9.4)
+  on_input: wait                      # wait | deny — agent input requests (§7.4)
+  input_timeout: 24h                  # max wait in awaiting_input (§7.4)
   max_retries: 1
   timeout: 60m
 
@@ -353,14 +415,15 @@ Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
 
 | Type | Required | Optional |
 |---|---|---|
-| `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `check`, `check_timeout` |
+| `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `on_input`, `input_timeout`, `check`, `check_timeout` |
 | `command` | `run` | `shell`, `env` (map), `check`, `check_timeout` |
 | `manual` | `instructions` | — |
 
 Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
-  parse as Go durations; unknown keys are errors (strict decoding) to catch typos.
+  parse as Go durations; `on_input` is `wait` or `deny`; unknown keys are errors
+  (strict decoding) to catch typos.
 - `agent` values must name a known adapter. Each step's resolved
   (agent, model, effort) triple (§8.6) is checked against that adapter's option
   catalog (§9.6): a known-invalid value (e.g. a claude-only effort reaching a
@@ -441,7 +504,7 @@ adapter via `RunSpec` (§9.1).
 ```go
 type AgentAdapter interface {
     Name() string                                   // "claude", "codex"
-    Detect(ctx context.Context) (Availability, error) // found on PATH? version? logged in (best effort)?
+    Detect(ctx context.Context) (Availability, error) // found on PATH? version? logged in (best effort)? supports mid-run input (§7.4)?
     Options(ctx context.Context) (AgentOptions, error) // selectable models/efforts, probed ad hoc (§9.6)
     Start(ctx context.Context, spec RunSpec) (RunHandle, error)
 }
@@ -452,13 +515,34 @@ type RunSpec struct {
     Model          string            // resolved per §8.6; "" = CLI default
     Effort         string            // resolved per §8.6; adapter-native; "" = CLI default
     PermissionMode PermissionMode    // FullAuto | Restricted
+    OnInput        InputPolicy       // Wait | Deny (§7.4); ignored when the adapter lacks input support
     Env            []string
 }
 
 type RunHandle interface {
-    Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, Result, Error
+    Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, InputRequest, Result, Error
+    Respond(resp InputResponse) error // answer the pending InputRequest (§7.4); error if none pending
     Wait() (RunResult, error)   // blocks until process exit
     Kill() error
+}
+
+type InputRequest struct {          // §7.4; at most one pending per run
+    Kind       string           // "question" | "permission"
+    Questions  []Question       // kind=question: one or more structured questions
+    Permission *PermissionReq   // kind=permission: tool name + action summary
+    Raw        json.RawMessage  // adapter-native payload, passed through to clients untranslated
+}
+
+type Question struct {
+    Text        string
+    Header      string
+    Options     []string // may be empty; free-text answers are always accepted
+    MultiSelect bool
+}
+
+type InputResponse struct {
+    Answers map[string][]string // question text → selected/typed answer(s)
+    Allow   *bool               // kind=permission: approve or deny
 }
 
 type RunResult struct {
@@ -500,6 +584,15 @@ adapter with zero core changes.
 - `Options()` probes `claude --help` ad hoc: the `--effort` enum (`low, medium,
   high, xhigh, max` as of 2.1.x) and the documented model aliases are parsed
   from the help text (source `cli`) and merged with the curated catalog (§9.6).
+- **Mid-run input (§7.4):** the process is additionally started with
+  `--input-format stream-json` and stdin kept open. Question/permission control
+  messages arriving on the stream are normalized to `InputRequest`; `Respond()`
+  translates the answer back to the control protocol and writes it to stdin. The
+  control-message wire format is not publicly documented — like the flags above
+  it is pinned against the detected CLI version at implementation time and
+  guarded by fixture tests; if the protocol can't be verified for an installed
+  version, the adapter reports `supports_input: false` and steps degrade
+  gracefully (no `awaiting_input`, §7.4).
 
 ### 9.3 Codex adapter
 
@@ -510,6 +603,9 @@ adapter with zero core changes.
 - The CLI enumerates nothing (`--help` documents only `-c key=value`), so
   `Options()` returns the curated catalog (source `curated`; efforts
   `minimal, low, medium, high`).
+- `codex exec` is strictly non-interactive once started — no mid-run input
+  channel exists. `supports_input: false`; codex steps never enter
+  `awaiting_input`, and `on_input` has no effect on them (§7.4).
 
 ### 9.4 Permission modes
 
@@ -517,14 +613,16 @@ adapter with zero core changes.
   unattended orchestration; the worktree is disposable and every change is
   inspectable before the engineer merges anything. **This is a real risk surface
   (agents can run arbitrary commands as the user) and is documented prominently.**
-- `restricted`: adapter-specific allowlists; steps may stall or fail on denied
-  actions. For sensitive projects.
+- `restricted`: adapter-specific allowlists. On input-capable adapters, denied
+  actions surface as `permission` input requests (§7.4, subject to `on_input`);
+  on others, steps may stall or fail on denied actions. For sensitive projects.
 
 Set at workflow `defaults` or per step; there is no daemon-global hardcoded policy.
 
 ### 9.5 Detection
 
-`GET /v1/info` reports, per adapter: found/not-found, path, version. The TUI surfaces
+`GET /v1/info` reports, per adapter: found/not-found, path, version,
+`supports_input` (§7.4). The TUI surfaces
 missing agents at task-creation time (a workflow whose steps need an unavailable agent
 is flagged).
 
@@ -537,6 +635,7 @@ defaults:
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
+    "supports_input": true,
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
     "default_model": "", "default_effort": "",
@@ -638,6 +737,7 @@ max_parallel_tasks: 3        # global cap
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
+  input_timeout: 24h           # max wait in awaiting_input (§7.4)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 log_level: info
 ```
@@ -653,7 +753,9 @@ edited via `PATCH /v1/projects/{id}`.
 - On startup: any StepRun still marked `running` is finalized as `interrupted`; if its
   recorded PID still exists *and* its start time matches, the process is killed
   (orphan). The owning task returns to `queued` and the interrupted step re-runs as a
-  fresh attempt that does **not** consume a retry.
+  fresh attempt that does **not** consume a retry. Tasks found in `awaiting_input`
+  are treated identically — the pending request is discarded with the process, and
+  the fresh session may re-ask (§7.4).
 - Graceful shutdown (`daemon stop`, SIGTERM, Windows service stop): stop admitting new
   steps, give running processes 15 s to exit after a termination signal, then kill;
   mark those runs `interrupted` (same resume path as a crash).
@@ -698,7 +800,7 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                           base_branch?, priority?, agent?, model?, effort? }
                                         → task (state=queued); agent/model/effort form the
                                         task-level override (§8.6), validated per §8.2
-GET    /v1/tasks/{id}                   full task incl. step runs summary
+GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4)
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only)
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
@@ -707,6 +809,7 @@ POST   /v1/tasks/{id}/retry            { prompt_override?, run_override? }   (bl
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
+POST   /v1/tasks/{id}/answer           { answers?, allow? }        (awaiting_input only, §7.4)
 POST   /v1/tasks/{id}/archive          { force? }                  (done/aborted only)
 
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
@@ -726,9 +829,11 @@ Two kinds of streams:
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
    `task.created`, `task.state_changed`, `task.archived`, `step.started`,
-   `step.finished`, `step.retrying`, `gate.waiting`, `project.*`,
-   `workflow.registry_changed`, `daemon.shutting_down`.
-   Payloads carry ids + the new state, not full objects (clients re-fetch as needed).
+   `step.finished`, `step.retrying`, `gate.waiting`, `task.awaiting_input`,
+   `project.*`, `workflow.registry_changed`, `daemon.shutting_down`.
+   Payloads carry ids + the new state, not full objects (clients re-fetch as needed);
+   `task.awaiting_input` additionally carries the request kind and a one-line summary
+   — the full request comes from `GET /v1/tasks/{id}` (§7.4).
    `/v1/events` supports `?types=` and `?project_id=` filters.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
@@ -768,6 +873,7 @@ CREATE TABLE tasks (
   state               TEXT NOT NULL,          -- §6
   current_step        INTEGER NOT NULL DEFAULT 0,
   block_reason        TEXT,                   -- set while state='blocked'
+  pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
@@ -798,6 +904,7 @@ CREATE TABLE step_runs (
   input_tokens        INTEGER,
   output_tokens       INTEGER,
   cost_usd            REAL,                   -- NULL when the agent doesn't report cost
+  input_wait_ms       INTEGER NOT NULL DEFAULT 0, -- time spent awaiting_input (§7.4); excluded from durations
   started_at          TEXT NOT NULL,
   finished_at         TEXT
 );
@@ -831,13 +938,20 @@ stream for the live tail.
 1. **Board (home).** Table of tasks: id, project, title, state (color-coded), current
    step `k/n` + step name, elapsed, cost-so-far. Filter by project/state; sort
    respects scheduler order for queued tasks. Header shows daemon status, agent
-   availability, running/cap counts.
+   availability, running/cap counts, and a needs-attention count. Tasks waiting on
+   a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
+   with a distinct badge, and the TUI rings the terminal bell on
+   `task.awaiting_input` — most terminals flash/badge the window even unfocused
+   (§7.4). OS desktop notifications remain out of v1 (§20).
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
    transcripts of past steps; **diff tab** (`GET …/diff`, syntax-highlighted); action
    bar for exactly the actions valid in the current state (§6), including gate
    approve/reject with the rendered gate instructions, and edit+retry which opens
-   `$EDITOR` on the failing step's prompt/command.
+   `$EDITOR` on the failing step's prompt/command. When the task is
+   `awaiting_input`, the pending question or permission request is rendered in
+   place (options, multi-select, free-text entry) above the live tail, and
+   submitting the answer resumes the run in the same session (§7.4).
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
    `$EDITOR`) → custom fields (key/value) → base branch (default prefilled) →
@@ -872,8 +986,10 @@ stream for the live tail.
 
 ## 17. Observability
 
-- **Per step:** duration, exit codes, tokens in/out, cost (when reported), full JSONL
-  transcript on disk (agent events, command output, check output).
+- **Per step:** duration (active time — time spent `awaiting_input` is tracked
+  separately as input wait, §7.4), exit codes, tokens in/out, cost (when reported),
+  full JSONL transcript on disk (agent events, command output, check output,
+  input requests and answers).
 - **Per task:** aggregate duration/tokens/cost across attempts (rolled up from
   step_runs; shown on board and detail views).
 - **Daemon log:** structured (slog), rotated; scheduler decisions at debug level.
@@ -898,6 +1014,10 @@ stream for the live tail.
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (default 512 MB) fails the step past the cap |
 | Template references missing field | Step fails at render time (before any process starts) with the template error |
+| `answer` posted when task isn't `awaiting_input` | `409` with the current state (standard invalid-transition handling) |
+| Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
+| `input_timeout` expires | Process killed; attempt fails with reason `input_timeout`; normal retry/blocked policy (§7.2) |
+| Unparseable/unknown control request from an agent | Transcripted verbatim; attempt fails with `input_protocol_error` (retry policy applies) — vincent never waits on a request it can't render |
 | Clock skew / DST | All timestamps stored UTC RFC3339 |
 
 ## 19. Milestones
@@ -905,14 +1025,14 @@ stream for the live tail.
 | Milestone | Contents | Acceptance |
 |---|---|---|
 | **M1 — Spine** | Daemon skeleton, SQLite + migrations, config, token auth, projects CRUD, task creation with worktree (incl. optional agent/model/effort override), Claude adapter (model/effort passthrough + options probe), single hardcoded-format one-step run, transcripts, health/info | `curl` can register a repo, create a 1-step agent task, watch it finish, and see the branch/diff |
-| **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation | Multi-step workflow incl. gate + command publish step runs unattended to the gate; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
-| **M3 — TUI** | All six views, live tail, diff view, all actions, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow → run 3 parallel tasks → approve gate → archive) is doable without leaving the TUI |
+| **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation, agent input requests (`awaiting_input`, answer endpoint, `input_timeout`, `on_input`, §7.4) | Multi-step workflow incl. gate + command publish step runs unattended to the gate; an agent question round-trips awaiting_input → answer → resume; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
+| **M3 — TUI** | All six views, live tail, diff view, all actions, input-request alerts + answer form, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow → run 3 parallel tasks → answer an agent question → approve gate → archive) is doable without leaving the TUI |
 | **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries) | Fresh-machine install to first completed task in under 10 minutes on each OS |
 
 ## 20. Future work (explicitly out of v1)
 
 - Web UI on the same API; auth story for non-loopback exposure.
-- OS desktop notifications (blocked / gate / done) — natural M4+1.
+- OS desktop notifications (blocked / gate / awaiting input / done) — natural M4+1.
 - More adapters (Gemini CLI, opencode, …); adapter capability flags.
 - Workflow branching/conditionals, parallel steps, and step fan-out.
 - LLM-as-judge verification as an optional third success layer.
