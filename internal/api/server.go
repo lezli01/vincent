@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
@@ -37,6 +38,25 @@ type Deps struct {
 	Git *gitx.Git
 	// Worktrees removes task worktrees during forced project deletion.
 	Worktrees *worktree.Manager
+	// Agents is the adapter registry, for task-override validation.
+	Agents *agent.Registry
+	// AgentStatus is the per-adapter availability probed at daemon start
+	// (§9.5); /v1/agents adds on-demand re-probing in T2.11.
+	AgentStatus []AgentStatus
+	// WakeRunner nudges task admission after a task is created; it must not
+	// block. Nil is tolerated (tests without a runner).
+	WakeRunner func()
+}
+
+// AgentStatus is one adapter's availability as reported by /v1/info
+// (spec §9.5).
+type AgentStatus struct {
+	Name          string `json:"name"`
+	Available     bool   `json:"available"`
+	Path          string `json:"path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	SupportsInput bool   `json:"supports_input"`
+	Error         string `json:"error,omitempty"`
 }
 
 // Server is the vincent HTTP API server.
@@ -89,6 +109,12 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
 	rt.handle(http.MethodPatch, "/v1/projects/{id}", s.handleProjectPatch)
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
+	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
+	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps", s.handleTaskSteps)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
@@ -127,21 +153,26 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// infoResponse is the GET /v1/info body (initial shape, phase 1 decision);
-// agent availability joins in T1.7 additively.
+// infoResponse is the GET /v1/info body (initial shape, phase 1 decision;
+// agent availability joined in T1.7).
 type infoResponse struct {
-	Version          string `json:"version"`
-	Commit           string `json:"commit"`
-	Built            string `json:"built"`
-	PID              int    `json:"pid"`
-	StartedAt        string `json:"started_at"`
-	UptimeSeconds    int64  `json:"uptime_seconds"`
-	Listen           string `json:"listen"`
-	MaxParallelTasks int    `json:"max_parallel_tasks"`
+	Version          string        `json:"version"`
+	Commit           string        `json:"commit"`
+	Built            string        `json:"built"`
+	PID              int           `json:"pid"`
+	StartedAt        string        `json:"started_at"`
+	UptimeSeconds    int64         `json:"uptime_seconds"`
+	Listen           string        `json:"listen"`
+	MaxParallelTasks int           `json:"max_parallel_tasks"`
+	Agents           []AgentStatus `json:"agents"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.deps.Config()
+	agents := s.deps.AgentStatus
+	if agents == nil {
+		agents = []AgentStatus{}
+	}
 	writeJSON(w, http.StatusOK, infoResponse{
 		Version:          version.Version(),
 		Commit:           version.Commit(),
@@ -151,6 +182,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 		UptimeSeconds:    int64(time.Since(s.deps.StartedAt).Seconds()),
 		Listen:           s.deps.ListenAddr,
 		MaxParallelTasks: cfg.MaxParallelTasks,
+		Agents:           agents,
 	})
 }
 

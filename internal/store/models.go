@@ -60,6 +60,9 @@ type Task struct {
 	BranchName       string
 	WorktreePath     string // "" until the worktree is created
 	Priority         int
+	AgentOverride    string // task-level selection (spec §8.6); "" = none
+	ModelOverride    string
+	EffortOverride   string
 	State            TaskState
 	CurrentStep      int
 	BlockReason      string // set while State == TaskBlocked
@@ -81,6 +84,8 @@ type StepRun struct {
 	Attempt        int    // 1-based
 	State          StepRunState
 	Agent          string // adapter name; agent steps only
+	Model          string // resolved model as passed to the adapter (spec §8.6); "" = CLI default
+	Effort         string // resolved effort as passed to the adapter; "" = CLI default
 	PID            *int   // while running
 	ProcStartedAt  *time.Time
 	ExitCode       *int
