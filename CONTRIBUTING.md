@@ -29,12 +29,14 @@ discuss before investing significant effort.
 ## Development
 
 The daemon and TUI are written in Go (see the spec for the architecture).
-Until Phase 0 lands there is no code to build; afterwards:
+Build targets run via [mage](https://magefile.org/) with zero install
+(list all targets with `go run mage.go -l`):
 
 ```sh
-make build   # build the vincent binary
-make test    # run all tests
-make lint    # golangci-lint
+go run mage.go build     # build the vincent binary into bin/
+go run mage.go test      # run all tests
+go run mage.go testrace  # run all tests with the race detector
+go run mage.go lint      # golangci-lint (pinned via go.mod tool directive)
 ```
 
 ## Pull request checklist
