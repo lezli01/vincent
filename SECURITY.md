@@ -5,8 +5,10 @@
 Please **do not** open a public issue for security vulnerabilities.
 
 Use GitHub's private vulnerability reporting: go to the repository's
-**Security** tab → **Report a vulnerability**. Reports are acknowledged on a
-best-effort basis.
+**Security** tab → **Report a vulnerability**, or use this direct link:
+<https://github.com/lezli01/vincent/security/advisories/new>. Reports submitted
+this way are private and visible only to the maintainers, and are acknowledged
+on a best-effort basis.
 
 ## Scope notes
 
