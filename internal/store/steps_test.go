@@ -35,6 +35,8 @@ func TestStepRunRoundTrip(t *testing.T) {
 		Attempt:        2,
 		State:          StepSucceeded,
 		Agent:          "claude",
+		Model:          "sonnet",
+		Effort:         "high",
 		PID:            intPtr(4321),
 		ProcStartedAt:  &proc,
 		ExitCode:       intPtr(0),
@@ -60,6 +62,7 @@ func TestStepRunRoundTrip(t *testing.T) {
 	}
 	if got.TaskID != in.TaskID || got.StepID != in.StepID || got.StepType != in.StepType ||
 		got.Attempt != in.Attempt || got.State != in.State || got.Agent != in.Agent ||
+		got.Model != in.Model || got.Effort != in.Effort ||
 		got.ResultSummary != in.ResultSummary || got.TranscriptPath != in.TranscriptPath {
 		t.Errorf("got %+v, want %+v", got, in)
 	}
