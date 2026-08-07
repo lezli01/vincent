@@ -1,6 +1,7 @@
 package taskrun
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -152,22 +154,73 @@ func script(posix, windows string) string {
 	return posix
 }
 
-func TestEngineRunsMultiStepWorkflow(t *testing.T) {
-	h := newEngineHarness(t)
-	snapshot := `name: multi
+// commandStep renders a command step as YAML. The command goes in a literal
+// block scalar: a PowerShell line often starts with a quote, which as a
+// plain `run:` value would be parsed as a quoted scalar and make the rest of
+// the line a YAML error.
+func commandStep(id, cmd string, extra ...string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "  - id: %s\n    type: command\n", id)
+	for _, line := range extra {
+		fmt.Fprintf(&sb, "    %s\n", line)
+	}
+	sb.WriteString("    run: |\n")
+	for _, line := range strings.Split(cmd, "\n") {
+		fmt.Fprintf(&sb, "      %s\n", line)
+	}
+	return sb.String()
+}
+
+// multiStepSnapshot is an agent step followed by a command step writing a
+// marker file from the §8.5 environment.
+func multiStepSnapshot(cmd string) string {
+	return `name: multi
 steps:
   - id: implement
     type: agent
     prompt: |
       Implement {{.Task.Title}} on {{.Task.BranchName}}
-  - id: publish
-    type: command
-    run: ` + script(
-		`echo "task $VINCENT_TASK_ID step $VINCENT_STEP_ID" > marker.txt`,
-		`"task $env:VINCENT_TASK_ID step $env:VINCENT_STEP_ID" | Out-File -Encoding ascii marker.txt`,
-	) + `
-`
-	task := h.createTask(t, snapshot)
+` + commandStep("publish", cmd)
+}
+
+// chainedSnapshot is two command steps, the second reading the first's
+// result through `.Steps` (§8.4).
+func chainedSnapshot(first, second string) string {
+	return "name: chained\nsteps:\n" + commandStep("first", first) + commandStep("second", second)
+}
+
+// TestSnapshotsParseOnEveryPlatform parses both platform variants of every
+// snapshot these tests build, so a YAML mistake in the Windows branch fails
+// on POSIX too instead of only in CI.
+func TestSnapshotsParseOnEveryPlatform(t *testing.T) {
+	snapshots := map[string]string{
+		"multi/posix":   multiStepSnapshot(markerCmdPosix),
+		"multi/windows": multiStepSnapshot(markerCmdWindows),
+		"chained/posix": chainedSnapshot(echoCmdPosix, relayCmdPosix),
+		"chained/win":   chainedSnapshot(echoCmdWindows, relayCmdWindows),
+	}
+	for name, src := range snapshots {
+		if _, err := workflow.Parse([]byte(src), workflow.Options{}); err != nil {
+			t.Errorf("%s does not parse: %v\n%s", name, err, src)
+		}
+	}
+}
+
+// Command bodies used by the engine tests, per platform.
+const (
+	markerCmdPosix   = `echo "task $VINCENT_TASK_ID step $VINCENT_STEP_ID" > marker.txt`
+	markerCmdWindows = `"task $env:VINCENT_TASK_ID step $env:VINCENT_STEP_ID" | Out-File -Encoding ascii marker.txt`
+
+	echoCmdPosix   = `echo first-step-output`
+	echoCmdWindows = `Write-Output first-step-output`
+
+	relayCmdPosix   = `echo "{{ (index .Steps "first").Result }}" > relay.txt`
+	relayCmdWindows = `"{{ (index .Steps "first").Result }}" | Out-File -Encoding ascii relay.txt`
+)
+
+func TestEngineRunsMultiStepWorkflow(t *testing.T) {
+	h := newEngineHarness(t)
+	task := h.createTask(t, multiStepSnapshot(script(markerCmdPosix, markerCmdWindows)))
 	h.start(t)
 
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
@@ -234,10 +287,7 @@ steps:
   - id: gate
     type: manual
     instructions: Inspect task {{.Task.ID}} before publishing.
-  - id: after
-    type: command
-    run: echo never
-`
+` + commandStep("after", "echo never")
 	task := h.createTask(t, snapshot)
 	h.start(t)
 
@@ -274,13 +324,7 @@ steps:
 
 func TestEngineRetriesThenBlocks(t *testing.T) {
 	h := newEngineHarness(t)
-	snapshot := `name: flaky
-steps:
-  - id: flaky
-    type: command
-    max_retries: 1
-    run: ` + script("exit 3", "exit 3") + `
-`
+	snapshot := "name: flaky\nsteps:\n" + commandStep("flaky", "exit 3", "max_retries: 1")
 	task := h.createTask(t, snapshot)
 	h.start(t)
 
@@ -315,14 +359,8 @@ steps:
 
 func TestEngineCheckFailureFailsStep(t *testing.T) {
 	h := newEngineHarness(t)
-	snapshot := `name: checked
-steps:
-  - id: build
-    type: command
-    max_retries: 0
-    run: ` + script("echo built", "Write-Output built") + `
-    check: ` + script("exit 7", "exit 7") + `
-`
+	snapshot := "name: checked\nsteps:\n" + commandStep("build",
+		script("echo built", "Write-Output built"), "max_retries: 0", "check: exit 7")
 	task := h.createTask(t, snapshot)
 	h.start(t)
 
@@ -369,14 +407,8 @@ steps:
 
 func TestEngineCommandTimeoutKills(t *testing.T) {
 	h := newEngineHarness(t)
-	snapshot := `name: slow
-steps:
-  - id: slow
-    type: command
-    max_retries: 0
-    timeout: 1s
-    run: ` + script("sleep 30", "Start-Sleep -Seconds 30") + `
-`
+	snapshot := "name: slow\nsteps:\n" + commandStep("slow",
+		script("sleep 30", "Start-Sleep -Seconds 30"), "max_retries: 0", "timeout: 1s")
 	task := h.createTask(t, snapshot)
 	h.start(t)
 
@@ -390,19 +422,10 @@ steps:
 // step reads an earlier step's result.
 func TestEngineStepResultsFlowIntoTemplates(t *testing.T) {
 	h := newEngineHarness(t)
-	snapshot := `name: chained
-steps:
-  - id: first
-    type: command
-    run: ` + script("echo first-step-output", "Write-Output first-step-output") + `
-  - id: second
-    type: command
-    run: ` + script(
-		`echo "{{ (index .Steps "first").Result }}" > relay.txt`,
-		`"{{ (index .Steps "first").Result }}" | Out-File -Encoding ascii relay.txt`,
-	) + `
-`
-	task := h.createTask(t, snapshot)
+	task := h.createTask(t, chainedSnapshot(
+		script(echoCmdPosix, echoCmdWindows),
+		script(relayCmdPosix, relayCmdWindows),
+	))
 	h.start(t)
 
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
@@ -420,14 +443,7 @@ steps:
 
 func TestEnginePinnedShellUnavailable(t *testing.T) {
 	h := newEngineHarness(t)
-	snapshot := `name: pinned
-steps:
-  - id: run
-    type: command
-    max_retries: 0
-    shell: cmd
-    run: echo hi
-`
+	snapshot := "name: pinned\nsteps:\n" + commandStep("run", "echo hi", "max_retries: 0", "shell: cmd")
 	if _, err := lookupShell("cmd"); err == nil {
 		t.Skip("cmd is available on this platform; the unavailable-shell path needs a missing shell")
 	}
