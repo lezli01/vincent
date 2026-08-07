@@ -18,10 +18,10 @@ implementation progress; the executing agent updates it in place as work proceed
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 2/9 | 🔨 in progress |
-| 2 — Workflow engine (M2) | 10 tasks | 0/10 | ⬜ not started |
+| 2 — Workflow engine (M2) | 11 tasks | 0/11 | ⬜ not started |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **6/37** | |
+| **Total** | | **6/38** | |
 
 ---
 
@@ -77,6 +77,15 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
 - *Diff endpoint:* `git -C {worktree} diff <merge-base(base, HEAD)>` — committed + staged + unstaged tracked changes; untracked files excluded (documented limitation).
 - *M1 gate:* `scripts/m1-gate.sh` (bash + curl + jq) run in CI on all 3 OSes (Git Bash on Windows): build vincent+fakeagent → temp dirs via env overrides → start daemon → register temp repo → create task → poll to done → assert branch/diff/transcript → stop daemon.
 
+**Agent/model/effort selection decisions (grill session, 2026-08-07; spec §8.6, §9.6):**
+
+- *Discovery:* adapter `Options()` probes the installed CLI ad hoc — claude: `--help` parse yields the `--effort` enum + model aliases (verified against 2.1.224); codex: `--help` enumerates nothing (only `-c key=value`, verified against 0.142.5) — merged with a curated per-adapter catalog; every option provenance-tagged `cli`/`curated`; free text always accepted.
+- *Effort scale:* adapter-native strings, no normalized vincent scale (claude `low…max`, codex `minimal…high`). Known-invalid (agent, model/effort) pairs are validation errors; values unknown to the catalog warn and pass through — the CLI is the final authority at run time.
+- *Selection surfaces & precedence:* workflow `defaults` + per-step fields (existing) + new optional task-level override on `POST /v1/tasks`; resolution `step > task override > defaults > adapter default` — explicit step pins always win (cross-agent workflows stay intact).
+- *Inheritance:* agent-scoped — `model`/`effort` never leak across an agent switch; they reset to the new adapter's default unless set alongside.
+- *Freshness:* `GET /v1/agents` cache keyed by binary identity (resolved path + mtime + version) — never stale by construction since help output is a pure function of the binary; `?refresh=true` re-probes.
+- *Phasing:* interfaces shaped final in phase 1 (T1.7: `RunSpec.Effort`, `--model`/`--effort`, `Options()` probe; T1.8: override params + `*_override`/StepRun columns); catalog endpoint + resolution/validation engine as new T2.11; codex probe in T2.9; TUI pickers in T3.5. M1 gate unchanged — the override is optional.
+
 - [x] **T1.1 — Config & platform dirs.** Platform-native config/data dir resolution (§12.2); `config.yaml` load with defaults + strict validation (§12.3); hot-reload via fsnotify. ✓ 2026-08-07
   *Done when:* unit tests cover defaults, overrides, invalid config rejection, and live reload. *(Verified: 28 unit tests — defaults, partial/full overrides, 13 invalid-config rejections, live reload incl. invalid-edit keep-last-good, per-OS data-dir table, generated default file loads back to `Default()`.)*
 - [x] **T1.2 — SQLite store & migrations.** Pure-Go driver; WAL + busy_timeout; embedded migrations applying schema §14; typed store layer (CRUD + scheduler query) for projects, tasks, step_runs, events. ✓ 2026-08-07
@@ -89,10 +98,10 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
   *Done when:* endpoint tests against temp git repos cover happy path + each validation failure.
 - [ ] **T1.6 — Worktree manager.** Create worktree + branch `vincent/{id}-{slug}` from base (§10); slug rules (§5.3); remove + prune on archive with dirty detection and `force`; error taxonomy for missing base branch, pre-existing branch, missing project path (§18).
   *Done when:* integration tests with temp repos cover create/remove/dirty/each error case.
-- [ ] **T1.7 — AgentAdapter + Claude Code adapter.** Interface per §9.1; Claude implementation: prompt via stdin, `stream-json` event parsing, full-auto flag, usage/cost extraction, kill support; `Detect()` wired into `/v1/info`. Include a **fake agent** test binary emitting scripted stream-json so CI never calls a real API.
-  *Done when:* adapter unit tests against the fake binary cover success, error event, nonzero exit, kill, and usage parsing.
-- [ ] **T1.8 — Minimal task run.** `POST /v1/tasks` (validation, snapshot placeholder, immediate queue) with a hardcoded single-agent-step execution path: worktree create → adapter run → StepRun + transcript file → `done`/`blocked`; `GET /v1/tasks[,/{id}]`, `/steps`, `/steps/{run_id}/transcript`, `/diff` (§13.2). Depends: T1.2, T1.5–T1.7.
-  *Done when:* end-to-end test with fake agent produces correct DB rows, transcript file, diff output.
+- [ ] **T1.7 — AgentAdapter + Claude Code adapter.** Interface per §9.1 (incl. `Options()` and `RunSpec.Model`/`Effort`); Claude implementation: prompt via stdin, `stream-json` event parsing, full-auto flag, `--model`/`--effort` passthrough, usage/cost extraction, kill support; `Options()` help-probe (effort enum + model aliases parsed from `--help`, merged with the curated catalog, §9.6); `Detect()` wired into `/v1/info`. Include a **fake agent** test binary emitting scripted stream-json so CI never calls a real API.
+  *Done when:* adapter unit tests against the fake binary cover success, error event, nonzero exit, kill, and usage parsing; options probe parses a captured `--help` fixture and falls back to curated-only on an unparseable one.
+- [ ] **T1.8 — Minimal task run.** `POST /v1/tasks` (validation, snapshot placeholder, immediate queue, optional `agent`/`model`/`effort` task-level override persisted to the `*_override` columns via a new migration) with a hardcoded single-agent-step execution path: worktree create → adapter run (agent/model/effort resolved per §8.6, recorded on the StepRun) → StepRun + transcript file → `done`/`blocked`; `GET /v1/tasks[,/{id}]`, `/steps`, `/steps/{run_id}/transcript`, `/diff` (§13.2). Depends: T1.2, T1.5–T1.7.
+  *Done when:* end-to-end test with fake agent produces correct DB rows, transcript file, diff output; an override round-trips into StepRun `model`/`effort`.
 - [ ] **T1.9 — Phase gate (M1 acceptance).** Scripted curl flow per §19 M1 against the fake agent in CI; run once manually with real `claude` on Windows and record the result here.
   *Done when:* script committed and green in CI; manual run noted.
 
@@ -106,7 +115,7 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
   *Done when:* unit tests cover every context variable, missing-field failure, and the retry block.
 - [ ] **T2.3 — Task state machine.** Full FSM §6 with persisted transitions, guarded invalid transitions (409), workflow snapshot at creation replacing T1.8's placeholder, `block_reason`, timestamps.
   *Done when:* exhaustive transition-table test (every state × every action) passes.
-- [ ] **T2.4 — Step executors.** Agent step (any adapter), command step (platform shell selection + `shell:` pin, §8.3), manual gate, `check` execution, per-step timeouts with kill, retry loop honoring `max_retries`, transcript capture for all output. (§7)
+- [ ] **T2.4 — Step executors.** Agent step (any adapter; agent/model/effort resolved per §8.6 via T2.11), command step (platform shell selection + `shell:` pin, §8.3), manual gate, `check` execution, per-step timeouts with kill, retry loop honoring `max_retries`, transcript capture for all output. (§7)
   *Done when:* integration tests cover each step type, check pass/fail, timeout kill, retry-then-blocked, and Windows + POSIX shells in CI.
 - [ ] **T2.5 — Scheduler.** Global + per-project caps counting only `running`; admission by priority DESC, created_at ASC; re-evaluation on every state change and config reload (§11).
   *Done when:* concurrency tests prove both caps and ordering under simultaneous task load.
@@ -116,8 +125,10 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
   *Done when:* reconnect-resume test misses zero state events; output streaming test shows coalescing.
 - [ ] **T2.8 — Crash recovery.** PID + start-time journaling before spawn; startup orphan detection/kill; `interrupted` runs re-queued without consuming retries; graceful shutdown (admission stop, 15 s term-then-kill) (§12.4).
   *Done when:* test kills the daemon hard mid-step and asserts full recovery; graceful path tested.
-- [ ] **T2.9 — Codex adapter.** Per §9.3, behind the same interface; nil cost handling; fake-binary tests mirroring T1.7. Depends: T1.7 (interface only — can run parallel to T2.1+).
+- [ ] **T2.9 — Codex adapter.** Per §9.3, behind the same interface; model/effort via `-c model=` / `-c model_reasoning_effort=`; `Options()` serves the curated catalog (the CLI enumerates nothing); nil cost handling; fake-binary tests mirroring T1.7. Depends: T1.7 (interface only — can run parallel to T2.1+).
   *Done when:* same test matrix as the Claude adapter passes.
+- [ ] **T2.11 — Agent option catalog & selection resolution.** `GET /v1/agents` (§9.6): per-adapter availability + provenance-tagged model/effort options; cache keyed by binary identity (resolved path + mtime + version) with `?refresh=true`; probe-failure fallback to curated with `probe_error`. §8.6 resolution engine (step > task > defaults > adapter default, agent-scoped inheritance) consumed by T2.4; catalog validation wired into T2.1 workflow checks and `POST /v1/tasks` (§8.2: known-invalid = error, unknown = warning). Depends: T1.7, T2.9.
+  *Done when:* resolution table-tests cover every precedence and inheritance case incl. agent-switch resets; cache test proves invalidation on binary swap and a hit otherwise; known-invalid pair rejected while a free-text model passes with a warning.
 - [ ] **T2.10 — Phase gate (M2 acceptance).** Automated: multi-step workflow (agent → command → gate → command publish to a local bare remote) with fake agents; kill -9 recovery; cap stress test. Manual: one real-workflow run with real `claude`, result recorded here.
   *Done when:* acceptance script green in CI; manual run noted.
 
@@ -133,8 +144,8 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
   *Done when:* a running fake-agent task shows live tail; historical attempts browsable.
 - [ ] **T3.4 — Task detail: diff & actions.** Diff tab (syntax highlighted); action bar offering exactly the state-valid actions; gate approve/reject with rendered instructions; edit+retry through `$EDITOR` (§6, §15).
   *Done when:* every action reachable and functional from the detail view; invalid actions never shown.
-- [ ] **T3.5 — New-task flow.** Project picker → workflow picker (description, step list, unavailable-agent flags) → title → description (inline or `$EDITOR`) → fields → base branch → priority (§15).
-  *Done when:* task created through the flow runs end-to-end; unavailable agent visibly flagged.
+- [ ] **T3.5 — New-task flow.** Project picker → workflow picker (description, step list, unavailable-agent flags) → title → description (inline or `$EDITOR`) → fields → base branch → priority → optional agent/model/effort pickers fed by `GET /v1/agents` (provenance-tagged options, free-text entry, note that step pins are not overridden) (§15, §8.6).
+  *Done when:* task created through the flow runs end-to-end; unavailable agent visibly flagged; override pickers populate from a live probe and accept free text.
 - [ ] **T3.6 — Projects & Workflows views.** Project list/add/edit/remove with per-project cap; workflow registry with scope badges + validation status, `e` opens `$EDITOR`, live reload visible (§15).
   *Done when:* editing a workflow file externally or via `e` updates the view without restart.
 - [ ] **T3.7 — Daemon view & first-run warning.** Version/uptime/config/adapters/log tail; one-time full-auto risk notice on first run (§16); quit reminder with running-task count.
