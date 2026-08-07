@@ -283,11 +283,11 @@ func TestSchedulerQueries(t *testing.T) {
 		t.Errorf("ListQueuedInOrder ids = %v, want %v (priority desc, then FIFO)", got, want)
 	}
 
-	if n, err := s.CountRunning(ctx); err != nil || n != 2 {
-		t.Errorf("CountRunning = %d, %v; want 2, nil", n, err)
+	if n, err := s.CountSlotHolders(ctx); err != nil || n != 2 {
+		t.Errorf("CountSlotHolders = %d, %v; want 2, nil", n, err)
 	}
-	if n, err := s.CountRunningByProject(ctx, p1.ID); err != nil || n != 1 {
-		t.Errorf("CountRunningByProject(p1) = %d, %v; want 1, nil", n, err)
+	if n, err := s.CountSlotHoldersByProject(ctx, p1.ID); err != nil || n != 1 {
+		t.Errorf("CountSlotHoldersByProject(p1) = %d, %v; want 1, nil", n, err)
 	}
 	if n, err := s.CountNonArchivedTasks(ctx, p1.ID); err != nil || n != 3 {
 		t.Errorf("CountNonArchivedTasks(p1) = %d, %v; want 3, nil", n, err)

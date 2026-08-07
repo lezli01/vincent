@@ -53,6 +53,9 @@ func (r *Runner) runAgentStep(
 		env.log.Error("start agent", "agent", sel.Agent, "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonAgentUnavailable}
 	}
+	// Register the live process so a cancel can reach it (§6).
+	defer r.setProc(env.task.ID, handle)()
+
 	pid := handle.PID()
 	started := time.Now()
 	run.PID = &pid
@@ -208,6 +211,8 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError, result: err.Error()}
 	}
 	defer proc.Release()
+	// Register the live process so a cancel can reach it (§6).
+	defer r.setProc(env.task.ID, proc)()
 
 	// Tree-kill on timeout or daemon shutdown: killing only the shell would
 	// leave its children running in the worktree.

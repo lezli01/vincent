@@ -10,9 +10,15 @@ import (
 	"time"
 )
 
-// EventTaskStateChanged is the durable event every transition writes
-// (spec §13.3).
-const EventTaskStateChanged = "task.state_changed"
+// Durable task events written outside the engine (spec §13.3).
+const (
+	// EventTaskStateChanged is written by every transition.
+	EventTaskStateChanged = "task.state_changed"
+	// EventTaskPriorityChanged is written by PATCH /v1/tasks/{id}. Priority
+	// is not a transition — the state is unchanged — so without its own
+	// event a reorder would be invisible to clients watching the queue.
+	EventTaskPriorityChanged = "task.priority_changed"
+)
 
 // StateConflictError reports that a task was not in the expected state when
 // a transition was attempted — the API answers 409 with the current state
@@ -48,6 +54,16 @@ type TaskChange struct {
 	// Snapshot replaces the workflow snapshot — edit+retry, which overrides
 	// a step in this task's snapshot only (§6).
 	Snapshot *string
+	// PauseRequested sets or clears the pending-pause flag. Engine
+	// transitions leave it alone; every human action but `pause` clears it,
+	// because each of them is a human saying "go" (§6).
+	PauseRequested *bool
+	// RetryCursorAt moves the retry-budget cursor — a human `retry` stamps
+	// it with now, and the budget then counts only later failures (§7.2).
+	RetryCursorAt *time.Time
+	// PendingOverride hands edit+retry text to the actor that will create
+	// the next attempt's step run; it clears when drained.
+	PendingOverride *Override
 	// EventPayload carries extra fields into the state-change event, merged
 	// with from/to. Reserved keys (from, to) are overwritten.
 	EventPayload map[string]any
@@ -106,12 +122,19 @@ func (s *Store) TransitionTask(
 			t.BlockReason = ""
 		}
 
+		pendingOverride, err := marshalOverride(t.PendingOverride)
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
-				workflow_snapshot = ?, updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
+				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
+				pending_override_json = ?,
+				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 			WHERE id = ? AND state = ?`,
 			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
-			t.WorkflowSnapshot, formatTime(t.UpdatedAt),
+			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+			formatTime(t.UpdatedAt),
 			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 			id, string(from))
 		if err != nil {
@@ -141,6 +164,7 @@ func (s *Store) TransitionTask(
 	if err != nil {
 		return nil, nil, err
 	}
+	s.notify(ev)
 	return task, ev, nil
 }
 
@@ -220,6 +244,31 @@ func applyChange(t *Task, ch TaskChange) {
 	if ch.BlockReason != nil {
 		t.BlockReason = *ch.BlockReason
 	}
+	if ch.PauseRequested != nil {
+		t.PauseRequested = *ch.PauseRequested
+	}
+	if ch.RetryCursorAt != nil {
+		t.RetryCursorAt = ch.RetryCursorAt
+	}
+	if ch.PendingOverride != nil {
+		if ch.PendingOverride.Empty() {
+			t.PendingOverride = nil
+		} else {
+			t.PendingOverride = ch.PendingOverride
+		}
+	}
+}
+
+// marshalOverride renders a pending override for storage; none is SQL NULL.
+func marshalOverride(o *Override) (any, error) {
+	if o == nil || o.Empty() {
+		return nil, nil
+	}
+	b, err := json.Marshal(o)
+	if err != nil {
+		return nil, fmt.Errorf("marshal pending override: %w", err)
+	}
+	return string(b), nil
 }
 
 // statePayload builds the state-change event body: ids plus the new state,

@@ -78,6 +78,10 @@ type RunHandle interface {
 	Respond(resp InputResponse) error
 	// Wait blocks until process exit and returns the assembled result.
 	Wait() (RunResult, error)
+	// Terminate asks the run's process tree to exit, the graceful half of
+	// spec §6's cancel. On platforms with no such primitive it is the same
+	// as Kill; the caller's grace period elapses either way.
+	Terminate() error
 	// Kill terminates the run's whole process tree.
 	Kill() error
 	// PID returns the OS process id of the run — recorded on the StepRun

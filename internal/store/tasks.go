@@ -8,12 +8,28 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lezli01/vincent/internal/taskstate"
 )
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
-	state, current_step, block_reason,
+	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
+
+// slotStates is the set of states that occupy a concurrency slot (spec §11),
+// rendered as SQL placeholders. It is derived from taskstate rather than
+// written out, so a new slot-holding state cannot be added to the FSM without
+// the caps noticing.
+var slotStates, slotPlaceholders = func() ([]any, string) {
+	var args []any
+	for _, s := range taskstate.All {
+		if taskstate.HoldsSlot(s) {
+			args = append(args, string(s))
+		}
+	}
+	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
+}()
 
 // CreateTask inserts t and assigns its ID and timestamps. A caller-set
 // CreatedAt is kept (tests rely on this); zero means now.
@@ -134,18 +150,86 @@ func (s *Store) ListQueuedInOrder(ctx context.Context) ([]Task, error) {
 		ORDER BY priority DESC, created_at ASC, id ASC`, string(TaskQueued))
 }
 
-// CountRunning returns the number of tasks in state running — the quantity
-// both concurrency caps count (spec §11).
-func (s *Store) CountRunning(ctx context.Context) (int, error) {
-	return s.countTasks(ctx, `SELECT COUNT(*) FROM tasks WHERE state = ?`, string(TaskRunning))
+// CountSlotHolders returns how many tasks occupy a concurrency slot — what
+// the global cap counts (spec §11).
+func (s *Store) CountSlotHolders(ctx context.Context) (int, error) {
+	return s.countTasks(ctx,
+		`SELECT COUNT(*) FROM tasks WHERE state IN `+slotPlaceholders, slotStates...)
 }
 
-// CountRunningByProject returns the number of the project's tasks in state
-// running (per-project cap, spec §11).
-func (s *Store) CountRunningByProject(ctx context.Context, projectID int64) (int, error) {
-	return s.countTasks(ctx, `SELECT COUNT(*) FROM tasks WHERE state = ? AND project_id = ?`,
-		string(TaskRunning), projectID)
+// CountSlotHoldersByProject returns how many of the project's tasks occupy a
+// concurrency slot — what the per-project cap counts (spec §11).
+func (s *Store) CountSlotHoldersByProject(ctx context.Context, projectID int64) (int, error) {
+	args := append(append([]any{}, slotStates...), projectID)
+	return s.countTasks(ctx,
+		`SELECT COUNT(*) FROM tasks WHERE state IN `+slotPlaceholders+` AND project_id = ?`, args...)
 }
+
+// ListAdmissible returns every queued task in admission order — priority
+// DESC, created_at ASC, id ASC (spec §11) — each carrying its project's
+// current slot count and cap.
+//
+// Ordering and both caps come from SQL, but the walk itself is the caller's:
+// admitting a task changes the tallies, and a single statement cannot see
+// its own in-flight admissions.
+func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
+	q := `SELECT ` + prefixed("t", taskColumns) + `,
+			(SELECT COUNT(*) FROM tasks o
+			  WHERE o.project_id = t.project_id AND o.state IN ` + slotPlaceholders + `),
+			p.max_parallel_tasks
+		FROM tasks t JOIN projects p ON p.id = t.project_id
+		WHERE t.state = ?
+		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
+	args := append(append([]any{}, slotStates...), string(TaskQueued))
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list admissible: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Candidate
+	for rows.Next() {
+		var (
+			c     Candidate
+			limit sql.NullInt64
+		)
+		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit))
+		if err != nil {
+			return nil, fmt.Errorf("scan admissible: %w", err)
+		}
+		c.Task = *t
+		if limit.Valid {
+			n := int(limit.Int64)
+			c.ProjectCap = &n
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list admissible: %w", err)
+	}
+	return out, nil
+}
+
+// prefixed qualifies each comma-separated column with a table alias.
+func prefixed(alias, columns string) string {
+	parts := strings.Split(columns, ",")
+	for i, p := range parts {
+		parts[i] = alias + "." + strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// scannerWithTail lets scanTask consume the leading task columns of a wider
+// row while extra trailing columns land in tail.
+func scannerWithTail(r rowScanner, tail ...any) rowScanner {
+	return tailScanner{row: r, tail: tail}
+}
+
+type tailScanner struct {
+	row  rowScanner
+	tail []any
+}
+
+func (t tailScanner) Scan(dest ...any) error { return t.row.Scan(append(dest, t.tail...)...) }
 
 // CountNonArchivedTasks returns how many of the project's tasks are not
 // archived — the guard for project deletion (spec §13.2).
@@ -174,6 +258,104 @@ func (s *Store) SweepInterrupted(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("sweep tasks: %w", err)
 	}
 	return n, nil
+}
+
+// RequestPause records a pause against a running task without changing its
+// state: §6 lets the current step finish first, and the engine applies the
+// transition at the step boundary. The write is conditional on the task
+// still running, so a task that finished in the meantime reports a state
+// conflict rather than acquiring a flag nothing will ever read.
+func (s *Store) RequestPause(ctx context.Context, id int64) (*Task, error) {
+	return s.conditionalTaskUpdate(ctx, id, TaskRunning,
+		[]TaskState{TaskRunning},
+		`UPDATE tasks SET pause_requested = 1, updated_at = ? WHERE id = ? AND state = ?`,
+		formatTime(time.Now()), id, string(TaskRunning))
+}
+
+// SetTaskPriority reorders admission (spec §6: queued and paused only). It is
+// not a transition — the state is unchanged — so the caller is responsible
+// for the durable event and for waking the scheduler.
+func (s *Store) SetTaskPriority(ctx context.Context, id int64, priority int) (*Task, error) {
+	allowed := []TaskState{TaskQueued, TaskPaused}
+	return s.conditionalTaskUpdate(ctx, id, TaskQueued, allowed,
+		`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ? AND state IN (?, ?)`,
+		priority, formatTime(time.Now()), id, string(TaskQueued), string(TaskPaused))
+}
+
+// TakePendingOverride reads and clears the edit+retry text a human left for
+// the next attempt, in one transaction so an override is consumed exactly
+// once. A task with none returns a zero Override.
+func (s *Store) TakePendingOverride(ctx context.Context, id int64) (Override, error) {
+	var ov Override
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		var raw sql.NullString
+		if err := tx.QueryRowContext(ctx,
+			`SELECT pending_override_json FROM tasks WHERE id = ?`, id).Scan(&raw); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("task %d: %w", id, ErrNotFound)
+			}
+			return fmt.Errorf("read pending override: %w", err)
+		}
+		if !raw.Valid || raw.String == "" {
+			return nil
+		}
+		if err := json.Unmarshal([]byte(raw.String), &ov); err != nil {
+			return fmt.Errorf("pending_override_json: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE tasks SET pending_override_json = NULL WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("clear pending override: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Override{}, err
+	}
+	return ov, nil
+}
+
+// conditionalTaskUpdate runs an update guarded on the task's state and
+// returns the refreshed row. Zero rows affected means the task moved, so the
+// caller answers 409 with the state actually found (spec §13.1); want is the
+// state named in that error.
+func (s *Store) conditionalTaskUpdate(
+	ctx context.Context, id int64, want TaskState, allowed []TaskState, q string, args ...any,
+) (*Task, error) {
+	var out *Task
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id)
+		t, err := scanTask(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("task %d: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("get task %d: %w", id, err)
+		}
+		if !containsState(allowed, t.State) {
+			return &StateConflictError{TaskID: id, Want: want, Got: t.State}
+		}
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return fmt.Errorf("update task %d: %w", id, err)
+		}
+		row = tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id)
+		if out, err = scanTask(row); err != nil {
+			return fmt.Errorf("reload task %d: %w", id, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func containsState(states []TaskState, s TaskState) bool {
+	for _, v := range states {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) countTasks(ctx context.Context, q string, args ...any) (int, error) {
@@ -210,6 +392,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		fields                      string
 		worktree, blockReason       sql.NullString
 		agentOv, modelOv, effortOv  sql.NullString
+		retryCursor, pendingOv      sql.NullString
 		created, updated            string
 		started, finished, archived sql.NullString
 	)
@@ -217,6 +400,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
+		&t.PauseRequested, &retryCursor, &pendingOv,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -225,6 +409,13 @@ func scanTask(r rowScanner) (*Task, error) {
 	t.AgentOverride = agentOv.String
 	t.ModelOverride = modelOv.String
 	t.EffortOverride = effortOv.String
+	if pendingOv.Valid && pendingOv.String != "" {
+		var ov Override
+		if err := json.Unmarshal([]byte(pendingOv.String), &ov); err != nil {
+			return nil, fmt.Errorf("pending_override_json: %w", err)
+		}
+		t.PendingOverride = &ov
+	}
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)
 	}
@@ -232,6 +423,9 @@ func scanTask(r rowScanner) (*Task, error) {
 		t.Fields = nil
 	}
 	var err error
+	if t.RetryCursorAt, err = parseTimePtr(retryCursor); err != nil {
+		return nil, err
+	}
 	if t.CreatedAt, err = parseTime(created); err != nil {
 		return nil, err
 	}

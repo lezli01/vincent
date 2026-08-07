@@ -219,6 +219,9 @@ func (r *run) Respond(agent.InputResponse) error {
 // Kill implements agent.RunHandle: terminates the whole process tree.
 func (r *run) Kill() error { return r.proc.Kill() }
 
+// Terminate implements agent.RunHandle: asks the tree to exit (spec §6).
+func (r *run) Terminate() error { return r.proc.Terminate() }
+
 // PID implements agent.RunHandle.
 func (r *run) PID() int { return r.cmd.Process.Pid }
 
