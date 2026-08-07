@@ -319,8 +319,10 @@ func TestRunnerStopInterrupts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if got.State != store.TaskBlocked || got.BlockReason != "interrupted" {
-		t.Errorf("after stop: %s/%q, want blocked/interrupted", got.State, got.BlockReason)
+	// An interruption is not a failure (§7.2, §12.4): the task returns to
+	// queued and the attempt re-runs on the next admission.
+	if got.State != store.TaskQueued || got.BlockReason != "" {
+		t.Errorf("after stop: %s/%q, want queued with no block reason", got.State, got.BlockReason)
 	}
 	runs, err := h.store.ListStepRuns(t.Context(), created.ID)
 	if err != nil || len(runs) != 1 {
@@ -340,7 +342,7 @@ func TestTaskCreateValidation(t *testing.T) {
 	}{
 		{"missing title", map[string]any{}, "title is required"},
 		{"unknown project", map[string]any{"project_id": int64(9999), "title": "x"}, "project 9999 not found"},
-		{"unknown workflow", map[string]any{"title": "x", "workflow": "feature-pr"}, "only the built-in"},
+		{"unknown workflow", map[string]any{"title": "x", "workflow": "feature-pr"}, "not found for project"},
 		{"unknown agent", map[string]any{"title": "x", "agent": "gemini"}, "available: claude"},
 		{"missing base branch", map[string]any{"title": "x", "base_branch": "nope"}, "does not resolve"},
 	}

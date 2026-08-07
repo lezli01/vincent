@@ -18,10 +18,10 @@ implementation progress; the executing agent updates it in place as work proceed
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
-| 2 — Workflow engine (M2) | 12 tasks | 2/12 | 🟡 in progress |
+| 2 — Workflow engine (M2) | 12 tasks | 4/12 | 🟡 in progress |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **15/39** | |
+| **Total** | | **17/39** | |
 
 ---
 
@@ -184,10 +184,11 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
   *Done when:* table-driven validation tests + scope-shadowing and broken-file-isolation tests pass. *(Verified: 23-case validation table incl. per-type field rejection and located line numbers, scope shadowing across builtin/global/project, broken- and unparsable-file isolation, duplicate-name-in-scope, project re-point and removal, live-reload tests covering create/edit/break/delete, a directory created after startup, a project registered after startup, and non-YAML files not churning the registry. Spec additions recorded: built-in scope in §5.2, entry shape in §13.2.)*
 - [x] **T2.2 — Template engine.** Context assembly per §8.4 (`.Task`, `.Project`, `.Workflow`, `.Step`, `.Steps`, `.Worktree`, `.LastFailure`); render-fails-before-spawn; command/check env vars (§8.5); retry failure block appending (§8.4). ✓ 2026-08-07
   *Done when:* unit tests cover every context variable, missing-field failure, and the retry block. *(Verified: every §8.4 variable asserted individually, strict-render failures for struct-field typo / map-key typo / unknown root, the defensive `index` idiom, all ten §8.5 env vars, and the failure block incl. 200-line truncation. Spec §8.1/§8.4 updated: `missingkey=error` means an optional field reads `{{ with index .Task.Fields "ticket" }}`.)*
-- [ ] **T2.3 — Task state machine.** Full FSM §6 with persisted transitions (incl. `awaiting_input`, §7.4), guarded invalid transitions (409), workflow snapshot at creation replacing T1.8's placeholder, `block_reason`, timestamps.
-  *Done when:* exhaustive transition-table test (every state × every action, incl. `answer`) passes.
-- [ ] **T2.4 — Step executors.** Agent step (any adapter; agent/model/effort resolved per §8.6 via T2.11), command step (platform shell selection + `shell:` pin, §8.3), manual gate, `check` execution, per-step timeouts with kill, retry loop honoring `max_retries`, transcript capture for all output. (§7)
-  *Done when:* integration tests cover each step type, check pass/fail, timeout kill, retry-then-blocked, and Windows + POSIX shells in CI.
+- [x] **T2.3 — Task state machine.** Full FSM §6 with persisted transitions (incl. `awaiting_input`, §7.4), guarded invalid transitions (409), workflow snapshot at creation replacing T1.8's placeholder, `block_reason`, timestamps. ✓ 2026-08-07
+  *Done when:* exhaustive transition-table test (every state × every action, incl. `answer`) passes. *(Verified: `internal/taskstate` holds the table; the test restates §6 independently and walks all 9 states × 16 actions, plus slot/terminal/human-action classification. Persistence is `store.TransitionTask` — compare-and-swap on the from-state with the `task.state_changed` event written in the same transaction; a conflicted transition writes neither row. Task creation now snapshots the registry entry. The 409 surface itself arrives with T2.6's action endpoints — `StateConflictError` already carries the current state for it.)*
+- [x] **T2.4 — Step executors.** Agent step (any adapter; agent/model/effort resolved per §8.6 via T2.11), command step (platform shell selection + `shell:` pin, §8.3), manual gate, `check` execution, per-step timeouts with kill, retry loop honoring `max_retries`, transcript capture for all output. (§7) ✓ 2026-08-07
+  *Done when:* integration tests cover each step type, check pass/fail, timeout kill, retry-then-blocked, and Windows + POSIX shells in CI. *(Verified: engine integration tests drive the real runner against real repos and the fake agent — multi-step agent→command run with §8.5 env, manual gate parking (row at entry, actor exits), retry-then-blocked with per-attempt transcripts, check failure recording `check_exit_code`, timeout tree-kill, template error failing before spawn, `.Steps` results flowing into a later step, and the §8.4 failure block reaching the retry prompt. Scripts are written per platform so the same tests exercise sh and pwsh in CI. §8.6 resolution has its own precedence/inheritance table test; T2.11 moves it into `internal/agent` and adds catalog validation.)*
+  *Carried forward:* the retry budget currently counts every failed attempt of a step; `store.CountStepAttempts` takes a `since` cursor so T2.6's human `retry` can reset it. In-process interruptions now re-queue the task (§12.4), but the startup sweep is still T1.8's blocking one until T2.8.
 - [ ] **T2.5 — Scheduler.** Global + per-project caps counting only `running`; admission by priority DESC, created_at ASC; re-evaluation on every state change and config reload (§11).
   *Done when:* concurrency tests prove both caps and ordering under simultaneous task load.
 - [ ] **T2.6 — Human actions API.** `cancel` (process kill incl. Windows tree-kill), `pause` (step-boundary), `resume`, `retry` with prompt/run overrides recorded, `skip`, `approve`, `reject`, `archive` (+dirty `force`), `PATCH` priority (§6, §13.2).

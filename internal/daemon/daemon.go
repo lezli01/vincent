@@ -154,12 +154,20 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Warn("workflow hot-reload unavailable", "error", err)
 	}
 
+	// The command-step shell is probed once and logged; a step's `shell:`
+	// pin is resolved per use and fails the step when missing (§8.3).
+	shells := taskrun.NewShells(logger)
+	if _, err := shells.Default(); err != nil {
+		logger.Warn("command steps will fail until a shell is available", "error", err)
+	}
+
 	worktrees := worktree.NewManager(git, dirs.Data)
 	runner := taskrun.New(taskrun.Deps{
 		Store:     st,
 		Config:    currentConfig,
 		Worktrees: worktrees,
 		Agents:    agents,
+		Shells:    shells,
 		DataDir:   dirs.Data,
 		Logger:    logger,
 	})
