@@ -1,3 +1,3 @@
-// Package config will resolve platform-native config/data directories and
-// load, validate, and hot-reload config.yaml (spec §12.2–12.3; T1.1).
+// Package config resolves platform-native config/data directories and
+// loads, validates, and hot-reloads config.yaml (spec §12.2–12.3; T1.1).
 package config
