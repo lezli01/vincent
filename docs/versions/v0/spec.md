@@ -784,6 +784,8 @@ GET    /v1/info                         daemon version, uptime, agent availabili
 GET    /v1/config                       effective global config (read-only)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
                                         ?refresh=true forces a re-probe
+POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
+                                        `vincent daemon stop` calls this and waits for exit
 
 GET    /v1/projects                     list
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
