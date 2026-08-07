@@ -96,6 +96,42 @@ func (s *Store) DeleteProject(ctx context.Context, id int64) error {
 	return oneRowAffected(res, fmt.Sprintf("project %d", id))
 }
 
+// DeleteProjectCascade hard-deletes the project and every row that hangs off
+// it (events, step_runs, tasks) in one transaction, keeping the schema's
+// foreign keys strict (T1.5 decision). Returns ErrNotFound when the project
+// does not exist; nothing is deleted then.
+func (s *Store) DeleteProjectCascade(ctx context.Context, id int64) (err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete project %d: %w", id, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	for _, q := range []string{
+		`DELETE FROM events WHERE project_id = ?1 OR task_id IN (SELECT id FROM tasks WHERE project_id = ?1)`,
+		`DELETE FROM step_runs WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?1)`,
+		`DELETE FROM tasks WHERE project_id = ?1`,
+	} {
+		if _, err = tx.ExecContext(ctx, q, id); err != nil {
+			return fmt.Errorf("delete project %d cascade: %w", id, err)
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete project %d: %w", id, err)
+	}
+	if err = oneRowAffected(res, fmt.Sprintf("project %d", id)); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("delete project %d: %w", id, err)
+	}
+	return nil
+}
+
 func scanProject(r rowScanner) (*Project, error) {
 	var (
 		p                Project
