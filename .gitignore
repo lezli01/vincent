@@ -1,0 +1,20 @@
+# Build output
+/bin/
+/dist/
+
+# Test and coverage artifacts
+*.out
+coverage.*
+
+# Local-only Go workspace files
+go.work
+go.work.sum
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# OS cruft
+.DS_Store
+Thumbs.db
