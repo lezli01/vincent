@@ -18,10 +18,10 @@ implementation progress; the executing agent updates it in place as work proceed
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
-| 2 — Workflow engine (M2) | 12 tasks | 0/12 | ⬜ not started |
+| 2 — Workflow engine (M2) | 12 tasks | 2/12 | 🟡 in progress |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **13/39** | |
+| **Total** | | **15/39** | |
 
 ---
 
@@ -180,10 +180,10 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
 - *Clocks:* real clock, shrunk durations in tests — timeouts are `context.WithTimeout` on real processes, so a fake clock buys mock fidelity, not determinism. Exception: T2.12's `input_wait_ms` accounting takes a `now func() time.Time` so the arithmetic is assertable without sleeping.
 - *M2 gate:* new `scripts/m2-gate.sh` beside `m1-gate.sh` (which keeps guarding the spine) — scenario 1 multi-step workflow (agent → command → manual gate → command push to a local bare remote) with an input-request round-trip; scenario 2 hard-kill mid-step + recovery; scenario 3 cap stress. Windows hard-kill uses `taskkill /F /PID` (Git Bash `kill -9` can't reliably kill a native process); the script branches on `$OSTYPE`.
 
-- [ ] **T2.1 — Workflow registry.** Strict YAML decode with unknown-key rejection (§8.1–8.2); validation with file/line errors; global + project scopes with shadowing (§5.2); fsnotify reload keeping valid entries when one file is broken; `GET /v1/workflows`, `POST /v1/workflows/validate`.
-  *Done when:* table-driven validation tests + scope-shadowing and broken-file-isolation tests pass.
-- [ ] **T2.2 — Template engine.** Context assembly per §8.4 (`.Task`, `.Project`, `.Workflow`, `.Step`, `.Steps`, `.Worktree`, `.LastFailure`); render-fails-before-spawn; command/check env vars (§8.5); retry failure block appending (§8.4).
-  *Done when:* unit tests cover every context variable, missing-field failure, and the retry block.
+- [x] **T2.1 — Workflow registry.** Strict YAML decode with unknown-key rejection (§8.1–8.2); validation with file/line errors; global + project scopes with shadowing (§5.2); fsnotify reload keeping valid entries when one file is broken; `GET /v1/workflows`, `POST /v1/workflows/validate`. ✓ 2026-08-07
+  *Done when:* table-driven validation tests + scope-shadowing and broken-file-isolation tests pass. *(Verified: 23-case validation table incl. per-type field rejection and located line numbers, scope shadowing across builtin/global/project, broken- and unparsable-file isolation, duplicate-name-in-scope, project re-point and removal, live-reload tests covering create/edit/break/delete, a directory created after startup, a project registered after startup, and non-YAML files not churning the registry. Spec additions recorded: built-in scope in §5.2, entry shape in §13.2.)*
+- [x] **T2.2 — Template engine.** Context assembly per §8.4 (`.Task`, `.Project`, `.Workflow`, `.Step`, `.Steps`, `.Worktree`, `.LastFailure`); render-fails-before-spawn; command/check env vars (§8.5); retry failure block appending (§8.4). ✓ 2026-08-07
+  *Done when:* unit tests cover every context variable, missing-field failure, and the retry block. *(Verified: every §8.4 variable asserted individually, strict-render failures for struct-field typo / map-key typo / unknown root, the defensive `index` idiom, all ten §8.5 env vars, and the failure block incl. 200-line truncation. Spec §8.1/§8.4 updated: `missingkey=error` means an optional field reads `{{ with index .Task.Fields "ticket" }}`.)*
 - [ ] **T2.3 — Task state machine.** Full FSM §6 with persisted transitions (incl. `awaiting_input`, §7.4), guarded invalid transitions (409), workflow snapshot at creation replacing T1.8's placeholder, `block_reason`, timestamps.
   *Done when:* exhaustive transition-table test (every state × every action, incl. `answer`) passes.
 - [ ] **T2.4 — Step executors.** Agent step (any adapter; agent/model/effort resolved per §8.6 via T2.11), command step (platform shell selection + `shell:` pin, §8.3), manual gate, `check` execution, per-step timeouts with kill, retry loop honoring `max_retries`, transcript capture for all output. (§7)
