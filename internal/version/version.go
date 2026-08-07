@@ -14,10 +14,31 @@ var (
 	date    = ""
 )
 
+// Version returns the version string, "dev" when not injected.
+func Version() string { return version }
+
+// Commit returns the abbreviated VCS revision, "unknown" when unavailable.
+func Commit() string {
+	c, _ := vcsFallback()
+	return c
+}
+
+// Date returns the build date, "unknown" when unavailable.
+func Date() string {
+	_, d := vcsFallback()
+	return d
+}
+
 // String renders one-line build info, e.g.
 // "vincent version dev (commit 9ad1de4, built 2026-08-06)".
 func String() string {
-	v, c, d := version, commit, date
+	return fmt.Sprintf("vincent version %s (commit %s, built %s)", Version(), Commit(), Date())
+}
+
+// vcsFallback fills commit/date from debug.ReadBuildInfo when the ldflags
+// injection is absent (plain `go build`).
+func vcsFallback() (c, d string) {
+	c, d = commit, date
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, s := range info.Settings {
 			switch s.Key {
@@ -41,5 +62,5 @@ func String() string {
 	if d == "" {
 		d = "unknown"
 	}
-	return fmt.Sprintf("vincent version %s (commit %s, built %s)", v, c, d)
+	return c, d
 }
