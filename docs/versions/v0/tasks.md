@@ -102,9 +102,22 @@ Milestone acceptance (§19 M1): via `curl` alone — register a repo, create a o
   *Done when:* unit tests cover defaults, overrides, invalid config rejection, and live reload. *(Verified: 28 unit tests — defaults, partial/full overrides, 13 invalid-config rejections, live reload incl. invalid-edit keep-last-good, per-OS data-dir table, generated default file loads back to `Default()`.)*
 - [x] **T1.2 — SQLite store & migrations.** Pure-Go driver; WAL + busy_timeout; embedded migrations applying schema §14; typed store layer (CRUD + scheduler query) for projects, tasks, step_runs, events. ✓ 2026-08-07
   *Done when:* migration idempotence test + CRUD round-trip tests pass on all 3 OSes in CI. *(Verified: PR #7 matrix green on ubuntu/macos/windows — idempotence via re-migrate + reopen, pragma checks, CRUD round-trips incl. nullable columns, scheduler ordering, FK enforcement.)*
-- [ ] **T1.3 — Daemon lifecycle.** `vincent daemon` (foreground); `daemon start/stop/status` (detached start, graceful stop, status via `daemon.json`); single-instance lock file; bearer token generated 0600 at first start; structured logging with rotation. (§12.1, §12.2, §13.1)
+**T1.3/T1.4 decisions (grill session, 2026-08-07):**
+
+- *Start handshake:* `daemon start` first probes for a healthy daemon (already running = success), then spawns the detached child and polls `daemon.json` + `GET /v1/health` for ~10 s; on failure it prints the tail of `daemon.log` and exits non-zero. No pipe IPC.
+- *Status truth:* try-acquire `daemon.lock` — acquirable means no daemon (a leftover `daemon.json` is reported as stale); held means alive, then `/v1/health` decides responsiveness. Exit codes: 0 healthy · 1 not running · 2 alive-but-unresponsive. Human-readable output; `--json` deferred to T4.2.
+- *Idempotency:* desired-state semantics — `start` on a running daemon and `stop` with none running both print what happened and exit 0.
+- *Stop flow:* `daemon stop` POSTs `/v1/daemon/stop` (202; response completes before shutdown begins), then waits for the lock to become acquirable (~20 s, longer than the daemon's own kill grace); `--force` falls back to killing the recorded PID.
+- *Foreground = daemon:* `vincent daemon` is the real daemon in both modes — always takes the lock, writes token/`daemon.json`, always logs to the rotating file; foreground additionally mirrors logs to stderr. Log level rides a `slog.LevelVar` so `log_level` applies on hot-reload; a `listen` change is warned and the effective value kept.
+- *Middleware order:* recover outermost → request log → auth → handler (panics always logged and enveloped as 500; unauthorized requests still logged). `/v1/health` is auth-exempt and logged at debug so poll loops don't spam the log.
+- *Error vocabulary (initial):* `unauthorized`, `not_found`, `method_not_allowed`, `invalid_json`, `validation_failed`, `invalid_state`, `internal`; ServeMux fallback 404/405 wrapped so every error body is the §13.1 envelope (405 carries `Allow`).
+- *`/v1/info` (initial):* version/commit/built, pid, `started_at`, uptime, effective listen address, `max_parallel_tasks`; agent availability joins in T1.7 (additive).
+- *`/v1/config`:* effective config as snake_case JSON mirroring `config.yaml`; durations rendered as Go duration strings.
+- *Token:* 32 bytes `crypto/rand` as hex, written atomically (temp+rename) 0600 at first start, reused unchanged on later starts.
+
+- [~] **T1.3 — Daemon lifecycle.** `vincent daemon` (foreground); `daemon start/stop/status` (detached start, graceful stop, status via `daemon.json`); single-instance lock file; bearer token generated 0600 at first start; structured logging with rotation. (§12.1, §12.2, §13.1)
   *Done when:* start/status/stop cycle works on all 3 OSes; second daemon refuses to start; token/`daemon.json` created with correct permissions.
-- [ ] **T1.4 — API foundation.** `net/http` server bound `127.0.0.1`; bearer-auth middleware (health exempt); JSON error envelope with stable codes; `GET /v1/health`, `/v1/info` (agent availability wired later), `/v1/config`. (§13.1–13.2)
+- [~] **T1.4 — API foundation.** `net/http` server bound `127.0.0.1`; bearer-auth middleware (health exempt); JSON error envelope with stable codes; `GET /v1/health`, `/v1/info` (agent availability wired later), `/v1/config`. (§13.1–13.2)
   *Done when:* auth rejection, health-without-auth, and error-shape tests pass.
 - [ ] **T1.5 — Projects API.** `GET/POST /v1/projects`, `GET/PATCH/DELETE /v1/projects/{id}`; registration validation (path exists, is git repo); `default_branch` auto-detection with fallback (§5.1); delete guarded by non-archived tasks.
   *Done when:* endpoint tests against temp git repos cover happy path + each validation failure.
