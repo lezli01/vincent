@@ -18,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -29,12 +30,13 @@ import (
 type taskHarness struct {
 	*projectHarness
 	runner    *taskrun.Runner
+	sched     *scheduler.Scheduler
 	repo      string
 	projectID int64
 }
 
 // newTaskHarness builds the spine. agentTimeout 0 keeps the default; the
-// runner is started unless withRunner is false.
+// runner and scheduler are started unless withRunner is false.
 func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *taskHarness {
 	t.Helper()
 	fake := agenttest.BuildFakeAgent(t)
@@ -62,8 +64,21 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 		DataDir:   dataDir,
 		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
+	sched := scheduler.New(scheduler.Deps{
+		Store:    st,
+		Config:   cfg,
+		Admitter: runner,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	st.SetEventHook(func(e *store.Event) {
+		if scheduler.WakeOn(e) {
+			sched.Wake()
+		}
+	})
 	if withRunner {
 		runner.Start(t.Context())
+		sched.Start(t.Context())
+		t.Cleanup(sched.Stop)
 		t.Cleanup(runner.Stop)
 	}
 	s := New(Deps{
@@ -78,11 +93,16 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 		Worktrees:   wt,
 		Agents:      reg,
 		AgentStatus: []AgentStatus{{Name: "claude", Available: true, Path: fake, Version: "2.1.224"}},
-		WakeRunner:  runner.Wake,
+		Runner:      runner,
+		WakeRunner:  sched.Wake,
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	h := &taskHarness{projectHarness: &projectHarness{ts: ts, store: st, wt: wt}, runner: runner}
+	h := &taskHarness{
+		projectHarness: &projectHarness{ts: ts, store: st, wt: wt},
+		runner:         runner,
+		sched:          sched,
+	}
 
 	h.repo = testrepo.Init(t, "main")
 	resp, body := h.doJSON(t, http.MethodPost, "/v1/projects", map[string]any{"path": h.repo})
@@ -314,6 +334,7 @@ func TestRunnerStopInterrupts(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	h.sched.Stop()
 	h.runner.Stop()
 	got, err := h.store.GetTask(t.Context(), created.ID)
 	if err != nil {

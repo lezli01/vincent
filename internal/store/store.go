@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
@@ -26,6 +27,8 @@ const timeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 // and SQLITE_BUSY cannot occur within the daemon.
 type Store struct {
 	db *sql.DB
+	// eventHook fires after an event's transaction commits; see SetEventHook.
+	eventHook atomic.Pointer[func(*Event)]
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies the

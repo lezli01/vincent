@@ -4,6 +4,7 @@ package procx
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -24,8 +25,12 @@ func attach(cmd *exec.Cmd) (platformProc, error) {
 // groupKill signals the process group created by Setpgid (pgid == child pid).
 type groupKill struct{ pgid int }
 
-func (g groupKill) kill() error {
-	err := syscall.Kill(-g.pgid, syscall.SIGKILL)
+func (g groupKill) terminate() error { return g.signal(syscall.SIGTERM) }
+
+func (g groupKill) kill() error { return g.signal(syscall.SIGKILL) }
+
+func (g groupKill) signal(sig syscall.Signal) error {
+	err := syscall.Kill(-g.pgid, sig)
 	// The group being gone already is success, not failure.
 	if err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
@@ -34,3 +39,13 @@ func (g groupKill) kill() error {
 }
 
 func (groupKill) release() {}
+
+// signalProcess asks a single process to exit, for the fallback path where
+// no process group was established.
+func signalProcess(cmd *exec.Cmd) error {
+	err := cmd.Process.Signal(syscall.SIGTERM)
+	if err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
+}

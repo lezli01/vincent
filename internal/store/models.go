@@ -3,21 +3,29 @@ package store
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/lezli01/vincent/internal/taskstate"
 )
 
-// TaskState enumerates task lifecycle states (spec §6).
-type TaskState string
+// TaskState is the task lifecycle state (spec §6). It is an alias, not a
+// second type: this list and taskstate's had already drifted apart once —
+// `awaiting_input` existed in the state machine and not here, which would
+// have silently under-counted the §11 caps — and a third copy must not
+// become possible.
+type TaskState = taskstate.State
 
-// Task lifecycle states (spec §6).
+// Task lifecycle states (spec §6), re-exported so store callers need not
+// import taskstate for a literal.
 const (
-	TaskQueued       TaskState = "queued"
-	TaskRunning      TaskState = "running"
-	TaskAwaitingGate TaskState = "awaiting_gate"
-	TaskBlocked      TaskState = "blocked"
-	TaskPaused       TaskState = "paused"
-	TaskDone         TaskState = "done"
-	TaskAborted      TaskState = "aborted"
-	TaskArchived     TaskState = "archived"
+	TaskQueued        = taskstate.Queued
+	TaskRunning       = taskstate.Running
+	TaskAwaitingGate  = taskstate.AwaitingGate
+	TaskAwaitingInput = taskstate.AwaitingInput
+	TaskBlocked       = taskstate.Blocked
+	TaskPaused        = taskstate.Paused
+	TaskDone          = taskstate.Done
+	TaskAborted       = taskstate.Aborted
+	TaskArchived      = taskstate.Archived
 )
 
 // StepRunState enumerates step-run attempt states (spec §5.4).
@@ -66,38 +74,77 @@ type Task struct {
 	State            TaskState
 	CurrentStep      int
 	BlockReason      string // set while State == TaskBlocked
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	StartedAt        *time.Time
-	FinishedAt       *time.Time
-	ArchivedAt       *time.Time
+	// PauseRequested is a pause accepted while running but not yet taken
+	// effect (spec §6). Persisted so a crash, which re-queues the task,
+	// cannot discard it.
+	PauseRequested bool
+	// RetryCursorAt is the last human retry. The retry budget counts only
+	// failed attempts after it, which is how retry resets it (§6, §7.2).
+	RetryCursorAt *time.Time
+	// PendingOverride is edit+retry text waiting for the next attempt's
+	// step run; the actor drains and clears it (§6).
+	PendingOverride *Override
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+	ArchivedAt      *time.Time
 }
 
 // StepRun is one attempt at executing one step of one task; history is
 // append-only (spec §5.4).
 type StepRun struct {
-	ID             int64
-	TaskID         int64
-	StepIndex      int
-	StepID         string
-	StepType       string // agent | command | manual
-	Attempt        int    // 1-based
-	State          StepRunState
-	Agent          string // adapter name; agent steps only
-	Model          string // resolved model as passed to the adapter (spec §8.6); "" = CLI default
-	Effort         string // resolved effort as passed to the adapter; "" = CLI default
-	PID            *int   // while running
-	ProcStartedAt  *time.Time
-	ExitCode       *int
-	CheckExitCode  *int
-	FailureReason  string
-	ResultSummary  string
+	ID            int64
+	TaskID        int64
+	StepIndex     int
+	StepID        string
+	StepType      string // agent | command | manual
+	Attempt       int    // 1-based
+	State         StepRunState
+	Agent         string // adapter name; agent steps only
+	Model         string // resolved model as passed to the adapter (spec §8.6); "" = CLI default
+	Effort        string // resolved effort as passed to the adapter; "" = CLI default
+	PID           *int   // while running
+	ProcStartedAt *time.Time
+	ExitCode      *int
+	CheckExitCode *int
+	FailureReason string
+	ResultSummary string
+	// PromptOverride and RunOverride record the text a human supplied for
+	// this attempt via edit+retry (spec §6). Empty on every other attempt,
+	// including later automatic retries of the same step: the edit happened
+	// at a point in time, even though the snapshot keeps it thereafter.
+	PromptOverride string
+	RunOverride    string
 	TranscriptPath string
 	InputTokens    *int64
 	OutputTokens   *int64
 	CostUSD        *float64 // nil when the agent doesn't report cost
 	StartedAt      time.Time
 	FinishedAt     *time.Time
+}
+
+// Override is the prompt or command a human supplied with `edit + retry`
+// (spec §6). Exactly one field is set: a prompt for an agent step, a run for
+// a command step.
+type Override struct {
+	Prompt string `json:"prompt,omitempty"`
+	Run    string `json:"run,omitempty"`
+}
+
+// Empty reports whether the override carries nothing.
+func (o Override) Empty() bool { return o.Prompt == "" && o.Run == "" }
+
+// Candidate is one queued task considered for admission, carrying the cap
+// context the scheduler needs to decide (spec §11). The slot counts are as
+// of the query; the scheduler adds its own in-flight admissions on top,
+// which SQL cannot see.
+type Candidate struct {
+	Task Task
+	// ProjectSlots is how many of the project's tasks already hold a slot.
+	ProjectSlots int
+	// ProjectCap is the project's max_parallel_tasks; nil = unlimited.
+	ProjectCap *int
 }
 
 // Event is a durable state event (spec §13.3). ID doubles as the SSE
