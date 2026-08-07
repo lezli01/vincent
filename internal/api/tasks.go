@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -53,38 +54,58 @@ type taskResponse struct {
 	State          string            `json:"state"`
 	CurrentStep    int               `json:"current_step"`
 	BlockReason    *string           `json:"block_reason"`
-	CreatedAt      string            `json:"created_at"`
-	UpdatedAt      string            `json:"updated_at"`
-	StartedAt      *string           `json:"started_at"`
-	FinishedAt     *string           `json:"finished_at"`
-	ArchivedAt     *string           `json:"archived_at"`
-	Steps          []stepRunResponse `json:"steps,omitempty"` // detail view only
+	// PauseRequested is a pause accepted but not yet in effect (§6).
+	PauseRequested bool `json:"pause_requested"`
+	// AvailableActions are the §6 human actions valid from the current
+	// state. Derived, never stored: clients render an action bar from this
+	// rather than restating the state machine.
+	AvailableActions []string          `json:"available_actions"`
+	CreatedAt        string            `json:"created_at"`
+	UpdatedAt        string            `json:"updated_at"`
+	StartedAt        *string           `json:"started_at"`
+	FinishedAt       *string           `json:"finished_at"`
+	ArchivedAt       *string           `json:"archived_at"`
+	Steps            []stepRunResponse `json:"steps,omitempty"` // detail view only
 }
 
 func toTaskResponse(t *store.Task) taskResponse {
 	return taskResponse{
-		ID:             t.ID,
-		ProjectID:      t.ProjectID,
-		Title:          t.Title,
-		Description:    t.Description,
-		Fields:         t.Fields,
-		Workflow:       t.WorkflowName,
-		BaseBranch:     t.BaseBranch,
-		BranchName:     t.BranchName,
-		WorktreePath:   nilIfEmpty(t.WorktreePath),
-		Priority:       t.Priority,
-		AgentOverride:  nilIfEmpty(t.AgentOverride),
-		ModelOverride:  nilIfEmpty(t.ModelOverride),
-		EffortOverride: nilIfEmpty(t.EffortOverride),
-		State:          string(t.State),
-		CurrentStep:    t.CurrentStep,
-		BlockReason:    nilIfEmpty(t.BlockReason),
-		CreatedAt:      t.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:      t.UpdatedAt.UTC().Format(time.RFC3339),
-		StartedAt:      timePtr(t.StartedAt),
-		FinishedAt:     timePtr(t.FinishedAt),
-		ArchivedAt:     timePtr(t.ArchivedAt),
+		ID:               t.ID,
+		ProjectID:        t.ProjectID,
+		Title:            t.Title,
+		Description:      t.Description,
+		Fields:           t.Fields,
+		Workflow:         t.WorkflowName,
+		BaseBranch:       t.BaseBranch,
+		BranchName:       t.BranchName,
+		WorktreePath:     nilIfEmpty(t.WorktreePath),
+		Priority:         t.Priority,
+		AgentOverride:    nilIfEmpty(t.AgentOverride),
+		ModelOverride:    nilIfEmpty(t.ModelOverride),
+		EffortOverride:   nilIfEmpty(t.EffortOverride),
+		State:            string(t.State),
+		CurrentStep:      t.CurrentStep,
+		BlockReason:      nilIfEmpty(t.BlockReason),
+		PauseRequested:   t.PauseRequested,
+		AvailableActions: availableActions(t.State),
+		CreatedAt:        t.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:        t.UpdatedAt.UTC().Format(time.RFC3339),
+		StartedAt:        timePtr(t.StartedAt),
+		FinishedAt:       timePtr(t.FinishedAt),
+		ArchivedAt:       timePtr(t.ArchivedAt),
 	}
+}
+
+// availableActions renders the §6 human actions valid from a state. Always a
+// list, never null: a terminal task has none, and a client should not have
+// to distinguish that from a missing field.
+func availableActions(s store.TaskState) []string {
+	actions := taskstate.HumanActionsFrom(s)
+	out := make([]string, 0, len(actions))
+	for _, a := range actions {
+		out = append(out, string(a))
+	}
+	return out
 }
 
 // stepRunResponse is the JSON shape of one step-run attempt (spec §5.4).
@@ -416,10 +437,20 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 
 // taskFromPath resolves the {id} path segment to a task, writing the
 // 404 response itself when it cannot.
-func (s *Server) taskFromPath(w http.ResponseWriter, r *http.Request) (*store.Task, bool) {
+// taskIDFromPath resolves the {id} path segment, writing the 404 itself when
+// it is not an integer.
+func taskIDFromPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusNotFound, CodeNotFound, "task ids are integers")
+		return 0, false
+	}
+	return id, true
+}
+
+func (s *Server) taskFromPath(w http.ResponseWriter, r *http.Request) (*store.Task, bool) {
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
 		return nil, false
 	}
 	t, err := s.deps.Store.GetTask(r.Context(), id)

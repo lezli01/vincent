@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -43,6 +44,10 @@ type Deps struct {
 	Agents *agent.Registry
 	// Workflows is the workflow registry (§5.2), serving /v1/workflows.
 	Workflows *workflow.Registry
+	// Runner applies the §6 human actions. The engine owns them because it
+	// owns the live runs they reach and the step_run rows they close; this
+	// package only maps them onto HTTP.
+	Runner *taskrun.Runner
 	// AgentStatus is the per-adapter availability probed at daemon start
 	// (§9.5); /v1/agents adds on-demand re-probing in T2.11.
 	AgentStatus []AgentStatus
@@ -126,6 +131,15 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)
+	rt.handle(http.MethodPatch, "/v1/tasks/{id}", s.handleTaskPatch)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/cancel", s.handleTaskCancel)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/pause", s.handleTaskPause)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/resume", s.handleTaskResume)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/retry", s.handleTaskRetry)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/skip", s.handleTaskSkip)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/approve", s.handleTaskApprove)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/reject", s.handleTaskReject)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/archive", s.handleTaskArchive)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps", s.handleTaskSteps)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)

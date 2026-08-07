@@ -21,6 +21,7 @@ import (
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
@@ -161,6 +162,15 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Warn("command steps will fail until a shell is available", "error", err)
 	}
 
+	// Crash recovery runs before anything can admit or execute. It belongs to
+	// neither the scheduler nor the runner — T2.8 replaces this interim sweep
+	// with real re-queue semantics, and this is the one call site it changes.
+	if n, err := st.SweepInterrupted(ctx); err != nil {
+		logger.Error("startup sweep failed", "error", err)
+	} else if n > 0 {
+		logger.Warn("swept interrupted tasks from a previous run", "tasks", n)
+	}
+
 	worktrees := worktree.NewManager(git, dirs.Data)
 	runner := taskrun.New(taskrun.Deps{
 		Store:     st,
@@ -170,6 +180,20 @@ func Run(ctx context.Context, opts Options) error {
 		Shells:    shells,
 		DataDir:   dirs.Data,
 		Logger:    logger,
+	})
+	sched := scheduler.New(scheduler.Deps{
+		Store:    st,
+		Config:   currentConfig,
+		Admitter: runner,
+		Logger:   logger,
+	})
+	// One notification seam: every committed event passes here, and the
+	// scheduler re-evaluates on the two that change what may be admitted
+	// (§11). T2.7's SSE broker publishes from this same hook.
+	st.SetEventHook(func(e *store.Event) {
+		if scheduler.WakeOn(e) {
+			sched.Wake()
+		}
 	})
 
 	startedAt := time.Now()
@@ -186,13 +210,16 @@ func Run(ctx context.Context, opts Options) error {
 		Agents:      agents,
 		AgentStatus: agentStatus,
 		Workflows:   workflows,
-		WakeRunner:  runner.Wake,
+		Runner:      runner,
+		WakeRunner:  sched.Wake,
 		OnProjectsChanged: func() {
 			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if err := syncWorkflowProjects(pctx, st, workflows); err != nil {
 				logger.Warn("project workflow scopes not refreshed", "error", err)
 			}
+			// A project's max_parallel_tasks may have changed (§11).
+			sched.Wake()
 		},
 	})
 
@@ -207,6 +234,8 @@ func Run(ctx context.Context, opts Options) error {
 			level.Set(lvl)
 		}
 		current.Store(&next)
+		// max_parallel_tasks may have changed (§11).
+		sched.Wake()
 	}); err != nil {
 		logger.Warn("config hot-reload unavailable", "error", err)
 	}
@@ -220,6 +249,7 @@ func Run(ctx context.Context, opts Options) error {
 	defer func() { _ = RemoveRuntimeInfo(dirs.Data) }()
 
 	runner.Start(ctx)
+	sched.Start(ctx)
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
@@ -232,6 +262,7 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Info("shutting down: stop requested via API")
 	case err := <-serveErr:
 		logger.Error("http server failed", "error", err)
+		sched.Stop()
 		runner.Stop()
 		return fmt.Errorf("http server: %w", err)
 	}
@@ -241,8 +272,10 @@ func Run(ctx context.Context, opts Options) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http shutdown incomplete", "error", err)
 	}
-	// After the HTTP drain: kill in-flight agent runs (tree-kill) and wait
-	// for their interrupted state to be persisted (T1.7–T1.9 decision).
+	// After the HTTP drain: stop admitting, then kill in-flight agent runs
+	// (tree-kill) and wait for their interrupted state to be persisted
+	// (T1.7–T1.9 decision).
+	sched.Stop()
 	runner.Stop()
 	logger.Info("daemon stopped")
 	return nil

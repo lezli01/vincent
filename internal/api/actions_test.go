@@ -1,0 +1,326 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/lezli01/vincent/internal/store"
+)
+
+// actionHarness is the task harness with no runner: tasks stay queued, so a
+// test can put one in any state it likes and drive the endpoints against it.
+func newActionHarness(t *testing.T) *taskHarness {
+	t.Helper()
+	return newTaskHarness(t, 0, false)
+}
+
+// queuedTask creates a task and leaves it queued.
+func queuedTask(t *testing.T, h *taskHarness) taskResponse {
+	t.Helper()
+	return h.createTask(t, map[string]any{"project_id": h.projectID, "title": "action test"})
+}
+
+// setState moves a task directly, for states the endpoints are meant to be
+// exercised from.
+func setState(t *testing.T, h *taskHarness, id int64, to store.TaskState) {
+	t.Helper()
+	task, err := h.store.GetTask(t.Context(), id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if _, _, err := h.store.TransitionTask(t.Context(), id, task.State, to, store.TaskChange{}); err != nil {
+		t.Fatalf("set state %s: %v", to, err)
+	}
+}
+
+// decodeTask reads a task response body.
+func decodeTask(t *testing.T, body []byte) taskResponse {
+	t.Helper()
+	var out taskResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode task: %v (%s)", err, body)
+	}
+	return out
+}
+
+// decodeError reads the §13.1 error envelope.
+func decodeError(t *testing.T, body []byte) errorDetail {
+	t.Helper()
+	var out errorBody
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode error: %v (%s)", err, body)
+	}
+	return out.Error
+}
+
+func TestCancelQueuedTask(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/cancel", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("cancel: %d %s", resp.StatusCode, body)
+	}
+	got := decodeTask(t, body)
+	if got.State != string(store.TaskAborted) {
+		t.Errorf("state = %s, want aborted", got.State)
+	}
+}
+
+// TestInvalidActionReportsStateInDetails is the §13.1 promise that made the
+// envelope grow a details object: a client must be able to branch on the
+// state it did not expect, not parse it out of a sentence.
+func TestInvalidActionReportsStateInDetails(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/approve", task.ID), nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("approve on a queued task: %d %s, want 409", resp.StatusCode, body)
+	}
+	e := decodeError(t, body)
+	if e.Code != CodeInvalidState {
+		t.Errorf("code = %s, want %s", e.Code, CodeInvalidState)
+	}
+	if e.Details["state"] != string(store.TaskQueued) {
+		t.Errorf("details.state = %q, want %q", e.Details["state"], store.TaskQueued)
+	}
+}
+
+// TestEveryActionRejectsAWrongState walks the endpoints, not the FSM: each
+// one must answer 409 rather than 404 or 500 when the state is wrong.
+func TestEveryActionRejectsAWrongState(t *testing.T) {
+	// Each action paired with a state it is not valid from.
+	cases := []struct {
+		action string
+		state  store.TaskState
+	}{
+		{"cancel", store.TaskDone},
+		{"pause", store.TaskBlocked},
+		{"resume", store.TaskQueued},
+		{"retry", store.TaskQueued},
+		{"skip", store.TaskQueued},
+		{"approve", store.TaskQueued},
+		{"reject", store.TaskQueued},
+		{"archive", store.TaskQueued},
+	}
+	for _, c := range cases {
+		t.Run(c.action, func(t *testing.T) {
+			h := newActionHarness(t)
+			task := queuedTask(t, h)
+			if c.state != store.TaskQueued {
+				setState(t, h, task.ID, c.state)
+			}
+			path := fmt.Sprintf("/v1/tasks/%d/%s", task.ID, c.action)
+			resp, body := h.doJSON(t, http.MethodPost, path, nil)
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("%s from %s: %d %s, want 409", c.action, c.state, resp.StatusCode, body)
+			}
+			if got := decodeError(t, body).Details["state"]; got != string(c.state) {
+				t.Errorf("details.state = %q, want %q", got, c.state)
+			}
+		})
+	}
+}
+
+// TestPauseRunningTaskDefers: the response reports the deferral rather than
+// claiming a state the task has not reached (§6).
+func TestPauseRunningTaskDefers(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskRunning)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/pause", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("pause: %d %s", resp.StatusCode, body)
+	}
+	got := decodeTask(t, body)
+	if got.State != string(store.TaskRunning) {
+		t.Errorf("state = %s, want running (the step finishes first)", got.State)
+	}
+	if !got.PauseRequested {
+		t.Error("pause_requested = false; a client cannot tell the pause was accepted")
+	}
+}
+
+// TestAvailableActionsTracksState asserts the field the M3 TUI will render
+// its action bar from actually follows §6.
+func TestAvailableActionsTracksState(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	if !hasAction(task.AvailableActions, "cancel") || !hasAction(task.AvailableActions, "pause") {
+		t.Errorf("queued actions = %v, want cancel and pause", task.AvailableActions)
+	}
+
+	setState(t, h, task.ID, store.TaskAwaitingGate)
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get task: %d %s", resp.StatusCode, body)
+	}
+	got := decodeTask(t, body)
+	for _, want := range []string{"approve", "reject", "skip", "cancel"} {
+		if !hasAction(got.AvailableActions, want) {
+			t.Errorf("awaiting_gate actions = %v, want %s", got.AvailableActions, want)
+		}
+	}
+	if hasAction(got.AvailableActions, "resume") {
+		t.Errorf("awaiting_gate actions = %v, must not offer resume", got.AvailableActions)
+	}
+}
+
+func TestPatchPriority(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	resp, body := h.doJSON(t, http.MethodPatch, fmt.Sprintf("/v1/tasks/%d", task.ID),
+		map[string]any{"priority": 9})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch priority: %d %s", resp.StatusCode, body)
+	}
+	if got := decodeTask(t, body); got.Priority != 9 {
+		t.Errorf("priority = %d, want 9", got.Priority)
+	}
+
+	setState(t, h, task.ID, store.TaskRunning)
+	resp, body = h.doJSON(t, http.MethodPatch, fmt.Sprintf("/v1/tasks/%d", task.ID),
+		map[string]any{"priority": 1})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("patch priority while running: %d %s, want 409", resp.StatusCode, body)
+	}
+	if got := decodeError(t, body).Details["state"]; got != string(store.TaskRunning) {
+		t.Errorf("details.state = %q, want running", got)
+	}
+}
+
+func TestPatchTaskRejectsUnknownField(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	resp, body := h.doJSON(t, http.MethodPatch, fmt.Sprintf("/v1/tasks/%d", task.ID),
+		map[string]any{"title": "renamed"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("patch title: %d %s, want 400", resp.StatusCode, body)
+	}
+}
+
+// TestRetryOverrideValidatedAgainstStepType: sending the wrong override kind
+// is a client error, not a silently dropped field.
+func TestRetryOverrideValidatedAgainstStepType(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskBlocked)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/retry", task.ID),
+		map[string]any{"run_override": "echo hi"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("run_override on an agent step: %d %s, want 400", resp.StatusCode, body)
+	}
+	if got := decodeError(t, body).Code; got != CodeValidationFailed {
+		t.Errorf("code = %s, want %s", got, CodeValidationFailed)
+	}
+}
+
+func TestRetryWithoutBodySucceeds(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskBlocked)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/retry", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry: %d %s", resp.StatusCode, body)
+	}
+	if got := decodeTask(t, body); got.State != string(store.TaskQueued) {
+		t.Errorf("state = %s, want queued", got.State)
+	}
+}
+
+// TestArchiveDirtyWorktree covers the §13.2 addition: removal happens before
+// the transition, so a refusal leaves the task exactly as it was.
+func TestArchiveDirtyWorktree(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskDone)
+
+	stored, err := h.store.GetTask(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch)
+	if err != nil {
+		t.Fatalf("create worktree: %v", err)
+	}
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path); err != nil {
+		t.Fatalf("record worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "wip.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("dirty worktree: %v", err)
+	}
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/archive", task.ID), nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("archive dirty: %d %s, want 409", resp.StatusCode, body)
+	}
+	if got := decodeError(t, body).Details["reason"]; got != CodeWorktreeDirty {
+		t.Errorf("details.reason = %q, want %q", got, CodeWorktreeDirty)
+	}
+	if got, _ := h.store.GetTask(t.Context(), task.ID); got.State != store.TaskDone {
+		t.Errorf("state = %s after a refused archive, want done", got.State)
+	}
+
+	// force is accepted as a query parameter, matching DELETE /v1/projects.
+	resp, body = h.doJSON(t, http.MethodPost,
+		fmt.Sprintf("/v1/tasks/%d/archive?force", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive force: %d %s", resp.StatusCode, body)
+	}
+	if got := decodeTask(t, body); got.State != string(store.TaskArchived) {
+		t.Errorf("state = %s, want archived", got.State)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("worktree %s survived the archive", path)
+	}
+}
+
+func TestArchiveForceInBody(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskDone)
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/archive", task.ID),
+		map[string]any{"force": true})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive: %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestActionOnMissingTask(t *testing.T) {
+	h := newActionHarness(t)
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks/4242/cancel", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("cancel missing task: %d %s, want 404", resp.StatusCode, body)
+	}
+}
+
+// TestAnswerIsNotRouted pins the PR's scope boundary: /answer belongs to
+// T2.12, and shipping a stub would teach clients a status that disappears.
+func TestAnswerIsNotRouted(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	resp, _ := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/answer", task.ID), nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("answer endpoint: %d, want 404 until T2.12", resp.StatusCode)
+	}
+}
+
+func hasAction(actions []string, want string) bool {
+	for _, a := range actions {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
