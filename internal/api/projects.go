@@ -135,6 +135,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "create project", err)
 		return
 	}
+	s.projectsChanged()
 	writeJSON(w, http.StatusCreated, toProjectResponse(&p))
 }
 
@@ -239,7 +240,16 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "update project", err)
 		return
 	}
+	s.projectsChanged()
 	writeJSON(w, http.StatusOK, toProjectResponse(p))
+}
+
+// projectsChanged tells the workflow registry to follow the current set of
+// project scopes (§5.2). It is a no-op when no callback is wired.
+func (s *Server) projectsChanged() {
+	if s.deps.OnProjectsChanged != nil {
+		s.deps.OnProjectsChanged()
+	}
 }
 
 func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
@@ -287,6 +297,7 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "delete project", err)
 		return
 	}
+	s.projectsChanged()
 	w.WriteHeader(http.StatusNoContent)
 }
 
