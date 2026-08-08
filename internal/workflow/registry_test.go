@@ -3,6 +3,7 @@ package workflow
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -147,16 +148,65 @@ func TestRegistryDuplicateNameInScope(t *testing.T) {
 	writeWorkflow(t, globalDir, "b-second", manualWorkflow("dup", "second"))
 	reg.ReloadGlobal()
 
-	entry, ok := find(reg.List(0), "dup")
-	if !ok {
-		t.Fatal("duplicate name not listed at all")
+	// Files load in name order: a-first wins the name and stays runnable.
+	winner, ok := reg.Lookup(0, "dup")
+	if !ok || !winner.Valid() || winner.Workflow.Description != "first" {
+		t.Fatalf("Lookup(dup) = %+v, %v; want the first file's valid workflow", winner, ok)
 	}
-	// Files load in name order: a-first wins, b-second is reported.
-	if entry.Valid() {
-		t.Errorf("entry = %+v, want the second file to invalidate the name", entry)
+
+	// b-second is still listed under the same name, as an invalid entry
+	// carrying a duplicate error — visible without shadowing the winner.
+	var listedValid, listedDup bool
+	for _, e := range reg.List(0) {
+		if e.Name != "dup" {
+			continue
+		}
+		if e.Valid() {
+			listedValid = true
+			continue
+		}
+		listedDup = true
+		if len(e.Errors) == 0 || !strings.Contains(e.Errors[0].Message, "duplicate workflow name") {
+			t.Errorf("loser errors = %v, want a duplicate-name message", e.Errors)
+		}
+		if filepath.Base(e.File) != "b-second.yaml" {
+			t.Errorf("loser file = %q, want b-second.yaml", e.File)
+		}
 	}
-	if len(entry.Errors) == 0 || entry.Errors[0].Message == "" {
-		t.Errorf("errors = %v, want a duplicate-name message", entry.Errors)
+	if !listedValid || !listedDup {
+		t.Errorf("List = %+v, want both the valid winner and the duplicate loser", reg.List(0))
+	}
+}
+
+// TestRegistryDuplicateNameUnparsableFile covers a broken file whose fallback
+// name collides with a valid sibling: the valid workflow must stay lookupable
+// and runnable, with the broken file surfaced as its own error entry (§5.2).
+func TestRegistryDuplicateNameUnparsableFile(t *testing.T) {
+	reg, globalDir := newTestRegistry(t)
+	writeWorkflow(t, globalDir, "deploy", manualWorkflow("deploy", "good"))
+	broken := filepath.Join(globalDir, "deploy.yml")
+	if err := os.WriteFile(broken, []byte("\tthis: is: not: yaml\n  - [\n"), 0o600); err != nil {
+		t.Fatalf("write %s: %v", broken, err)
+	}
+	reg.ReloadGlobal()
+
+	got, ok := reg.Lookup(0, "deploy")
+	if !ok || !got.Valid() || got.Workflow.Description != "good" {
+		t.Fatalf("Lookup(deploy) = %+v, %v; want the valid workflow despite the broken sibling", got, ok)
+	}
+
+	var found bool
+	for _, e := range reg.List(0) {
+		if e.File != broken {
+			continue
+		}
+		found = true
+		if e.Valid() || len(e.Errors) == 0 {
+			t.Errorf("broken entry = %+v, want invalid with errors", e)
+		}
+	}
+	if !found {
+		t.Fatal("broken duplicate file is not listed; it must be visible with its errors")
 	}
 }
 
