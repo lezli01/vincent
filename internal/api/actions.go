@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -89,6 +90,48 @@ func (s *Server) handleTaskArchive(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// answerRequest is the §13.2 body of POST /v1/tasks/{id}/answer (§7.4).
+// Answer values accept a bare string or an array of strings, so
+// single-select answers need no array ceremony.
+type answerRequest struct {
+	Answers map[string]answerValues `json:"answers"`
+	Allow   *bool                   `json:"allow"`
+}
+
+// answerValues decodes a string or an array of strings.
+type answerValues []string
+
+func (v *answerValues) UnmarshalJSON(b []byte) error {
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*v = []string{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return errors.New("answer values must be a string or an array of strings")
+	}
+	*v = many
+	return nil
+}
+
+func (s *Server) handleTaskAnswer(w http.ResponseWriter, r *http.Request) {
+	var req answerRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	in := taskrun.AnswerInput{Allow: req.Allow}
+	if req.Answers != nil {
+		in.Answers = make(map[string][]string, len(req.Answers))
+		for text, vals := range req.Answers {
+			in.Answers[text] = vals
+		}
+	}
+	s.runAction(w, r, func(id int64) (*store.Task, error) {
+		return s.deps.Runner.Answer(r.Context(), id, in)
+	})
+}
+
 // patchTaskRequest is the §13.2 body of PATCH /v1/tasks/{id}. Priority is
 // the only mutable field in v1.
 type patchTaskRequest struct {
@@ -151,6 +194,12 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 		e, _ := taskrun.AsOverrideMismatch(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
 
+	// A structurally mismatched answer is untranslatable to the live agent
+	// session; the request never reaches the task (§7.4, §13.2).
+	case isAnswerValidation(err):
+		e, _ := taskrun.AsAnswerValidation(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
 	// Archive removes the worktree before transitioning, so a refusal here
 	// means the task is untouched — `worktree_dirty` is the one a client
 	// resolves by re-sending with force (§13.2).
@@ -175,5 +224,10 @@ func isStateConflict(err error) bool {
 
 func isOverrideMismatch(err error) bool {
 	_, ok := taskrun.AsOverrideMismatch(err)
+	return ok
+}
+
+func isAnswerValidation(err error) bool {
+	_, ok := taskrun.AsAnswerValidation(err)
 	return ok
 }
