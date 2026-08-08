@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lezli01/vincent/internal/tui"
 	"github.com/lezli01/vincent/internal/version"
 )
 
@@ -32,8 +33,9 @@ func newRootCmd() *cobra.Command {
 		Short:        "vincent — local AI workload orchestrator",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "The vincent TUI is not implemented yet (Phase 3). Try `vincent version`.")
-			return err
+			// Bare `vincent` is the TUI (§12.1); it auto-starts the daemon
+			// in the background when unreachable.
+			return tui.Run(cmd.Context())
 		},
 	}
 	root.AddCommand(newDaemonCmd(), newVersionCmd())

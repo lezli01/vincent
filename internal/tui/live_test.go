@@ -1,0 +1,117 @@
+package tui
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lezli01/vincent/internal/api"
+	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/store"
+)
+
+// TestLiveChangeFromRealServer is the T3.1 done-when in automated form: the
+// shell, connected to the real handlers, re-renders when the daemon commits
+// a state change the TUI didn't make.
+func TestLiveChangeFromRealServer(t *testing.T) {
+	const token = "live-token"
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	broker := events.New()
+	t.Cleanup(broker.Close)
+	st.SetEventHook(broker.Publish)
+
+	ctx := context.Background()
+	p := &store.Project{Name: "live", Path: "/nowhere", DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	task := &store.Task{
+		ProjectID: p.ID, Title: "t", WorkflowName: "adhoc", WorkflowSnapshot: "x",
+		BaseBranch: "main", BranchName: "b", State: store.TaskQueued,
+	}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	s := api.New(api.Deps{
+		Token:       token,
+		Config:      config.Default,
+		StartedAt:   time.Now(),
+		ListenAddr:  "127.0.0.1:0",
+		RequestStop: func() {},
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Store:       st,
+		Broker:      broker,
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatalf("parse test server url: %v", err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("test server port: %v", err)
+	}
+
+	// Real health check and real client against the real server; only the
+	// on-disk discovery is faked.
+	cn := connector{
+		resolveDataDir: func() (string, error) { return t.TempDir(), nil },
+		readRuntime: func(string) (daemon.RuntimeInfo, error) {
+			return daemon.RuntimeInfo{PID: 1, Port: port, StartedAt: time.Now()}, nil
+		},
+		checkHealth: daemon.CheckHealth,
+		newClient: func(string) (*apiclient.Client, error) {
+			return apiclient.New(ts.URL, token), nil
+		},
+		startDetached: func() (int, error) { t.Fatal("auto-start must not trigger"); return 0, nil },
+		startTimeout:  time.Second,
+		pollInterval:  time.Millisecond,
+	}
+
+	m := newRoot(testCtx(t), cn)
+	msg := runCmd(t, m.Init(), 10*time.Second)
+	if _, ok := msg.(connectedMsg); !ok {
+		t.Fatalf("probe = %T, want connectedMsg", msg)
+	}
+	_, cmd := m.Update(msg)
+
+	// First note announces the live stream.
+	msg = runCmd(t, cmd, 10*time.Second)
+	_, cmd = m.Update(msg)
+	if m.phase != phaseConnected {
+		t.Fatalf("phase = %v, want phaseConnected", m.phase)
+	}
+
+	// The externally-made change: another client appends a durable event
+	// through the store hook, exactly like the runner would.
+	ev := &store.Event{Type: store.EventTaskStateChanged, TaskID: &task.ID, ProjectID: &p.ID}
+	if err := st.AppendEvent(ctx, ev); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	deadline := time.Now().Add(15 * time.Second)
+	for !strings.Contains(content(m), store.EventTaskStateChanged) {
+		if time.Now().After(deadline) {
+			t.Fatalf("event never rendered; view: %q", content(m))
+		}
+		msg = runCmd(t, cmd, 10*time.Second)
+		_, cmd = m.Update(msg)
+	}
+}
