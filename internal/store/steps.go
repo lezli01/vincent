@@ -12,7 +12,7 @@ import (
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
 	proc_started_at, exit_code, check_exit_code, failure_reason, result_summary,
 	prompt_override, run_override, transcript_path,
-	input_tokens, output_tokens, cost_usd, started_at, finished_at`
+	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
 
 // TerminalizeOpenStepRuns closes every still-running step run of a task,
 // recording state and reason. It exists for the human actions that end a
@@ -85,14 +85,15 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
 			proc_started_at, exit_code, check_exit_code, failure_reason, result_summary,
 			prompt_override, run_override, transcript_path,
-			input_tokens, output_tokens, cost_usd, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
-		r.InputTokens, r.OutputTokens, r.CostUSD, formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
+		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
+		formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
 	if err != nil {
 		return fmt.Errorf("insert step run: %w", err)
 	}
@@ -111,13 +112,13 @@ func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
 			exit_code = ?, check_exit_code = ?, failure_reason = ?, result_summary = ?,
 			prompt_override = ?, run_override = ?, transcript_path = ?,
-			input_tokens = ?, output_tokens = ?, cost_usd = ?, finished_at = ?
+			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?
 		WHERE id = ?`,
 		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt),
 		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
-		r.InputTokens, r.OutputTokens, r.CostUSD, formatTimePtr(r.FinishedAt),
+		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS, formatTimePtr(r.FinishedAt),
 		r.ID)
 	if err != nil {
 		return fmt.Errorf("update step run %d: %w", r.ID, err)
@@ -218,7 +219,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &exitCode, &checkExit,
 		&failure, &summary, &promptOv, &runOv, &transcript,
-		&inTok, &outTok, &cost, &started, &finished); err != nil {
+		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
 		return nil, err
 	}
 	r.Agent = agent.String

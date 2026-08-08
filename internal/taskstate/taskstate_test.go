@@ -8,7 +8,7 @@ import (
 // allActions is every action the table may contain, human and engine.
 var allActions = []Action{
 	Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive,
-	Admit, Gate, RequestInput, Complete, Fail, Interrupt, Park,
+	Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
 }
 
 // wantTransitions is the §6 transition table restated independently of the
@@ -37,10 +37,11 @@ var wantTransitions = map[State]map[Action]State{
 		Reject:  Blocked,
 	},
 	AwaitingInput: {
-		Cancel:    Aborted,
-		Answer:    Running,
-		Fail:      Blocked,
-		Interrupt: Queued,
+		Cancel:      Aborted,
+		Answer:      Running,
+		Fail:        Blocked,
+		Interrupt:   Queued,
+		InputClosed: Running, // unanswered wait, retries remaining (§7.4)
 	},
 	Blocked: {
 		Cancel: Aborted,
@@ -167,7 +168,7 @@ func TestHumanActionsFrom(t *testing.T) {
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
 	human := []Action{Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive}
-	engine := []Action{Admit, Gate, RequestInput, Complete, Fail, Interrupt, Park}
+	engine := []Action{Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park}
 	for _, a := range human {
 		if !Human(a) {
 			t.Errorf("Human(%s) = false", a)

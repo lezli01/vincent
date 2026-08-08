@@ -25,9 +25,12 @@ listen: 127.0.0.1:0
 max_parallel_tasks: 3
 
 # Fallback step timeouts, used when a workflow step declares none.
+# input_timeout bounds each wait for an answer to an agent's input request
+# (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
+  input_timeout: 24h
 
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
