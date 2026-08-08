@@ -75,7 +75,7 @@ func (r *Runner) runAgentStep(
 	}
 	res, waitErr := handle.Wait()
 
-	outcome := classifyAgent(ctx, runCtx, &res, waitErr)
+	outcome := classifyAgent(ctx, runCtx, r.canceling(env.task.ID), &res, waitErr)
 	outcome.exitCode = &res.ExitCode
 	outcome.result = res.ResultText
 	if outcome.result == "" {
@@ -90,13 +90,18 @@ func (r *Runner) runAgentStep(
 }
 
 // classifyAgent maps a finished agent run to its attempt state and reason:
-// §7.1 requires exit 0 and a non-error terminal result.
-func classifyAgent(daemonCtx, runCtx context.Context, res *agent.RunResult, waitErr error) stepOutcome {
+// §7.1 requires exit 0 and a non-error terminal result. canceling marks a
+// human cancel in progress — its Terminate reaches the process before the
+// run context is canceled (§6's grace), so an abrupt exit during a cancel is
+// an interruption, not a failure to retry.
+func classifyAgent(daemonCtx, runCtx context.Context, canceling bool, res *agent.RunResult, waitErr error) stepOutcome {
 	switch {
 	case daemonCtx.Err() != nil:
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		return stepOutcome{state: store.StepFailed, reason: ReasonTimeout}
+	case canceling && (waitErr != nil || res.ExitCode != 0 || res.IsError):
+		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	case res.ExitCode != 0:
@@ -241,6 +246,15 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 			tail.add(line)
 			mu.Unlock()
 		}
+		if err := scanner.Err(); err != nil {
+			// A single line past the buffer cap stops the scanner but not the
+			// process. Keep draining the pipe: left full, it would block the
+			// child until the timeout kill and misreport the attempt.
+			tr.Note("error", map[string]any{
+				"error": "output capture stopped for " + name + ": " + err.Error(),
+			})
+			_, _ = io.Copy(io.Discard, rd)
+		}
 	}
 	wg.Add(2)
 	go stream(stdout, "stdout")
@@ -255,6 +269,11 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		outcome.state, outcome.reason = store.StepFailed, ReasonTimeout
+	case exitCode != 0 && r.canceling(env.task.ID):
+		// A cancel's Terminate reaches the process before the run context is
+		// canceled (§6's grace) — an abrupt exit during a cancel is an
+		// interruption, not a failure to retry.
+		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted
 	case exitCode != 0:
 		outcome.state, outcome.reason = store.StepFailed, ReasonNonzeroExit
 	default:

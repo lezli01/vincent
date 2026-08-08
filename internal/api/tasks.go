@@ -261,8 +261,10 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	// The branch name embeds the task id (§5.3), so it is written right
 	// after the insert; the runner recomputes it if a crash lands between.
+	// The write is branch-name only: the scheduler may have admitted the
+	// task already, and a full-row update would stomp its state.
 	t.BranchName = worktree.BranchName(t.ID, t.Title)
-	if err := s.deps.Store.UpdateTask(ctx, &t); err != nil {
+	if err := s.deps.Store.SetTaskBranchName(ctx, t.ID, t.BranchName); err != nil {
 		s.internalError(w, "assign branch name", err)
 		return
 	}
