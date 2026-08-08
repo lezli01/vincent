@@ -301,6 +301,12 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "delete project", err)
 		return
 	}
+	// The cascade is the only path that deletes task rows, so it is the only
+	// place the snapshot cache can be left holding entries for tasks that no
+	// longer exist.
+	for i := range tasks {
+		s.snaps.forget(tasks[i].ID)
+	}
 	s.projectsChanged()
 	w.WriteHeader(http.StatusNoContent)
 }

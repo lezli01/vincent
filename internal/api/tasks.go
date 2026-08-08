@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -142,6 +143,27 @@ type stepRunResponse struct {
 	InputWaitMS int64   `json:"input_wait_ms"`
 	StartedAt   string  `json:"started_at"`
 	FinishedAt  *string `json:"finished_at"`
+}
+
+// listTaskResponse is one row of GET /v1/tasks: the task plus the derived
+// columns a board renders (§15). They live here rather than on taskResponse
+// because the detail endpoint already serves the same numbers per attempt in
+// steps[], and a rollup there would be a second, redundant answer.
+type listTaskResponse struct {
+	taskResponse
+	// ProjectName saves every client the projects join.
+	ProjectName string `json:"project_name"`
+	// StepTotal is the snapshot's step count — the n in k/n. Zero when the
+	// snapshot could not be parsed.
+	StepTotal int `json:"step_total"`
+	// StepName is the current step's name (or id), empty for a task whose
+	// cursor has run past the last step.
+	StepName string `json:"step_name"`
+	// CostUSD sums every attempt (§17); null when no attempt reported a
+	// cost, which is not the same as free.
+	CostUSD      *float64 `json:"cost_usd"`
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
 }
 
 func toStepRunResponse(r *store.StepRun) stepRunResponse {
@@ -356,16 +378,73 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.ProjectID = id
 	}
-	tasks, err := s.deps.Store.ListTasks(r.Context(), filter)
+	switch v := q.Get("archived"); v {
+	case "", "false":
+		filter.Archived = store.ArchivedExclude
+	case "true":
+		filter.Archived = store.ArchivedOnly
+	case "all":
+		filter.Archived = store.ArchivedAll
+	default:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"archived must be one of: false, true, all")
+		return
+	}
+	ctx := r.Context()
+	tasks, err := s.deps.Store.ListTasks(ctx, filter)
 	if err != nil {
 		s.internalError(w, "list tasks", err)
 		return
 	}
-	out := make([]taskResponse, 0, len(tasks))
-	for i := range tasks {
-		out = append(out, toTaskResponse(&tasks[i]))
+	out, err := s.toListResponse(ctx, tasks)
+	if err != nil {
+		s.internalError(w, "list tasks", err)
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// toListResponse decorates tasks with the board columns: project names, the
+// snapshot's step count and current step name, and the cost/token rollups.
+// Three queries total regardless of task count — the point of the endpoint
+// is that a board never has to fan out per row.
+func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]listTaskResponse, error) {
+	ids := make([]int64, 0, len(tasks))
+	for i := range tasks {
+		ids = append(ids, tasks[i].ID)
+	}
+	rollups, err := s.deps.Store.TaskRollups(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := s.deps.Store.ListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[int64]string, len(projects))
+	for i := range projects {
+		names[projects[i].ID] = projects[i].Name
+	}
+
+	out := make([]listTaskResponse, 0, len(tasks))
+	for i := range tasks {
+		t := &tasks[i]
+		summary := s.snaps.get(t.ID, t.WorkflowSnapshot)
+		row := listTaskResponse{
+			taskResponse: toTaskResponse(t),
+			ProjectName:  names[t.ProjectID],
+			StepTotal:    summary.stepTotal,
+			StepName:     summary.stepName(t.CurrentStep),
+			InputTokens:  rollups[t.ID].InputTokens,
+			OutputTokens: rollups[t.ID].OutputTokens,
+		}
+		if ru := rollups[t.ID]; ru.HasCost {
+			cost := ru.CostUSD
+			row.CostUSD = &cost
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
 func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
