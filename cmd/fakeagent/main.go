@@ -9,18 +9,30 @@
 // environment-driven so argv stays true to the real CLIs:
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
-//	                      hang | big-usage | sleep (internal: silent child)
+//	                      hang | big-usage | ask-question | ask-permission |
+//	                      bad-input-request | sleep (internal: silent child)
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style
 //	                      (run dialect is argv-driven; this only affects the
 //	                      version probe, which carries no dialect hint)
+//	FAKEAGENT_VERSION     claude dialect: version number --version reports
+//	                      (default 2.1.224) — lets tests drive the §7.4
+//	                      supports_input version gate
 //	FAKEAGENT_EDIT_FILE   success: append a line to this worktree-relative
 //	                      tracked file, so gate runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
+//	FAKEAGENT_ASK_MULTI   ask-question: add a second, multi-select question
+//
+// With --input-format stream-json on argv the prompt is read as one
+// {"type":"user",…} JSONL line (stdin stays open), mirroring the real CLI's
+// input mode (spec §9.2); otherwise the prompt is stdin-until-EOF as before.
+// The ask-* scenarios emit control_request lines in the captured 2.1.226
+// shape and block reading stdin until the matching control_response arrives.
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,8 +43,8 @@ import (
 )
 
 const (
-	version      = "2.1.224 (Claude Code fake)"
-	codexVersion = "codex-cli 0.142.5 (fake)"
+	defaultVersion = "2.1.224"
+	codexVersion   = "codex-cli 0.142.5 (fake)"
 )
 
 const helpText = `Usage: fakeagent [options] [prompt]
@@ -64,7 +76,11 @@ func main() {
 			if os.Getenv("FAKEAGENT_DIALECT") == "codex" {
 				fmt.Println(codexVersion)
 			} else {
-				fmt.Println(version)
+				v := os.Getenv("FAKEAGENT_VERSION")
+				if v == "" {
+					v = defaultVersion
+				}
+				fmt.Printf("%s (Claude Code fake)\n", v)
 			}
 			return
 		case "--help", "-h":
@@ -86,10 +102,21 @@ func main() {
 		return
 	}
 
-	prompt, _ := io.ReadAll(os.Stdin)
+	prompt, stdin := readPrompt(hasFlag("--input-format"))
 
 	emit(map[string]any{"type": "system", "subtype": "init", "model": "fake-1"})
 	switch scenario {
+	case "ask-question":
+		askQuestion(prompt, stdin)
+	case "ask-permission":
+		askPermission(prompt, stdin)
+	case "bad-input-request":
+		emitText("about to violate the control protocol")
+		emit(map[string]any{
+			"type": "control_request", "request_id": "fake-bad-1",
+			"request": map[string]any{"subtype": "definitely_not_can_use_tool"},
+		})
+		block() // the engine must kill us — never answer, never exit
 	case "error-event":
 		emitText("something went wrong, giving up")
 		emit(map[string]any{
@@ -121,6 +148,149 @@ func main() {
 		}
 		emitSuccessResult(prompt, 100, 42)
 	}
+}
+
+// hasFlag reports whether an argv element equals the flag.
+func hasFlag(flag string) bool {
+	for _, a := range os.Args[1:] {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// readPrompt reads the prompt: stdin-until-EOF normally, or one
+// {"type":"user",…} JSONL line in input mode, returning the still-open
+// reader for control traffic.
+func readPrompt(inputMode bool) ([]byte, *bufio.Reader) {
+	if !inputMode {
+		prompt, _ := io.ReadAll(os.Stdin)
+		return prompt, nil
+	}
+	rd := bufio.NewReader(os.Stdin)
+	line, _ := rd.ReadString('\n')
+	var msg struct {
+		Message struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(line), &msg); err != nil {
+		return []byte(line), rd
+	}
+	var texts []string
+	for _, c := range msg.Message.Content {
+		texts = append(texts, c.Text)
+	}
+	return []byte(strings.Join(texts, "\n")), rd
+}
+
+// controlResponse is the inbound answer shape (captured from 2.1.226).
+type controlResponse struct {
+	Type     string `json:"type"`
+	Response struct {
+		Subtype   string `json:"subtype"`
+		RequestID string `json:"request_id"`
+		Response  struct {
+			Behavior     string         `json:"behavior"`
+			Message      string         `json:"message"`
+			UpdatedInput map[string]any `json:"updatedInput"`
+		} `json:"response"`
+	} `json:"response"`
+}
+
+// awaitControlResponse blocks reading stdin lines until the control_response
+// for requestID arrives. Returns false when stdin closes first (the run was
+// killed or abandoned).
+func awaitControlResponse(rd *bufio.Reader, requestID string) (controlResponse, bool) {
+	if rd == nil { // no input mode, nothing will ever arrive
+		block()
+	}
+	for {
+		line, err := rd.ReadString('\n')
+		if line != "" {
+			var resp controlResponse
+			if json.Unmarshal([]byte(line), &resp) == nil &&
+				resp.Type == "control_response" && resp.Response.RequestID == requestID {
+				return resp, true
+			}
+		}
+		if err != nil {
+			return controlResponse{}, false
+		}
+	}
+}
+
+// askQuestion emits an AskUserQuestion control_request in the captured shape
+// and blocks until answered; the answers round-trip into the result text.
+func askQuestion(prompt []byte, rd *bufio.Reader) {
+	questions := []any{map[string]any{
+		"question": "Which color do you prefer?",
+		"header":   "Color",
+		"options": []any{
+			map[string]any{"label": "Red", "description": "The color red"},
+			map[string]any{"label": "Blue", "description": "The color blue"},
+		},
+		"multiSelect": false,
+	}}
+	if os.Getenv("FAKEAGENT_ASK_MULTI") == "1" {
+		questions = append(questions, map[string]any{
+			"question": "Which toppings?",
+			"header":   "Toppings",
+			"options": []any{
+				map[string]any{"label": "Cheese", "description": ""},
+				map[string]any{"label": "Basil", "description": ""},
+			},
+			"multiSelect": true,
+		})
+	}
+	emit(map[string]any{"type": "assistant", "message": map[string]any{
+		"content": []any{map[string]any{"type": "tool_use", "name": "AskUserQuestion", "input": map[string]any{}}},
+	}})
+	emit(map[string]any{
+		"type": "control_request", "request_id": "fake-req-1",
+		"request": map[string]any{
+			"subtype":   "can_use_tool",
+			"tool_name": "AskUserQuestion",
+			"input":     map[string]any{"questions": questions},
+		},
+	})
+	resp, ok := awaitControlResponse(rd, "fake-req-1")
+	if !ok {
+		os.Exit(1)
+	}
+	answered, _ := json.Marshal(map[string]any{
+		"answers":  resp.Response.Response.UpdatedInput["answers"],
+		"response": resp.Response.Response.UpdatedInput["response"],
+	})
+	emitText("question answered: " + string(answered))
+	emitSuccessResult([]byte(string(prompt)+" | "+string(answered)), 100, 42)
+}
+
+// askPermission emits a Write permission control_request in the captured
+// shape and blocks until allowed or denied.
+func askPermission(prompt []byte, rd *bufio.Reader) {
+	emit(map[string]any{
+		"type": "control_request", "request_id": "fake-req-2",
+		"request": map[string]any{
+			"subtype":     "can_use_tool",
+			"tool_name":   "Write",
+			"description": "hello.txt",
+			"input":       map[string]any{"file_path": "hello.txt", "content": "hi"},
+		},
+	})
+	resp, ok := awaitControlResponse(rd, "fake-req-2")
+	if !ok {
+		os.Exit(1)
+	}
+	verdict := resp.Response.Response.Behavior
+	if verdict == "deny" {
+		verdict += ": " + resp.Response.Response.Message
+	}
+	emitText("permission " + verdict)
+	emitSuccessResult([]byte(string(prompt)+" | "+verdict), 100, 42)
 }
 
 func emit(v map[string]any) {
