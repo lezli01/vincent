@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+// Durable event types written outside the engine and the transition path
+// (spec §13.3). An archive is visible as task.state_changed with
+// `to: archived`; there is no separate task.archived type (PR D decision).
+const (
+	EventTaskCreated             = "task.created"
+	EventProjectCreated          = "project.created"
+	EventProjectUpdated          = "project.updated"
+	EventProjectDeleted          = "project.deleted"
+	EventWorkflowRegistryChanged = "workflow.registry_changed"
+	EventDaemonShuttingDown      = "daemon.shutting_down"
+)
+
 // SetEventHook registers fn to run after an event's transaction commits.
 // It is the daemon's single notification seam: the scheduler wakes from it
 // (spec §11) and T2.7's SSE broker will publish from it, which is why it
@@ -54,6 +66,7 @@ type EventFilter struct {
 	AfterID   int64    // only events with id > AfterID (SSE resume cursor)
 	Types     []string // empty = all types
 	ProjectID int64    // 0 = all projects
+	TaskID    int64    // 0 = all tasks (the per-task stream's resume query)
 	Limit     int      // 0 = unlimited
 }
 
@@ -71,6 +84,10 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	if f.ProjectID != 0 {
 		q += ` AND project_id = ?`
 		args = append(args, f.ProjectID)
+	}
+	if f.TaskID != 0 {
+		q += ` AND task_id = ?`
+		args = append(args, f.TaskID)
 	}
 	q += ` ORDER BY id ASC`
 	if f.Limit > 0 {

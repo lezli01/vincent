@@ -42,7 +42,7 @@ func TestTransitionTaskWritesStateAndEventTogether(t *testing.T) {
 	}
 
 	// The event is in the table, readable by an SSE catch-up query.
-	events, err := s.ListEvents(ctx, EventFilter{})
+	events, err := s.ListEvents(ctx, EventFilter{Types: []string{EventTaskStateChanged}})
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestTransitionTaskConflictLeavesNothingBehind(t *testing.T) {
 	}
 
 	// A failed transition writes no event: the rollback covers both writes.
-	events, err := s.ListEvents(ctx, EventFilter{})
+	events, err := s.ListEvents(ctx, EventFilter{Types: []string{EventTaskStateChanged}})
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
