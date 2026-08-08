@@ -55,6 +55,16 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 		go func() {
 			defer r.wg.Done()
 			lr.stop(cancelGrace, log)
+			// The actor is unwinding now; once it is gone, close anything it
+			// could not — a row it lost at a transition boundary would
+			// otherwise stay open until the startup sweep.
+			<-lr.done
+			if n, err := r.deps.Store.TerminalizeOpenStepRuns(r.persistCtx(), id,
+				store.StepInterrupted, ReasonCanceled); err != nil {
+				log.Error("cancel: close open step runs", "error", err)
+			} else if n > 0 {
+				log.Info("cancel: closed step runs the actor left open", "rows", n)
+			}
 		}()
 		return task, nil
 	}
@@ -145,7 +155,12 @@ func (r *Runner) Skip(ctx context.Context, id int64) (*store.Task, error) {
 	if err := r.recordStepDecision(ctx, task, store.StepSkipped, ""); err != nil {
 		return nil, err
 	}
-	return r.transitionFrom(ctx, task, taskstate.Skip, advance(task))
+	// Skipping moves past the step an edit+retry was aimed at; a surviving
+	// override must not drain onto some later step's attempt.
+	ch := advance(task)
+	var noOverride store.Override
+	ch.PendingOverride = &noOverride
+	return r.transitionFrom(ctx, task, taskstate.Skip, ch)
 }
 
 // Approve passes a manual gate and advances to the next step (§6).
@@ -276,6 +291,12 @@ func (r *Runner) recordStepDecision(
 		return err
 	}
 	if n > 0 {
+		return nil
+	}
+	if task.State != store.TaskBlocked {
+		// From a gate the decision closes the actor's open row; zero rows
+		// means a concurrent action beat this one to it. Writing a fresh row
+		// here would record a decision that is about to lose its CAS.
 		return nil
 	}
 	attempts, err := r.deps.Store.CountStepAttempts(ctx, task.ID, task.CurrentStep, time.Time{})

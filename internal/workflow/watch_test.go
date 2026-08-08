@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // waitFor polls cond until it holds or the deadline passes. Reloads are
@@ -140,5 +142,79 @@ func TestWatchIgnoresNonYAML(t *testing.T) {
 	case <-reloads:
 		t.Error("a non-YAML file triggered a registry reload")
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestWatchAncestorIgnoresUnrelatedChurn proves repo-root churn does not
+// reload a scope watched at an ancestor: only the path leading to the
+// workflows directory matters.
+func TestWatchAncestorIgnoresUnrelatedChurn(t *testing.T) {
+	reg, _ := newTestRegistry(t)
+	repo := t.TempDir()
+	reg.SetProjects(map[int64]string{4: repo})
+
+	reloads := make(chan struct{}, 16)
+	reg.OnChange(func() { reloads <- struct{}{} })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := reg.Watch(ctx); err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "notes.txt"), []byte("junk"), 0o600); err != nil {
+		t.Fatalf("write unrelated file: %v", err)
+	}
+	select {
+	case <-reloads:
+		t.Error("unrelated churn in a watched ancestor triggered a registry reload")
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestWatchClassifySelfEvent covers the watched directory itself being
+// removed or renamed (`mv workflows workflows.old`): the event's Name is the
+// watch path, not a child of it, and must still resync + reload the scope.
+// Exercised directly because dir self-event delivery differs per OS.
+func TestWatchClassifySelfEvent(t *testing.T) {
+	reg, globalDir := newTestRegistry(t)
+	wt := &watcher{reg: reg, watched: map[string]scopeRef{globalDir: {scope: ScopeGlobal}}}
+
+	ref, ok := wt.classify(fsnotify.Event{Name: globalDir, Op: fsnotify.Rename})
+	if !ok || ref.scope != ScopeGlobal {
+		t.Errorf("classify(rename of watched dir) = %+v, %v; want the global scope, true", ref, ok)
+	}
+	if _, ok := wt.classify(fsnotify.Event{Name: globalDir, Op: fsnotify.Chmod}); ok {
+		t.Error("classify(chmod of watched dir) = interesting, want chmod noise ignored")
+	}
+}
+
+// TestWatchClassifyAncestorEvents pins which ancestor-watch events matter:
+// only path components on the way to the workflows directory.
+func TestWatchClassifyAncestorEvents(t *testing.T) {
+	reg, _ := newTestRegistry(t)
+	repo := t.TempDir()
+	reg.SetProjects(map[int64]string{3: repo})
+	ref := scopeRef{scope: ScopeProject, projectID: 3}
+	wt := &watcher{reg: reg, watched: map[string]scopeRef{repo: ref}}
+
+	tests := []struct {
+		name        string
+		ev          string
+		interesting bool
+	}{
+		{"component toward the workflows dir", filepath.Join(repo, ".vincent"), true},
+		{"unrelated file", filepath.Join(repo, "README.md"), false},
+		{"unrelated directory", filepath.Join(repo, "build"), false},
+		{"unrelated yaml outside the workflows dir", filepath.Join(repo, "config.yaml"), false},
+	}
+	for _, tt := range tests {
+		got, ok := wt.classify(fsnotify.Event{Name: tt.ev, Op: fsnotify.Create})
+		if ok != tt.interesting {
+			t.Errorf("%s: classify(%s) = %v, want %v", tt.name, tt.ev, ok, tt.interesting)
+		}
+		if ok && got != ref {
+			t.Errorf("%s: classify(%s) ref = %+v, want %+v", tt.name, tt.ev, got, ref)
+		}
 	}
 }

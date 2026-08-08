@@ -130,10 +130,10 @@ func AppendFailureBlock(prompt string, attempt int, failure Failure) string {
 	fmt.Fprintf(&sb, "reason: %s\n", failure.Reason)
 	if failure.Output != "" {
 		fmt.Fprintf(&sb, "--- output (last %d lines) ---\n", failureOutputLines)
+		// lastLines never carries a trailing newline, so add exactly one to
+		// keep the closing tag on its own line.
 		sb.WriteString(lastLines(failure.Output, failureOutputLines))
-		if !strings.HasSuffix(failure.Output, "\n") {
-			sb.WriteString("\n")
-		}
+		sb.WriteString("\n")
 	}
 	sb.WriteString("</previous-attempt-failure>\n")
 	return sb.String()

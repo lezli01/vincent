@@ -91,7 +91,10 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 	}
 
 	for index := task.CurrentStep; index < len(wf.Steps); index++ {
-		if ctx.Err() != nil {
+		// A cancel sets the flag before it terminates the process, and the run
+		// context is only canceled after the §6 grace — the flag is what stops
+		// the actor from starting new work for a task that is already aborted.
+		if ctx.Err() != nil || r.canceling(task.ID) {
 			r.interrupt(task, log)
 			return
 		}
@@ -159,14 +162,20 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 
 // runStepWithRetries runs one step until it succeeds, is interrupted, or
 // exhausts its retry budget (§7.2). Interrupted attempts consume no retry.
+// The budget counts failures since the task's retry cursor — a human retry
+// stamps it, granting the fresh budget §6 promises.
 func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutcome {
 	maxRetries := resolveMaxRetries(env.step, env.wf.Defaults)
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, time.Time{})
+	var since time.Time
+	if env.task.RetryCursorAt != nil {
+		since = *env.task.RetryCursorAt
+	}
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, since)
 	if err != nil {
 		env.log.Error("count step attempts", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
-	var last stepOutcome
+	last := r.previousFailure(ctx, env, attempts.Last)
 	for {
 		attempts.Last++
 		last = r.runAttempt(ctx, env, attempts.Last, last)
@@ -179,12 +188,38 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 				"reason", last.reason, "attempts", attempts.Last, "max_retries", maxRetries)
 			return last
 		}
+		// A cancel or shutdown that lands between attempts must not spawn
+		// another process for a task that is already ending; the attempt that
+		// just failed did so on its own and keeps its row.
+		if ctx.Err() != nil || r.canceling(env.task.ID) {
+			return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
+		}
 		env.log.Info("retrying step", "reason", last.reason, "next_attempt", attempts.Last+1)
 		r.emit(env.task, eventStepRetrying, map[string]any{
 			"step_id": env.step.ID, "step_index": env.index,
 			"attempt": attempts.Last, "reason": last.reason,
 		})
 	}
+}
+
+// previousFailure reconstructs `.LastFailure` for the first attempt of an
+// admission that resumes a step with failed history — the human-retry path,
+// where §8.4's failure block matters most. Within an admission the loop
+// carries the outcome in memory; across admissions the row is what survives,
+// so the block draws on its failure reason and result summary.
+func (r *Runner) previousFailure(ctx context.Context, env *stepEnv, lastAttempt int) stepOutcome {
+	if lastAttempt == 0 {
+		return stepOutcome{}
+	}
+	prev, err := r.deps.Store.LastFailedStepRun(ctx, env.task.ID, env.index)
+	if err != nil {
+		env.log.Warn("previous failure unavailable for retry context", "error", err)
+		return stepOutcome{}
+	}
+	if prev == nil {
+		return stepOutcome{}
+	}
+	return stepOutcome{state: store.StepFailed, reason: prev.FailureReason, output: prev.ResultSummary}
 }
 
 // runAttempt runs a single attempt end to end: render, execute, check,
@@ -220,16 +255,11 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	run.TranscriptPath = tr.Path()
 
 	// An `edit + retry` left its text on the task, because the handler ran
-	// while the task was blocked and this row did not exist yet (§6). Taking
-	// it clears it, so it marks the attempt the human edited and not the
-	// automatic retries that may follow.
-	if ov, err := r.deps.Store.TakePendingOverride(r.persistCtx(), env.task.ID); err != nil {
-		env.log.Warn("read pending override", "error", err)
-	} else if !ov.Empty() {
-		run.PromptOverride, run.RunOverride = ov.Prompt, ov.Run
-	}
-
-	if err := r.deps.Store.CreateStepRun(r.persistCtx(), run); err != nil {
+	// while the task was blocked and this row did not exist yet (§6). The
+	// insert drains it in the same transaction — it marks the attempt the
+	// human edited, not the automatic retries that may follow, and a crash
+	// cannot clear it without recording it.
+	if err := r.deps.Store.CreateStepRunTakingOverride(r.persistCtx(), run); err != nil {
 		env.log.Error("create step run", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
@@ -378,8 +408,9 @@ func (r *Runner) fail(task *store.Task, reason string, log *slog.Logger, what st
 	if err != nil {
 		log.Error(what, "error", err, "reason", reason)
 	}
-	r.transition(task, taskstate.Fail, store.TaskChange{BlockReason: &reason}, log)
-	log.Warn("task blocked", "reason", reason)
+	if r.transition(task, taskstate.Fail, store.TaskChange{BlockReason: &reason}, log) {
+		log.Warn("task blocked", "reason", reason)
+	}
 }
 
 // interrupt re-queues a task whose step was cut short by shutdown or crash:
@@ -391,9 +422,11 @@ func (r *Runner) interrupt(task *store.Task, log *slog.Logger) {
 }
 
 // park completes a pause requested while the task was running: §6 lets the
-// current step finish first.
+// current step finish first. The persisted flag has served its purpose and
+// clears with the transition — `paused` itself is the durable fact now.
 func (r *Runner) park(task *store.Task, log *slog.Logger) {
-	if r.transition(task, taskstate.Park, store.TaskChange{}, log) {
+	noPause := false
+	if r.transition(task, taskstate.Park, store.TaskChange{PauseRequested: &noPause}, log) {
 		log.Info("task paused at a step boundary")
 	}
 }

@@ -117,9 +117,6 @@ func (s *Scheduler) admit(ctx context.Context) {
 		s.deps.Logger.Error("admission: count slot holders", "error", err)
 		return
 	}
-	if global >= limit {
-		return
-	}
 	candidates, err := s.deps.Store.ListAdmissible(ctx)
 	if err != nil {
 		s.deps.Logger.Error("admission: list admissible", "error", err)
@@ -130,7 +127,7 @@ func (s *Scheduler) admit(ctx context.Context) {
 	// rows carry the counts as of the query, which predate them.
 	admitted := map[int64]int{}
 	for i := range candidates {
-		if global >= limit || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		c := candidates[i]
@@ -139,9 +136,14 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// A pause requested while the task was running outlives the task's
 		// return to queued — a crash re-queues without clearing it (§6). Take
 		// effect now rather than running a step the human already stopped.
+		// This runs even with the caps full: the human asked for `paused`,
+		// and a task showing `queued` until a slot frees would be a lie.
 		if c.Task.PauseRequested {
 			s.park(&c.Task, log)
 			continue
+		}
+		if global >= limit {
+			continue // keep walking: later candidates may need parking
 		}
 		if c.ProjectCap != nil && c.ProjectSlots+admitted[c.Task.ProjectID] >= *c.ProjectCap {
 			continue
