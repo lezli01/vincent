@@ -57,7 +57,7 @@ type Registry struct {
 	log       *slog.Logger
 
 	mu       sync.RWMutex
-	global   map[string]Entry
+	global   scopeEntries
 	projects map[int64]*projectScope
 
 	// onChange is called after any scope reloads, for the
@@ -71,7 +71,16 @@ type Registry struct {
 type projectScope struct {
 	root    string // repo root
 	dir     string // {repo}/.vincent/workflows
-	entries map[string]Entry
+	entries scopeEntries
+}
+
+// scopeEntries is the loaded contents of one workflow directory. byName
+// resolves lookups; on a duplicate name the first file (in name order) keeps
+// the entry, and each later file lands in dupes as an invalid entry so it
+// stays visible in List without knocking out the valid one (§5.2).
+type scopeEntries struct {
+	byName map[string]Entry
+	dupes  []Entry
 }
 
 // NewRegistry returns a registry over globalDir ({config_dir}/workflows).
@@ -84,7 +93,7 @@ func NewRegistry(globalDir string, opts Options, log *slog.Logger) *Registry {
 		globalDir: globalDir,
 		opts:      opts,
 		log:       log,
-		global:    map[string]Entry{},
+		global:    scopeEntries{byName: map[string]Entry{}},
 		projects:  map[int64]*projectScope{},
 	}
 }
@@ -117,7 +126,7 @@ func (r *Registry) SetProjects(roots map[int64]string) {
 		r.projects[id] = &projectScope{
 			root:    root,
 			dir:     filepath.Join(root, ProjectDirName),
-			entries: map[string]Entry{},
+			entries: scopeEntries{byName: map[string]Entry{}},
 		}
 		added = append(added, id)
 	}
@@ -202,9 +211,9 @@ func (r *Registry) notify() {
 // loadDir parses every *.yaml/*.yml in dir. A missing directory is normal
 // (most repos have no .vincent/workflows) and yields no entries. Files are
 // processed in name order so a duplicate `name:` deterministically keeps the
-// first file and reports the second.
-func (r *Registry) loadDir(dir string, scope Scope, projectID int64) map[string]Entry {
-	entries := map[string]Entry{}
+// first file and reports each later one.
+func (r *Registry) loadDir(dir string, scope Scope, projectID int64) scopeEntries {
+	entries := scopeEntries{byName: map[string]Entry{}}
 	if dir == "" {
 		return entries
 	}
@@ -236,43 +245,57 @@ func (r *Registry) loadDir(dir string, scope Scope, projectID int64) map[string]
 			entry.Workflow = wf
 			entry.Name = wf.Name
 		}
-		if prev, dup := entries[entry.Name]; dup {
+		// First file wins a duplicate name (§5.2 isolation): the later file
+		// becomes an invalid dupe entry instead of overwriting the winner.
+		if prev, dup := entries.byName[entry.Name]; dup {
 			entry.Workflow = nil
-			entry.Errors = Errors{{
+			entry.Errors = append(entry.Errors, Error{
 				Path:    "name",
 				Message: fmt.Sprintf("duplicate workflow name %q in this scope (already defined by %s)", entry.Name, prev.File),
-			}}
+			})
 			r.log.Warn("duplicate workflow name", "name", entry.Name, "file", path, "first", prev.File)
+			entries.dupes = append(entries.dupes, entry)
+			continue
 		}
-		entries[entry.Name] = entry
+		entries.byName[entry.Name] = entry
 	}
 	return entries
 }
 
 // List returns the merged view for a project: built-in, overlaid by global,
-// overlaid by that project's workflows (§5.2 shadowing), sorted by name.
-// A projectID of 0 lists built-in + global only.
+// overlaid by that project's workflows (§5.2 shadowing), sorted by name and
+// then file. A projectID of 0 lists built-in + global only. Duplicate-name
+// losers appear as extra invalid entries after the file that kept the name,
+// so a colliding file is visible without hiding the valid one.
 func (r *Registry) List(projectID int64) []Entry {
 	merged := map[string]Entry{}
 	for name, e := range builtins() {
 		merged[name] = e
 	}
 	r.mu.RLock()
-	for name, e := range r.global {
+	for name, e := range r.global.byName {
 		merged[name] = e
 	}
+	dupes := append([]Entry(nil), r.global.dupes...)
 	if ps, ok := r.projects[projectID]; ok {
-		for name, e := range ps.entries {
+		for name, e := range ps.entries.byName {
 			merged[name] = e
 		}
+		dupes = append(dupes, ps.entries.dupes...)
 	}
 	r.mu.RUnlock()
 
-	out := make([]Entry, 0, len(merged))
+	out := make([]Entry, 0, len(merged)+len(dupes))
 	for _, e := range merged {
 		out = append(out, e)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	out = append(out, dupes...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].File < out[j].File
+	})
 	return out
 }
 
@@ -283,12 +306,12 @@ func (r *Registry) List(projectID int64) []Entry {
 func (r *Registry) Lookup(projectID int64, name string) (Entry, bool) {
 	r.mu.RLock()
 	if ps, ok := r.projects[projectID]; ok {
-		if e, ok := ps.entries[name]; ok {
+		if e, ok := ps.entries.byName[name]; ok {
 			r.mu.RUnlock()
 			return e, true
 		}
 	}
-	if e, ok := r.global[name]; ok {
+	if e, ok := r.global.byName[name]; ok {
 		r.mu.RUnlock()
 		return e, true
 	}
