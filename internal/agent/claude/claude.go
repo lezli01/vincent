@@ -53,6 +53,9 @@ func New(pathFn func() string) *Adapter {
 // Name implements agent.Adapter.
 func (a *Adapter) Name() string { return "claude" }
 
+// Path implements agent.Adapter: the resolved binary, no subprocess.
+func (a *Adapter) Path() (string, error) { return a.resolvePath() }
+
 // resolvePath returns the binary to execute: the configured path when set,
 // otherwise "claude" from PATH.
 func (a *Adapter) resolvePath() (string, error) {
