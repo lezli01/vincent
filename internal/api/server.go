@@ -146,6 +146,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/skip", s.handleTaskSkip)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/approve", s.handleTaskApprove)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/reject", s.handleTaskReject)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/answer", s.handleTaskAnswer)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/archive", s.handleTaskArchive)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps", s.handleTaskSteps)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
@@ -253,6 +254,7 @@ type configResponse struct {
 type configDefaults struct {
 	AgentTimeout   string `json:"agent_timeout"`
 	CommandTimeout string `json:"command_timeout"`
+	InputTimeout   string `json:"input_timeout"`
 }
 
 type agentPath struct {
@@ -267,6 +269,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		Defaults: configDefaults{
 			AgentTimeout:   cfg.Defaults.AgentTimeout.String(),
 			CommandTimeout: cfg.Defaults.CommandTimeout.String(),
+			InputTimeout:   cfg.Defaults.InputTimeout.String(),
 		},
 		TranscriptRetentionDays: cfg.TranscriptRetentionDays,
 		LogLevel:                cfg.LogLevel,

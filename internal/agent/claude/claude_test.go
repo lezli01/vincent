@@ -54,9 +54,10 @@ func drain(t *testing.T, h agent.RunHandle) []agent.Event {
 
 func TestBuildArgs(t *testing.T) {
 	tests := []struct {
-		name string
-		spec agent.RunSpec
-		want []string
+		name      string
+		spec      agent.RunSpec
+		inputMode bool
+		want      []string
 	}{
 		{
 			name: "full auto defaults",
@@ -76,10 +77,20 @@ func TestBuildArgs(t *testing.T) {
 				"--dangerously-skip-permissions", "--model", "opus", "--effort", "max",
 			},
 		},
+		{
+			name:      "input mode adds the control-protocol flags",
+			spec:      agent.RunSpec{PermissionMode: agent.FullAuto},
+			inputMode: true,
+			want: []string{
+				"-p", "--output-format", "stream-json", "--verbose",
+				"--dangerously-skip-permissions",
+				"--input-format", "stream-json", "--permission-prompt-tool", "stdio",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildArgs(tt.spec)
+			got := buildArgs(tt.spec, tt.inputMode)
 			if strings.Join(got, " ") != strings.Join(tt.want, " ") {
 				t.Errorf("buildArgs = %q, want %q", got, tt.want)
 			}
@@ -98,8 +109,8 @@ func TestDetect(t *testing.T) {
 	if av.Version != "2.1.224" {
 		t.Errorf("Version = %q, want 2.1.224", av.Version)
 	}
-	if av.SupportsInput {
-		t.Error("SupportsInput = true; must be false until T2.12")
+	if !av.SupportsInput {
+		t.Error("SupportsInput = false; 2.1.224 is inside the verified family")
 	}
 	if av.LoggedIn != nil {
 		t.Error("LoggedIn must stay nil (unknown) in v1")
@@ -269,10 +280,10 @@ func processAlive(pid int) bool {
 	return p.Signal(syscall.Signal(0)) == nil
 }
 
-func TestRespondUnsupported(t *testing.T) {
+func TestRespondNoPending(t *testing.T) {
 	h := startRun(t, "success")
 	if err := h.Respond(agent.InputResponse{}); err == nil {
-		t.Error("Respond succeeded; claude must reject input until T2.12")
+		t.Error("Respond succeeded with no pending request")
 	}
 	drain(t, h)
 	_, _ = h.Wait()

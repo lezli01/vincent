@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/store"
@@ -305,14 +306,132 @@ func TestActionOnMissingTask(t *testing.T) {
 	}
 }
 
-// TestAnswerIsNotRouted pins the PR's scope boundary: /answer belongs to
-// T2.12, and shipping a stub would teach clients a status that disappears.
-func TestAnswerIsNotRouted(t *testing.T) {
+// setAwaitingInput moves a task into awaiting_input carrying a pending
+// request, the way the engine's RequestInput transition does (§7.4).
+func setAwaitingInput(t *testing.T, h *taskHarness, id int64, pendingJSON string) {
+	t.Helper()
+	setState(t, h, id, store.TaskRunning)
+	if _, _, err := h.store.TransitionTask(t.Context(), id, store.TaskRunning,
+		store.TaskAwaitingInput, store.TaskChange{PendingInput: &pendingJSON}); err != nil {
+		t.Fatalf("set awaiting_input: %v", err)
+	}
+}
+
+const pendingQuestionJSON = `{"kind":"question","questions":[` +
+	`{"text":"Which color?","header":"Color","options":["Red","Blue"]},` +
+	`{"text":"Which toppings?","options":["Cheese","Basil"],"multi_select":true}]}`
+
+const pendingPermissionJSON = `{"kind":"permission","permission":{"tool":"Write","summary":"hello.txt"}}`
+
+func TestAnswerWrongState(t *testing.T) {
 	h := newActionHarness(t)
 	task := queuedTask(t, h)
-	resp, _ := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/answer", task.ID), nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("answer endpoint: %d, want 404 until T2.12", resp.StatusCode)
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/answer", task.ID),
+		map[string]any{"answers": map[string]any{"Which color?": "Red"}})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("answer queued task: %d %s, want 409", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"state":"queued"`) {
+		t.Errorf("409 body %s does not carry details.state", body)
+	}
+}
+
+func TestAnswerQuestionValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   map[string]any
+		status int
+	}{
+		{"missing a question's answer", map[string]any{
+			"answers": map[string]any{"Which color?": "Red"},
+		}, http.StatusBadRequest},
+		{"two answers for a single-select", map[string]any{
+			"answers": map[string]any{
+				"Which color?": []string{"Red", "Blue"}, "Which toppings?": "Cheese",
+			},
+		}, http.StatusBadRequest},
+		{"answer matching no question", map[string]any{
+			"answers": map[string]any{
+				"Which color?": "Red", "Which toppings?": "Cheese", "Bogus?": "x",
+			},
+		}, http.StatusBadRequest},
+		{"allow on a question request", map[string]any{
+			"answers": map[string]any{"Which color?": "Red", "Which toppings?": "Cheese"},
+			"allow":   true,
+		}, http.StatusBadRequest},
+		{"free text and multi-select accepted", map[string]any{
+			"answers": map[string]any{
+				"Which color?":    "Chartreuse",
+				"Which toppings?": []string{"Cheese", "Basil"},
+			},
+		}, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newActionHarness(t)
+			task := queuedTask(t, h)
+			setAwaitingInput(t, h, task.ID, pendingQuestionJSON)
+			resp, body := h.doJSON(t, http.MethodPost,
+				fmt.Sprintf("/v1/tasks/%d/answer", task.ID), tt.body)
+			if resp.StatusCode != tt.status {
+				t.Fatalf("answer: %d %s, want %d", resp.StatusCode, body, tt.status)
+			}
+			if tt.status == http.StatusOK {
+				out := decodeTask(t, body)
+				if out.State != string(store.TaskRunning) {
+					t.Errorf("state after answer = %s, want running", out.State)
+				}
+				if len(out.PendingInput) != 0 {
+					t.Errorf("pending_input survived the answer: %s", out.PendingInput)
+				}
+			} else if !strings.Contains(string(body), CodeValidationFailed) {
+				t.Errorf("error body %s does not carry %s", body, CodeValidationFailed)
+			}
+		})
+	}
+}
+
+func TestAnswerPermissionValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   map[string]any
+		status int
+	}{
+		{"answers on a permission request", map[string]any{
+			"answers": map[string]any{"Which color?": "Red"},
+		}, http.StatusBadRequest},
+		{"missing allow", map[string]any{}, http.StatusBadRequest},
+		{"deny accepted", map[string]any{"allow": false}, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newActionHarness(t)
+			task := queuedTask(t, h)
+			setAwaitingInput(t, h, task.ID, pendingPermissionJSON)
+			resp, body := h.doJSON(t, http.MethodPost,
+				fmt.Sprintf("/v1/tasks/%d/answer", task.ID), tt.body)
+			if resp.StatusCode != tt.status {
+				t.Fatalf("answer: %d %s, want %d", resp.StatusCode, body, tt.status)
+			}
+		})
+	}
+}
+
+// TestPendingInputOnTaskGet pins §13.2: the full request rides the task.
+func TestPendingInputOnTaskGet(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setAwaitingInput(t, h, task.ID, pendingQuestionJSON)
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get task: %d %s", resp.StatusCode, body)
+	}
+	out := decodeTask(t, body)
+	if string(out.PendingInput) != pendingQuestionJSON {
+		t.Errorf("pending_input = %s, want the stored request verbatim", out.PendingInput)
+	}
+	if !hasAction(out.AvailableActions, "answer") {
+		t.Errorf("available_actions %v lack answer", out.AvailableActions)
 	}
 }
 
