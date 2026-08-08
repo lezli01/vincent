@@ -17,9 +17,10 @@ import (
 func StartTime(pid int) (time.Time, error) {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {
-		// The kernel answers ESRCH or ENOENT for a PID that does not exist,
-		// depending on version.
-		if errors.Is(err, unix.ESRCH) || errors.Is(err, unix.ENOENT) {
+		// A vanished PID surfaces as ESRCH or ENOENT depending on kernel
+		// version — or as EIO, x/sys's mapping of the zero-length result
+		// this sysctl returns for a process that no longer exists.
+		if errors.Is(err, unix.ESRCH) || errors.Is(err, unix.ENOENT) || errors.Is(err, unix.EIO) {
 			return time.Time{}, ErrProcessGone
 		}
 		return time.Time{}, fmt.Errorf("sysctl kern.proc.pid %d: %w", pid, err)
