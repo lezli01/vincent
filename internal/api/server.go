@@ -82,6 +82,9 @@ type Server struct {
 	deps    Deps
 	handler http.Handler
 	httpSrv *http.Server
+	// snaps memoizes parsed workflow snapshots for the task list's step
+	// columns; entries are immutable, so it needs no invalidation (§18).
+	snaps *snapshotCache
 }
 
 // New assembles the server: routes wrapped in recover → log → auth
@@ -92,7 +95,7 @@ func New(deps Deps) *Server {
 		// built-in ad-hoc workflow is still served.
 		deps.Workflows = workflow.NewRegistry("", workflow.Options{}, deps.Logger)
 	}
-	s := &Server{deps: deps}
+	s := &Server{deps: deps, snaps: newSnapshotCache()}
 	s.handler = s.buildHandler()
 	s.httpSrv = &http.Server{
 		Handler:           s.handler,
