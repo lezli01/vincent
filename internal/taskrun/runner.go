@@ -56,6 +56,10 @@ type Deps struct {
 	// (§13.3). Nil is tolerated (tests without streaming); the transcript
 	// stays the durable copy either way.
 	Events *events.Broker
+	// Now is the clock for §7.4 wait accounting and the pausable step
+	// clock; nil means time.Now. Injected by tests so input_wait_ms is
+	// assertable without sleeping (phase 2 decision).
+	Now func() time.Time
 }
 
 // Runner executes admitted tasks and applies the §6 human actions.
@@ -104,6 +108,10 @@ type liveRun struct {
 	canceling bool
 	// proc is the process currently executing this task's step, if any.
 	proc stopper
+	// answers delivers a validated /answer body to the actor parked in
+	// awaiting_input (§7.4). Buffered: requests are serial, so at most one
+	// answer is ever in flight, and the handler must never block on it.
+	answers chan agent.InputResponse
 }
 
 // New returns a stopped runner.
@@ -183,7 +191,11 @@ func (r *Runner) Admit(_ context.Context, task *store.Task) error {
 		return ErrRunnerStopped
 	}
 	taskCtx, cancel := context.WithCancel(r.base)
-	lr := &liveRun{cancel: cancel, done: make(chan struct{})}
+	lr := &liveRun{
+		cancel:  cancel,
+		done:    make(chan struct{}),
+		answers: make(chan agent.InputResponse, 1),
+	}
 
 	r.mu.Lock()
 	if _, exists := r.live[task.ID]; exists {
@@ -313,6 +325,14 @@ func (lr *liveRun) stop(grace time.Duration, log *slog.Logger) {
 	// Unblock the actor even if no process was running — it may be between
 	// steps, or waiting on git.
 	lr.cancel()
+}
+
+// now returns the injected clock, defaulting to the real one.
+func (r *Runner) now() time.Time {
+	if r.deps.Now != nil {
+		return r.deps.Now()
+	}
+	return time.Now()
 }
 
 // persistCtx returns the context for writes that must survive shutdown.

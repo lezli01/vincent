@@ -61,6 +61,9 @@ type Config struct {
 type Defaults struct {
 	AgentTimeout   Duration `yaml:"agent_timeout"`
 	CommandTimeout Duration `yaml:"command_timeout"`
+	// InputTimeout bounds each wait in awaiting_input (§7.4); overridable
+	// in workflow defaults and per step.
+	InputTimeout Duration `yaml:"input_timeout"`
 }
 
 // Agents configures how agent CLIs are located.
@@ -83,6 +86,7 @@ func Default() Config {
 		Defaults: Defaults{
 			AgentTimeout:   Duration(60 * time.Minute),
 			CommandTimeout: Duration(15 * time.Minute),
+			InputTimeout:   Duration(24 * time.Hour),
 		},
 		TranscriptRetentionDays: 90,
 		LogLevel:                "info",
@@ -129,6 +133,9 @@ func (c Config) validate() error {
 	}
 	if c.Defaults.CommandTimeout <= 0 {
 		return fmt.Errorf("defaults.command_timeout must be positive, got %s", c.Defaults.CommandTimeout)
+	}
+	if c.Defaults.InputTimeout <= 0 {
+		return fmt.Errorf("defaults.input_timeout must be positive, got %s", c.Defaults.InputTimeout)
 	}
 	if c.TranscriptRetentionDays < 0 {
 		return fmt.Errorf("transcript_retention_days must not be negative, got %d", c.TranscriptRetentionDays)

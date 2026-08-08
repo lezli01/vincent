@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -37,8 +38,14 @@ func (r *Runner) runAgentStep(
 	}
 
 	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	inputTimeout := resolveInputTimeout(env.step, env.wf.Defaults, r.deps.Config())
+	onInput := resolveInputPolicy(env.step, env.wf.Defaults)
+
+	// The step clock is actor-managed (input.go) so it can pause while the
+	// task waits in awaiting_input (§7.4); a plain context deadline can't.
+	// Cancel causes tell classifyAgent why the tree was killed.
+	runCtx, cancelCause := context.WithCancelCause(ctx)
+	defer cancelCause(nil)
 
 	handle, err := adapter.Start(runCtx, agent.RunSpec{
 		Prompt:         prompt,
@@ -46,7 +53,7 @@ func (r *Runner) runAgentStep(
 		Model:          sel.Model,
 		Effort:         sel.Effort,
 		PermissionMode: resolvePermission(env.step, env.wf.Defaults),
-		OnInput:        resolveInputPolicy(env.step, env.wf.Defaults),
+		OnInput:        onInput,
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -66,15 +73,162 @@ func (r *Runner) runAgentStep(
 	env.log.Info("agent step running",
 		"agent", sel.Agent, "pid", pid, "model", sel.Model, "effort", sel.Effort)
 
+	clock := newStepClock(timeout, r.now, func() { cancelCause(errStepTimeout) })
+	defer clock.stop()
+
+	var answers chan agent.InputResponse
+	if lr, ok := r.lookupRun(env.task.ID); ok {
+		answers = lr.answers
+	}
+
 	tail := newOutputTail(outputTailLines)
-	for ev := range handle.Events() {
+	events := handle.Events()
+	var (
+		parked      bool // task is in awaiting_input; this actor stays (§7.4)
+		inputTimer  *time.Timer
+		inputTimerC <-chan time.Time
+		waitStart   time.Time
+		inputWaitMS int64
+	)
+	// endWait leaves the parked state: account the wait, resume the clock.
+	endWait := func() {
+		if inputTimer != nil {
+			inputTimer.Stop()
+			inputTimer, inputTimerC = nil, nil
+		}
+		inputWaitMS += r.now().Sub(waitStart).Milliseconds()
+		clock.resume()
+		parked = false
+	}
+	// consume transcripts and publishes one event like the plain loop did.
+	consume := func(ev agent.Event) {
 		tr.Raw(ev.Raw)
 		if ev.Type == agent.EventOutput && ev.Text != "" {
 			tail.add(ev.Text)
 		}
 		r.publishAgentEvent(env.task.ID, ev)
 	}
+	// protocolError fails the attempt rather than wait on a request vincent
+	// cannot render (§18): kill the tree, let the stream drain.
+	protocolError := func(msg string) {
+		tr.Note("input_protocol_error", map[string]any{"error": msg})
+		env.log.Error("input protocol error", "error", msg)
+		cancelCause(errInputProtocol)
+	}
+
+loop:
+	for {
+		if !parked {
+			ev, ok := <-events
+			if !ok {
+				break loop
+			}
+			consume(ev)
+			switch ev.Type { //nolint:exhaustive // consume() handled the rest
+			case agent.EventInputRequest:
+				switch {
+				case ev.Request == nil:
+					protocolError(ev.Message)
+				case onInput == agent.InputDeny:
+					r.autoDeny(env, handle, ev.Request, tr)
+				default: // on_input: wait
+					pendingJSON, err := encodePending(ev.Request)
+					if err != nil {
+						protocolError(err.Error())
+						continue
+					}
+					summary := summarize(ev.Request)
+					tr.Note("input_request", map[string]any{
+						"kind": ev.Request.Kind, "summary": summary, "policy": string(agent.InputWait),
+					})
+					ch := store.TaskChange{
+						PendingInput: &pendingJSON,
+						EventPayload: map[string]any{"kind": ev.Request.Kind, "summary": summary},
+					}
+					// A lost CAS means a human canceled first; keep draining —
+					// the kill is already on its way.
+					if r.transition(env.task, taskstate.RequestInput, ch, env.log) {
+						clock.pause()
+						waitStart = r.now()
+						inputTimer = time.NewTimer(inputTimeout)
+						inputTimerC = inputTimer.C
+						parked = true
+						env.log.Info("task awaiting input", "kind", ev.Request.Kind)
+					}
+				}
+			case agent.EventInputCanceled:
+				// Nothing was pending engine-side (not parked): tolerated.
+			}
+			continue
+		}
+
+		// Parked: the agent is idle on its request. Wait for the answer, the
+		// input_timeout, or the process/stream ending on its own.
+		select {
+		case resp := <-answers:
+			// The handler already CASed awaiting_input → running (clearing
+			// pending_input); mirror it so later engine CAS's see the truth.
+			env.task.State = store.TaskRunning
+			if err := handle.Respond(resp); err != nil {
+				// The process died as the answer landed; the stream is about
+				// to close and the attempt resolves from its exit (§18).
+				env.log.Warn("deliver answer", "error", err)
+				tr.Note("input_response_failed", map[string]any{"error": err.Error()})
+			} else {
+				tr.Note("input_response", map[string]any{
+					"source": "human", "answers": resp.Answers,
+					"allow": resp.Allow, "response": resp.Response,
+				})
+			}
+			endWait()
+		case <-inputTimerC:
+			// Expiry races the answer's CAS; the transition decides (§7.4).
+			if r.transition(env.task, taskstate.InputClosed, store.TaskChange{}, env.log) {
+				tr.Note("input_timeout", map[string]any{"timeout": inputTimeout.String()})
+				env.log.Warn("input request timed out", "timeout", inputTimeout)
+				endWait()
+				cancelCause(errInputTimeout)
+			} else {
+				// An answer won; it is already on the channel.
+				inputTimerC = nil
+			}
+		case ev, ok := <-events:
+			if !ok {
+				// The process died while awaiting input: the request is void
+				// and the attempt fails from its exit code (§18). The CAS can
+				// lose only to a concurrent answer or cancel — either way the
+				// state is already where it should be.
+				if r.transition(env.task, taskstate.InputClosed, store.TaskChange{}, env.log) {
+					tr.Note("input_request_aborted", map[string]any{"reason": "agent process exited"})
+				}
+				endWait()
+				break loop
+			}
+			consume(ev)
+			switch ev.Type { //nolint:exhaustive // consume() handled the rest
+			case agent.EventInputCanceled:
+				// The agent withdrew its request; the run continues (§7.4).
+				if r.transition(env.task, taskstate.InputClosed, store.TaskChange{}, env.log) {
+					tr.Note("input_request_withdrawn", map[string]any{})
+					env.log.Info("input request withdrawn by the agent")
+					endWait()
+				}
+			case agent.EventInputRequest:
+				// The adapter guarantees serial requests; anything here is a
+				// protocol violation (nil Request) or a contract break.
+				if r.transition(env.task, taskstate.InputClosed, store.TaskChange{}, env.log) {
+					endWait()
+				}
+				msg := ev.Message
+				if msg == "" {
+					msg = "second input request while one is pending"
+				}
+				protocolError(msg)
+			}
+		}
+	}
 	res, waitErr := handle.Wait()
+	run.InputWaitMS = inputWaitMS
 
 	outcome := classifyAgent(ctx, runCtx, r.interrupting(env.task.ID), &res, waitErr)
 	outcome.exitCode = &res.ExitCode
@@ -94,13 +248,18 @@ func (r *Runner) runAgentStep(
 // §7.1 requires exit 0 and a non-error terminal result. interrupting marks
 // a human cancel or a graceful shutdown in progress — either one Terminates
 // the process before the run context is canceled (§6's grace, §12.4's), so
-// an abrupt exit then is an interruption, not a failure to retry.
+// an abrupt exit then is an interruption, not a failure to retry. The run
+// context's cancel cause distinguishes the engine's own kills (§7.4).
 func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *agent.RunResult, waitErr error) stepOutcome {
 	switch {
 	case daemonCtx.Err() != nil:
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case causeIs(runCtx, errStepTimeout):
 		return stepOutcome{state: store.StepFailed, reason: ReasonTimeout}
+	case causeIs(runCtx, errInputTimeout):
+		return stepOutcome{state: store.StepFailed, reason: ReasonInputTimeout}
+	case causeIs(runCtx, errInputProtocol):
+		return stepOutcome{state: store.StepFailed, reason: ReasonInputProtocolError}
 	case interrupting && (waitErr != nil || res.ExitCode != 0 || res.IsError):
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
@@ -330,7 +489,10 @@ func (r *Runner) publishAgentEvent(taskID int64, ev agent.Event) {
 	case agent.EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
 		r.publishOutput(taskID, "agent.usage", map[string]any{"raw": string(ev.Raw)})
-	case agent.EventInputRequest, agent.EventResult, agent.EventError, agent.EventUnknown:
+	case agent.EventInputRequest, agent.EventInputCanceled,
+		agent.EventResult, agent.EventError, agent.EventUnknown:
+		// Input requests surface via the state change (§13.3); results and
+		// errors surface as step outcomes.
 	}
 }
 
