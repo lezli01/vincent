@@ -54,6 +54,12 @@ type Options struct {
 // listener → daemon.json; teardown reverses it, removing daemon.json only on
 // this graceful path (spec §12.2, §12.4).
 func Run(ctx context.Context, opts Options) error {
+	return runWithAgents(ctx, opts, nil)
+}
+
+// runWithAgents is Run with an injectable registry for lifecycle tests. A nil
+// registry builds the production adapters from the live configuration.
+func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) error {
 	dirs, err := config.ResolveDirs()
 	if err != nil {
 		return err
@@ -141,12 +147,15 @@ func Run(ctx context.Context, opts Options) error {
 	// §9.6 binary-identity cache — primed asynchronously here, stat-checked
 	// per request, so a CLI installed after daemon start is visible without
 	// a restart (T2.11).
-	agents := agent.NewRegistry(
-		claude.New(func() string { return currentConfig().Agents.Claude.Path }),
-		codex.New(func() string { return currentConfig().Agents.Codex.Path }),
-	)
+	if agents == nil {
+		agents = agent.NewRegistry(
+			claude.New(func() string { return currentConfig().Agents.Claude.Path }),
+			codex.New(func() string { return currentConfig().Agents.Codex.Path }),
+		)
+	}
 	catalog := agent.NewCatalogCache(agents)
-	go primeAgentCatalog(ctx, logger, catalog)
+	stopCatalogPrime := startAgentCatalogPrime(ctx, logger, catalog)
+	defer stopCatalogPrime()
 
 	// Workflow registry: global scope from {config_dir}/workflows, project
 	// scopes from every registered repo's .vincent/workflows (§5.2). Both
@@ -318,6 +327,24 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	logger.Info("daemon stopped")
 	return nil
+}
+
+// startAgentCatalogPrime starts the asynchronous startup probe and returns a
+// stop function that cancels and joins it. Run defers the stop before closing
+// the logger so a canceled probe cannot write through lumberjack afterward and
+// reopen daemon.log during shutdown (notably breaking TempDir cleanup on
+// Windows).
+func startAgentCatalogPrime(ctx context.Context, logger *slog.Logger, catalog *agent.CatalogCache) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		primeAgentCatalog(ctx, logger, catalog)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 // syncWorkflowProjects points the registry at the current set of registered
