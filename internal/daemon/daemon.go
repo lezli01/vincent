@@ -155,8 +155,9 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Warn("workflow hot-reload unavailable", "error", err)
 	}
 
-	// The command-step shell is probed once and logged; a step's `shell:`
-	// pin is resolved per use and fails the step when missing (§8.3).
+	// The command-step shell is probed at startup and re-probed on config
+	// reload; a step's `shell:` pin is resolved per use and fails the step
+	// when missing (§8.3).
 	shells := taskrun.NewShells(logger)
 	if _, err := shells.Default(); err != nil {
 		logger.Warn("command steps will fail until a shell is available", "error", err)
@@ -234,6 +235,9 @@ func Run(ctx context.Context, opts Options) error {
 			level.Set(lvl)
 		}
 		current.Store(&next)
+		// A reload may follow a shell install; pick it up without a restart
+		// (§8.3).
+		shells.Reprobe()
 		// max_parallel_tasks may have changed (§11).
 		sched.Wake()
 	}); err != nil {
