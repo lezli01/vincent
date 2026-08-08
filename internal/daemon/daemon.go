@@ -18,6 +18,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
@@ -136,20 +137,25 @@ func Run(ctx context.Context, opts Options) error {
 	requestStop := func() { stopOnce.Do(func() { close(stopRequested) }) }
 
 	// Agent adapters: paths ride the live config so hot-reloaded paths reach
-	// future runs; availability is probed once at startup and served from
-	// /v1/info (on-demand re-probing arrives with /v1/agents, T2.11).
+	// future runs. Availability and option catalogs are served from the
+	// §9.6 binary-identity cache — primed asynchronously here, stat-checked
+	// per request, so a CLI installed after daemon start is visible without
+	// a restart (T2.11).
 	agents := agent.NewRegistry(
 		claude.New(func() string { return currentConfig().Agents.Claude.Path }),
+		codex.New(func() string { return currentConfig().Agents.Codex.Path }),
 	)
-	agentStatus := probeAgents(ctx, logger, agents)
+	catalog := agent.NewCatalogCache(agents)
+	go primeAgentCatalog(ctx, logger, catalog)
 
 	// Workflow registry: global scope from {config_dir}/workflows, project
 	// scopes from every registered repo's .vincent/workflows (§5.2). Both
 	// are watched; a repo that has no such directory is picked up if one
-	// appears later.
+	// appears later. Catalog checks read the cache's primed-or-curated view
+	// and never probe (§8.2).
 	workflows := workflow.NewRegistry(
 		filepath.Join(dirs.Config, workflow.GlobalDirName),
-		workflow.Options{KnownAgents: agents.Names()},
+		workflow.Options{KnownAgents: agents.Names(), Catalogs: catalog.Catalogs},
 		logger,
 	)
 	workflows.ReloadGlobal()
@@ -230,7 +236,7 @@ func Run(ctx context.Context, opts Options) error {
 		Git:         git,
 		Worktrees:   worktrees,
 		Agents:      agents,
-		AgentStatus: agentStatus,
+		Catalog:     catalog,
 		Workflows:   workflows,
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
@@ -329,27 +335,21 @@ func syncWorkflowProjects(ctx context.Context, st *store.Store, reg *workflow.Re
 	return nil
 }
 
-// probeAgents runs Detect on every registered adapter and logs the outcome.
-func probeAgents(ctx context.Context, logger *slog.Logger, agents *agent.Registry) []api.AgentStatus {
-	out := make([]api.AgentStatus, 0, len(agents.Names()))
-	for _, a := range agents.All() {
-		av, err := a.Detect(ctx)
-		if err != nil {
-			av = agent.Availability{Error: err.Error()}
+// primeAgentCatalog fills the §9.6 cache at startup and logs each adapter's
+// availability. Runs asynchronously: a slow probe never delays daemon
+// readiness, and a request racing the prime waits behind the same
+// per-adapter probe instead of double-spawning.
+func primeAgentCatalog(ctx context.Context, logger *slog.Logger, catalog *agent.CatalogCache) {
+	for _, name := range catalog.Names() {
+		e, ok := catalog.Entry(ctx, name, false)
+		if !ok {
+			continue
 		}
+		av := e.Availability
 		if av.Found {
-			logger.Info("agent detected", "agent", a.Name(), "path", av.Path, "version", av.Version)
+			logger.Info("agent detected", "agent", name, "path", av.Path, "version", av.Version)
 		} else {
-			logger.Warn("agent not available", "agent", a.Name(), "error", av.Error)
+			logger.Warn("agent not available", "agent", name, "error", av.Error)
 		}
-		out = append(out, api.AgentStatus{
-			Name:          a.Name(),
-			Available:     av.Found,
-			Path:          av.Path,
-			Version:       av.Version,
-			SupportsInput: av.SupportsInput,
-			Error:         av.Error,
-		})
 	}
-	return out
 }

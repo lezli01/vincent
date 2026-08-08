@@ -46,7 +46,7 @@ var (
 // serving an empty scope.
 func builtins() map[string]Entry {
 	builtinOnce.Do(func() {
-		wf, err := Parse([]byte(AdhocSource), Options{})
+		wf, _, err := Parse([]byte(AdhocSource), Options{})
 		if err != nil {
 			panic(fmt.Sprintf("built-in workflow %q is invalid: %v", AdhocName, err))
 		}

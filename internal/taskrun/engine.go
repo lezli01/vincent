@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -79,7 +80,7 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		r.fail(task, ReasonInternalError, log, "load project", err)
 		return
 	}
-	wf, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil {
 		// The snapshot validated at creation, so this is corruption or a
 		// vincent downgrade — either way the task cannot run.
@@ -241,7 +242,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		Attempt:   attempt,
 		State:     store.StepRunning,
 	}
-	var sel selection
+	var sel agent.Selection
 	if env.step.Type == workflow.StepAgent {
 		sel = resolveSelection(env.step, env.wf.Defaults, env.task)
 		run.Agent, run.Model, run.Effort = sel.Agent, sel.Model, sel.Effort

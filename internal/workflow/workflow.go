@@ -13,6 +13,7 @@ import (
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 )
 
@@ -104,10 +105,14 @@ func (s Step) DisplayName() string {
 }
 
 // Options tune validation. KnownAgents is the set of registered adapter
-// names; when empty the `agent` field is not checked against it (option
-// catalog validation arrives with T2.11).
+// names; when empty the `agent` field is not checked against it.
 type Options struct {
 	KnownAgents []string
+	// Catalogs supplies adapter → option catalog for the §8.2 cross-catalog
+	// check of every agent step's resolved (agent, model, effort) triple.
+	// Nil disables catalog validation. The daemon wires the catalog cache's
+	// never-probing view here (T2.11).
+	Catalogs func() agent.Catalogs
 }
 
 // Error is a single validation failure, located in the source file when the
@@ -148,17 +153,19 @@ func (es Errors) Error() string {
 
 // Parse decodes and validates a workflow definition. Decoding is strict:
 // unknown keys are errors, to catch typos (§8.2). A non-nil error is always
-// of type Errors.
-func Parse(src []byte, opts Options) (*Workflow, error) {
+// of type Errors. The middle return carries §8.2 catalog warnings —
+// non-fatal findings a valid workflow may still surface (T2.11).
+func Parse(src []byte, opts Options) (*Workflow, Errors, error) {
 	var wf Workflow
 	if err := yaml.UnmarshalWithOptions(src, &wf, yaml.DisallowUnknownField()); err != nil {
-		return nil, Errors{{Line: lineOfDecodeError(err), Message: cleanDecodeError(err)}}
+		return nil, nil, Errors{{Line: lineOfDecodeError(err), Message: cleanDecodeError(err)}}
 	}
 	loc := newLocator(src)
-	if errs := validate(&wf, opts, loc); len(errs) > 0 {
-		return nil, errs
+	errs, warns := validate(&wf, opts, loc)
+	if len(errs) > 0 {
+		return nil, warns, errs
 	}
-	return &wf, nil
+	return &wf, warns, nil
 }
 
 // Marshal re-encodes a workflow as YAML. It exists for `edit + retry`, which
@@ -190,9 +197,10 @@ func yamlUnmarshalLenient(src []byte, v any) error {
 }
 
 // validate applies the §8.2 constraints. Every check reports its own error
-// so one file surfaces all its problems in a single pass.
-func validate(wf *Workflow, opts Options, loc *locator) Errors {
-	var errs Errors
+// so one file surfaces all its problems in a single pass; catalog findings
+// split into errors and warnings per the cross-catalog rule.
+func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
+	var errs, warns Errors
 	add := func(path, format string, args ...any) {
 		errs = append(errs, Error{Path: path, Line: loc.line(path), Message: fmt.Sprintf(format, args...)})
 	}
@@ -223,8 +231,68 @@ func validate(wf *Workflow, opts Options, loc *locator) Errors {
 		}
 		validateStep(step, base, opts, add)
 	}
+	warns = validateCatalogs(wf, opts, loc, add)
 	sort.SliceStable(errs, func(i, j int) bool { return errs[i].Line < errs[j].Line })
-	return errs
+	sort.SliceStable(warns, func(i, j int) bool { return warns[i].Line < warns[j].Line })
+	return errs, warns
+}
+
+// validateCatalogs applies the §8.2 cross-catalog check to every agent
+// step's resolved triple (no task override exists at load time). A finding
+// is attributed to the level that supplied the value: the step's own field,
+// or defaults — where identical findings from many steps collapse to one.
+func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string, string, ...any)) Errors {
+	if opts.Catalogs == nil {
+		return nil
+	}
+	catalogs := opts.Catalogs()
+	var warns Errors
+	seen := map[string]bool{}
+	for i, step := range wf.Steps {
+		if step.Type != StepAgent {
+			continue
+		}
+		sel := agent.Resolve(
+			agent.Level{Agent: step.Agent, Model: step.Model, Effort: step.Effort},
+			agent.Level{},
+			agent.Level{Agent: wf.Defaults.Agent, Model: wf.Defaults.Model, Effort: wf.Defaults.Effort},
+		)
+		cerrs, cwarns := catalogs.Check(sel)
+		for _, f := range cerrs {
+			path, dup := findingPath(step, f.Field, i, seen)
+			if dup {
+				continue
+			}
+			add(path, "%s", f.Message)
+		}
+		for _, f := range cwarns {
+			path, dup := findingPath(step, f.Field, i, seen)
+			if dup {
+				continue
+			}
+			warns = append(warns, Error{Path: path, Line: loc.line(path), Message: f.Message})
+		}
+	}
+	return warns
+}
+
+// findingPath locates a catalog finding: the step's own field when the step
+// set the value, else the defaults field — reported once however many steps
+// inherit it.
+func findingPath(step Step, field string, index int, seen map[string]bool) (string, bool) {
+	stepValue := step.Model
+	if field == "effort" {
+		stepValue = step.Effort
+	}
+	if stepValue != "" {
+		return fmt.Sprintf("steps[%d].%s", index, field), false
+	}
+	path := "defaults." + field
+	if seen[path] {
+		return path, true
+	}
+	seen[path] = true
+	return path, false
 }
 
 func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...any)) {
