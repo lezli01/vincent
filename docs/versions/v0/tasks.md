@@ -19,7 +19,7 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
+| 3 — TUI (M3) | 8 tasks | 0/8 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
 | **Total** | | **25/39** | |
 
@@ -285,7 +285,20 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
 
 Milestone acceptance (§19 M3): the full loop — register project, author workflow, run 3 parallel tasks, approve a gate, archive — without leaving the TUI.
 
-- [ ] **T3.1 — TUI foundation.** Bubble Tea shell; API client (token + `daemon.json` discovery); daemon auto-start when unreachable (§12.1); `/v1/events` subscription driving re-render; view routing, global keys, help overlay (§15).
+**Phase 3 decisions (grill session, 2026-08-08):**
+
+- *Delivery:* 7 PRs — H: T3.1 foundation · I: T3.2 board · J: T3.3 detail timeline/tail · K: T3.4 detail diff/actions · L: T3.5 new-task flow · M: T3.6+T3.7 projects/workflows/daemon views · N: T3.8 gate. Each independently green in CI; tasks.md updated per PR; each PR opens with its own grill block (Phase 2 pattern).
+- *Framework:* Bubble Tea **v2** (`charm.land/bubbletea/v2` + `charm.land/bubbles/v2` + `charm.land/lipgloss/v2`) — greenfield TUI, v2 is the stable, maintained line; choosing it now avoids a v1→v2 migration later. No v1-only third-party widgets (task table = bubbles v2).
+- *API client:* new shared `internal/apiclient` — typed methods over §13.2, token + `daemon.json` discovery, SSE subscriber with `Last-Event-ID` reconnect and §13.3 snapshot-then-stream catch-up. The client owns its wire structs (server DTOs stay unexported); drift can't ship unnoticed because client and server live in one binary and the client is integration-tested against the real handlers. T4.2's CLI subcommands reuse this package.
+- *Testing:* TUI covered by pure Update/View unit tests (feed msgs, assert on state + rendered strings — no terminal emulation, deterministic on the 3-OS matrix); apiclient integration-tested against an `httptest` server running the real API; daemon auto-start covered by binary e2e like the Phase 1 daemon tests. No teatest/golden frames. Manual polish checks stay in the T3.8 gate.
+
+**PR H decisions (T3.1; grill session, 2026-08-08):**
+
+- *Auto-start UX:* bare `vincent` always enters the TUI immediately; a connect state runs `daemon.StartDetached()` + the phase-1 health poll as a `tea.Cmd` behind a "starting daemon…" screen; failure = in-TUI error screen (daemon log path, `r` retry, `q` quit). The same state doubles as the reconnect screen if the daemon dies mid-session.
+- *Shell shape:* one root model owning view routing (`1..6`), global keys, and the `?` help overlay; views are sub-models. PR H ships stub views for board/detail/new-task/projects/workflows/daemon; view-specific action keys land with their views in later PRs.
+- *SSE wiring:* apiclient subscription goroutine → `Program.Send` msgs; the home stub renders connection state + the last-received event line, which is how the done-when ("reflects an externally-made state change live") is demonstrated and unit-tested.
+
+- [~] **T3.1 — TUI foundation.** Bubble Tea shell; API client (token + `daemon.json` discovery); daemon auto-start when unreachable (§12.1); `/v1/events` subscription driving re-render; view routing, global keys, help overlay (§15).
   *Done when:* TUI connects, auto-starts a stopped daemon, and reflects an externally-made state change live.
 - [ ] **T3.2 — Board view.** Task table (id, project, title, state color-coded, step k/n, elapsed, cost), filters, scheduler-order sort; header with daemon status, agent availability, running/cap counts, needs-attention count; needs-attention tasks (`awaiting_input`/`awaiting_gate`/`blocked`) pinned on top with a distinct badge; terminal bell on `task.awaiting_input` (§7.4, §15).
   *Done when:* board renders live updates from SSE without polling; filters work; an awaiting-input fake-agent task visibly alerts (pin + badge + bell).
