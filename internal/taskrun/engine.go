@@ -28,7 +28,14 @@ const (
 	ReasonInvalidSnapshot  = "invalid_snapshot"
 	ReasonRejected         = "rejected"
 	ReasonCanceled         = "canceled"
-	ReasonInternalError    = "internal_error"
+	// ReasonInputTimeout is a §7.4 wait expiring: the pending input request
+	// was never answered within input_timeout.
+	ReasonInputTimeout = "input_timeout"
+	// ReasonInputProtocolError is a control request vincent could not parse
+	// or that broke the serial-request contract — the attempt fails rather
+	// than wait on a request it can't render (§18).
+	ReasonInputProtocolError = "input_protocol_error"
+	ReasonInternalError      = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit

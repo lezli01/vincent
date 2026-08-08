@@ -56,6 +56,7 @@ max_parallel_tasks: 9
 defaults:
   agent_timeout: 1h30m
   command_timeout: 90s
+  input_timeout: 36h
 transcript_retention_days: 7
 log_level: warn
 agents:
@@ -74,6 +75,7 @@ agents:
 		Defaults: Defaults{
 			AgentTimeout:   Duration(90 * time.Minute),
 			CommandTimeout: Duration(90 * time.Second),
+			InputTimeout:   Duration(36 * time.Hour),
 		},
 		TranscriptRetentionDays: 7,
 		LogLevel:                "warn",

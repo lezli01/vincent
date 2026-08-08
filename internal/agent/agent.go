@@ -103,13 +103,22 @@ type EventType string
 // Normalized event types. Unknown stream lines are transcripted but not
 // normalized (tolerant parsing, phase 1 decision).
 const (
-	EventOutput       EventType = "output"
-	EventToolUse      EventType = "tool_use"
-	EventUsage        EventType = "usage"
+	EventOutput  EventType = "output"
+	EventToolUse EventType = "tool_use"
+	EventUsage   EventType = "usage"
+	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
+	// Request means the adapter received a control message it could not
+	// parse or that violates the serial-request contract — the engine fails
+	// the attempt with input_protocol_error rather than wait on a request it
+	// can't render (spec §18).
 	EventInputRequest EventType = "input_request"
-	EventResult       EventType = "result"
-	EventError        EventType = "error"
-	EventUnknown      EventType = "unknown"
+	// EventInputCanceled reports that the agent withdrew its pending input
+	// request (T2.12 interface addition); the engine resumes the run via the
+	// input_closed transition (spec §6).
+	EventInputCanceled EventType = "input_canceled"
+	EventResult        EventType = "result"
+	EventError         EventType = "error"
+	EventUnknown       EventType = "unknown"
 )
 
 // Event is one normalized agent stream event.
@@ -155,6 +164,10 @@ type PermissionReq struct {
 type InputResponse struct {
 	Answers map[string][]string // question text → selected/typed answer(s)
 	Allow   *bool               // kind=permission: approve or deny
+	// Response is a free-text response in place of per-question answers —
+	// the §7.4 deny-mode canned answer rides here; for a permission denial
+	// it becomes the message the agent reads (T2.12 interface addition).
+	Response string
 }
 
 // RunResult is the outcome of one agent run (spec §9.1). IsError reports a
