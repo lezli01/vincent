@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 8 tasks | 0/8 | 🟡 in progress |
+| 3 — TUI (M3) | 8 tasks | 1/8 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **25/39** | |
+| **Total** | | **26/39** | |
 
 ---
 
@@ -298,8 +298,8 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
 - *Shell shape:* one root model owning view routing (`1..6`), global keys, and the `?` help overlay; views are sub-models. PR H ships stub views for board/detail/new-task/projects/workflows/daemon; view-specific action keys land with their views in later PRs.
 - *SSE wiring:* apiclient subscription goroutine → `Program.Send` msgs; the home stub renders connection state + the last-received event line, which is how the done-when ("reflects an externally-made state change live") is demonstrated and unit-tested.
 
-- [~] **T3.1 — TUI foundation.** Bubble Tea shell; API client (token + `daemon.json` discovery); daemon auto-start when unreachable (§12.1); `/v1/events` subscription driving re-render; view routing, global keys, help overlay (§15).
-  *Done when:* TUI connects, auto-starts a stopped daemon, and reflects an externally-made state change live.
+- [x] **T3.1 — TUI foundation.** Bubble Tea shell; API client (token + `daemon.json` discovery); daemon auto-start when unreachable (§12.1); `/v1/events` subscription driving re-render; view routing, global keys, help overlay (§15). ✓ 2026-08-08
+  *Done when:* TUI connects, auto-starts a stopped daemon, and reflects an externally-made state change live. *(Verified: PR #22 matrix green on ubuntu/macos/windows — apiclient integration tests against the real handlers (live delivery, disconnect + Last-Event-ID resume with cursor assert, server-side type filter, auth envelope, SSE spec framing, discovery); TUI Update/View unit tests (auto-start state machine, failure + retry, routing, help, quit, event line, reconnect); `TestAutoStartRealDaemon` e2e drives the built binary probe-miss → auto-start → live re-render on an external `project.created` → graceful stop.)*
 - [ ] **T3.2 — Board view.** Task table (id, project, title, state color-coded, step k/n, elapsed, cost), filters, scheduler-order sort; header with daemon status, agent availability, running/cap counts, needs-attention count; needs-attention tasks (`awaiting_input`/`awaiting_gate`/`blocked`) pinned on top with a distinct badge; terminal bell on `task.awaiting_input` (§7.4, §15).
   *Done when:* board renders live updates from SSE without polling; filters work; an awaiting-input fake-agent task visibly alerts (pin + badge + bell).
 - [ ] **T3.3 — Task detail: timeline & tail.** Step timeline with attempts/durations/tokens/cost; live output tail with follow mode; scrollback into past transcripts via ranged transcript endpoint.
