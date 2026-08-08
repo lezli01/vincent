@@ -58,3 +58,22 @@ jobs:
       - name: M1 gate (fake agent)
         shell: bash
         run: ./scripts/m1-gate.sh
+
+  # M2 acceptance (spec §19): multi-step workflow with an input round-trip,
+  # hard-kill recovery, and cap stress — all against the fake agent.
+  m2-gate:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: M2 gate (fake agent)
+        shell: bash
+        run: ./scripts/m2-gate.sh
