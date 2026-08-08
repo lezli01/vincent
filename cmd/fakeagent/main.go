@@ -1,13 +1,18 @@
 // fakeagent is a scenario-driven stand-in for an agent CLI (phase 1
-// decision): it accepts claude-shaped argv, reads the prompt from stdin, and
-// emits Claude-style stream-json on stdout, so adapter tests and the M1 gate
-// never call a real API. It is always compiled by ./... and excluded from
-// release packaging (T4.5).
+// decision): it accepts claude- or codex-shaped argv, reads the prompt from
+// stdin, and emits the matching dialect (Claude stream-json or codex exec
+// JSONL) on stdout, so adapter tests and the gates never call a real API. It
+// is always compiled by ./... and excluded from release packaging (T4.5).
 //
-// Scenario selection is environment-driven (argv stays claude-shaped):
+// The dialect is selected by argv shape: a first argument of "exec" is
+// codex-shaped (T2.9); anything else is claude-shaped. Scenario selection is
+// environment-driven so argv stays true to the real CLIs:
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
 //	                      hang | big-usage | sleep (internal: silent child)
+//	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style
+//	                      (run dialect is argv-driven; this only affects the
+//	                      version probe, which carries no dialect hint)
 //	FAKEAGENT_EDIT_FILE   success: append a line to this worktree-relative
 //	                      tracked file, so gate runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
@@ -25,7 +30,10 @@ import (
 	"time"
 )
 
-const version = "2.1.224 (Claude Code fake)"
+const (
+	version      = "2.1.224 (Claude Code fake)"
+	codexVersion = "codex-cli 0.142.5 (fake)"
+)
 
 const helpText = `Usage: fakeagent [options] [prompt]
 
@@ -52,8 +60,12 @@ Options:
 func main() {
 	for _, a := range os.Args[1:] {
 		switch a {
-		case "--version", "-v":
-			fmt.Println(version)
+		case "--version", "-v", "-V":
+			if os.Getenv("FAKEAGENT_DIALECT") == "codex" {
+				fmt.Println(codexVersion)
+			} else {
+				fmt.Println(version)
+			}
 			return
 		case "--help", "-h":
 			fmt.Print(helpText)
@@ -67,6 +79,11 @@ func main() {
 	}
 	if scenario == "sleep" {
 		block() // silent child for tree-kill tests; killed by the test
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "exec" {
+		codexMain(scenario)
+		return
 	}
 
 	prompt, _ := io.ReadAll(os.Stdin)
