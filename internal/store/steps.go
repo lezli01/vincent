@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -262,4 +263,62 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// TaskRollup aggregates one task's step_run metrics across every attempt
+// (§17). Retries are included on purpose: a step that failed twice before
+// succeeding cost money three times, and a board reporting only the
+// surviving attempt would under-report spend exactly on the tasks that
+// burned it.
+type TaskRollup struct {
+	// CostUSD sums cost_usd over attempts that reported one. HasCost
+	// distinguishes "every attempt reported nothing" from "genuinely free":
+	// adapters that never report cost (§9) must not render as $0.00.
+	CostUSD      float64
+	HasCost      bool
+	InputTokens  int64
+	OutputTokens int64
+}
+
+// TaskRollups returns the rollup for each of ids that has any step runs.
+// Tasks with no runs yet are absent from the map; callers treat a miss as a
+// zero rollup. ids is expected to be one page of a task list, so the IN list
+// is bounded by the caller's page size.
+func (s *Store) TaskRollups(ctx context.Context, ids []int64) (map[int64]TaskRollup, error) {
+	out := make(map[int64]TaskRollup, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT task_id, SUM(cost_usd), SUM(input_tokens), SUM(output_tokens)
+		FROM step_runs WHERE task_id IN (`+placeholders+`) GROUP BY task_id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("roll up task metrics: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			taskID        int64
+			cost          sql.NullFloat64
+			inTok, outTok sql.NullInt64
+		)
+		if err := rows.Scan(&taskID, &cost, &inTok, &outTok); err != nil {
+			return nil, fmt.Errorf("scan task rollup: %w", err)
+		}
+		out[taskID] = TaskRollup{
+			CostUSD:      cost.Float64,
+			HasCost:      cost.Valid,
+			InputTokens:  inTok.Int64,
+			OutputTokens: outTok.Int64,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read task rollups: %w", err)
+	}
+	return out, nil
 }

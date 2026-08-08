@@ -259,7 +259,11 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	force := hasForce(r)
-	tasks, err := s.deps.Store.ListTasks(ctx, store.TaskFilter{ProjectID: p.ID})
+	// ArchivedAll is explicit: this handler classifies archived vs not
+	// itself, and must not silently inherit the list default (which excludes
+	// archives for the board's benefit, §13.2).
+	tasks, err := s.deps.Store.ListTasks(ctx,
+		store.TaskFilter{ProjectID: p.ID, Archived: store.ArchivedAll})
 	if err != nil {
 		s.internalError(w, "list tasks", err)
 		return

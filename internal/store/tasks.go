@@ -99,11 +99,27 @@ func (s *Store) GetTask(ctx context.Context, id int64) (*Task, error) {
 	return t, nil
 }
 
-// TaskFilter narrows ListTasks. Zero values mean "no filter".
+// ArchivedFilter selects how ListTasks treats archived tasks. The zero value
+// excludes them: a board that listed every archive ever would grow without
+// bound, and the callers that want history ask for it (§13.2).
+type ArchivedFilter int
+
+const (
+	// ArchivedExclude omits archived tasks. Default.
+	ArchivedExclude ArchivedFilter = iota
+	// ArchivedOnly returns archived tasks and nothing else.
+	ArchivedOnly
+	// ArchivedAll applies no archived-state filter at all.
+	ArchivedAll
+)
+
+// TaskFilter narrows ListTasks. Zero values mean "no filter", except
+// Archived, whose zero value excludes archived tasks.
 type TaskFilter struct {
 	ProjectID int64     // 0 = all projects
 	State     TaskState // "" = all states
-	Limit     int       // 0 = unlimited
+	Archived  ArchivedFilter
+	Limit     int // 0 = unlimited
 	Offset    int
 }
 
@@ -119,6 +135,19 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	if f.State != "" {
 		where = append(where, "state = ?")
 		args = append(args, string(f.State))
+	}
+	// An explicit State always wins: asking for state=archived and getting
+	// nothing back because the default excludes archives would be absurd.
+	if f.State == "" {
+		switch f.Archived {
+		case ArchivedExclude:
+			where = append(where, "state != ?")
+			args = append(args, string(TaskArchived))
+		case ArchivedOnly:
+			where = append(where, "state = ?")
+			args = append(args, string(TaskArchived))
+		case ArchivedAll:
+		}
 	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
