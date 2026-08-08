@@ -91,10 +91,11 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 	}
 
 	for index := task.CurrentStep; index < len(wf.Steps); index++ {
-		// A cancel sets the flag before it terminates the process, and the run
-		// context is only canceled after the §6 grace — the flag is what stops
-		// the actor from starting new work for a task that is already aborted.
-		if ctx.Err() != nil || r.canceling(task.ID) {
+		// A cancel or shutdown sets its flag before it terminates the process,
+		// and the run context is only canceled after the grace (§6, §12.4) —
+		// the flag is what stops the actor from starting new work for a task
+		// that is already ending.
+		if ctx.Err() != nil || r.interrupting(task.ID) {
 			r.interrupt(task, log)
 			return
 		}
@@ -191,7 +192,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 		// A cancel or shutdown that lands between attempts must not spawn
 		// another process for a task that is already ending; the attempt that
 		// just failed did so on its own and keeps its row.
-		if ctx.Err() != nil || r.canceling(env.task.ID) {
+		if ctx.Err() != nil || r.interrupting(env.task.ID) {
 			return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 		}
 		env.log.Info("retrying step", "reason", last.reason, "next_attempt", attempts.Last+1)
@@ -277,12 +278,12 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	case workflow.StepAgent:
 		outcome = r.runAgentStep(ctx, env, sel, rc, run, tr)
 	case workflow.StepCommand:
-		outcome = r.runCommandStep(ctx, env, rc, tr)
+		outcome = r.runCommandStep(ctx, env, rc, run, tr)
 	default:
 		outcome = stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
 	if outcome.state == store.StepSucceeded && env.step.Check != "" {
-		outcome = r.runCheck(ctx, env, rc, tr, outcome)
+		outcome = r.runCheck(ctx, env, rc, run, tr, outcome)
 	}
 	// A cancel reaches the step as an interruption; recording it as one
 	// would lose the fact that a human ended this deliberately (§6).

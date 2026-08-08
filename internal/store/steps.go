@@ -180,6 +180,30 @@ func (s *Store) ListStepRuns(ctx context.Context, taskID int64) ([]StepRun, erro
 	return out, nil
 }
 
+// ListRunningStepRuns returns every step run still marked running, across
+// all tasks — the startup recovery's work list (spec §12.4): rows a previous
+// daemon process left open, each carrying the PID it journaled.
+func (s *Store) ListRunningStepRuns(ctx context.Context) ([]StepRun, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+		WHERE state = ? ORDER BY id ASC`, string(StepRunning))
+	if err != nil {
+		return nil, fmt.Errorf("list running step runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []StepRun
+	for rows.Next() {
+		r, err := scanStepRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan step run: %w", err)
+		}
+		out = append(out, *r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list running step runs: %w", err)
+	}
+	return out, nil
+}
+
 func scanStepRun(row rowScanner) (*StepRun, error) {
 	var (
 		r                                       StepRun

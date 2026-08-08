@@ -764,14 +764,18 @@ edited via `PATCH /v1/projects/{id}`.
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
 - On startup: any StepRun still marked `running` is finalized as `interrupted`; if its
-  recorded PID still exists *and* its start time matches, the process is killed
+  recorded PID still exists *and* its start time matches the journaled spawn time
+  (within a small tolerance — the guard against PID reuse), the process is killed
   (orphan). The owning task returns to `queued` and the interrupted step re-runs as a
   fresh attempt that does **not** consume a retry. Tasks found in `awaiting_input`
   are treated identically — the pending request is discarded with the process, and
   the fresh session may re-ask (§7.4).
-- Graceful shutdown (`daemon stop`, SIGTERM, Windows service stop): stop admitting new
-  steps, give running processes 15 s to exit after a termination signal, then kill;
-  mark those runs `interrupted` (same resume path as a crash).
+- Graceful shutdown (`daemon stop`, SIGTERM, Windows service stop): a
+  `daemon.shutting_down` event is emitted first, then admission stops, running
+  processes get 15 s to exit after a termination signal, then kill; those runs are
+  marked `interrupted` (same resume path as a crash). The API — SSE streams included —
+  stays up through the grace so clients watch the wind-down live; streams close
+  before the final HTTP drain.
 - Because agent steps are fresh sessions operating on a worktree whose committed state
   survives, re-running an interrupted step is safe by construction; workflow authors
   are advised to have agents commit incrementally.
@@ -860,18 +864,24 @@ Two kinds of streams:
 1. **State events** — durable. Persisted to the `events` table with a monotonic id,
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
-   `task.created`, `task.state_changed`, `task.archived`, `step.started`,
+   `task.created`, `task.state_changed`, `step.started`,
    `step.finished`, `step.retrying`, `gate.waiting`, `task.awaiting_input`,
    `project.*`, `workflow.registry_changed`, `daemon.shutting_down`.
+   (An archive is visible as `task.state_changed` with `to: archived`; there is no
+   separate `task.archived` type — PR D decision.)
    Payloads carry ids + the new state, not full objects (clients re-fetch as needed);
    `task.awaiting_input` additionally carries the request kind and a one-line summary
    — the full request comes from `GET /v1/tasks/{id}` (§7.4).
-   `/v1/events` supports `?types=` and `?project_id=` filters.
+   `/v1/events` supports `?types=` and `?project_id=` filters. A connection without
+   `Last-Event-ID` starts live at the next committed event — the stream never replays
+   history unasked; state catch-up is a REST snapshot, then the stream.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
-   catch-up = fetch the transcript, then follow live).
+   catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
+   flushed on a ~100 ms coalescing timer (~10 Hz); `Last-Event-ID` on the per-task
+   stream resumes its durable events only — live output is not replayable.
 
 ## 14. Data model (SQLite)
 
