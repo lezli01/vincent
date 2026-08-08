@@ -219,7 +219,10 @@ nullable — not all agents report cost), input wait time (ms spent in `awaiting
            running┘
 
 * answer resumes the step in place; input_timeout fails the attempt (normal
-  retry/blocked policy §7.2). On daemon restart, an interrupted step re-runs
+  retry/blocked policy §7.2) — a wait that ends without an answer while retries
+  remain (input_timeout, agent process death, withdrawn request) re-enters
+  `running` via the engine's `input_closed` transition; exhausted retries go to
+  `blocked` as usual. On daemon restart, an interrupted step re-runs
   as a fresh attempt and the task is re-queued (§12.4).
 ```
 
@@ -320,11 +323,13 @@ Behavior with `on_input: wait` (the default):
    (the agent process is alive mid-step, idle on its stdin — killing or re-queuing
    it would lose the very session the answer belongs to). The normalized request
    (§9.1 `InputRequest`; the adapter-native payload is preserved in `raw`) is
-   stored on the task as `pending_input` and a durable `task.awaiting_input`
-   event is emitted (§13.3) — this is the alert clients key off.
+   stored on the task as `pending_input`; the durable `task.state_changed` event
+   for the transition carries the request kind and a one-line summary in its
+   payload (§13.3) — this is the alert clients key off.
 2. The step `timeout` clock **pauses** — it measures agent work, not human
    latency. A separate `input_timeout` (global default 24h, §12.3; overridable in
-   workflow `defaults` and per step) bounds the wait: on expiry the process is
+   workflow `defaults` and per step) bounds each wait, measured **per request** —
+   a new request starts a fresh window: on expiry the process is
    killed and the attempt fails with reason `input_timeout` (normal retry/blocked
    policy, §7.2), freeing the slot.
 3. The engineer answers via `POST /v1/tasks/{id}/answer` or the TUI answer form
@@ -334,9 +339,9 @@ Behavior with `on_input: wait` (the default):
    so at most one `pending_input` exists per task.
 
 `on_input: deny` (workflow `defaults` or per step) keeps runs strictly unattended:
-the adapter immediately auto-responds — questions get a canned "no user is
-available; decide with your best judgment" answer, permission requests are denied
-— and the task never leaves `running`.
+vincent immediately auto-responds through the adapter's `Respond()` — questions
+get a canned "no user is available; decide with your best judgment" answer,
+permission requests are denied — and the task never leaves `running`.
 
 Adapters without mid-run input support (`supports_input: false`, §9.5 — codex in
 v1) never produce input requests; their steps behave exactly as today. Requests
@@ -597,15 +602,31 @@ adapter with zero core changes.
 - `Options()` probes `claude --help` ad hoc: the `--effort` enum (`low, medium,
   high, xhigh, max` as of 2.1.x) and the documented model aliases are parsed
   from the help text (source `cli`) and merged with the curated catalog (§9.6).
-- **Mid-run input (§7.4):** the process is additionally started with
-  `--input-format stream-json` and stdin kept open. Question/permission control
-  messages arriving on the stream are normalized to `InputRequest`; `Respond()`
-  translates the answer back to the control protocol and writes it to stdin. The
-  control-message wire format is not publicly documented — like the flags above
-  it is pinned against the detected CLI version at implementation time and
-  guarded by fixture tests; if the protocol can't be verified for an installed
-  version, the adapter reports `supports_input: false` and steps degrade
-  gracefully (no `awaiting_input`, §7.4).
+- **Mid-run input (§7.4):** pinned against claude 2.1.226 (fixtures captured from
+  real runs live in `internal/agent/claude/testdata/`). The process is additionally
+  started with `--input-format stream-json --permission-prompt-tool stdio` (the
+  latter is undocumented; it is what enables the AskUserQuestion tool in `-p` mode
+  and routes permission prompts over the stream) and stdin is kept open; the prompt
+  is then delivered as a single `{"type":"user","message":{…}}` JSONL line instead
+  of raw text. Requests arrive as `{"type":"control_request","request_id":…,
+  "request":{"subtype":"can_use_tool","tool_name":…,"input":…}}`:
+  `tool_name: "AskUserQuestion"` normalizes to a `question` InputRequest (option
+  labels from `input.questions[].options[].label`, `multiSelect` honored); any
+  other tool normalizes to a `permission` request. `Respond()` writes back
+  `{"type":"control_response","response":{"subtype":"success","request_id":…,
+  "response":R}}` where R is `{"behavior":"allow","updatedInput":…}` (question
+  answers ride `updatedInput.answers` keyed by question text, arrays for
+  multi-select; the deny-mode canned answer rides `updatedInput.response`) or
+  `{"behavior":"deny","message":…}` for permission denial. In full-auto the CLI
+  auto-approves every regular tool before the callback, so only `question`
+  requests occur; in restricted mode allowlisted tools auto-approve and every
+  other tool falls through as a `permission` request. `supports_input` is
+  version-gated to the fixture-verified family `[2.1.0, 3.0.0)` — outside it, or
+  when the version is unparseable, the adapter reports `supports_input: false`
+  and runs exactly as before (no input flags, raw-text prompt). A control request
+  the adapter cannot parse fails the attempt with `input_protocol_error`, never
+  hangs; an inbound `control_cancel_request` withdrawing the pending request
+  resumes the run (`input_closed`).
 
 ### 9.3 Codex adapter
 
@@ -894,13 +915,15 @@ Two kinds of streams:
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
    `task.created`, `task.state_changed`, `step.started`,
-   `step.finished`, `step.retrying`, `gate.waiting`, `task.awaiting_input`,
+   `step.finished`, `step.retrying`, `gate.waiting`,
    `project.*`, `workflow.registry_changed`, `daemon.shutting_down`.
    (An archive is visible as `task.state_changed` with `to: archived`; there is no
-   separate `task.archived` type — PR D decision.)
-   Payloads carry ids + the new state, not full objects (clients re-fetch as needed);
-   `task.awaiting_input` additionally carries the request kind and a one-line summary
-   — the full request comes from `GET /v1/tasks/{id}` (§7.4).
+   separate `task.archived` type — PR D decision. Likewise there is no separate
+   `task.awaiting_input` type — PR F decision: entering the state is
+   `task.state_changed` with `to: awaiting_input`, whose payload additionally
+   carries the request kind and a one-line summary — the full request comes from
+   `GET /v1/tasks/{id}` (§7.4).)
+   Payloads carry ids + the new state, not full objects (clients re-fetch as needed).
    `/v1/events` supports `?types=` and `?project_id=` filters. A connection without
    `Last-Event-ID` starts live at the next committed event — the stream never replays
    history unasked; state catch-up is a REST snapshot, then the stream.
@@ -1016,8 +1039,8 @@ stream for the live tail.
    respects scheduler order for queued tasks. Header shows daemon status, agent
    availability, running/cap counts, and a needs-attention count. Tasks waiting on
    a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
-   with a distinct badge, and the TUI rings the terminal bell on
-   `task.awaiting_input` — most terminals flash/badge the window even unfocused
+   with a distinct badge, and the TUI rings the terminal bell when a task enters
+   `awaiting_input` — most terminals flash/badge the window even unfocused
    (§7.4). OS desktop notifications remain out of v1 (§20).
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
