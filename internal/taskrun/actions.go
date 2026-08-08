@@ -326,7 +326,7 @@ func advance(task *store.Task) store.TaskChange {
 // applyOverride rewrites the current step's prompt or run inside the task's
 // own snapshot copy (§5.3) and returns the new YAML.
 func applyOverride(task *store.Task, ov store.Override) (string, error) {
-	wf, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil {
 		return "", fmt.Errorf("parse workflow snapshot: %w", err)
 	}
@@ -356,7 +356,7 @@ func applyOverride(task *store.Task, ov store.Override) (string, error) {
 // describeStep names a step of the task's snapshot, tolerating a snapshot
 // that no longer parses: the row is bookkeeping, not execution.
 func describeStep(task *store.Task, index int) (stepID, stepType string) {
-	wf, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil || index < 0 || index >= len(wf.Steps) {
 		return fmt.Sprintf("step-%d", index), workflow.StepManual
 	}

@@ -20,7 +20,9 @@ type workflowResponse struct {
 	Description string                 `json:"description"`
 	Steps       []workflowStepResponse `json:"steps"`
 	Errors      []workflow.Error       `json:"errors,omitempty"`
-	Error       *string                `json:"error"`
+	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
+	Warnings []workflow.Error `json:"warnings,omitempty"`
+	Error    *string          `json:"error"`
 }
 
 type workflowStepResponse struct {
@@ -56,6 +58,9 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 		out.Errors = e.Errors
 		msg := e.Errors.Error()
 		out.Error = &msg
+	}
+	if len(e.Warnings) > 0 {
+		out.Warnings = e.Warnings
 	}
 	return out
 }
@@ -106,16 +111,18 @@ type validateRequest struct {
 	YAML string `json:"yaml"`
 }
 
-// validateResponse mirrors §13.2: { valid, errors[] }.
+// validateResponse mirrors §13.2: { valid, errors[], warnings[] }.
 type validateResponse struct {
-	Valid  bool             `json:"valid"`
-	Name   string           `json:"name,omitempty"`
-	Errors []workflow.Error `json:"errors"`
+	Valid    bool             `json:"valid"`
+	Name     string           `json:"name,omitempty"`
+	Errors   []workflow.Error `json:"errors"`
+	Warnings []workflow.Error `json:"warnings"`
 }
 
 // handleWorkflowValidate serves POST /v1/workflows/validate. A workflow that
 // fails validation is a valid API response, not an API error: the body
-// reports the failures with their source lines.
+// reports the failures with their source lines, plus any non-fatal §8.2
+// catalog warnings.
 func (s *Server) handleWorkflowValidate(w http.ResponseWriter, r *http.Request) {
 	var req validateRequest
 	if !decodeJSON(w, r, &req) {
@@ -125,14 +132,19 @@ func (s *Server) handleWorkflowValidate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "yaml is required")
 		return
 	}
-	wf, err := workflow.Parse([]byte(req.YAML), s.deps.Workflows.Options())
+	wf, warns, err := workflow.Parse([]byte(req.YAML), s.deps.Workflows.Options())
+	if warns == nil {
+		warns = workflow.Errors{}
+	}
 	if err != nil {
 		var errs workflow.Errors
 		if !errors.As(err, &errs) {
 			errs = workflow.Errors{{Message: err.Error()}}
 		}
-		writeJSON(w, http.StatusOK, validateResponse{Valid: false, Errors: errs})
+		writeJSON(w, http.StatusOK, validateResponse{Valid: false, Errors: errs, Warnings: warns})
 		return
 	}
-	writeJSON(w, http.StatusOK, validateResponse{Valid: true, Name: wf.Name, Errors: []workflow.Error{}})
+	writeJSON(w, http.StatusOK, validateResponse{
+		Valid: true, Name: wf.Name, Errors: []workflow.Error{}, Warnings: warns,
+	})
 }

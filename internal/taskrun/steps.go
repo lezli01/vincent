@@ -19,7 +19,7 @@ import (
 // runAgentStep runs one agent attempt: render the prompt, spawn the adapter,
 // stream its events into the transcript, and classify the result (§7.1).
 func (r *Runner) runAgentStep(
-	ctx context.Context, env *stepEnv, sel selection,
+	ctx context.Context, env *stepEnv, sel agent.Selection,
 	rc workflow.RenderContext, run *store.StepRun, tr *transcript,
 ) stepOutcome {
 	prompt, err := workflow.Render("prompt", env.step.Prompt, rc)

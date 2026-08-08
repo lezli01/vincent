@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
@@ -55,9 +56,12 @@ func newEngineHarness(t *testing.T) *engineHarness {
 		Store:     st,
 		Config:    config.Default,
 		Worktrees: worktree.NewManager(git, dataDir),
-		Agents:    agent.NewRegistry(claude.New(func() string { return fake })),
-		DataDir:   dataDir,
-		Logger:    log,
+		Agents: agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			codex.New(func() string { return fake }),
+		),
+		DataDir: dataDir,
+		Logger:  log,
 	})
 	return &engineHarness{store: st, runner: runner, repo: repo, dataDir: dataDir, projectID: project.ID}
 }
@@ -217,7 +221,7 @@ func TestSnapshotsParseOnEveryPlatform(t *testing.T) {
 		"chained/win":   chainedSnapshot(echoCmdWindows, relayCmdWindows),
 	}
 	for name, src := range snapshots {
-		if _, err := workflow.Parse([]byte(src), workflow.Options{}); err != nil {
+		if _, _, err := workflow.Parse([]byte(src), workflow.Options{}); err != nil {
 			t.Errorf("%s does not parse: %v\n%s", name, err, src)
 		}
 	}
@@ -668,5 +672,51 @@ steps:
 	}
 	if !strings.Contains(runs[1].ResultSummary, ReasonNonzeroExit) {
 		t.Errorf("re-admitted retry prompt %q names no failure reason", runs[1].ResultSummary)
+	}
+}
+
+// TestEngineRunsCodexStep drives a codex step through the real engine: the
+// registry hands the run to the codex adapter, the fake binary answers in
+// the codex dialect (argv-sniffed on `exec`), and the step row records the
+// resolved codex triple with nil cost (§9.3; T2.9/T2.11).
+func TestEngineRunsCodexStep(t *testing.T) {
+	h := newEngineHarness(t)
+	task := h.createTask(t, `name: codex-run
+steps:
+  - id: build
+    type: agent
+    agent: codex
+    model: gpt-5.6-sol
+    effort: xhigh
+    max_retries: 0
+    prompt: |
+      Implement {{.Task.Title}} with codex
+`)
+	h.start(t)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 {
+		t.Fatalf("step runs = %d, want 1: %+v", len(runs), runs)
+	}
+	run := runs[0]
+	if run.State != store.StepSucceeded {
+		t.Fatalf("step = %s (%s), want succeeded", run.State, run.FailureReason)
+	}
+	if run.Agent != "codex" || run.Model != "gpt-5.6-sol" || run.Effort != "xhigh" {
+		t.Errorf("resolved triple = %s/%s/%s, want codex/gpt-5.6-sol/xhigh", run.Agent, run.Model, run.Effort)
+	}
+	// The rendered prompt reached codex via stdin (the dialect echoes it).
+	if !strings.Contains(run.ResultSummary, "Implement engine test with codex") {
+		t.Errorf("result summary %q does not contain the rendered prompt", run.ResultSummary)
+	}
+	if run.InputTokens == nil || *run.InputTokens != 100 {
+		t.Errorf("input tokens = %v, want 100 from turn.completed", run.InputTokens)
+	}
+	if run.CostUSD != nil {
+		t.Errorf("cost = %v, want nil (codex reports no cost)", *run.CostUSD)
 	}
 }

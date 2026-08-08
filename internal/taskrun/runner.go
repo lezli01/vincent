@@ -27,8 +27,9 @@ import (
 )
 
 // DefaultAgent is used when neither the step, the task override, nor the
-// workflow defaults name an agent.
-const DefaultAgent = "claude"
+// workflow defaults name an agent. Aliases the §8.6 resolver's constant so
+// the two can never drift.
+const DefaultAgent = agent.DefaultAgent
 
 // stopGrace bounds how long Stop waits for actors after cancellation.
 const stopGrace = 20 * time.Second
