@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -54,6 +55,9 @@ type taskResponse struct {
 	State          string            `json:"state"`
 	CurrentStep    int               `json:"current_step"`
 	BlockReason    *string           `json:"block_reason"`
+	// Warnings are non-fatal §8.2 catalog findings from creation-time
+	// validation; only the POST /v1/tasks response carries them.
+	Warnings []string `json:"warnings,omitempty"`
 	// PauseRequested is a pause accepted but not yet in effect (§6).
 	PauseRequested bool `json:"pause_requested"`
 	// AvailableActions are the §6 human actions valid from the current
@@ -171,10 +175,11 @@ type taskCreateRequest struct {
 }
 
 // handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
-// resolved through the registry and snapshotted onto the task (§5.3); the
-// optional agent/model/effort override is validated per the T1.7–T1.9
-// decision: the agent must name a registered adapter, model/effort are free
-// text until T2.11's catalog validation.
+// resolved through the registry and snapshotted onto the task (§5.3). The
+// optional agent/model/effort override is validated per §8.2 with the
+// override applied to every agent step's resolved triple: the agent must
+// name a registered adapter, a known-invalid model/effort is a 400, and a
+// catalog-unknown value passes with a warning on the 201 body (T2.11).
 func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var req taskCreateRequest
 	if !decodeJSON(w, r, &req) {
@@ -255,6 +260,11 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.Effort != nil {
 		t.EffortOverride = strings.TrimSpace(*req.Effort)
 	}
+	warnings, cerr := s.checkTaskCatalog(entry.Workflow, &t)
+	if cerr != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
+		return
+	}
 	if err := s.deps.Store.CreateTask(ctx, &t); err != nil {
 		s.internalError(w, "create task", err)
 		return
@@ -271,7 +281,40 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if s.deps.WakeRunner != nil {
 		s.deps.WakeRunner()
 	}
-	writeJSON(w, http.StatusCreated, toTaskResponse(&t))
+	resp := toTaskResponse(&t)
+	resp.Warnings = warnings
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// checkTaskCatalog applies the §8.2 cross-catalog check to every agent
+// step's resolved triple with the task-level override in place. A
+// known-invalid value yields a non-empty error message (→ 400); values no
+// catalog knows come back as warnings for the 201 body. Never probes: the
+// catalogs are the cache's primed-or-curated view (T2.11).
+func (s *Server) checkTaskCatalog(wf *workflow.Workflow, t *store.Task) (warnings []string, errMsg string) {
+	if s.deps.Catalog == nil || wf == nil {
+		return nil, ""
+	}
+	catalogs := s.deps.Catalog.Catalogs()
+	override := agent.Level{Agent: t.AgentOverride, Model: t.ModelOverride, Effort: t.EffortOverride}
+	defaults := agent.Level{Agent: wf.Defaults.Agent, Model: wf.Defaults.Model, Effort: wf.Defaults.Effort}
+	for i, step := range wf.Steps {
+		if step.Type != workflow.StepAgent {
+			continue
+		}
+		sel := agent.Resolve(
+			agent.Level{Agent: step.Agent, Model: step.Model, Effort: step.Effort},
+			override, defaults,
+		)
+		cerrs, cwarns := catalogs.Check(sel)
+		if len(cerrs) > 0 {
+			return nil, fmt.Sprintf("steps[%d] (%s): %s", i, step.ID, cerrs[0].Message)
+		}
+		for _, f := range cwarns {
+			warnings = append(warnings, fmt.Sprintf("steps[%d] (%s): %s", i, step.ID, f.Message))
+		}
+	}
+	return warnings, ""
 }
 
 func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {

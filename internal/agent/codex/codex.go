@@ -1,8 +1,8 @@
-// Package claude implements the agent adapter for the Claude Code CLI:
-// headless `claude -p` runs with stream-json event parsing, model/effort
-// passthrough, an ad-hoc --help options probe, and tree-kill support
-// (spec §9.2; T1.7).
-package claude
+// Package codex implements the agent adapter for the Codex CLI: headless
+// `codex exec --json` runs with JSONL event parsing, model/effort
+// passthrough, and tree-kill support (spec §9.3; T2.9). Invocation and
+// stream shapes are pinned against codex-cli 0.142.5.
+package codex
 
 import (
 	"bufio"
@@ -20,29 +20,20 @@ import (
 )
 
 // binaryName is what PATH resolution looks for when no path is configured.
-const binaryName = "claude"
+const binaryName = "codex"
 
-// restrictedTools is the --allowedTools value for restricted mode: file
-// tools plus git — deliberately no test runners, which execute arbitrary
-// project code anyway (T1.7 decision). Denied actions degrade per §9.4
-// until T2.12 turns them into permission requests.
-const restrictedTools = "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(git:*)"
+// versionTimeout bounds the --version probe subprocess.
+const versionTimeout = 10 * time.Second
 
-// Probe timeouts bound the --version and --help subprocesses.
-const (
-	versionTimeout = 10 * time.Second
-	helpTimeout    = 15 * time.Second
-)
-
-// Adapter runs agents through the Claude Code CLI.
+// Adapter runs agents through the Codex CLI.
 type Adapter struct {
 	// pathFn returns the configured binary path; "" resolves from PATH.
 	// A func rather than a value so config hot-reload reaches future runs.
 	pathFn func() string
 }
 
-// New returns the Claude adapter. pathFn returns the configured binary path
-// ("" = resolve "claude" from PATH); nil means always resolve from PATH.
+// New returns the Codex adapter. pathFn returns the configured binary path
+// ("" = resolve "codex" from PATH); nil means always resolve from PATH.
 func New(pathFn func() string) *Adapter {
 	if pathFn == nil {
 		pathFn = func() string { return "" }
@@ -51,33 +42,33 @@ func New(pathFn func() string) *Adapter {
 }
 
 // Name implements agent.Adapter.
-func (a *Adapter) Name() string { return "claude" }
+func (a *Adapter) Name() string { return "codex" }
 
 // Path implements agent.Adapter: the resolved binary, no subprocess.
 func (a *Adapter) Path() (string, error) { return a.resolvePath() }
 
 // resolvePath returns the binary to execute: the configured path when set,
-// otherwise "claude" from PATH.
+// otherwise "codex" from PATH.
 func (a *Adapter) resolvePath() (string, error) {
 	if p := a.pathFn(); p != "" {
 		if _, err := exec.LookPath(p); err != nil {
-			return "", fmt.Errorf("configured claude path %s: %w", p, err)
+			return "", fmt.Errorf("configured codex path %s: %w", p, err)
 		}
 		return p, nil
 	}
 	p, err := exec.LookPath(binaryName)
 	if err != nil {
-		return "", fmt.Errorf("claude not found on PATH: %w", err)
+		return "", fmt.Errorf("codex not found on PATH: %w", err)
 	}
 	return p, nil
 }
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-// Detect implements agent.Adapter: path resolution plus a --version probe.
-// logged_in stays unknown in v1 — there is no cheap documented probe, and
-// state-file parsing would be an unpinned surface (T1.7 decision).
-// SupportsInput is false until T2.12 lands the input engine.
+// Detect implements agent.Adapter: path resolution plus a --version probe
+// (`codex-cli 0.142.5`). logged_in stays unknown — codex has no cheap
+// documented probe either. SupportsInput is permanently false: `codex exec`
+// is strictly non-interactive once started (spec §9.3).
 func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	path, err := a.resolvePath()
 	if err != nil {
@@ -89,7 +80,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	if err != nil {
 		return agent.Availability{
 			Path:  path,
-			Error: fmt.Sprintf("claude --version failed: %v", err),
+			Error: fmt.Sprintf("codex --version failed: %v", err),
 		}, nil
 	}
 	raw := strings.TrimSpace(string(out))
@@ -100,22 +91,25 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	return agent.Availability{Found: true, Path: path, Version: version}, nil
 }
 
-// buildArgs assembles the pinned CLI invocation (spec §9.2, verified against
-// 2.1.x): message-level stream-json (no --include-partial-messages, T1.7
-// decision), permission-mode flags, model/effort passthrough. The prompt is
-// never an argv element.
+// buildArgs assembles the pinned CLI invocation (spec §9.3, verified against
+// codex-cli 0.142.5). Full-auto is the documented automation switch;
+// restricted confines writes to the worktree — note that a `git commit` from
+// a restricted step may be denied in a linked worktree, whose real git dir
+// lives under the main repo (vincent itself never needs commits). The prompt
+// is never an argv element: with stdin piped and no prompt argument, codex
+// reads the instructions from stdin.
 func buildArgs(spec agent.RunSpec) []string {
-	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	args := []string{"exec", "--json"}
 	if spec.PermissionMode == agent.Restricted {
-		args = append(args, "--allowedTools", restrictedTools)
+		args = append(args, "--sandbox", "workspace-write")
 	} else {
-		args = append(args, "--dangerously-skip-permissions")
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	if spec.Model != "" {
-		args = append(args, "--model", spec.Model)
+		args = append(args, "-m", spec.Model)
 	}
 	if spec.Effort != "" {
-		args = append(args, "--effort", spec.Effort)
+		args = append(args, "-c", "model_reasoning_effort="+spec.Effort)
 	}
 	return args
 }
@@ -139,11 +133,11 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("claude stdout pipe: %w", err)
+		return nil, fmt.Errorf("codex stdout pipe: %w", err)
 	}
 	proc, err := procx.Start(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("start claude: %w", err)
+		return nil, fmt.Errorf("start codex: %w", err)
 	}
 	r := &run{
 		cmd:        cmd,
@@ -164,7 +158,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	return r, nil
 }
 
-// run is a live Claude Code process.
+// run is a live Codex process.
 type run struct {
 	cmd    *exec.Cmd
 	proc   *procx.Proc
@@ -175,28 +169,29 @@ type run struct {
 	procDone   chan struct{}
 
 	mu       sync.Mutex
-	terminal *agent.RunResult // parsed result event, if any
+	terminal *agent.RunResult // assembled from turn.completed / turn.failed
 
 	waitOnce sync.Once
 	waitRes  agent.RunResult
 	waitErr  error
 }
 
-// maxLineBytes bounds one stream-json line; agent messages embed file
-// contents, so lines can be large.
+// maxLineBytes bounds one JSONL line; command items embed aggregated output,
+// so lines can be large.
 const maxLineBytes = 16 * 1024 * 1024
 
 func (r *run) readLoop(sc *bufio.Scanner) {
 	defer close(r.readerDone)
 	defer close(r.events)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	st := &stream{}
 	for sc.Scan() {
 		line := make([]byte, len(sc.Bytes()))
 		copy(line, sc.Bytes())
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
 		}
-		ev := parseLine(line)
+		ev := st.parse(line)
 		if ev.Type == agent.EventResult && ev.Result != nil {
 			r.mu.Lock()
 			res := *ev.Result
@@ -212,11 +207,11 @@ func (r *run) readLoop(sc *bufio.Scanner) {
 // Events implements agent.RunHandle.
 func (r *run) Events() <-chan agent.Event { return r.events }
 
-// Respond implements agent.RunHandle. Claude reports supports_input=false
-// until T2.12 pins the bidirectional stream-json protocol, so there is never
-// a pending request to answer.
+// Respond implements agent.RunHandle. `codex exec` is strictly
+// non-interactive — no mid-run input channel exists (spec §9.3), so there is
+// never a pending request to answer.
 func (r *run) Respond(agent.InputResponse) error {
-	return errors.New("claude adapter does not support mid-run input yet (T2.12)")
+	return errors.New("codex exec is non-interactive; mid-run input is not supported")
 }
 
 // Kill implements agent.RunHandle: terminates the whole process tree.
@@ -230,7 +225,7 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 
 // Wait implements agent.RunHandle. It blocks until the stream is fully
 // consumed and the process has exited, then assembles the RunResult per
-// §7.1: the terminal result event plus the exit code.
+// §7.1: the terminal turn event plus the exit code.
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
@@ -240,7 +235,7 @@ func (r *run) Wait() (agent.RunResult, error) {
 
 		var exitErr *exec.ExitError
 		if err != nil && !errors.As(err, &exitErr) {
-			r.waitErr = fmt.Errorf("wait for claude: %w", err)
+			r.waitErr = fmt.Errorf("wait for codex: %w", err)
 		}
 		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
 		r.mu.Lock()
@@ -252,7 +247,7 @@ func (r *run) Wait() (agent.RunResult, error) {
 			res.ResultText = terminal.ResultText
 			res.InputTokens = terminal.InputTokens
 			res.OutputTokens = terminal.OutputTokens
-			res.CostUSD = terminal.CostUSD
+			// CostUSD stays nil: codex does not report cost (spec §9.3).
 		} else {
 			res.IsError = true
 			res.ErrorMessage = "stream ended without a result event"

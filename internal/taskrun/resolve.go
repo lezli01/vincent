@@ -12,47 +12,14 @@ import (
 // defaultMaxRetries is the §7.2 default: one retry, i.e. up to two attempts.
 const defaultMaxRetries = 1
 
-// selection is the resolved (agent, model, effort) triple for one agent step
-// (spec §8.6). It is recorded on the StepRun and passed to the adapter.
-type selection struct {
-	Agent  string
-	Model  string
-	Effort string
-}
-
-// resolveSelection applies the §8.6 precedence — explicit step field, then
-// the task-level override, then workflow defaults, then the adapter default
-// (empty, meaning the CLI decides).
-//
-// Model and effort are agent-scoped: they only inherit from a level whose
-// agent matches the step's resolved agent, so a claude alias never reaches
-// codex. T2.11 moves this into internal/agent and adds catalog validation.
-func resolveSelection(step workflow.Step, defaults workflow.Defaults, task *store.Task) selection {
-	// Level 4 of §8.6 is the adapter default; when no level names an agent at
-	// all, the daemon's default adapter runs the step.
-	resolved := firstNonEmpty(step.Agent, task.AgentOverride, defaults.Agent, DefaultAgent)
-
-	// Each level carries the agent it was written for; a level whose agent
-	// differs from the resolved one contributes nothing but its own agent
-	// field. The task override inherits the workflow's agent when it does
-	// not name one, since it replaces the workflow defaults.
-	taskAgent := firstNonEmpty(task.AgentOverride, defaults.Agent)
-	inScope := func(levelAgent string) bool { return levelAgent == "" || levelAgent == resolved }
-
-	sel := selection{Agent: resolved, Model: step.Model, Effort: step.Effort}
-	if sel.Model == "" && inScope(taskAgent) {
-		sel.Model = task.ModelOverride
-	}
-	if sel.Model == "" && inScope(defaults.Agent) {
-		sel.Model = defaults.Model
-	}
-	if sel.Effort == "" && inScope(taskAgent) {
-		sel.Effort = task.EffortOverride
-	}
-	if sel.Effort == "" && inScope(defaults.Agent) {
-		sel.Effort = defaults.Effort
-	}
-	return sel
+// resolveSelection maps the engine's types onto the §8.6 resolver, which
+// lives in internal/agent since T2.11 so catalog validation shares it.
+func resolveSelection(step workflow.Step, defaults workflow.Defaults, task *store.Task) agent.Selection {
+	return agent.Resolve(
+		agent.Level{Agent: step.Agent, Model: step.Model, Effort: step.Effort},
+		agent.Level{Agent: task.AgentOverride, Model: task.ModelOverride, Effort: task.EffortOverride},
+		agent.Level{Agent: defaults.Agent, Model: defaults.Model, Effort: defaults.Effort},
+	)
 }
 
 // resolvePermission resolves the step's permission mode (§9.4): step field,
