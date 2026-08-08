@@ -16,6 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
@@ -48,7 +49,10 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 	git := gitx.New()
 	dataDir := t.TempDir()
 	wt := worktree.NewManager(git, dataDir)
-	reg := agent.NewRegistry(claude.New(func() string { return fake }))
+	reg := agent.NewRegistry(
+		claude.New(func() string { return fake }),
+		codex.New(func() string { return "/nonexistent/codex-not-here" }),
+	)
 	cfg := func() config.Config {
 		c := config.Default()
 		if agentTimeout > 0 {
@@ -92,7 +96,7 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 		Git:         git,
 		Worktrees:   wt,
 		Agents:      reg,
-		AgentStatus: []AgentStatus{{Name: "claude", Available: true, Path: fake, Version: "2.1.224"}},
+		Catalog:     agent.NewCatalogCache(reg),
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
 	})
@@ -382,6 +386,35 @@ func TestTaskCreateValidation(t *testing.T) {
 	}
 }
 
+// TestTaskCreateCatalogValidation drives the §8.2 cross-catalog check with
+// the task-level override applied to the adhoc workflow's claude step:
+// a value from another adapter's catalog is a 400, an unknown value creates
+// the task with a warning on the 201 body (T2.11).
+func TestTaskCreateCatalogValidation(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+
+	// minimal is a codex-only effort; the adhoc step resolves to claude.
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
+		"project_id": h.projectID, "title": "bad effort", "effort": "minimal",
+	})
+	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	if !strings.Contains(string(body), "codex") {
+		t.Errorf("message %s must name the owning adapter", body)
+	}
+
+	// A model no catalog knows passes with a warning.
+	created := h.createTask(t, map[string]any{"title": "warned", "model": "made-up-model-x"})
+	if len(created.Warnings) != 1 || !strings.Contains(created.Warnings[0], "made-up-model-x") {
+		t.Errorf("warnings = %v, want one naming the unknown model", created.Warnings)
+	}
+
+	// A curated value is silent.
+	created = h.createTask(t, map[string]any{"title": "clean", "model": "opus", "effort": "max"})
+	if len(created.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none for curated values", created.Warnings)
+	}
+}
+
 func TestTaskListFilters(t *testing.T) {
 	h := newTaskHarness(t, 0, false) // no runner: tasks stay queued
 	first := h.createTask(t, map[string]any{"title": "one"})
@@ -435,7 +468,7 @@ func TestInfoReportsAgents(t *testing.T) {
 	if err := json.Unmarshal(body, &info); err != nil {
 		t.Fatalf("info body: %v", err)
 	}
-	if len(info.Agents) != 1 || info.Agents[0].Name != "claude" || !info.Agents[0].Available {
-		t.Errorf("agents = %+v, want claude available", info.Agents)
+	if len(info.Agents) != 2 || info.Agents[0].Name != "claude" || !info.Agents[0].Available || info.Agents[1].Available {
+		t.Errorf("agents = %+v, want claude available + codex not", info.Agents)
 	}
 }

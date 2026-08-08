@@ -42,6 +42,14 @@ type Adapter interface {
 	// with the curated catalog (spec §9.6). On probe failure it returns the
 	// curated catalog alongside the error — degrade, never block.
 	Options(ctx context.Context) (Options, error)
+	// Path resolves the binary without spawning it (config knob, else PATH),
+	// so the catalog cache can key on binary identity cheaply (§9.6; T2.11
+	// interface addition).
+	Path() (string, error)
+	// Curated returns the compiled-in catalog without probing — what §8.2
+	// validation reads while the cache is unprimed (T2.11 interface
+	// addition).
+	Curated() Options
 	// Start launches one agent run. The returned handle's process is killed
 	// (whole tree) when ctx is canceled.
 	Start(ctx context.Context, spec RunSpec) (RunHandle, error)
