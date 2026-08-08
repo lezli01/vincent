@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,6 +59,9 @@ type taskResponse struct {
 	// Warnings are non-fatal §8.2 catalog findings from creation-time
 	// validation; only the POST /v1/tasks response carries them.
 	Warnings []string `json:"warnings,omitempty"`
+	// PendingInput is the normalized §7.4 input request while the task is
+	// awaiting_input — embedded verbatim as the engine persisted it.
+	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	// PauseRequested is a pause accepted but not yet in effect (§6).
 	PauseRequested bool `json:"pause_requested"`
 	// AvailableActions are the §6 human actions valid from the current
@@ -90,6 +94,7 @@ func toTaskResponse(t *store.Task) taskResponse {
 		State:            string(t.State),
 		CurrentStep:      t.CurrentStep,
 		BlockReason:      nilIfEmpty(t.BlockReason),
+		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
 		PauseRequested:   t.PauseRequested,
 		AvailableActions: availableActions(t.State),
 		CreatedAt:        t.CreatedAt.UTC().Format(time.RFC3339),
@@ -132,8 +137,11 @@ type stepRunResponse struct {
 	InputTokens    *int64   `json:"input_tokens"`
 	OutputTokens   *int64   `json:"output_tokens"`
 	CostUSD        *float64 `json:"cost_usd"`
-	StartedAt      string   `json:"started_at"`
-	FinishedAt     *string  `json:"finished_at"`
+	// InputWaitMS is the time this attempt spent in awaiting_input (§7.4);
+	// excluded from duration metrics (§17).
+	InputWaitMS int64   `json:"input_wait_ms"`
+	StartedAt   string  `json:"started_at"`
+	FinishedAt  *string `json:"finished_at"`
 }
 
 func toStepRunResponse(r *store.StepRun) stepRunResponse {
@@ -156,9 +164,18 @@ func toStepRunResponse(r *store.StepRun) stepRunResponse {
 		InputTokens:    r.InputTokens,
 		OutputTokens:   r.OutputTokens,
 		CostUSD:        r.CostUSD,
+		InputWaitMS:    r.InputWaitMS,
 		StartedAt:      r.StartedAt.UTC().Format(time.RFC3339),
 		FinishedAt:     timePtr(r.FinishedAt),
 	}
+}
+
+// rawIfNotEmpty embeds stored JSON verbatim; "" renders as an absent field.
+func rawIfNotEmpty(s string) json.RawMessage {
+	if s == "" {
+		return nil
+	}
+	return json.RawMessage(s)
 }
 
 type taskCreateRequest struct {
