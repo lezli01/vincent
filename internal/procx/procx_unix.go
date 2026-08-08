@@ -49,3 +49,22 @@ func signalProcess(cmd *exec.Cmd) error {
 	}
 	return nil
 }
+
+// KillPID kills a process rediscovered by PID — crash recovery reaping an
+// orphan from a previous daemon (spec §12.4). Start configures every child
+// as its own group leader (pgid == pid), so signaling the negative PID
+// reaches the whole surviving tree; a direct kill is the fallback for a
+// child that somehow left its group. A PID that is already gone is success.
+func KillPID(pid int) error {
+	err := syscall.Kill(-pid, syscall.SIGKILL)
+	if err == nil || errors.Is(err, syscall.ESRCH) {
+		if err != nil { // no such group: try the process itself
+			err = syscall.Kill(pid, syscall.SIGKILL)
+			if err != nil && !errors.Is(err, syscall.ESRCH) {
+				return err
+			}
+		}
+		return nil
+	}
+	return err
+}

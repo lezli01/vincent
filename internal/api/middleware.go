@@ -79,3 +79,7 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+// Unwrap lets http.ResponseController reach the underlying connection's
+// Flusher through this wrapper — the SSE endpoints stream (§13.3).
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

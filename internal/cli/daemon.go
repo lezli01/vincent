@@ -16,8 +16,9 @@ const (
 	// startTimeout bounds the `daemon start` health poll (phase 1 decision).
 	startTimeout = 10 * time.Second
 	// stopTimeout exceeds the daemon's own shutdown grace so a graceful stop
-	// is never reported as a failure prematurely.
-	stopTimeout = 20 * time.Second
+	// is never reported as a failure prematurely: §12.4's 15 s process grace
+	// plus the HTTP drain must fit inside it (PR D decision).
+	stopTimeout = 30 * time.Second
 	// pollInterval paces lifecycle polling loops.
 	pollInterval = 100 * time.Millisecond
 )

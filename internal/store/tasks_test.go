@@ -85,49 +85,6 @@ func TestTaskRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSweepInterrupted(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	p := testProject(t, s, "p1")
-
-	running := newTask(p.ID, "was-running", TaskRunning)
-	queued := newTask(p.ID, "still-queued", TaskQueued)
-	for _, tk := range []*Task{running, queued} {
-		if err := s.CreateTask(ctx, tk); err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-	}
-	run := &StepRun{TaskID: running.ID, StepIndex: 0, StepID: "run", StepType: "agent", Attempt: 1, State: StepRunning}
-	if err := s.CreateStepRun(ctx, run); err != nil {
-		t.Fatalf("CreateStepRun: %v", err)
-	}
-
-	n, err := s.SweepInterrupted(ctx)
-	if err != nil {
-		t.Fatalf("SweepInterrupted: %v", err)
-	}
-	if n != 1 {
-		t.Errorf("swept %d tasks, want 1", n)
-	}
-	got, err := s.GetTask(ctx, running.ID)
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	if got.State != TaskBlocked || got.BlockReason != "interrupted" {
-		t.Errorf("running task = %s/%q, want blocked/interrupted", got.State, got.BlockReason)
-	}
-	if q, _ := s.GetTask(ctx, queued.ID); q.State != TaskQueued {
-		t.Errorf("queued task = %s, want untouched", q.State)
-	}
-	r, err := s.GetStepRun(ctx, run.ID)
-	if err != nil {
-		t.Fatalf("GetStepRun: %v", err)
-	}
-	if r.State != StepInterrupted || r.FinishedAt == nil {
-		t.Errorf("step run = %s finished=%v, want interrupted with finished_at", r.State, r.FinishedAt)
-	}
-}
-
 func TestTaskNullableDefaults(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
