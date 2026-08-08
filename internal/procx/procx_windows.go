@@ -90,6 +90,12 @@ func KillPID(pid int) error {
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	if err := windows.TerminateProcess(h, 1); err != nil {
+		// Windows documents ERROR_ACCESS_DENIED when the process terminated
+		// after its handle was opened. OpenProcess already granted
+		// PROCESS_TERMINATE, so this is the successful already-gone case.
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return nil
+		}
 		return fmt.Errorf("terminate process %d: %w", pid, err)
 	}
 	return nil
