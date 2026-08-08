@@ -18,10 +18,10 @@ implementation progress; the executing agent updates it in place as work proceed
 |---|---|---|---|
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
-| 2 — Workflow engine (M2) | 12 tasks | 11/12 | 🟡 in progress |
+| 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 8 tasks | 0/8 | ⬜ not started |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **24/39** | |
+| **Total** | | **25/39** | |
 
 ---
 
@@ -278,8 +278,8 @@ Milestone acceptance (§19 M2): a multi-step workflow (gate + command publish) r
 - *CI:* own `m2-gate` job mirroring `m1-gate` (3-OS matrix, checkout + setup-go + script). Parallel to m1-gate; a failure names the milestone that broke.
 - *Manual leg:* `VINCENT_GATE_AGENT=claude` runs **scenario 1 only** against the real CLI with `model: haiku` pinned (T2.12 spend precedent); scenarios 2/3 stay fake even then — killing a paid run and 8× cap spend prove nothing extra. Result recorded in the T2.10 note.
 
-- [~] **T2.10 — Phase gate (M2 acceptance).** Automated: multi-step workflow (agent → command → gate → command publish to a local bare remote) with fake agents, incl. an input-request round-trip (§7.4); kill -9 recovery; cap stress test. Manual: one real-workflow run with real `claude`, result recorded here.
-  *Done when:* acceptance script green in CI; manual run noted.
+- [x] **T2.10 — Phase gate (M2 acceptance).** Automated: multi-step workflow (agent → command → gate → command publish to a local bare remote) with fake agents, incl. an input-request round-trip (§7.4); kill -9 recovery; cap stress test. Manual: one real-workflow run with real `claude`, result recorded here. ✓ 2026-08-08
+  *Done when:* acceptance script green in CI; manual run noted. *(Verified: `scripts/m2-gate.sh` green in the PR #21 CI matrix on ubuntu/macos/windows — scenario 1 drives ask → `awaiting_input` → scripted `/answer` built from `pending_input` → resume → commit → gate approve → push, asserting `input_wait_ms > 0`, `vincent.input_request`/`input_response` transcript lines, the approved gate row, the agent's README.md edit in the bare remote, and the `awaiting_input` `{kind}` event over an SSE replay from cursor 1; scenario 2 hard-kills the daemon mid-hang (`taskkill //F` on Windows) and asserts the orphaned grandchild reaped after restart plus interrupted-attempt-1/succeeded-attempt-2 rows under adhoc's `max_retries: 0` (§7.2 budget exclusion on real binaries); scenario 3 observed caps at exactly 3/3 global and 2/2 per-project across 8 tasks, all done. fakeagent's `ask-question` now honors `FAKEAGENT_EDIT_FILE` post-answer. Manual run 2026-08-08: `VINCENT_GATE_AGENT=claude scripts/m2-gate.sh` with real claude 2.1.226 (haiku) on Windows 11 — GATE PASS: AskUserQuestion parked the task, the scripted answer resumed it in place, claude's README.md edit was committed, gate-approved, and pushed to the bare remote.)*
 
 ## Phase 3 — TUI (M3)
 
