@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+# M2 phase gate (T2.10; spec §19 M2): prove via curl alone that a multi-step
+# workflow (agent → command → manual gate → command publish to a local bare
+# remote) runs to the gate with an agent question round-tripping
+# awaiting_input → answer → resume (scenario 1), that kill -9 mid-step
+# recovers correctly (scenario 2), and that both concurrency caps hold under
+# load (scenario 3). Runs against the committed fakeagent so CI never calls a
+# real API; run manually with VINCENT_GATE_AGENT=claude to exercise the real
+# CLI (scenario 1 only — killing a paid run and 8× cap spend prove nothing
+# extra). VINCENT_GATE_SCENARIO=1|2|3 runs a single scenario for debugging.
+#
+# Each scenario gets fresh config/data/repo dirs and its own daemon:
+# FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
+# change at daemon start, and isolation keeps one scenario's leftovers out of
+# another's assertions (PR G decision).
+#
+# Requirements: bash, go, git, curl, jq (all present on the GitHub runners,
+# incl. Git Bash on Windows).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMP="$(mktemp -d)"
+BIN="$TMP/bin"
+
+VINCENT="$BIN/vincent"
+FAKEAGENT="$BIN/fakeagent"
+if [[ "${OS:-}" == "Windows_NT" ]]; then
+  VINCENT+=".exe"
+  FAKEAGENT+=".exe"
+fi
+
+REAL_AGENT=0
+[[ "${VINCENT_GATE_AGENT:-fake}" == "claude" ]] && REAL_AGENT=1
+
+fail() { echo "GATE FAIL: $*" >&2; exit 1; }
+
+cleanup() {
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+
+# hostpath converts a bash path for consumption by vincent — Git Bash /tmp
+# paths are meaningless to a native Windows binary. -m keeps forward slashes
+# so nothing needs YAML/JSON escaping.
+hostpath() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
+}
+
+echo "== build vincent + fakeagent"
+(cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
+
+# ---------------------------------------------------------------------------
+# Per-scenario plumbing. scenario_dirs re-points the phase-1 env-override
+# knob at fresh config/data dirs; daemon_up starts the daemon (inheriting the
+# FAKEAGENT_* variables exported by the caller) and primes PORT/TOKEN/BASE.
+# ---------------------------------------------------------------------------
+
+CONFIG_DIR=""
+DATA_DIR=""
+scenario_dirs() { # scenario_dirs NAME
+  CONFIG_DIR="$TMP/$1/config"
+  DATA_DIR="$TMP/$1/data"
+  mkdir -p "$CONFIG_DIR" "$DATA_DIR"
+  export VINCENT_CONFIG_DIR
+  VINCENT_CONFIG_DIR="$(hostpath "$CONFIG_DIR")"
+  export VINCENT_DATA_DIR
+  VINCENT_DATA_DIR="$(hostpath "$DATA_DIR")"
+}
+
+PORT="" TOKEN="" BASE=""
+daemon_up() {
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+}
+
+api() { # api METHOD PATH [JSON_BODY] — prints the body, fails loudly on non-2xx
+  local method="$1" path="$2" body="${3:-}" out status
+  local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" -w $'\n%{http_code}')
+  [[ -n "$body" ]] && args+=(-H "Content-Type: application/json" -d "$body")
+  out="$(curl "${args[@]}" "$BASE$path")" || fail "curl $method $path failed"
+  status="${out##*$'\n'}"
+  out="${out%$'\n'*}"
+  [[ "$status" == 2* ]] || fail "$method $path -> HTTP $status: $out"
+  printf '%s' "$out"
+}
+
+make_repo() { # make_repo PATH — init a commit-ready repo on main
+  git init -q -b main "$1"
+  git -C "$1" config user.name gate
+  git -C "$1" config user.email gate@example.invalid
+  git -C "$1" config commit.gpgsign false
+  printf 'gate repo\n' > "$1/README.md"
+  git -C "$1" add . && git -C "$1" commit -qm init
+}
+
+register_project() { # register_project REPO_PATH [EXTRA_JSON_FIELDS] -> id
+  local extra="${2:-}"
+  local body
+  body="$(jq -cn --arg p "$(hostpath "$1")" "{path: \$p $extra}")"
+  api POST /projects "$body" | jq -r .id
+}
+
+wait_for_state() { # wait_for_state TASK_ID STATE TRIES
+  local id="$1" want="$2" tries="$3" state=""
+  for _ in $(seq 1 "$tries"); do
+    state="$(api GET "/tasks/$id" | jq -r .state)"
+    [[ "$state" == "$want" ]] && return 0
+    if [[ "$state" == "blocked" || "$state" == "aborted" ]] && [[ "$want" != "blocked" ]]; then
+      api GET "/tasks/$id" | jq . >&2
+      fail "task $id reached $state while waiting for $want"
+    fi
+    sleep 1
+  done
+  api GET "/tasks/$id" | jq . >&2
+  fail "task $id never reached $want (still $state)"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 1 — multi-step workflow with an input-request round-trip:
+# agent (asks a question, then edits README.md) → command (commit) → manual
+# gate → command (push to a local bare remote). Spec §19 M2, §7.4.
+# ---------------------------------------------------------------------------
+scenario1() {
+  echo "=== scenario 1: workflow + input round-trip + gate + publish"
+  scenario_dirs s1
+
+  local agent_path model_line=""
+  agent_path="$(hostpath "$FAKEAGENT")"
+  if (( REAL_AGENT )); then
+    agent_path="" # empty = resolve the real claude from PATH
+    model_line="  model: haiku"
+  else
+    export FAKEAGENT_SCENARIO=ask-question
+    export FAKEAGENT_ASK_MULTI=1 # second, multi-select question over the wire
+    export FAKEAGENT_EDIT_FILE=README.md
+  fi
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$agent_path"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-flow.yaml" <<EOF
+name: m2-flow
+description: M2 gate — ask, commit, gate, publish.
+defaults:
+  agent: claude
+  max_retries: 0
+$model_line
+steps:
+  - id: ask
+    type: agent
+    prompt: |
+      Use the AskUserQuestion tool to ask the user which color they prefer
+      (options: Red, Blue). After the answer arrives, append one line stating
+      the chosen color to README.md in the current directory. Do not do
+      anything else. Task: {{.Task.Title}}
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "m2 gate: record the answer"'
+  - id: review
+    type: manual
+    instructions: |
+      Inspect the diff of task #{{.Task.ID}} before it is published.
+  - id: publish
+    type: command
+    run: git push publish {{.Task.BranchName}}
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s1/repo" remote="$TMP/s1/remote.git"
+  make_repo "$repo"
+  git init -q --bare "$remote"
+  git -C "$repo" remote add publish "$(hostpath "$remote")"
+
+  local project_id task_id
+  project_id="$(register_project "$repo")"
+  task_id="$(api POST /tasks "{\"project_id\":$project_id,\"workflow\":\"m2-flow\",\"title\":\"M2 gate flow\",\"description\":\"Answer the question, then publish.\"}" | jq -r .id)"
+  [[ "$task_id" =~ ^[0-9]+$ ]] || fail "task creation returned no id"
+
+  echo "== wait for awaiting_input"
+  wait_for_state "$task_id" awaiting_input 180
+  local task pending
+  task="$(api GET "/tasks/$task_id")"
+  pending="$(jq .pending_input <<<"$task")"
+  [[ "$(jq -r .kind <<<"$pending")" == "question" ]] || fail "pending_input is not a question: $pending"
+  jq -e '.available_actions | index("answer")' <<<"$task" >/dev/null \
+    || fail "available_actions misses answer: $task"
+
+  echo "== answer (first option per question, built from pending_input)"
+  local answer_body
+  answer_body="$(jq -c '{answers: [.questions[]
+    | (.options[0] // "Blue") as $pick
+    | {key: .text, value: (if .multi_select then [$pick] else $pick end)}]
+    | from_entries}' <<<"$pending")"
+  api POST "/tasks/$task_id/answer" "$answer_body" >/dev/null
+
+  echo "== wait for the gate, approve"
+  wait_for_state "$task_id" awaiting_gate 180
+  local gate_row
+  gate_row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "review")][-1]')"
+  [[ "$(jq -r .state <<<"$gate_row")" == "running" ]] || fail "gate row not open: $gate_row"
+  api POST "/tasks/$task_id/approve" >/dev/null
+
+  echo "== wait for done"
+  wait_for_state "$task_id" done 180
+
+  echo "== assert step rows (input wait accounted, gate approved, publish succeeded)"
+  local steps ask_row
+  steps="$(api GET "/tasks/$task_id/steps")"
+  ask_row="$(jq '[.[] | select(.step_id == "ask")][-1]' <<<"$steps")"
+  [[ "$(jq -r .state <<<"$ask_row")" == "succeeded" ]] || fail "ask step not succeeded: $ask_row"
+  jq -e '.input_wait_ms > 0' <<<"$ask_row" >/dev/null || fail "ask step has no input wait: $ask_row"
+  [[ "$(jq -r '[.[] | select(.step_id == "review")][-1].state' <<<"$steps")" == "approved" ]] \
+    || fail "gate row not approved: $steps"
+  [[ "$(jq -r '[.[] | select(.step_id == "publish")][-1].state' <<<"$steps")" == "succeeded" ]] \
+    || fail "publish step not succeeded: $steps"
+
+  echo "== assert request/answer transcript lines"
+  local run_id transcript
+  run_id="$(jq -r .id <<<"$ask_row")"
+  transcript="$(api GET "/tasks/$task_id/steps/$run_id/transcript")"
+  grep -q '"vincent.input_request"' <<<"$transcript" || fail "transcript has no vincent.input_request"
+  grep -q '"vincent.input_response"' <<<"$transcript" || fail "transcript has no vincent.input_response"
+
+  echo "== assert the bare remote got the branch"
+  local branch
+  branch="$(api GET "/tasks/$task_id" | jq -r .branch_name)"
+  git -C "$remote" rev-parse --verify "refs/heads/$branch" >/dev/null \
+    || fail "branch $branch missing in the bare remote"
+  git -C "$remote" log -1 --format=%s "$branch" | grep -q 'm2 gate: record the answer' \
+    || fail "published tip is not the gate commit"
+  if (( ! REAL_AGENT )); then
+    git -C "$remote" show --name-only --format= "$branch" | grep -qx 'README.md' \
+      || fail "published commit does not carry the agent's README.md edit"
+  fi
+
+  echo "== assert durable events over SSE replay (Last-Event-ID: 1)"
+  # Cursor 1, not 0: ids start at 1 and a 0/absent cursor means live-only by
+  # design (PR D — genesis catch-up is REST snapshot, then follow). Resuming
+  # from the first event replays every later state change.
+  local events
+  events="$(curl -sS -N --max-time 3 -H "Authorization: Bearer $TOKEN" \
+    -H "Last-Event-ID: 1" "$BASE/events?types=task.state_changed" || true)"
+  grep -q '"to":"awaiting_input"' <<<"$events" || fail "SSE replay misses the awaiting_input transition"
+  grep -q '"kind":"question"' <<<"$events" || fail "awaiting_input event carries no {kind}"
+  grep -q '"to":"awaiting_gate"' <<<"$events" || fail "SSE replay misses the awaiting_gate transition"
+
+  "$VINCENT" daemon stop
+  unset FAKEAGENT_SCENARIO FAKEAGENT_ASK_MULTI FAKEAGENT_EDIT_FILE
+  echo "=== scenario 1 PASS (task $task_id, branch $branch)"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 2 — kill -9 mid-step recovers correctly: hang agent with a spawned
+# grandchild, hard-kill the daemon, restart, assert the orphan tree is gone
+# and the task re-ran the same step to done. adhoc pins max_retries: 0, so
+# the re-run existing at all proves §7.2's interrupted-excluded-from-budget.
+# ---------------------------------------------------------------------------
+scenario2() {
+  echo "=== scenario 2: hard-kill recovery"
+  scenario_dirs s2
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  export FAKEAGENT_SCENARIO=hang
+  export FAKEAGENT_SPAWN_CHILD=1
+  daemon_up
+
+  local repo="$TMP/s2/repo" project_id task_id
+  make_repo "$repo"
+  project_id="$(register_project "$repo")"
+  task_id="$(api POST /tasks "{\"project_id\":$project_id,\"title\":\"M2 gate hang\",\"description\":\"Hang until killed.\"}" | jq -r .id)"
+
+  echo "== wait for the agent (and its child) to spawn"
+  local child_pid=""
+  for _ in $(seq 1 60); do
+    local run_id
+    run_id="$(api GET "/tasks/$task_id/steps" | jq -r '.[0].id // empty')"
+    if [[ -n "$run_id" ]]; then
+      child_pid="$(api GET "/tasks/$task_id/steps/$run_id/transcript" 2>/dev/null \
+        | grep '"fakeagent.child"' | head -1 | jq -r .pid || true)"
+      [[ -n "$child_pid" ]] && break
+    fi
+    sleep 1
+  done
+  [[ "$child_pid" =~ ^[0-9]+$ ]] || fail "never saw the fakeagent child pid in the transcript"
+
+  echo "== hard-kill the daemon (pid from daemon.json)"
+  local daemon_pid
+  daemon_pid="$(jq -r .pid "$DATA_DIR/daemon.json")"
+  if [[ "${OS:-}" == "Windows_NT" ]]; then
+    # Git Bash kill -9 can't reliably kill a native process; // stops MSYS
+    # from mangling the flags into paths (phase 2 decision).
+    taskkill //F //PID "$daemon_pid" >/dev/null
+  else
+    kill -9 "$daemon_pid"
+  fi
+  for _ in $(seq 1 20); do
+    kill -0 "$daemon_pid" 2>/dev/null || break
+    sleep 0.5
+  done
+
+  echo "== restart (scenario flips to success for the re-run)"
+  export FAKEAGENT_SCENARIO=success
+  unset FAKEAGENT_SPAWN_CHILD
+  daemon_up
+
+  echo "== assert the orphaned child is gone"
+  local alive=1
+  for _ in $(seq 1 20); do
+    if [[ "${OS:-}" == "Windows_NT" ]]; then
+      tasklist //FI "PID eq $child_pid" 2>/dev/null | grep -q " $child_pid " || { alive=0; break; }
+    else
+      kill -0 "$child_pid" 2>/dev/null || { alive=0; break; }
+    fi
+    sleep 0.5
+  done
+  (( alive == 0 )) || fail "orphaned child $child_pid still alive after recovery"
+
+  echo "== assert the task re-ran the same step to done"
+  wait_for_state "$task_id" done 60
+  local steps
+  steps="$(api GET "/tasks/$task_id/steps")"
+  jq -e '.[] | select(.step_index == 0 and .attempt == 1
+    and .state == "interrupted" and .failure_reason == "interrupted")' <<<"$steps" >/dev/null \
+    || fail "no interrupted attempt-1 row: $steps"
+  jq -e '.[] | select(.step_index == 0 and .attempt == 2 and .state == "succeeded")' <<<"$steps" >/dev/null \
+    || fail "no succeeded attempt-2 row: $steps"
+
+  "$VINCENT" daemon stop
+  unset FAKEAGENT_SCENARIO
+  echo "=== scenario 2 PASS (task $task_id, child $child_pid reaped)"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 3 — caps honored under load: 8 one-step `sleep 2` command tasks
+# across two projects (per-project cap 2, global cap 3; both bind). No agent
+# processes — deterministic durations, no scenario-env coupling.
+# ---------------------------------------------------------------------------
+scenario3() {
+  echo "=== scenario 3: cap stress"
+  scenario_dirs s3
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+max_parallel_tasks: 3
+EOF
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-caps.yaml" <<EOF
+name: m2-caps
+description: M2 gate cap stress — sleep, valid in sh and pwsh alike.
+steps:
+  - id: nap
+    type: command
+    run: sleep 2
+EOF
+
+  daemon_up
+
+  local repo_a="$TMP/s3/repo-a" repo_b="$TMP/s3/repo-b" pa pb
+  make_repo "$repo_a"
+  make_repo "$repo_b"
+  pa="$(register_project "$repo_a" ', max_parallel_tasks: 2')"
+  pb="$(register_project "$repo_b" ', max_parallel_tasks: 2')"
+
+  echo "== create 8 tasks (4 per project)"
+  local i
+  for i in 1 2 3 4; do
+    api POST /tasks "{\"project_id\":$pa,\"workflow\":\"m2-caps\",\"title\":\"cap a$i\",\"description\":\"nap\"}" >/dev/null
+    api POST /tasks "{\"project_id\":$pb,\"workflow\":\"m2-caps\",\"title\":\"cap b$i\",\"description\":\"nap\"}" >/dev/null
+  done
+
+  echo "== sample running counts until all 8 finish"
+  local max_global=0 max_project=0 done_count=0 snap g p
+  for _ in $(seq 1 450); do # 450 × 0.2 s = 90 s budget
+    snap="$(api GET /tasks)"
+    g="$(jq '[.[] | select(.state == "running")] | length' <<<"$snap")"
+    p="$(jq '[.[] | select(.state == "running")] | group_by(.project_id) | map(length) | max // 0' <<<"$snap")"
+    done_count="$(jq '[.[] | select(.state == "done")] | length' <<<"$snap")"
+    (( g > max_global )) && max_global=$g
+    (( p > max_project )) && max_project=$p
+    jq -e '.[] | select(.state == "blocked" or .state == "aborted")' <<<"$snap" >/dev/null \
+      && fail "a cap-stress task failed: $snap"
+    (( done_count == 8 )) && break
+    sleep 0.2
+  done
+  (( done_count == 8 )) || fail "only $done_count/8 tasks finished"
+  (( max_global <= 3 )) || fail "global cap violated: saw $max_global running (cap 3)"
+  (( max_project <= 2 )) || fail "per-project cap violated: saw $max_project running (cap 2)"
+  (( max_global >= 2 )) || fail "never saw parallelism (max $max_global) — scheduler serialized?"
+
+  "$VINCENT" daemon stop
+  echo "=== scenario 3 PASS (max global $max_global/3, max per-project $max_project/2)"
+}
+
+WHICH="${VINCENT_GATE_SCENARIO:-all}"
+if (( REAL_AGENT )); then
+  echo "== real-agent mode: scenario 1 only (PR G decision)"
+  WHICH=1
+fi
+case "$WHICH" in
+  1) scenario1 ;;
+  2) scenario2 ;;
+  3) scenario3 ;;
+  all) scenario1; scenario2; scenario3 ;;
+  *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
+esac
+
+echo "M2 GATE PASS"
