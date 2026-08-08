@@ -80,6 +80,18 @@ func resolveCheckTimeout(step workflow.Step, cfg config.Config) time.Duration {
 	return cfg.Defaults.CommandTimeout.Std()
 }
 
+// resolveInputTimeout resolves the bound on each awaiting_input wait (§7.4):
+// step field, then workflow defaults, then the daemon default.
+func resolveInputTimeout(step workflow.Step, defaults workflow.Defaults, cfg config.Config) time.Duration {
+	if step.InputTimeout != nil {
+		return step.InputTimeout.Std()
+	}
+	if defaults.InputTimeout != nil {
+		return defaults.InputTimeout.Std()
+	}
+	return cfg.Defaults.InputTimeout.Std()
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if v != "" {

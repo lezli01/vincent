@@ -64,6 +64,11 @@ type TaskChange struct {
 	// PendingOverride hands edit+retry text to the actor that will create
 	// the next attempt's step run; it clears when drained.
 	PendingOverride *Override
+	// PendingInput stores the normalized InputRequest JSON with the
+	// transition into awaiting_input (§7.4). Clearing is not the caller's
+	// job: TransitionTask NULLs the column on any transition out of
+	// awaiting_input, so "non-null iff awaiting_input" holds by construction.
+	PendingInput *string
 	// EventPayload carries extra fields into the state-change event, merged
 	// with from/to. Reserved keys (from, to) are overwritten.
 	EventPayload map[string]any
@@ -106,6 +111,11 @@ func (s *Store) TransitionTask(
 		t.State = to
 		t.UpdatedAt = now
 		applyChange(t, ch)
+		if from == TaskAwaitingInput {
+			// The §7.4 invariant, enforced in one place: leaving
+			// awaiting_input always discards the pending request.
+			t.PendingInputJSON = ""
+		}
 		switch to {
 		case TaskRunning:
 			if t.StartedAt == nil {
@@ -115,7 +125,7 @@ func (s *Store) TransitionTask(
 			t.FinishedAt = &now
 		case TaskArchived:
 			t.ArchivedAt = &now
-		case TaskQueued, TaskAwaitingGate, TaskBlocked, TaskPaused:
+		case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskBlocked, TaskPaused:
 			// No timestamp of their own; updated_at covers them.
 		}
 		if to != TaskBlocked {
@@ -129,11 +139,12 @@ func (s *Store) TransitionTask(
 		res, err := tx.ExecContext(ctx, `
 			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
 				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
-				pending_override_json = ?,
+				pending_override_json = ?, pending_input_json = ?,
 				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 			WHERE id = ? AND state = ?`,
 			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
 			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+			nullString(t.PendingInputJSON),
 			formatTime(t.UpdatedAt),
 			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 			id, string(from))
@@ -260,6 +271,9 @@ func applyChange(t *Task, ch TaskChange) {
 		} else {
 			t.PendingOverride = ch.PendingOverride
 		}
+	}
+	if ch.PendingInput != nil {
+		t.PendingInputJSON = *ch.PendingInput
 	}
 }
 

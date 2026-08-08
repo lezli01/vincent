@@ -15,6 +15,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
+	pending_input_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -408,6 +409,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		worktree, blockReason       sql.NullString
 		agentOv, modelOv, effortOv  sql.NullString
 		retryCursor, pendingOv      sql.NullString
+		pendingInput                sql.NullString
 		created, updated            string
 		started, finished, archived sql.NullString
 	)
@@ -416,11 +418,13 @@ func scanTask(r rowScanner) (*Task, error) {
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
+		&pendingInput,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
 	t.WorktreePath = worktree.String
 	t.BlockReason = blockReason.String
+	t.PendingInputJSON = pendingInput.String
 	t.AgentOverride = agentOv.String
 	t.ModelOverride = modelOv.String
 	t.EffortOverride = effortOv.String

@@ -80,6 +80,11 @@ const (
 	// Interrupt is a crash or graceful stop mid-step: the attempt does not
 	// consume a retry and the task is re-queued (§12.4).
 	Interrupt Action = "interrupt"
+	// InputClosed is a pending input request ending without an answer while
+	// execution continues — input_timeout expiry or agent process death with
+	// retries remaining, or the agent withdrawing its request (§7.4; PR F).
+	// Exhausted retries use Fail instead.
+	InputClosed Action = "input_closed"
 	// Park is a requested pause taking effect at the step boundary (§6).
 	Park Action = "park"
 )
@@ -138,6 +143,7 @@ var table = map[Action]map[State]Transition{
 	Complete:     {Running: {To: Done}},
 	Fail:         {Running: {To: Blocked}, AwaitingInput: {To: Blocked}},
 	Interrupt:    {Running: {To: Queued}, AwaitingInput: {To: Queued}},
+	InputClosed:  {AwaitingInput: {To: Running}},
 	Park:         {Running: {To: Paused}},
 }
 

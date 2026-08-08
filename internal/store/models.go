@@ -84,7 +84,11 @@ type Task struct {
 	// PendingOverride is edit+retry text waiting for the next attempt's
 	// step run; the actor drains and clears it (§6).
 	PendingOverride *Override
-	CreatedAt       time.Time
+	// PendingInputJSON is the normalized InputRequest while the task is
+	// awaiting_input (§7.4); "" otherwise. TransitionTask clears it on any
+	// transition out of awaiting_input.
+	PendingInputJSON string
+	CreatedAt        time.Time
 	UpdatedAt       time.Time
 	StartedAt       *time.Time
 	FinishedAt      *time.Time
@@ -120,8 +124,11 @@ type StepRun struct {
 	InputTokens    *int64
 	OutputTokens   *int64
 	CostUSD        *float64 // nil when the agent doesn't report cost
-	StartedAt      time.Time
-	FinishedAt     *time.Time
+	// InputWaitMS is the time this attempt spent in awaiting_input (§7.4),
+	// excluded from duration metrics (§17).
+	InputWaitMS int64
+	StartedAt   time.Time
+	FinishedAt  *time.Time
 }
 
 // Override is the prompt or command a human supplied with `edit + retry`

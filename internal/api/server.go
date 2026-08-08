@@ -253,6 +253,7 @@ type configResponse struct {
 type configDefaults struct {
 	AgentTimeout   string `json:"agent_timeout"`
 	CommandTimeout string `json:"command_timeout"`
+	InputTimeout   string `json:"input_timeout"`
 }
 
 type agentPath struct {
@@ -267,6 +268,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		Defaults: configDefaults{
 			AgentTimeout:   cfg.Defaults.AgentTimeout.String(),
 			CommandTimeout: cfg.Defaults.CommandTimeout.String(),
+			InputTimeout:   cfg.Defaults.InputTimeout.String(),
 		},
 		TranscriptRetentionDays: cfg.TranscriptRetentionDays,
 		LogLevel:                cfg.LogLevel,
