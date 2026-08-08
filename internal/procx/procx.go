@@ -6,9 +6,14 @@
 package procx
 
 import (
+	"errors"
 	"os/exec"
 	"sync"
 )
+
+// ErrProcessGone reports that no process with the queried PID exists —
+// for crash recovery, the good case: the orphan already exited.
+var ErrProcessGone = errors.New("process not found")
 
 // Proc is a started subprocess whose whole tree Kill terminates.
 type Proc struct {

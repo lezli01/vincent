@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -58,6 +59,9 @@ type Deps struct {
 	// or deleted, so the workflow registry can follow the project scopes
 	// (§5.2). Nil is tolerated.
 	OnProjectsChanged func()
+	// Broker feeds the SSE endpoints (§13.3). Nil is tolerated (tests
+	// without streaming); the endpoints then answer 500.
+	Broker *events.Broker
 }
 
 // AgentStatus is one adapter's availability as reported by /v1/info
@@ -143,6 +147,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps", s.handleTaskSteps)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)
+	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
