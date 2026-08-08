@@ -538,7 +538,7 @@ type RunSpec struct {
 }
 
 type RunHandle interface {
-    Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, InputRequest, Result, Error
+    Events() <-chan AgentEvent  // normalized stream: Output, ToolUse, Usage, InputRequest, InputCanceled, Result, Error
     Respond(resp InputResponse) error // answer the pending InputRequest (§7.4); error if none pending
     Wait() (RunResult, error)   // blocks until process exit
     Kill() error
@@ -559,8 +559,10 @@ type Question struct {
 }
 
 type InputResponse struct {
-    Answers map[string][]string // question text → selected/typed answer(s)
-    Allow   *bool               // kind=permission: approve or deny
+    Answers  map[string][]string // question text → selected/typed answer(s)
+    Allow    *bool               // kind=permission: approve or deny
+    Response string              // free-text response: the §7.4 deny-mode canned answer,
+                                 // or the message a permission denial carries (PR F addition)
 }
 
 type RunResult struct {
