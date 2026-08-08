@@ -44,6 +44,8 @@ type Entry struct {
 	// Workflow is the parsed definition; nil when Errors is non-empty.
 	Workflow *Workflow
 	Errors   Errors
+	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
+	Warnings Errors
 }
 
 // Valid reports whether the entry parsed and validated.
@@ -231,7 +233,8 @@ func (r *Registry) loadDir(dir string, scope Scope, projectID int64) scopeEntrie
 			continue
 		}
 		entry := Entry{Scope: scope, ProjectID: projectID, File: path, Source: string(src)}
-		wf, perr := Parse(src, r.opts)
+		wf, warns, perr := Parse(src, r.opts)
+		entry.Warnings = warns
 		switch {
 		case perr != nil:
 			var errs Errors
@@ -244,6 +247,9 @@ func (r *Registry) loadDir(dir string, scope Scope, projectID int64) scopeEntrie
 		default:
 			entry.Workflow = wf
 			entry.Name = wf.Name
+			if len(warns) > 0 {
+				r.log.Warn("workflow has catalog warnings", "file", path, "warnings", warns.Error())
+			}
 		}
 		// First file wins a duplicate name (§5.2 isolation): the later file
 		// becomes an invalid dupe entry instead of overwriting the winner.

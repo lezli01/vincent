@@ -39,7 +39,7 @@ steps:
 `
 
 func TestParseValid(t *testing.T) {
-	wf, err := Parse([]byte(validSource), Options{KnownAgents: []string{"claude", "codex"}})
+	wf, _, err := Parse([]byte(validSource), Options{KnownAgents: []string{"claude", "codex"}})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestParseValidation(t *testing.T) {
 	opts := Options{KnownAgents: []string{"claude", "codex"}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse([]byte(tt.src), opts)
+			_, _, err := Parse([]byte(tt.src), opts)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want validation failure", tt.name)
 			}
@@ -245,7 +245,7 @@ func hasPath(errs Errors, path string) bool {
 // strict-decoding failure and a semantic failure point at the offending line.
 func TestParseReportsLines(t *testing.T) {
 	semantic := "name: x\nsteps:\n  - id: a\n    type: agent\n    timeout: 0s\n    prompt: hi\n"
-	_, err := Parse([]byte(semantic), Options{})
+	_, _, err := Parse([]byte(semantic), Options{})
 	var errs Errors
 	if !errors.As(err, &errs) || len(errs) == 0 {
 		t.Fatalf("Parse = %v, want validation errors", err)
@@ -255,7 +255,7 @@ func TestParseReportsLines(t *testing.T) {
 	}
 
 	strict := "name: x\nsteps:\n  - id: a\n    type: manual\n    instructions: hi\n    nope: 1\n"
-	_, err = Parse([]byte(strict), Options{})
+	_, _, err = Parse([]byte(strict), Options{})
 	if !errors.As(err, &errs) || len(errs) == 0 {
 		t.Fatalf("Parse = %v, want a decode error", err)
 	}
@@ -268,7 +268,7 @@ func TestParseReportsLines(t *testing.T) {
 // than stopping at the first.
 func TestParseCollectsEveryFailure(t *testing.T) {
 	src := "name: x\nsteps:\n  - {id: a, type: agent}\n  - {id: a, type: bogus}\n"
-	_, err := Parse([]byte(src), Options{})
+	_, _, err := Parse([]byte(src), Options{})
 	var errs Errors
 	if !errors.As(err, &errs) {
 		t.Fatalf("error type = %T, want Errors", err)

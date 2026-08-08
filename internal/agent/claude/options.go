@@ -37,6 +37,9 @@ func (a *Adapter) Options(ctx context.Context) (agent.Options, error) {
 	return mergeOptions(models, efforts), nil
 }
 
+// Curated implements agent.Adapter: the compiled-in catalog, no probe.
+func (a *Adapter) Curated() agent.Options { return mergeOptions(nil, nil) }
+
 // mergeOptions builds the catalog: probed values first (source cli), then
 // curated values not already present (source curated). Defaults stay empty —
 // the CLI decides.

@@ -10,89 +10,18 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// TestResolveSelection walks the §8.6 precedence ladder and the
-// agent-scoped inheritance rule that keeps a claude alias away from codex.
+// TestResolveSelection proves the wrapper feeds each §8.6 level's fields to
+// the shared resolver; the precedence ladder itself is table-tested where
+// the resolver lives, in internal/agent (T2.11).
 func TestResolveSelection(t *testing.T) {
-	tests := []struct {
-		name     string
-		step     workflow.Step
-		defaults workflow.Defaults
-		task     store.Task
-		want     selection
-	}{
-		{
-			name: "nothing declared falls back to the daemon default agent",
-			want: selection{Agent: DefaultAgent},
-		},
-		{
-			name:     "workflow defaults apply",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "low"},
-			want:     selection{Agent: "claude", Model: "sonnet", Effort: "low"},
-		},
-		{
-			name:     "task override replaces workflow defaults",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "low"},
-			task:     store.Task{AgentOverride: "claude", ModelOverride: "opus", EffortOverride: "max"},
-			want:     selection{Agent: "claude", Model: "opus", Effort: "max"},
-		},
-		{
-			name:     "explicit step fields beat the task override",
-			step:     workflow.Step{Agent: "claude", Model: "haiku", Effort: "low"},
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet"},
-			task:     store.Task{AgentOverride: "claude", ModelOverride: "opus", EffortOverride: "max"},
-			want:     selection{Agent: "claude", Model: "haiku", Effort: "low"},
-		},
-		{
-			name:     "a step pinning another agent does not inherit its model",
-			step:     workflow.Step{Agent: "codex"},
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "max"},
-			want:     selection{Agent: "codex"},
-		},
-		{
-			name:     "a step pinning another agent keeps its own model and effort",
-			step:     workflow.Step{Agent: "codex", Effort: "high"},
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "max"},
-			want:     selection{Agent: "codex", Effort: "high"},
-		},
-		{
-			name:     "a task override switching agent drops the workflow model",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "max"},
-			task:     store.Task{AgentOverride: "codex"},
-			want:     selection{Agent: "codex"},
-		},
-		{
-			name:     "a task override switching agent carries its own model",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet"},
-			task:     store.Task{AgentOverride: "codex", ModelOverride: "gpt-5.2"},
-			want:     selection{Agent: "codex", Model: "gpt-5.2"},
-		},
-		{
-			name:     "a model-only task override rides the workflow agent",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet"},
-			task:     store.Task{ModelOverride: "opus"},
-			want:     selection{Agent: "claude", Model: "opus"},
-		},
-		{
-			name:     "a model-only task override does not reach a step that switched agent",
-			step:     workflow.Step{Agent: "codex"},
-			defaults: workflow.Defaults{Agent: "claude"},
-			task:     store.Task{ModelOverride: "opus"},
-			want:     selection{Agent: "codex"},
-		},
-		{
-			name:     "workflow defaults fill what the task override leaves unset",
-			defaults: workflow.Defaults{Agent: "claude", Model: "sonnet", Effort: "low"},
-			task:     store.Task{EffortOverride: "max"},
-			want:     selection{Agent: "claude", Model: "sonnet", Effort: "max"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := resolveSelection(tt.step, tt.defaults, &tt.task)
-			if got != tt.want {
-				t.Errorf("resolveSelection = %+v, want %+v", got, tt.want)
-			}
-		})
+	got := resolveSelection(
+		workflow.Step{Effort: "low"},
+		workflow.Defaults{Agent: "claude", Model: "sonnet"},
+		&store.Task{ModelOverride: "opus"},
+	)
+	want := agent.Selection{Agent: "claude", Model: "opus", Effort: "low"}
+	if got != want {
+		t.Errorf("resolveSelection = %+v, want %+v (step effort, override model, defaults agent)", got, want)
 	}
 }
 

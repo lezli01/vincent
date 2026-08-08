@@ -49,9 +49,11 @@ type Deps struct {
 	// owns the live runs they reach and the step_run rows they close; this
 	// package only maps them onto HTTP.
 	Runner *taskrun.Runner
-	// AgentStatus is the per-adapter availability probed at daemon start
-	// (§9.5); /v1/agents adds on-demand re-probing in T2.11.
-	AgentStatus []AgentStatus
+	// Catalog serves /v1/agents and /v1/info agent availability from the
+	// §9.6 binary-identity cache: fresh by construction, stat-cheap per
+	// request. Nil is tolerated (tests without adapters) — /v1/info then
+	// reports no agents and /v1/agents answers 500.
+	Catalog *agent.CatalogCache
 	// WakeRunner nudges task admission after a task is created; it must not
 	// block. Nil is tolerated (tests without a runner).
 	WakeRunner func()
@@ -124,6 +126,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/health", s.handleHealth)
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
+	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
 	rt.handle(http.MethodGet, "/v1/projects", s.handleProjectList)
 	rt.handle(http.MethodPost, "/v1/projects", s.handleProjectCreate)
@@ -201,11 +204,27 @@ type infoResponse struct {
 	Agents           []AgentStatus `json:"agents"`
 }
 
-func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	cfg := s.deps.Config()
-	agents := s.deps.AgentStatus
-	if agents == nil {
-		agents = []AgentStatus{}
+	// Availability rides the same binary-identity cache as /v1/agents
+	// (T2.11): a CLI installed or upgraded after daemon start is visible on
+	// the next request, and the two endpoints can never disagree.
+	agents := []AgentStatus{}
+	if s.deps.Catalog != nil {
+		for _, name := range s.deps.Catalog.Names() {
+			e, ok := s.deps.Catalog.Entry(r.Context(), name, false)
+			if !ok {
+				continue
+			}
+			agents = append(agents, AgentStatus{
+				Name:          name,
+				Available:     e.Availability.Found,
+				Path:          e.Availability.Path,
+				Version:       e.Availability.Version,
+				SupportsInput: e.Availability.SupportsInput,
+				Error:         e.Availability.Error,
+			})
+		}
 	}
 	writeJSON(w, http.StatusOK, infoResponse{
 		Version:          version.Version(),
