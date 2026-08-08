@@ -17,8 +17,9 @@
 //	FAKEAGENT_VERSION     claude dialect: version number --version reports
 //	                      (default 2.1.224) — lets tests drive the §7.4
 //	                      supports_input version gate
-//	FAKEAGENT_EDIT_FILE   success: append a line to this worktree-relative
-//	                      tracked file, so gate runs produce a non-empty diff
+//	FAKEAGENT_EDIT_FILE   success, ask-question (post-answer): append a line
+//	                      to this worktree-relative tracked file, so gate
+//	                      runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
@@ -266,6 +267,9 @@ func askQuestion(prompt []byte, rd *bufio.Reader) {
 		"response": resp.Response.Response.UpdatedInput["response"],
 	})
 	emitText("question answered: " + string(answered))
+	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
+		editFile(f) // the answered agent then does work the gate can publish
+	}
 	emitSuccessResult([]byte(string(prompt)+" | "+string(answered)), 100, 42)
 }
 
