@@ -98,6 +98,9 @@ func (wt *watcher) sync() []scopeRef {
 			continue
 		}
 		if err := wt.w.Add(dir); err != nil {
+			// Deliberately not recorded as watched: the next sync (a wake or
+			// a debounce fire) retries the Add instead of skipping the dir
+			// for good.
 			wt.reg.log.Warn("workflow watch failed", "dir", dir, "error", err)
 			continue
 		}
@@ -170,15 +173,20 @@ func (wt *watcher) classify(ev fsnotify.Event) (scopeRef, bool) {
 	if ev.Op == fsnotify.Chmod {
 		return scopeRef{}, false
 	}
+	// An event on a watched directory itself — its removal or rename, e.g.
+	// `mv workflows workflows.old` — leaves a dead watch behind. Resync and
+	// reload that scope so the registry does not serve stale entries.
+	if ref, ok := wt.watched[ev.Name]; ok {
+		return ref, true
+	}
 	dir := filepath.Dir(ev.Name)
 	ref, ok := wt.watched[dir]
 	if !ok {
 		return scopeRef{}, false
 	}
+	target := wt.workflowsDir(ref)
 	// Events inside the workflows directory itself: only YAML matters.
-	// Events on an ancestor matter only when they concern the path leading
-	// to that directory (its creation).
-	if wt.isWorkflowsDir(dir, ref) {
+	if dir == target {
 		switch strings.ToLower(filepath.Ext(ev.Name)) {
 		case ".yaml", ".yml":
 			return ref, true
@@ -186,17 +194,31 @@ func (wt *watcher) classify(ev fsnotify.Event) (scopeRef, bool) {
 			return scopeRef{}, false
 		}
 	}
-	return ref, true
+	// Events on an ancestor matter only when they concern the path leading
+	// to the workflows directory (its creation); unrelated churn next to
+	// that path must not reload the scope.
+	if target != "" && pathLeadsTo(ev.Name, target) {
+		return ref, true
+	}
+	return scopeRef{}, false
 }
 
-// isWorkflowsDir reports whether dir is the scope's workflows directory
-// rather than a watched ancestor of it.
-func (wt *watcher) isWorkflowsDir(dir string, ref scopeRef) bool {
+// workflowsDir returns the scope's workflows directory, or "" when the scope
+// no longer exists.
+func (wt *watcher) workflowsDir(ref scopeRef) string {
 	if ref.scope == ScopeGlobal {
-		return dir == wt.reg.globalDir
+		return wt.reg.globalDir
 	}
 	wt.reg.mu.RLock()
 	defer wt.reg.mu.RUnlock()
-	ps, ok := wt.reg.projects[ref.projectID]
-	return ok && dir == ps.dir
+	if ps, ok := wt.reg.projects[ref.projectID]; ok {
+		return ps.dir
+	}
+	return ""
+}
+
+// pathLeadsTo reports whether path is target itself or a directory on the
+// way to it.
+func pathLeadsTo(path, target string) bool {
+	return path == target || strings.HasPrefix(target, path+string(filepath.Separator))
 }

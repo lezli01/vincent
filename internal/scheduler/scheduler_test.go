@@ -263,6 +263,32 @@ func TestPausedRequestParksInsteadOfAdmitting(t *testing.T) {
 	}
 }
 
+// TestPendingPauseParksEvenAtFullCap: parking is the human's pause becoming
+// visible, and the paused task will never use a slot — it must not wait for
+// one to free up.
+func TestPendingPauseParksEvenAtFullCap(t *testing.T) {
+	h := newHarness(t, 1)
+	p := h.project(t, "proj", nil)
+	h.task(t, p, "busy", store.TaskRunning, 0, 3*time.Minute)
+	task := h.task(t, p, "pausing", store.TaskRunning, 0, 2*time.Minute)
+	if _, err := h.store.RequestPause(t.Context(), task.ID); err != nil {
+		t.Fatalf("RequestPause: %v", err)
+	}
+	if _, _, err := h.store.TransitionTask(t.Context(), task.ID,
+		store.TaskRunning, store.TaskQueued, store.TaskChange{}); err != nil {
+		t.Fatalf("re-queue: %v", err)
+	}
+
+	h.sched.admit(t.Context())
+
+	if got := h.admitter.ids(); len(got) != 0 {
+		t.Fatalf("admitted %v with the cap full", got)
+	}
+	if got := h.state(t, task.ID); got != store.TaskPaused {
+		t.Fatalf("state = %s, want paused even while the cap is full", got)
+	}
+}
+
 // TestAdmitFailureRequeues asserts a task never stays running with nobody
 // executing it — the invisible-until-next-startup failure mode.
 func TestAdmitFailureRequeues(t *testing.T) {

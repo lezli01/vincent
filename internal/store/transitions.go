@@ -205,24 +205,28 @@ type StepAttempts struct {
 	Failed int
 }
 
-// CountStepAttempts summarizes attempts for one step. `since` bounds the
-// count to attempts started after a point in time — the hook a human retry
-// uses to reset the retry budget (§6); the zero time counts all attempts.
+// CountStepAttempts summarizes attempts for one step. `since` bounds Failed
+// to attempts started after a point in time — the hook a human retry uses to
+// reset the retry budget (§6); the zero time counts all failures. Last is
+// never bounded: attempt numbers must stay monotonic over the step's whole
+// history, or `{step_index}-{attempt}.jsonl` transcript names would collide
+// and truncate earlier attempts (phase 2 decision).
 func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex int, since time.Time) (StepAttempts, error) {
 	var (
-		out      StepAttempts
-		last     sql.NullInt64
-		failed   sql.NullInt64
-		sinceArg any
+		out    StepAttempts
+		last   sql.NullInt64
+		failed sql.NullInt64
 	)
-	q := `SELECT MAX(attempt), SUM(CASE WHEN state = ? THEN 1 ELSE 0 END)
-		FROM step_runs WHERE task_id = ? AND step_index = ?`
-	args := []any{string(StepFailed), taskID, stepIndex}
+	// The empty string sorts before every formatted time, so a zero cursor
+	// counts all failures.
+	sinceArg := ""
 	if !since.IsZero() {
-		q += ` AND started_at > ?`
 		sinceArg = formatTime(since)
-		args = append(args, sinceArg)
 	}
+	q := `SELECT MAX(attempt),
+			SUM(CASE WHEN state = ? AND started_at > ? THEN 1 ELSE 0 END)
+		FROM step_runs WHERE task_id = ? AND step_index = ?`
+	args := []any{string(StepFailed), sinceArg, taskID, stepIndex}
 	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&last, &failed); err != nil {
 		return out, fmt.Errorf("count step attempts: %w", err)
 	}
