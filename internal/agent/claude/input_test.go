@@ -80,7 +80,7 @@ func fixtureEvents(t *testing.T, name string) ([]agent.Event, *run) {
 	if err != nil {
 		t.Fatalf("open fixture: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	r := &run{inputMode: true}
 	var events []agent.Event
 	sc := bufio.NewScanner(f)

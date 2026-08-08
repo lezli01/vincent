@@ -89,10 +89,10 @@ type Task struct {
 	// transition out of awaiting_input.
 	PendingInputJSON string
 	CreatedAt        time.Time
-	UpdatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
-	ArchivedAt      *time.Time
+	UpdatedAt        time.Time
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	ArchivedAt       *time.Time
 }
 
 // StepRun is one attempt at executing one step of one task; history is
