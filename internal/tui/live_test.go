@@ -92,12 +92,11 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 	}
 	_, cmd := m.Update(msg)
 
-	// First note announces the live stream.
-	msg = runCmd(t, cmd, 10*time.Second)
-	_, cmd = m.Update(msg)
-	if m.phase != phaseConnected {
-		t.Fatalf("phase = %v, want phaseConnected", m.phase)
-	}
+	// The stream has to be established before the change is made: a
+	// subscription without Last-Event-ID starts live at the *next* committed
+	// event (§13.3), so appending first would race the event into oblivion.
+	p2 := newPump(t, m, cmd)
+	p2.until(10*time.Second, "the event stream to go live", func() bool { return m.streamLive })
 
 	// The externally-made change: another client appends a durable event
 	// through the store hook, exactly like the runner would.
@@ -106,12 +105,7 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 		t.Fatalf("AppendEvent: %v", err)
 	}
 
-	deadline := time.Now().Add(15 * time.Second)
-	for !strings.Contains(content(m), store.EventTaskStateChanged) {
-		if time.Now().After(deadline) {
-			t.Fatalf("event never rendered; view: %q", content(m))
-		}
-		msg = runCmd(t, cmd, 10*time.Second)
-		_, cmd = m.Update(msg)
-	}
+	p2.until(15*time.Second, "the external event to render", func() bool {
+		return strings.Contains(content(m), store.EventTaskStateChanged)
+	})
 }
