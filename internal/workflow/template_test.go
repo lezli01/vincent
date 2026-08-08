@@ -152,6 +152,19 @@ func TestAppendFailureBlock(t *testing.T) {
 			t.Errorf("block %q missing %q", got, want)
 		}
 	}
+	if !strings.Contains(got, "line3\n</previous-attempt-failure>\n") {
+		t.Errorf("block %q: closing tag is not on its own line", got)
+	}
+
+	// Output ending in a newline (the usual case) must not glue the closing
+	// tag onto the last line, and must not open a blank line before it.
+	got = AppendFailureBlock("prompt", 2, Failure{Reason: "boom", Output: "line1\nline2\n"})
+	if !strings.Contains(got, "line2\n</previous-attempt-failure>\n") {
+		t.Errorf("block %q: closing tag is not on its own line after newline-terminated output", got)
+	}
+	if strings.Contains(got, "\n\n</previous-attempt-failure>") {
+		t.Errorf("block %q: blank line before the closing tag", got)
+	}
 }
 
 func TestAppendFailureBlockTruncatesOutput(t *testing.T) {
@@ -165,5 +178,8 @@ func TestAppendFailureBlockTruncatesOutput(t *testing.T) {
 	}
 	if !strings.Contains(got, "line300\n") || !strings.Contains(got, "line499") {
 		t.Error("block is missing the most recent output lines")
+	}
+	if !strings.Contains(got, "line499\n</previous-attempt-failure>\n") {
+		t.Error("closing tag is not on its own line after truncated newline-terminated output")
 	}
 }

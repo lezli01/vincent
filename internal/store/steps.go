@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -39,10 +40,48 @@ func (s *Store) TerminalizeOpenStepRuns(
 // kept; zero means now. Every attempt is a fresh row — history is
 // append-only (spec §5.4).
 func (s *Store) CreateStepRun(ctx context.Context, r *StepRun) error {
+	return createStepRun(ctx, s.db, r)
+}
+
+// CreateStepRunTakingOverride inserts r with any pending edit+retry override
+// drained onto it, clearing the override in the same transaction: the drain
+// and the row it lands on commit together, so a crash cannot clear the
+// human's override without recording it (phase 2 decision).
+func (s *Store) CreateStepRunTakingOverride(ctx context.Context, r *StepRun) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		var raw sql.NullString
+		if err := tx.QueryRowContext(ctx,
+			`SELECT pending_override_json FROM tasks WHERE id = ?`, r.TaskID).Scan(&raw); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("task %d: %w", r.TaskID, ErrNotFound)
+			}
+			return fmt.Errorf("read pending override: %w", err)
+		}
+		if raw.Valid && raw.String != "" {
+			var ov Override
+			if err := json.Unmarshal([]byte(raw.String), &ov); err != nil {
+				return fmt.Errorf("pending_override_json: %w", err)
+			}
+			r.PromptOverride, r.RunOverride = ov.Prompt, ov.Run
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE tasks SET pending_override_json = NULL WHERE id = ?`, r.TaskID); err != nil {
+				return fmt.Errorf("clear pending override: %w", err)
+			}
+		}
+		return createStepRun(ctx, tx, r)
+	})
+}
+
+// execer is the subset of *sql.DB and *sql.Tx the insert needs.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 	if r.StartedAt.IsZero() {
 		r.StartedAt = time.Now()
 	}
-	res, err := s.db.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
 			proc_started_at, exit_code, check_exit_code, failure_reason, result_summary,
 			prompt_override, run_override, transcript_path,
@@ -95,6 +134,25 @@ func (s *Store) GetStepRun(ctx context.Context, id int64) (*StepRun, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get step run %d: %w", id, err)
+	}
+	return r, nil
+}
+
+// LastFailedStepRun returns the most recent failed attempt of one step, or
+// nil when the step has none. It seeds `.LastFailure` when an admission
+// starts on a step whose earlier attempts failed under a previous actor —
+// the human-retry path, where the §8.4 failure block matters most.
+func (s *Store) LastFailedStepRun(ctx context.Context, taskID int64, stepIndex int) (*StepRun, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+		WHERE task_id = ? AND step_index = ? AND state = ?
+		ORDER BY attempt DESC, id DESC LIMIT 1`,
+		taskID, stepIndex, string(StepFailed))
+	r, err := scanStepRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("last failed step run: %w", err)
 	}
 	return r, nil
 }

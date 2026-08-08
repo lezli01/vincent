@@ -298,6 +298,49 @@ func TestSkipFromBlockedAppendsRow(t *testing.T) {
 	}
 }
 
+// TestApproveWithoutOpenRowFabricatesNothing: zero open rows at a gate means
+// a concurrent action already decided it; a fresh row would record a
+// decision whose CAS is about to lose.
+func TestApproveWithoutOpenRowFabricatesNothing(t *testing.T) {
+	h := newActionHarness(t)
+	task := h.task(t, store.TaskAwaitingGate)
+
+	if _, err := h.runner.Approve(t.Context(), task.ID); err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+	if runs := h.runs(t, task.ID); len(runs) != 0 {
+		t.Fatalf("step runs = %d, want none fabricated at a gate with no open row", len(runs))
+	}
+}
+
+// TestSkipClearsPendingOverride: skipping moves past the step an edit+retry
+// was aimed at; a surviving override must not drain onto a later step's
+// attempt.
+func TestSkipClearsPendingOverride(t *testing.T) {
+	h := newActionHarness(t)
+	task := h.task(t, store.TaskBlocked)
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{Prompt: "edited"}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	// The retried attempt never drained the override (it failed before its
+	// row was created); the human gives up on the step and skips it.
+	for _, hop := range [][2]store.TaskState{
+		{store.TaskQueued, store.TaskRunning}, {store.TaskRunning, store.TaskBlocked},
+	} {
+		if _, _, err := h.store.TransitionTask(t.Context(), task.ID,
+			hop[0], hop[1], store.TaskChange{}); err != nil {
+			t.Fatalf("transition %s → %s: %v", hop[0], hop[1], err)
+		}
+	}
+
+	if _, err := h.runner.Skip(t.Context(), task.ID); err != nil {
+		t.Fatalf("Skip: %v", err)
+	}
+	if got := h.get(t, task.ID); got.PendingOverride != nil {
+		t.Error("pending override survived the skip; it would mislabel a later step's attempt")
+	}
+}
+
 // TestSkipPastLastStepCompletes asserts the final-step skip needs no special
 // case: the cursor lands past the end and the actor finishes the task.
 func TestSkipPastLastStepCompletes(t *testing.T) {

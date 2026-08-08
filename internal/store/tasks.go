@@ -115,8 +115,26 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	return s.queryTasks(ctx, q, args...)
 }
 
+// SetTaskBranchName records the branch derived from the task's id right
+// after the insert (§5.3). It writes nothing else on purpose: the scheduler
+// may admit the task between the insert and this write, and a full-row
+// update would overwrite the state its CAS just set (phase 2 decision: only
+// TransitionTask writes state).
+func (s *Store) SetTaskBranchName(ctx context.Context, id int64, branch string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET branch_name = ?, updated_at = ? WHERE id = ?`,
+		branch, formatTime(time.Now()), id)
+	if err != nil {
+		return fmt.Errorf("set task %d branch name: %w", id, err)
+	}
+	return oneRowAffected(res, fmt.Sprintf("task %d", id))
+}
+
 // UpdateTask writes every mutable field of t (matched by ID) and bumps
-// UpdatedAt. Returns ErrNotFound when the row does not exist.
+// UpdatedAt — including state, so it must never run against a task an actor
+// or the scheduler may be touching; live code paths go through
+// TransitionTask and the targeted setters instead. Test fixtures are its
+// remaining callers. Returns ErrNotFound when the row does not exist.
 func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 	t.UpdatedAt = time.Now()
 	fields, err := marshalFields(t.Fields)

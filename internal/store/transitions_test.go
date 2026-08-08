@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestTransitionTaskWritesStateAndEventTogether(t *testing.T) {
@@ -183,5 +184,49 @@ func TestTransitionTaskTimestamps(t *testing.T) {
 	}
 	if archived.ArchivedAt == nil {
 		t.Error("archived_at was not stamped on archive")
+	}
+}
+
+// TestCountStepAttemptsCursorBoundsOnlyFailures: the retry cursor resets the
+// budget without restarting attempt numbering — a bounded MAX(attempt) would
+// collide transcript filenames and truncate earlier attempts.
+func TestCountStepAttemptsCursorBoundsOnlyFailures(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	task := newTask(p.ID, "work", TaskBlocked)
+	if err := s.CreateTask(ctx, task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	base := time.Now().Add(-time.Hour)
+	for i := 1; i <= 3; i++ {
+		run := &StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "step", StepType: "command",
+			Attempt: i, State: StepFailed,
+			StartedAt: base.Add(time.Duration(i) * time.Minute),
+		}
+		if err := s.CreateStepRun(ctx, run); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+
+	cursor := base.Add(2*time.Minute + 30*time.Second) // after attempt 2, before 3
+	got, err := s.CountStepAttempts(ctx, task.ID, 0, cursor)
+	if err != nil {
+		t.Fatalf("CountStepAttempts: %v", err)
+	}
+	if got.Last != 3 {
+		t.Errorf("Last = %d, want 3 — attempt numbers must not restart at the cursor", got.Last)
+	}
+	if got.Failed != 1 {
+		t.Errorf("Failed = %d, want 1 — only failures after the cursor count", got.Failed)
+	}
+
+	all, err := s.CountStepAttempts(ctx, task.ID, 0, time.Time{})
+	if err != nil {
+		t.Fatalf("CountStepAttempts (zero cursor): %v", err)
+	}
+	if all.Last != 3 || all.Failed != 3 {
+		t.Errorf("zero cursor = %+v, want Last 3 / Failed 3", all)
 	}
 }
