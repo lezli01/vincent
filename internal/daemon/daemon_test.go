@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 )
 
@@ -118,12 +119,16 @@ func TestLogTail(t *testing.T) {
 // startTestDaemon runs Run in-process against temp dirs and returns the
 // discovered runtime info plus the Run result channel.
 func startTestDaemon(ctx context.Context, t *testing.T) (dataDir string, ri RuntimeInfo, done <-chan error) {
+	return startTestDaemonWithAgents(ctx, t, nil)
+}
+
+func startTestDaemonWithAgents(ctx context.Context, t *testing.T, agents *agent.Registry) (dataDir string, ri RuntimeInfo, done <-chan error) {
 	t.Helper()
 	dataDir = t.TempDir()
 	t.Setenv(config.EnvDataDir, dataDir)
 	t.Setenv(config.EnvConfigDir, t.TempDir())
 	ch := make(chan error, 1)
-	go func() { ch <- Run(ctx, Options{}) }()
+	go func() { ch <- runWithAgents(ctx, Options{}, agents) }()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		var err error
@@ -141,6 +146,77 @@ func startTestDaemon(ctx context.Context, t *testing.T) (dataDir string, ri Runt
 	}
 	t.Fatal("daemon did not become healthy within 15s")
 	return "", RuntimeInfo{}, nil
+}
+
+type blockingCatalogAdapter struct {
+	started  chan struct{}
+	finished chan struct{}
+}
+
+func (a *blockingCatalogAdapter) Name() string { return "blocking" }
+
+func (a *blockingCatalogAdapter) Detect(ctx context.Context) (agent.Availability, error) {
+	close(a.started)
+	<-ctx.Done()
+	return agent.Availability{Error: ctx.Err().Error()}, nil
+}
+
+func (a *blockingCatalogAdapter) Options(ctx context.Context) (agent.Options, error) {
+	<-ctx.Done()
+	// Model a canceled subprocess that takes a moment to be reaped. Run must
+	// still join the prime before the logger and its file are closed.
+	time.Sleep(250 * time.Millisecond)
+	close(a.finished)
+	return agent.Options{}, nil
+}
+
+func (a *blockingCatalogAdapter) Path() (string, error) {
+	return "", errors.New("blocking adapter has no binary")
+}
+
+func (a *blockingCatalogAdapter) Curated() agent.Options { return agent.Options{} }
+
+func (a *blockingCatalogAdapter) Start(context.Context, agent.RunSpec) (agent.RunHandle, error) {
+	return nil, errors.New("blocking adapter cannot run")
+}
+
+func TestRunJoinsAgentCatalogPrimeBeforeReturn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	adapter := &blockingCatalogAdapter{
+		started:  make(chan struct{}),
+		finished: make(chan struct{}),
+	}
+	dataDir, ri, done := startTestDaemonWithAgents(ctx, t, agent.NewRegistry(adapter))
+
+	select {
+	case <-adapter.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent catalog prime did not start")
+	}
+	token, err := ReadToken(dataDir)
+	if err != nil {
+		t.Fatalf("ReadToken: %v", err)
+	}
+	if err := RequestStop(ctx, ri.Port, token); err != nil {
+		t.Fatalf("RequestStop: %v", err)
+	}
+	if err := waitDone(t, done); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	select {
+	case <-adapter.finished:
+		// The prime stopped before Run returned, as required.
+	default:
+		cancel()
+		select {
+		case <-adapter.finished:
+		case <-time.After(5 * time.Second):
+			t.Fatal("agent catalog prime ignored context cancellation")
+		}
+		t.Fatal("Run returned before the agent catalog prime stopped")
+	}
 }
 
 func waitDone(t *testing.T, done <-chan error) error {
