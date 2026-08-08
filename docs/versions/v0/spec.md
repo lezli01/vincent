@@ -429,9 +429,16 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   (strict decoding) to catch typos.
 - `agent` values must name a known adapter. Each step's resolved
   (agent, model, effort) triple (§8.6) is checked against that adapter's option
-  catalog (§9.6): a known-invalid value (e.g. a claude-only effort reaching a
-  codex step) is a validation error; values the catalog doesn't know (free-text
-  models) pass with a warning — the CLI stays the final authority at run time.
+  catalog (§9.6). The rule is cross-catalog: a value present in the resolved
+  adapter's own catalog is valid; a value found only in *another* adapter's
+  catalog (e.g. claude's `sonnet` or `max` reaching a codex step) is a
+  validation error; a value in no catalog at all (free-text models, future CLI
+  values) passes with a warning — the CLI stays the final authority at run
+  time. Validation never probes: it consults the §9.6 cache when primed and
+  the curated catalogs otherwise (probing only ever adds values, so a verdict
+  can soften but never harden). Warnings surface structurally: `warnings[]`
+  beside `errors[]` on registry entries and the validate response (§13.2),
+  `warnings[]` on the task-creation response, and the daemon log.
 
 ### 8.3 Command steps and shells
 
@@ -602,13 +609,27 @@ adapter with zero core changes.
 
 ### 9.3 Codex adapter
 
-- Invocation: `codex exec --json` with full-access sandbox flags in full-auto mode,
-  cwd = worktree, prompt via stdin.
-- Normalizes Codex's JSONL events; token usage parsed when present; `CostUSD` is nil.
-- Model and effort pass through as `-c model=…` / `-c model_reasoning_effort=…`.
+- Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
+  worktree, prompt via stdin (piped; no prompt argument). Full-auto maps to
+  `--dangerously-bypass-approvals-and-sandbox` — the documented automation
+  switch; restricted maps to `--sandbox workspace-write`, writes confined to
+  the worktree, the closest analog of claude's allowlist. Caveat: in a linked
+  worktree the real git dir lives under the main repo, so a `git commit` from
+  a restricted codex step may be denied; vincent itself never needs commits
+  (the diff reads the working tree).
+- Normalizes Codex's JSONL events (`thread.started`, `item.started`,
+  `item.completed`, `turn.completed`, `turn.failed`, `error`); token usage
+  comes from `turn.completed` (`input_tokens` taken verbatim, as with claude);
+  `CostUSD` is nil. The final `agent_message` item is the result text; a
+  stream ending without `turn.completed`/`turn.failed` is an error result,
+  mirroring the claude adapter.
+- Model passes through as `-m` (a first-class flag as of 0.142.x); effort as
+  `-c model_reasoning_effort=…`.
 - The CLI enumerates nothing (`--help` documents only `-c key=value`), so
-  `Options()` returns the curated catalog (source `curated`; efforts
-  `minimal, low, medium, high`).
+  `Options()` returns the curated catalog (source `curated`): efforts
+  `minimal, low, medium, high, xhigh`; **no curated models** — codex model
+  availability is account-dependent (the same id is accepted on one plan and
+  rejected on another), so pickers offer free text and the CLI default only.
 - `codex exec` is strictly non-interactive once started — no mid-run input
   channel exists. `supports_input: false`; codex steps never enter
   `awaiting_input`, and `on_input` has no effect on them (§7.4).
@@ -628,7 +649,10 @@ Set at workflow `defaults` or per step; there is no daemon-global hardcoded poli
 ### 9.5 Detection
 
 `GET /v1/info` reports, per adapter: found/not-found, path, version,
-`supports_input` (§7.4). The TUI surfaces
+`supports_input` (§7.4). Availability is served from the §9.6 binary-identity
+cache (primed asynchronously at startup, stat-checked per request), so
+installing or upgrading a CLI becomes visible on the next request without a
+daemon restart. The TUI surfaces
 missing agents at task-creation time (a workflow whose steps need an unavailable agent
 is flagged).
 
@@ -656,6 +680,9 @@ defaults:
 - **Probe failure degrades, never blocks:** if the CLI is missing or its help
   output can't be parsed, the endpoint serves the curated catalog with
   `probe_error` set; free-text entry is unaffected.
+- **Only this endpoint probes:** validation paths (registry load/reload,
+  `/validate`, task creation) read the cached catalog when primed and the
+  curated catalog otherwise — they never spawn a probe subprocess (§8.2).
 - Catalogs are advisory: pickers (§15) always accept free text, and validation
   treats catalog membership per §8.2.
 
@@ -821,14 +848,16 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
-                                        { name, scope, project_id, file, description, steps[], errors[]?, error? }
-POST   /v1/workflows/validate           { yaml } → { valid, errors[] }
+                                        { name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }
+POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 
 GET    /v1/tasks?project_id=&state=&limit=&offset=
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, priority?, agent?, model?, effort? }
                                         → task (state=queued); agent/model/effort form the
-                                        task-level override (§8.6), validated per §8.2
+                                        task-level override (§8.6), validated per §8.2 —
+                                        known-invalid = 400, catalog-unknown values are
+                                        reported in `warnings[]` on the 201 body
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
