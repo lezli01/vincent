@@ -55,9 +55,11 @@ func (h *engineHarness) statePayloads(t *testing.T, id int64) []map[string]any {
 	return out
 }
 
-func payloadTo(payloads []map[string]any, to string) map[string]any {
+// awaitingInputPayload finds the state-change payload that entered
+// awaiting_input, if the task ever did.
+func awaitingInputPayload(payloads []map[string]any) map[string]any {
 	for _, p := range payloads {
-		if p["to"] == to {
+		if p["to"] == string(store.TaskAwaitingInput) {
 			return p
 		}
 	}
@@ -84,7 +86,7 @@ func TestEngineInputRequestRoundTrip(t *testing.T) {
 		t.Fatalf("pending = %+v, want the fake's question", pending)
 	}
 	// …and the state-change event carries the alert fields (§13.3).
-	entered := payloadTo(h.statePayloads(t, task.ID), string(store.TaskAwaitingInput))
+	entered := awaitingInputPayload(h.statePayloads(t, task.ID))
 	if entered == nil {
 		t.Fatal("no state_changed event with to=awaiting_input")
 	}
@@ -183,7 +185,7 @@ func TestEngineInputTimeoutFailsAttempt(t *testing.T) {
 	}
 	// The wait ended through input_closed: awaiting_input → running → blocked.
 	payloads := h.statePayloads(t, task.ID)
-	if payloadTo(payloads, string(store.TaskAwaitingInput)) == nil {
+	if awaitingInputPayload(payloads) == nil {
 		t.Error("no transition into awaiting_input recorded")
 	}
 }
@@ -199,7 +201,7 @@ func TestEngineDenyModeAutoAnswersQuestion(t *testing.T) {
 		t.Fatalf("task reached %s (block_reason %q), want done", final.State, final.BlockReason)
 	}
 	// Deny mode never leaves running (§7.4).
-	if p := payloadTo(h.statePayloads(t, task.ID), string(store.TaskAwaitingInput)); p != nil {
+	if p := awaitingInputPayload(h.statePayloads(t, task.ID)); p != nil {
 		t.Errorf("deny-mode task entered awaiting_input: %v", p)
 	}
 	runs := h.stepRuns(t, task.ID)
@@ -244,7 +246,7 @@ func TestEngineBadInputRequestFailsProtocol(t *testing.T) {
 	if len(runs) != 1 || runs[0].FailureReason != ReasonInputProtocolError {
 		t.Fatalf("step runs = %+v, want one failed attempt with input_protocol_error", runs)
 	}
-	if p := payloadTo(h.statePayloads(t, task.ID), string(store.TaskAwaitingInput)); p != nil {
+	if p := awaitingInputPayload(h.statePayloads(t, task.ID)); p != nil {
 		t.Errorf("protocol error must not park the task, but it entered awaiting_input: %v", p)
 	}
 }
