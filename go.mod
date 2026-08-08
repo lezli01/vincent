@@ -3,6 +3,9 @@ module github.com/lezli01/vincent
 go 1.26
 
 require (
+	charm.land/bubbles/v2 v2.1.1
+	charm.land/bubbletea/v2 v2.0.8
+	charm.land/lipgloss/v2 v2.0.5
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gofrs/flock v0.13.0
@@ -16,9 +19,6 @@ require (
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect
-	charm.land/bubbles/v2 v2.1.1 // indirect
-	charm.land/bubbletea/v2 v2.0.8 // indirect
-	charm.land/lipgloss/v2 v2.0.5 // indirect
 	codeberg.org/chavacava/garif v0.2.0 // indirect
 	codeberg.org/polyfloyd/go-errorlint v1.9.0 // indirect
 	dev.gaijin.team/go/exhaustruct/v4 v4.0.0 // indirect
@@ -45,6 +45,7 @@ require (
 	github.com/alingse/nilnesserr v0.2.0 // indirect
 	github.com/ashanbrown/forbidigo/v2 v2.3.1 // indirect
 	github.com/ashanbrown/makezero/v2 v2.2.1 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bkielbasa/cyclop v1.2.3 // indirect
 	github.com/blizzy78/varnamelen v0.8.0 // indirect

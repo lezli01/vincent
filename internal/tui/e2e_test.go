@@ -99,6 +99,12 @@ func TestAutoStartRealDaemon(t *testing.T) {
 	}
 	_, cmd = m.Update(msg)
 
+	// Wait for the subscription itself: a stream with no Last-Event-ID
+	// starts live at the next committed event (§13.3), so registering the
+	// project before it is established would lose the event.
+	pmp := newPump(t, m, cmd)
+	pmp.until(30*time.Second, "the event stream to go live", func() bool { return m.streamLive })
+
 	// Externally-made change: a plain HTTP client registers a project while
 	// the shell watches the event stream.
 	ri, err := daemon.ReadRuntimeInfo(dataDir)
@@ -129,15 +135,9 @@ func TestAutoStartRealDaemon(t *testing.T) {
 		t.Fatalf("register project: status %s: %s", resp.Status, respBody)
 	}
 
-	// Pump stream notes until the change shows on screen.
-	deadline := time.Now().Add(30 * time.Second)
-	for !strings.Contains(content(m), "project.created") {
-		if time.Now().After(deadline) {
-			t.Fatalf("project.created never rendered; view: %q", content(m))
-		}
-		msg = runCmd(t, cmd, 10*time.Second)
-		_, cmd = m.Update(msg)
-	}
+	pmp.until(30*time.Second, "project.created to render", func() bool {
+		return strings.Contains(content(m), "project.created")
+	})
 
 	// Graceful stop through the real CLI; the daemon must not linger.
 	stop := exec.Command(vincentBin, "daemon", "stop")
