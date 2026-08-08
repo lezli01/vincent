@@ -31,8 +31,9 @@ var slotStates, slotPlaceholders = func() ([]any, string) {
 	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
 }()
 
-// CreateTask inserts t and assigns its ID and timestamps. A caller-set
-// CreatedAt is kept (tests rely on this); zero means now.
+// CreateTask inserts t and assigns its ID and timestamps, writing the
+// durable task.created event in the same transaction (spec §13.3). A
+// caller-set CreatedAt is kept (tests rely on this); zero means now.
 func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 	now := time.Now()
 	if t.CreatedAt.IsZero() {
@@ -43,26 +44,44 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 	if err != nil {
 		return fmt.Errorf("insert task: %w", err)
 	}
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
-			state, current_step, block_reason,
-			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
-		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
-		string(t.State), t.CurrentStep, nullString(t.BlockReason),
-		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
-		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
+	var ev *Event
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
+				base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+				state, current_step, block_reason,
+				created_at, updated_at, started_at, finished_at, archived_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
+			t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
+			nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+			string(t.State), t.CurrentStep, nullString(t.BlockReason),
+			formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
+			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
+		if err != nil {
+			return fmt.Errorf("insert task: %w", err)
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("insert task: %w", err)
+		}
+		t.ID = id
+		payload, err := json.Marshal(map[string]any{
+			"state": string(t.State), "title": t.Title, "workflow": t.WorkflowName,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal task.created event: %w", err)
+		}
+		ev = &Event{
+			TS: now, Type: EventTaskCreated,
+			TaskID: &t.ID, ProjectID: &t.ProjectID, Payload: payload,
+		}
+		return appendEventTx(ctx, tx, ev)
+	})
 	if err != nil {
-		return fmt.Errorf("insert task: %w", err)
+		return err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("insert task: %w", err)
-	}
-	t.ID = id
+	s.notify(ev)
 	return nil
 }
 
@@ -254,28 +273,6 @@ func (t tailScanner) Scan(dest ...any) error { return t.row.Scan(append(dest, t.
 func (s *Store) CountNonArchivedTasks(ctx context.Context, projectID int64) (int, error) {
 	return s.countTasks(ctx, `SELECT COUNT(*) FROM tasks WHERE project_id = ? AND state != ?`,
 		projectID, string(TaskArchived))
-}
-
-// SweepInterrupted marks every running step run `interrupted` and every
-// running task `blocked` (block_reason "interrupted") — the M1 interim for
-// daemon stop/crash leftovers until T2.8 lands real re-queue semantics
-// (T1.7–T1.9 decision). Returns how many tasks were swept.
-func (s *Store) SweepInterrupted(ctx context.Context) (int64, error) {
-	now := formatTime(time.Now())
-	if _, err := s.db.ExecContext(ctx, `UPDATE step_runs SET state = ?, finished_at = ?
-		WHERE state = ?`, string(StepInterrupted), now, string(StepRunning)); err != nil {
-		return 0, fmt.Errorf("sweep step runs: %w", err)
-	}
-	res, err := s.db.ExecContext(ctx, `UPDATE tasks SET state = ?, block_reason = ?, updated_at = ?
-		WHERE state = ?`, string(TaskBlocked), "interrupted", now, string(TaskRunning))
-	if err != nil {
-		return 0, fmt.Errorf("sweep tasks: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("sweep tasks: %w", err)
-	}
-	return n, nil
 }
 
 // RequestPause records a pause against a running task without changing its

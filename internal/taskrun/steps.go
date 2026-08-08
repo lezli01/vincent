@@ -72,10 +72,11 @@ func (r *Runner) runAgentStep(
 		if ev.Type == agent.EventOutput && ev.Text != "" {
 			tail.add(ev.Text)
 		}
+		r.publishAgentEvent(env.task.ID, ev)
 	}
 	res, waitErr := handle.Wait()
 
-	outcome := classifyAgent(ctx, runCtx, r.canceling(env.task.ID), &res, waitErr)
+	outcome := classifyAgent(ctx, runCtx, r.interrupting(env.task.ID), &res, waitErr)
 	outcome.exitCode = &res.ExitCode
 	outcome.result = res.ResultText
 	if outcome.result == "" {
@@ -90,17 +91,17 @@ func (r *Runner) runAgentStep(
 }
 
 // classifyAgent maps a finished agent run to its attempt state and reason:
-// §7.1 requires exit 0 and a non-error terminal result. canceling marks a
-// human cancel in progress — its Terminate reaches the process before the
-// run context is canceled (§6's grace), so an abrupt exit during a cancel is
-// an interruption, not a failure to retry.
-func classifyAgent(daemonCtx, runCtx context.Context, canceling bool, res *agent.RunResult, waitErr error) stepOutcome {
+// §7.1 requires exit 0 and a non-error terminal result. interrupting marks
+// a human cancel or a graceful shutdown in progress — either one Terminates
+// the process before the run context is canceled (§6's grace, §12.4's), so
+// an abrupt exit then is an interruption, not a failure to retry.
+func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *agent.RunResult, waitErr error) stepOutcome {
 	switch {
 	case daemonCtx.Err() != nil:
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		return stepOutcome{state: store.StepFailed, reason: ReasonTimeout}
-	case canceling && (waitErr != nil || res.ExitCode != 0 || res.IsError):
+	case interrupting && (waitErr != nil || res.ExitCode != 0 || res.IsError):
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -115,7 +116,7 @@ func classifyAgent(daemonCtx, runCtx context.Context, canceling bool, res *agent
 
 // runCommandStep runs one command attempt in the worktree (§8.3, §8.5).
 func (r *Runner) runCommandStep(
-	ctx context.Context, env *stepEnv, rc workflow.RenderContext, tr *transcript,
+	ctx context.Context, env *stepEnv, rc workflow.RenderContext, run *store.StepRun, tr *transcript,
 ) stepOutcome {
 	script, err := workflow.Render("run", env.step.Run, rc)
 	if err != nil {
@@ -123,7 +124,7 @@ func (r *Runner) runCommandStep(
 		return stepOutcome{state: store.StepFailed, reason: ReasonTemplateError, result: err.Error()}
 	}
 	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
-	return r.runShellCommand(ctx, env, tr, shellCommand{
+	return r.runShellCommand(ctx, env, run, tr, shellCommand{
 		phase:    "run",
 		script:   script,
 		shellPin: env.step.Shell,
@@ -136,14 +137,14 @@ func (r *Runner) runCommandStep(
 // runCheck runs a step's `check` command after its body succeeded; a
 // non-zero check fails the attempt (§7.1).
 func (r *Runner) runCheck(
-	ctx context.Context, env *stepEnv, rc workflow.RenderContext, tr *transcript, outcome stepOutcome,
+	ctx context.Context, env *stepEnv, rc workflow.RenderContext, run *store.StepRun, tr *transcript, outcome stepOutcome,
 ) stepOutcome {
 	script, err := workflow.Render("check", env.step.Check, rc)
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
 		return stepOutcome{state: store.StepFailed, reason: ReasonTemplateError, result: err.Error()}
 	}
-	checkOutcome := r.runShellCommand(ctx, env, tr, shellCommand{
+	checkOutcome := r.runShellCommand(ctx, env, run, tr, shellCommand{
 		phase:    "check",
 		script:   script,
 		shellPin: env.step.Shell,
@@ -184,7 +185,9 @@ type shellCommand struct {
 
 // runShellCommand executes one command, streaming its output into the
 // transcript and tree-killing it on timeout or shutdown.
-func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcript, sc shellCommand) stepOutcome {
+func (r *Runner) runShellCommand(
+	ctx context.Context, env *stepEnv, run *store.StepRun, tr *transcript, sc shellCommand,
+) stepOutcome {
 	sh, err := r.deps.Shells.For(sc.shellPin)
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -219,6 +222,17 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 	// Register the live process so a cancel can reach it (§6).
 	defer r.setProc(env.task.ID, proc)()
 
+	// Journal the PID before any output can arrive, so crash recovery can
+	// find and kill an orphaned command tree (§12.4 covers any step process;
+	// a check overwrites the body's PID — the column means "running now").
+	pid := cmd.Process.Pid
+	started := time.Now()
+	run.PID = &pid
+	run.ProcStartedAt = &started
+	if err := r.deps.Store.UpdateStepRun(r.persistCtx(), run); err != nil {
+		env.log.Error("journal command pid", "error", err)
+	}
+
 	// Tree-kill on timeout or daemon shutdown: killing only the shell would
 	// leave its children running in the worktree.
 	killed := make(chan struct{})
@@ -242,6 +256,9 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 		for scanner.Scan() {
 			line := scanner.Text()
 			tr.Output(sc.phase, name, line)
+			r.publishOutput(env.task.ID, "command.output", map[string]any{
+				"phase": sc.phase, "stream": name, "text": line,
+			})
 			mu.Lock()
 			tail.add(line)
 			mu.Unlock()
@@ -269,10 +286,10 @@ func (r *Runner) runShellCommand(ctx context.Context, env *stepEnv, tr *transcri
 		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		outcome.state, outcome.reason = store.StepFailed, ReasonTimeout
-	case exitCode != 0 && r.canceling(env.task.ID):
-		// A cancel's Terminate reaches the process before the run context is
-		// canceled (§6's grace) — an abrupt exit during a cancel is an
-		// interruption, not a failure to retry.
+	case exitCode != 0 && r.interrupting(env.task.ID):
+		// A cancel's or shutdown's Terminate reaches the process before the
+		// run context is canceled (§6's grace, §12.4's) — an abrupt exit then
+		// is an interruption, not a failure to retry.
 		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted
 	case exitCode != 0:
 		outcome.state, outcome.reason = store.StepFailed, ReasonNonzeroExit
@@ -292,6 +309,29 @@ func exitCodeOf(err error) int {
 		return exitErr.ExitCode()
 	}
 	return -1
+}
+
+// publishAgentEvent maps a normalized agent stream event onto the §13.3
+// live-output chunk types. Events that carry nothing a client renders
+// (results, errors — those surface as step outcomes) are skipped.
+func (r *Runner) publishAgentEvent(taskID int64, ev agent.Event) {
+	switch ev.Type {
+	case agent.EventOutput:
+		if ev.Text == "" {
+			return
+		}
+		r.publishOutput(taskID, "agent.output", map[string]any{"text": ev.Text})
+	case agent.EventToolUse:
+		names := make([]string, 0, len(ev.Tools))
+		for _, t := range ev.Tools {
+			names = append(names, t.Name)
+		}
+		r.publishOutput(taskID, "agent.tool_use", map[string]any{"tools": names})
+	case agent.EventUsage:
+		// Usage payloads are adapter-native; the raw line is the honest shape.
+		r.publishOutput(taskID, "agent.usage", map[string]any{"raw": string(ev.Raw)})
+	case agent.EventInputRequest, agent.EventResult, agent.EventError, agent.EventUnknown:
+	}
 }
 
 // commandEnv builds the environment of a command or check step: the

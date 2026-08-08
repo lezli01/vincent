@@ -62,13 +62,25 @@ func TestDeleteProjectCascade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
+	deleted := 0
 	for _, e := range events {
 		if e.ProjectID != nil && *e.ProjectID == doomed.ID {
-			t.Errorf("event %d for the deleted project survived", e.ID)
+			// The only trace the cascade leaves is the project.deleted event
+			// it appends after the deletes (PR D decision).
+			if e.Type != EventProjectDeleted {
+				t.Errorf("event %d (%s) for the deleted project survived", e.ID, e.Type)
+				continue
+			}
+			deleted++
 		}
 	}
-	if len(events) != 1 {
-		t.Errorf("events = %d, want 1 (the kept project's)", len(events))
+	if deleted != 1 {
+		t.Errorf("project.deleted events = %d, want exactly 1", deleted)
+	}
+	// Remaining: the kept project's project.created and two task.created
+	// (CreateProject/CreateTask write their own), plus project.deleted.
+	if len(events) != 4 {
+		t.Errorf("events = %d, want 4", len(events))
 	}
 	// The other project is untouched.
 	if _, err := s.GetProject(ctx, keep.ID); err != nil {
