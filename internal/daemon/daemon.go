@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
@@ -35,6 +36,10 @@ var ErrAlreadyRunning = errors.New("another vincent daemon is already running")
 
 // shutdownTimeout bounds the HTTP server drain on graceful shutdown.
 const shutdownTimeout = 5 * time.Second
+
+// processGrace is §12.4's window between asking running step processes to
+// exit and killing them on graceful shutdown.
+const processGrace = 15 * time.Second
 
 // Options configures Run.
 type Options struct {
@@ -163,13 +168,19 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Warn("command steps will fail until a shell is available", "error", err)
 	}
 
-	// Crash recovery runs before anything can admit or execute. It belongs to
-	// neither the scheduler nor the runner — T2.8 replaces this interim sweep
-	// with real re-queue semantics, and this is the one call site it changes.
-	if n, err := st.SweepInterrupted(ctx); err != nil {
-		logger.Error("startup sweep failed", "error", err)
+	// The broker is the post-commit fan-out (§13.3): SSE subscribers and the
+	// scheduler's wake all hang off the store's single event hook through it.
+	broker := events.New()
+	st.SetEventHook(broker.Publish)
+
+	// Crash recovery runs before anything can admit or execute (§12.4): it
+	// belongs to neither the scheduler nor the runner. Orphans are killed
+	// only when PID and start time both match the journal; the owning tasks
+	// re-queue through the FSM, consuming no retries.
+	if n, err := taskrun.Recover(ctx, st, logger); err != nil {
+		logger.Error("startup crash recovery failed", "error", err)
 	} else if n > 0 {
-		logger.Warn("swept interrupted tasks from a previous run", "tasks", n)
+		logger.Warn("recovered tasks from a previous run", "tasks", n)
 	}
 
 	worktrees := worktree.NewManager(git, dirs.Data)
@@ -181,6 +192,7 @@ func Run(ctx context.Context, opts Options) error {
 		Shells:    shells,
 		DataDir:   dirs.Data,
 		Logger:    logger,
+		Events:    broker,
 	})
 	sched := scheduler.New(scheduler.Deps{
 		Store:    st,
@@ -188,12 +200,21 @@ func Run(ctx context.Context, opts Options) error {
 		Admitter: runner,
 		Logger:   logger,
 	})
-	// One notification seam: every committed event passes here, and the
-	// scheduler re-evaluates on the two that change what may be admitted
-	// (§11). T2.7's SSE broker publishes from this same hook.
-	st.SetEventHook(func(e *store.Event) {
+	// The scheduler re-evaluates on the two event types that change what may
+	// be admitted (§11) — an internal broker subscriber, one hop downstream
+	// of the store's post-commit hook.
+	broker.OnEvent(func(e *store.Event) {
 		if scheduler.WakeOn(e) {
 			sched.Wake()
+		}
+	})
+	// Registry reloads become durable workflow.registry_changed events
+	// (§13.3). Registered after the initial loads so boot churn stays out of
+	// the event log.
+	workflows.OnChange(func() {
+		if err := st.AppendEvent(context.Background(),
+			&store.Event{Type: store.EventWorkflowRegistryChanged}); err != nil {
+			logger.Warn("workflow.registry_changed event not recorded", "error", err)
 		}
 	})
 
@@ -213,6 +234,7 @@ func Run(ctx context.Context, opts Options) error {
 		Workflows:   workflows,
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
+		Broker:      broker,
 		OnProjectsChanged: func() {
 			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -268,19 +290,26 @@ func Run(ctx context.Context, opts Options) error {
 		logger.Error("http server failed", "error", err)
 		sched.Stop()
 		runner.Stop()
+		broker.Close()
 		return fmt.Errorf("http server: %w", err)
 	}
 
+	// Graceful order (§12.4, PR D decision): announce, stop admitting, give
+	// running processes the grace to exit while the API — SSE included —
+	// stays up so clients watch the wind-down, then end the streams and
+	// drain HTTP.
+	if err := st.AppendEvent(context.Background(),
+		&store.Event{Type: store.EventDaemonShuttingDown}); err != nil {
+		logger.Warn("daemon.shutting_down event not recorded", "error", err)
+	}
+	sched.Stop()
+	runner.StopGraceful(processGrace)
+	broker.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http shutdown incomplete", "error", err)
 	}
-	// After the HTTP drain: stop admitting, then kill in-flight agent runs
-	// (tree-kill) and wait for their interrupted state to be persisted
-	// (T1.7–T1.9 decision).
-	sched.Stop()
-	runner.Stop()
 	logger.Info("daemon stopped")
 	return nil
 }

@@ -16,10 +16,12 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -49,6 +51,10 @@ type Deps struct {
 	Shells    *Shells
 	DataDir   string
 	Logger    *slog.Logger
+	// Events receives live output chunks for the per-task SSE stream
+	// (§13.3). Nil is tolerated (tests without streaming); the transcript
+	// stays the durable copy either way.
+	Events *events.Broker
 }
 
 // Runner executes admitted tasks and applies the §6 human actions.
@@ -56,6 +62,11 @@ type Runner struct {
 	deps   Deps
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// stopping marks a graceful shutdown in progress: processes have been
+	// asked to exit, and an abrupt exit is an interruption to re-queue, not
+	// a failure to retry (§12.4).
+	stopping atomic.Bool
 
 	// base is the parent of every task's run context; canceling it stops
 	// every actor. nil until Start.
@@ -116,6 +127,7 @@ func (r *Runner) Stop() {
 	if r.cancel == nil {
 		return
 	}
+	r.stopping.Store(true)
 	r.cancel()
 	done := make(chan struct{})
 	go func() { r.wg.Wait(); close(done) }()
@@ -126,11 +138,47 @@ func (r *Runner) Stop() {
 	}
 }
 
+// StopGraceful is §12.4's shutdown path: ask every live process tree to
+// exit, give the actors up to grace to persist their re-queue transitions
+// (visible on SSE — the API is still up while this runs), then fall back to
+// Stop's hard kill for whatever remains.
+func (r *Runner) StopGraceful(grace time.Duration) {
+	if r.cancel == nil {
+		return
+	}
+	r.stopping.Store(true)
+
+	r.mu.Lock()
+	procs := make([]stopper, 0, len(r.live))
+	for _, lr := range r.live {
+		lr.mu.Lock()
+		if lr.proc != nil {
+			procs = append(procs, lr.proc)
+		}
+		lr.mu.Unlock()
+	}
+	r.mu.Unlock()
+	for _, p := range procs {
+		if err := p.Terminate(); err != nil {
+			r.deps.Logger.Warn("shutdown: terminate failed; the grace-period kill will follow", "error", err)
+		}
+	}
+
+	done := make(chan struct{})
+	go func() { r.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(grace):
+		r.deps.Logger.Warn("processes outlived the shutdown grace; killing", "grace", grace)
+	}
+	r.Stop()
+}
+
 // Admit implements scheduler.Admitter: it takes ownership of a task the
 // scheduler has already moved to running and starts its actor. It returns
 // immediately.
 func (r *Runner) Admit(_ context.Context, task *store.Task) error {
-	if r.base == nil || r.base.Err() != nil {
+	if r.base == nil || r.base.Err() != nil || r.stopping.Load() {
 		return ErrRunnerStopped
 	}
 	taskCtx, cancel := context.WithCancel(r.base)
@@ -215,6 +263,23 @@ func (r *Runner) canceling(taskID int64) bool {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 	return lr.canceling
+}
+
+// interrupting reports whether an abrupt process exit for this task should
+// read as an interruption rather than a failure: a human cancel or a daemon
+// shutdown has already asked the process to die (§6, §12.4).
+func (r *Runner) interrupting(taskID int64) bool {
+	return r.stopping.Load() || r.canceling(taskID)
+}
+
+// publishOutput streams one live-output chunk to the task's SSE subscribers
+// (§13.3). No broker, no subscribers, or a slow subscriber all lose nothing
+// durable: the transcript is the durable copy.
+func (r *Runner) publishOutput(taskID int64, chunkType string, payload map[string]any) {
+	if r.deps.Events == nil {
+		return
+	}
+	r.deps.Events.PublishOutput(taskID, events.Chunk{Type: chunkType, Payload: payload})
 }
 
 // stop ends a live run for a cancel: §6's graceful term, then kill after the

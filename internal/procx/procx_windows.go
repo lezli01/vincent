@@ -3,6 +3,7 @@
 package procx
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"unsafe"
@@ -72,4 +73,24 @@ func (j *jobKill) release() {
 		_ = windows.CloseHandle(j.job)
 		j.job = 0
 	}
+}
+
+// KillPID kills a process rediscovered by PID — crash recovery reaping an
+// orphan from a previous daemon (spec §12.4). The Job object died with the
+// daemon and KILL_ON_JOB_CLOSE normally reaped the tree already, so this is
+// the belt-and-braces path for a root process found still alive. A PID that
+// is already gone is success.
+func KillPID(pid int) error {
+	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return nil // no such process
+		}
+		return fmt.Errorf("open process %d: %w", pid, err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	if err := windows.TerminateProcess(h, 1); err != nil {
+		return fmt.Errorf("terminate process %d: %w", pid, err)
+	}
+	return nil
 }
