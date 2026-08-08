@@ -506,3 +506,167 @@ steps:
 		t.Errorf("retry prompt %q does not name the previous failure reason", runs[1].ResultSummary)
 	}
 }
+
+// waitForWorktree polls until the task's worktree path is recorded.
+func (h *engineHarness) waitForWorktree(t *testing.T, id int64) string {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		task, err := h.store.GetTask(t.Context(), id)
+		if err != nil {
+			t.Fatalf("GetTask: %v", err)
+		}
+		if task.WorktreePath != "" {
+			return task.WorktreePath
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("worktree never created")
+	return ""
+}
+
+// waitForFile polls until path exists — the sign a step's process is really
+// executing.
+func (h *engineHarness) waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("file %s never appeared", path)
+}
+
+// waitForActorExit polls until the runner no longer holds a live run.
+func (h *engineHarness) waitForActorExit(t *testing.T, id int64) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if !h.runner.Running(id) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("actor still live after cancel")
+}
+
+// TestEngineCancelOfLiveStepInterrupts covers §6's cancel against a live
+// process: the terminated attempt records interrupted/canceled — not a
+// failure the retry loop would re-run, spawning fresh processes for a task
+// that is already aborted.
+func TestEngineCancelOfLiveStepInterrupts(t *testing.T) {
+	h := newEngineHarness(t)
+	long := script(
+		"echo started > cancel-marker.txt\nsleep 30",
+		`"started" | Out-File -Encoding ascii cancel-marker.txt`+"\nStart-Sleep -Seconds 30",
+	)
+	after := script(`echo after > after.txt`, `"after" | Out-File -Encoding ascii after.txt`)
+	snapshot := "name: cancelable\nsteps:\n" +
+		commandStep("long", long, "max_retries: 3") + commandStep("after", after)
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	h.waitForState(t, task.ID, store.TaskRunning)
+	wt := h.waitForWorktree(t, task.ID)
+	h.waitForFile(t, filepath.Join(wt, "cancel-marker.txt"))
+
+	canceled, err := h.runner.Cancel(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if canceled.State != store.TaskAborted {
+		t.Fatalf("state after cancel = %s, want aborted", canceled.State)
+	}
+	h.waitForActorExit(t, task.ID)
+
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 {
+		t.Fatalf("step runs = %d, want 1 — a canceled step must not retry or reach the next step", len(runs))
+	}
+	if runs[0].State != store.StepInterrupted || runs[0].FailureReason != ReasonCanceled {
+		t.Fatalf("attempt = %s/%q, want interrupted/canceled", runs[0].State, runs[0].FailureReason)
+	}
+	if _, err := os.Stat(filepath.Join(wt, "after.txt")); err == nil {
+		t.Error("the step after the canceled one ran")
+	}
+}
+
+// TestEngineHumanRetryResetsBudget: a human retry grants the full budget
+// again (§6) while attempt numbers keep climbing, so transcript files never
+// collide.
+func TestEngineHumanRetryResetsBudget(t *testing.T) {
+	h := newEngineHarness(t)
+	snapshot := "name: flaky\nsteps:\n" + commandStep("flaky", "exit 3", "max_retries: 1")
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task = %s, want blocked", blocked.State)
+	}
+	if runs := h.stepRuns(t, task.ID); len(runs) != 2 {
+		t.Fatalf("attempts before retry = %d, want 2", len(runs))
+	}
+
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	reblocked := h.waitForState(t, task.ID, store.TaskBlocked)
+	if reblocked.BlockReason != ReasonNonzeroExit {
+		t.Fatalf("block_reason = %q, want nonzero_exit", reblocked.BlockReason)
+	}
+
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 4 {
+		t.Fatalf("attempts after retry = %d, want 4 — the retry grants a fresh budget", len(runs))
+	}
+	paths := map[string]bool{}
+	for i, run := range runs {
+		if run.Attempt != i+1 {
+			t.Errorf("attempt %d numbered %d, want %d — numbering must stay monotonic", i, run.Attempt, i+1)
+		}
+		paths[run.TranscriptPath] = true
+	}
+	if len(paths) != len(runs) {
+		t.Errorf("transcript paths = %d unique, want %d — colliding names truncate history", len(paths), len(runs))
+	}
+}
+
+// TestEngineFailureBlockSurvivesReadmission: the §8.4 failure block is
+// rebuilt from the step's failed row when a fresh actor resumes the step —
+// the human-retry path the block exists for.
+func TestEngineFailureBlockSurvivesReadmission(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "nonzero-exit")
+	h := newEngineHarness(t)
+	snapshot := `name: retried
+steps:
+  - id: implement
+    type: agent
+    max_retries: 0
+    prompt: "Do the work"
+`
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task = %s, want blocked", blocked.State)
+	}
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	h.waitForState(t, task.ID, store.TaskBlocked)
+
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 2 {
+		t.Fatalf("attempts = %d, want 2", len(runs))
+	}
+	if !strings.Contains(runs[1].ResultSummary, "previous-attempt-failure") {
+		t.Errorf("re-admitted retry prompt %q carries no failure block", runs[1].ResultSummary)
+	}
+	if !strings.Contains(runs[1].ResultSummary, ReasonNonzeroExit) {
+		t.Errorf("re-admitted retry prompt %q names no failure reason", runs[1].ResultSummary)
+	}
+}
