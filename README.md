@@ -69,14 +69,22 @@ follows the task breakdown:
 - **Phase 1 — the daemon spine** (config, SQLite store, daemon lifecycle +
   HTTP API, projects and worktrees, the Claude agent adapter, first
   end-to-end task run): **done** — the M1 acceptance gate passes in CI.
-- **Phase 2 — the workflow engine**: **underway**. Landed so far: the
-  workflow registry with live reload, the template engine, the task state
-  machine and step executors (agent, command, manual gate, checks, retries,
-  timeouts), the scheduler with global and per-project caps, and the human
-  actions API (cancel, pause, resume, retry with edit, skip, approve,
-  reject, archive, priority). Still to come: events/SSE, crash recovery,
-  the Codex adapter, the agent option catalog, interactive input requests,
-  and the M2 acceptance gate.
+- **Phase 2 — the workflow engine** (workflow registry with live reload, the
+  template engine, the task state machine, step executors for agent,
+  command, manual-gate and check steps with retries and timeouts, the
+  scheduler with global and per-project caps, the human actions API, durable
+  events and SSE, crash recovery, the Codex adapter, the agent option
+  catalog, and interactive input requests): **done** — the M2 acceptance
+  gate passes in CI.
+- **Phase 3 — the TUI**: **feature-complete**. All six views are built —
+  board, task detail (step timeline, live output tail, diff, action bar),
+  the new-task flow, projects, workflows, and the daemon view — together
+  with the one-time full-auto risk notice shown on first run. What remains
+  is the manual M3 walkthrough on Windows and one POSIX OS.
+- **Phase 4 — polish** (service install, CLI subcommands, retention and
+  limits, docs and example workflows, signed release binaries): **not
+  started**. There are no packaged releases yet, so build from source with
+  the commands below.
 
 See [docs/versions/v0/spec.md](docs/versions/v0/spec.md) for the product and
 implementation spec, and
@@ -107,7 +115,9 @@ Tests are self-contained: they run against temporary SQLite databases,
 throwaway git repositories, and a fake agent built from `cmd/fakeagent` on
 the fly — no real agent CLI, network access, or running daemon required.
 CI runs lint, the race-enabled tests, and the build on Linux, macOS, and
-Windows, plus `scripts/m1-gate.sh`, the phase-1 acceptance gate.
+Windows, plus the phase acceptance gates — `scripts/m1-gate.sh` and
+`scripts/m2-gate.sh` — which drive a real daemon end to end against the fake
+agent on all three platforms.
 
 ## Contributing
 
@@ -128,8 +138,11 @@ Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Security
 
 vincent executes AI agents in full-auto mode by default — a documented design
-decision (see [the spec](docs/versions/v0/spec.md), §16), not a vulnerability —
-but security reports are taken seriously. Please report vulnerabilities
+decision (see [the spec](docs/versions/v0/spec.md), §16), not a vulnerability.
+In full-auto an agent can run arbitrary commands **as the invoking user**, and
+a git worktree isolates collisions between tasks, not privileges; the TUI shows
+this warning once on first run. Security reports are still taken seriously —
+please report vulnerabilities
 privately via GitHub's
 [security advisories](https://github.com/lezli01/vincent/security/advisories/new)
 rather than a public issue. See [SECURITY.md](SECURITY.md) for details.

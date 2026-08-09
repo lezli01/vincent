@@ -142,7 +142,7 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 		pollInterval:  time.Millisecond,
 	}
 
-	m := newRoot(ctx, cn)
+	m := newRoot(ctx, cn, ackedDir(t))
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {

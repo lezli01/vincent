@@ -85,7 +85,7 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 		pollInterval:  time.Millisecond,
 	}
 
-	m := newRoot(testCtx(t), cn)
+	m := newRoot(testCtx(t), cn, ackedDir(t))
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
 		t.Fatalf("probe = %T, want connectedMsg", msg)
