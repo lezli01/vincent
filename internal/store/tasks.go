@@ -73,9 +73,13 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 		if err != nil {
 			return fmt.Errorf("marshal task.created event: %w", err)
 		}
+		// Copied, not aliased: the event goes to the broker, and t belongs to
+		// the caller, which keeps writing it (the API assigns BranchName right
+		// after this returns).
+		taskID, projectID := t.ID, t.ProjectID
 		ev = &Event{
 			TS: now, Type: EventTaskCreated,
-			TaskID: &t.ID, ProjectID: &t.ProjectID, Payload: payload,
+			TaskID: &taskID, ProjectID: &projectID, Payload: payload,
 		}
 		return appendEventTx(ctx, tx, ev)
 	})

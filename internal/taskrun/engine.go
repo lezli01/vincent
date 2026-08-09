@@ -462,8 +462,14 @@ func (r *Runner) emit(task *store.Task, evType string, payload map[string]any) {
 		r.deps.Logger.Error("marshal event", "type", evType, "error", err)
 		return
 	}
+	// The ids are copied, never aliased into task. This event is published to
+	// the broker and read on every subscriber's goroutine, while the runner
+	// keeps rewriting *task on its own (transition does `*task = *updated`) —
+	// so an Event pointing into task hands every SSE reader a pointer to
+	// memory the engine is still writing.
+	taskID, projectID := task.ID, task.ProjectID
 	ev := &store.Event{
-		Type: evType, TaskID: &task.ID, ProjectID: &task.ProjectID, Payload: body,
+		Type: evType, TaskID: &taskID, ProjectID: &projectID, Payload: body,
 	}
 	if err := r.deps.Store.AppendEvent(r.persistCtx(), ev); err != nil {
 		r.deps.Logger.Error("append event", "type", evType, "error", err)

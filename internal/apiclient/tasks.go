@@ -193,6 +193,9 @@ type TaskDetail struct {
 	WorktreePath *string         `json:"worktree_path"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	Steps        []StepRun       `json:"steps"`
+	// Warnings is set on the POST /v1/tasks 201 only: advisory findings that
+	// did not block creation, such as a model the catalog does not know.
+	Warnings []string `json:"warnings,omitempty"`
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.
 	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`
@@ -249,6 +252,39 @@ func (c *Client) ListTasks(ctx context.Context, opts ListTasksOptions) ([]Task, 
 	var out []Task
 	if err := c.get(ctx, "/v1/tasks"+opts.query(), &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// CreateTaskRequest is the POST /v1/tasks body (§13.2). Every optional field
+// is a pointer so an omitted one keeps the server's own fallback: Workflow
+// falls through to the project default then adhoc, BaseBranch to the
+// project's default branch, and the Agent/Model/Effort triple to the
+// workflow's defaults (§8.6 level 3). Sending "" instead of omitting would
+// ask the daemon to override those defaults with nothing.
+//
+// It is deliberately not the retry-scoped Override: that carries
+// prompt_override/run_override and shares no field with this one.
+type CreateTaskRequest struct {
+	ProjectID   int64             `json:"project_id"`
+	Workflow    *string           `json:"workflow,omitempty"`
+	Title       string            `json:"title"`
+	Description *string           `json:"description,omitempty"`
+	Fields      map[string]string `json:"fields,omitempty"`
+	BaseBranch  *string           `json:"base_branch,omitempty"`
+	Priority    *int              `json:"priority,omitempty"`
+	Agent       *string           `json:"agent,omitempty"`
+	Model       *string           `json:"model,omitempty"`
+	Effort      *string           `json:"effort,omitempty"`
+}
+
+// CreateTask creates a task and returns it as the daemon recorded it. The
+// 201 body carries Warnings for anything advisory — a catalog-unknown model
+// or effort — which is not an error: the task exists and will run.
+func (c *Client) CreateTask(ctx context.Context, req CreateTaskRequest) (TaskDetail, error) {
+	var out TaskDetail
+	if err := c.post(ctx, "/v1/tasks", req, &out); err != nil {
+		return TaskDetail{}, err
 	}
 	return out, nil
 }
