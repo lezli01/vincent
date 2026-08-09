@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 6/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 7/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **31/44** | |
+| **Total** | | **32/44** | |
 
 ---
 
@@ -459,14 +459,15 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
 
 **Phase 3 TUI refactor decisions (grill session, 2026-08-09):**
 
-The M3 TUI reached T3.8 as six full-screen views routed by `1..6`, with 45 keys
-spread across eight groups in the `?` overlay. It works and it is tested; it is
+The M3 TUI reached T3.8 as six full-screen views routed by `1..6`, with 42 distinct
+keystrokes bound and 45 help rows across nine groups behind `?` (measured in
+`tui-friction.md`). It works and it is tested; it is
 also unlearnable without the overlay open. The refactor keeps every capability and
 changes how it is reached. T3.1–T3.7 stay `[x]` — they are not undone, they are
 superseded in layout and routing by T3.10–T3.13.
 
 - *Refactor first, then gate — the outgoing UI is never walked at all.* T3.8 is acceptance evidence, and evidence for a UI about to be deleted is worth nothing: a two-OS walkthrough with real `claude` costs hours of human time and pins a commit SHA that the next PR invalidates. Nothing is discarded by skipping it, because nothing was recorded — `m3-gate.md` holds a template with no run in it, so T3.8 simply stays `[~]` until T3.13 lands. The gate's *artifacts* do carry over: `scripts/m3-gate.sh` never touches the TUI (it seeds two repos, the workflows and a bare remote, then prints a paste-ready launch line) and section A is quoted from §19, so only section B's key-specific sweep items are rewritten, in T3.13.
-- *The friction record is derived, not walked.* `tui-friction.md` still exists and is still what the refactor is graded against, but its provenance changes: it is read off the current binding surface — `internal/tui/help.go`'s 45 keys in eight groups, the six views behind `1..6`, `actionbar.go`'s hints being task-scoped only — rather than harvested from a session at a terminal. The friction is already legible in the source; spending a human hour to rediscover it buys nothing that reading `help.go` does not. What matters is that the list is written down **before** the refactor, so "is this better?" is settled against a fixed record instead of taste at review time.
+- *The friction record is derived, not walked.* `tui-friction.md` still exists and is still what the refactor is graded against, but its provenance changes: it is read off the current binding surface — 42 bound keystrokes against 45 help rows in nine groups, the six views behind `1..6`, `actionbar.go`'s hints being task-scoped only — rather than harvested from a session at a terminal. The derivation is reproducible and the measurement method is stated in the file, which is what stops the "before" figure being renegotiated once the "after" is known. The friction is already legible in the source; spending a human hour to rediscover it buys nothing that reading `help.go` does not. What matters is that the list is written down **before** the refactor, so "is this better?" is settled against a fixed record instead of taste at review time.
 - *Bubble Tea v2 stays.* lazygit's feel comes from layout and contextual menus, not from gocui; tview and gocui would both discard ~7k lines, every `*live_test.go`, and the Phase 3 framework decision to buy nothing the current stack cannot do. bubbletea v2 has mouse and focus, lipgloss v2 has borders and joins. No goal below needs a different engine.
 - *Hybrid, not full lazygit.* The daily loop (board → detail → back) fuses into one persistent screen; projects, workflows, daemon and new-task stay full-screen takeovers, reached from the command palette instead of `1..6`. A full lazygit port would force §15's eight-field new-task wizard into a popup, which is worse than what exists. Config surfaces visited twice a week do not earn permanent screen width.
 - *Three panes, accordion.* Top: the full-width task table, keeping all eight §15 columns — a 30%-wide left rail would delete five of them, and cost and step `k/n` are spec'd and load-bearing. Bottom: timeline (left) beside output/diff (right), which satisfies §15's "neither half can hide behind the other" as well as the stacked layout did. The focused panel expands and the others collapse to title + one line; the task table never drops below 5 rows because it is the navigation spine. Below **80×20** the shell falls to single-panel mode (focused panel full screen, `tab` swaps); below **60×15** it renders an explicit `terminal too small (58×14, need 60×15)`. A silently illegible layout is worse than a stated floor, and the floor is testable.
@@ -487,7 +488,7 @@ superseded in layout and routing by T3.10–T3.13.
 - *Five PRs, docs first, each independently green* — O: T3.9 · P: T3.10 · Q: T3.11 · R: T3.12 · S: T3.13. Each opens with its own grill block, per the Phase 2/3 pattern.
 - *Success is measured against the "before".* Every item in `tui-friction.md` becomes a checkbox re-checked during the T3.8 walk, each carrying its disposition — fixed, deferred to a Phase 4 task ID, or won't-fix with a reason. Without that, "is it easier now?" is settled by whoever argues hardest in the PR thread, which is how 45 keys happened.
 
-- [ ] **T3.9 — Refactor spec & friction record (docs only).** Rewrite §15's layout and key prose for the three-pane panel shell (`:` palette, footer, `esc` stack, panel-local `/`, disconnected banner, terminal floors), keeping its numbered 1–6 list as the capability contract and leaving §19 untouched. Add `docs/versions/v0/tui-friction.md`, derived from the current binding surface (`internal/tui/help.go`, the `1..6` routing in `views.go`, `actionbar.go`'s task-scoped hints) — the outgoing UI is not walked.
+- [x] **T3.9 — Refactor spec & friction record (docs only).** ✓ 2026-08-09 Rewrite §15's layout and key prose for the three-pane panel shell (`:` palette, footer, `esc` stack, panel-local `/`, disconnected banner, terminal floors), keeping its numbered 1–6 list as the capability contract and leaving §19 untouched. Add `docs/versions/v0/tui-friction.md`, derived from the current binding surface (`internal/tui/help.go`, the `1..6` routing in `views.go`, `actionbar.go`'s task-scoped hints) — the outgoing UI is not walked.
   *Done when:* §15 describes the target UI with no stale key table; `tui-friction.md` lists concrete friction items, each phrased so T3.8 can re-check it.
 - [ ] **T3.10 — Panel shell; board and detail fused.** `panel` interface (renamed from `view`), `shell.go` owning layout/focus/accordion, `layout.go` as a pure `layout(w, h, focus) → []box`. Three panes (task table · timeline · output|diff tabs), focused-panel borders, single-panel mode below 80×20, explicit too-small below 60×15. Debounced running-task-only SSE subscription. `NO_COLOR` and 16-colour downgrade. *Depends:* T3.9.
   *Done when:* `layout` is table-tested across sizes and focus targets; holding `down` across the table asserts one subscription, not one per row; existing board/detail render assertions pass against the boxed sub-models.
