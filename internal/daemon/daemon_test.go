@@ -176,6 +176,10 @@ func (a *blockingCatalogAdapter) Path() (string, error) {
 
 func (a *blockingCatalogAdapter) Curated() agent.Options { return agent.Options{} }
 
+func (a *blockingCatalogAdapter) NewLineParser() agent.LineParser {
+	return func(raw []byte) agent.Event { return agent.Event{Type: agent.EventUnknown, Raw: raw} }
+}
+
 func (a *blockingCatalogAdapter) Start(context.Context, agent.RunSpec) (agent.RunHandle, error) {
 	return nil, errors.New("blocking adapter cannot run")
 }
