@@ -288,33 +288,3 @@ func (c *Client) CreateTask(ctx context.Context, req CreateTaskRequest) (TaskDet
 	}
 	return out, nil
 }
-
-// AgentStatus is one adapter's availability from GET /v1/info.
-type AgentStatus struct {
-	Name          string `json:"name"`
-	Available     bool   `json:"available"`
-	Version       string `json:"version"`
-	SupportsInput bool   `json:"supports_input"`
-	Error         string `json:"error,omitempty"`
-}
-
-// Info is the GET /v1/info body: what the board header reports about the
-// daemon itself.
-type Info struct {
-	Version          string        `json:"version"`
-	PID              int           `json:"pid"`
-	UptimeSeconds    int64         `json:"uptime_seconds"`
-	MaxParallelTasks int           `json:"max_parallel_tasks"`
-	Agents           []AgentStatus `json:"agents"`
-}
-
-// Info fetches daemon identity, caps and adapter availability. The board
-// calls it once per connect: availability rides a daemon-side cache that
-// only moves when a CLI is installed mid-session.
-func (c *Client) Info(ctx context.Context) (Info, error) {
-	var out Info
-	if err := c.get(ctx, "/v1/info", &out); err != nil {
-		return Info{}, err
-	}
-	return out, nil
-}
