@@ -25,8 +25,12 @@ type pickerOption struct {
 // row, because an adapter's catalog is a suggestion: a model shipped this
 // morning is not in it, and the daemon accepts unknown values with a warning
 // rather than rejecting them.
+//
+// row is an opaque identifier the owning form gives back to itself when a
+// value is chosen — an ntRow in the new-task flow, a pfRow in the project
+// form — so the picker itself stays ignorant of either row set.
 type picker struct {
-	row       ntRow
+	row       int
 	heading   string
 	options   []pickerOption
 	cursor    int
@@ -36,7 +40,7 @@ type picker struct {
 	err       string
 }
 
-func newPicker(row ntRow, heading string, options []pickerOption, allowFree bool, current string) *picker {
+func newPicker(row int, heading string, options []pickerOption, allowFree bool, current string) *picker {
 	in := textinput.New()
 	in.Placeholder = "type a value"
 	p := &picker{row: row, heading: heading, options: options, allowFree: allowFree, input: in}
@@ -128,6 +132,45 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 	return pickerResult{}
 }
 
+// renderBody draws the option list, the free-text row and the picker's own
+// error. Whatever explanatory lines a particular row deserves are the owning
+// form's business, appended after this.
+func (p *picker) renderBody() []string {
+	out := []string{styleDim.Render("    " + p.heading + ":")}
+	for i, opt := range p.options {
+		marker := "  "
+		if i == p.cursor && !p.editing {
+			marker = styleFocus.Render("▸ ")
+		}
+		label := opt.label
+		if label == "" {
+			label = "(none)"
+		}
+		if opt.disabled {
+			label = styleBad.Render(label)
+		}
+		line := "    " + marker + label
+		if opt.note != "" {
+			line += "  " + styleDim.Render(opt.note)
+		}
+		out = append(out, line)
+	}
+	if p.allowFree {
+		marker := "  "
+		if p.onFreeRow() && !p.editing {
+			marker = styleFocus.Render("▸ ")
+		}
+		out = append(out, "    "+marker+styleDim.Render("type a value not listed…"))
+	}
+	if p.editing {
+		out = append(out, "      "+p.input.View())
+	}
+	if p.err != "" {
+		out = append(out, styleBad.Render("    ⚠ "+p.err))
+	}
+	return out
+}
+
 func (p *picker) startFree() {
 	p.editing = true
 	p.cursor = len(p.options)
@@ -139,15 +182,15 @@ func (p *picker) startFree() {
 func (n *newTask) openPicker(row ntRow) {
 	switch row {
 	case ntProject:
-		n.pick = newPicker(row, "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
+		n.pick = newPicker(int(row), "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
 	case ntWorkflow:
-		n.pick = newPicker(row, "workflow", n.workflowOptions(), false, n.workflow)
+		n.pick = newPicker(int(row), "workflow", n.workflowOptions(), false, n.workflow)
 	case ntAgent:
-		n.pick = newPicker(row, "agent override", n.agentOptions(), false, n.agent)
+		n.pick = newPicker(int(row), "agent override", n.agentOptions(), false, n.agent)
 	case ntModel:
-		n.pick = newPicker(row, "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
+		n.pick = newPicker(int(row), "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
 	case ntEffort:
-		n.pick = newPicker(row, "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
+		n.pick = newPicker(int(row), "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
 	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
 		return
 	}
@@ -162,7 +205,7 @@ func (n *newTask) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 	res := n.pick.update(msg)
 	cmds := []tea.Cmd{res.cmd}
 	if res.chosen {
-		cmds = append(cmds, n.applyPick(n.pick.row, res.value))
+		cmds = append(cmds, n.applyPick(ntRow(n.pick.row), res.value))
 	}
 	if res.closed {
 		n.pick = nil

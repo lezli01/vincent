@@ -1120,7 +1120,9 @@ stream for the live tail.
    replaces workflow defaults, never explicit step fields, §8.6) → create.
 4. **Projects.** List/add/edit/remove; per-project cap and defaults.
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
-   the file in `$EDITOR`; live reload reflects saves immediately.
+   the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
+   registry, it does not author it: creating a workflow file from the TUI is out of
+   v1 — new files are written in the editor and appear on the next reload.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon log.
 
 ### Global keys
@@ -1143,6 +1145,14 @@ Detail view keys: `tab`/`shift+tab` cycle focus (timeline → pane → answer fo
 when one is pending) · `d` output/diff · `f`/`G` re-arm follow · `esc` back to the
 board. In the answer form, `space` picks or toggles a choice, `e` opens free-text
 entry, `enter` submits, `esc` abandons it without touching the task.
+
+Projects view keys: `a` add · `enter`/`e` edit · `d` delete · `/` filter. Workflows
+view keys: `e` edit the file · `enter` expand the step list · `R` re-read the
+registry. The action keys above are task-scoped and unreachable here, so these two
+views bind freely; `n` still opens the new-task form, seeded with the project under
+the cursor. Deleting a project confirms inline, and a project holding non-archived
+tasks re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but
+a *running* task is refused outright, since no confirmation makes that delete legal.
 
 ## 16. Security considerations
 

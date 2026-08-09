@@ -105,6 +105,12 @@ func (c *Client) action(ctx context.Context, id int64, name string, body any) (T
 // decoding the response into out. Non-2xx responses come back as *Error, with
 // the §13.1 details object intact.
 func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	return c.send(ctx, http.MethodPost, path, body, out)
+}
+
+// send performs an authenticated write of any method. A nil body sends none
+// and a nil out discards the response, which is what a 204 needs.
+func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -113,7 +119,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 		}
 		rdr = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, rdr)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, rdr)
 	if err != nil {
 		return fmt.Errorf("build request %s: %w", path, err)
 	}
@@ -123,7 +129,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	}
 	resp, err := c.rest.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
+		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
