@@ -73,7 +73,7 @@ func newViews(ctx context.Context) [viewCount]view {
 		viewBoard:     newBoard(),
 		viewDetail:    newDetail(ctx),
 		viewNewTask:   newNewTask(),
-		viewProjects:  stubView{name: "Projects", note: "Projects lands in PR M (T3.6)."},
+		viewProjects:  newProjectsView(),
 		viewWorkflows: stubView{name: "Workflows", note: "Workflows lands in PR M (T3.6)."},
 		viewDaemon:    stubView{name: "Daemon", note: "The daemon view lands in PR M (T3.7)."},
 	}
