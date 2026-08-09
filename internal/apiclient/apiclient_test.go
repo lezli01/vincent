@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -31,6 +33,7 @@ const noteTimeout = 10 * time.Second
 type harness struct {
 	ts        *httptest.Server
 	st        *store.Store
+	broker    *events.Broker
 	projectID int64
 	taskID    int64
 }
@@ -68,10 +71,13 @@ func newHarness(t *testing.T) *harness {
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
 		Broker:      broker,
+		// The registry is what lets the transcript endpoint normalize a
+		// recorded run with the same parser that read it live.
+		Agents: agent.NewRegistry(claude.New(func() string { return "" })),
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &harness{ts: ts, st: st, projectID: p.ID, taskID: task.ID}
+	return &harness{ts: ts, st: st, broker: broker, projectID: p.ID, taskID: task.ID}
 }
 
 // append writes one durable event; the store hook publishes it to the broker.

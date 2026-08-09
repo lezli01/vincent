@@ -79,7 +79,7 @@ func newRoot(ctx context.Context, cn connector) *root {
 		cn:    cn,
 		ctx:   ctx,
 		phase: phaseProbing,
-		views: newViews(),
+		views: newViews(ctx),
 	}
 }
 
@@ -97,10 +97,13 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case selectTaskMsg:
 		// A view asked to open a task. Routing is the shell's job, so the
 		// board never reaches into the view table itself.
-		m.active = viewDetail
-		m.help = false
 		m.selectedTask = msg.id
-		return m.delegate(msg)
+		// The detail view must have the task before it is told it is on
+		// screen: activation is what opens its per-task subscription.
+		cmd := m.deliver(viewDetail, msg)
+		return m, tea.Batch(cmd, m.switchTo(viewDetail))
+	case selectViewMsg:
+		return m, m.switchTo(msg.id)
 	case connectedMsg:
 		return m.updateConnected(msg)
 	case probeFailedMsg:
@@ -138,9 +141,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.help = false
 		return m, nil
 	case "1", "2", "3", "4", "5", "6":
-		m.active = viewID(key[0] - '1')
-		m.help = false
-		return m, nil
+		return m, m.switchTo(viewID(key[0] - '1'))
 	case "r":
 		if m.phase == phaseFailed || m.phase == phaseReconnecting {
 			return m, m.restartConnect()
@@ -213,9 +214,30 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 
 // delegate routes a message to the active view.
 func (m *root) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
-	v, cmd := m.views[m.active].update(msg)
-	m.views[m.active] = v
-	return m, cmd
+	return m, m.deliver(m.active, msg)
+}
+
+// deliver routes a message to one specific view.
+func (m *root) deliver(id viewID, msg tea.Msg) tea.Cmd {
+	v, cmd := m.views[id].update(msg)
+	m.views[id] = v
+	return cmd
+}
+
+// switchTo changes the visible view and tells both sides. A view that owns a
+// live subscription — the detail view's per-task stream — needs to know when
+// it is no longer being watched, and re-entering one is when it refreshes.
+func (m *root) switchTo(id viewID) tea.Cmd {
+	m.help = false
+	if id == m.active {
+		return nil
+	}
+	prev := m.active
+	m.active = id
+	return tea.Batch(
+		m.deliver(prev, viewDeactivatedMsg{id: prev}),
+		m.deliver(id, viewActivatedMsg{id: id}),
+	)
 }
 
 // broadcast routes a message to every view, not just the visible one.

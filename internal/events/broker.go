@@ -102,6 +102,15 @@ func (b *Broker) PublishOutput(taskID int64, c Chunk) {
 	}
 }
 
+// OutputSubscribers reports how many live-output subscribers a task has.
+// Chunks published with nobody listening are dropped by design, so a caller
+// that must not lose one — a test, mainly — can wait for a reader to attach.
+func (b *Broker) OutputSubscribers(taskID int64) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.outs[taskID])
+}
+
 // EventSub is one durable-event subscription. C closes when the subscriber
 // fell behind or the broker shut down; either way the client reconnects and
 // resumes from its cursor.

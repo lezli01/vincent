@@ -43,6 +43,29 @@ type Note interface{ isNote() }
 // EventNote delivers one durable event.
 type EventNote struct{ Event Event }
 
+// OutputNote delivers one live-output chunk from a per-task stream (§13.3):
+// ephemeral, never replayed, and identified by the step_run that produced it
+// plus the transcript offset just past its line, which is what lets a client
+// join a transcript fetch to the live stream exactly.
+type OutputNote struct {
+	Type    string
+	RunID   int64
+	Offset  int64
+	Payload json.RawMessage
+}
+
+// Text extracts the human-readable text of an output chunk, if it has any:
+// agent.output and command.output carry a line, the rest carry structure.
+func (n OutputNote) Text() string {
+	var body struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(n.Payload, &body); err != nil {
+		return ""
+	}
+	return body.Text
+}
+
 // ConnectedNote reports a (re)established stream. Cursor is the resume
 // position the connection asked for (0 = live-only).
 type ConnectedNote struct{ Cursor int64 }
@@ -55,6 +78,7 @@ type DisconnectedNote struct {
 }
 
 func (EventNote) isNote()        {}
+func (OutputNote) isNote()       {}
 func (ConnectedNote) isNote()    {}
 func (DisconnectedNote) isNote() {}
 
@@ -78,11 +102,21 @@ type StreamOptions struct {
 // and closes the channel only when ctx is canceled.
 func (c *Client) StreamEvents(ctx context.Context, opts StreamOptions) <-chan Note {
 	ch := make(chan Note)
-	go c.streamLoop(ctx, opts, ch)
+	go c.streamLoop(ctx, "/v1/events", opts, ch)
 	return ch
 }
 
-func (c *Client) streamLoop(ctx context.Context, opts StreamOptions, ch chan<- Note) {
+// StreamTask subscribes to GET /v1/tasks/{id}/events: that task's durable
+// events interleaved with its live output (§13.3). Durable events resume via
+// Last-Event-ID exactly as on the global stream; live output is ephemeral and
+// never replayed, so a reconnect catches up by re-fetching the transcript.
+func (c *Client) StreamTask(ctx context.Context, taskID int64, opts StreamOptions) <-chan Note {
+	ch := make(chan Note)
+	go c.streamLoop(ctx, "/v1/tasks/"+strconv.FormatInt(taskID, 10)+"/events", opts, ch)
+	return ch
+}
+
+func (c *Client) streamLoop(ctx context.Context, path string, opts StreamOptions, ch chan<- Note) {
 	defer close(ch)
 	initial := opts.InitialBackoff
 	if initial <= 0 {
@@ -95,7 +129,7 @@ func (c *Client) streamLoop(ctx context.Context, opts StreamOptions, ch chan<- N
 	cursor := opts.LastEventID
 	backoff := initial
 	for {
-		connected, err := c.streamOnce(ctx, opts, &cursor, ch)
+		connected, err := c.streamOnce(ctx, path, opts, &cursor, ch)
 		if ctx.Err() != nil {
 			return
 		}
@@ -117,9 +151,9 @@ func (c *Client) streamLoop(ctx context.Context, opts StreamOptions, ch chan<- N
 // streamOnce runs one connection: dial, announce, then decode frames until
 // the stream breaks. connected reports whether the dial reached streaming.
 func (c *Client) streamOnce(
-	ctx context.Context, opts StreamOptions, cursor *int64, ch chan<- Note,
+	ctx context.Context, path string, opts StreamOptions, cursor *int64, ch chan<- Note,
 ) (connected bool, err error) {
-	req, err := c.buildStreamRequest(ctx, opts, *cursor)
+	req, err := c.buildStreamRequest(ctx, path, opts, *cursor)
 	if err != nil {
 		return false, err
 	}
@@ -138,7 +172,7 @@ func (c *Client) streamOnce(
 }
 
 func (c *Client) buildStreamRequest(
-	ctx context.Context, opts StreamOptions, cursor int64,
+	ctx context.Context, path string, opts StreamOptions, cursor int64,
 ) (*http.Request, error) {
 	q := url.Values{}
 	if len(opts.Types) > 0 {
@@ -147,7 +181,7 @@ func (c *Client) buildStreamRequest(
 	if opts.ProjectID != 0 {
 		q.Set("project_id", strconv.FormatInt(opts.ProjectID, 10))
 	}
-	u := c.baseURL + "/v1/events"
+	u := c.baseURL + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
@@ -163,29 +197,46 @@ func (c *Client) buildStreamRequest(
 	return req, nil
 }
 
+// frame is one accumulated SSE frame: the event name, whether the server
+// gave it an id, and its data lines.
+type frame struct {
+	name  string
+	hasID bool
+	data  []string
+}
+
+func (f *frame) reset() { *f = frame{data: f.data[:0]} }
+
 // readFrames decodes SSE frames until the body ends. Comment lines
 // (heartbeats) are skipped; a frame dispatches on its blank line, with
 // multiple data: lines joined by newlines per the SSE spec.
+//
+// The `event:` field is not decoration here: on a per-task stream it is the
+// only thing naming a live-output chunk, whose data is the bare payload
+// rather than the durable-event envelope.
 func (c *Client) readFrames(
 	ctx context.Context, body io.Reader, cursor *int64, ch chan<- Note,
 ) error {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64*1024), maxFrameSize)
-	var data []string
+	var fr frame
 	for sc.Scan() {
 		line := sc.Text()
 		switch {
 		case line == "":
-			if len(data) > 0 {
-				if !c.dispatch(ctx, strings.Join(data, "\n"), cursor, ch) {
+			if len(fr.data) > 0 {
+				if !c.dispatch(ctx, &fr, cursor, ch) {
 					return ctx.Err()
 				}
-				data = data[:0]
 			}
+			fr.reset()
 		case strings.HasPrefix(line, ":"): // comment/heartbeat
 		case strings.HasPrefix(line, "data:"):
-			data = append(data, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
-		default: // id:/event: fields — the data envelope repeats both
+			fr.data = append(fr.data, trimField(line, "data:"))
+		case strings.HasPrefix(line, "event:"):
+			fr.name = trimField(line, "event:")
+		case strings.HasPrefix(line, "id:"):
+			fr.hasID = true
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -194,9 +245,20 @@ func (c *Client) readFrames(
 	return errors.New("event stream ended")
 }
 
-// dispatch decodes one frame body and delivers it. Frames without an id
-// (live-output chunks on per-task streams) never advance the resume cursor.
-func (c *Client) dispatch(ctx context.Context, data string, cursor *int64, ch chan<- Note) bool {
+func trimField(line, prefix string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(line, prefix), " ")
+}
+
+// dispatch decodes one frame and delivers it. An id marks a durable event,
+// whose data is the full envelope; a frame without one is a live-output
+// chunk, whose data is the bare payload and whose name is its only type
+// (§13.3). Live output never advances the resume cursor — it is not
+// replayable, so a reconnect must not believe it has been seen.
+func (c *Client) dispatch(ctx context.Context, fr *frame, cursor *int64, ch chan<- Note) bool {
+	data := strings.Join(fr.data, "\n")
+	if !fr.hasID {
+		return send(ctx, ch, outputNote(fr.name, data))
+	}
 	var ev Event
 	if err := json.Unmarshal([]byte(data), &ev); err != nil {
 		// A malformed frame is a server bug; skipping it beats killing the
@@ -207,6 +269,20 @@ func (c *Client) dispatch(ctx context.Context, data string, cursor *int64, ch ch
 		*cursor = ev.ID
 	}
 	return send(ctx, ch, EventNote{Event: ev})
+}
+
+// outputNote builds a live-output note, lifting the identity fields every
+// chunk carries out of the payload.
+func outputNote(name, data string) OutputNote {
+	note := OutputNote{Type: name, Payload: json.RawMessage(data)}
+	var ident struct {
+		RunID  int64 `json:"run_id"`
+		Offset int64 `json:"offset"`
+	}
+	if err := json.Unmarshal([]byte(data), &ident); err == nil {
+		note.RunID, note.Offset = ident.RunID, ident.Offset
+	}
+	return note
 }
 
 // send delivers n unless ctx ends first; it reports whether delivery happened.
