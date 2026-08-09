@@ -911,7 +911,22 @@ POST   /v1/tasks/{id}/archive          { force? } or ?force        (done/aborted
                                         stays done/aborted
 
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
-GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=   raw JSONL transcript, ranged
+GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
+                                        the attempt's JSONL transcript, ranged.
+                                        `offset=` (bytes) and `tail=` (last N bytes) are
+                                        mutually exclusive; `tail` opens at the start of the
+                                        record its byte count lands in (so a window narrower
+                                        than the last record still returns that record, never
+                                        nothing), `offset` is taken as given. The body always
+                                        ends on a complete line and `X-Next-Offset` reports that
+                                        boundary — never mid-record, so a follow-up fetch on a
+                                        file still being appended to resumes cleanly.
+                                        `format=normalized` maps each line through the owning
+                                        adapter's parser into the §13.3 live-output shapes plus
+                                        `agent.result`, `agent.error`, the `vincent.*` kinds and
+                                        `agent.raw` for anything the parser doesn't recognize —
+                                        one render path for live tail and scrollback alike.
+                                        Default (absent) is the raw file, byte for byte.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
 
@@ -954,6 +969,14 @@ Two kinds of streams:
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
    flushed on a ~100 ms coalescing timer (~10 Hz); `Last-Event-ID` on the per-task
    stream resumes its durable events only — live output is not replayable.
+   Every chunk carries `run_id` (the `step_runs` row that produced it) and `offset`
+   (the byte position in that attempt's transcript file *after* its line was written;
+   the write always precedes the publish). Together they make the catch-up seam exact:
+   a client fetches the transcript, then discards buffered chunks whose `run_id`
+   matches the attempt it fetched and whose `offset` is at or before the fetch's
+   `X-Next-Offset`. `run_id` is load-bearing on its own — offsets restart at zero in
+   every attempt's file, so a step advance or a retry mid-stream would otherwise have
+   its output compared against a position in a different file.
 
 ## 14. Data model (SQLite)
 
@@ -1068,7 +1091,16 @@ stream for the live tail.
    (§7.4). OS desktop notifications remain out of v1 (§20).
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
-   transcripts of past steps; **diff tab** (`GET …/diff`, syntax-highlighted); action
+   transcripts of past steps. Layout is stacked — timeline above, output below in a
+   tabbed pane the diff joins — because selecting an attempt *is* how scrollback is
+   navigated, so neither half can hide behind the other. Attempt duration here is
+   §17's active time (`finished_at - started_at - input_wait_ms`) with the excluded
+   wait shown beside it rather than silently subtracted; this is deliberately not
+   the board's wall-clock `elapsed`, because the per-step figure is diagnostic while
+   the board's is an alarm. Follow mode is a property of the *live* attempt: it is
+   unavailable on a finished one, and a step advance moves the selection only when
+   the cursor was already on the live attempt. **Diff tab** (`GET …/diff`,
+   syntax-highlighted); action
    bar for exactly the actions valid in the current state (§6), including gate
    approve/reject with the rendered gate instructions, and edit+retry which opens
    `$EDITOR` on the failing step's prompt/command. When the task is
