@@ -46,6 +46,7 @@ func codexMain(scenario string) {
 			"exit_code": 0, "status": "completed",
 		}})
 		emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
+		workFor(emitCodexMessage)
 		if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
 			editFile(f)
 		}
