@@ -2,8 +2,8 @@ package tui
 
 import "strings"
 
-// helpText is the §15 keys overlay. The remaining views arrive in later
-// Phase 3 PRs and get documented here as they land.
+// helpText is the §15 keys overlay. The daemon view arrives in T3.7 and gets
+// documented here when it lands.
 func helpText() string {
 	rows := [][2]string{
 		{"?", "toggle this help"},
@@ -52,6 +52,19 @@ func helpText() string {
 		{"ctrl+s", "create the task"},
 		{"esc", "leave the field, then the form (a touched draft asks first)"},
 	}
+	projectRows := [][2]string{
+		{"a", "register a repository"},
+		{"enter/e", "edit the selected project"},
+		{"d", "remove the project (asks first; its task rows go with it)"},
+		{"/", "filter by name or path"},
+		{"ctrl+s", "in the form: save"},
+	}
+	workflowRows := [][2]string{
+		{"↑/↓", "move between entries"},
+		{"enter", "show the entry's steps"},
+		{"e", "open the workflow file in $EDITOR (the view updates when you save)"},
+		{"R", "re-read the registry"},
+	}
 	var b strings.Builder
 	b.WriteString("\n  Global keys\n\n")
 	writeKeyRows(&b, rows)
@@ -65,6 +78,10 @@ func helpText() string {
 	writeKeyRows(&b, formRows)
 	b.WriteString("\n  New task\n\n")
 	writeKeyRows(&b, newTaskRows)
+	b.WriteString("\n  Projects\n\n")
+	writeKeyRows(&b, projectRows)
+	b.WriteString("\n  Workflows\n\n")
+	writeKeyRows(&b, workflowRows)
 	return b.String()
 }
 
