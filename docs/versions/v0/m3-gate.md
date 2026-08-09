@@ -1,0 +1,110 @@
+# M3 phase gate — walkthrough and results (T3.8)
+
+Spec §19 M3 acceptance: *the full loop (register → author workflow\* → run 3
+parallel tasks → answer an agent question → approve gate → archive) is doable
+without leaving the TUI.*
+
+M1 and M2 are asserted by `curl` in CI. M3 cannot be: its acceptance is a
+judgement about a terminal program, and the Phase 3 decision ruled out driving
+one from tests. So this is a human walkthrough. `scripts/m3-gate.sh` seeds the
+world and prints the launch instructions; everything below is done by hand, on
+**Windows 11 and macOS**, both runs on the PR branch before it merges.
+
+Linux is not hand-run: it executes the full Go suite and both existing gates on
+every PR across all three OSes. That is a stated choice, not an omission.
+
+```sh
+scripts/m3-gate.sh                     # seed (real claude on the question leg)
+VINCENT_GATE_AGENT=fake scripts/m3-gate.sh   # zero-spend rehearsal
+scripts/m3-gate.sh clean               # stop the daemon, remove the seeded tree
+```
+
+Start `vincent` from the printed launch block in the terminal you mean to
+judge — Windows Terminal or pwsh on Windows, not Git Bash, which hands a
+native console app a pipe rather than a console.
+
+## Grading
+
+Fixed before the walkthrough starts, so nothing can be argued down after the
+fact because the gate is otherwise green:
+
+- **An item that blocks completing the loop fails the gate.** It is fixed in
+  this PR, and *both* OS runs are then re-walked on the fixed build — every
+  result below names one commit, and two runs against two builds would make
+  that record a lie.
+- **An item that merely looks or reads wrong does not fail the gate.** It
+  becomes a new Phase 4 task in `tasks.md` under the "newly discovered work"
+  rule, and its ID goes in the findings table.
+
+## Section A — the acceptance loop (mandatory)
+
+Section A failing is a gate failure. Do it in order; it is one continuous
+session, and *leaving the TUI to get something done is itself a failure*.
+
+| ID | Step | Passes when |
+|---|---|---|
+| **L1** | Launch `vincent` with no daemon running. | The TUI comes up on its own, shows it is starting the daemon, and reaches the board without you starting anything by hand. On the very first launch the full-auto notice appears; `enter` dismisses it. |
+| **L2** | Register the app repo: view `4`, `a`, paste the seeded app-repo path, `ctrl+s`. | The project appears in the list with its name derived from the directory, and no error. |
+| **L3** | Author a workflow: view `5`, select **m3-parallel** on the app project, `e`. | Your `$EDITOR` opens *the project-scoped file* (`.vincent/workflows/m3-parallel.yaml`, 2 steps — not the 1-step global copy). Change the step id `work-shadow` to something you will recognise, save, quit the editor. The row updates **without a restart**. |
+| **L4** | Read the shadowing row on the Workflows view. | **m3-parallel** is one row, not two, and says it shadows the global entry. |
+| **L5** | Create four tasks on the app project with **m3-parallel**: `n`, title, pick the workflow, override `agent` to `codex`, `ctrl+s`. Repeat. | Four tasks exist. |
+| **L6** | Watch the board. | Exactly **three** run at once and the fourth sits `queued`; each running row shows the step name you typed in L3 (proving the shadow ran, not the global copy) and a step count of 2. When the first finishes, the fourth starts on its own — no keypress, no refresh. |
+| **L7** | Open one running task (`enter`), watch the output pane. | Output is still arriving while you watch; `f`/`G` re-follows after you scroll away. Press `d` for the diff — it shows the agent's README.md edit. |
+| **L8** | Create a task on the app project with **m3-loop** (agent `claude`, the real CLI). Wait. | The task reaches `awaiting_input` and the TUI alerts you. Open it, `tab` to the answer form, pick an option, `enter`. The run resumes in place — no new attempt, no restart — and finishes the agent step. |
+| **L9** | The task stops at the gate. Approve it: `a`. | The manual step shows as approved, the publish step runs, and the task reaches `done`. `git -C <bare remote> log --oneline --all` shows the branch with the agent's commit. |
+| **L10** | Archive the finished loop task: `A`, confirm. | It asks first, naming the consequence; on `y` the task shows as archived and its worktree is gone from disk. |
+
+## Section B — contents sweep
+
+One item per phrase in §19's M3 **contents** column, quoted, plus the paths
+that column implies. Graded by the rule above — findings here do not fail the
+gate unless they blocked Section A.
+
+| ID | §19 phrase | Look at |
+|---|---|---|
+| **S1** | "All six views" | `1`–`6` all render, none blank or panicking; `?` lists the keys each one actually has. |
+| **S2** | "live tail" | Covered by L7; additionally, a tail left open across a task's completion ends cleanly rather than hanging on "following". |
+| **S3** | "diff view" | `d` on a task with no commits yet, on a finished task, and on an archived one (worktree removed) — three different situations, three intelligible messages. |
+| **S4** | "all actions" | `p` pause/resume a running task · `c` cancel (asks first) · `s` skip a step · `r` retry a blocked task · `E` edit the failing step in `$EDITOR` and retry · `x` reject a gate. Each offered only when valid for that task's state. |
+| **S5** | "input-request alerts + answer form" | Covered by L8; additionally `e` in the form types a free-text answer instead of picking, and `esc` leaves without answering and the task stays parked. |
+| **S6** | "`$EDITOR` integration" | Covered by L3 (workflow file) and S4 (`E` on a step); also `e` on the description field in the new-task form. The TUI redraws correctly after the editor exits in all three. |
+| **S7** | "daemon auto-start" | Covered by L1. |
+| **S8** | Reconnect (PR H made connect and reconnect one state) | From a second terminal, `vincent daemon stop --force`. The TUI notices, shows the connect/reconnect screen with the log path, and `r` brings it back without losing the view you were on. |
+| **S9** | Projects view states | The spare repo gives the list a second row; `d` on a project with a running task is refused with a reason; `enter`/`e` edits and saves. |
+| **S10** | Workflows view states | **m3-broken** renders as invalid, carrying the registry's own message (unknown step type, line 5); the built-in `adhoc` renders as built-in with no `e`. |
+| **S11** | Daemon view | `6` shows version, uptime, pid, listen address, the three paths, `max_parallel_tasks: 3`, both adapters with their resolved paths, and a log tail that matches what the daemon is actually writing. `R` refreshes all three. |
+| **S12** | Destructive confirmation | `A` on one of the **m3-parallel** tasks — its worktree is dirty (the agent edited README.md and nothing committed). The prompt says changes will be lost. Answer `n` first: the task is still there. Then `y`. |
+| **S13** | Quit reminder | `q` with tasks still running prints the running-task count after the alt screen tears down, and the line survives in scrollback. |
+
+## Results
+
+One block per run. A run records the build it judged: any loop-blocking fix
+invalidates every earlier run.
+
+<!-- Template — copy per run.
+
+### <OS> — YYYY-MM-DD
+
+| | |
+|---|---|
+| OS / version | |
+| terminal host | |
+| vincent commit | |
+| `claude --version` | |
+| resolved `$EDITOR` | |
+| mode | real claude / rehearsal |
+
+Section A: L1 … L10 — pass / fail
+Section B: S1 … S13 — pass / fail / n-a
+
+**Findings**
+
+| Item | What | Disposition |
+|---|---|---|
+| S? | | fixed in PR N / T4.x |
+
+**Verdict:** GATE PASS / GATE FAIL
+
+-->
+
+_No runs recorded yet._
