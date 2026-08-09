@@ -169,7 +169,7 @@ func (s *Server) runAction(w http.ResponseWriter, r *http.Request, action taskAc
 		s.writeActionError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toTaskResponse(task))
+	writeJSON(w, http.StatusOK, toTaskResponse(task, s.snaps.get(task.ID, task.WorkflowSnapshot)))
 }
 
 // writeActionError maps the errors an action can produce onto §13.1 status

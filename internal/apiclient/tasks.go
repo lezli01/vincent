@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"strconv"
 	"time"
@@ -123,6 +124,85 @@ func (o ListTasksOptions) query() string {
 		return ""
 	}
 	return "?" + q.Encode()
+}
+
+// StepRun is one attempt of one step (§5.4) as the detail view reads it.
+type StepRun struct {
+	ID        int64  `json:"id"`
+	StepIndex int    `json:"step_index"`
+	StepID    string `json:"step_id"`
+	StepName  string `json:"step_name"`
+	StepType  string `json:"step_type"`
+	Attempt   int    `json:"attempt"`
+	State     string `json:"state"`
+
+	Agent  *string `json:"agent"`
+	Model  *string `json:"model"`
+	Effort *string `json:"effort"`
+
+	ExitCode      *int    `json:"exit_code"`
+	CheckExitCode *int    `json:"check_exit_code"`
+	FailureReason *string `json:"failure_reason"`
+	ResultSummary string  `json:"result_summary"`
+
+	// TranscriptPath is nil for a step that produced no transcript — a manual
+	// gate or a skipped step. The output pane renders such a row's metadata
+	// instead of fetching.
+	TranscriptPath *string  `json:"transcript_path"`
+	InputTokens    *int64   `json:"input_tokens"`
+	OutputTokens   *int64   `json:"output_tokens"`
+	CostUSD        *float64 `json:"cost_usd"`
+	// InputWaitMS is time this attempt spent waiting on a human (§7.4).
+	InputWaitMS int64 `json:"input_wait_ms"`
+	// PromptOverride/RunOverride report a human-edited retry (§6).
+	PromptOverride bool `json:"prompt_override"`
+	RunOverride    bool `json:"run_override"`
+
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+}
+
+// Duration is the attempt's §17 active time: wall clock minus the time it
+// spent waiting on a human, which is not work the step did. A running
+// attempt is measured to now. ok is false before the attempt started.
+func (s StepRun) Duration(now time.Time) (time.Duration, bool) {
+	if s.StartedAt.IsZero() {
+		return 0, false
+	}
+	end := now
+	if s.FinishedAt != nil {
+		end = *s.FinishedAt
+	}
+	d := end.Sub(s.StartedAt) - time.Duration(s.InputWaitMS)*time.Millisecond
+	if d < 0 {
+		return 0, true
+	}
+	return d, true
+}
+
+// Live reports whether this attempt is still producing output, which is what
+// makes follow mode meaningful (a finished attempt will never gain a line).
+func (s StepRun) Live() bool { return s.FinishedAt == nil && s.State == "running" }
+
+// TaskDetail is GET /v1/tasks/{id}: the task plus every attempt of every
+// step it has run.
+type TaskDetail struct {
+	Task
+	Description  string          `json:"description"`
+	BranchName   string          `json:"branch_name"`
+	WorktreePath *string         `json:"worktree_path"`
+	PendingInput json.RawMessage `json:"pending_input,omitempty"`
+	Steps        []StepRun       `json:"steps"`
+}
+
+// GetTask fetches one task with its step history — one call, because the
+// detail endpoint already embeds steps[].
+func (c *Client) GetTask(ctx context.Context, id int64) (TaskDetail, error) {
+	var out TaskDetail
+	if err := c.get(ctx, "/v1/tasks/"+strconv.FormatInt(id, 10), &out); err != nil {
+		return TaskDetail{}, err
+	}
+	return out, nil
 }
 
 // ListTasks fetches the task list the board renders.

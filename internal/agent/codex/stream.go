@@ -51,6 +51,14 @@ type stream struct {
 	lastMessage string
 }
 
+// NewLineParser returns a parser for codex transcript lines (§13.2
+// format=normalized). Each call gets its own stream: codex's result text is
+// the last agent_message it saw, so two files must not share the state.
+func (a *Adapter) NewLineParser() agent.LineParser {
+	s := &stream{}
+	return s.parse
+}
+
 // parse normalizes one verbatim JSONL line into an agent.Event. The raw
 // line always rides along for lossless transcripts.
 func (s *stream) parse(raw []byte) agent.Event {
