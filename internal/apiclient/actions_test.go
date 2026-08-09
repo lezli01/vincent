@@ -1,0 +1,153 @@
+package apiclient_test
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
+)
+
+// TestActionAgainstRealHandlers: an action returns the daemon's own view of
+// the task afterwards, which is what a caller renders instead of predicting
+// the transition itself.
+func TestActionAgainstRealHandlers(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	got, err := h.client().Cancel(ctx, h.taskID)
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if got.State != string(store.TaskAborted) {
+		t.Errorf("state = %q, want aborted", got.State)
+	}
+	if len(got.AvailableActions) == 0 {
+		t.Error("available_actions is empty; an aborted task can still be archived")
+	}
+}
+
+// TestActionConflictCarriesState: a 409 arrives as *Error with §13.1's
+// details intact, so a stale action bar can say what it found instead of
+// re-printing the daemon's prose.
+func TestActionConflictCarriesState(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.client().Approve(context.Background(), h.taskID)
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Approve on a queued task: err = %v, want *apiclient.Error", err)
+	}
+	if apiErr.Status != http.StatusConflict {
+		t.Errorf("status = %d, want 409", apiErr.Status)
+	}
+	if got := apiErr.Details["state"]; got != string(store.TaskQueued) {
+		t.Errorf("details.state = %q, want queued", got)
+	}
+}
+
+// TestRetryOverrideReachesTheWire: edit+retry rewrites the snapshot, so the
+// text comes back on the next fetch — the round trip the editor path rides.
+func TestRetryOverrideReachesTheWire(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	id := h.snapshotTask(t)
+	h.setState(t, id, store.TaskBlocked)
+
+	const edited = "do it differently"
+	if _, err := h.client().Retry(ctx, id, apiclient.Override{Prompt: edited}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	task, err := h.client().GetTask(ctx, id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	step, ok := task.Step(0)
+	if !ok {
+		t.Fatal("workflow_steps has no step 0")
+	}
+	text, field, editable := step.EditableText()
+	if !editable || field != "prompt" {
+		t.Fatalf("EditableText field = %q editable = %v, want prompt/true", field, editable)
+	}
+	if text != edited {
+		t.Errorf("prompt = %q, want %q", text, edited)
+	}
+}
+
+// TestWorkflowStepsDecode covers the field mapping and the per-type editable
+// text, including the manual step that has none.
+func TestWorkflowStepsDecode(t *testing.T) {
+	h := newHarness(t)
+	id := h.snapshotTask(t)
+
+	task, err := h.client().GetTask(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if len(task.WorkflowSteps) != 3 {
+		t.Fatalf("workflow_steps = %d, want 3", len(task.WorkflowSteps))
+	}
+	for _, tc := range []struct {
+		index int
+		field string
+		text  string
+		ok    bool
+	}{
+		{0, "prompt", "write the thing", true},
+		{1, "", "", false},
+		{2, "run", "git push", true},
+	} {
+		step, found := task.Step(tc.index)
+		if !found {
+			t.Fatalf("step %d missing", tc.index)
+		}
+		text, field, ok := step.EditableText()
+		if ok != tc.ok || field != tc.field || text != tc.text {
+			t.Errorf("step %d: (%q, %q, %v), want (%q, %q, %v)",
+				tc.index, text, field, ok, tc.text, tc.field, tc.ok)
+		}
+	}
+	if got, _ := task.Step(1); got.Instructions != "look at the diff" {
+		t.Errorf("manual instructions = %q, want the gate text", got.Instructions)
+	}
+}
+
+// TestDiffReadsWorktree drives the text/plain endpoint against a real repo.
+func TestDiffReadsWorktree(t *testing.T) {
+	h := newHarness(t)
+	repo := testrepo.Init(t, "main")
+	testrepo.WriteFile(t, repo, "README.md", "changed by the agent\n")
+	id := h.taskInWorktree(t, repo)
+
+	diff, err := h.client().Diff(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !strings.Contains(diff, "changed by the agent") {
+		t.Errorf("diff does not carry the change:\n%s", diff)
+	}
+	if !strings.HasPrefix(diff, "diff --git") {
+		t.Errorf("diff is not a unified diff:\n%s", diff)
+	}
+}
+
+// TestDiffWithoutWorktree: the 409 stays an *Error rather than flattening to
+// an empty diff — "not started yet" and "worktree removed" are different
+// answers to "show me the changes".
+func TestDiffWithoutWorktree(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.client().Diff(context.Background(), h.taskID)
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Diff on a task with no worktree: err = %v, want *apiclient.Error", err)
+	}
+	if apiErr.Status != http.StatusConflict {
+		t.Errorf("status = %d, want 409", apiErr.Status)
+	}
+}

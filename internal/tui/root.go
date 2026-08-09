@@ -31,6 +31,9 @@ var (
 	styleWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	styleBad   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	styleDim   = lipgloss.NewStyle().Faint(true)
+	// styleKey marks the letter to press, so an action bar reads as keys with
+	// labels rather than a sentence.
+	styleKey = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 )
 
 // noteMsg wraps one stream Note for Update.

@@ -211,8 +211,8 @@ func TestDetailFollowDropsAndRearms(t *testing.T) {
 	if d.newLines != 1 {
 		t.Errorf("new-line counter = %d, want 1", d.newLines)
 	}
-	if !strings.Contains(d.outputHeader(), "1 new") {
-		t.Errorf("paused header does not report unread output: %q", d.outputHeader())
+	if !strings.Contains(d.paneHeader(), "1 new") {
+		t.Errorf("paused header does not report unread output: %q", d.paneHeader())
 	}
 
 	d.focus = focusOutput
@@ -220,8 +220,8 @@ func TestDetailFollowDropsAndRearms(t *testing.T) {
 	if !d.following || d.newLines != 0 {
 		t.Errorf("f did not re-arm follow: following=%v new=%d", d.following, d.newLines)
 	}
-	if !strings.Contains(d.outputHeader(), "following") {
-		t.Errorf("following header missing: %q", d.outputHeader())
+	if !strings.Contains(d.paneHeader(), "following") {
+		t.Errorf("following header missing: %q", d.paneHeader())
 	}
 }
 
