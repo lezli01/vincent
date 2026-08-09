@@ -68,8 +68,14 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.runAction(w, r, func(id int64) (*store.Task, error) {
-		return s.deps.Runner.Retry(r.Context(), id,
+		t, err := s.deps.Runner.Retry(r.Context(), id,
 			store.Override{Prompt: req.PromptOverride, Run: req.RunOverride})
+		if err == nil && (req.PromptOverride != "" || req.RunOverride != "") {
+			// edit+retry rewrote this task's snapshot (§6), which is the one
+			// thing that can make a cached parse wrong.
+			s.snaps.forget(id)
+		}
+		return t, err
 	})
 }
 
