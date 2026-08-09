@@ -19,6 +19,10 @@ type transcript struct {
 	path string
 	mu   sync.Mutex
 	f    *os.File
+	// size is the byte length written so far. Every append returns the
+	// position after it, which live-output chunks carry so a client can tell
+	// exactly which lines its transcript fetch already covered (§13.3).
+	size int64
 }
 
 // openTranscript creates the transcript file for one attempt.
@@ -38,15 +42,20 @@ func openTranscript(dataDir string, taskID int64, stepIndex, attempt int) (*tran
 // Path is the transcript's location, recorded on the StepRun.
 func (t *transcript) Path() string { return t.path }
 
-// Raw appends a verbatim stream line.
-func (t *transcript) Raw(line []byte) {
+// Raw appends a verbatim stream line and reports the file offset just past
+// it. A short or failed write still advances by what landed, so the offset
+// never claims more of the file than exists.
+func (t *transcript) Raw(line []byte) int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, _ = t.f.Write(append(line, '\n'))
+	n, _ := t.f.Write(append(line, '\n'))
+	t.size += int64(n)
+	return t.size
 }
 
-// Note appends a namespaced vincent annotation.
-func (t *transcript) Note(kind string, fields map[string]any) {
+// Note appends a namespaced vincent annotation and reports the offset past
+// it.
+func (t *transcript) Note(kind string, fields map[string]any) int64 {
 	entry := make(map[string]any, len(fields)+2)
 	for k, v := range fields {
 		entry[k] = v
@@ -55,15 +64,18 @@ func (t *transcript) Note(kind string, fields map[string]any) {
 	entry["ts"] = time.Now().UTC().Format(time.RFC3339)
 	b, err := json.Marshal(entry)
 	if err != nil {
-		return
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		return t.size
 	}
-	t.Raw(b)
+	return t.Raw(b)
 }
 
 // Output appends one line of process output, tagged with its stream and the
-// phase that produced it (the step's own command, or its check).
-func (t *transcript) Output(phase, stream, text string) {
-	t.Note("output", map[string]any{"phase": phase, "stream": stream, "text": text})
+// phase that produced it (the step's own command, or its check), and reports
+// the offset past it.
+func (t *transcript) Output(phase, stream, text string) int64 {
+	return t.Note("output", map[string]any{"phase": phase, "stream": stream, "text": text})
 }
 
 // Close closes the file.

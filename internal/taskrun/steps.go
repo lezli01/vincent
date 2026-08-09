@@ -101,12 +101,14 @@ func (r *Runner) runAgentStep(
 		parked = false
 	}
 	// consume transcripts and publishes one event like the plain loop did.
+	// The transcript write comes first so the published offset is a position
+	// the file has actually reached (§13.3).
 	consume := func(ev agent.Event) {
-		tr.Raw(ev.Raw)
+		offset := tr.Raw(ev.Raw)
 		if ev.Type == agent.EventOutput && ev.Text != "" {
 			tail.add(ev.Text)
 		}
-		r.publishAgentEvent(env.task.ID, ev)
+		r.publishAgentEvent(env.task.ID, run.ID, offset, ev)
 	}
 	// protocolError fails the attempt rather than wait on a request vincent
 	// cannot render (§18): kill the tree, let the stream drain.
@@ -414,8 +416,8 @@ func (r *Runner) runShellCommand(
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
-			tr.Output(sc.phase, name, line)
-			r.publishOutput(env.task.ID, "command.output", map[string]any{
+			offset := tr.Output(sc.phase, name, line)
+			r.publishOutput(env.task.ID, run.ID, offset, "command.output", map[string]any{
 				"phase": sc.phase, "stream": name, "text": line,
 			})
 			mu.Lock()
@@ -473,22 +475,22 @@ func exitCodeOf(err error) int {
 // publishAgentEvent maps a normalized agent stream event onto the §13.3
 // live-output chunk types. Events that carry nothing a client renders
 // (results, errors — those surface as step outcomes) are skipped.
-func (r *Runner) publishAgentEvent(taskID int64, ev agent.Event) {
+func (r *Runner) publishAgentEvent(taskID, runID, offset int64, ev agent.Event) {
 	switch ev.Type {
 	case agent.EventOutput:
 		if ev.Text == "" {
 			return
 		}
-		r.publishOutput(taskID, "agent.output", map[string]any{"text": ev.Text})
+		r.publishOutput(taskID, runID, offset, "agent.output", map[string]any{"text": ev.Text})
 	case agent.EventToolUse:
 		names := make([]string, 0, len(ev.Tools))
 		for _, t := range ev.Tools {
 			names = append(names, t.Name)
 		}
-		r.publishOutput(taskID, "agent.tool_use", map[string]any{"tools": names})
+		r.publishOutput(taskID, runID, offset, "agent.tool_use", map[string]any{"tools": names})
 	case agent.EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
-		r.publishOutput(taskID, "agent.usage", map[string]any{"raw": string(ev.Raw)})
+		r.publishOutput(taskID, runID, offset, "agent.usage", map[string]any{"raw": string(ev.Raw)})
 	case agent.EventInputRequest, agent.EventInputCanceled,
 		agent.EventResult, agent.EventError, agent.EventUnknown:
 		// Input requests surface via the state change (§13.3); results and
