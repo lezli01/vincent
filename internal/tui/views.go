@@ -29,16 +29,6 @@ type view interface {
 	render(width, height int) string
 }
 
-// stubView is a placeholder screen for a view a later Phase 3 PR replaces.
-type stubView struct {
-	name string
-	note string
-}
-
-func (s stubView) title() string                  { return s.name }
-func (s stubView) update(tea.Msg) (view, tea.Cmd) { return s, nil }
-func (s stubView) render(int, int) string         { return "\n  " + s.note + "\n" }
-
 // selectViewMsg asks the shell to switch views. A view uses it rather than
 // reaching into the view table itself — routing stays the root's job.
 type selectViewMsg struct{ id viewID }
@@ -57,6 +47,20 @@ type projectHinting interface {
 	hintedProject() int64
 }
 
+// dataDirAware is implemented by views that read files the daemon writes.
+// The daemon view's log tail is the only one, and §15 records why: an
+// endpoint cannot serve the log when the daemon is what died.
+type dataDirAware interface {
+	setDataDir(string)
+}
+
+// connectionAware is implemented by views that render while the daemon is
+// unreachable and therefore have to say which of their contents are still
+// true. Only the daemon view is reachable in that state.
+type connectionAware interface {
+	setConnected(bool)
+}
+
 // clientAware is implemented by views that talk to the daemon themselves.
 // The root hands each one the client as the connection comes up (and again
 // after a reconnect) rather than widening the view interface, which every
@@ -65,8 +69,7 @@ type clientAware interface {
 	setClient(*apiclient.Client) tea.Cmd
 }
 
-// newViews returns the initial view set: all stubs in PR H; each later PR
-// swaps its own slot for the real screen. ctx bounds background work a view
+// newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail view's per-task subscription.
 func newViews(ctx context.Context) [viewCount]view {
 	return [viewCount]view{
@@ -75,6 +78,6 @@ func newViews(ctx context.Context) [viewCount]view {
 		viewNewTask:   newNewTask(),
 		viewProjects:  newProjectsView(),
 		viewWorkflows: newWorkflowsView(),
-		viewDaemon:    stubView{name: "Daemon", note: "The daemon view lands in PR M (T3.7)."},
+		viewDaemon:    newDaemonView(),
 	}
 }

@@ -144,7 +144,7 @@ func fakeConnector() connector {
 // TestAutoStartFlow drives probe-miss → auto-start → connected through the
 // root state machine (T3.1: auto-starts a stopped daemon).
 func TestAutoStartFlow(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector())
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 
 	msg := runCmd(t, m.Init(), 5*time.Second)
 	if _, ok := msg.(probeFailedMsg); !ok {
@@ -181,7 +181,7 @@ func TestAutoStartFlow(t *testing.T) {
 func TestConnectFailureAndRetry(t *testing.T) {
 	cn := fakeConnector()
 	cn.startDetached = func() (int, error) { return 0, errors.New("spawn refused") }
-	m := newRoot(testCtx(t), cn)
+	m := newRoot(testCtx(t), cn, ackedDir(t))
 
 	msg := runCmd(t, m.Init(), 5*time.Second)
 	_, cmd := m.Update(msg) // probeFailedMsg → starting
@@ -208,7 +208,7 @@ func TestConnectFailureAndRetry(t *testing.T) {
 }
 
 func TestViewRoutingAndHelp(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector())
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
 
 	m.Update(key("2"))
@@ -246,7 +246,7 @@ func TestQuitKeys(t *testing.T) {
 		key("q"),
 		{Code: 'c', Mod: tea.ModCtrl},
 	} {
-		m := newRoot(testCtx(t), fakeConnector())
+		m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 		_, cmd := m.Update(k)
 		if cmd == nil {
 			t.Fatalf("%q returned no command", k.String())
@@ -260,7 +260,7 @@ func TestQuitKeys(t *testing.T) {
 // TestLiveEventLine renders a delivered event on the shell's event line —
 // the foundation's visible re-render on external change.
 func TestLiveEventLine(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector())
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
 	m.notes = make(chan apiclient.Note)
 
@@ -279,7 +279,7 @@ func TestLiveEventLine(t *testing.T) {
 }
 
 func TestReconnectingState(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector())
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
 	m.notes = make(chan apiclient.Note)
 

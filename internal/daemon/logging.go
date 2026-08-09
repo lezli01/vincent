@@ -46,16 +46,12 @@ func parseLevel(s string) (slog.Level, error) {
 	}
 }
 
-// LogTail returns up to n trailing lines of the daemon log, for surfacing
-// startup failures from `daemon start`.
+// LogTail returns up to n trailing lines of the daemon log as text, for
+// surfacing startup failures from `daemon start`.
 func LogTail(dataDir string, n int) string {
-	b, err := os.ReadFile(filepath.Join(dataDir, "logs", "daemon.log"))
+	lines, err := TailFile(LogPath(dataDir), n)
 	if err != nil {
 		return fmt.Sprintf("(no daemon log: %v)", err)
-	}
-	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n")
 }
