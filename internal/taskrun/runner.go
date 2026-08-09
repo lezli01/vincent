@@ -288,10 +288,20 @@ func (r *Runner) interrupting(taskID int64) bool {
 // publishOutput streams one live-output chunk to the task's SSE subscribers
 // (§13.3). No broker, no subscribers, or a slow subscriber all lose nothing
 // durable: the transcript is the durable copy.
-func (r *Runner) publishOutput(taskID int64, chunkType string, payload map[string]any) {
+//
+// Every chunk is stamped with the step_run that produced it and the offset
+// just past its transcript line, which is what lets a client join a
+// transcript fetch to the live stream without a gap or a duplicate. Callers
+// must have written the line first — the offset means "this line is in the
+// file up to here".
+func (r *Runner) publishOutput(
+	taskID, runID, offset int64, chunkType string, payload map[string]any,
+) {
 	if r.deps.Events == nil {
 		return
 	}
+	payload["run_id"] = runID
+	payload["offset"] = offset
 	r.deps.Events.PublishOutput(taskID, events.Chunk{Type: chunkType, Payload: payload})
 }
 
