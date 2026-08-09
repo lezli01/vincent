@@ -787,6 +787,7 @@ pointer to the running instance.
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
   daemon.lock
+  tui.json                   # TUI-local state (the §16 first-run acknowledgment)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   logs/daemon.log            # rotated, size-capped
@@ -1123,7 +1124,16 @@ stream for the live tail.
    the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
    registry, it does not author it: creating a workflow file from the TUI is out of
    v1 — new files are written in the editor and appear on the next reload.
-6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon log.
+6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
+   log. The view reports, it does not act: stopping the daemon from the TUI is out
+   of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
+   at launch has no business killing it. The log tail is read straight from
+   `{data_dir}/logs/daemon.log`, the one place the TUI is not a pure API client:
+   an endpoint cannot serve the log when the daemon is the thing that died, which
+   is when the log is worth reading. For the same reason this is the only view
+   reachable while disconnected — views 1–5 stay behind the connection, view 6
+   renders the log and the resolved paths with the daemon-supplied blocks marked
+   unavailable.
 
 ### Global keys
 
@@ -1154,6 +1164,12 @@ the cursor. Deleting a project confirms inline, and a project holding non-archiv
 tasks re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but
 a *running* task is refused outright, since no confirmation makes that delete legal.
 
+Daemon view keys: `R` re-read everything · `f`/`G` follow the log again · `↑/↓`,
+`pgup`/`pgdn` scroll it. Identity, config and adapters refresh when the view opens
+and on `R`; the log alone re-reads on a short timer, because it is the only part
+that changes while you watch. Uptime ticks locally from the daemon's `started_at`
+rather than from a fetched figure, so it cannot drift between refreshes.
+
 ## 16. Security considerations
 
 - **Trust boundary = the OS user.** API on loopback only + bearer token file (0600)
@@ -1162,7 +1178,11 @@ a *running* task is refused outright, since no confirmation makes that delete le
   arbitrary commands *as the user*, not confined to the worktree. Mitigations:
   per-workflow/step `restricted` mode, everything transcripted, nothing merges or
   pushes unless a workflow step does it. This risk is documented in the README and
-  shown once in the TUI on first run.
+  shown once in the TUI on first run. The acknowledgment persists in
+  `{data_dir}/tui.json` and is written when the notice is *dismissed*, never when
+  it is shown — a quit two seconds in must not bury it. Every failure reading or
+  writing that file shows the notice again: a security warning that suppresses
+  itself because a parse failed has failed in the wrong direction.
 - Worktrees provide *collision* isolation, not *security* isolation.
 - The daemon stores no secrets; agent CLIs use their own auth (keychain/config). The
   token file gates only the vincent API itself.
