@@ -19,11 +19,19 @@ func helpText() string {
 		{"/", "filter by id, title, project or state"},
 		{"esc", "clear the filter"},
 	}
+	detailRows := [][2]string{
+		{"tab", "move focus between the timeline and the output"},
+		{"↑/↓", "select an attempt, or scroll the output"},
+		{"f / G", "follow the live output again"},
+		{"esc", "back to the board"},
+	}
 	var b strings.Builder
 	b.WriteString("\n  Global keys\n\n")
 	writeKeyRows(&b, rows)
 	b.WriteString("\n  Board\n\n")
 	writeKeyRows(&b, boardRows)
+	b.WriteString("\n  Task detail\n\n")
+	writeKeyRows(&b, detailRows)
 	b.WriteString("\n  Task actions (pause, cancel, approve, retry, skip, archive) land in PR K.\n")
 	return b.String()
 }

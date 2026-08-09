@@ -1,0 +1,371 @@
+package tui
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+)
+
+// fixedNow keeps duration rendering deterministic.
+var fixedNow = time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+
+func newTestDetail(t *testing.T) *detail {
+	t.Helper()
+	d := newDetail(testCtx(t))
+	d.now = func() time.Time { return fixedNow }
+	d.width, d.height = 120, 30
+	return d
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// attempt builds one step-run fixture.
+func attempt(id int64, stepIndex, n int, name, state string, live bool) apiclient.StepRun {
+	r := apiclient.StepRun{
+		ID: id, StepIndex: stepIndex, StepName: name, StepID: name, StepType: "agent",
+		Attempt: n, State: state, Agent: ptr("claude"),
+		TranscriptPath: ptr("/tmp/t.jsonl"),
+		StartedAt:      fixedNow.Add(-time.Minute),
+	}
+	if !live {
+		fin := fixedNow.Add(-30 * time.Second)
+		r.FinishedAt = &fin
+	}
+	return r
+}
+
+func loadDetail(d *detail, steps []apiclient.StepRun) {
+	d.applyLoaded(detailLoadedMsg{
+		id: d.taskID,
+		task: apiclient.TaskDetail{
+			Task:  apiclient.Task{ID: d.taskID, Title: "detail task", State: stateRunning, StepTotal: 2},
+			Steps: steps,
+		},
+	})
+}
+
+// TestDetailTimelineRendersAttempts covers what §15 asks a timeline to show,
+// including the two things this PR made visible: the §17 active duration with
+// its excluded wait beside it, and the edited-attempt flag.
+func TestDetailTimelineRendersAttempts(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 42
+
+	failed := attempt(1, 0, 1, "implement", "failed", false)
+	failed.FailureReason = ptr("template_error")
+	live := attempt(2, 0, 2, "implement", "running", true)
+	live.PromptOverride = true
+	live.InputWaitMS = 20_000 // 20s waiting, inside a 60s wall clock
+	live.CostUSD = ptr(0.21)
+	live.InputTokens = ptr(int64(8100))
+	live.OutputTokens = ptr(int64(120))
+	loadDetail(d, []apiclient.StepRun{failed, live})
+
+	got := d.render(120, 30)
+	for _, want := range []string{
+		"#42 detail task", // header names the task
+		"1 implement",     // step group header, 1-based
+		"a1", "a2",        // both attempts
+		"template_error", // why the first one died
+		editedBadge,      // the human edit PR C recorded and nothing read
+		"40s",            // 60s wall clock minus 20s waiting (§17)
+		"+20s waiting",   // and the wait is stated, not silently dropped
+		"8.1k↓/120↑",     // tokens
+		"$0.21",          // cost
+		"claude",         // the resolved agent
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("timeline missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestDetailSelectionFollowsOnlyTheLiveAttempt is the rollover rule: live
+// movement never overrides a user who is browsing history.
+func TestDetailSelectionFollowsOnlyTheLiveAttempt(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 7
+	first := attempt(1, 0, 1, "plan", "running", true)
+	loadDetail(d, []apiclient.StepRun{first})
+	if d.selectedRun != 1 {
+		t.Fatalf("selected = %d, want the only attempt", d.selectedRun)
+	}
+
+	// The step finishes and a new one starts: the cursor was on the live
+	// attempt, so it follows.
+	done := attempt(1, 0, 1, "plan", "succeeded", false)
+	next := attempt(2, 1, 1, "implement", "running", true)
+	loadDetail(d, []apiclient.StepRun{done, next})
+	if d.selectedRun != 2 {
+		t.Fatalf("selected = %d, want the new live attempt", d.selectedRun)
+	}
+
+	// Now the user browses back to the finished attempt.
+	d.moveSelection(-1)
+	if d.selectedRun != 1 {
+		t.Fatalf("selected = %d, want the earlier attempt after moving up", d.selectedRun)
+	}
+	third := attempt(3, 2, 1, "publish", "running", true)
+	loadDetail(d, []apiclient.StepRun{done, attempt(2, 1, 1, "implement", "succeeded", false), third})
+	if d.selectedRun != 1 {
+		t.Errorf("selected = %d; a refresh moved the cursor off what the user was reading", d.selectedRun)
+	}
+}
+
+// TestDetailBufferedChunksDedupedByOffset is the catch-up seam: chunks that
+// arrive while the transcript fetch is in flight are held, then admitted only
+// if the fetch did not already cover them.
+func TestDetailBufferedChunksDedupedByOffset(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 3
+	d.displayRun = 9
+	d.task.Steps = []apiclient.StepRun{attempt(9, 0, 1, "implement", "running", true)}
+	d.streamID = 3 // a live subscription for this task
+	d.fetching = true
+
+	// Two chunks land mid-fetch: one the fetch will cover, one past its end.
+	d.update(taskNoteMsgFor(3, 9, 100, "covered by the fetch"))
+	d.update(taskNoteMsgFor(3, 9, 200, "newer than the fetch"))
+	if len(d.buffer) != 2 {
+		t.Fatalf("buffered %d chunks, want 2", len(d.buffer))
+	}
+
+	d.applyTranscript(detailTranscriptMsg{
+		runID: 9,
+		records: []apiclient.TranscriptRecord{
+			{Type: "agent.output", Text: "covered by the fetch"},
+		},
+		next: 150,
+	})
+
+	got := strings.Join(d.outputLines(), "\n")
+	if strings.Count(got, "covered by the fetch") != 1 {
+		t.Errorf("line duplicated across the seam:\n%s", got)
+	}
+	if !strings.Contains(got, "newer than the fetch") {
+		t.Errorf("line past the fetch was dropped:\n%s", got)
+	}
+	if d.nextOffset != 200 {
+		t.Errorf("next offset = %d, want the newest chunk's 200", d.nextOffset)
+	}
+	if len(d.buffer) != 0 {
+		t.Errorf("buffer not drained: %d left", len(d.buffer))
+	}
+}
+
+// TestDetailChunkForUnknownAttemptIsHeld covers the other half: output from a
+// step that started since the last fetch is held and forces a refetch, rather
+// than being dropped for the ~150ms the debounce would cost.
+func TestDetailChunkForUnknownAttemptIsHeld(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 3
+	d.client = apiclient.New("http://127.0.0.1:1", "token") // never called in-test
+	d.displayRun = 9
+	d.task.Steps = []apiclient.StepRun{attempt(9, 0, 1, "implement", "succeeded", false)}
+	d.streamID = 3          // a live subscription for this task
+	d.refreshPending = true // a debounce is already pending and must be bypassed
+
+	_, cmd := d.update(taskNoteMsgFor(3, 77, 10, "first line of a new step"))
+	if cmd == nil {
+		t.Fatal("an unknown attempt did not trigger a refetch")
+	}
+	if d.refreshPending {
+		t.Error("the refetch is still behind the debounce")
+	}
+	if len(d.buffer) != 1 {
+		t.Fatalf("buffered %d chunks, want the held line", len(d.buffer))
+	}
+
+	// When the refetch lands and the view moves to that attempt, the held
+	// line is admitted by the same offset rule.
+	loadDetail(d, []apiclient.StepRun{
+		attempt(9, 0, 1, "implement", "succeeded", false),
+		attempt(77, 1, 1, "publish", "running", true),
+	})
+	d.applyTranscript(detailTranscriptMsg{runID: 77, next: 0})
+	if got := strings.Join(d.outputLines(), "\n"); !strings.Contains(got, "first line of a new step") {
+		t.Errorf("held line never rendered:\n%s", got)
+	}
+}
+
+// TestDetailFollowDropsAndRearms covers the follow contract, including the
+// counter — dropping follow silently while output keeps arriving is how a
+// reader concludes the run stalled.
+func TestDetailFollowDropsAndRearms(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 5
+	d.displayRun = 1
+	d.task.Steps = []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)}
+	d.following = true
+
+	d.following = false // as if the user had scrolled up
+	d.appendChunk(apiclient.OutputNote{
+		Type: "agent.output", RunID: 1, Offset: 10,
+		Payload: json.RawMessage(`{"text":"more output"}`),
+	})
+	if d.newLines != 1 {
+		t.Errorf("new-line counter = %d, want 1", d.newLines)
+	}
+	if !strings.Contains(d.outputHeader(), "1 new") {
+		t.Errorf("paused header does not report unread output: %q", d.outputHeader())
+	}
+
+	d.focus = focusOutput
+	d.updateKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if !d.following || d.newLines != 0 {
+		t.Errorf("f did not re-arm follow: following=%v new=%d", d.following, d.newLines)
+	}
+	if !strings.Contains(d.outputHeader(), "following") {
+		t.Errorf("following header missing: %q", d.outputHeader())
+	}
+}
+
+// TestDetailEmptyStates covers the five distinct nothing-to-show cases; two
+// of them used to be the same blank pane.
+func TestDetailEmptyStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(d *detail)
+		want  string
+	}{
+		{"no task", func(*detail) {}, "no task selected"},
+		{"queued, no attempts", func(d *detail) {
+			d.taskID = 1
+			loadDetail(d, nil)
+		}, "no attempts yet"},
+		{"gate step has no transcript", func(d *detail) {
+			d.taskID = 1
+			gate := attempt(1, 0, 1, "review", "running", true)
+			gate.TranscriptPath = nil
+			loadDetail(d, []apiclient.StepRun{gate})
+		}, "wrote no transcript"},
+		{"transcript pruned", func(d *detail) {
+			d.taskID = 1
+			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "failed", false)})
+			d.applyTranscript(detailTranscriptMsg{runID: 1, err: errTest})
+		}, "may have been pruned"},
+		{"running, nothing yet", func(d *detail) {
+			d.taskID = 1
+			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+			d.applyTranscript(detailTranscriptMsg{runID: 1})
+		}, "no output yet"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newTestDetail(t)
+			tc.setup(d)
+			if got := d.render(120, 30); !strings.Contains(got, tc.want) {
+				t.Errorf("render missing %q:\n%s", tc.want, got)
+			}
+		})
+	}
+}
+
+// TestDetailOutputRendering covers the per-type rules: usage is fetched and
+// not shown, unparsed lines collapse behind a count, and an overlong history
+// says it was cut.
+func TestDetailOutputRendering(t *testing.T) {
+	d := newTestDetail(t)
+	d.records = []apiclient.TranscriptRecord{
+		{Type: "agent.output", Text: "reading token.go"},
+		{Type: "agent.tool_use", Tools: []string{"Edit"}},
+		{Type: "agent.usage", Raw: json.RawMessage(`{"raw":"{}"}`)},
+		{Type: "agent.raw", Line: `{"type":"system"}`},
+		{Type: "agent.raw", Line: `{"type":"system"}`},
+		{Type: "command.output", Text: "boom", Stream: "stderr"},
+		{Type: "vincent.input_request", Kind: "question", Summary: "Which colour?"},
+		{Type: "agent.result", ResultText: "all done"},
+	}
+	got := strings.Join(d.outputLines(), "\n")
+	for _, want := range []string{
+		"reading token.go", "▸ Edit", "… 2 unparsed line(s)", "boom",
+		"? Which colour?", "✓ all done",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `"raw"`) {
+		t.Errorf("usage payload rendered into the tail:\n%s", got)
+	}
+
+	d.truncated = true
+	if !strings.Contains(strings.Join(d.outputLines(), "\n"), "earlier output truncated") {
+		t.Error("a truncated history does not say so")
+	}
+}
+
+// TestDetailRecordCapDropsOldest guards the memory bound: §18 allows an agent
+// to emit gigabytes, and the transcript on disk stays the full record.
+func TestDetailRecordCapDropsOldest(t *testing.T) {
+	d := newTestDetail(t)
+	d.displayRun = 1
+	for i := range maxRecords + 10 {
+		d.appendChunk(apiclient.OutputNote{
+			Type: "agent.output", RunID: 1, Offset: int64(i + 1),
+			Payload: json.RawMessage(`{"text":"line"}`),
+		})
+	}
+	if len(d.records) != maxRecords {
+		t.Errorf("records = %d, want the cap %d", len(d.records), maxRecords)
+	}
+	if !d.truncated {
+		t.Error("dropping the oldest records was not flagged")
+	}
+}
+
+// TestDetailStreamLifecycle proves the subscription exists exactly while the
+// view is on screen with a task: a tail nobody is watching costs a connection
+// and unbounded memory for output the transcript already holds.
+func TestDetailStreamLifecycle(t *testing.T) {
+	d := newTestDetail(t)
+	d.client = apiclient.New("http://127.0.0.1:1", "token")
+
+	d.update(selectTaskMsg{id: 12})
+	if d.streamID != 0 {
+		t.Fatal("subscribed before the view was on screen")
+	}
+	d.update(viewActivatedMsg{id: viewDetail})
+	if d.streamID != 12 {
+		t.Fatalf("stream task = %d, want 12 after activation", d.streamID)
+	}
+	d.update(viewDeactivatedMsg{id: viewDetail})
+	if d.streamID != 0 {
+		t.Errorf("stream still open (task %d) after leaving the view", d.streamID)
+	}
+}
+
+// TestDetailEscReturnsToBoard covers the one navigation key the view owns.
+func TestDetailEscReturnsToBoard(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 1
+	_, cmd := d.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("esc produced no command")
+	}
+	msg, ok := cmd().(selectViewMsg)
+	if !ok || msg.id != viewBoard {
+		t.Errorf("esc = %#v, want selectViewMsg{viewBoard}", msg)
+	}
+}
+
+// taskNoteMsgFor builds one live-output note as it arrives from the stream.
+func taskNoteMsgFor(taskID, runID, offset int64, text string) taskNoteMsg {
+	payload, _ := json.Marshal(map[string]any{
+		"run_id": runID, "offset": offset, "text": text,
+	})
+	return taskNoteMsg{
+		taskID: taskID,
+		note: apiclient.OutputNote{
+			Type: "agent.output", RunID: runID, Offset: offset, Payload: payload,
+		},
+	}
+}
+
+// errTest stands in for any transcript fetch failure.
+var errTest = &apiclient.Error{Status: 404, Code: "not_found", Message: "gone"}
