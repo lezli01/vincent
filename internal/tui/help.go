@@ -2,12 +2,13 @@ package tui
 
 import "strings"
 
-// helpText is the §15 keys overlay. The new-task flow (n) and the remaining
-// views arrive in later Phase 3 PRs and get documented here as they land.
+// helpText is the §15 keys overlay. The remaining views arrive in later
+// Phase 3 PRs and get documented here as they land.
 func helpText() string {
 	rows := [][2]string{
 		{"?", "toggle this help"},
 		{"1..6", "switch view: board · task detail · new task · projects · workflows · daemon"},
+		{"n", "start a new task for the project you are looking at"},
 		{"q", "quit the TUI (the daemon keeps running)"},
 		{"ctrl+c", "quit the TUI"},
 	}
@@ -41,6 +42,16 @@ func helpText() string {
 		{"enter", "submit the answer; the run resumes where it stopped"},
 		{"esc", "leave the form without answering"},
 	}
+	newTaskRows := [][2]string{
+		{"↑/↓", "move between fields"},
+		{"enter", "open the focused field's editor or picker"},
+		{"e", "edit the description in $EDITOR"},
+		{"+ / -", "nudge the priority (higher runs first)"},
+		{"a / d", "in the fields editor: add or delete a key/value pair"},
+		{"R", "re-probe the adapters (the list is otherwise cache-served)"},
+		{"ctrl+s", "create the task"},
+		{"esc", "leave the field, then the form (a touched draft asks first)"},
+	}
 	var b strings.Builder
 	b.WriteString("\n  Global keys\n\n")
 	writeKeyRows(&b, rows)
@@ -52,6 +63,8 @@ func helpText() string {
 	writeKeyRows(&b, detailRows)
 	b.WriteString("\n  Answer form (while a task is waiting on you)\n\n")
 	writeKeyRows(&b, formRows)
+	b.WriteString("\n  New task\n\n")
+	writeKeyRows(&b, newTaskRows)
 	return b.String()
 }
 

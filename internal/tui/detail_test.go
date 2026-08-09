@@ -22,8 +22,6 @@ func newTestDetail(t *testing.T) *detail {
 	return d
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // attempt builds one step-run fixture.
 func attempt(id int64, stepIndex, n int, name, state string, live bool) apiclient.StepRun {
 	r := apiclient.StepRun{
