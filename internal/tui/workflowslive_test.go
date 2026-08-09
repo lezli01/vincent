@@ -107,7 +107,7 @@ func TestWorkflowsViewReflectsFileEdit(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	m := newRoot(testCtx(t), liveConnector(t, ts.URL, token))
+	m := newRoot(testCtx(t), liveConnector(t, ts.URL, token), ackedDir(t))
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
 		t.Fatalf("probe = %T, want connectedMsg", msg)

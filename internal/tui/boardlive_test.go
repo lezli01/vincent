@@ -92,7 +92,7 @@ func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 		pollInterval:  time.Millisecond,
 	}
 
-	m := newRoot(testCtx(t), cn)
+	m := newRoot(testCtx(t), cn, ackedDir(t))
 	// A width the full column set fits, so assertions read real values
 	// rather than truncation.
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
