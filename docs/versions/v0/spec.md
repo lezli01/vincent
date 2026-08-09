@@ -874,7 +874,17 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         { name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 
-GET    /v1/tasks?project_id=&state=&limit=&offset=
+GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
+                                        list rows additionally carry the §15 board fields:
+                                        project_name, step_total, step_name, and cost_usd /
+                                        input_tokens / output_tokens rolled up across every
+                                        attempt (§17) — so a board renders without an N+1.
+                                        These are list-only; GET /v1/tasks/{id} serves the
+                                        same numbers per attempt in steps[].
+                                        ?archived= defaults to false: archived tasks are
+                                        excluded unless asked for (?archived=true → only
+                                        archived, ?archived=all → both). state=archived
+                                        still selects them explicitly
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, priority?, agent?, model?, effort? }
                                         → task (state=queued); agent/model/effort form the
@@ -916,9 +926,17 @@ Two kinds of streams:
 1. **State events** — durable. Persisted to the `events` table with a monotonic id,
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
-   `task.created`, `task.state_changed`, `step.started`,
-   `step.finished`, `step.retrying`, `gate.waiting`,
+   `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `project.*`, `workflow.registry_changed`, `daemon.shutting_down`.
+   (`step.started`, `step.finished`, `step.retrying` and `gate.waiting` were listed
+   here through M2 but were never emitted — PR D completed the vocabulary without
+   them, since a step's lifecycle is reconstructable from `GET /v1/tasks/{id}/steps`
+   and the per-task stream. `task.step_advanced` — PR I decision — is the one piece
+   that was not: it carries `{ current_step }` when the engine moves the cursor
+   without a state change, so a board's `k/n` tracks a run instead of freezing at
+   the step the task started on. It is emitted only when the cursor actually moves,
+   never on a bare worktree-path write, and deliberately does not wake the scheduler:
+   nothing about admission changes when a running task advances a step.)
    (An archive is visible as `task.state_changed` with `to: archived`; there is no
    separate `task.archived` type — PR D decision. Likewise there is no separate
    `task.awaiting_input` type — PR F decision: entering the state is
@@ -1037,8 +1055,12 @@ stream for the live tail.
 ### Views
 
 1. **Board (home).** Table of tasks: id, project, title, state (color-coded), current
-   step `k/n` + step name, elapsed, cost-so-far. Filter by project/state; sort
-   respects scheduler order for queued tasks. Header shows daemon status, agent
+   step `k/n` + step name, elapsed, cost-so-far. *Elapsed here is wall clock from
+   `started_at`* — §17's active-time rule (which excludes time spent `awaiting_input`)
+   governs the per-step figures in the detail view, not this column: a task idle on a
+   human for 35 of its 40 minutes must not read as "5m" on the board that is trying to
+   flag it. Cost-so-far sums every attempt, retries included (§17). Filter by
+   project/state; sort respects scheduler order for queued tasks. Header shows daemon status, agent
    availability, running/cap counts, and a needs-attention count. Tasks waiting on
    a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
    with a distinct badge, and the TUI rings the terminal bell when a task enters
