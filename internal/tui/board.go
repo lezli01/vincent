@@ -116,10 +116,16 @@ func newBoard() *board {
 func (b *board) applyStyles() {
 	s := table.DefaultStyles()
 	s.Header = s.Header.Bold(true)
-	s.Selected = lipgloss.NewStyle().
+	s.Selected = tableSelectedStyle()
+	b.tbl.SetStyles(s)
+}
+
+// tableSelectedStyle is shared by every table in the TUI so a cursor looks
+// the same wherever it is.
+func tableSelectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
 		Background(lipgloss.Color("237")).
 		Bold(true)
-	b.tbl.SetStyles(s)
 }
 
 func ringBell() {
@@ -267,6 +273,11 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 func isTaskEvent(t string) bool {
 	return strings.HasPrefix(t, "task.") || strings.HasPrefix(t, "project.")
 }
+
+// eventWorkflowRegistryChanged is the durable event the daemon writes after
+// any registry scope reloads (§13.3). Its payload is empty — it names no
+// scope — so the only honest reaction is to refetch the whole registry.
+const eventWorkflowRegistryChanged = "workflow.registry_changed"
 
 // ringsFor decides whether one event should ring the terminal bell.
 //

@@ -169,7 +169,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 		return nil
 	}
 	switch {
-	case n.mode == ntPicking && n.pick != nil && n.pick.row == row:
+	case n.mode == ntPicking && n.pick != nil && ntRow(n.pick.row) == row:
 		return n.renderPicker()
 	case n.mode == ntFieldsOpen && row == ntFields:
 		return n.renderFields()
@@ -185,46 +185,17 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 
 func (n *newTask) renderPicker() []string {
 	p := n.pick
-	out := []string{styleDim.Render("    " + p.heading + ":")}
-	for i, opt := range p.options {
-		marker := "  "
-		if i == p.cursor && !p.editing {
-			marker = styleFocus.Render("▸ ")
-		}
-		label := opt.label
-		if label == "" {
-			label = "(none)"
-		}
-		if opt.disabled {
-			label = styleBad.Render(label)
-		}
-		line := "    " + marker + label
-		if opt.note != "" {
-			line += "  " + styleDim.Render(opt.note)
-		}
-		out = append(out, line)
-	}
-	if p.allowFree {
-		marker := "  "
-		if p.onFreeRow() && !p.editing {
-			marker = styleFocus.Render("▸ ")
-		}
-		out = append(out, "    "+marker+styleDim.Render("type a value not listed…"))
-	}
-	if p.editing {
-		out = append(out, "      "+p.input.View())
-	}
-	if p.err != "" {
-		out = append(out, styleBad.Render("    ⚠ "+p.err))
-	}
-	if p.row == ntWorkflow {
+	out := p.renderBody()
+	if ntRow(p.row) == ntWorkflow {
 		if opt, ok := p.current(); ok {
 			out = append(out, n.renderWorkflowDetail(opt.value)...)
 		}
 	}
-	if p.row == ntAgent || p.row == ntModel || p.row == ntEffort {
+	switch ntRow(p.row) {
+	case ntAgent, ntModel, ntEffort:
 		out = append(out, styleDim.Render(
 			"    replaces the workflow's defaults; steps that pin their own keep them (§8.6)"))
+	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
 	}
 	out = append(out, styleDim.Render("    enter select · esc cancel"))
 	return out
