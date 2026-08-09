@@ -66,7 +66,7 @@ func TestPatchProjectDistinguishesAbsentNullAndSet(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PatchProject set: %v", err)
 	}
-	p := h.project(t, ctx)
+	p := h.project(ctx, t)
 	if p.DefaultWorkflow == nil || *p.DefaultWorkflow != adhoc {
 		t.Fatalf("DefaultWorkflow = %v, want %q", p.DefaultWorkflow, adhoc)
 	}
@@ -80,7 +80,7 @@ func TestPatchProjectDistinguishesAbsentNullAndSet(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PatchProject null: %v", err)
 	}
-	p = h.project(t, ctx)
+	p = h.project(ctx, t)
 	if p.DefaultWorkflow != nil {
 		t.Errorf("DefaultWorkflow = %q, want nil after an explicit null", *p.DefaultWorkflow)
 	}
@@ -93,7 +93,7 @@ func TestPatchProjectDistinguishesAbsentNullAndSet(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PatchProject clear cap: %v", err)
 	}
-	if p = h.project(t, ctx); p.MaxParallelTasks != nil {
+	if p = h.project(ctx, t); p.MaxParallelTasks != nil {
 		t.Errorf("MaxParallelTasks = %d, want nil (no project cap)", *p.MaxParallelTasks)
 	}
 }
@@ -155,7 +155,7 @@ func TestDeleteProjectRemovesAnEmptyProject(t *testing.T) {
 func TestDeleteProjectWithTasksNeedsForce(t *testing.T) {
 	h := newCreateHarness(t)
 	ctx := t.Context()
-	h.newTask(t, ctx, store.TaskQueued)
+	h.newTask(ctx, t, store.TaskQueued)
 
 	err := h.client.DeleteProject(ctx, h.projectID, false)
 	var apiErr *apiclient.Error
@@ -175,7 +175,7 @@ func TestDeleteProjectWithTasksNeedsForce(t *testing.T) {
 func TestDeleteProjectWithARunningTaskRefusesForceToo(t *testing.T) {
 	h := newCreateHarness(t)
 	ctx := t.Context()
-	task := h.newTask(t, ctx, store.TaskQueued)
+	task := h.newTask(ctx, t, store.TaskQueued)
 	if _, _, err := h.store.TransitionTask(
 		ctx, task.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{},
 	); err != nil {
@@ -194,7 +194,7 @@ func TestDeleteProjectWithARunningTaskRefusesForceToo(t *testing.T) {
 	}
 }
 
-func (h *createHarness) project(t *testing.T, ctx context.Context) apiclient.Project {
+func (h *createHarness) project(ctx context.Context, t *testing.T) apiclient.Project {
 	t.Helper()
 	projects, err := h.client.ListProjects(ctx)
 	if err != nil {
@@ -209,7 +209,7 @@ func (h *createHarness) project(t *testing.T, ctx context.Context) apiclient.Pro
 	return apiclient.Project{}
 }
 
-func (h *createHarness) newTask(t *testing.T, ctx context.Context, state store.TaskState) *store.Task {
+func (h *createHarness) newTask(ctx context.Context, t *testing.T, state store.TaskState) *store.Task {
 	t.Helper()
 	task := &store.Task{
 		ProjectID:    h.projectID,

@@ -42,6 +42,8 @@ func (o Opt[T]) Value() (T, bool) {
 // IsNull reports an explicit clear.
 func (o Opt[T]) IsNull() bool { return o.set && o.null }
 
+// MarshalJSON writes null for a cleared field and the value otherwise; an
+// absent field never reaches here, because omitzero drops it first.
 func (o Opt[T]) MarshalJSON() ([]byte, error) {
 	if o.null {
 		return []byte("null"), nil
