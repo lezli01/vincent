@@ -42,6 +42,18 @@ func editorCommand() []string {
 	return []string{"vi"}
 }
 
+// openEditorPath opens an existing file in $EDITOR and reports when the
+// editor exits. It is deliberately a sibling of writeEditorFile rather than a
+// flag on it: that one creates a temp file the caller then reads back and
+// sends over the wire, while this one touches a file it must not create, must
+// not truncate and never reads — the registry reload is what reports the
+// result, not this process.
+func openEditorPath(run execFunc, path string, done func(error) tea.Msg) tea.Cmd {
+	argv := append(editorCommand(), path)
+	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
+	return run(cmd, func(runErr error) tea.Msg { return done(runErr) })
+}
+
 // editRetry opens the current step's prompt or command in $EDITOR (§6, §15).
 // The step type picks the field, so the client never sends the mismatched
 // pair the daemon would reject.
