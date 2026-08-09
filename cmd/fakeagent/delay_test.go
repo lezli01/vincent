@@ -65,11 +65,12 @@ func TestDelayAbsentOrInvalidIsNoDelay(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start := time.Now()
+			// Asserted on the output, not the clock: an upper bound on wall
+			// time measures how loaded the machine is (process spawn alone
+			// can exceed a second under a parallel ./... run), while the
+			// progress lines are the delay's only observable — no ticks
+			// emitted means no ticks slept.
 			out := runAgent(t, bin, []string{"-p", "--output-format", "stream-json"}, tc.env...)
-			if elapsed := time.Since(start); elapsed > time.Second {
-				t.Errorf("run took %s, want no delay", elapsed)
-			}
 			if strings.Contains(out, "still working") {
 				t.Errorf("emitted progress lines with no delay configured:\n%s", out)
 			}
