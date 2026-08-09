@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/viewport"
@@ -178,6 +179,13 @@ func (d *detail) update(msg tea.Msg) (view, tea.Cmd) {
 		return d, nil
 	case detailLoadedMsg:
 		return d, d.applyLoaded(msg)
+	case taskCreatedMsg:
+		// The 201's advisory findings — a catalog-unknown model, say. The
+		// task exists and will run, so this is a status line, not an error.
+		if len(msg.task.Warnings) > 0 {
+			d.actions.setStatus("created with warnings: "+strings.Join(msg.task.Warnings, "; "), false)
+		}
+		return d, nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
 		return d, nil

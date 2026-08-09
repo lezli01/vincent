@@ -372,6 +372,21 @@ func (b *board) selected() (int64, bool) {
 	return rows[i].ID, true
 }
 
+// hintedProject is the project of the row under the cursor, which is the
+// project a new task is most likely for.
+func (b *board) hintedProject() int64 {
+	id, ok := b.selected()
+	if !ok {
+		return 0
+	}
+	for _, t := range b.visible() {
+		if t.ID == id {
+			return t.ProjectID
+		}
+	}
+	return 0
+}
+
 // rememberSelection records the id under the cursor so a refresh that
 // reorders rows can put the cursor back on the same task. The table clamps
 // its cursor index but never remaps it, so tracking the index alone would
