@@ -18,6 +18,13 @@ const (
 	// is not a transition — the state is unchanged — so without its own
 	// event a reorder would be invisible to clients watching the queue.
 	EventTaskPriorityChanged = "task.priority_changed"
+	// EventTaskStepAdvanced is written when the engine moves a running task's
+	// step cursor. Also not a transition — the task stays `running` for its
+	// whole multi-step life — so without it a board's k/n would sit at the
+	// step the task started on until the run ended (§13.3, PR I decision).
+	// It deliberately does not wake the scheduler: advancing a step changes
+	// nothing about what may be admitted (see scheduler.WakeOn).
+	EventTaskStepAdvanced = "task.step_advanced"
 )
 
 // StateConflictError reports that a task was not in the expected state when
@@ -182,27 +189,72 @@ func (s *Store) TransitionTask(
 // SetTaskProgress writes the step cursor and worktree path without changing
 // state — the engine advancing through steps, and recording the worktree it
 // created (§10). Nil fields are left unchanged.
+//
+// Moving the cursor appends a task.step_advanced event in the same
+// transaction, so a client watching the stream sees k/n track a run instead
+// of freezing at the step the task started on. A worktree-path-only write
+// emits nothing: it is bookkeeping no client renders.
 func (s *Store) SetTaskProgress(ctx context.Context, id int64, currentStep *int, worktreePath *string) error {
 	if currentStep == nil && worktreePath == nil {
 		return nil
 	}
-	sets := []string{"updated_at = ?"}
-	args := []any{formatTime(time.Now())}
-	if currentStep != nil {
-		sets = append(sets, "current_step = ?")
-		args = append(args, *currentStep)
-	}
-	if worktreePath != nil {
-		sets = append(sets, "worktree_path = ?")
-		args = append(args, nullString(*worktreePath))
-	}
-	args = append(args, id)
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
+	var ev *Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		now := time.Now()
+		sets := []string{"updated_at = ?"}
+		args := []any{formatTime(now)}
+		if currentStep != nil {
+			sets = append(sets, "current_step = ?")
+			args = append(args, *currentStep)
+		}
+		if worktreePath != nil {
+			sets = append(sets, "worktree_path = ?")
+			args = append(args, nullString(*worktreePath))
+		}
+		args = append(args, id)
+		res, err := tx.ExecContext(ctx,
+			`UPDATE tasks SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
+		if err != nil {
+			return fmt.Errorf("set task %d progress: %w", id, err)
+		}
+		if err := oneRowAffected(res, fmt.Sprintf("task %d", id)); err != nil {
+			return err
+		}
+		if currentStep == nil {
+			return nil
+		}
+		// The project id rides the event so /v1/events?project_id= can filter
+		// it like every other task event; it is not on the write path, so it
+		// costs one read of a row the transaction already touched.
+		var projectID int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT project_id FROM tasks WHERE id = ?`, id).Scan(&projectID); err != nil {
+			return fmt.Errorf("read task %d project: %w", id, err)
+		}
+		payload, err := json.Marshal(map[string]any{"current_step": *currentStep})
+		if err != nil {
+			return fmt.Errorf("marshal step advance event: %w", err)
+		}
+		e := &Event{
+			TS:        now,
+			Type:      EventTaskStepAdvanced,
+			TaskID:    &id,
+			ProjectID: &projectID,
+			Payload:   payload,
+		}
+		if err := appendEventTx(ctx, tx, e); err != nil {
+			return err
+		}
+		ev = e
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("set task %d progress: %w", id, err)
+		return err
 	}
-	return oneRowAffected(res, fmt.Sprintf("task %d", id))
+	if ev != nil {
+		s.notify(ev)
+	}
+	return nil
 }
 
 // StepAttempts summarizes the attempts recorded for one step of one task.

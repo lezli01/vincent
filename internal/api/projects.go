@@ -259,7 +259,11 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	force := hasForce(r)
-	tasks, err := s.deps.Store.ListTasks(ctx, store.TaskFilter{ProjectID: p.ID})
+	// ArchivedAll is explicit: this handler classifies archived vs not
+	// itself, and must not silently inherit the list default (which excludes
+	// archives for the board's benefit, §13.2).
+	tasks, err := s.deps.Store.ListTasks(ctx,
+		store.TaskFilter{ProjectID: p.ID, Archived: store.ArchivedAll})
 	if err != nil {
 		s.internalError(w, "list tasks", err)
 		return
@@ -296,6 +300,12 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Store.DeleteProjectCascade(ctx, p.ID); err != nil {
 		s.internalError(w, "delete project", err)
 		return
+	}
+	// The cascade is the only path that deletes task rows, so it is the only
+	// place the snapshot cache can be left holding entries for tasks that no
+	// longer exist.
+	for i := range tasks {
+		s.snaps.forget(tasks[i].ID)
 	}
 	s.projectsChanged()
 	w.WriteHeader(http.StatusNoContent)
