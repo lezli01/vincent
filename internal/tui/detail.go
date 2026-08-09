@@ -31,6 +31,17 @@ type detailFocus int
 const (
 	focusTimeline detailFocus = iota
 	focusOutput
+	// focusForm exists only while a task is awaiting_input; tab cycles into
+	// it and back out again.
+	focusForm
+)
+
+// detailTab is which pane the lower half shows.
+type detailTab int
+
+const (
+	tabOutput detailTab = iota
+	tabDiff
 )
 
 // Detail messages.
@@ -81,7 +92,17 @@ type detail struct {
 	// that adds or reorders rows cannot silently select a different one.
 	selectedRun int64
 	focus       detailFocus
+	tab         detailTab
 	active      bool
+
+	// actions is the §6 action bar; form is the §7.4 answer form, present
+	// exactly while the task is parked on a request.
+	actions actionBar
+	form    *answerForm
+	diff    diffPane
+	// exec runs $EDITOR for edit+retry, injected so the path is testable
+	// without a terminal.
+	exec execFunc
 
 	vp viewport.Model
 	// displayRun is the attempt the output pane is showing; records are its
@@ -114,7 +135,14 @@ type detail struct {
 }
 
 func newDetail(ctx context.Context) *detail {
-	return &detail{ctx: ctx, now: time.Now, vp: viewport.New(), following: true}
+	return &detail{
+		ctx:       ctx,
+		now:       time.Now,
+		vp:        viewport.New(),
+		following: true,
+		diff:      newDiffPane(),
+		exec:      tea.ExecProcess,
+	}
 }
 
 func (d *detail) title() string { return "Task detail" }
@@ -167,10 +195,35 @@ func (d *detail) update(msg tea.Msg) (view, tea.Cmd) {
 		return d, d.updateTaskNote(msg)
 	case taskStreamDoneMsg:
 		return d, nil
+	case diffLoadedMsg:
+		d.diff.apply(msg)
+		return d, nil
+	case actionResultMsg:
+		return d, d.applyAction(msg)
+	case editRetryMsg:
+		return d, d.applyEdit(msg)
 	case tea.KeyPressMsg:
 		return d.updateKey(msg)
 	}
 	return d, nil
+}
+
+// applyAction records what an action did and refetches: the response already
+// carries the new state, and the refetch picks up everything hanging off it
+// (a new step row, a cleared pending request, a 409's real state).
+func (d *detail) applyAction(msg actionResultMsg) tea.Cmd {
+	if msg.taskID != d.taskID {
+		return nil
+	}
+	d.actions.applyResult(msg)
+	if msg.action == apiclient.ActionAnswer && msg.err != nil && d.form != nil {
+		// The daemon refused the answer: keep the form and its typed values on
+		// screen, since re-entering them is the last thing a human wants.
+		d.form.submitting = false
+		d.form.err = errString(msg.err)
+	}
+	d.refreshPending = false
+	return d.loadCmd()
 }
 
 // open switches the view to a task, discarding everything about the last one.
@@ -185,6 +238,10 @@ func (d *detail) open(id int64) tea.Cmd {
 	d.resetOutput()
 	d.buffer = nil // held output belongs to the task being left
 	d.focus = focusTimeline
+	d.tab = tabOutput
+	d.actions.clear()
+	d.form = nil
+	d.diff.open(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
 
@@ -250,6 +307,7 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	d.loadErr = nil
 	d.loaded = true
 	d.task = msg.task
+	d.syncForm()
 
 	runs := d.attempts()
 	if len(runs) == 0 {
@@ -260,6 +318,28 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 		d.selectedRun = runs[len(runs)-1].ID
 	}
 	return d.syncOutput()
+}
+
+// syncForm keeps the answer form in step with the task: it exists exactly
+// while a request is pending, and survives a refresh that did not change the
+// request, so a refetch mid-typing does not discard what was typed.
+func (d *detail) syncForm() {
+	req, ok, err := d.task.PendingRequest()
+	if err != nil || !ok {
+		if d.form != nil {
+			d.form = nil
+			if d.focus == focusForm {
+				d.focus = focusTimeline
+			}
+		}
+		return
+	}
+	if d.form != nil && d.form.sameRequest(req) {
+		return
+	}
+	d.form = newAnswerForm(req)
+	// A task that stopped for you is the reason you are looking at it.
+	d.focus = focusForm
 }
 
 // syncOutput makes the output pane match the selected attempt, fetching its
@@ -460,12 +540,32 @@ func waitTaskNote(ch <-chan apiclient.Note, taskID int64) tea.Cmd {
 }
 
 func (d *detail) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+	// A pending confirmation is a question; the form is a text surface. Both
+	// own the keyboard until they are done with it.
+	if d.actions.capturing() {
+		cmd, _ := d.actions.handleKey(msg.String(), d.client, d.target())
+		return d, cmd
+	}
+	if d.focus == focusForm && d.form != nil {
+		cmd, exit := d.form.update(msg, d.client, d.taskID)
+		if exit {
+			d.focus = focusTimeline
+		}
+		return d, cmd
+	}
+
 	switch msg.String() {
 	case "tab":
-		if d.focus == focusTimeline {
-			d.focus = focusOutput
-		} else {
-			d.focus = focusTimeline
+		d.cycleFocus(1)
+		return d, nil
+	case "shift+tab":
+		d.cycleFocus(-1)
+		return d, nil
+	case "d":
+		return d, d.toggleTab()
+	case "E":
+		if d.target().has(apiclient.ActionRetry) {
+			return d, d.editRetry()
 		}
 		return d, nil
 	case "f":
@@ -473,6 +573,15 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 		return d, nil
 	case "esc":
 		return d, func() tea.Msg { return selectViewMsg{id: viewBoard} }
+	}
+
+	// Action keys work from any focus: they act on the task, not on a pane.
+	if cmd, handled := d.actions.handleKey(msg.String(), d.client, d.target()); handled {
+		return d, cmd
+	}
+
+	if d.tab == tabDiff && d.focus == focusOutput {
+		return d, d.diff.update(msg)
 	}
 
 	if d.focus == focusTimeline {
@@ -573,6 +682,51 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 	return apiclient.StepRun{}
 }
 
-// capturesInput reports whether the view is consuming raw keystrokes. The
-// detail view has no text field in PR J; the answer form arrives with PR K.
-func (d *detail) capturesInput() bool { return false }
+// capturesInput reports whether the view is consuming raw keystrokes: the
+// answer form's text entry, and a y/n confirmation. Neither may lose a key to
+// the shell's global bindings — typing "q" into an answer must not quit.
+func (d *detail) capturesInput() bool {
+	if d.actions.capturing() {
+		return true
+	}
+	return d.form != nil && d.form.capturing()
+}
+
+// target is the slice of the task the action bar works from.
+func (d *detail) target() taskActions {
+	return taskActions{id: d.taskID, state: d.task.State, actions: d.task.AvailableActions}
+}
+
+// cycleFocus walks timeline → pane → form and back, skipping the form when
+// no request is pending.
+func (d *detail) cycleFocus(delta int) {
+	order := []detailFocus{focusTimeline, focusOutput}
+	if d.form != nil {
+		order = append(order, focusForm)
+	}
+	at := 0
+	for i, f := range order {
+		if f == d.focus {
+			at = i
+		}
+	}
+	next := (at + delta + len(order)) % len(order)
+	d.focus = order[next]
+}
+
+// toggleTab switches the lower pane between output and diff. Opening the diff
+// tab fetches it; nothing else does, because the endpoint runs git per call
+// and following the event stream would mean a subprocess per event. Leaving
+// and re-entering the tab is therefore also how a diff is refreshed.
+func (d *detail) toggleTab() tea.Cmd {
+	if d.tab == tabDiff {
+		d.tab = tabOutput
+		return nil
+	}
+	d.tab = tabDiff
+	if d.focus == focusForm {
+		d.focus = focusOutput
+	}
+	d.diff.open(d.taskID)
+	return d.diff.fetch(d.client, true)
+}

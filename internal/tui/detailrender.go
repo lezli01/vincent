@@ -47,16 +47,56 @@ func (d *detail) render(width, height int) string {
 		sb.WriteString("\n")
 	}
 
-	body := max(d.height-2, 4)
+	// Header, the optional error line, the pane header and the action bar are
+	// the chrome the body divides what is left of.
+	body := max(d.height-3, 4)
 	timelineHeight := max(int(float64(body)*timelineShare), 3)
-	outputHeight := max(body-timelineHeight-1, 3)
+	paneHeight := max(body-timelineHeight-1, 3)
+
+	formHeight := 0
+	if d.form != nil {
+		// The form takes at most half the pane: the tail underneath is what
+		// says why the agent is asking.
+		formHeight = min(d.form.height(), max(paneHeight/2, 3))
+		paneHeight = max(paneHeight-formHeight, 2)
+	}
 
 	sb.WriteString(d.renderTimeline(timelineHeight))
 	sb.WriteString("\n")
-	sb.WriteString(d.outputHeader())
+	if formHeight > 0 {
+		sb.WriteString(d.form.render(formHeight))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(d.paneHeader())
 	sb.WriteString("\n")
-	sb.WriteString(d.renderOutputPane(outputHeight))
+	if d.tab == tabDiff {
+		sb.WriteString(d.diff.render(d.width, paneHeight))
+	} else {
+		sb.WriteString(d.renderOutputPane(paneHeight))
+	}
+	sb.WriteString("\n")
+	sb.WriteString(d.actions.render(d.target(), d.detailHints()...))
 	return sb.String()
+}
+
+// detailHints are the view's own keys, shown beside the task's actions so the
+// bar is the one place that answers "what can I do here".
+func (d *detail) detailHints() []string {
+	hints := []string{styleKey.Render("d") + " diff"}
+	if d.tab == tabDiff {
+		hints = []string{styleKey.Render("d") + " output"}
+	}
+	if d.form != nil {
+		hints = append(hints, styleAsk.Render("answer in the form above"))
+	}
+	if d.target().has("retry") {
+		if step, ok := d.task.Step(d.task.CurrentStep); ok {
+			if _, _, editable := step.EditableText(); editable {
+				hints = append(hints, styleKey.Render("E")+" edit+retry")
+			}
+		}
+	}
+	return hints
 }
 
 func (d *detail) headerLine() string {
@@ -211,25 +251,44 @@ func window(lines []string, focus, height int) []string {
 	return lines[start : start+height]
 }
 
-// outputHeader is the pane's tab strip plus the follow indicator. PR K adds
-// the diff tab beside "output".
-func (d *detail) outputHeader() string {
-	label := " output"
+// paneHeader is the tab strip plus, on the output tab, the follow indicator.
+func (d *detail) paneHeader() string {
+	tabs := []string{tabLabel("output", d.tab == tabOutput), tabLabel("diff", d.tab == tabDiff)}
+	strip := " " + strings.Join(tabs, styleDim.Render(" | "))
 	if d.focus == focusOutput {
-		label = styleFocus.Render(label)
+		strip = styleFocus.Render(" ▸") + strip
 	} else {
-		label = styleDim.Render(label)
+		strip = "  " + strip
 	}
+	if d.tab == tabDiff {
+		if d.diff.truncated {
+			return strip + styleDim.Render(" · truncated")
+		}
+		return strip
+	}
+	return strip + d.followIndicator()
+}
+
+func tabLabel(name string, active bool) string {
+	if active {
+		return styleTitle.Render(name)
+	}
+	return styleDim.Render(name)
+}
+
+// followIndicator says whether the tail is live, because dropping follow
+// silently while output keeps arriving reads as a stalled run.
+func (d *detail) followIndicator() string {
 	switch {
 	case d.noTranscript || d.displayRun == 0:
-		return label
+		return ""
 	case d.following:
-		return label + styleDim.Render(" · ") + styleOK.Render("▼ following")
+		return styleDim.Render(" · ") + styleOK.Render("▼ following")
 	case d.newLines > 0:
-		return label + styleDim.Render(" · ") +
+		return styleDim.Render(" · ") +
 			styleWarn.Render(fmt.Sprintf("⏸ paused · %d new", d.newLines))
 	default:
-		return label + styleDim.Render(" · ⏸ paused")
+		return styleDim.Render(" · ⏸ paused")
 	}
 }
 

@@ -2,16 +2,25 @@ package tui
 
 import "strings"
 
-// helpText is the §15 global-keys overlay. View-specific keys (p, c, a, r,
-// s, A, n) arrive with their views in later Phase 3 PRs and get documented
-// here as they land.
+// helpText is the §15 keys overlay. The new-task flow (n) and the remaining
+// views arrive in later Phase 3 PRs and get documented here as they land.
 func helpText() string {
 	rows := [][2]string{
 		{"?", "toggle this help"},
 		{"1..6", "switch view: board · task detail · new task · projects · workflows · daemon"},
-		{"r", "retry connecting (when the daemon is unreachable)"},
 		{"q", "quit the TUI (the daemon keeps running)"},
 		{"ctrl+c", "quit the TUI"},
+	}
+	// The action keys are offered only when the daemon lists them for the
+	// selected task, so an action that is not valid right now is not shown.
+	actionRows := [][2]string{
+		{"p", "pause a running task, or resume a paused one"},
+		{"a / x", "approve or reject a gate"},
+		{"r", "retry a blocked task (retry connecting when the daemon is unreachable)"},
+		{"E", "edit the failing step's prompt or command in $EDITOR, then retry"},
+		{"s", "skip the current step"},
+		{"c", "cancel the task (asks first — a running step is killed)"},
+		{"A", "archive a finished task (asks first — the worktree is removed)"},
 	}
 	boardRows := [][2]string{
 		{"↑/↓", "move the selection"},
@@ -20,19 +29,29 @@ func helpText() string {
 		{"esc", "clear the filter"},
 	}
 	detailRows := [][2]string{
-		{"tab", "move focus between the timeline and the output"},
-		{"↑/↓", "select an attempt, or scroll the output"},
+		{"tab", "move focus: timeline → output → answer form"},
+		{"d", "switch the pane between output and diff (reloads the diff)"},
+		{"↑/↓", "select an attempt, or scroll the pane"},
 		{"f / G", "follow the live output again"},
 		{"esc", "back to the board"},
+	}
+	formRows := [][2]string{
+		{"space", "pick an option (toggles, for a multi-select question)"},
+		{"e", "type your own answer — options are suggestions, never a list"},
+		{"enter", "submit the answer; the run resumes where it stopped"},
+		{"esc", "leave the form without answering"},
 	}
 	var b strings.Builder
 	b.WriteString("\n  Global keys\n\n")
 	writeKeyRows(&b, rows)
+	b.WriteString("\n  Task actions (on the selected task, board or detail)\n\n")
+	writeKeyRows(&b, actionRows)
 	b.WriteString("\n  Board\n\n")
 	writeKeyRows(&b, boardRows)
 	b.WriteString("\n  Task detail\n\n")
 	writeKeyRows(&b, detailRows)
-	b.WriteString("\n  Task actions (pause, cancel, approve, retry, skip, archive) land in PR K.\n")
+	b.WriteString("\n  Answer form (while a task is waiting on you)\n\n")
+	writeKeyRows(&b, formRows)
 	return b.String()
 }
 
