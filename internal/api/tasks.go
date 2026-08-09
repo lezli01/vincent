@@ -79,6 +79,42 @@ type taskResponse struct {
 	FinishedAt       *string           `json:"finished_at"`
 	ArchivedAt       *string           `json:"archived_at"`
 	Steps            []stepRunResponse `json:"steps,omitempty"` // detail view only
+	// WorkflowSteps is the snapshot's step list (detail view only): the text
+	// edit+retry prefills an editor with, and a manual step's instructions.
+	// It reflects earlier edit+retry rewrites, because the snapshot is this
+	// task's execution truth (§5.3).
+	WorkflowSteps []snapshotStepResponse `json:"workflow_steps,omitempty"`
+}
+
+// snapshotStepResponse is one step of the task's snapshot (spec §13.2).
+type snapshotStepResponse struct {
+	Index        int    `json:"index"`
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Prompt       string `json:"prompt,omitempty"`
+	Run          string `json:"run,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// workflowSteps renders the parsed snapshot for the detail response. Nil for
+// a snapshot that would not parse — the same degradation step_total already
+// takes.
+func workflowSteps(summary snapshotSummary) []snapshotStepResponse {
+	if len(summary.steps) == 0 {
+		return nil
+	}
+	out := make([]snapshotStepResponse, 0, len(summary.steps))
+	for _, s := range summary.steps {
+		out = append(out, snapshotStepResponse{
+			Index:        s.index,
+			ID:           s.id,
+			Type:         s.stepType,
+			Prompt:       s.prompt,
+			Run:          s.run,
+			Instructions: s.instructions,
+		})
+	}
+	return out
 }
 
 func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
@@ -474,6 +510,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	summary := s.snaps.get(t.ID, t.WorkflowSnapshot)
 	resp := toTaskResponse(t, summary)
 	resp.Snapshot = t.WorkflowSnapshot
+	resp.WorkflowSteps = workflowSteps(summary)
 	resp.Steps = make([]stepRunResponse, 0, len(runs))
 	for i := range runs {
 		resp.Steps = append(resp.Steps, toStepRunResponse(&runs[i], summary))

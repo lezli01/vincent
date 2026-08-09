@@ -6,11 +6,23 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// snapshotSummary is everything the board needs out of a task's workflow
-// snapshot: how many steps there are, and what each is called.
+// snapshotSummary is everything the API needs out of a task's workflow
+// snapshot: how many steps there are, what each is called, and the text a
+// human edits before retrying one (§6 edit+retry).
 type snapshotSummary struct {
 	stepTotal int
 	stepNames []string
+	steps     []stepDefinition
+}
+
+// stepDefinition is one step of the snapshot as the detail view sees it.
+type stepDefinition struct {
+	index        int
+	id           string
+	stepType     string
+	prompt       string
+	run          string
+	instructions string
 }
 
 // stepName returns the display name of step index i, or "" when the index is
@@ -25,11 +37,12 @@ func (s snapshotSummary) stepName(i int) string {
 
 // snapshotCache memoizes parsed workflow snapshots by task id.
 //
-// The cache never needs invalidating: a task's snapshot is written once at
-// creation and is immutable for the task's whole life (§18 — editing the
-// workflow file mid-task is irrelevant, execution uses the snapshot). Without
-// it, listing 50 tasks would re-parse 50 YAML documents on every refresh, and
-// the board refreshes on every task event.
+// Editing the workflow *file* mid-task cannot invalidate an entry (§18 —
+// execution uses the snapshot), so the cache has exactly one writer to fear:
+// edit+retry rewrites the task's own snapshot (§6), and the retry handler
+// forgets the entry for it. Without the cache, listing 50 tasks would
+// re-parse 50 YAML documents on every refresh, and the board refreshes on
+// every task event.
 type snapshotCache struct {
 	mu sync.Mutex
 	m  map[int64]snapshotSummary
@@ -73,6 +86,7 @@ func parseSnapshot(snapshot string) snapshotSummary {
 	s := snapshotSummary{
 		stepTotal: len(wf.Steps),
 		stepNames: make([]string, 0, len(wf.Steps)),
+		steps:     make([]stepDefinition, 0, len(wf.Steps)),
 	}
 	for i := range wf.Steps {
 		// `name` is optional in the schema; `id` is not, so it is the
@@ -82,6 +96,14 @@ func parseSnapshot(snapshot string) snapshotSummary {
 			name = wf.Steps[i].ID
 		}
 		s.stepNames = append(s.stepNames, name)
+		s.steps = append(s.steps, stepDefinition{
+			index:        i,
+			id:           wf.Steps[i].ID,
+			stepType:     wf.Steps[i].Type,
+			prompt:       wf.Steps[i].Prompt,
+			run:          wf.Steps[i].Run,
+			instructions: wf.Steps[i].Instructions,
+		})
 	}
 	return s
 }

@@ -894,7 +894,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
-                                        `pause_requested`, so clients never restate the FSM
+                                        `pause_requested`, so clients never restate the FSM.
+                                        Detail-only: `workflow_steps[]` — the task's snapshot
+                                        as { index, id, type, prompt?, run?, instructions? },
+                                        which is what edit+retry prefills an editor with. It
+                                        reflects edits made by a previous edit+retry, since
+                                        the snapshot is this task's execution truth (§5.3)
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only);
                                         emits task.priority_changed and re-runs admission
 POST   /v1/tasks/{id}/cancel
@@ -1123,6 +1128,21 @@ stream for the live tail.
 `?` help · `n` new task · `1..6` switch views · `/` filter · `enter` open ·
 `p` pause/resume · `c` cancel · `a` approve · `r` retry · `s` skip · `A` archive ·
 `q` quit TUI (daemon keeps running; a status line reminds of running task count on exit).
+
+The action keys act on the selected task — the row under the cursor on the board,
+the open task in the detail view — and are offered only when the daemon reports
+them in `available_actions`, so an invalid action is never on screen. `E` opens
+`$EDITOR` for edit+retry, `x` rejects a gate (`r` is taken by retry), and `d`
+toggles the detail pane between output and diff. `r` doubles as *retry connecting*
+on the disconnected screen, where no task is reachable anyway. Destructive actions
+confirm inline before firing: `c` cancel (kills a live process) and `A` archive
+(removes the worktree; a dirty one re-prompts for `force`). `set priority` (§6) has
+no key in v1 — priority is chosen in the new-task flow.
+
+Detail view keys: `tab`/`shift+tab` cycle focus (timeline → pane → answer form,
+when one is pending) · `d` output/diff · `f`/`G` re-arm follow · `esc` back to the
+board. In the answer form, `space` picks or toggles a choice, `e` opens free-text
+entry, `enter` submits, `esc` abandons it without touching the task.
 
 ## 16. Security considerations
 
