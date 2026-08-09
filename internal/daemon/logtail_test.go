@@ -108,10 +108,10 @@ func TestTailFileFollowsLumberjackRotation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.log")
 	lj := &lumberjack.Logger{Filename: path, MaxSize: 1, MaxBackups: 3}
-	defer lj.Close()
+	defer func() { _ = lj.Close() }()
 
 	line := strings.Repeat("y", 1023) + "\n"
-	for i := 0; i < 1200; i++ {
+	for i := range 1200 {
 		// Tailing while the writer rotates underneath is the real sequence;
 		// doing it only afterwards would not exercise the overlap.
 		if _, err := lj.Write([]byte(line)); err != nil {

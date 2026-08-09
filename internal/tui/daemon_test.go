@@ -32,8 +32,10 @@ func testInfo() apiclient.Info {
 		Listen:           "127.0.0.1:51234",
 		MaxParallelTasks: 3,
 		Agents: []apiclient.AgentStatus{
-			{Name: "claude", Available: true, Path: "/usr/bin/claude",
-				Version: "2.1.0", SupportsInput: true},
+			{
+				Name: "claude", Available: true, Path: "/usr/bin/claude",
+				Version: "2.1.0", SupportsInput: true,
+			},
 			{Name: "codex", Available: false, Error: "not found in PATH"},
 		},
 	}
