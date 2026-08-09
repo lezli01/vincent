@@ -11,6 +11,10 @@
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
 //	                      hang | big-usage | ask-question | ask-permission |
 //	                      bad-input-request | sleep (internal: silent child)
+//	FAKEAGENT_SCENARIO_CODEX
+//	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
+//	                      only — lets one process environment drive two
+//	                      adapters pointed at this binary differently
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style
 //	                      (run dialect is argv-driven; this only affects the
 //	                      version probe, which carries no dialect hint)
@@ -104,6 +108,13 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "exec" {
+		// A dialect-scoped override, because a gate can point both adapters
+		// at this binary and they then share one process environment: the
+		// M3 rehearsal needs claude asking a question while codex just works
+		// (T3.8), which a single FAKEAGENT_SCENARIO cannot express.
+		if s := os.Getenv("FAKEAGENT_SCENARIO_CODEX"); s != "" {
+			scenario = s
+		}
 		codexMain(scenario)
 		return
 	}
