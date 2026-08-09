@@ -1097,9 +1097,10 @@ stream for the live tail.
    (§7.4). OS desktop notifications remain out of v1 (§20).
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
-   transcripts of past steps. Layout is stacked — timeline above, output below in a
-   tabbed pane the diff joins — because selecting an attempt *is* how scrollback is
-   navigated, so neither half can hide behind the other. Attempt duration here is
+   transcripts of past steps. Timeline and output are **side by side, both always
+   visible** — selecting an attempt *is* how scrollback is navigated, so neither
+   half can hide behind the other. The output side is a tabbed pane the diff
+   joins. Attempt duration here is
    §17's active time (`finished_at - started_at - input_wait_ms`) with the excluded
    wait shown beside it rather than silently subtracted; this is deliberately not
    the board's wall-clock `elapsed`, because the per-step figure is diagnostic while
@@ -1110,9 +1111,13 @@ stream for the live tail.
    bar for exactly the actions valid in the current state (§6), including gate
    approve/reject with the rendered gate instructions, and edit+retry which opens
    `$EDITOR` on the failing step's prompt/command. When the task is
-   `awaiting_input`, the pending question or permission request is rendered in
-   place (options, multi-select, free-text entry) above the live tail, and
-   submitting the answer resumes the run in the same session (§7.4).
+   `awaiting_input`, the pending question or permission request (options,
+   multi-select, free-text entry) opens as a **popup**, and submitting the answer
+   resumes the run in the same session (§7.4). It is a popup rather than a pane
+   region because it is an interrupt, not a view of the task — the same reason
+   the board pins those tasks and rings the bell. It **never steals focus**:
+   auto-opening under a keystroke is how an answer gets lost, so it announces
+   itself with a badge on the row and a footer hint, and the human opens it.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
    `$EDITOR`) → custom fields (key/value) → base branch (default prefilled) →
@@ -1131,45 +1136,142 @@ stream for the live tail.
    at launch has no business killing it. The log tail is read straight from
    `{data_dir}/logs/daemon.log`, the one place the TUI is not a pure API client:
    an endpoint cannot serve the log when the daemon is the thing that died, which
-   is when the log is worth reading. For the same reason this is the only view
-   reachable while disconnected — views 1–5 stay behind the connection, view 6
-   renders the log and the resolved paths with the daemon-supplied blocks marked
-   unavailable.
+   is when the log is worth reading — so it is the one view with something true to
+   show while disconnected. See *Disconnected* below for what the rest of the UI
+   does in that state.
 
-### Global keys
+### Layout
 
-`?` help · `n` new task · `1..6` switch views · `/` filter · `enter` open ·
-`p` pause/resume · `c` cancel · `a` approve · `r` retry · `s` skip · `A` archive ·
-`q` quit TUI (daemon keeps running; a status line reminds of running task count on exit).
+The list above is a contract about **capabilities**, not about screens. Views 1
+and 2 — the daily loop — are one persistent screen of three panels; views 3–6 are
+full-screen takeovers reached from the command palette.
 
-The action keys act on the selected task — the row under the cursor on the board,
-the open task in the detail view — and are offered only when the daemon reports
-them in `available_actions`, so an invalid action is never on screen. `E` opens
-`$EDITOR` for edit+retry, `x` rejects a gate (`r` is taken by retry), and `d`
-toggles the detail pane between output and diff. `r` doubles as *retry connecting*
-on the disconnected screen, where no task is reachable anyway. Destructive actions
-confirm inline before firing: `c` cancel (kills a live process) and `A` archive
-(removes the worktree; a dirty one re-prompts for `force`). `set priority` (§6) has
-no key in v1 — priority is chosen in the new-task flow.
+```
+┌─ Tasks ──────────────────────────────────────────────┐
+│  #12  api    add rate limiting   running   3/5  …    │   ← always full width
+│  #13  web    fix flaky test      ● gate    2/4  …    │
+└──────────────────────────────────────────────────────┘
+┌─ Timeline ───────────┐┌─ Output │ Diff ──────────────┐
+│  1 ✓ plan      1m2s  ││  … live tail …               │
+│  2 ▸ implement 4m9s  ││                              │
+└──────────────────────┘└──────────────────────────────┘
+ tab focus · enter open · / filter        : commands  ? help  q quit
+```
 
-Detail view keys: `tab`/`shift+tab` cycle focus (timeline → pane → answer form,
-when one is pending) · `d` output/diff · `f`/`G` re-arm follow · `esc` back to the
-board. In the answer form, `space` picks or toggles a choice, `e` opens free-text
-entry, `enter` submits, `esc` abandons it without touching the task.
+The task table keeps the full §15 column set at full width. A narrow left rail
+would have to drop most of it, and cost-so-far and step `k/n` are the two columns
+a human scans to decide where to intervene.
 
-Projects view keys: `a` add · `enter`/`e` edit · `d` delete · `/` filter. Workflows
-view keys: `e` edit the file · `enter` expand the step list · `R` re-read the
-registry. The action keys above are task-scoped and unreachable here, so these two
-views bind freely; `n` still opens the new-task form, seeded with the project under
-the cursor. Deleting a project confirms inline, and a project holding non-archived
-tasks re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but
-a *running* task is refused outright, since no confirmation makes that delete legal.
+**The focused panel expands; the others collapse** to their title bar plus the
+selected line. The task table never collapses below 5 rows — it is the navigation
+spine, and a spine you cannot see is a modal round-trip wearing a border.
 
-Daemon view keys: `R` re-read everything · `f`/`G` follow the log again · `↑/↓`,
-`pgup`/`pgdn` scroll it. Identity, config and adapters refresh when the view opens
-and on `R`; the log alone re-reads on a short timer, because it is the only part
-that changes while you watch. Uptime ticks locally from the daemon's `started_at`
-rather than from a fetched figure, so it cannot drift between refreshes.
+Terminal size is a stated floor, not a hope. Below **80×20** the shell drops to
+single-panel mode: the focused panel alone, full screen, `tab` swapping which.
+Below **60×15** it renders the size it has and the size it needs, and nothing
+else. A layout that silently becomes illegible is worse than one that says so, and
+a floor is testable where "looks cramped" is not.
+
+Views 3–6 stay full-screen because they are forms and lists, not observations: the
+new-task flow is eight fields with pickers, and squeezing it beside a live tail
+serves neither. Takeovers are for surfaces you visit deliberately; popups are for
+small things — the palette, confirmations, and the answer form.
+
+### Discovery
+
+Three surfaces, one source. **`bindings.go` is the single registry** — every
+binding declares its key, label, scope (global · panel · task-action) and priority,
+and the palette, the footer and `?` all render from it. Hand-maintained parallel
+lists drift within two PRs and the drift is invisible until a human presses a key
+the help promised.
+
+**`:` opens the command palette.** It lists, searchable by intent: the task
+actions valid *right now*, navigation to views 3–6, and the focused panel's own
+commands — each with its direct key beside it, so the palette teaches shortcuts
+rather than replacing them. Invalid task actions are omitted rather than greyed,
+holding the same invariant the action bar always had: an action that cannot happen
+is not on screen. Navigation living here is what lets view-switching keys be
+retired without substituting a different set to memorise.
+
+**The footer is one line and never wraps.** Left to right: the focused panel's
+keys (at most five, in registry priority order), then the task's
+`available_actions`, then — pinned right and never truncated — `: commands`,
+`? help`, `q quit`. Overflow truncates from the left with `…`. The pinned segment
+is exempt because `:` is the escape hatch that makes every other key optional; a
+narrow terminal dropping it would fail exactly when the human is most lost.
+
+`?` remains, as a compact cheat sheet grouped by panel, rendered from the registry.
+
+### Keys
+
+Global: `:` palette · `?` help · `n` new task · `q` quit (the daemon keeps running;
+a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
+focus between panels · `M` toggle mouse.
+
+Task actions act on the selected task and are offered only when the daemon reports
+them in `available_actions`: `p` pause/resume · `a` approve · `x` reject · `r`
+retry · `s` skip · `E` edit+retry in `$EDITOR` · `c` cancel · `A` archive. `x`
+rejects because `r` is taken; `r` doubles as *retry connecting* while disconnected,
+where no task is reachable anyway. Destructive actions confirm inline: `c` kills a
+live process, `A` removes the worktree and a dirty one re-prompts for `force`.
+`set priority` (§6) has no key — priority is chosen in the new-task flow.
+
+Panel-local: `/` filters **whichever list has focus** — tasks, projects, workflows
+— so one key means one thing everywhere. `enter` opens or expands. `[`/`]` switch
+the output pane's tabs (`d` kept as an alias). `f`/`G` re-arm follow on a live
+tail or the daemon log. `e` opens `$EDITOR` where a view has a file to edit. `R`
+re-reads a registry or the daemon blocks. One key jumps to the next task needing a
+human, surfaced in the footer only when that count is non-zero — the board has
+always pinned and belled those tasks without offering any way to *go* to one.
+
+**`esc` cancels one layer per press**, by a fixed stack: popup (palette,
+confirmation, answer form) → takeover screen → active filter → nothing. It is a
+no-op at the bottom and it **never quits** — `esc`-to-exit surprises anyone who
+pressed it meaning "back". "Back to the board" is not among its meanings any more,
+because the board is always on screen.
+
+A filter is view state, not a mode: `tab` **commits** it and moves focus, leaving
+it applied and named in the panel title; only `esc` clears it. Losing a filter
+because you glanced at the output pane is the kind of thing that trains people to
+distrust a UI. The shell consults the **focused** panel for whether it is capturing
+input, so global single-key bindings stay live everywhere else without leaking
+keystrokes into a text field.
+
+Deleting a project confirms inline, and a project holding non-archived tasks
+re-prompts to archive them (the `?force` of `DELETE /v1/projects/{id}`) — but a
+*running* task is refused outright, since no confirmation makes that delete legal.
+
+In the daemon view, identity, config and adapters refresh on open and on `R`; the
+log alone re-reads on a short timer, because it is the only part that changes while
+you watch. Uptime ticks locally from the daemon's `started_at` rather than from a
+fetched figure, so it cannot drift between refreshes.
+
+### Mouse
+
+On by default, `M` toggles it, and the toggle is in the palette. Click to focus a
+panel, click a row to select it, wheel to scroll the focused panel, click a footer
+hint to fire it, click a tab to switch it. No drag, no right-click.
+
+Capturing the mouse costs native click-drag text selection. Every terminal has a
+modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and
+the toggle covers what is left — whereas shipping it off by default would make the
+feature that exists for discoverability itself undiscoverable.
+
+### Colour
+
+A fixed palette: panel borders, a focus colour, and the existing state colours. It
+degrades under `NO_COLOR` and on 16-colour terminals. No theme setting in v1 — that
+is configuration surface, a docs section and a support burden for no acceptance
+value.
+
+### Disconnected
+
+The panels stay on screen with their contents **marked stale**, behind a banner
+saying the daemon is unreachable, with `r` to retry. Nothing force-navigates: the
+last known task table is information as long as it is labelled as such, and
+connect and reconnect are the same state, so a takeover on every blip would be
+hostile. `:` still reaches the daemon view, which is the one surface with something
+currently true to show (§15 view 6).
 
 ## 16. Security considerations
 
