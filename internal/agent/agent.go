@@ -50,6 +50,12 @@ type Adapter interface {
 	// validation reads while the cache is unprimed (T2.11 interface
 	// addition).
 	Curated() Options
+	// NewLineParser returns a parser for this adapter's transcript lines, so
+	// a recorded run can be normalized after the fact with exactly the code
+	// that normalized it live (§13.2 format=normalized; T3.3 interface
+	// addition). One parser handles one file, in order: some dialects carry
+	// state across lines.
+	NewLineParser() LineParser
 	// Start launches one agent run. The returned handle's process is killed
 	// (whole tree) when ctx is canceled.
 	Start(ctx context.Context, spec RunSpec) (RunHandle, error)
@@ -120,6 +126,13 @@ const (
 	EventError         EventType = "error"
 	EventUnknown       EventType = "unknown"
 )
+
+// LineParser normalizes one verbatim stream line into an Event. Parsers are
+// stateful for dialects that derive an event from earlier lines (codex's
+// result text is the last agent_message it saw), so a parser instance
+// belongs to exactly one stream or transcript file and must see its lines in
+// order.
+type LineParser func(raw []byte) Event
 
 // Event is one normalized agent stream event.
 type Event struct {

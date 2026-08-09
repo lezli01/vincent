@@ -96,6 +96,10 @@ func (s *stubAdapter) Path() (string, error) { return s.path, s.pathErr }
 
 func (s *stubAdapter) Curated() Options { return s.curated }
 
+func (s *stubAdapter) NewLineParser() LineParser {
+	return func(raw []byte) Event { return Event{Type: EventUnknown, Raw: raw} }
+}
+
 func (s *stubAdapter) Start(context.Context, RunSpec) (RunHandle, error) {
 	return nil, errors.New("stub adapter cannot run")
 }

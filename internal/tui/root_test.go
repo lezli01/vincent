@@ -48,49 +48,63 @@ func runCmd(t *testing.T, cmd tea.Cmd, timeout time.Duration) tea.Msg {
 // often has to reach one state, act on the world, then keep pumping — and
 // dropping the pending commands in between would lose the SSE subscription.
 type pump struct {
-	t     *testing.T
-	m     *root
-	queue []tea.Cmd
+	t    *testing.T
+	m    *root
+	msgs chan tea.Msg
+	done chan struct{}
 }
 
 func newPump(t *testing.T, m *root, cmd tea.Cmd) *pump {
 	t.Helper()
-	p := &pump{t: t, m: m}
+	p := &pump{
+		t:    t,
+		m:    m,
+		msgs: make(chan tea.Msg, 256),
+		done: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(p.done) })
 	p.push(cmd)
 	return p
 }
 
+// push runs a command the way the runtime does: on its own goroutine, with
+// its message delivered asynchronously. Commands must not be serialized —
+// a subscription command blocks until its next note arrives, and running one
+// at a time would starve every command queued behind it.
 func (p *pump) push(cmd tea.Cmd) {
-	if cmd != nil {
-		p.queue = append(p.queue, cmd)
+	if cmd == nil {
+		return
 	}
+	go func() {
+		msg := cmd()
+		if msg == nil {
+			return
+		}
+		select {
+		case p.msgs <- msg:
+		case <-p.done:
+		}
+	}()
 }
 
 // until pumps until cond holds, failing the test on timeout.
 func (p *pump) until(timeout time.Duration, what string, cond func() bool) {
 	p.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.After(timeout)
 	for !cond() {
-		if time.Now().After(deadline) {
+		select {
+		case msg := <-p.msgs:
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				for _, c := range batch {
+					p.push(c)
+				}
+				continue
+			}
+			_, cmd := p.m.Update(msg)
+			p.push(cmd)
+		case <-deadline:
 			p.t.Fatalf("timed out waiting for %s; view: %q", what, content(p.m))
 		}
-		if len(p.queue) == 0 {
-			p.t.Fatalf("ran out of commands waiting for %s; view: %q", what, content(p.m))
-		}
-		next := p.queue[0]
-		p.queue = p.queue[1:]
-		msg := runCmd(p.t, next, time.Until(deadline))
-		if batch, ok := msg.(tea.BatchMsg); ok {
-			for _, c := range batch {
-				p.push(c)
-			}
-			continue
-		}
-		if msg == nil {
-			continue
-		}
-		_, cmd := p.m.Update(msg)
-		p.push(cmd)
 	}
 }
 
