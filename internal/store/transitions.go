@@ -166,11 +166,14 @@ func (s *Store) TransitionTask(
 		if err != nil {
 			return err
 		}
+		// Copied, not aliased: t is handed back to the caller as the updated
+		// task, and this event outlives that hand-off inside the broker.
+		taskID, projectID := t.ID, t.ProjectID
 		e := &Event{
 			TS:        now,
 			Type:      EventTaskStateChanged,
-			TaskID:    &t.ID,
-			ProjectID: &t.ProjectID,
+			TaskID:    &taskID,
+			ProjectID: &projectID,
 			Payload:   payload,
 		}
 		if err := appendEventTx(ctx, tx, e); err != nil {
