@@ -79,7 +79,7 @@ func TestAutoStartRealDaemon(t *testing.T) {
 		pollInterval: 100 * time.Millisecond,
 	}
 
-	m := newRoot(testCtx(t), cn)
+	m := newRoot(testCtx(t), cn, ackedDir(t))
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(probeFailedMsg); !ok {
 		t.Fatalf("probe with no daemon = %T, want probeFailedMsg", msg)

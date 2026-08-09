@@ -2,8 +2,7 @@ package tui
 
 import "strings"
 
-// helpText is the §15 keys overlay. The daemon view arrives in T3.7 and gets
-// documented here when it lands.
+// helpText is the §15 keys overlay.
 func helpText() string {
 	rows := [][2]string{
 		{"?", "toggle this help"},
@@ -65,6 +64,11 @@ func helpText() string {
 		{"e", "open the workflow file in $EDITOR (the view updates when you save)"},
 		{"R", "re-read the registry"},
 	}
+	daemonRows := [][2]string{
+		{"R", "re-read the daemon info, the config and the log"},
+		{"f / G", "follow the end of the log again"},
+		{"↑/↓", "scroll the log"},
+	}
 	var b strings.Builder
 	b.WriteString("\n  Global keys\n\n")
 	writeKeyRows(&b, rows)
@@ -82,6 +86,8 @@ func helpText() string {
 	writeKeyRows(&b, projectRows)
 	b.WriteString("\n  Workflows\n\n")
 	writeKeyRows(&b, workflowRows)
+	b.WriteString("\n  Daemon (the only view that still works when the daemon is down)\n\n")
+	writeKeyRows(&b, daemonRows)
 	return b.String()
 }
 
