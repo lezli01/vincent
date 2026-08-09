@@ -35,6 +35,11 @@ type streamUsage struct {
 	OutputTokens int64 `json:"output_tokens"`
 }
 
+// NewLineParser returns a parser for claude transcript lines (§13.2
+// format=normalized). Claude's dialect is stateless — every line stands on
+// its own — so each call hands back the same pure function.
+func (a *Adapter) NewLineParser() agent.LineParser { return parseLine }
+
 // parseLine normalizes one verbatim stream-json line into an agent.Event.
 // The raw line always rides along for lossless transcripts.
 func parseLine(raw []byte) agent.Event {
