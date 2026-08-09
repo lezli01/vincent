@@ -74,6 +74,11 @@ type board struct {
 	filter    textinput.Model
 	filtering bool
 
+	// actions drives §15's action keys against the row under the cursor —
+	// the same component the detail view renders as a bar, gated on the same
+	// available_actions.
+	actions actionBar
+
 	refreshPending bool
 	ticking        bool
 
@@ -198,10 +203,30 @@ func (b *board) update(msg tea.Msg) (view, tea.Cmd) {
 		return b, tickCmd()
 	case noteMsg:
 		return b, b.updateNote(msg.note)
+	case actionResultMsg:
+		b.actions.applyResult(msg)
+		// Refetch immediately rather than through the debounce: a 409 means
+		// the row was stale, and leaving it stale invites the same keypress.
+		b.refreshPending = false
+		return b, b.loadCmd()
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	}
 	return b, nil
+}
+
+// target is the row under the cursor as the action bar sees it.
+func (b *board) target() taskActions {
+	id, ok := b.selected()
+	if !ok {
+		return taskActions{}
+	}
+	for _, t := range b.visible() {
+		if t.ID == id {
+			return taskActions{id: t.ID, state: t.State, actions: t.AvailableActions}
+		}
+	}
+	return taskActions{id: id}
 }
 
 func (b *board) updateLoaded(msg boardLoadedMsg) {
@@ -292,6 +317,12 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 		return b, cmd
 	}
 
+	// A confirmation owns the keyboard until it is answered.
+	if b.actions.capturing() {
+		cmd, _ := b.actions.handleKey(msg.String(), b.client, b.target())
+		return b, cmd
+	}
+
 	switch msg.String() {
 	case "/":
 		b.filtering = true
@@ -307,6 +338,13 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 			return b, func() tea.Msg { return selectTaskMsg{id: id} }
 		}
 		return b, nil
+	}
+
+	// §15's action keys act on the row under the cursor. A key the daemon
+	// does not offer for this task falls through to the table, so j/k keep
+	// moving on a row that cannot be skipped.
+	if cmd, handled := b.actions.handleKey(msg.String(), b.client, b.target()); handled {
+		return b, cmd
 	}
 
 	var cmd tea.Cmd
@@ -389,11 +427,28 @@ func (b *board) render(width, height int) string {
 	b.tbl.SetHeight(max(3, b.height-b.chromeLines()))
 	b.restoreSelection(rows)
 	sb.WriteString(b.tbl.View())
+	sb.WriteString("\n")
+	sb.WriteString(b.actionLine())
 	return sb.String()
 }
 
+// actionLine is the board's action affordance: the same gating as the detail
+// view's bar, rendered as one dim footer. Triage happens here, so the keys
+// have to be here too (§15 lists them as global).
+func (b *board) actionLine() string {
+	t := b.target()
+	if t.id == 0 {
+		return ""
+	}
+	var extra []string
+	if t.has(apiclient.ActionAnswer) {
+		extra = append(extra, styleAsk.Render("enter → answer in the detail view"))
+	}
+	return b.actions.render(t, extra...)
+}
+
 func (b *board) chromeLines() int {
-	n := 2 // header + a blank the shell leaves
+	n := 3 // header + the action line + a blank the shell leaves
 	if b.statusLine() != "" {
 		n++
 	}
@@ -505,5 +560,6 @@ func (b *board) emptyBody(rows []apiclient.Task) (string, bool) {
 	}
 }
 
-// capturesInput reports that the filter field has the keyboard.
-func (b *board) capturesInput() bool { return b.filtering }
+// capturesInput reports that the filter field or a pending confirmation has
+// the keyboard — typing into either must not reach the shell's global keys.
+func (b *board) capturesInput() bool { return b.filtering || b.actions.capturing() }
