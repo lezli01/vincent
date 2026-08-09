@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 8 tasks | 4/8 | 🟡 in progress |
+| 3 — TUI (M3) | 8 tasks | 5/8 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **29/39** | |
+| **Total** | | **30/39** | |
 
 ---
 
@@ -387,8 +387,9 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
 - *Testing:* one end-to-end (`TestNewTaskFlowCreatesRunnableTask`) driving the real handlers, real registry and the fakeagent binary — fill the form through `Update`, submit, assert the created task reaches `done`, which is the round trip this PR invents. Unit tests cover the unavailable flag against a catalog with one adapter missing, invalid-workflow rows refusing selection, the agent switch clearing model and effort, the `$EDITOR` description path in PR K's five shapes, a `base_branch` 400 re-focusing its row, warnings surfacing after the 201, and the fields editor's duplicate-key overwrite. `apiclient` covers the four new calls against real handlers.
 - *Commit order:* `apiclient` → `tui` → `n` binding and help overlay in `root.go` → tasks.md. No spec commit — §15 and §13.2 already specify this flow.
 
-- [ ] **T3.5 — New-task flow.** Project picker → workflow picker (description, step list, unavailable-agent flags) → title → description (inline or `$EDITOR`) → fields → base branch → priority → optional agent/model/effort pickers fed by `GET /v1/agents` (provenance-tagged options, free-text entry, note that step pins are not overridden) (§15, §8.6).
-  *Done when:* task created through the flow runs end-to-end; unavailable agent visibly flagged; override pickers populate from a live probe and accept free text.
+- [x] **T3.5 — New-task flow.** Project picker → workflow picker (description, step list, unavailable-agent flags) → title → description (inline or `$EDITOR`) → fields → base branch → priority → optional agent/model/effort pickers fed by `GET /v1/agents` (provenance-tagged options, free-text entry, note that step pins are not overridden) (§15, §8.6). ✓ 2026-08-09
+  *Done when:* task created through the flow runs end-to-end; unavailable agent visibly flagged; override pickers populate from a live probe and accept free text. *(Verified: `TestNewTaskFlowCreatesRunnableTask` drives the shell against a real daemon — real registry, scheduler, worktree and the fake-agent binary — pressing `n`, picking the registry workflow, typing a title, adding a `ticket` field and submitting with `ctrl+s`; the created task reaches `done` with the fields, workflow and prefilled branch the form sent, which is the only way to show the body it builds is one the engine accepts. The same test reads the unavailable flag off the live probe: the harness registers codex at a path that does not exist, and the option renders flagged while claude resolves to the fake binary and populates the model catalog. Unit tests cover the invalid-workflow refusal with the entry's own finding, the agent switch clearing model and effort and swapping the catalog, free-text model entry, the request omitting every untouched field, client-side blocking limited to project/title/workflow, a `base_branch` 400 landing on its row and moving the cursor there, an unroutable error staying a form error, the fields editor's duplicate-key overwrite and its dropped keyless row, capture on and off, both discard paths, priority nudging and omission at 0, the `$EDITOR` path in three shapes (edited, failed, seeded from the draft), and the 201's warnings reaching the detail view as a non-error status.)*
+  *Carried forward:* two shell bugs fixed in passing — `esc` was swallowed globally by `root.updateKey`, which had quietly made the detail view's documented "esc back to the board" dead code since PR J, and the new `n` binding is suppressed while the form is up because there `n` is "no" to the discard prompt. A step whose agent resolves only at §8.6 level 4 still cannot be availability-checked; it renders "adapter default", unflagged.
 - [ ] **T3.6 — Projects & Workflows views.** Project list/add/edit/remove with per-project cap; workflow registry with scope badges + validation status, `e` opens `$EDITOR`, live reload visible (§15).
   *Done when:* editing a workflow file externally or via `e` updates the view without restart.
 - [ ] **T3.7 — Daemon view & first-run warning.** Version/uptime/config/adapters/log tail; one-time full-auto risk notice on first run (§16); quit reminder with running-task count.
