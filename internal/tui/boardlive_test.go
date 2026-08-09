@@ -39,6 +39,7 @@ steps:
 // exactly as the daemon runs them.
 type boardLiveHarness struct {
 	st        *store.Store
+	broker    *events.Broker
 	m         *root
 	p         *pump
 	projectID int64
@@ -108,7 +109,7 @@ func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	return &boardLiveHarness{st: st, m: m, p: p, projectID: proj.ID}
+	return &boardLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID}
 }
 
 func (h *boardLiveHarness) createTask(t *testing.T, title string) *store.Task {
@@ -236,7 +237,10 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 	if h.m.selectedTask != task.ID {
 		t.Errorf("selected task = %d, want %d", h.m.selectedTask, task.ID)
 	}
-	if got := content(h.m); !strings.Contains(got, "task "+strconv.FormatInt(task.ID, 10)) {
-		t.Errorf("detail view does not name the task: %q", got)
-	}
+	// The detail view fetches on activation, so the header naming the task is
+	// also proof the hand-off reached a view with a working client.
+	want := "#" + strconv.FormatInt(task.ID, 10) + " openable task"
+	h.p.until(10*time.Second, "the detail header to render", func() bool {
+		return strings.Contains(content(h.m), want)
+	})
 }
