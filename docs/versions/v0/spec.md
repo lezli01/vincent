@@ -1123,7 +1123,8 @@ stream for the live tail.
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
    registry, it does not author it: creating a workflow file from the TUI is out of
-   v1 — new files are written in the editor and appear on the next reload.
+   v1 — new files are written in the editor and appear on the next reload. §19's M3
+   acceptance loop says "author workflow"; it means this edit path.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
    log. The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
@@ -1231,8 +1232,15 @@ rather than from a fetched figure, so it cannot drift between refreshes.
 |---|---|---|
 | **M1 — Spine** | Daemon skeleton, SQLite + migrations, config, token auth, projects CRUD, task creation with worktree (incl. optional agent/model/effort override), Claude adapter (model/effort passthrough + options probe), single hardcoded-format one-step run, transcripts, health/info | `curl` can register a repo, create a 1-step agent task, watch it finish, and see the branch/diff |
 | **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation, agent input requests (`awaiting_input`, answer endpoint, `input_timeout`, `on_input`, §7.4) | Multi-step workflow incl. gate + command publish step runs unattended to the gate; an agent question round-trips awaiting_input → answer → resume; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
-| **M3 — TUI** | All six views, live tail, diff view, all actions, input-request alerts + answer form, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow → run 3 parallel tasks → answer an agent question → approve gate → archive) is doable without leaving the TUI |
+| **M3 — TUI** | All six views, live tail, diff view, all actions, input-request alerts + answer form, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow\* → run 3 parallel tasks → answer an agent question → approve gate → archive) is doable without leaving the TUI |
 | **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries) | Fresh-machine install to first completed task in under 10 minutes on each OS |
+
+\* **"author workflow" means editing in place,** not creating a file. §15 view 5
+records that creating a workflow file from the TUI is out of v1: `e` opens an
+existing entry in `$EDITOR` and the registry reload reflects the save, while new
+files are written in the editor and appear on the next reload. The M3 acceptance
+walkthrough exercises the edit path; it does not require a create path the TUI
+deliberately does not have.
 
 ## 20. Future work (explicitly out of v1)
 
