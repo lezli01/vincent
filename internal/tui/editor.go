@@ -56,7 +56,11 @@ func (d *detail) editRetry() tea.Cmd {
 		d.actions.setStatus("edit+retry: a gate has no prompt or command to edit", true)
 		return nil
 	}
-	path, err := writeEditorFile(d.taskID, step, text)
+	ext := ".md"
+	if step.Type != "agent" {
+		ext = ".sh"
+	}
+	path, err := writeEditorFile(fmt.Sprintf("task%d-%s", d.taskID, safeName(step.ID)), ext, text)
 	if err != nil {
 		d.actions.setStatus("edit+retry: "+errString(err), true)
 		return nil
@@ -82,15 +86,13 @@ func (d *detail) editRetry() tea.Cmd {
 	})
 }
 
-// writeEditorFile seeds a temp file with the step's current text. The
-// extension follows the field so an editor picks sensible highlighting.
-func writeEditorFile(taskID int64, step apiclient.WorkflowStep, text string) (string, error) {
-	ext := ".md"
-	if step.Type != "agent" {
-		ext = ".sh"
-	}
-	name := fmt.Sprintf("vincent-task%d-%s%s", taskID, safeName(step.ID), ext)
-	path := filepath.Join(os.TempDir(), name)
+// writeEditorFile seeds a temp file with the text an editing session starts
+// from. The caller supplies the extension so the editor picks sensible
+// highlighting, and the name so two concurrent sessions cannot collide. It
+// takes a plain name rather than a task and step because a new task's
+// description belongs to neither yet.
+func writeEditorFile(name, ext, text string) (string, error) {
+	path := filepath.Join(os.TempDir(), "vincent-"+safeName(name)+ext)
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}

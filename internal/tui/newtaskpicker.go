@@ -1,0 +1,446 @@
+package tui
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+)
+
+// pickerOption is one selectable value. note is the dim suffix — a
+// provenance tag, a scope badge, an availability warning — and disabled
+// marks a row that is shown for information only.
+type pickerOption struct {
+	value    string
+	label    string
+	note     string
+	disabled bool
+}
+
+// picker is the list a focused row expands into. allowFree adds a free-text
+// row, because an adapter's catalog is a suggestion: a model shipped this
+// morning is not in it, and the daemon accepts unknown values with a warning
+// rather than rejecting them.
+type picker struct {
+	row       ntRow
+	heading   string
+	options   []pickerOption
+	cursor    int
+	allowFree bool
+	input     textinput.Model
+	editing   bool
+	err       string
+}
+
+func newPicker(row ntRow, heading string, options []pickerOption, allowFree bool, current string) *picker {
+	in := textinput.New()
+	in.Placeholder = "type a value"
+	p := &picker{row: row, heading: heading, options: options, allowFree: allowFree, input: in}
+	for i, o := range options {
+		if o.value == current {
+			p.cursor = i
+			break
+		}
+	}
+	return p
+}
+
+// rowCount includes the free-text row when there is one.
+func (p *picker) rowCount() int {
+	if p.allowFree {
+		return len(p.options) + 1
+	}
+	return len(p.options)
+}
+
+func (p *picker) onFreeRow() bool { return p.allowFree && p.cursor == len(p.options) }
+
+// current is the option under the cursor, if the cursor is on one.
+func (p *picker) current() (pickerOption, bool) {
+	if p.cursor < 0 || p.cursor >= len(p.options) {
+		return pickerOption{}, false
+	}
+	return p.options[p.cursor], true
+}
+
+// pickerResult reports what a keystroke did to the picker.
+type pickerResult struct {
+	value  string
+	chosen bool
+	closed bool
+	cmd    tea.Cmd
+}
+
+func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
+	if p.editing {
+		switch msg.String() {
+		case "enter":
+			v := strings.TrimSpace(p.input.Value())
+			p.editing = false
+			p.input.Blur()
+			if v == "" {
+				return pickerResult{}
+			}
+			return pickerResult{value: v, chosen: true, closed: true}
+		case "esc":
+			p.editing = false
+			p.input.Blur()
+			return pickerResult{}
+		}
+		var cmd tea.Cmd
+		p.input, cmd = p.input.Update(msg)
+		return pickerResult{cmd: cmd}
+	}
+	switch msg.String() {
+	case "up", "k":
+		if p.cursor > 0 {
+			p.cursor--
+		}
+	case "down", "j":
+		if p.cursor < p.rowCount()-1 {
+			p.cursor++
+		}
+	case "e":
+		if p.allowFree {
+			p.startFree()
+		}
+	case "enter", " ", "space":
+		if p.onFreeRow() {
+			p.startFree()
+			return pickerResult{}
+		}
+		opt, ok := p.current()
+		if !ok {
+			return pickerResult{}
+		}
+		if opt.disabled {
+			p.err = firstNonEmpty(opt.note, "this option cannot be selected")
+			return pickerResult{}
+		}
+		return pickerResult{value: opt.value, chosen: true, closed: true}
+	case "esc":
+		return pickerResult{closed: true}
+	}
+	return pickerResult{}
+}
+
+func (p *picker) startFree() {
+	p.editing = true
+	p.cursor = len(p.options)
+	p.input.SetValue("")
+	p.input.Focus()
+}
+
+// openPicker builds the list for a row and opens it.
+func (n *newTask) openPicker(row ntRow) {
+	switch row {
+	case ntProject:
+		n.pick = newPicker(row, "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
+	case ntWorkflow:
+		n.pick = newPicker(row, "workflow", n.workflowOptions(), false, n.workflow)
+	case ntAgent:
+		n.pick = newPicker(row, "agent override", n.agentOptions(), false, n.agent)
+	case ntModel:
+		n.pick = newPicker(row, "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
+	case ntEffort:
+		n.pick = newPicker(row, "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
+	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+		return
+	}
+	n.mode = ntPicking
+}
+
+func (n *newTask) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
+	if n.pick == nil {
+		n.mode = ntNavigating
+		return nil
+	}
+	res := n.pick.update(msg)
+	cmds := []tea.Cmd{res.cmd}
+	if res.chosen {
+		cmds = append(cmds, n.applyPick(n.pick.row, res.value))
+	}
+	if res.closed {
+		n.pick = nil
+		n.mode = ntNavigating
+	}
+	return tea.Batch(cmds...)
+}
+
+// applyPick commits a chosen value and repairs whatever it invalidated. It
+// returns a command when the choice invalidated data the form is holding.
+func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
+	n.touched = true
+	delete(n.rowErr, row)
+	switch row {
+	case ntProject:
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id == n.projectID {
+			return nil
+		}
+		for _, p := range n.projects {
+			if p.ID == id {
+				n.setProject(p)
+			}
+		}
+		// The registry is project-scoped (§5.2), so the workflow list and
+		// the selection made from it are both stale now.
+		n.workflow = ""
+		n.workflows = nil
+		return n.workflowsCmd(id)
+	case ntWorkflow:
+		n.workflow = value
+	case ntAgent:
+		if value == n.agent {
+			return nil
+		}
+		n.agent = value
+		// §8.6 agent-scoped inheritance: model and effort only inherit from a
+		// level whose agent matches. Carrying a claude alias onto codex is
+		// exactly the leak that rule exists to prevent, so switching agent
+		// resets both rather than sending a triple the resolver would reject.
+		n.model, n.effort = "", ""
+	case ntModel:
+		n.model = value
+	case ntEffort:
+		n.effort = value
+	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+	}
+	return nil
+}
+
+func (n *newTask) projectOptions() []pickerOption {
+	out := make([]pickerOption, 0, len(n.projects))
+	for _, p := range n.projects {
+		out = append(out, pickerOption{
+			value: strconv.FormatInt(p.ID, 10),
+			label: p.Name,
+			note:  p.Path,
+		})
+	}
+	return out
+}
+
+func (n *newTask) workflowOptions() []pickerOption {
+	out := make([]pickerOption, 0, len(n.workflows))
+	for _, e := range n.workflows {
+		opt := pickerOption{value: e.Name, label: e.Name, note: e.Scope}
+		if !e.Valid() {
+			opt.disabled = true
+			opt.note = "invalid: " + e.FirstError()
+		} else if bad := n.unavailableSteps(e); len(bad) > 0 {
+			opt.note = fmt.Sprintf("%s · ⚠ %d step(s) need an unavailable agent", e.Scope, len(bad))
+		}
+		out = append(out, opt)
+	}
+	return out
+}
+
+// agentOptions lists every registered adapter plus "leave it to the
+// workflow". An unavailable adapter stays selectable — it may be installed
+// before the task is admitted — but says so.
+func (n *newTask) agentOptions() []pickerOption {
+	out := []pickerOption{{value: "", label: "(workflow default)"}}
+	for _, a := range n.agents {
+		opt := pickerOption{value: a.Name, label: a.Name}
+		switch {
+		case !a.Available:
+			opt.note = "⚠ unavailable: " + firstNonEmpty(a.Error, "not found")
+		case a.Version != "":
+			opt.note = a.Version
+		}
+		out = append(out, opt)
+	}
+	return out
+}
+
+// effectiveAgent is the adapter whose catalog the model and effort pickers
+// should show: the override when one is set, else the agent the selected
+// workflow's first agent step resolves to. It is empty when neither says.
+func (n *newTask) effectiveAgent() string {
+	if n.agent != "" {
+		return n.agent
+	}
+	e := n.workflowEntry(n.workflow)
+	if e == nil {
+		return ""
+	}
+	for _, s := range e.Steps {
+		if s.Agent != "" {
+			return s.Agent
+		}
+	}
+	return ""
+}
+
+func (n *newTask) effectiveAgentModels() []apiclient.AgentOption {
+	a, ok := n.agents.Find(n.effectiveAgent())
+	if !ok {
+		return nil
+	}
+	return a.Models
+}
+
+func (n *newTask) effectiveAgentEfforts() []apiclient.AgentOption {
+	a, ok := n.agents.Find(n.effectiveAgent())
+	if !ok {
+		return nil
+	}
+	return a.Efforts
+}
+
+// optionRows renders a catalog with its provenance tags. A "cli" value came
+// from the adapter itself and cannot be stale; a "curated" one is vincent's
+// own list and may be.
+func (n *newTask) optionRows(opts []apiclient.AgentOption) []pickerOption {
+	out := []pickerOption{{value: "", label: "(workflow default)"}}
+	for _, o := range opts {
+		out = append(out, pickerOption{value: o.Value, label: o.Value, note: o.Source})
+	}
+	return out
+}
+
+// fieldsEditor edits the free-form key/value map (§5.3). It is a row list
+// rather than a raw "k=v per line" buffer because that buffer defers every
+// parse error to submit time and cannot tell an empty value from a missing
+// key.
+type fieldsEditor struct {
+	rows   []kv
+	cursor int
+	// editing is 0 for none, 1 for the key, 2 for the value.
+	editing int
+	input   textinput.Model
+	err     string
+}
+
+func newFieldsEditor(rows []kv) *fieldsEditor {
+	in := textinput.New()
+	return &fieldsEditor{rows: append([]kv(nil), rows...), input: in}
+}
+
+func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
+	f := n.fieldsEd
+	if f == nil {
+		n.mode = ntNavigating
+		return nil
+	}
+	if f.editing != 0 {
+		return f.updateEditing(msg)
+	}
+	switch msg.String() {
+	case "up", "k":
+		if f.cursor > 0 {
+			f.cursor--
+		}
+	case "down", "j":
+		if f.cursor < len(f.rows)-1 {
+			f.cursor++
+		}
+	case "a":
+		f.rows = append(f.rows, kv{})
+		f.cursor = len(f.rows) - 1
+		f.startEdit(1)
+	case "enter":
+		if len(f.rows) > 0 {
+			f.startEdit(1)
+		}
+	case "d":
+		if len(f.rows) > 0 {
+			f.rows = append(f.rows[:f.cursor], f.rows[f.cursor+1:]...)
+			if f.cursor >= len(f.rows) {
+				f.cursor = max(0, len(f.rows)-1)
+			}
+		}
+	case "esc":
+		n.commitFields()
+	}
+	return nil
+}
+
+func (f *fieldsEditor) startEdit(which int) {
+	if f.cursor < 0 || f.cursor >= len(f.rows) {
+		return
+	}
+	f.editing = which
+	f.err = ""
+	if which == 1 {
+		f.input.SetValue(f.rows[f.cursor].key)
+	} else {
+		f.input.SetValue(f.rows[f.cursor].value)
+	}
+	f.input.Focus()
+}
+
+// updateEditing runs the key field then the value field, so adding a pair is
+// one uninterrupted "a, key, enter, value, enter".
+func (f *fieldsEditor) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "enter":
+		v := strings.TrimSpace(f.input.Value())
+		if f.editing == 1 {
+			f.rows[f.cursor].key = v
+			f.startEdit(2)
+			return nil
+		}
+		f.rows[f.cursor].value = v
+		f.editing = 0
+		f.input.Blur()
+		f.dedupe()
+		return nil
+	case "esc":
+		f.editing = 0
+		f.input.Blur()
+		return nil
+	}
+	var cmd tea.Cmd
+	f.input, cmd = f.input.Update(msg)
+	return cmd
+}
+
+// dedupe collapses a repeated key onto the row that already holds it, and
+// says so. The wire format is a map, so two rows with one key would silently
+// drop one of them at submit time.
+func (f *fieldsEditor) dedupe() {
+	seen := map[string]int{}
+	out := make([]kv, 0, len(f.rows))
+	for _, r := range f.rows {
+		if r.key == "" {
+			out = append(out, r)
+			continue
+		}
+		if at, dup := seen[r.key]; dup {
+			out[at].value = r.value
+			f.err = fmt.Sprintf("%q was already set; the later value wins", r.key)
+			continue
+		}
+		seen[r.key] = len(out)
+		out = append(out, r)
+	}
+	f.rows = out
+	if f.cursor >= len(f.rows) {
+		f.cursor = max(0, len(f.rows)-1)
+	}
+}
+
+// commitFields copies the editor's rows back onto the draft, dropping the
+// blank ones an abandoned "a" left behind.
+func (n *newTask) commitFields() {
+	f := n.fieldsEd
+	if f == nil {
+		return
+	}
+	out := make([]kv, 0, len(f.rows))
+	for _, r := range f.rows {
+		if r.key != "" {
+			out = append(out, r)
+		}
+	}
+	n.fields = out
+	n.fieldsEd = nil
+	n.mode = ntNavigating
+	n.touched = true
+}
