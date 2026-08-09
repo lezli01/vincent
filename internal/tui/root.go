@@ -57,10 +57,16 @@ type root struct {
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
 	lastEvent  *apiclient.Event
+	// streamLive reports that the SSE subscription is established, as
+	// opposed to the daemon merely answering health checks.
+	streamLive bool
 
 	active viewID
 	views  [viewCount]view
 	help   bool
+	// selectedTask is the task the board last opened; PR J's detail view
+	// reads it from the same message that sets it.
+	selectedTask int64
 
 	width  int
 	height int
@@ -85,9 +91,16 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		return m, m.broadcast(msg)
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
+	case selectTaskMsg:
+		// A view asked to open a task. Routing is the shell's job, so the
+		// board never reaches into the view table itself.
+		m.active = viewDetail
+		m.help = false
+		m.selectedTask = msg.id
+		return m.delegate(msg)
 	case connectedMsg:
 		return m.updateConnected(msg)
 	case probeFailedMsg:
@@ -108,6 +121,13 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// A view that is capturing text (the board's filter) owns every key but
+	// ctrl+c: typing "q" into a filter must not quit the TUI.
+	if msg.String() != "ctrl+c" && m.activeCapturesInput() {
+		v, cmd := m.views[m.active].update(msg)
+		m.views[m.active] = v
+		return m, cmd
+	}
 	switch key := msg.String(); key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -152,7 +172,15 @@ func (m *root) updateConnected(msg connectedMsg) (tea.Model, tea.Cmd) {
 	streamCtx, cancel := context.WithCancel(m.ctx)
 	m.stopStream = cancel
 	m.notes = m.client.StreamEvents(streamCtx, apiclient.StreamOptions{})
-	return m, waitNote(m.notes)
+	cmds := []tea.Cmd{waitNote(m.notes)}
+	for i := range m.views {
+		if ca, ok := m.views[i].(clientAware); ok {
+			if cmd := ca.setClient(m.client); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
@@ -168,12 +196,19 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 	case apiclient.ConnectedNote:
 		m.phase = phaseConnected
 		m.connErr = nil
+		// Distinct from phaseConnected, which only means the health probe
+		// answered: this is the event stream itself being established, and
+		// until it is, a committed event will not reach us (a stream with no
+		// Last-Event-ID starts live at the *next* event, §13.3).
+		m.streamLive = true
 	case apiclient.DisconnectedNote:
 		m.phase = phaseReconnecting
+		m.streamLive = false
 		m.connErr = n.Err
 		m.retryIn = n.RetryIn
 	}
-	return m, waitNote(m.notes)
+	// Every view sees the note, not just the visible one.
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes))
 }
 
 // delegate routes a message to the active view.
@@ -181,6 +216,30 @@ func (m *root) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	v, cmd := m.views[m.active].update(msg)
 	m.views[m.active] = v
 	return m, cmd
+}
+
+// broadcast routes a message to every view, not just the visible one.
+// Connection lifecycle, window size and stream events all have to reach a
+// view that is currently off-screen: the board must keep its rows current
+// and must ring the bell for a task that starts waiting while the user is
+// looking at another view.
+func (m *root) broadcast(msg tea.Msg) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, viewCount)
+	for i := range m.views {
+		v, cmd := m.views[i].update(msg)
+		m.views[i] = v
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// activeCapturesInput reports whether the visible view is consuming raw
+// keystrokes, in which case the global single-key bindings stand down.
+func (m *root) activeCapturesInput() bool {
+	c, ok := m.views[m.active].(inputCapturing)
+	return ok && c.capturesInput()
 }
 
 // waitNote receives the next stream note as a message; Update re-arms it.
