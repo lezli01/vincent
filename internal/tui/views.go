@@ -50,6 +50,13 @@ type inputCapturing interface {
 	capturesInput() bool
 }
 
+// projectHinting is implemented by views that know which project the user is
+// looking at, so the new-task form opens on it rather than making them pick
+// the project they were just staring at.
+type projectHinting interface {
+	hintedProject() int64
+}
+
 // clientAware is implemented by views that talk to the daemon themselves.
 // The root hands each one the client as the connection comes up (and again
 // after a reconnect) rather than widening the view interface, which every
@@ -65,7 +72,7 @@ func newViews(ctx context.Context) [viewCount]view {
 	return [viewCount]view{
 		viewBoard:     newBoard(),
 		viewDetail:    newDetail(ctx),
-		viewNewTask:   stubView{name: "New task", note: "The new-task flow lands in PR L (T3.5)."},
+		viewNewTask:   newNewTask(),
 		viewProjects:  stubView{name: "Projects", note: "Projects lands in PR M (T3.6)."},
 		viewWorkflows: stubView{name: "Workflows", note: "Workflows lands in PR M (T3.6)."},
 		viewDaemon:    stubView{name: "Daemon", note: "The daemon view lands in PR M (T3.7)."},

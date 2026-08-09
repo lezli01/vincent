@@ -107,6 +107,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.switchTo(viewDetail))
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case taskCreatedMsg:
+		return m.updateTaskCreated(msg)
 	case connectedMsg:
 		return m.updateConnected(msg)
 	case probeFailedMsg:
@@ -141,16 +143,54 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.help = !m.help
 		return m, nil
 	case "esc":
-		m.help = false
-		return m, nil
+		// esc closes the help overlay when one is open, and otherwise belongs
+		// to the view: it is "back to the board" in the detail view and "leave
+		// the field, then the form" in the new-task flow. Swallowing it here
+		// unconditionally made both of those dead code.
+		if m.help {
+			m.help = false
+			return m, nil
+		}
 	case "1", "2", "3", "4", "5", "6":
 		return m, m.switchTo(viewID(key[0] - '1'))
+	case "n":
+		// Not while the form is already up: there, n is "no" to the discard
+		// prompt, and re-opening would throw away the draft it is asking
+		// about.
+		if m.phase == phaseConnected && m.active != viewNewTask {
+			return m, m.openNewTask()
+		}
 	case "r":
 		if m.phase == phaseFailed || m.phase == phaseReconnecting {
 			return m, m.restartConnect()
 		}
 	}
 	return m.delegate(msg)
+}
+
+// openNewTask opens the §15 new-task form, seeded with the project the
+// current view is looking at. The form must be told to open before it is
+// shown: opening is what resets the draft and fetches the catalogs.
+func (m *root) openNewTask() tea.Cmd {
+	hint := int64(0)
+	if h, ok := m.views[m.active].(projectHinting); ok {
+		hint = h.hintedProject()
+	}
+	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
+	return tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// updateTaskCreated lands on the task that was just created. Creating a task
+// is the beginning of watching it, and the 201's warnings ride along so an
+// advisory finding is not lost on a board row.
+func (m *root) updateTaskCreated(msg taskCreatedMsg) (tea.Model, tea.Cmd) {
+	m.selectedTask = msg.task.ID
+	cmds := []tea.Cmd{
+		m.deliver(viewDetail, selectTaskMsg{id: msg.task.ID}),
+		m.deliver(viewDetail, msg),
+		m.switchTo(viewDetail),
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // restartConnect tears down any live stream and reruns the full connect
@@ -352,7 +392,7 @@ func (m *root) body() string {
 }
 
 func (m *root) footerLine() string {
-	hints := " 1-6 views · ? help · q quit"
+	hints := " 1-6 views · n new task · ? help · q quit"
 	if m.phase == phaseFailed || m.phase == phaseReconnecting {
 		hints += " · r retry"
 	}
