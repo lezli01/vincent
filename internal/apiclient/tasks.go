@@ -193,6 +193,45 @@ type TaskDetail struct {
 	WorktreePath *string         `json:"worktree_path"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	Steps        []StepRun       `json:"steps"`
+	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
+	// editor, and a gate's instructions.
+	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`
+}
+
+// WorkflowStep is one step of the task's snapshot (§13.2).
+type WorkflowStep struct {
+	Index        int    `json:"index"`
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Prompt       string `json:"prompt,omitempty"`
+	Run          string `json:"run,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// EditableText reports the text edit+retry opens for this step and the
+// override field it belongs in: a prompt for an agent step, a command for
+// command and check steps. ok is false for a manual gate, which has neither —
+// the field name is what keeps the client from sending the mismatched pair
+// the daemon would reject.
+func (s WorkflowStep) EditableText() (text, field string, ok bool) {
+	switch s.Type {
+	case "agent":
+		return s.Prompt, "prompt", true
+	case "command", "check":
+		return s.Run, "run", true
+	default:
+		return "", "", false
+	}
+}
+
+// Step returns the snapshot step at index i.
+func (t TaskDetail) Step(i int) (WorkflowStep, bool) {
+	for _, s := range t.WorkflowSteps {
+		if s.Index == i {
+			return s, true
+		}
+	}
+	return WorkflowStep{}, false
 }
 
 // GetTask fetches one task with its step history — one call, because the

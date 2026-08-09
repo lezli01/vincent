@@ -18,7 +18,10 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 const testToken = "test-token"
@@ -62,6 +65,20 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
+	// The runner is never started: the action endpoints under test drive a
+	// task that has no live actor, which is the ordinary case for a queued or
+	// parked one.
+	git := gitx.New()
+	dataDir := t.TempDir()
+	agents := agent.NewRegistry(claude.New(func() string { return "" }))
+	runner := taskrun.New(taskrun.Deps{
+		Store:     st,
+		Config:    config.Default,
+		Worktrees: worktree.NewManager(git, dataDir),
+		Agents:    agents,
+		DataDir:   dataDir,
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 	s := api.New(api.Deps{
 		Token:       testToken,
 		Config:      config.Default,
@@ -71,9 +88,12 @@ func newHarness(t *testing.T) *harness {
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
 		Broker:      broker,
+		Git:         git,
+		Runner:      runner,
+		WakeRunner:  func() {},
 		// The registry is what lets the transcript endpoint normalize a
 		// recorded run with the same parser that read it live.
-		Agents: agent.NewRegistry(claude.New(func() string { return "" })),
+		Agents: agents,
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -88,6 +108,64 @@ func (h *harness) append(t *testing.T, evType string) *store.Event {
 		t.Fatalf("AppendEvent: %v", err)
 	}
 	return e
+}
+
+// setState moves a task directly, for the states an endpoint is meant to be
+// driven from.
+func (h *harness) setState(t *testing.T, id int64, to store.TaskState) {
+	t.Helper()
+	task, err := h.st.GetTask(t.Context(), id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(t.Context(), id, task.State, to, store.TaskChange{}); err != nil {
+		t.Fatalf("set state %s: %v", to, err)
+	}
+}
+
+// snapshotWorkflow is a three-step snapshot covering every step type that
+// carries editable text, plus the manual gate that carries none.
+const snapshotWorkflow = `name: three
+steps:
+  - id: implement
+    type: agent
+    prompt: write the thing
+  - id: review
+    type: manual
+    instructions: look at the diff
+  - id: publish
+    type: command
+    run: git push
+`
+
+// snapshotTask creates a task whose snapshot actually parses, which the
+// default harness task's placeholder deliberately does not.
+func (h *harness) snapshotTask(t *testing.T) int64 {
+	t.Helper()
+	task := &store.Task{
+		ProjectID: h.projectID, Title: "snapshot", WorkflowName: "three",
+		WorkflowSnapshot: snapshotWorkflow,
+		BaseBranch:       "main", BranchName: "vincent/2-snapshot", State: store.TaskQueued,
+	}
+	if err := h.st.CreateTask(t.Context(), task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	return task.ID
+}
+
+// taskInWorktree creates a running task pointed at a real repository, so the
+// diff endpoint has something to diff.
+func (h *harness) taskInWorktree(t *testing.T, repo string) int64 {
+	t.Helper()
+	task := &store.Task{
+		ProjectID: h.projectID, Title: "diffable", WorkflowName: "adhoc",
+		WorkflowSnapshot: snapshotWorkflow, BaseBranch: "main",
+		BranchName: "vincent/3-diffable", WorktreePath: repo, State: store.TaskRunning,
+	}
+	if err := h.st.CreateTask(t.Context(), task); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	return task.ID
 }
 
 func (h *harness) client() *apiclient.Client {
