@@ -11,6 +11,10 @@
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
 //	                      hang | big-usage | ask-question | ask-permission |
 //	                      bad-input-request | sleep (internal: silent child)
+//	FAKEAGENT_SCENARIO_CODEX
+//	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
+//	                      only — lets one process environment drive two
+//	                      adapters pointed at this binary differently
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style
 //	                      (run dialect is argv-driven; this only affects the
 //	                      version probe, which carries no dialect hint)
@@ -24,6 +28,10 @@
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
 //	FAKEAGENT_ASK_MULTI   ask-question: add a second, multi-select question
+//	FAKEAGENT_DELAY_MS    success (both dialects): stretch the run over this
+//	                      many milliseconds, emitting one assistant line per
+//	                      second — the M3 gate needs tasks that are still
+//	                      running when a human looks at the board (T3.8)
 //
 // With --input-format stream-json on argv the prompt is read as one
 // {"type":"user",…} JSONL line (stdin stays open), mirroring the real CLI's
@@ -39,6 +47,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -99,6 +108,13 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "exec" {
+		// A dialect-scoped override, because a gate can point both adapters
+		// at this binary and they then share one process environment: the
+		// M3 rehearsal needs claude asking a question while codex just works
+		// (T3.8), which a single FAKEAGENT_SCENARIO cannot express.
+		if s := os.Getenv("FAKEAGENT_SCENARIO_CODEX"); s != "" {
+			scenario = s
+		}
 		codexMain(scenario)
 		return
 	}
@@ -144,11 +160,43 @@ func main() {
 			"content": []any{map[string]any{"type": "tool_use", "name": "Edit", "input": map[string]any{}}},
 		}})
 		emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
+		workFor(emitText)
 		if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
 			editFile(f)
 		}
 		emitSuccessResult(prompt, 100, 42)
 	}
+}
+
+// tickInterval bounds how long the stream stays silent while delaying.
+const tickInterval = time.Second
+
+// workFor stretches a successful run over FAKEAGENT_DELAY_MS, emitting one
+// line per tick in the caller's dialect. A run that returns immediately
+// cannot be observed running, which is what the M3 gate needs it to do
+// (T3.8): three tasks concurrent on the board long enough to look at, and a
+// live tail with output still arriving. Emitting nothing while sleeping would
+// leave that tail as empty as no delay at all, so the delay is spent in
+// ticks rather than one Sleep.
+func workFor(emitLine func(string)) {
+	d := delayDuration()
+	for elapsed := time.Duration(0); elapsed < d; {
+		step := min(tickInterval, d-elapsed)
+		time.Sleep(step)
+		elapsed += step
+		emitLine(fmt.Sprintf("still working (%s elapsed)", elapsed.Round(time.Millisecond)))
+	}
+}
+
+// delayDuration parses FAKEAGENT_DELAY_MS. Unset, unparseable and
+// non-positive all mean no delay: this is test scaffolding, and a typo in a
+// gate script must never be the reason a suite hangs or fails.
+func delayDuration() time.Duration {
+	ms, err := strconv.Atoi(os.Getenv("FAKEAGENT_DELAY_MS"))
+	if err != nil || ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // hasFlag reports whether an argv element equals the flag.
