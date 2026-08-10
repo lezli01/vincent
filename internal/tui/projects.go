@@ -167,7 +167,7 @@ func (p *projectsView) scheduleRefresh() tea.Cmd {
 	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return projectsRefreshMsg{} })
 }
 
-func (p *projectsView) update(msg tea.Msg) (view, tea.Cmd) {
+func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		p.width, p.height = msg.Width, msg.Height
@@ -239,7 +239,7 @@ func (p *projectsView) updateNote(n apiclient.Note) tea.Cmd {
 	return nil
 }
 
-func (p *projectsView) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if p.form != nil {
 		return p, p.form.updateKey(msg)
 	}
@@ -312,7 +312,7 @@ func (p *projectsView) askDelete() {
 	}
 }
 
-func (p *projectsView) updateConfirm(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (p *projectsView) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	c := p.confirm
 	switch msg.String() {
 	case "y", "Y":

@@ -13,7 +13,7 @@ import (
 )
 
 // pressView sends one named key to a view and returns whatever it asked for.
-func pressView(v view, name string) tea.Cmd {
+func pressView(v panel, name string) tea.Cmd {
 	_, cmd := v.update(namedKey(name))
 	return cmd
 }
@@ -334,7 +334,7 @@ func TestProjectsRefetchOnActivationAndOnEvents(t *testing.T) {
 	if _, cmd := p.update(viewActivatedMsg{id: viewProjects}); cmd == nil {
 		t.Error("activation did not refetch")
 	}
-	if _, cmd := p.update(viewActivatedMsg{id: viewBoard}); cmd != nil {
+	if _, cmd := p.update(viewActivatedMsg{id: viewHome}); cmd != nil {
 		t.Error("another view's activation triggered a fetch")
 	}
 	for _, evType := range []string{"project.created", "task.state_changed", eventWorkflowRegistryChanged} {

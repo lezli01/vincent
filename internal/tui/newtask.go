@@ -223,7 +223,7 @@ func (n *newTask) workflowsCmd(projectID int64) tea.Cmd {
 	}
 }
 
-func (n *newTask) update(msg tea.Msg) (view, tea.Cmd) {
+func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		n.width, n.height = msg.Width, msg.Height
@@ -360,7 +360,7 @@ func (n *newTask) workflowEntry(name string) *apiclient.WorkflowEntry {
 	return nil
 }
 
-func (n *newTask) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (n *newTask) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch n.mode {
 	case ntEditing:
 		return n, n.updateEditing(msg)
@@ -375,7 +375,7 @@ func (n *newTask) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 	return n.updateNavigating(msg)
 }
 
-func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		n.moveCursor(-1)
@@ -495,19 +495,19 @@ func (n *newTask) nudgePriority(delta int) {
 
 // abandon leaves the form. A touched draft asks first; an untouched one is
 // nothing to lose.
-func (n *newTask) abandon() (view, tea.Cmd) {
+func (n *newTask) abandon() (panel, tea.Cmd) {
 	if !n.touched {
-		return n, func() tea.Msg { return selectViewMsg{id: viewBoard} }
+		return n, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	}
 	n.mode = ntConfirming
 	return n, nil
 }
 
-func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		n.reset()
-		return n, func() tea.Msg { return selectViewMsg{id: viewBoard} }
+		return n, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	default:
 		n.mode = ntNavigating
 		return n, nil

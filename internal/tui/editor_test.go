@@ -73,7 +73,7 @@ func editorDetail(t *testing.T, client *apiclient.Client, typed string, runErr e
 // path ends up making.
 func runEdit(t *testing.T, d *detail) {
 	t.Helper()
-	_, cmd := d.updateKey(keyPress("E"))
+	cmd := d.updateKey(keyPress("E"))
 	if cmd == nil {
 		return
 	}

@@ -210,13 +210,19 @@ func TestConnectFailureAndRetry(t *testing.T) {
 func TestViewRoutingAndHelp(t *testing.T) {
 	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
+	// The shell sizes its panels; below the floor it renders the size line
+	// instead, so routing tests need a real terminal size first.
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	m.Update(key("2"))
-	if m.active != viewDetail {
-		t.Fatalf("active = %v, want viewDetail", m.active)
+	if m.active != viewHome {
+		t.Fatalf("active = %v, want viewHome", m.active)
 	}
-	if !strings.Contains(content(m), "Task detail") {
-		t.Errorf("view 2 lacks 'Task detail': %q", content(m))
+	if s := m.views[viewHome].(*shell); s.focus != panelTimeline {
+		t.Fatalf("focus = %v, want the timeline panel after 2", s.focus)
+	}
+	if !strings.Contains(content(m), "Timeline") {
+		t.Errorf("view 2 lacks the timeline panel: %q", content(m))
 	}
 
 	m.Update(key("?"))
