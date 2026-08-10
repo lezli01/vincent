@@ -203,6 +203,25 @@ func TestShellAnswerPopup(t *testing.T) {
 	}
 }
 
+// TestShellReopensAfterALostSettle: a settle window that fires while a
+// takeover screen is active is delivered there and lost; returning to the
+// home screen must not leave the panels on "loading…" forever.
+func TestShellReopensAfterALostSettle(t *testing.T) {
+	s, subs := newShellFixture(t, task(1, stateRunning))
+	// The cursor rested on row 1, but its settle tick fired into a takeover.
+	if s.lastSel != 1 || s.detail.taskID != 0 {
+		t.Fatalf("fixture: lastSel=%d taskID=%d, want a pending selection", s.lastSel, s.detail.taskID)
+	}
+	s.update(viewDeactivatedMsg{id: viewHome})
+	s.update(viewActivatedMsg{id: viewHome})
+	if s.detail.taskID != 1 {
+		t.Fatalf("detail task = %d, want the tracked row reopened", s.detail.taskID)
+	}
+	if *subs != 1 {
+		t.Fatalf("subscriptions = %d, want 1 for the reopened running task", *subs)
+	}
+}
+
 // TestShellRendersThreePanes pins the composed frame: three titled panels,
 // exactly one carrying the focus glyph, the action-bar line underneath.
 func TestShellRendersThreePanes(t *testing.T) {

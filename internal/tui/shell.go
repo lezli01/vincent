@@ -128,7 +128,14 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 	case viewActivatedMsg:
 		if msg.id == viewHome {
 			s.detail.active = true
-			return s, tea.Batch(s.detail.loadCmd(), s.detail.syncStream())
+			cmds := []tea.Cmd{s.detail.loadCmd(), s.detail.syncStream()}
+			// A settle window that fired while a takeover screen was active
+			// was delivered to that screen and lost; coming back with the
+			// panels still empty re-opens the tracked row.
+			if s.lastSel != 0 && s.detail.taskID != s.lastSel {
+				cmds = append(cmds, s.detail.open(s.lastSel, s.stateOf(s.lastSel)))
+			}
+			return s, tea.Batch(cmds...)
 		}
 		return s, nil
 	case viewDeactivatedMsg:
