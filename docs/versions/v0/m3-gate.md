@@ -81,6 +81,68 @@ gate unless they blocked Section A.
 | **S17** | Accordion at 24 rows (T3.13) | On a 24-row terminal focus each panel in turn: the focused band expands, the collapsed band is title + one line, and the task table never shows fewer than five rows. |
 | **S18** | `NO_COLOR` (T3.13) | A `NO_COLOR=1` run: focus still discernible (the ▸ glyph), states legible as text, box-drawing intact, nothing invisible. |
 
+## Shakeout findings — before any run is recorded
+
+Both walkthroughs so far are shakeout: they surfaced findings, the findings
+were fixed, and no run is recorded against a build that is already superseded.
+The recorded runs below judge one build, which is the whole point of the
+commit-SHA-per-run rule.
+
+The Windows shakeout (2026-08-10, nine findings) is written up in `tasks.md`
+under T3.8. The macOS shakeout follows.
+
+### macOS — 2026-08-10
+
+| | |
+|---|---|
+| OS / version | macOS 26.5.2 (25F84) |
+| terminal host | Ghostty 1.3.1 |
+| vincent commit | `3a2d361` |
+| `claude --version` | 2.1.226 (Claude Code) |
+| resolved `$EDITOR` | `nano` |
+| mode | real claude on the question leg |
+
+Section A completed — the §19 loop ran end to end without leaving the TUI —
+with three findings. None blocked the loop, so by the grading rule none fail
+the gate; all three are fixed here rather than deferred, because two of them
+are one-line geometry and one is dead message routing.
+
+1. **Clicking a task row selected the task two rows above it** (S14, L5/L6):
+   you had to click a few lines *below* the row you wanted. `updateClick`
+   derived the table's first-row line from `board.chromeLines()`, which is a
+   *height budget* — it counts the header, the status line **and the action
+   line rendered below the table** — so the click origin sat two lines too
+   high and every click resolved to the wrong row, or to nothing at all near
+   the top. The geometry above the rows is now its own `board.firstRowLine()`,
+   and the regression test locates the target line in the **rendered frame**
+   instead of recomputing the same arithmetic the code under test uses — the
+   old test agreed with the bug because it shared the formula.
+2. **Paste did nothing, anywhere** (L2, S5, S6). L2 says "paste the seeded
+   app-repo path" and there was no way to do it. Bracketed paste reaches
+   Bubble Tea as `tea.PasteMsg`, which is neither a key nor a mouse event, so
+   the root took its default route and *broadcast* it to every view; the views
+   dispatch on `tea.KeyPressMsg` and dropped it. `ctrl+v` failed differently:
+   bubbles' textinput answers it with an unexported message only textinput
+   understands, so a root that routes by message type cannot deliver it
+   either. Paste now follows the key routing to the one field holding the
+   keyboard (palette → active view → nothing), and `ctrl+v` reads the system
+   clipboard into the same path for terminals that pass the key through.
+   A paste with no field under it is dropped, never replayed as keystrokes —
+   pasting a path onto the board would otherwise fire `a`, `c` and `r` as task
+   actions.
+3. **The gate's own launch block poisoned later `go test` runs.** The banner
+   told you to `export FAKEAGENT_DELAY_MS`, `FAKEAGENT_SCENARIO_CODEX` and the
+   two `VINCENT_*` dirs; they outlive the walkthrough, and the next
+   `go test ./...` in that shell inherits them — `cmd/fakeagent` and
+   `internal/agent/codex` then fail with what read exactly like real
+   regressions (a 25-second delay and a pinned scenario). The POSIX block is
+   now one-shot `env VAR=… vincent`, and the teardown line tells PowerShell
+   how to clear its session.
+
+Also fixed while enumerating the fields that can receive a paste: the new-task
+form's key/value editor was missing from `capturesInput()`, so typing `q` into
+a field name quit the TUI.
+
 ## Results
 
 One block per run. A run records the build it judged: any loop-blocking fix

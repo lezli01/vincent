@@ -79,6 +79,16 @@ type pickerResult struct {
 	cmd    tea.Cmd
 }
 
+// paste types into the free-text entry. The option list is keyboard-only.
+func (p *picker) paste(text string) tea.Cmd {
+	if !p.editing {
+		return nil
+	}
+	var cmd tea.Cmd
+	p.input, cmd = p.input.Update(tea.PasteMsg{Content: text})
+	return cmd
+}
+
 func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 	if p.editing {
 		switch msg.String() {
@@ -424,6 +434,16 @@ func (f *fieldsEditor) startEdit(which int) {
 
 // updateEditing runs the key field then the value field, so adding a pair is
 // one uninterrupted "a, key, enter, value, enter".
+// paste types into whichever half of the row is being edited.
+func (f *fieldsEditor) paste(text string) tea.Cmd {
+	if f.editing == 0 {
+		return nil
+	}
+	var cmd tea.Cmd
+	f.input, cmd = f.input.Update(tea.PasteMsg{Content: text})
+	return cmd
+}
+
 func (f *fieldsEditor) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "enter":

@@ -160,6 +160,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logPath = msg.logPath
 		m.setConnected(false)
 		return m, nil
+	case tea.PasteMsg:
+		return m, m.updatePaste(msg.Content)
 	case tea.MouseClickMsg:
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
@@ -186,6 +188,29 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, m.broadcast(msg)
 }
 
+// updatePaste delivers pasted text to whatever field has the keyboard. It
+// follows the key routing rather than the broadcast one — paste is input —
+// so it lands on the layer a keystroke would: the palette, then the active
+// view, and nowhere at all when nothing is capturing text. A paste with no
+// field to receive it is dropped rather than treated as keystrokes: replaying
+// a pasted path as single keys on the board would fire its action letters.
+func (m *root) updatePaste(text string) tea.Cmd {
+	if text == "" || m.notice.active || m.help {
+		return nil
+	}
+	if m.palette != nil {
+		return m.palette.paste(text)
+	}
+	if !m.activeCapturesInput() {
+		return nil
+	}
+	p, ok := m.views[m.active].(pasteReceiving)
+	if !ok {
+		return nil
+	}
+	return p.paste(text)
+}
+
 // updateMouseClick is §15's click scope: a footer hint fires its key, and
 // everything else lands in the active screen's body. Popups stay keyboard;
 // right-clicks and the rest are out of scope.
@@ -208,6 +233,15 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
+	}
+	// ctrl+v is the explicit paste, for terminals that hand the key to the
+	// app rather than pasting for you. It is caught ahead of every layer so
+	// the clipboard is read in one place; the text comes back as a
+	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
+	// capturing text means nothing to paste into — don't shell out to read a
+	// clipboard whose contents would be dropped.
+	if msg.String() == "ctrl+v" && (m.palette != nil || m.activeCapturesInput()) {
+		return m, readClipboardCmd()
 	}
 	// An open palette owns every key but ctrl+c — it is a popup, the top of
 	// the §15 esc stack.

@@ -114,6 +114,18 @@ func (s *shell) capturesInput() bool {
 	return s.focusedCaptures()
 }
 
+// paste hands pasted text to the surface that owns the keyboard: the answer
+// popup's free-text field, or the task filter while it is being typed.
+func (s *shell) paste(text string) tea.Cmd {
+	if s.popup && s.detail.form != nil {
+		return s.detail.form.paste(text)
+	}
+	if s.focus == panelTasks {
+		return s.board.paste(text)
+	}
+	return nil
+}
+
 func (s *shell) focusedCaptures() bool {
 	if s.focus == panelTasks {
 		return s.board.capturesInput()
@@ -364,10 +376,9 @@ func (s *shell) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	}
 	switch id {
 	case panelTasks:
-		// Inside the border sit the board's chrome lines, then the table's
-		// own column header, then the rows. A click above the rows just
-		// focuses.
-		line := y - b.y - 2 - s.board.chromeLines()
+		// The box's top border, then the board's own lines above the table
+		// (firstRowLine), then the rows. A click above the rows just focuses.
+		line := y - b.y - 1 - s.board.firstRowLine()
 		if line >= 0 {
 			s.board.clickRow(line)
 		}
