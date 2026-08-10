@@ -66,6 +66,13 @@ var bindings = []binding{
 	{key: "tab", label: "move focus between the panels; commits a filter (shift+tab goes back)", scope: scopeGlobal},
 	{key: "!", label: "jump to the next task needing a human", scope: scopeGlobal},
 	{key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
+	// Paste is normally the terminal's own (Cmd+V, Ctrl+Shift+V, middle
+	// click): it arrives as bracketed paste and lands in the focused field
+	// with no key involved. ctrl+v is the fallback for terminals that pass
+	// the key through instead, and it is documented rather than palette-run —
+	// running it from the palette would paste into a field the palette just
+	// closed.
+	{key: "ctrl+v", label: "paste into the focused field (Cmd+V and the terminal's own paste work too)", scope: scopeGlobal, noPalette: true},
 	{key: "esc", label: "close one layer: popup → screen → filter — never quits", scope: scopeGlobal, noPalette: true},
 	{key: "q", label: "quit the TUI (the daemon keeps running)", scope: scopeGlobal},
 	{key: "ctrl+c", label: "quit the TUI", scope: scopeGlobal, noPalette: true},

@@ -418,6 +418,17 @@ func (b *board) clickRow(line int) {
 	b.rememberSelection()
 }
 
+// paste types into the filter, and only into the filter: a confirmation is
+// single-key, and a paste is not an answer to "are you sure?".
+func (b *board) paste(text string) tea.Cmd {
+	if !b.filtering {
+		return nil
+	}
+	var cmd tea.Cmd
+	b.filter, cmd = b.filter.Update(tea.PasteMsg{Content: text})
+	return cmd
+}
+
 // wheelMove is one wheel notch on the task table: the cursor moves, and the
 // panels below follow it through the usual settle window.
 func (b *board) wheelMove(delta int) {
@@ -553,6 +564,21 @@ func (b *board) actionLine() string {
 
 func (b *board) chromeLines() int {
 	n := 3 // header + the action line + a blank the shell leaves
+	if b.statusLine() != "" {
+		n++
+	}
+	return n
+}
+
+// firstRowLine is the board-content line the table's first data row lands
+// on: the header line, the status line when there is one, then the table's
+// own column header. Click math needs *only* what sits above the rows, so it
+// cannot borrow chromeLines — that is a height budget and also counts the
+// action line rendered below the table. Sharing the two put every click two
+// rows high, which read as "rows select from a few lines below themselves"
+// (M3 gate finding, macOS).
+func (b *board) firstRowLine() int {
+	n := 2 // the header line, then the table's column header
 	if b.statusLine() != "" {
 		n++
 	}
