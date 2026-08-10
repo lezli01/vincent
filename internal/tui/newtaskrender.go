@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // ntLabels are the row captions, in row order.
@@ -113,9 +115,9 @@ func (n *newTask) rowValue(row ntRow) string {
 	case ntAgent:
 		return n.agentSummary()
 	case ntModel:
-		return n.overrideSummary(n.model)
+		return n.overrideSummary(n.model, apiclient.ModelOf)
 	case ntEffort:
-		return n.overrideSummary(n.effort)
+		return n.overrideSummary(n.effort, apiclient.EffortOf)
 	case ntCreate, ntRowCount:
 	}
 	return ""
@@ -155,61 +157,62 @@ func (n *newTask) descriptionSummary() string {
 }
 
 // overrideSummary states plainly that an unset override means the workflow
-// decides — the one thing §8.6 confusion turns into a wrong agent.
+// decides — the one thing §8.6 confusion turns into a wrong agent — and then
+// names what it decides. The names come from POST /v1/resolve, so the form
+// reports the daemon's own resolution instead of re-deriving §8.6 (T4.7).
 //
-// Model and effort stop at that: the registry reports each step's agent
-// (§8.6 levels 1 and 3) but not its model or effort, so naming those would
-// mean guessing. T4.7 is the task that exposes the resolution properly.
-func (n *newTask) overrideSummary(v string) string {
-	if v == "" {
-		return styleDim.Render("(workflow default)")
+// Until the resolution arrives (or when it failed) the suffix is simply
+// absent: "(workflow default)" alone is incomplete, never wrong.
+func (n *newTask) overrideSummary(v string, field func(apiclient.ResolvedStep) *apiclient.ResolvedField) string {
+	if v != "" {
+		return v
 	}
-	return v
+	return styleDim.Render("(workflow default" + n.resolvedSuffix(field) + ")")
 }
 
-// agentSummary names what "(workflow default)" actually means for the
-// selected workflow, which is the T3.8 finding: an unnamed default is a
-// spend decision nobody can review. The agents come from the registry's own
-// per-step report, not from the TUI re-implementing §8.6 — steps that name
-// none resolve to the adapter default, which the API cannot report and this
-// says so rather than inventing a name.
+// agentSummary is overrideSummary for the agent row. It exists separately
+// because an unresolved agent still names a value — §8.6 level 4 is the
+// daemon's default adapter, not "nothing".
 func (n *newTask) agentSummary() string {
 	if n.agent != "" {
 		return n.agent
 	}
-	return styleDim.Render("(workflow default" + n.workflowAgents() + ")")
+	return styleDim.Render("(workflow default" + n.resolvedAgents() + ")")
 }
 
-// workflowAgents renders the distinct agents the selected workflow's agent
-// steps name, in step order: " → claude", " → claude, codex" when they
-// differ, " → adapter default" when none does, and nothing at all when no
-// workflow is picked yet.
-func (n *newTask) workflowAgents() string {
-	e := n.workflowEntry(n.workflow)
-	if e == nil {
+// resolvedAgents renders the distinct agents the draft's agent steps resolve
+// to, in step order: " → claude", " → claude, codex" when they differ, and
+// nothing at all before the resolution lands or when the workflow has no
+// agent steps to run.
+func (n *newTask) resolvedAgents() string {
+	res, ok := n.resolved()
+	if !ok {
 		return ""
 	}
-	var names []string
-	adapterDefault := false
-	for _, s := range e.Steps {
-		if s.Type != "agent" {
-			continue
-		}
-		if s.Agent == "" {
-			adapterDefault = true
-			continue
-		}
-		if !contains(names, s.Agent) {
-			names = append(names, s.Agent)
-		}
-	}
-	if adapterDefault {
-		names = append(names, "adapter default")
-	}
+	names := res.Agents()
 	if len(names) == 0 {
 		return "" // a workflow with no agent steps: the override is moot
 	}
 	return " → " + strings.Join(names, ", ")
+}
+
+// resolvedSuffix is resolvedAgents for model and effort, where §8.6 level 4
+// may genuinely name nothing: an adapter that reports no default of its own
+// leaves the choice to the CLI at run time, and that is what gets rendered
+// rather than a guessed model name.
+func (n *newTask) resolvedSuffix(field func(apiclient.ResolvedStep) *apiclient.ResolvedField) string {
+	res, ok := n.resolved()
+	if !ok {
+		return ""
+	}
+	values, unnamed := res.Values(field)
+	if unnamed {
+		values = append(values, "CLI default")
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return " → " + strings.Join(values, ", ")
 }
 
 // renderExpansion draws whatever the focused row opened underneath it.
@@ -261,15 +264,22 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 	if e.Description != "" {
 		out = append(out, styleDim.Render("    "+e.Description))
 	}
+	// The resolution describes the *committed* workflow; the picker previews
+	// other entries, and those keep the registry's own text rather than a
+	// resolution fetched for a different draft.
+	res, resolved := n.resolved()
+	resolved = resolved && name == n.workflow
 	for i, s := range e.Steps {
 		agent := s.Agent
 		suffix := ""
+		if resolved && i < len(res.Steps) && res.Steps[i].Agent != nil {
+			agent = res.Steps[i].Agent.Value
+		}
 		switch {
 		case s.Type != "agent":
 			agent = ""
 		case agent == "":
-			// §8.6 level 4: the adapter's own default. The registry does not
-			// resolve it, so it is reported, never accused.
+			// §8.6 level 4 with no resolution to hand: reported, never accused.
 			agent = "adapter default"
 		case n.agents.Unavailable(agent):
 			suffix = "  " + styleWarn.Render("⚠ unavailable")

@@ -138,6 +138,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
 	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
+	rt.handle(http.MethodPost, "/v1/resolve", s.handleResolve)
 	rt.handle(http.MethodGet, "/v1/tasks", s.handleTaskList)
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)

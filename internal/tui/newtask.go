@@ -74,6 +74,14 @@ type (
 		entries   []apiclient.WorkflowEntry
 		err       error
 	}
+	// ntResolvedMsg carries POST /v1/resolve for one draft state. The key
+	// travels with it because the user keeps typing while it is in flight;
+	// a reply for a draft that has moved on is dropped, not rendered.
+	ntResolvedMsg struct {
+		key        resolveKey
+		resolution apiclient.Resolution
+		err        error
+	}
 	// ntDescriptionMsg carries the result of editing the description in
 	// $EDITOR.
 	ntDescriptionMsg struct {
@@ -125,6 +133,13 @@ type newTask struct {
 	mode     ntMode
 	pick     *picker
 	fieldsEd *fieldsEditor
+
+	// resolution is what the daemon says the committed draft would actually
+	// run, per §8.6 — fetched, never derived: the TUI must not own a second
+	// implementation of the precedence (PR L decision, T4.7). resolvedFor
+	// records the draft it describes, so a stale reply cannot be shown.
+	resolution  apiclient.Resolution
+	resolvedFor resolveKey
 
 	// rowErr is the daemon's complaint parked on the row it named.
 	rowErr map[ntRow]string
@@ -252,6 +267,75 @@ func (n *newTask) loadCmd(refresh bool) tea.Cmd {
 	}
 }
 
+// resolveKey identifies the draft state a resolution describes: everything
+// POST /v1/resolve takes as input. Equality is the whole point — a reply
+// whose key no longer matches the draft is discarded.
+type resolveKey struct {
+	projectID               int64
+	workflow                string
+	agent, model, effortSel string
+}
+
+func (n *newTask) resolveKey() resolveKey {
+	return resolveKey{
+		projectID: n.projectID,
+		workflow:  n.workflow,
+		agent:     n.agent,
+		model:     n.model,
+		effortSel: n.effort,
+	}
+}
+
+// resolveCmd asks the daemon what the current draft would run. It fires on
+// every change to the workflow or the override triple — five fields, one
+// cheap loopback call each, and the alternative is a form that says
+// "(workflow default)" about a spend decision (the T3.8 finding).
+func (n *newTask) resolveCmd() tea.Cmd {
+	client := n.client
+	key := n.resolveKey()
+	if client == nil || key.workflow == "" {
+		return nil
+	}
+	req := apiclient.ResolveRequest{
+		Workflow: key.workflow,
+		Agent:    key.agent,
+		Model:    key.model,
+		Effort:   key.effortSel,
+	}
+	if key.projectID != 0 {
+		req.ProjectID = ptr(key.projectID)
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		res, err := client.Resolve(ctx, req)
+		return ntResolvedMsg{key: key, resolution: res, err: err}
+	}
+}
+
+// applyResolution takes a reply only when it still describes the draft. A
+// failure clears the resolution rather than keeping a stale one: the summary
+// lines fall back to naming no resolved value, which is honest, where stale
+// text would name the wrong model.
+func (n *newTask) applyResolution(msg ntResolvedMsg) {
+	if msg.key != n.resolveKey() {
+		return
+	}
+	if msg.err != nil {
+		n.resolution, n.resolvedFor = apiclient.Resolution{}, resolveKey{}
+		return
+	}
+	n.resolution, n.resolvedFor = msg.resolution, msg.key
+}
+
+// resolved reports the resolution when it describes the draft on screen.
+func (n *newTask) resolved() (apiclient.Resolution, bool) {
+	if n.resolvedFor == (resolveKey{}) || n.resolvedFor != n.resolveKey() {
+		return apiclient.Resolution{}, false
+	}
+	return n.resolution, true
+}
+
 func (n *newTask) workflowsCmd(projectID int64) tea.Cmd {
 	client := n.client
 	if client == nil {
@@ -279,7 +363,11 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.projectID == n.projectID && msg.err == nil {
 			n.workflows = msg.entries
 			n.selectDefaultWorkflow()
+			return n, n.resolveCmd()
 		}
+		return n, nil
+	case ntResolvedMsg:
+		n.applyResolution(msg)
 		return n, nil
 	case ntDescriptionMsg:
 		n.applyDescription(msg)
@@ -334,7 +422,7 @@ func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
 	if p, ok := n.project(); ok {
 		return n.workflowsCmd(p.ID)
 	}
-	return nil
+	return n.resolveCmd()
 }
 
 // selectDefaultProject prefers the project the caller was looking at, then
@@ -699,14 +787,23 @@ func (n *newTask) applyFailure(err error) {
 }
 
 // unavailableSteps lists the agent steps of a workflow whose resolved agent
-// is a known adapter that is not usable. A step with no agent resolves to
-// the adapter default (§8.6 level 4), which the registry cannot report, so
-// it is never accused.
+// is a known adapter that is not usable.
+//
+// With a resolution to hand, a step naming no agent is checked too: §8.6
+// level 4 still runs an adapter, and "the default one is missing" is exactly
+// the warning that used to be impossible to give. Without one, such a step
+// is reported, never accused — the registry cannot say what it resolves to.
 func (n *newTask) unavailableSteps(e apiclient.WorkflowEntry) []string {
+	res, resolved := n.resolved()
+	resolved = resolved && e.Name == n.workflow
 	var out []string
-	for _, s := range e.Steps {
-		if n.agents.Unavailable(s.Agent) {
-			out = append(out, fmt.Sprintf("%s → %s", firstNonEmpty(s.Name, s.ID), s.Agent))
+	for i, s := range e.Steps {
+		name := s.Agent
+		if resolved && i < len(res.Steps) && res.Steps[i].Agent != nil {
+			name = res.Steps[i].Agent.Value
+		}
+		if n.agents.Unavailable(name) {
+			out = append(out, fmt.Sprintf("%s → %s", firstNonEmpty(s.Name, s.ID), name))
 		}
 	}
 	return out
