@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 9/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 10/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **34/44** | |
+| **Total** | | **35/44** | |
 
 ---
 
@@ -514,8 +514,9 @@ superseded in layout and routing by T3.10–T3.13.
 - *`?` renders from the registry,* grouped by scope and context, carrying the same prose the hand-written help had. The reachability test opens the palette in each owning context and asserts every registry entry surfaces — "is every key discoverable?" becomes a test, per the refactor decision.
 - *While disconnected the palette omits task actions* (nothing can act on a task the daemon cannot see) but keeps navigation and panel commands — `:` is how §15 says the daemon view stays reachable.
 
-- [~] **T3.11 — Command palette; `1..6` retired.** `bindings.go` registry (key, label, scope, priority) as the single source for palette, footer and `?`. `:` opens a searchable list of valid task actions + navigation to the four takeover screens + panel-local commands, each showing its direct key; invalid task actions omitted. `esc` stack, panel-local `/`, `tab`-commits-filter. Jump-to-next-attention key. *Depends:* T3.10.
+- [x] **T3.11 — Command palette; `1..6` retired.** ✓ 2026-08-10 `bindings.go` registry (key, label, scope, priority) as the single source for palette, footer and `?`. `:` opens a searchable list of valid task actions + navigation to the four takeover screens + panel-local commands, each showing its direct key; invalid task actions omitted. `esc` stack, panel-local `/`, `tab`-commits-filter. Jump-to-next-attention key. *Depends:* T3.10.
   *Done when:* `1..6` is gone and every takeover screen is reachable from `:`; a test asserts every registry entry is reachable from the palette; the `?` overlay renders from the registry, not a literal list.
+  *2026-08-10:* landed per the PR Q decisions above; `TestPaletteReachesEveryRegistryEntry` is the reachability sweep.
 - [ ] **T3.12 — Contextual footer.** Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
   *Done when:* narrow-terminal tests assert the pinned segment survives and the line never wraps.
 - [ ] **T3.13 — Mouse.** Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
