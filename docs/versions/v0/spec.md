@@ -803,6 +803,7 @@ defaults:
   command_timeout: 15m
   input_timeout: 24h           # max wait in awaiting_input (§7.4)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
+transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 log_level: info
 ```
 
@@ -1320,7 +1321,7 @@ currently true to show (§15 view 6).
 | Project path missing | New/step-starting tasks in that project → blocked with `project_path_missing` |
 | Daemon port taken | Ephemeral port by default makes this nearly impossible; pinned-port conflict fails startup with a clear message |
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes |
-| Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (default 512 MB) fails the step past the cap |
+| Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
 | Template references missing field | Step fails at render time (before any process starts) with the template error |
 | `answer` posted when task isn't `awaiting_input` | `409` with the current state (standard invalid-transition handling) |
 | Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
@@ -1335,7 +1336,7 @@ currently true to show (§15 view 6).
 | **M1 — Spine** | Daemon skeleton, SQLite + migrations, config, token auth, projects CRUD, task creation with worktree (incl. optional agent/model/effort override), Claude adapter (model/effort passthrough + options probe), single hardcoded-format one-step run, transcripts, health/info | `curl` can register a repo, create a 1-step agent task, watch it finish, and see the branch/diff |
 | **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation, agent input requests (`awaiting_input`, answer endpoint, `input_timeout`, `on_input`, §7.4) | Multi-step workflow incl. gate + command publish step runs unattended to the gate; an agent question round-trips awaiting_input → answer → resume; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
 | **M3 — TUI** | All six views, live tail, diff view, all actions, input-request alerts + answer form, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow\* → run 3 parallel tasks → answer an agent question → approve gate → archive) is doable without leaving the TUI |
-| **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries) | Fresh-machine install to first completed task in under 10 minutes on each OS |
+| **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries†) | Fresh-machine install to first completed task in under 10 minutes on each OS |
 
 \* **"author workflow" means editing in place,** not creating a file. §15 view 5
 records that creating a workflow file from the TUI is out of v1: `e` opens an
@@ -1343,6 +1344,16 @@ existing entry in `$EDITOR` and the registry reload reflects the save, while new
 files are written in the editor and appear on the next reload. The M3 acceptance
 walkthrough exercises the edit path; it does not require a create path the TUI
 deliberately does not have.
+
+† **"Signed binaries" is descoped, 2026-08-10** (Phase 4 grill session). Releases
+carry cosign keyless signatures, checksums, and GitHub build attestations —
+supply-chain verifiable without a certificate purchase. OS code signing
+(Windows Authenticode, Apple notarization) is a recurring cost v1 does not take
+on, so macOS Gatekeeper and Windows SmartScreen prompt on first launch; the
+README documents that path, including `xattr -d com.apple.quarantine`. The M4
+acceptance clock in T4.6 absorbs that friction deliberately — it is vincent's
+own cost — while excluding agent-CLI installation and authentication, which is
+a documented prerequisite of the walkthrough.
 
 ## 20. Future work (explicitly out of v1)
 
