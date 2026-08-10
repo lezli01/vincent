@@ -44,13 +44,13 @@ session, and *leaving the TUI to get something done is itself a failure*.
 | ID | Step | Passes when |
 |---|---|---|
 | **L1** | Launch `vincent` with no daemon running. | The TUI comes up on its own, shows it is starting the daemon, and reaches the board without you starting anything by hand. On the very first launch the full-auto notice appears; `enter` dismisses it. |
-| **L2** | Register the app repo: view `4`, `a`, paste the seeded app-repo path, `ctrl+s`. | The project appears in the list with its name derived from the directory, and no error. |
-| **L3** | Author a workflow: view `5`, select **m3-parallel** on the app project, `e`. | Your `$EDITOR` opens *the project-scoped file* (`.vincent/workflows/m3-parallel.yaml`, 2 steps — not the 1-step global copy). Change the step id `work-shadow` to something you will recognise, save, quit the editor. The row updates **without a restart**. |
+| **L2** | Register the app repo: `:` → projects, `a`, paste the seeded app-repo path, `ctrl+s`. | The project appears in the list with its name derived from the directory, and no error. |
+| **L3** | Author a workflow: `:` → workflows, select **m3-parallel** on the app project, `e`. | Your `$EDITOR` opens *the project-scoped file* (`.vincent/workflows/m3-parallel.yaml`, 2 steps — not the 1-step global copy). Change the step id `work-shadow` to something you will recognise, save, quit the editor. The row updates **without a restart**. |
 | **L4** | Read the shadowing row on the Workflows view. | **m3-parallel** is one row, not two, and says it shadows the global entry. |
 | **L5** | Create four tasks on the app project with **m3-parallel**: `n`, title, pick the workflow, override `agent` to `codex`, `ctrl+s`. Repeat. | Four tasks exist. |
 | **L6** | Watch the board. | Exactly **three** run at once and the fourth sits `queued`; each running row shows the step name you typed in L3 (proving the shadow ran, not the global copy) and a step count of 2. When the first finishes, the fourth starts on its own — no keypress, no refresh. |
 | **L7** | Open one running task (`enter`), watch the output pane. | Output is still arriving while you watch; `f`/`G` re-follows after you scroll away. Press `d` for the diff — it shows the agent's README.md edit. |
-| **L8** | Create a task on the app project with **m3-loop** (agent `claude`, the real CLI). Wait. | The task reaches `awaiting_input` and the TUI alerts you. Open it, `tab` to the answer form, pick an option, `enter`. The run resumes in place — no new attempt, no restart — and finishes the agent step. |
+| **L8** | Create a task on the app project with **m3-loop** (agent `claude`, the real CLI). Wait. | The task reaches `awaiting_input` and the TUI alerts you. Jump to it (`!`), open the answer popup (`enter`), pick an option, `enter`. The run resumes in place — no new attempt, no restart — and finishes the agent step. |
 | **L9** | The task stops at the gate. Approve it: `a`. | The manual step shows as approved, the publish step runs, and the task reaches `done`. `git -C <bare remote> log --oneline --all` shows the branch with the agent's commit. |
 | **L10** | Archive the finished loop task: `A`, confirm. | It asks first, naming the consequence; on `y` the task shows as archived and its worktree is gone from disk. |
 
@@ -62,19 +62,24 @@ gate unless they blocked Section A.
 
 | ID | §19 phrase | Look at |
 |---|---|---|
-| **S1** | "All six views" | `1`–`6` all render, none blank or panicking; `?` lists the keys each one actually has. |
+| **S1** | "All six views" | All six §15 surfaces render, none blank or panicking: the home panels plus the four takeovers reached from the `:` palette; `?` lists the keys each surface actually has, straight from the registry. |
 | **S2** | "live tail" | Covered by L7; additionally, a tail left open across a task's completion ends cleanly rather than hanging on "following". |
 | **S3** | "diff view" | `d` on a task with no commits yet, on a finished task, and on an archived one (worktree removed) — three different situations, three intelligible messages. |
 | **S4** | "all actions" | `p` pause/resume a running task · `c` cancel (asks first) · `s` skip a step · `r` retry a blocked task · `E` edit the failing step in `$EDITOR` and retry · `x` reject a gate. Each offered only when valid for that task's state. |
 | **S5** | "input-request alerts + answer form" | Covered by L8; additionally `e` in the form types a free-text answer instead of picking, and `esc` leaves without answering and the task stays parked. |
 | **S6** | "`$EDITOR` integration" | Covered by L3 (workflow file) and S4 (`E` on a step); also `e` on the description field in the new-task form. The TUI redraws correctly after the editor exits in all three. |
 | **S7** | "daemon auto-start" | Covered by L1. |
-| **S8** | Reconnect (PR H made connect and reconnect one state) | From a second terminal, `vincent daemon stop --force`. The TUI notices, shows the connect/reconnect screen with the log path, and `r` brings it back without losing the view you were on. |
+| **S8** | Reconnect (PR H made connect and reconnect one state) | From a second terminal, `vincent daemon stop --force`. The panels stay on screen marked stale behind the banner (§15 Disconnected), `:` still reaches the daemon view, and `r` brings the connection back without losing where you were. |
 | **S9** | Projects view states | The spare repo gives the list a second row; `d` on a project with a running task is refused with a reason; `enter`/`e` edits and saves. |
 | **S10** | Workflows view states | **m3-broken** renders as invalid, carrying the registry's own message (unknown step type, line 5); the built-in `adhoc` renders as built-in with no `e`. |
-| **S11** | Daemon view | `6` shows version, uptime, pid, listen address, the three paths, `max_parallel_tasks: 3`, both adapters with their resolved paths, and a log tail that matches what the daemon is actually writing. `R` refreshes all three. |
+| **S11** | Daemon view | The daemon entry in `:` shows version, uptime, pid, listen address, the three paths, `max_parallel_tasks: 3`, both adapters with their resolved paths, and a log tail that matches what the daemon is actually writing. `R` refreshes all three. |
 | **S12** | Destructive confirmation | `A` on one of the **m3-parallel** tasks — its worktree is dirty (the agent edited README.md and nothing committed). The prompt says changes will be lost. Answer `n` first: the task is still there. Then `y`. |
 | **S13** | Quit reminder | `q` with tasks still running prints the running-task count after the alt screen tears down, and the line survives in scrollback. |
+| **S14** | Mouse (T3.13) | On both Windows hosts (Windows Terminal + pwsh, Git Bash/mintty): click focuses a panel, click selects a task row, the wheel scrolls the focused panel, clicking a footer hint fires it, clicking the output/diff tab switches it. `M` turns it off and native click-drag text selection returns. |
+| **S15** | Resize across both floors (T3.13) | Shrink below 80×20 — single-panel mode, `tab` swaps which; below 60×15 — the explicit size line; grow back — three panels return, nothing panics, selection and any committed filter survive. |
+| **S16** | Palette reachable and complete (T3.13) | `:` opens on every surface; entries match it — the selected task's valid actions, navigation, the surface's own keys — and running an entry behaves exactly like pressing the key it shows. |
+| **S17** | Accordion at 24 rows (T3.13) | On a 24-row terminal focus each panel in turn: the focused band expands, the collapsed band is title + one line, and the task table never shows fewer than five rows. |
+| **S18** | `NO_COLOR` (T3.13) | A `NO_COLOR=1` run: focus still discernible (the ▸ glyph), states legible as text, box-drawing intact, nothing invisible. |
 
 ## Results
 

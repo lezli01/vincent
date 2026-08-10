@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 11/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 12/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **36/44** | |
+| **Total** | | **37/44** | |
 
 ---
 
@@ -529,8 +529,20 @@ superseded in layout and routing by T3.10–T3.13.
 - [x] **T3.12 — Contextual footer.** ✓ 2026-08-10 Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
   *Done when:* narrow-terminal tests assert the pinned segment survives and the line never wraps.
   *2026-08-10:* landed per the PR R decisions above; the event line is gone and the T3.1 live proofs now assert the event-driven refresh renders the change itself.
-- [ ] **T3.13 — Mouse.** Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
+**PR S decisions (T3.13; grill session, 2026-08-10):**
+
+- *The wheel scrolls the focused panel, not the hovered one* — §15 verbatim. Hover tracking is drag-adjacent machinery for a behavior §15 does not ask for.
+- *A click on a row selects it and rides the settle window,* exactly like cursor movement — §15 says "click a row to select it", and a click that opened would make selecting without opening impossible. Opening stays `enter`'s job.
+- *Row mapping reads the rendered frame, not bubbles' private scroll state.* The table's scroll offset is unexported and its clamp logic is not a contract; the clicked line's distance from the styled cursor row drives `MoveUp`/`MoveDown` — the same path as key movement, so the table's own bookkeeping stays consistent.
+- *Footer hints fire by synthesizing the hint's key* — the palette's one-execution-path rule again; the hit ranges are computed from the same segments the footer renders, truncation included, so a hint that was cut cannot be clicked.
+- *The palette and the answer popup ignore clicks.* §15 scopes the mouse to focus, select, scroll, footer and tabs; popup interaction stays keyboard, and a stray click must not answer a question.
+- *The mouse rides `tea.View.MouseMode`* — bubbletea v2 sets it per frame — so `M` is a flag flip: on by default per §15, the toggle in the registry and therefore the palette and `?`.
+- *Takeover screens get wheel delegation for free and no click surfaces.* Nothing §15 lists exists there; their lists stay keyboard until someone misses it at the gate.
+- *The T3.8 sweep grows five items and three are reworded:* S1/S8/S11 were written against the retired digits and the old connect screen; they now walk the palette route and the stale-panels banner. New items cover mouse on both Windows hosts, resize across both floors, palette completeness, the accordion at 24 rows, and `NO_COLOR`.
+
+- [x] **T3.13 — Mouse.** ✓ 2026-08-10 Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
   *Done when:* `hitTest` is table-tested; `MouseClickMsg` tests assert focus and selection changes; `m3-gate.md`'s sweep carries the new items.
+  *2026-08-10:* landed per the PR S decisions above; the sweep gained S14–S18 and S1/S8/S11 were reworded off the retired digits.
 
 ## Phase 4 — Polish (M4)
 

@@ -64,6 +64,12 @@ type shell struct {
 	// bodyW/bodyH the area the root hands render.
 	termW, termH int
 	bodyW, bodyH int
+
+	// lastBoxes and bannerLines are the geometry of the last frame, kept
+	// for hit-testing: a click lands on what was on screen, not on what the
+	// next layout would be.
+	lastBoxes   []box
+	bannerLines int
 }
 
 func newShell(ctx context.Context) *shell {
@@ -122,6 +128,10 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 		return s, s.forward(msg)
 	case tea.KeyPressMsg:
 		return s.updateKey(msg)
+	case tea.MouseClickMsg:
+		return s, s.updateClick(msg)
+	case tea.MouseWheelMsg:
+		return s, s.updateWheel(msg)
 	case focusPanelMsg:
 		s.focus = msg.id
 		return s, nil
@@ -327,6 +337,74 @@ func (s *shell) checkSelection() tea.Cmd {
 	})
 }
 
+// updateClick is §15's click scope on the home screen: click a panel to
+// focus it, click a row to select it, click the output panel's title tabs
+// to switch them. Coordinates arrive body-relative (the root strips its
+// header); the banner line is the shell's own offset. Popups stay keyboard:
+// a stray click must not answer a question.
+func (s *shell) updateClick(msg tea.MouseClickMsg) tea.Cmd {
+	if s.popup {
+		return nil
+	}
+	y := msg.Y - s.bannerLines
+	id, ok := hitTest(msg.X, y, s.lastBoxes)
+	if !ok {
+		return nil
+	}
+	// The frame that was clicked was rendered with the *old* focus — the
+	// output title's tab spans shift by the focus glyph, so remember what
+	// was actually on screen before moving focus.
+	wasFocusedOutput := s.focus == panelOutput
+	s.focus = id
+	var b box
+	for _, cand := range s.lastBoxes {
+		if cand.id == id {
+			b = cand
+		}
+	}
+	switch id {
+	case panelTasks:
+		// Inside the border sit the board's chrome lines, then the table's
+		// own column header, then the rows. A click above the rows just
+		// focuses.
+		line := y - b.y - 2 - s.board.chromeLines()
+		if line >= 0 {
+			s.board.clickRow(line)
+		}
+		return s.checkSelection()
+	case panelTimeline:
+		s.syncDetailFocus()
+		return s.detail.clickTimeline(y - b.y - 1)
+	default:
+		s.syncDetailFocus()
+		return s.detail.clickOutputTitle(msg.X-b.x, y-b.y, wasFocusedOutput)
+	}
+}
+
+// updateWheel scrolls the focused panel (§15: focused, not hovered).
+func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	delta := 1
+	if msg.Button == tea.MouseWheelUp {
+		delta = -1
+	}
+	switch s.focus {
+	case panelTasks:
+		s.board.wheelMove(delta)
+		return s.checkSelection()
+	case panelTimeline:
+		s.syncDetailFocus()
+		return s.detail.moveSelection(delta)
+	default:
+		if delta > 0 {
+			s.detail.vp.ScrollDown(1)
+		} else {
+			s.detail.vp.ScrollUp(1)
+		}
+		s.detail.syncFollowToViewport()
+		return nil
+	}
+}
+
 // jumpAttention moves to the next task needing a human, wrapping through
 // the pinned attention rows in board order, and opens it immediately — a
 // jump is deliberate, like enter, so it skips the settle window.
@@ -391,6 +469,12 @@ func (s *shell) render(width, height int) string {
 	}
 
 	boxes := layout(s.bodyW, areaH, s.focus)
+	// Kept for hit-testing: a click lands on what was on screen.
+	s.lastBoxes = boxes
+	s.bannerLines = 0
+	if banner != "" {
+		s.bannerLines = 1
+	}
 	if boxes == nil {
 		return fmt.Sprintf("\n  terminal too small (%d×%d, need %d×%d)",
 			s.termW, s.termH, minTermW, minTermH)
