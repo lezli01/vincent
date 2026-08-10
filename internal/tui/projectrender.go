@@ -33,44 +33,138 @@ func (p *projectsView) render(width, height int) string {
 		return sb.String()
 	}
 
-	p.tbl.SetColumns(projectColumns(p.width))
-	p.tbl.SetRows(p.rowsFor(rows))
+	cols, set := projectColumns(p.width)
+	if len(cols) != len(p.tbl.Columns()) {
+		// Crossing a breakpoint: clear the rows first, or the table
+		// re-renders the previous shape against the new column set.
+		p.tbl.SetRows(nil)
+	}
+	p.tbl.SetColumns(cols)
+	p.tbl.SetRows(p.rowsFor(rows, set))
 	p.tbl.SetWidth(p.width)
 	p.tbl.SetHeight(max(3, p.height-len(p.statusLines())-3))
 	p.restoreSelection(rows)
+	// Passing through an empty row set parks the cursor at -1; with rows on
+	// screen it belongs on one, or nothing is selected and every key that
+	// acts on a row goes nowhere.
+	if p.tbl.Cursor() < 0 && len(rows) > 0 {
+		p.tbl.SetCursor(0)
+	}
 	sb.WriteString(p.tbl.View())
 	return sb.String()
 }
 
-// projectColumns drops the path first on a narrow terminal: it is the
-// longest column and the one a name already stands in for.
-func projectColumns(width int) []table.Column {
-	cols := []table.Column{
-		{Title: "id", Width: 4},
-		{Title: "name", Width: 18},
-	}
-	if width >= 90 {
-		cols = append(cols, table.Column{Title: "path", Width: width - 76})
-	}
-	return append(cols,
-		table.Column{Title: "branch", Width: 14},
-		table.Column{Title: "workflow", Width: 16},
-		table.Column{Title: "running / cap", Width: 20},
-	)
+// Projects column widths. As on the board, the table pads every cell by one
+// space either side, so a column occupies its width plus two — the original
+// widths ignored that and overflowed by a whole column's padding, which the
+// table swallowed by cutting the last column: "running / cap" arrived
+// unreadable (T3.8 finding).
+const (
+	pcolID       = 4
+	pcolName     = 20
+	pcolBranch   = 14
+	pcolWorkflow = 16
+	pcolCap      = 20
+	// pcolMinName is where squeezing the name stops and a whole column goes
+	// instead; pcolMaxName is where a wide terminal stops widening it.
+	pcolMinName = 14
+	pcolMaxName = 40
+	// pcolMinPath is not worth rendering below; pcolMaxPath is where a wide
+	// terminal stops handing space to the one column that needs it least.
+	pcolMinPath = 24
+	pcolMaxPath = 60
+)
+
+// projectColSet records which optional columns survived the current width,
+// so the row builder cannot disagree with the header about how many cells a
+// row has — a mismatch is an index panic on the next resize.
+type projectColSet struct {
+	path     bool
+	branch   bool
+	workflow bool
 }
 
-func (p *projectsView) rowsFor(projects []apiclient.Project) []table.Row {
+// projectColumns fits §15's project columns into the width it has. The path
+// is the first thing a narrow terminal loses — it is the longest column and
+// the one a name already stands in for — and on a wide one it stops growing
+// at pcolMaxPath rather than pushing the figures off the edge.
+func projectColumns(width int) ([]table.Column, projectColSet) {
+	// id, name and running/cap always exist: the identity, the thing you
+	// scan for, and the figure the view is for.
+	base := pcolID + pcolCap + 3*colPadding
+	name := pcolName
+	branch, workflow := true, true
+	cost := func() int {
+		c := base + name
+		if branch {
+			c += pcolBranch + colPadding
+		}
+		if workflow {
+			c += pcolWorkflow + colPadding
+		}
+		return c
+	}
+	// Squeeze the name to its floor first — repo names are short — then shed
+	// the configuration columns, which a narrow terminal can live without.
+squeeze:
+	for cost() > width {
+		switch {
+		case name > pcolMinName:
+			name = max(pcolMinName, name-(cost()-width))
+		case workflow:
+			workflow = false
+		case branch:
+			branch = false
+		default:
+			break squeeze // nothing left to shed; the table will truncate
+		}
+	}
+
+	path := 0
+	if slack := width - cost(); slack >= pcolMinPath+colPadding {
+		path = min(slack-colPadding, pcolMaxPath)
+	} else if slack > 0 {
+		// No room for a path column, so the space goes to the name rather
+		// than sitting empty at the right edge.
+		name = min(name+slack, pcolMaxName)
+	}
+
+	cols := []table.Column{
+		{Title: "id", Width: pcolID},
+		{Title: "name", Width: name},
+	}
+	if path > 0 {
+		cols = append(cols, table.Column{Title: "path", Width: path})
+	}
+	if branch {
+		cols = append(cols, table.Column{Title: "branch", Width: pcolBranch})
+	}
+	if workflow {
+		cols = append(cols, table.Column{Title: "workflow", Width: pcolWorkflow})
+	}
+	return append(cols,
+		table.Column{Title: "running / cap", Width: pcolCap},
+	), projectColSet{path: path > 0, branch: branch, workflow: workflow}
+}
+
+func (p *projectsView) rowsFor(projects []apiclient.Project, set projectColSet) []table.Row {
 	out := make([]table.Row, 0, len(projects))
 	for _, pr := range projects {
 		row := table.Row{strconv.FormatInt(pr.ID, 10), pr.Name}
-		if p.width >= 90 {
+		if set.path {
 			row = append(row, pr.Path)
 		}
-		workflow := styleDim.Render("adhoc")
-		if pr.DefaultWorkflow != nil && *pr.DefaultWorkflow != "" {
-			workflow = *pr.DefaultWorkflow
+		if set.branch {
+			row = append(row, pr.DefaultBranch)
 		}
-		out = append(out, append(row, pr.DefaultBranch, workflow, p.capCell(pr)))
+		if set.workflow {
+			workflow := styleDim.Render("adhoc")
+			if pr.DefaultWorkflow != nil && *pr.DefaultWorkflow != "" {
+				workflow = *pr.DefaultWorkflow
+			}
+			row = append(row, workflow)
+		}
+		out = append(out, append(row, p.capCell(pr)))
 	}
 	return out
 }

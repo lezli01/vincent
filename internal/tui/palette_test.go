@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -99,6 +100,33 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	}
 }
 
+// TestPaletteSectionsAreVisiblySeparate is a T3.8 finding: the group
+// headings looked exactly like the entries, so the list read as one flat
+// wall — and navigation needs its own section, since reaching the takeover
+// screens is why the digits could be retired.
+func TestPaletteSectionsAreVisiblySeparate(t *testing.T) {
+	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true))
+	out := p.render(60, 18)
+	plain := ansi.Strip(out)
+
+	if !strings.Contains(plain, "VIEWS") {
+		t.Errorf("no views section:\n%s", plain)
+	}
+	// Headings are styled and ruled; entries are not.
+	if !strings.Contains(out, styleTitle.Render(" VIEWS ")) {
+		t.Error("the views heading is not rendered as a heading")
+	}
+	if !strings.Contains(plain, "─") {
+		t.Errorf("no section rule:\n%s", plain)
+	}
+	// Section names, one per group present.
+	for _, want := range []string{"ACTIONS ON #9", "VIEWS"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing section %q:\n%s", want, plain)
+		}
+	}
+}
+
 // TestPaletteRunsKeyedEntryThroughItsKey: executing an entry replays its
 // direct keypress — one path, so the palette cannot diverge from the
 // shortcut it teaches.
@@ -160,16 +188,54 @@ func TestPaletteSearchNarrowsAndEscCloses(t *testing.T) {
 // TestHelpRendersFromRegistry: the ? overlay is generated, not hand-written
 // — a registry row's label must appear verbatim.
 func TestHelpRendersFromRegistry(t *testing.T) {
-	got := helpText()
+	got := helpText(ctxTasks)
 	for _, want := range []string{
 		"jump to the next task needing a human",
 		"open the command palette",
 		"open the selected task",
 		"filter by id",
-		"Go to (from the : palette)",
+		"GO TO (FROM THE : PALETTE)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("help overlay missing %q", want)
+		}
+	}
+}
+
+// TestHelpIsContextual is a T3.8 finding: the sheet answers "what can I do
+// here", so it carries the focused surface's keys — not all eight
+// surfaces' sections at once.
+func TestHelpIsContextual(t *testing.T) {
+	tasks := helpText(ctxTasks)
+	if !strings.Contains(tasks, "filter by id") {
+		t.Error("the task table's help lacks its own filter key")
+	}
+	for _, elsewhere := range []string{"register a repository", "re-read the registry", "re-probe the adapters"} {
+		if strings.Contains(tasks, elsewhere) {
+			t.Errorf("the task table's help carries another surface's key: %q", elsewhere)
+		}
+	}
+
+	projects := helpText(ctxProjects)
+	if !strings.Contains(projects, "register a repository") {
+		t.Error("the projects help lacks its own add key")
+	}
+	for _, elsewhere := range []string{"filter by id", "follow the live output"} {
+		if strings.Contains(projects, elsewhere) {
+			t.Errorf("the projects help carries a panel key: %q", elsewhere)
+		}
+	}
+	// Task actions belong to the panels, where a task is selected.
+	if strings.Contains(projects, "approve the gate") {
+		t.Error("the projects help offers task actions")
+	}
+	if !strings.Contains(helpText(ctxTasks), "approve the gate") {
+		t.Error("the task table's help omits the task actions")
+	}
+	// The globals are everywhere, because they work everywhere.
+	for _, ctx := range []bindingContext{ctxTasks, ctxProjects, ctxDaemon, ctxNewTask} {
+		if !strings.Contains(helpText(ctx), "quit the TUI") {
+			t.Errorf("%s help omits the global keys", ctx)
 		}
 	}
 }

@@ -348,6 +348,70 @@ func TestProjectsRefetchOnActivationAndOnEvents(t *testing.T) {
 	}
 }
 
+// TestProjectColumnsFitTheirWidth is a T3.8 finding: the widths ignored the
+// table's per-cell padding and overflowed by a whole column's worth, so the
+// last column ("running / cap") arrived cut. The path column is also the
+// one that must not eat a wide terminal.
+func TestProjectColumnsFitTheirWidth(t *testing.T) {
+	for _, width := range []int{80, 100, 120, 160, 240} {
+		cols, set := projectColumns(width)
+		total := 0
+		for _, c := range cols {
+			total += c.Width + colPadding
+		}
+		if total > width {
+			t.Errorf("width %d: columns need %d cells — the last one gets cut", width, total)
+		}
+		// Whatever survives has to be readable, the last column included.
+		last := cols[len(cols)-1]
+		if last.Title != "running / cap" || last.Width != pcolCap {
+			t.Errorf("width %d: last column = %q/%d, want the full cap column", width, last.Title, last.Width)
+		}
+		for _, c := range cols {
+			if c.Width < 4 {
+				t.Errorf("width %d: column %q shrank to %d", width, c.Title, c.Width)
+			}
+			if c.Title == "path" && c.Width > pcolMaxPath {
+				t.Errorf("width %d: path took %d cells, capped at %d", width, c.Width, pcolMaxPath)
+			}
+		}
+		if width >= 160 && !set.path {
+			t.Errorf("width %d dropped the path column", width)
+		}
+	}
+}
+
+// The header and the rows must agree about how many cells a row has, or the
+// table indexes out of range on the next resize.
+func TestProjectRowsMatchTheirColumns(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
+	for _, width := range []int{70, 100, 200} {
+		cols, set := projectColumns(width)
+		rows := p.rowsFor(p.visible(), set)
+		if len(rows) == 0 {
+			t.Fatal("no rows built")
+		}
+		if len(rows[0]) != len(cols) {
+			t.Errorf("width %d: row has %d cells, header has %d", width, len(rows[0]), len(cols))
+		}
+	}
+}
+
+// A resize across the path breakpoint must not panic or lose the selection.
+func TestProjectsSurviveAColumnBreakpoint(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "a"), testProject(2, "b")}, nil)
+	p.render(200, 24)
+	p.tbl.SetCursor(1)
+	p.rememberSelection()
+	p.render(80, 24) // path column disappears
+	p.render(200, 24)
+	if got, ok := p.current(); !ok || got.ID != 2 {
+		t.Errorf("selection after two resizes = %+v, want project 2", got)
+	}
+}
+
 func TestProjectsHintTheProjectUnderTheCursor(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(7, "vincent")}, nil)

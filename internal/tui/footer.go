@@ -116,6 +116,17 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
+// padBetween pins right to the right edge of width, left where it is, and at
+// least two spaces between them. It never truncates: callers that can
+// overflow (the contextual footer) trim their left side first.
+func padBetween(left, right string, width int) string {
+	pad := 2
+	if width > 0 {
+		pad = max(width-ansi.StringWidth(left)-ansi.StringWidth(right), 2)
+	}
+	return left + strings.Repeat(" ", pad) + right
+}
+
 func pinnedHits(x int, segs []footerSeg) []footerHit {
 	out := make([]footerHit, 0, len(segs))
 	for _, s := range segs {
