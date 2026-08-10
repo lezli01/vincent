@@ -152,6 +152,49 @@ func TestNewTaskFallsBackToAdhocWithoutAProjectDefault(t *testing.T) {
 	}
 }
 
+// TestNewTaskNamesTheWorkflowDefaultAgent is a T3.8 finding: "(workflow
+// default)" told nobody which agent would run, and that is a spend
+// decision. The names come from the registry's own per-step report, so a
+// step naming none still reads as the adapter default rather than a guess.
+func TestNewTaskNamesTheWorkflowDefaultAgent(t *testing.T) {
+	n := loadedForm(t)
+	n.workflow = "two-step"
+
+	summary := n.agentSummary()
+	if !strings.Contains(summary, "workflow default") {
+		t.Fatalf("agent summary = %q, want it to still say the workflow decides", summary)
+	}
+	for _, want := range []string{"codex", "adapter default"} {
+		if !strings.Contains(summary, want) {
+			t.Errorf("agent summary = %q, want it to name %q", summary, want)
+		}
+	}
+	// The picker's own default row carries the same names.
+	opts := n.agentOptions()
+	if len(opts) == 0 || opts[0].value != "" {
+		t.Fatal("the first agent option is not the workflow default")
+	}
+	if !strings.Contains(opts[0].note, "codex") {
+		t.Errorf("default option note = %q, want the workflow's agents", opts[0].note)
+	}
+
+	// An explicit override replaces it outright — no "(default)" noise.
+	n.agent = "claude"
+	if got := n.agentSummary(); got != "claude" {
+		t.Errorf("agent summary with an override = %q, want just the agent", got)
+	}
+
+	// Model and effort stay unnamed: the registry does not report them per
+	// step, and inventing a value would be worse than saying nothing (T4.7).
+	n.model = ""
+	if got := n.overrideSummary(n.model); !strings.Contains(got, "workflow default") {
+		t.Errorf("model summary = %q", got)
+	}
+	if strings.Contains(n.overrideSummary(n.model), "→") {
+		t.Error("the model summary names a value the API never reported")
+	}
+}
+
 func TestNewTaskFlagsStepsNeedingAnUnavailableAgent(t *testing.T) {
 	n := loadedForm(t)
 	e := n.workflowEntry("two-step")

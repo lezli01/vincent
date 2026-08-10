@@ -57,10 +57,13 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected 
 			out = append(out, paletteEntry{group: group, label: b.label, key: b.key})
 		}
 	}
+	// Views get their own section: navigating to them is the reason the
+	// digits could be retired, so it must not read as one more command
+	// (T3.8 finding).
 	for _, b := range bindings {
 		if b.nav {
 			out = append(out, paletteEntry{
-				group: "go to", label: b.label, key: b.key,
+				group: "views", label: b.label, key: b.key,
 				nav: true, navTarget: b.navTarget,
 			})
 		}
@@ -145,7 +148,16 @@ func (p *palette) render(w, h int) string {
 	for i, e := range m {
 		if e.group != group {
 			group = e.group
-			rows = append(rows, styleDim.Render("  "+group))
+			// A section header, not another dim line: a list where the
+			// headings look like the entries reads as one flat wall
+			// (T3.8 finding). Blank line above, rule to the right edge.
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
+			label := " " + strings.ToUpper(group) + " "
+			fill := max(inner-ansi.StringWidth(label)-1, 0)
+			rows = append(rows, styleTitle.Render(label)+
+				styleDim.Render(strings.Repeat("─", fill)))
 		}
 		mark, style := "  ", styleDim
 		if i == cursor {

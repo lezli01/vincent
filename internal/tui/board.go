@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -390,8 +391,16 @@ func (b *board) clickRow(line int) {
 	if len(rows) < 2 {
 		return
 	}
+	body := rows[1:] // the column header is line 0
+	// A table shorter than its pane is padded with blank lines. Clicking one
+	// used to select the last row, because the move clamps — so clicking
+	// empty space below the list silently changed the selection (T3.8
+	// finding). Nothing is a row unless something is rendered on it.
+	if line >= len(body) || strings.TrimSpace(ansi.Strip(body[line])) == "" {
+		return
+	}
 	cursorLine := -1
-	for i, row := range rows[1:] { // the column header is line 0
+	for i, row := range body {
 		if strings.Contains(row, marker) {
 			cursorLine = i
 			break

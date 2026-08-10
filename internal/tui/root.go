@@ -552,7 +552,14 @@ func (m *root) connBadge() string {
 
 func (m *root) body() string {
 	if m.help {
-		return helpText()
+		// The sheet describes the surface it was opened over, framed like
+		// every other surface (T3.8 findings).
+		ctx, _ := m.activeContext()
+		h := m.bodyHeight()
+		if m.width < 4 || h < 3 {
+			return helpText(ctx)
+		}
+		return frame(helpTitle(ctx), helpText(ctx), m.width, h, true)
 	}
 	// The daemon view is the exception to the connection gate (§15): its log
 	// tail comes off the filesystem, and a daemon that is down is exactly
@@ -638,6 +645,11 @@ func (m *root) homeLoaded() bool {
 // footerLine is the §15 contextual footer, rendered from the registry and
 // the shell's action bar.
 func (m *root) footerLine() string {
+	if m.help {
+		// The overlay owns the keyboard, so it owns the key row: the keys
+		// underneath do nothing until it closes.
+		return helpFooter(m.width)
+	}
 	ctx, s := m.activeContext()
 	var (
 		bar       *actionBar

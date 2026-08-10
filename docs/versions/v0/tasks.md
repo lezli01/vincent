@@ -457,6 +457,14 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
   *Done when:* walkthrough passes on both; notes committed.
   *2026-08-09:* deferred behind T3.9–T3.13 (see the TUI refactor decisions below). The walkthrough runs **once**, against the panel UI, and never against the one being replaced; its sweep section grows the items listed in T3.13. `scripts/m3-gate.sh` and section A of `m3-gate.md` carry over unchanged — the seed is UI-agnostic and the §19 loop is spec-derived.
   *2026-08-10:* first Windows pass surfaced four findings before any run was recorded; graded per the rule above (none block the loop). Fixed pre-run: console windows flashing for every daemon child (procx/gitx `CREATE_NO_WINDOW`), the takeovers' duplicate key rows and missing frames (both runs will judge the fixed build). Deferred: naming what "(workflow default)" resolves to in the new-task form → T4.7.
+  *2026-08-10 (first full Windows walkthrough):* Section A **passed** — the §19 loop completed without leaving the TUI — with nine findings, all fixed pre-record so the recorded runs judge one build:
+  1. **The task table stopped updating** (`0/3 running` with four tasks queued; only a restart showed them). Not cosmetic: `root` routed every non-input message to the *active* view, so the board's refresh debounce fired into the new-task form, `refreshPending` stayed true and every later task event was ignored. The elapsed ticker died the same way. Input is now routed, background work is broadcast. This predates the refactor; the fused screen is what made it visible.
+  2. Clicking blank space below the last row selected the last task (the move clamps) — clicks now land only on rendered rows.
+  3. The Projects table ignored the bubbles cell padding and overflowed by a column's worth, cutting `running / cap`; the path column also grew unbounded. Widths now degrade like the board's (squeeze the name, shed workflow then branch) with the path capped, and the row builder shares one column set with the header.
+  4. `?` listed all eight surfaces' sections; it is now the focused surface's keys plus the globals, framed and titled with the surface name.
+  5. `?` showed the underlying surface's footer while open; it now carries its own key row.
+  6. The palette's group headings looked like its entries; sections are now styled and ruled, with navigation in its own **views** section.
+  7. "(workflow default)" named no agent. The registry already reports each step's agent (§8.6 levels 1 and 3), so the form now reads "(workflow default → claude, adapter default)" from the server's own report. Model and effort stay unnamed — the API does not report them per step, which is exactly T4.7's remaining scope.
 
 **Phase 3 TUI refactor decisions (grill session, 2026-08-09):**
 
@@ -561,5 +569,5 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *Done when:* tagged pre-release produces working artifacts installed and smoke-tested on each OS.
 - [ ] **T4.6 — Phase gate (M4 acceptance).** Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
   *Done when:* all three runs under 10 minutes; notes committed. **v1 complete.**
-- [ ] **T4.7 — Name what "default" resolves to in the new-task form.** T3.8 finding (2026-08-10): the agent/model/effort pickers offer "(workflow default)" without saying what that is; a spend decision deserves a name. Needs new read-only API surface exposing the §8.6 resolution (the PR L decision deliberately kept resolution server-side and left the "adapter default" hole open — this task relitigates that explicitly).
-  *Done when:* the pickers show the resolved value beside "(workflow default)" wherever the server can know it, and the workflow-step list's "adapter default" names the adapter.
+- [ ] **T4.7 — Report the §8.6 model and effort resolution.** T3.8 finding (2026-08-10), narrowed: the **agent** side landed with the walkthrough fixes — the registry already reports each step's agent, so the new-task form names it. Model and effort have no such field on the wire, so "(workflow default)" is all the form can honestly say about them, and the workflow-step list still cannot name which adapter "adapter default" resolves to. Both need new read-only API surface, which relitigates the PR L decision that kept resolution server-side — do that explicitly, not by having the TUI re-implement §8.6.
+  *Done when:* the model and effort rows name what an unset override resolves to, and a step with no agent names the adapter that will run it.

@@ -287,7 +287,11 @@ func (n *newTask) workflowOptions() []pickerOption {
 // workflow". An unavailable adapter stays selectable — it may be installed
 // before the task is admitted — but says so.
 func (n *newTask) agentOptions() []pickerOption {
-	out := []pickerOption{{value: "", label: "(workflow default)"}}
+	out := []pickerOption{{
+		value: "",
+		label: "(workflow default)",
+		note:  strings.TrimPrefix(n.workflowAgents(), " → "),
+	}}
 	for _, a := range n.agents {
 		opt := pickerOption{value: a.Name, label: a.Name}
 		switch {
