@@ -103,6 +103,35 @@ func TestShellClickSelectsRow(t *testing.T) {
 	}
 }
 
+// TestShellClickBelowTheRowsIsIgnored is a T3.8 finding: the table is
+// padded with blank lines when it has fewer rows than pane, and clicking
+// one used to select the last task because the move clamps.
+func TestShellClickBelowTheRowsIsIgnored(t *testing.T) {
+	s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateRunning))
+	s.settle()
+	before, ok := s.board.selected()
+	if !ok {
+		t.Fatal("fixture selected nothing")
+	}
+	box := s.lastBoxes[0]
+	firstRow := box.y + 2 + s.board.chromeLines()
+
+	// Well past two rows, still inside the panel.
+	for _, offset := range []int{2, 3, 5} {
+		s.update(tea.MouseClickMsg{X: 10, Y: firstRow + offset, Button: tea.MouseLeft})
+		s.render(120, 37)
+		if got, _ := s.board.selected(); got != before {
+			t.Fatalf("a click %d lines below the last row moved the selection to #%d", offset, got)
+		}
+	}
+	// The row above it still selects, so the bound is not simply "ignore".
+	s.update(tea.MouseClickMsg{X: 10, Y: firstRow + 1, Button: tea.MouseLeft})
+	s.render(120, 37)
+	if got, _ := s.board.selected(); got == before {
+		t.Fatal("clicking the second row selected nothing")
+	}
+}
+
 // TestShellWheelScrollsFocusedPanel: §15 — the wheel scrolls the focused
 // panel, not the hovered one.
 func TestShellWheelScrollsFocusedPanel(t *testing.T) {
@@ -220,7 +249,7 @@ func TestRootMouseToggle(t *testing.T) {
 		t.Fatalf("mouse mode = %v after M M, want cell motion again", v.MouseMode)
 	}
 	// The toggle is discoverable: a registry row, so palette and ? carry it.
-	if !strings.Contains(helpText(), "toggle the mouse") {
+	if !strings.Contains(helpText(ctxTasks), "toggle the mouse") {
 		t.Error("the mouse toggle is not in the help overlay")
 	}
 }

@@ -111,7 +111,7 @@ func (n *newTask) rowValue(row ntRow) string {
 		return firstNonEmpty(strings.TrimSpace(n.priority.Value()), "0") + "  " +
 			styleDim.Render("higher runs first · +/-")
 	case ntAgent:
-		return n.overrideSummary(n.agent)
+		return n.agentSummary()
 	case ntModel:
 		return n.overrideSummary(n.model)
 	case ntEffort:
@@ -156,11 +156,60 @@ func (n *newTask) descriptionSummary() string {
 
 // overrideSummary states plainly that an unset override means the workflow
 // decides — the one thing §8.6 confusion turns into a wrong agent.
+//
+// Model and effort stop at that: the registry reports each step's agent
+// (§8.6 levels 1 and 3) but not its model or effort, so naming those would
+// mean guessing. T4.7 is the task that exposes the resolution properly.
 func (n *newTask) overrideSummary(v string) string {
 	if v == "" {
 		return styleDim.Render("(workflow default)")
 	}
 	return v
+}
+
+// agentSummary names what "(workflow default)" actually means for the
+// selected workflow, which is the T3.8 finding: an unnamed default is a
+// spend decision nobody can review. The agents come from the registry's own
+// per-step report, not from the TUI re-implementing §8.6 — steps that name
+// none resolve to the adapter default, which the API cannot report and this
+// says so rather than inventing a name.
+func (n *newTask) agentSummary() string {
+	if n.agent != "" {
+		return n.agent
+	}
+	return styleDim.Render("(workflow default" + n.workflowAgents() + ")")
+}
+
+// workflowAgents renders the distinct agents the selected workflow's agent
+// steps name, in step order: " → claude", " → claude, codex" when they
+// differ, " → adapter default" when none does, and nothing at all when no
+// workflow is picked yet.
+func (n *newTask) workflowAgents() string {
+	e := n.workflowEntry(n.workflow)
+	if e == nil {
+		return ""
+	}
+	var names []string
+	adapterDefault := false
+	for _, s := range e.Steps {
+		if s.Type != "agent" {
+			continue
+		}
+		if s.Agent == "" {
+			adapterDefault = true
+			continue
+		}
+		if !contains(names, s.Agent) {
+			names = append(names, s.Agent)
+		}
+	}
+	if adapterDefault {
+		names = append(names, "adapter default")
+	}
+	if len(names) == 0 {
+		return "" // a workflow with no agent steps: the override is moot
+	}
+	return " → " + strings.Join(names, ", ")
 }
 
 // renderExpansion draws whatever the focused row opened underneath it.

@@ -252,14 +252,18 @@ func TestViewRoutingAndHelp(t *testing.T) {
 
 	m.Update(key("?"))
 	help := content(m)
-	if !strings.Contains(help, "Global keys") {
+	if !strings.Contains(help, "GLOBAL KEYS") {
 		t.Errorf("help overlay missing after ?: %q", help)
 	}
-	// The board's keys are documented as they land (T3.2).
-	for _, k := range []string{"open the selected task", "filter by id"} {
+	// The sheet is contextual (T3.8): on the home screen it carries the
+	// focused panel's keys, and its own key row replaces the footer's.
+	for _, k := range []string{"open the selected task", "filter by id", "esc"} {
 		if !strings.Contains(help, k) {
 			t.Errorf("help overlay lacks %q: %q", k, help)
 		}
+	}
+	if strings.Contains(help, "register a repository") {
+		t.Errorf("help overlay carries another surface's keys: %q", help)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if strings.Contains(content(m), "toggle this help") {
