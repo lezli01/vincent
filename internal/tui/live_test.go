@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -86,6 +88,7 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 	}
 
 	m := newRoot(testCtx(t), cn, ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
 		t.Fatalf("probe = %T, want connectedMsg", msg)
@@ -98,14 +101,18 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 	p2 := newPump(t, m, cmd)
 	p2.until(10*time.Second, "the event stream to go live", func() bool { return m.streamLive })
 
-	// The externally-made change: another client appends a durable event
-	// through the store hook, exactly like the runner would.
-	ev := &store.Event{Type: store.EventTaskStateChanged, TaskID: &task.ID, ProjectID: &p.ID}
-	if err := st.AppendEvent(ctx, ev); err != nil {
-		t.Fatalf("AppendEvent: %v", err)
+	// The board rendered the task from its initial load; prove the *event*
+	// path by changing state behind the TUI's back and watching the row
+	// re-render — the refresh is event-driven, never polled (§13.3).
+	p2.until(15*time.Second, "the initial board load", func() bool {
+		return strings.Contains(content(m), "queued")
+	})
+	if _, _, err := st.TransitionTask(ctx, task.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("TransitionTask: %v", err)
 	}
 
-	p2.until(15*time.Second, "the external event to render", func() bool {
-		return strings.Contains(content(m), store.EventTaskStateChanged)
+	p2.until(15*time.Second, "the external state change to render", func() bool {
+		return strings.Contains(content(m), "running")
 	})
 }

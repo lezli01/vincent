@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 10/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 11/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **35/44** | |
+| **Total** | | **36/44** | |
 
 ---
 
@@ -517,8 +517,18 @@ superseded in layout and routing by T3.10–T3.13.
 - [x] **T3.11 — Command palette; `1..6` retired.** ✓ 2026-08-10 `bindings.go` registry (key, label, scope, priority) as the single source for palette, footer and `?`. `:` opens a searchable list of valid task actions + navigation to the four takeover screens + panel-local commands, each showing its direct key; invalid task actions omitted. `esc` stack, panel-local `/`, `tab`-commits-filter. Jump-to-next-attention key. *Depends:* T3.10.
   *Done when:* `1..6` is gone and every takeover screen is reachable from `:`; a test asserts every registry entry is reachable from the palette; the `?` overlay renders from the registry, not a literal list.
   *2026-08-10:* landed per the PR Q decisions above; `TestPaletteReachesEveryRegistryEntry` is the reachability sweep.
-- [ ] **T3.12 — Contextual footer.** Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
+**PR R decisions (T3.12; grill session, 2026-08-10):**
+
+- *Confirmations and statuses live in the footer.* The task text says "generalize `actionbar` into the footer", and that includes everything the bar carried: a pending y/n replaces the footer's left segments outright — it owns the keyboard anyway, and the pinned chrome survives it — while result statuses ride after the action hints and are the first thing left-truncation eats. Relocating confirms to a popup was considered and rejected: more motion for a y/n question, and a second popup layer to stack esc through.
+- *The event line is removed.* T3.1 needed visible proof that external events reach the TUI; the live panels are that proof now. §15's layout sketch has no such row, stream liveness is already the connection badge and the stale banner's job, and every layout — the 80×20 floor included — gains a content row. The T3.1 live tests keep their teeth by asserting the event-driven board refresh renders the row itself, which is a stronger claim than echoing the event id.
+- *One `actionBar`, owned by the shell.* PR P accepted two bars as interim; the footer is where they merge. Board and detail share the shell's instance (their standalone constructors keep private ones so unit tests stand alone), so a confirmation started from any panel is the same pending question wherever the eye lands.
+- *The registry grows a short `hint` per footer-worthy row.* The palette and `?` read the long labels; a one-line footer cannot. Rows without a hint stay out of the footer; priority orders the five that fit.
+- *The chrome shrinks by two rows* (event line, the shell's interim bar line): `shellChromeH` drops from 4 to 2 and the §15 floors stay stated in terminal cells — the layout tests shift automatically because they are written against the derived constants.
+- *Truncation is literal §15:* the composed left content is cut from the left with a leading `…` when the pinned segment would not fit; the pinned `: commands  ? help  q quit` is never touched. `r retry` joins the left content while the connection is down, and the `!` hint carries its count and exists only when that count is non-zero.
+
+- [x] **T3.12 — Contextual footer.** ✓ 2026-08-10 Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
   *Done when:* narrow-terminal tests assert the pinned segment survives and the line never wraps.
+  *2026-08-10:* landed per the PR R decisions above; the event line is gone and the T3.1 live proofs now assert the event-driven refresh renders the change itself.
 - [ ] **T3.13 — Mouse.** Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
   *Done when:* `hitTest` is table-tested; `MouseClickMsg` tests assert focus and selection changes; `m3-gate.md`'s sweep carries the new items.
 

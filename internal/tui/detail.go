@@ -46,9 +46,12 @@ const (
 
 // Detail messages.
 type (
-	// detailLoadedMsg carries a completed task fetch.
+	// detailLoadedMsg carries a completed task fetch. seq orders concurrent
+	// fetches — an older response landing late must not clobber a newer one
+	// (zero = untracked, for tests that build the message directly).
 	detailLoadedMsg struct {
 		id   int64
+		seq  uint64
 		task apiclient.TaskDetail
 		err  error
 	}
@@ -99,9 +102,10 @@ type detail struct {
 	tab         detailTab
 	active      bool
 
-	// actions is the §6 action bar; form is the §7.4 answer form, present
-	// exactly while the task is parked on a request.
-	actions actionBar
+	// actions is the §6 action bar — the shell's shared instance, rendered
+	// by the footer (T3.12); form is the §7.4 answer form, present exactly
+	// while the task is parked on a request.
+	actions *actionBar
 	form    *answerForm
 	diff    diffPane
 	// exec runs $EDITOR for edit+retry, injected so the path is testable
@@ -139,7 +143,11 @@ type detail struct {
 	openStream func(ctx context.Context, id int64, opts apiclient.StreamOptions) <-chan apiclient.Note
 
 	refreshPending bool
-	width, height  int
+	// loadSeq stamps outgoing fetches; appliedSeq is the newest installed.
+	loadSeq    uint64
+	appliedSeq uint64
+
+	width, height int
 }
 
 func newDetail(ctx context.Context) *detail {
@@ -148,6 +156,7 @@ func newDetail(ctx context.Context) *detail {
 		now:       time.Now,
 		vp:        viewport.New(),
 		following: true,
+		actions:   &actionBar{},
 		diff:      newDiffPane(),
 		exec:      tea.ExecProcess,
 	}
@@ -287,11 +296,13 @@ func (d *detail) loadCmd() tea.Cmd {
 	if client == nil || id == 0 {
 		return nil
 	}
+	d.loadSeq++
+	seq := d.loadSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		task, err := client.GetTask(ctx, id)
-		return detailLoadedMsg{id: id, task: task, err: err}
+		return detailLoadedMsg{id: id, seq: seq, task: task, err: err}
 	}
 }
 
@@ -313,6 +324,9 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	if msg.id != d.taskID {
 		return nil // a fetch for a task the view has already left
 	}
+	if msg.seq != 0 && msg.seq <= d.appliedSeq {
+		return nil // a slower, older fetch landing after a newer one
+	}
 	if msg.err != nil {
 		// Keep what is on screen: a failed refresh is not a lost connection,
 		// and blanking a running task's timeline over one 500 destroys the
@@ -327,6 +341,7 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	d.loadErr = nil
 	d.loaded = true
 	d.task = msg.task
+	d.appliedSeq = msg.seq
 	d.syncForm()
 
 	runs := d.attempts()

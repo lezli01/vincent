@@ -23,9 +23,9 @@ type box struct {
 // §15 states its floors in terminal cells: below 80×20 the shell drops to
 // single-panel mode, below 60×15 it renders only the size line. layout is
 // given the *panel area* — the terminal minus the shell's fixed chrome
-// (header, event line, footer, action-bar line: shellChromeH lines) — so the
-// height floors here are the §15 terminal floors shifted by that chrome.
-// Width has no chrome, so the width floors are §15's verbatim.
+// (the root's header and footer: shellChromeH lines) — so the height floors
+// here are the §15 terminal floors shifted by that chrome. Width has no
+// chrome, so the width floors are §15's verbatim.
 const (
 	minTermW = 60
 	minTermH = 15
@@ -33,8 +33,8 @@ const (
 	minShellW = 80
 	minShellH = 20
 
-	// shellChromeH is what the shell and root draw around the panel area.
-	shellChromeH = 4
+	// shellChromeH is what the root draws around the panel area.
+	shellChromeH = 2
 
 	minAreaH3 = minShellH - shellChromeH // three-pane floor
 	minAreaH1 = minTermH - shellChromeH  // single-panel floor

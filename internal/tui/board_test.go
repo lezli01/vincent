@@ -428,6 +428,31 @@ func TestSelectionTracksTaskIDAcrossResort(t *testing.T) {
 // Enter moved to the shell in T3.10: opening the row under the cursor is
 // the fused screen's job (shell_test.go), not a message the board emits.
 
+// TestBoardIgnoresStaleLoads: commands run on their own goroutines, so an
+// older ListTasks response can land after a newer one. It must not drag the
+// board backwards — found as a Windows CI flake where a row reverted from
+// running 2/3 to queued 1/3.
+func TestBoardIgnoresStaleLoads(t *testing.T) {
+	b := testBoard()
+	b.client = apiclient.New("http://127.0.0.1:1", "token")
+	first := b.loadCmd()  // seq 1
+	second := b.loadCmd() // seq 2
+	if first == nil || second == nil {
+		t.Fatal("loadCmd returned nil with a client set")
+	}
+
+	b.updateLoaded(boardLoadedMsg{seq: 2, tasks: []apiclient.Task{task(1, stateRunning)}})
+	b.updateLoaded(boardLoadedMsg{seq: 1, tasks: []apiclient.Task{task(1, stateQueued)}})
+	if b.tasks[0].State != stateRunning {
+		t.Fatalf("state = %s; a stale fetch clobbered a newer one", b.tasks[0].State)
+	}
+	// The next real fetch still applies.
+	b.updateLoaded(boardLoadedMsg{seq: 3, tasks: []apiclient.Task{task(1, stateDone)}})
+	if b.tasks[0].State != stateDone {
+		t.Fatalf("state = %s, want the newer fetch applied", b.tasks[0].State)
+	}
+}
+
 func TestFilterCapturesKeys(t *testing.T) {
 	b := testBoard()
 	if b.capturesInput() {
