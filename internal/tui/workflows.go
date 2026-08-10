@@ -163,7 +163,7 @@ func (w *workflowsView) scheduleRefresh() tea.Cmd {
 	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return workflowsRefreshMsg{} })
 }
 
-func (w *workflowsView) update(msg tea.Msg) (view, tea.Cmd) {
+func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		w.width, w.height = msg.Width, msg.Height
@@ -242,7 +242,7 @@ func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 	return nil
 }
 
-func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		w.moveCursor(-1)

@@ -47,9 +47,9 @@ type (
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg time.Time
-	// selectTaskMsg asks the shell to open a task. The board does not route
-	// itself: the root owns view routing, and PR J's detail view receives
-	// this same message unchanged.
+	// selectTaskMsg asks the home shell to select a task in the table and
+	// open it in the detail panels immediately — the explicit path, used by
+	// task creation. Cursor movement goes through the settle window instead.
 	selectTaskMsg struct{ id int64 }
 )
 
@@ -187,7 +187,7 @@ func (b *board) scheduleRefresh() tea.Cmd {
 	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return boardRefreshMsg{} })
 }
 
-func (b *board) update(msg tea.Msg) (view, tea.Cmd) {
+func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = msg.Width, msg.Height
@@ -310,7 +310,7 @@ func (b *board) ringsFor(ev apiclient.Event) bool {
 	return true
 }
 
-func (b *board) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if b.filtering {
 		switch msg.String() {
 		case "esc":
@@ -342,11 +342,6 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 	case "esc":
 		if b.filter.Value() != "" {
 			b.filter.SetValue("")
-		}
-		return b, nil
-	case "enter":
-		if id, ok := b.selected(); ok {
-			return b, func() tea.Msg { return selectTaskMsg{id: id} }
 		}
 		return b, nil
 	}
@@ -446,12 +441,25 @@ func (b *board) render(width, height int) string {
 	}
 
 	cols, set := boardColumns(b.width)
+	// SetColumns re-renders the rows it already holds: when a resize crosses
+	// a column breakpoint, yesterday's wider rows meet today's narrower
+	// column set and the table indexes out of range. Clear the rows first —
+	// the real ones are set right back.
+	if len(cols) != len(b.tbl.Columns()) {
+		b.tbl.SetRows(nil)
+	}
 	b.tbl.SetColumns(cols)
 	b.tbl.SetRows(b.rowsFor(rows, set))
 	b.tbl.SetWidth(b.width)
 	// Two lines of chrome above, plus the filter line when it is showing.
 	b.tbl.SetHeight(max(3, b.height-b.chromeLines()))
 	b.restoreSelection(rows)
+	// Passing through an empty row set (the breakpoint clear above, or a
+	// board that emptied and refilled) parks the cursor at -1; with rows on
+	// screen the cursor belongs on one.
+	if b.tbl.Cursor() < 0 && len(rows) > 0 {
+		b.tbl.SetCursor(0)
+	}
 	sb.WriteString(b.tbl.View())
 	sb.WriteString("\n")
 	sb.WriteString(b.actionLine())
@@ -468,7 +476,7 @@ func (b *board) actionLine() string {
 	}
 	var extra []string
 	if t.has(apiclient.ActionAnswer) {
-		extra = append(extra, styleAsk.Render("enter → answer in the detail view"))
+		extra = append(extra, styleAsk.Render("enter → answer"))
 	}
 	return b.actions.render(t, extra...)
 }

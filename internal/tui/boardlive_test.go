@@ -231,14 +231,15 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 		t.Fatal("enter on the board produced no command")
 	}
 	h.p.push(cmd)
-	h.p.until(5*time.Second, "the detail view to open", func() bool {
-		return h.m.active == viewDetail
-	})
-	if h.m.selectedTask != task.ID {
-		t.Errorf("selected task = %d, want %d", h.m.selectedTask, task.ID)
+	s := h.m.views[viewHome].(*shell)
+	if s.focus != panelTimeline {
+		t.Fatalf("focus = %v, want the timeline panel after enter", s.focus)
 	}
-	// The detail view fetches on activation, so the header naming the task is
-	// also proof the hand-off reached a view with a working client.
+	if s.detail.taskID != task.ID {
+		t.Fatalf("detail task = %d, want %d", s.detail.taskID, task.ID)
+	}
+	// The open fetches immediately, so the header naming the task is also
+	// proof the hand-off reached a sub-model with a working client.
 	want := "#" + strconv.FormatInt(task.ID, 10) + " openable task"
 	h.p.until(10*time.Second, "the detail header to render", func() bool {
 		return strings.Contains(content(h.m), want)

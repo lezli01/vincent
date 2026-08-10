@@ -26,15 +26,14 @@ const (
 	detailRefreshDebounce = 150 * time.Millisecond
 )
 
-// detailFocus is which pane the keyboard drives.
+// detailFocus is which pane the keyboard drives. The shell maps its panel
+// focus onto it; the answer form is a popup the shell owns (T3.10), not a
+// focus target.
 type detailFocus int
 
 const (
 	focusTimeline detailFocus = iota
 	focusOutput
-	// focusForm exists only while a task is awaiting_input; tab cycles into
-	// it and back out again.
-	focusForm
 )
 
 // detailTab is which pane the lower half shows.
@@ -70,8 +69,8 @@ type (
 	// taskStreamDoneMsg reports the per-task note channel closed.
 	taskStreamDoneMsg struct{}
 	// viewActivatedMsg and viewDeactivatedMsg tell a view it came on or off
-	// screen. The detail view holds a live subscription and must not keep it
-	// open for a task nobody is watching.
+	// screen. The shell translates them for the detail sub-model, whose live
+	// subscription must not stay open for a task nobody is watching.
 	viewActivatedMsg   struct{ id viewID }
 	viewDeactivatedMsg struct{ id viewID }
 )
@@ -88,6 +87,10 @@ type detail struct {
 	task    apiclient.TaskDetail
 	loaded  bool
 	loadErr error
+	// stateHint is the board row's state at open time: it decides whether
+	// the subscription opens before the authoritative fetch lands (§13.3 —
+	// only a running task has live output worth a stream).
+	stateHint string
 
 	// selectedRun tracks the attempt under the cursor by id, so a refresh
 	// that adds or reorders rows cannot silently select a different one.
@@ -130,6 +133,10 @@ type detail struct {
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
 	streamID   int64
+	// openStream opens the per-task stream; injected so tests can count
+	// subscriptions without a server (T3.10 done-when: holding `down`
+	// across the table opens one, not one per row).
+	openStream func(ctx context.Context, id int64, opts apiclient.StreamOptions) <-chan apiclient.Note
 
 	refreshPending bool
 	width, height  int
@@ -146,74 +153,59 @@ func newDetail(ctx context.Context) *detail {
 	}
 }
 
-func (d *detail) title() string { return "Task detail" }
-
 // setClient wires the view to a connected daemon. Called again on reconnect,
 // which is when a fresh load and a fresh subscription are exactly right.
 func (d *detail) setClient(c *apiclient.Client) tea.Cmd {
 	d.client = c
+	d.openStream = c.StreamTask
 	if d.taskID == 0 {
 		return nil
 	}
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
 
-func (d *detail) update(msg tea.Msg) (view, tea.Cmd) {
+func (d *detail) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		d.width, d.height = msg.Width, msg.Height
-		return d, nil
-	case selectTaskMsg:
-		return d, d.open(msg.id)
-	case viewActivatedMsg:
-		if msg.id == viewDetail {
-			d.active = true
-			return d, tea.Batch(d.loadCmd(), d.syncStream())
-		}
-		return d, nil
-	case viewDeactivatedMsg:
-		if msg.id == viewDetail {
-			d.active = false
-			return d, d.syncStream()
-		}
-		return d, nil
+		return nil
 	case detailLoadedMsg:
-		return d, d.applyLoaded(msg)
+		return d.applyLoaded(msg)
 	case taskCreatedMsg:
 		// The 201's advisory findings — a catalog-unknown model, say. The
 		// task exists and will run, so this is a status line, not an error.
 		if len(msg.task.Warnings) > 0 {
 			d.actions.setStatus("created with warnings: "+strings.Join(msg.task.Warnings, "; "), false)
 		}
-		return d, nil
+		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
-		return d, nil
+		return nil
 	case detailRefreshMsg:
 		if msg.id != d.taskID {
-			return d, nil
+			return nil
 		}
 		d.refreshPending = false
-		return d, d.loadCmd()
+		return d.loadCmd()
 	case noteMsg:
 		// The global stream drives refreshes; the per-task stream is for live
 		// output. One refresh trigger, not two.
-		return d, d.updateGlobalNote(msg.note)
+		return d.updateGlobalNote(msg.note)
 	case taskNoteMsg:
-		return d, d.updateTaskNote(msg)
+		return d.updateTaskNote(msg)
 	case taskStreamDoneMsg:
-		return d, nil
+		return nil
 	case diffLoadedMsg:
 		d.diff.apply(msg)
-		return d, nil
+		return nil
 	case actionResultMsg:
-		return d, d.applyAction(msg)
+		return d.applyAction(msg)
 	case editRetryMsg:
-		return d, d.applyEdit(msg)
+		return d.applyEdit(msg)
 	case tea.KeyPressMsg:
 		return d.updateKey(msg)
 	}
-	return d, nil
+	return nil
 }
 
 // applyAction records what an action did and refetches: the response already
@@ -234,12 +226,15 @@ func (d *detail) applyAction(msg actionResultMsg) tea.Cmd {
 	return d.loadCmd()
 }
 
-// open switches the view to a task, discarding everything about the last one.
-func (d *detail) open(id int64) tea.Cmd {
+// open switches the view to a task, discarding everything about the last
+// one. stateHint is the board row's state, deciding whether the stream
+// opens before the fetch confirms the task is running.
+func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	if id == d.taskID {
 		return nil
 	}
 	d.taskID = id
+	d.stateHint = stateHint
 	d.task = apiclient.TaskDetail{}
 	d.loaded, d.loadErr = false, nil
 	d.selectedRun, d.displayRun = 0, 0
@@ -251,6 +246,23 @@ func (d *detail) open(id int64) tea.Cmd {
 	d.form = nil
 	d.diff.open(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
+}
+
+// deselect drops the task without opening another: the table cursor moved
+// and the settle window is still open. The subscription is torn down here,
+// immediately — an explicit unsubscribe on move (PR P decision) — while any
+// new subscription waits for the settle.
+func (d *detail) deselect() {
+	d.taskID = 0
+	d.stateHint = ""
+	d.task = apiclient.TaskDetail{}
+	d.loaded, d.loadErr = false, nil
+	d.selectedRun, d.displayRun = 0, 0
+	d.resetOutput()
+	d.buffer = nil
+	d.actions.clear()
+	d.form = nil
+	d.syncStream()
 }
 
 // resetOutput clears the pane for a different attempt. It deliberately keeps
@@ -320,12 +332,24 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	runs := d.attempts()
 	if len(runs) == 0 {
 		d.selectedRun = 0
-		return nil
+		// The authoritative state may disagree with the hint the open used —
+		// a task that stopped running drops its stream, one that started
+		// gains it.
+		return d.syncStream()
 	}
 	if wasLive || d.runIndex(d.selectedRun) < 0 {
 		d.selectedRun = runs[len(runs)-1].ID
 	}
-	return d.syncOutput()
+	return tea.Batch(d.syncOutput(), d.syncStream())
+}
+
+// running reports whether the task has live output worth a stream: the
+// loaded state when there is one, the board row's hint before that.
+func (d *detail) running() bool {
+	if d.loaded {
+		return d.task.State == stateRunning
+	}
+	return d.stateHint == stateRunning
 }
 
 // syncForm keeps the answer form in step with the task: it exists exactly
@@ -334,20 +358,16 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 func (d *detail) syncForm() {
 	req, ok, err := d.task.PendingRequest()
 	if err != nil || !ok {
-		if d.form != nil {
-			d.form = nil
-			if d.focus == focusForm {
-				d.focus = focusTimeline
-			}
-		}
+		d.form = nil
 		return
 	}
 	if d.form != nil && d.form.sameRequest(req) {
 		return
 	}
+	// The form exists as state; it renders as a popup the human opens. It
+	// never steals focus — auto-opening under a keystroke is how an answer
+	// gets lost (§15).
 	d.form = newAnswerForm(req)
-	// A task that stopped for you is the reason you are looking at it.
-	d.focus = focusForm
 }
 
 // syncOutput makes the output pane match the selected attempt, fetching its
@@ -510,10 +530,13 @@ func (d *detail) hold(n apiclient.OutputNote) {
 }
 
 // syncStream opens or closes the per-task subscription so it exists exactly
-// while this view is on screen with a task.
+// while this sub-model is on screen with a *running* task — a finished or
+// parked task has no live output, and its transcript is the durable copy
+// (§13.3). The running-only rule plus the shell's settle window is what
+// keeps a cursor sweep from opening a stream per row.
 func (d *detail) syncStream() tea.Cmd {
 	want := int64(0)
-	if d.active && d.client != nil {
+	if d.active && d.openStream != nil && d.running() {
 		want = d.taskID
 	}
 	if want == d.streamID {
@@ -529,7 +552,7 @@ func (d *detail) syncStream() tea.Cmd {
 	ctx, cancel := context.WithCancel(d.ctx)
 	d.stopStream = cancel
 	d.streamID = want
-	d.notes = d.client.StreamTask(ctx, want, apiclient.StreamOptions{})
+	d.notes = d.openStream(ctx, want, apiclient.StreamOptions{})
 	return waitTaskNote(d.notes, want)
 }
 
@@ -547,59 +570,45 @@ func waitTaskNote(ch <-chan apiclient.Note, taskID int64) tea.Cmd {
 	}
 }
 
-func (d *detail) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
-	// A pending confirmation is a question; the form is a text surface. Both
-	// own the keyboard until they are done with it.
+func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	// A pending confirmation is a question: it owns the keyboard until it is
+	// answered. (The answer form is a popup the shell routes to before the
+	// key ever reaches here.)
 	if d.actions.capturing() {
 		cmd, _ := d.actions.handleKey(msg.String(), d.client, d.target())
-		return d, cmd
-	}
-	if d.focus == focusForm && d.form != nil {
-		cmd, exit := d.form.update(msg, d.client, d.taskID)
-		if exit {
-			d.focus = focusTimeline
-		}
-		return d, cmd
+		return cmd
 	}
 
 	switch msg.String() {
-	case "tab":
-		d.cycleFocus(1)
-		return d, nil
-	case "shift+tab":
-		d.cycleFocus(-1)
-		return d, nil
 	case "d":
-		return d, d.toggleTab()
+		return d.toggleTab()
 	case "E":
 		if d.target().has(apiclient.ActionRetry) {
-			return d, d.editRetry()
+			return d.editRetry()
 		}
-		return d, nil
+		return nil
 	case "f":
 		d.setFollowing(true)
-		return d, nil
-	case "esc":
-		return d, func() tea.Msg { return selectViewMsg{id: viewBoard} }
+		return nil
 	}
 
 	// Action keys work from any focus: they act on the task, not on a pane.
 	if cmd, handled := d.actions.handleKey(msg.String(), d.client, d.target()); handled {
-		return d, cmd
+		return cmd
 	}
 
 	if d.tab == tabDiff && d.focus == focusOutput {
-		return d, d.diff.update(msg)
+		return d.diff.update(msg)
 	}
 
 	if d.focus == focusTimeline {
 		switch msg.String() {
 		case "up", "k":
-			return d, d.moveSelection(-1)
+			return d.moveSelection(-1)
 		case "down", "j":
-			return d, d.moveSelection(1)
+			return d.moveSelection(1)
 		}
-		return d, nil
+		return nil
 	}
 
 	// Output pane: scrolling away from the bottom drops follow, and coming
@@ -607,7 +616,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 	switch msg.String() {
 	case "G", "end":
 		d.setFollowing(true)
-		return d, nil
+		return nil
 	case "j", "down":
 		d.vp.ScrollDown(1)
 	case "k", "up":
@@ -616,10 +625,10 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
 		var cmd tea.Cmd
 		d.vp, cmd = d.vp.Update(msg)
 		d.syncFollowToViewport()
-		return d, cmd
+		return cmd
 	}
 	d.syncFollowToViewport()
-	return d, nil
+	return nil
 }
 
 func (d *detail) setFollowing(on bool) {
@@ -690,36 +699,16 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 	return apiclient.StepRun{}
 }
 
-// capturesInput reports whether the view is consuming raw keystrokes: the
-// answer form's text entry, and a y/n confirmation. Neither may lose a key to
-// the shell's global bindings — typing "q" into an answer must not quit.
+// capturesInput reports whether the sub-model is consuming raw keystrokes:
+// a y/n confirmation. (The answer form's text entry is captured by the
+// shell's popup routing before keys reach here.)
 func (d *detail) capturesInput() bool {
-	if d.actions.capturing() {
-		return true
-	}
-	return d.form != nil && d.form.capturing()
+	return d.actions.capturing()
 }
 
 // target is the slice of the task the action bar works from.
 func (d *detail) target() taskActions {
 	return taskActions{id: d.taskID, state: d.task.State, actions: d.task.AvailableActions}
-}
-
-// cycleFocus walks timeline → pane → form and back, skipping the form when
-// no request is pending.
-func (d *detail) cycleFocus(delta int) {
-	order := []detailFocus{focusTimeline, focusOutput}
-	if d.form != nil {
-		order = append(order, focusForm)
-	}
-	at := 0
-	for i, f := range order {
-		if f == d.focus {
-			at = i
-		}
-	}
-	next := (at + delta + len(order)) % len(order)
-	d.focus = order[next]
 }
 
 // toggleTab switches the lower pane between output and diff. Opening the diff
@@ -732,9 +721,6 @@ func (d *detail) toggleTab() tea.Cmd {
 		return nil
 	}
 	d.tab = tabDiff
-	if d.focus == focusForm {
-		d.focus = focusOutput
-	}
 	d.diff.open(d.taskID)
 	return d.diff.fetch(d.client, true)
 }

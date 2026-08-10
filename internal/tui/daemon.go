@@ -164,7 +164,7 @@ func (d *daemonView) refreshCmd() tea.Cmd {
 	return tea.Batch(d.infoCmd(), d.configCmd(), d.logCmd())
 }
 
-func (d *daemonView) update(msg tea.Msg) (view, tea.Cmd) {
+func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		d.width, d.height = msg.Width, msg.Height
@@ -240,7 +240,7 @@ func (d *daemonView) applyLog(msg daemonLogMsg) {
 	d.logDirty = true
 }
 
-func (d *daemonView) updateKey(msg tea.KeyPressMsg) (view, tea.Cmd) {
+func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "R":
 		return d, d.refreshCmd()

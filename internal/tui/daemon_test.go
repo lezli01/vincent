@@ -267,11 +267,11 @@ func TestDaemonViewTickerStopsWhenTheViewGoesOffScreen(t *testing.T) {
 // Another view's activation is not this view's.
 func TestDaemonViewIgnoresAnotherViewsActivation(t *testing.T) {
 	d := newTestDaemonView(nil, nil)
-	if _, cmd := d.update(viewActivatedMsg{id: viewBoard}); cmd != nil {
-		t.Error("the board's activation started the daemon view")
+	if _, cmd := d.update(viewActivatedMsg{id: viewHome}); cmd != nil {
+		t.Error("the home screen's activation started the daemon view")
 	}
 	if d.visible {
-		t.Error("the board's activation marked the daemon view visible")
+		t.Error("the home screen's activation marked the daemon view visible")
 	}
 }
 

@@ -65,7 +65,7 @@ type root struct {
 	streamLive bool
 
 	active viewID
-	views  [viewCount]view
+	views  [viewCount]panel
 	help   bool
 	// notice is §16's full-auto warning. It owns the whole screen until it
 	// is dismissed, ahead of and independent of the connect flow: the
@@ -129,13 +129,12 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
 	case selectTaskMsg:
-		// A view asked to open a task. Routing is the shell's job, so the
-		// board never reaches into the view table itself.
+		// A caller asked to open a task explicitly — task creation, and the
+		// live tests. The home shell selects the row and opens the detail
+		// panels without waiting out a settle window.
 		m.selectedTask = msg.id
-		// The detail view must have the task before it is told it is on
-		// screen: activation is what opens its per-task subscription.
-		cmd := m.deliver(viewDetail, msg)
-		return m, tea.Batch(cmd, m.switchTo(viewDetail))
+		cmd := m.deliver(viewHome, msg)
+		return m, tea.Batch(cmd, m.switchTo(viewHome))
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
 	case taskCreatedMsg:
@@ -186,8 +185,17 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 			return m, nil
 		}
-	case "1", "2", "3", "4", "5", "6":
-		return m, m.switchTo(viewID(key[0] - '1'))
+	case "1", "2":
+		// Board and detail are one screen now; the digits keep their §15
+		// meanings until T3.11 retires them, so 2 lands focused on the
+		// timeline.
+		cmds := []tea.Cmd{m.switchTo(viewHome)}
+		if key == "2" {
+			cmds = append(cmds, m.deliver(viewHome, focusPanelMsg{id: panelTimeline}))
+		}
+		return m, tea.Batch(cmds...)
+	case "3", "4", "5", "6":
+		return m, m.switchTo(viewID(key[0]-'3') + viewNewTask)
 	case "n":
 		// Not while the form is already up: there, n is "no" to the discard
 		// prompt, and re-opening would throw away the draft it is asking
@@ -237,9 +245,9 @@ func (m *root) openNewTask() tea.Cmd {
 func (m *root) updateTaskCreated(msg taskCreatedMsg) (tea.Model, tea.Cmd) {
 	m.selectedTask = msg.task.ID
 	cmds := []tea.Cmd{
-		m.deliver(viewDetail, selectTaskMsg{id: msg.task.ID}),
-		m.deliver(viewDetail, msg),
-		m.switchTo(viewDetail),
+		m.deliver(viewHome, selectTaskMsg{id: msg.task.ID}),
+		m.deliver(viewHome, msg),
+		m.switchTo(viewHome),
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -440,10 +448,18 @@ func (m *root) body() string {
 	}
 	// The daemon view is the exception to the connection gate (§15): its log
 	// tail comes off the filesystem, and a daemon that is down is exactly
-	// when that log is worth reading. Views 1-5 have nothing to show without
-	// the daemon and stay behind the screens below.
+	// when that log is worth reading.
 	if m.active == viewDaemon && m.phase != phaseConnected {
 		return m.views[viewDaemon].render(m.width, m.bodyHeight())
+	}
+	// The home panels stay on screen while the daemon is unreachable, marked
+	// stale behind the shell's banner (§15 Disconnected) — provided there was
+	// ever anything to show; before the first connection a stale empty board
+	// would be a lie, not information (PR P decision). The takeovers are
+	// forms against a live daemon and stay behind the screens below.
+	if m.active == viewHome && m.homeLoaded() &&
+		(m.phase == phaseReconnecting || m.phase == phaseFailed) {
+		return m.views[viewHome].render(m.width, m.bodyHeight())
 	}
 	switch m.phase {
 	case phaseProbing:
@@ -472,11 +488,11 @@ func (m *root) body() string {
 // tasks running" from a TUI that never reached the daemon is a false
 // statement, not a reassuring one.
 func (m *root) quitReminder() (string, bool) {
-	b, ok := m.views[viewBoard].(*board)
-	if !ok || !b.loaded {
+	s, ok := m.views[viewHome].(*shell)
+	if !ok || !s.board.loaded {
 		return "", false
 	}
-	n := countRunning(b.tasks)
+	n := countRunning(s.board.tasks)
 	if n == 0 {
 		return "", false
 	}
@@ -488,8 +504,16 @@ func (m *root) quitReminder() (string, bool) {
 		n, noun), true
 }
 
+// homeLoaded reports whether the home shell ever loaded a task list — the
+// difference between "stale panels are information" and "there is nothing
+// to mark stale".
+func (m *root) homeLoaded() bool {
+	s, ok := m.views[viewHome].(*shell)
+	return ok && s.board.loaded
+}
+
 func (m *root) footerLine() string {
-	hints := " 1-6 views · n new task · ? help · q quit"
+	hints := " tab panels · 1-6 views · n new task · ? help · q quit"
 	if m.phase == phaseFailed || m.phase == phaseReconnecting {
 		hints += " · r retry"
 	}
