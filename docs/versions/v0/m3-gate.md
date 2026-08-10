@@ -125,26 +125,54 @@ Section B: S1 … S18 — pass / fail / n-a
 
 Section A: L1 … L10 — **pass**. The §19 loop completed without leaving the TUI.
 
-Section B: S1 … S18 — **pass**, with one partial:
+Section B: S1 … S18 — **pass except S14, which failed.**
 
-- **S14 partial.** Mouse was judged in Windows Terminal + pwsh only. The second
-  Windows host the item names — Git Bash/mintty — was not walked, so the
-  mouse-reporting behaviour of a non-console host is still unobserved.
+- **S14 fail.** Clicking a task row selected a row **two above** the one clicked;
+  reaching a given task meant clicking two lines below it, and the top two rows
+  were unreachable entirely (the move clamps). Fixed in this PR — see the
+  findings table.
+- **S14 also partial in coverage.** Mouse was judged in Windows Terminal + pwsh
+  only. The second Windows host the item names — Git Bash/mintty — was not
+  walked, so a non-console host's mouse reporting is still unobserved.
 
 **Findings**
 
 | Item | What | Disposition |
 |---|---|---|
-| — | none | — |
+| S14 | Click-to-select landed two rows above the click. `shell.updateClick` skipped `board.chromeLines()` to find the first table row, but that is the table's *vertical budget* — it counts the action line and the shell's blank **below** the table as well as the header above it. The offset needed only the lines above. Split into `headerLines()` (what is drawn above the table) with `chromeLines()` now derived from it, so the two cannot drift apart again. | fixed in this PR |
+
+Why the existing tests did not catch it: `TestShellClickSelectsRow` and
+`TestShellClickBelowTheRowsIsIgnored` built their click coordinate from
+`chromeLines()` — the same expression `updateClick` subtracts — so the error
+cancelled itself and the assertions held against a broken screen. Both now use
+`headerLines()`, and a new `TestShellClickLandsOnTheRowUnderTheCursor` reads
+each row's position **off the rendered frame** and clicks there, which is the
+only formulation that could have failed. It fails by exactly two rows against
+the old code.
+
+This is the second defect in the same click path: the earlier unrecorded
+walkthrough found clicks below the last row selecting the last task. A mapping
+from pixels to rows has no natural test that does not restate it, which is why
+the new one asserts against rendered output instead.
 
 The nine findings from the unrecorded first Windows walkthrough (see T3.8 in
 `tasks.md`) were all fixed before this run, so this run judges the fixed build
 and they are not repeated here.
 
-**Verdict:** GATE PASS (Windows). Not yet a gate pass overall — the gate is
-Windows **and** one POSIX OS, and macOS has not been walked.
+**Verdict:** GATE PASS (Windows). S14 failed but did not block Section A — the
+§19 loop is keyboard-driven throughout — so under the grading rule it does not
+fail the gate. Not yet a gate pass overall: the gate is Windows **and** one
+POSIX OS, and macOS has not been walked.
 
-Two notes on the record itself:
+Three notes on the record itself:
+
+- **The S14 fix moves the build, and only S14 needs re-checking.** The grading
+  rule re-walks *both* OS runs only for a loop-blocking fix; this was not one.
+  The fix is also provably narrow: `chromeLines()` returns exactly what it
+  returned before (`headerLines() + 2`), so the table's height budget and every
+  rendered frame are unchanged — only the click offset moved. So the Windows
+  run above stands as recorded, with S14 to be re-checked on the fixed build,
+  and the macOS run judges the fixed commit.
 
 - The "both runs on the branch before it merges" rule in the header is no longer
   literally satisfiable: T3.9–T3.13 merged first, so this run judges `master` at

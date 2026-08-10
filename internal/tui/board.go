@@ -551,13 +551,21 @@ func (b *board) actionLine() string {
 	return b.actions.render(t, extra...)
 }
 
-func (b *board) chromeLines() int {
-	n := 3 // header + the action line + a blank the shell leaves
+// headerLines is what the board draws *above* the table: the header line,
+// plus the status line when there is one. This is the offset a click must
+// skip to reach the rows, and it is deliberately not chromeLines() — that
+// one is the table's vertical budget and also counts the two lines below.
+// Conflating them put clicks two rows above the row that was clicked (T3.8).
+func (b *board) headerLines() int {
 	if b.statusLine() != "" {
-		n++
+		return 2
 	}
-	return n
+	return 1
 }
+
+// chromeLines is the height the table does not get: what headerLines draws
+// above it, plus the action line and a blank the shell leaves below.
+func (b *board) chromeLines() int { return b.headerLines() + 2 }
 
 func (b *board) rowsFor(tasks []apiclient.Task, set columnSet) []table.Row {
 	now := b.now()

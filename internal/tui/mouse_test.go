@@ -5,9 +5,53 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
+
+// TestShellClickLandsOnTheRowUnderTheCursor reads the row's position off the
+// rendered frame instead of recomputing the offset the click path uses. The
+// T3.8 Windows walkthrough found clicks landing two rows above the row that
+// was clicked, and the earlier tests could not catch it: they built the click
+// coordinate from `chromeLines()` — the same expression `updateClick`
+// subtracts — so any offset error cancelled itself and the assertion held.
+// Here the only source of truth is where the title is actually drawn.
+func TestShellClickLandsOnTheRowUnderTheCursor(t *testing.T) {
+	titles := []string{"alpha", "bravo", "charlie", "delta"}
+	tasks := make([]apiclient.Task, 0, len(titles))
+	for i, title := range titles {
+		tk := task(int64(i+1), stateRunning)
+		tk.Title = title
+		tasks = append(tasks, tk)
+	}
+	s, _ := newShellFixture(t, tasks...)
+	s.settle()
+
+	for i, title := range titles {
+		frame := strings.Split(s.render(120, 37), "\n")
+		y := -1
+		for line, text := range frame {
+			if strings.Contains(ansi.Strip(text), title) {
+				y = line
+				break
+			}
+		}
+		if y < 0 {
+			t.Fatalf("%q is not on screen", title)
+		}
+		s.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
+		s.render(120, 37)
+
+		got, ok := s.board.selected()
+		if !ok {
+			t.Fatalf("clicking %q on line %d selected nothing", title, y)
+		}
+		if want := tasks[i].ID; got != want {
+			t.Errorf("clicking %q on line %d selected #%d, want #%d", title, y, got, want)
+		}
+	}
+}
 
 // TestHitTest is the T3.13 done-when: the pure half of click-to-focus,
 // table-tested against a real layout.
@@ -84,7 +128,7 @@ func TestShellClickSelectsRow(t *testing.T) {
 
 	// The third data row: box top border, board header, table header, then
 	// row 0, 1, 2…
-	y := s.lastBoxes[0].y + 2 + s.board.chromeLines() + 2
+	y := s.lastBoxes[0].y + 2 + s.board.headerLines() + 2
 	s.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
 	s.render(120, 37)
 
@@ -114,7 +158,7 @@ func TestShellClickBelowTheRowsIsIgnored(t *testing.T) {
 		t.Fatal("fixture selected nothing")
 	}
 	box := s.lastBoxes[0]
-	firstRow := box.y + 2 + s.board.chromeLines()
+	firstRow := box.y + 2 + s.board.headerLines()
 
 	// Well past two rows, still inside the panel.
 	for _, offset := range []int{2, 3, 5} {

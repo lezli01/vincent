@@ -364,10 +364,12 @@ func (s *shell) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	}
 	switch id {
 	case panelTasks:
-		// Inside the border sit the board's chrome lines, then the table's
+		// Inside the border sit the board's header lines, then the table's
 		// own column header, then the rows. A click above the rows just
-		// focuses.
-		line := y - b.y - 2 - s.board.chromeLines()
+		// focuses. This counts what is drawn *above* the table only —
+		// chromeLines() also counts the two lines below it, and using it
+		// here landed every click two rows high (T3.8).
+		line := y - b.y - 2 - s.board.headerLines()
 		if line >= 0 {
 			s.board.clickRow(line)
 		}
