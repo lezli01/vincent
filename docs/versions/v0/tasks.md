@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 7/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 9/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **32/44** | |
+| **Total** | | **34/44** | |
 
 ---
 
@@ -490,8 +490,19 @@ superseded in layout and routing by T3.10–T3.13.
 
 - [x] **T3.9 — Refactor spec & friction record (docs only).** ✓ 2026-08-09 Rewrite §15's layout and key prose for the three-pane panel shell (`:` palette, footer, `esc` stack, panel-local `/`, disconnected banner, terminal floors), keeping its numbered 1–6 list as the capability contract and leaving §19 untouched. Add `docs/versions/v0/tui-friction.md`, derived from the current binding surface (`internal/tui/help.go`, the `1..6` routing in `views.go`, `actionbar.go`'s task-scoped hints) — the outgoing UI is not walked.
   *Done when:* §15 describes the target UI with no stale key table; `tui-friction.md` lists concrete friction items, each phrased so T3.8 can re-check it.
-- [ ] **T3.10 — Panel shell; board and detail fused.** `panel` interface (renamed from `view`), `shell.go` owning layout/focus/accordion, `layout.go` as a pure `layout(w, h, focus) → []box`. Three panes (task table · timeline · output|diff tabs), focused-panel borders, single-panel mode below 80×20, explicit too-small below 60×15. Debounced running-task-only SSE subscription. `NO_COLOR` and 16-colour downgrade. *Depends:* T3.9.
+**PR P decisions (T3.10; grill session, 2026-08-10):**
+
+- *The answer form becomes the §15 popup in this PR, not later.* The fused layout has no inline slot — the form used to take half the output pane, and boxing that into a quarter-height panel is exactly the shape the refactor decisions called wrong for an interrupt. Building it inline now means building it twice. It opens on a human key press only — `enter` on an `awaiting_input` row — and `esc` closes it; it never auto-opens and never steals focus. The announce surfaces stay where they were planned (jump key T3.11, footer hint T3.12); until then the row badge and the bell are the announcement, which is what they already are today.
+- *The disconnected code lands here.* §15's amended "Disconnected" prose (T3.9) is implemented by the same PR that rewrites root's body rendering: `reconnecting`/`failed` with a loaded board renders the panels marked stale behind a banner with `r` to retry. The initial probe/start keeps the current connect screens — before the first connection there is no "last known task table", so a stale empty shell would be a lie, not information. Takeover screens keep the connection gate; the daemon view exception is unchanged.
+- *The task fetch rides the same settle as the subscribe.* The refactor decision pinned only the SSE subscription to a ~250ms settle; the `GetTask` + transcript fetch join it rather than firing per cursor move. One mechanism, one test, and a 20-row hold-down costs one fetch instead of twenty. Cursor move = immediate unsubscribe + placeholder; settle = fetch + subscribe iff the task is running.
+- *The accordion is vertical, between bands.* "Collapse to title + one line" applies to the unfocused band, not to the timeline/output pair individually: collapsing the output while navigating the timeline would defeat the reason they sit side by side — selecting an attempt *is* how scrollback is navigated (§15). Focus on tasks → the bottom band is two title+line strips; focus below → the tasks panel sits on its 5-row floor and the band keeps its 40/60 split.
+- *`detail` stays one sub-model rendering two boxes* (timeline, output|diff). Splitting it into two models would divorce the timeline cursor from the transcript state it drives, for no testing gain; the shell's focus maps onto its internal focus.
+- *Two action lines is the accepted interim.* Action keys route to the focused panel's bar — board's inside the tasks panel, detail's below the band — both gated on the same `available_actions` for the same selected task. T3.12's footer is the PR that unifies them; dragging that work forward would make this PR two PRs.
+- *`1`/`2` collapse onto the fused screen* (`2` focusing the timeline) and `3..6` keep their meanings until T3.11 retires the digits — capability parity during the interim, no new keys born early.
+
+- [x] **T3.10 — Panel shell; board and detail fused.** ✓ 2026-08-10 `panel` interface (renamed from `view`), `shell.go` owning layout/focus/accordion, `layout.go` as a pure `layout(w, h, focus) → []box`. Three panes (task table · timeline · output|diff tabs), focused-panel borders, single-panel mode below 80×20, explicit too-small below 60×15. Debounced running-task-only SSE subscription. `NO_COLOR` and 16-colour downgrade. *Depends:* T3.9.
   *Done when:* `layout` is table-tested across sizes and focus targets; holding `down` across the table asserts one subscription, not one per row; existing board/detail render assertions pass against the boxed sub-models.
+  *2026-08-10:* landed per the PR P decisions above. Also fixed in passing: resizing across a board column breakpoint crashed bubbles' table (stale wider rows re-rendered against the narrower column set) — found by the new single-panel-mode test, fixed in `board.render`.
 - [ ] **T3.11 — Command palette; `1..6` retired.** `bindings.go` registry (key, label, scope, priority) as the single source for palette, footer and `?`. `:` opens a searchable list of valid task actions + navigation to the four takeover screens + panel-local commands, each showing its direct key; invalid task actions omitted. `esc` stack, panel-local `/`, `tab`-commits-filter. Jump-to-next-attention key. *Depends:* T3.10.
   *Done when:* `1..6` is gone and every takeover screen is reachable from `:`; a test asserts every registry entry is reachable from the palette; the `?` overlay renders from the registry, not a literal list.
 - [ ] **T3.12 — Contextual footer.** Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.

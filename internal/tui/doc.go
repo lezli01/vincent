@@ -3,8 +3,11 @@
 // it never affects work. Bare `vincent` launches it, auto-starting the
 // daemon in the background when unreachable (§12.1).
 //
-// Phase 3 lands it PR by PR: this foundation ships the shell — connection
-// management, /v1/events subscription, view routing, global keys, and the
-// help overlay — with stub views that later PRs replace (board, task
-// detail, new-task flow, projects/workflows/daemon).
+// The root owns connection management, the /v1/events subscription, screen
+// routing and the global keys. The home screen (shell.go) fuses §15's board
+// and task detail into one persistent three-panel layout — task table on
+// top, step timeline and output|diff side by side below — with layout.go's
+// pure layout function deciding the accordion, the single-panel fallback
+// and the too-small floor (T3.10). The remaining §15 surfaces (new task,
+// projects, workflows, daemon) stay full-screen takeovers.
 package tui

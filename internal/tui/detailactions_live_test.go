@@ -216,7 +216,13 @@ func TestDetailAnswersLiveAgentQuestion(t *testing.T) {
 		t.Errorf("available actions = %v, want answer without approve", actions.actions)
 	}
 
-	// Pick the first option and submit, exactly as a human would.
+	// Open the popup, pick the first option and submit, exactly as a human
+	// would: the form never opens itself (§15 — it announces itself and the
+	// human presses the key).
+	h.press(t, "enter")
+	if s := h.m.views[viewHome].(*shell); !s.popup {
+		t.Fatal("enter did not open the answer popup")
+	}
 	h.press(t, " ")
 	h.press(t, "enter")
 
@@ -285,8 +291,7 @@ func keyPress(key string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 }
 
-// detailOf reaches the detail view for assertions about its state.
+// detailOf reaches the detail sub-model for assertions about its state.
 func detailOf(m *root) *detail {
-	d, _ := m.views[viewDetail].(*detail)
-	return d
+	return m.views[viewHome].(*shell).detail
 }

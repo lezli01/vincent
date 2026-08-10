@@ -293,8 +293,8 @@ func TestNewTaskFlowCreatesRunnableTask(t *testing.T) {
 	h.p.until(20*time.Second, "the form to create the task", func() bool {
 		return h.m.selectedTask != 0
 	})
-	if h.m.active != viewDetail {
-		t.Errorf("active view = %v, want the detail view of the new task", h.m.active)
+	if h.m.active != viewHome {
+		t.Errorf("active view = %v, want the home screen on the new task", h.m.active)
 	}
 	id := h.m.selectedTask
 

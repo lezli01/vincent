@@ -425,34 +425,8 @@ func TestSelectionTracksTaskIDAcrossResort(t *testing.T) {
 	}
 }
 
-// TestEnterEmitsSelectTaskMsg wires the board to the shell's routing.
-func TestEnterEmitsSelectTaskMsg(t *testing.T) {
-	b := testBoard()
-	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{task(7, stateRunning)}})
-	b.render(120, 20)
-
-	_, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("enter produced no command")
-	}
-	msg, ok := cmd().(selectTaskMsg)
-	if !ok {
-		t.Fatalf("enter produced %T, want selectTaskMsg", cmd())
-	}
-	if msg.id != 7 {
-		t.Errorf("selected id = %d, want 7", msg.id)
-	}
-}
-
-// TestEnterOnEmptyBoardIsSafe: no rows, no selection, no panic.
-func TestEnterOnEmptyBoardIsSafe(t *testing.T) {
-	b := testBoard()
-	b.updateLoaded(boardLoadedMsg{tasks: nil})
-	b.render(120, 20)
-	if _, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
-		t.Error("enter on an empty board produced a command")
-	}
-}
+// Enter moved to the shell in T3.10: opening the row under the cursor is
+// the fused screen's job (shell_test.go), not a message the board emits.
 
 func TestFilterCapturesKeys(t *testing.T) {
 	b := testBoard()

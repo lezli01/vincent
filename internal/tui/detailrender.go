@@ -11,10 +11,6 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// timelineShare is how much of the body the step timeline takes. The output
-// pane gets the rest: the timeline is an index, the output is the content.
-const timelineShare = 0.4
-
 var (
 	styleStepHeader = lipgloss.NewStyle().Bold(true)
 	styleSelected   = lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true)
@@ -28,55 +24,79 @@ var (
 // before retrying it (§6). A glyph, so it survives a monochrome terminal.
 const editedBadge = "✎"
 
-func (d *detail) render(width, height int) string {
+// timelinePanel renders the timeline pane's content for the shell: the task
+// header, a stale-refresh note when there is one, and the attempt timeline.
+// At one line — the collapsed band — it shows the selected attempt, which is
+// the line the cursor would land on (§15: title bar plus the selected line).
+func (d *detail) timelinePanel(height int) string {
+	if d.taskID == 0 {
+		return styleDim.Render("  no task selected")
+	}
+	if height <= 1 {
+		if run := d.runByID(d.selectedRun); run.ID != 0 {
+			return d.attemptLine(run)
+		}
+		return d.headerLine()
+	}
+	var sb strings.Builder
+	sb.WriteString(d.headerLine())
+	used := 1
+	if line := d.errorLine(); line != "" && height > 2 {
+		sb.WriteString("\n")
+		sb.WriteString(line)
+		used++
+	}
+	sb.WriteString("\n")
+	sb.WriteString(d.renderTimeline(height - used))
+	return sb.String()
+}
+
+// outputPanel renders the output|diff pane's content for the shell. The tab
+// strip lives in the panel title (outputTitle), so the content is the pane
+// alone. At one line it shows the tail's last line — the freshest thing a
+// collapsed output pane can say.
+func (d *detail) outputPanel(width, height int) string {
+	if d.taskID == 0 {
+		return styleDim.Render("  no task selected")
+	}
 	if width > 0 {
 		d.width = width
 	}
-	if height > 0 {
-		d.height = height
+	if height <= 1 {
+		return d.collapsedOutputLine()
 	}
-	if d.taskID == 0 {
-		return styleDim.Render("\n  no task selected — press 1, pick a row, enter\n")
-	}
-
-	var sb strings.Builder
-	sb.WriteString(d.headerLine())
-	sb.WriteString("\n")
-	if line := d.errorLine(); line != "" {
-		sb.WriteString(line)
-		sb.WriteString("\n")
-	}
-
-	// Header, the optional error line, the pane header and the action bar are
-	// the chrome the body divides what is left of.
-	body := max(d.height-3, 4)
-	timelineHeight := max(int(float64(body)*timelineShare), 3)
-	paneHeight := max(body-timelineHeight-1, 3)
-
-	formHeight := 0
-	if d.form != nil {
-		// The form takes at most half the pane: the tail underneath is what
-		// says why the agent is asking.
-		formHeight = min(d.form.height(), max(paneHeight/2, 3))
-		paneHeight = max(paneHeight-formHeight, 2)
-	}
-
-	sb.WriteString(d.renderTimeline(timelineHeight))
-	sb.WriteString("\n")
-	if formHeight > 0 {
-		sb.WriteString(d.form.render(formHeight))
-		sb.WriteString("\n")
-	}
-	sb.WriteString(d.paneHeader())
-	sb.WriteString("\n")
 	if d.tab == tabDiff {
-		sb.WriteString(d.diff.render(d.width, paneHeight))
-	} else {
-		sb.WriteString(d.renderOutputPane(paneHeight))
+		return d.diff.render(d.width, height)
 	}
-	sb.WriteString("\n")
-	sb.WriteString(d.actions.render(d.target(), d.detailHints()...))
-	return sb.String()
+	return d.renderOutputPane(height)
+}
+
+// collapsedOutputLine is the one line a collapsed output pane shows: the
+// last rendered line of the tail, or why there is none.
+func (d *detail) collapsedOutputLine() string {
+	if body, ok := d.outputEmptyState(); ok {
+		return styleDim.Render("  " + body)
+	}
+	lines := d.outputLines()
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[len(lines)-1]
+}
+
+// outputTitle is the output panel's border title: the §15 tab strip plus
+// the follow state, so which tab is live and whether the tail follows stay
+// visible even collapsed.
+func (d *detail) outputTitle() string {
+	strip := tabLabel("output", d.tab == tabOutput) +
+		styleDim.Render(" │ ") + tabLabel("diff", d.tab == tabDiff)
+	if d.tab == tabDiff {
+		if d.diff.truncated {
+			return strip + styleDim.Render(" · truncated")
+		}
+		return strip
+	}
+	return strip + d.followIndicator()
 }
 
 // detailHints are the view's own keys, shown beside the task's actions so the
@@ -87,7 +107,7 @@ func (d *detail) detailHints() []string {
 		hints = []string{styleKey.Render("d") + " output"}
 	}
 	if d.form != nil {
-		hints = append(hints, styleAsk.Render("answer in the form above"))
+		hints = append(hints, styleAsk.Render("enter answer"))
 	}
 	if d.target().has("retry") {
 		if step, ok := d.task.Step(d.task.CurrentStep); ok {
@@ -249,24 +269,6 @@ func window(lines []string, focus, height int) []string {
 	start := focus - height/2
 	start = min(max(start, 0), len(lines)-height)
 	return lines[start : start+height]
-}
-
-// paneHeader is the tab strip plus, on the output tab, the follow indicator.
-func (d *detail) paneHeader() string {
-	tabs := []string{tabLabel("output", d.tab == tabOutput), tabLabel("diff", d.tab == tabDiff)}
-	strip := " " + strings.Join(tabs, styleDim.Render(" | "))
-	if d.focus == focusOutput {
-		strip = styleFocus.Render(" ▸") + strip
-	} else {
-		strip = "  " + strip
-	}
-	if d.tab == tabDiff {
-		if d.diff.truncated {
-			return strip + styleDim.Render(" · truncated")
-		}
-		return strip
-	}
-	return strip + d.followIndicator()
 }
 
 func tabLabel(name string, active bool) string {

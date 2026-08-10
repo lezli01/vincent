@@ -225,7 +225,7 @@ func TestWorkflowsRefetchOnActivationAndOnRegistryEvents(t *testing.T) {
 	if _, cmd := w.update(viewActivatedMsg{id: viewWorkflows}); cmd == nil {
 		t.Error("activation did not refetch")
 	}
-	if _, cmd := w.update(viewActivatedMsg{id: viewBoard}); cmd != nil {
+	if _, cmd := w.update(viewActivatedMsg{id: viewHome}); cmd != nil {
 		t.Error("another view's activation triggered a fetch")
 	}
 	for _, evType := range []string{eventWorkflowRegistryChanged, "project.created"} {
