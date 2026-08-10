@@ -123,6 +123,21 @@ func (p *projectsView) capturesInput() bool {
 	return p.form != nil && p.form.capturesInput()
 }
 
+// paste hands pasted text to the field that owns the keyboard: a form row
+// being typed into — pasting the repository path is how a project gets
+// registered without leaving the TUI (§19 M3) — or the filter.
+func (p *projectsView) paste(text string) tea.Cmd {
+	if p.form != nil {
+		return p.form.paste(text)
+	}
+	if !p.filtering {
+		return nil
+	}
+	var cmd tea.Cmd
+	p.filter, cmd = p.filter.Update(tea.PasteMsg{Content: text})
+	return cmd
+}
+
 // hintedProject lets `n` open the new-task form on the row under the cursor.
 func (p *projectsView) hintedProject() int64 {
 	id, ok := p.selected()

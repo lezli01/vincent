@@ -251,8 +251,15 @@ git -C "$REPO_A" add .vincent && git -C "$REPO_A" commit -qm "add project-scoped
 
 # ---------------------------------------------------------------------------
 # Banner. Both shells are printed because the walkthrough runs on Windows
-# Terminal + pwsh and on a POSIX terminal, and the env exports are what carry
-# the seeded dirs and the fake-agent knobs into the daemon the TUI starts.
+# Terminal + pwsh and on a POSIX terminal, and the env vars are what carry the
+# seeded dirs and the fake-agent knobs into the daemon the TUI starts.
+#
+# The POSIX form is one-shot `env VAR=… vincent`, not `export`: an exported
+# FAKEAGENT_DELAY_MS outlives the walkthrough and the next `go test ./...` in
+# that shell inherits it, which fails cmd/fakeagent and internal/agent/codex
+# with what look like real regressions (M3 gate finding, macOS). pwsh keeps
+# the assignment form — there is no readable one-shot there — and the
+# "when you are done" line below clears it.
 # ---------------------------------------------------------------------------
 H_CONFIG="$(hostpath "$CONFIG_DIR")"
 H_DATA="$(hostpath "$DATA_DIR")"
@@ -282,14 +289,14 @@ Start the TUI in the terminal you want to judge — not from Git Bash, which
 gives a native console app a pipe rather than a console.
 
   bash / zsh:
-    export VINCENT_CONFIG_DIR="$H_CONFIG"
-    export VINCENT_DATA_DIR="$H_DATA"
-    export FAKEAGENT_DELAY_MS=$DELAY_MS
-    export FAKEAGENT_EDIT_FILE=README.md
-    export FAKEAGENT_SCENARIO_CODEX=success
-$( (( REAL_AGENT )) || echo "    export FAKEAGENT_SCENARIO=ask-question
-    export FAKEAGENT_ASK_MULTI=1" )
-    "$H_VINCENT"
+    env VINCENT_CONFIG_DIR="$H_CONFIG" \\
+        VINCENT_DATA_DIR="$H_DATA" \\
+        FAKEAGENT_DELAY_MS=$DELAY_MS \\
+        FAKEAGENT_EDIT_FILE=README.md \\
+        FAKEAGENT_SCENARIO_CODEX=success \\
+$( (( REAL_AGENT )) || echo "        FAKEAGENT_SCENARIO=ask-question \\
+        FAKEAGENT_ASK_MULTI=1 \\" )
+        "$H_VINCENT"
 
   PowerShell:
     \$env:VINCENT_CONFIG_DIR="$H_CONFIG"
@@ -305,5 +312,10 @@ No daemon is running and no project is registered — the TUI starting the
 daemon is checklist item 1, registering the app repo is item 2.
 
 When you are done:  scripts/m3-gate.sh clean
+
+In PowerShell, also clear the session's variables — they outlive the gate and
+the daemon a later run starts would inherit them:
+
+  Remove-Item Env:VINCENT_CONFIG_DIR,Env:VINCENT_DATA_DIR,Env:FAKEAGENT_* -EA 0
 
 EOF

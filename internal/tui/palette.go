@@ -128,6 +128,18 @@ func (p *palette) update(msg tea.KeyPressMsg) (run *paletteEntry, done bool, cmd
 	return nil, false, c
 }
 
+// paste types text into the search line — the palette is a text field like
+// any other, and pasting a workflow or task name into it is the reason to
+// have one.
+func (p *palette) paste(text string) tea.Cmd {
+	var cmd tea.Cmd
+	p.input, cmd = p.input.Update(tea.PasteMsg{Content: text})
+	if n := len(p.matches()); p.cursor >= n {
+		p.cursor = max(n-1, 0)
+	}
+	return cmd
+}
+
 // render draws the palette box for overlaying: the search line, then the
 // matches windowed around the cursor, grouped by section.
 func (p *palette) render(w, h int) string {

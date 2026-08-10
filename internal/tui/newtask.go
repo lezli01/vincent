@@ -177,10 +177,52 @@ func (n *newTask) setClient(c *apiclient.Client) tea.Cmd {
 // capturesInput reports that a text field owns the keyboard, so the global
 // single-key bindings stand down while someone is typing a title.
 func (n *newTask) capturesInput() bool {
-	if n.mode == ntEditing {
+	switch n.mode {
+	case ntEditing:
 		return true
+	case ntPicking:
+		return n.pick != nil && n.pick.editing
+	case ntFieldsOpen:
+		// The key/value editor types too, and was missing here: a "q" typed
+		// into a field name quit the TUI (M3 gate finding).
+		return n.fieldsEd != nil && n.fieldsEd.editing != 0
+	case ntNavigating, ntConfirming:
 	}
-	return n.mode == ntPicking && n.pick != nil && n.pick.editing
+	return false
+}
+
+// paste hands pasted text to the field that owns the keyboard. Pasting a
+// description or a branch name is the ordinary way to fill this form.
+func (n *newTask) paste(text string) tea.Cmd {
+	var cmd tea.Cmd
+	switch n.mode {
+	case ntEditing:
+		switch n.cursor {
+		case ntTitle:
+			n.titleIn, cmd = n.titleIn.Update(tea.PasteMsg{Content: text})
+		case ntBranch:
+			n.branch, cmd = n.branch.Update(tea.PasteMsg{Content: text})
+		case ntPriority:
+			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
+		case ntDescription:
+			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
+		case ntProject, ntWorkflow, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+			return nil
+		}
+		delete(n.rowErr, n.cursor)
+	case ntPicking:
+		if n.pick == nil {
+			return nil
+		}
+		return n.pick.paste(text)
+	case ntFieldsOpen:
+		if n.fieldsEd == nil {
+			return nil
+		}
+		return n.fieldsEd.paste(text)
+	case ntNavigating, ntConfirming:
+	}
+	return cmd
 }
 
 // loadCmd fetches the three catalogs in one command. refresh forces a live

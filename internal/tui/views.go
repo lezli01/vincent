@@ -44,6 +44,19 @@ type inputCapturing interface {
 	capturesInput() bool
 }
 
+// pasteReceiving is implemented by views that hold text fields. The root
+// hands pasted text to the *active* view only — a paste belongs to the one
+// field that has the keyboard, and the broadcast path every other background
+// message takes would type the same text into every view at once. A view
+// with no field taking input returns nil, and the paste is dropped.
+//
+// The sub-models below speak tea.KeyPressMsg, not tea.Msg, so a paste has no
+// key to ride in on; each view walks to its focused field and feeds it a
+// tea.PasteMsg, which bubbles' textinput/textarea insert verbatim.
+type pasteReceiving interface {
+	paste(text string) tea.Cmd
+}
+
 // projectHinting is implemented by views that know which project the user is
 // looking at, so the new-task form opens on it rather than making them pick
 // the project they were just staring at.
