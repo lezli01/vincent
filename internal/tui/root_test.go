@@ -214,15 +214,40 @@ func TestViewRoutingAndHelp(t *testing.T) {
 	// instead, so routing tests need a real terminal size first.
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
+	// T3.11 retired the digits: they are no-ops, not navigation.
 	m.Update(key("2"))
 	if m.active != viewHome {
-		t.Fatalf("active = %v, want viewHome", m.active)
+		t.Fatalf("active = %v after 2, want the digit to be dead", m.active)
 	}
-	if s := m.views[viewHome].(*shell); s.focus != panelTimeline {
-		t.Fatalf("focus = %v, want the timeline panel after 2", s.focus)
+	m.Update(key("6"))
+	if m.active != viewHome {
+		t.Fatalf("active = %v after 6, want the digit to be dead", m.active)
 	}
-	if !strings.Contains(content(m), "Timeline") {
-		t.Errorf("view 2 lacks the timeline panel: %q", content(m))
+
+	// The palette is the route: search for the workflows entry and run it.
+	m.Update(key(":"))
+	if m.palette == nil {
+		t.Fatal(": did not open the palette")
+	}
+	for _, r := range "workflows" {
+		m.Update(key(string(r)))
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.palette != nil {
+		t.Fatal("running an entry did not close the palette")
+	}
+	if m.active != viewWorkflows {
+		t.Fatalf("active = %v, want the workflows view via the palette", m.active)
+	}
+	// esc on the takeover asks to leave; the command it returns is the
+	// message the runtime would feed back.
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("esc on the takeover produced no command")
+	}
+	m.Update(cmd())
+	if m.active != viewHome {
+		t.Fatalf("active = %v, want esc to close the takeover", m.active)
 	}
 
 	m.Update(key("?"))
@@ -239,11 +264,6 @@ func TestViewRoutingAndHelp(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if strings.Contains(content(m), "toggle this help") {
 		t.Errorf("help overlay still visible after esc: %q", content(m))
-	}
-
-	m.Update(key("6"))
-	if m.active != viewDaemon {
-		t.Fatalf("active = %v, want viewDaemon", m.active)
 	}
 }
 

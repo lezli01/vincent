@@ -32,7 +32,15 @@ func disconnectedShell(t *testing.T, logLines []string) *root {
 func TestDaemonViewIsReachableWhileDisconnected(t *testing.T) {
 	m := disconnectedShell(t, []string{"level=ERROR msg=\"bind: address in use\""})
 
-	m.Update(key("6"))
+	// The §15 route: `:` still reaches the daemon view while disconnected.
+	m.Update(key(":"))
+	for _, r := range "daemon" {
+		m.Update(key(string(r)))
+	}
+	m.Update(namedKey("enter"))
+	if m.active != viewDaemon {
+		t.Fatalf("active = %v, want the daemon view via the palette", m.active)
+	}
 	out := content(m)
 	if !strings.Contains(out, "bind: address in use") {
 		t.Errorf("the log is not readable on the disconnected screen:\n%s", out)
@@ -41,10 +49,10 @@ func TestDaemonViewIsReachableWhileDisconnected(t *testing.T) {
 		t.Error("the failure screen is still covering the daemon view")
 	}
 
-	for _, k := range []string{"1", "2", "3", "4", "5"} {
-		m.Update(key(k))
+	for _, id := range []viewID{viewHome, viewNewTask, viewProjects, viewWorkflows} {
+		m.Update(selectViewMsg{id: id})
 		if body := content(m); !strings.Contains(body, "daemon unreachable") {
-			t.Errorf("view %s rendered without a daemon:\n%s", k, body)
+			t.Errorf("view %v rendered without a daemon:\n%s", id, body)
 		}
 	}
 }
@@ -52,8 +60,8 @@ func TestDaemonViewIsReachableWhileDisconnected(t *testing.T) {
 // And the failure screen has to say so, or the exception is undiscoverable.
 func TestFailureScreenPointsAtTheDaemonView(t *testing.T) {
 	m := disconnectedShell(t, nil)
-	if out := content(m); !strings.Contains(out, "6 for the daemon log") {
-		t.Errorf("the failure screen does not mention view 6:\n%s", out)
+	if out := content(m); !strings.Contains(out, ": for the daemon view") {
+		t.Errorf("the failure screen does not point at the palette route:\n%s", out)
 	}
 }
 
