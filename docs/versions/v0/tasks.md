@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 10/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 11/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **35/44** | |
+| **Total** | | **36/44** | |
 
 ---
 
@@ -526,8 +526,9 @@ superseded in layout and routing by T3.10–T3.13.
 - *The chrome shrinks by two rows* (event line, the shell's interim bar line): `shellChromeH` drops from 4 to 2 and the §15 floors stay stated in terminal cells — the layout tests shift automatically because they are written against the derived constants.
 - *Truncation is literal §15:* the composed left content is cut from the left with a leading `…` when the pinned segment would not fit; the pinned `: commands  ? help  q quit` is never touched. `r retry` joins the left content while the connection is down, and the `!` hint carries its count and exists only when that count is non-zero.
 
-- [~] **T3.12 — Contextual footer.** Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
+- [x] **T3.12 — Contextual footer.** ✓ 2026-08-10 Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
   *Done when:* narrow-terminal tests assert the pinned segment survives and the line never wraps.
+  *2026-08-10:* landed per the PR R decisions above; the event line is gone and the T3.1 live proofs now assert the event-driven refresh renders the change itself.
 - [ ] **T3.13 — Mouse.** Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
   *Done when:* `hitTest` is table-tested; `MouseClickMsg` tests assert focus and selection changes; `m3-gate.md`'s sweep carries the new items.
 
