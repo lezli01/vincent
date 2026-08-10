@@ -152,22 +152,69 @@ func TestNewTaskFallsBackToAdhocWithoutAProjectDefault(t *testing.T) {
 	}
 }
 
-// TestNewTaskNamesTheWorkflowDefaultAgent is a T3.8 finding: "(workflow
-// default)" told nobody which agent would run, and that is a spend
-// decision. The names come from the registry's own per-step report, so a
-// step naming none still reads as the adapter default rather than a guess.
+// resolveField is a resolved §8.6 value with its source, spelled short.
+func resolveField(value, source string) *apiclient.ResolvedField {
+	return &apiclient.ResolvedField{Value: value, Source: source}
+}
+
+// feedResolution delivers a daemon resolution for the form's current draft,
+// exactly as the command's reply arrives.
+func feedResolution(n *newTask, steps ...apiclient.ResolvedStep) {
+	n.update(ntResolvedMsg{
+		key:        n.resolveKey(),
+		resolution: apiclient.Resolution{Workflow: n.workflow, Steps: steps},
+	})
+}
+
+// twoStepResolution is what POST /v1/resolve says about the two-step
+// fixture: the third step names no agent and resolves to claude, and no
+// adapter reports a default model, so that field comes back empty.
+func twoStepResolution() []apiclient.ResolvedStep {
+	return []apiclient.ResolvedStep{
+		{
+			ID: "implement", Type: "agent",
+			Agent: resolveField("claude", apiclient.SourceStep),
+			Model: resolveField("sonnet", apiclient.SourceWorkflow),
+		},
+		{
+			ID: "review", Type: "agent",
+			Agent: resolveField("codex", apiclient.SourceStep),
+			Model: resolveField("", apiclient.SourceAdapter),
+		},
+		{
+			ID: "unset", Type: "agent",
+			Agent: resolveField("claude", apiclient.SourceAdapter),
+			Model: resolveField("sonnet", apiclient.SourceWorkflow),
+		},
+		{ID: "publish", Type: "command"},
+	}
+}
+
+// TestNewTaskNamesTheWorkflowDefaultAgent is a T3.8 finding closed by T4.7:
+// "(workflow default)" told nobody which agent would run, and that is a
+// spend decision. The names come from the daemon's resolution, so even a
+// step naming no agent is reported by name rather than as "adapter default".
 func TestNewTaskNamesTheWorkflowDefaultAgent(t *testing.T) {
 	n := loadedForm(t)
 	n.workflow = "two-step"
+
+	// Before the resolution lands the form says only what it knows.
+	if got := n.agentSummary(); strings.Contains(got, "→") {
+		t.Errorf("agent summary = %q, want no resolved names before the reply", got)
+	}
+	feedResolution(n, twoStepResolution()...)
 
 	summary := n.agentSummary()
 	if !strings.Contains(summary, "workflow default") {
 		t.Fatalf("agent summary = %q, want it to still say the workflow decides", summary)
 	}
-	for _, want := range []string{"codex", "adapter default"} {
+	for _, want := range []string{"claude", "codex"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("agent summary = %q, want it to name %q", summary, want)
 		}
+	}
+	if strings.Contains(summary, "adapter default") {
+		t.Errorf("agent summary = %q, want the resolved adapter named, not described", summary)
 	}
 	// The picker's own default row carries the same names.
 	opts := n.agentOptions()
@@ -178,20 +225,54 @@ func TestNewTaskNamesTheWorkflowDefaultAgent(t *testing.T) {
 		t.Errorf("default option note = %q, want the workflow's agents", opts[0].note)
 	}
 
+	// Model names what it resolves to, including the step whose adapter
+	// reports no default of its own — that one is the CLI's call at run time.
+	model := n.overrideSummary(n.model, apiclient.ModelOf)
+	for _, want := range []string{"workflow default", "sonnet", "CLI default"} {
+		if !strings.Contains(model, want) {
+			t.Errorf("model summary = %q, want it to name %q", model, want)
+		}
+	}
+
 	// An explicit override replaces it outright — no "(default)" noise.
 	n.agent = "claude"
 	if got := n.agentSummary(); got != "claude" {
 		t.Errorf("agent summary with an override = %q, want just the agent", got)
 	}
+}
 
-	// Model and effort stay unnamed: the registry does not report them per
-	// step, and inventing a value would be worse than saying nothing (T4.7).
-	n.model = ""
-	if got := n.overrideSummary(n.model); !strings.Contains(got, "workflow default") {
-		t.Errorf("model summary = %q", got)
+// TestNewTaskDropsAStaleResolution proves the key guard: a reply for a draft
+// the user has already moved past must not be rendered, or the form names
+// the model of a workflow nobody selected.
+func TestNewTaskDropsAStaleResolution(t *testing.T) {
+	n := loadedForm(t)
+	n.workflow = "two-step"
+	stale := ntResolvedMsg{
+		key: n.resolveKey(),
+		resolution: apiclient.Resolution{Workflow: "two-step", Steps: []apiclient.ResolvedStep{
+			{ID: "implement", Type: "agent", Agent: resolveField("codex", apiclient.SourceWorkflow)},
+		}},
 	}
-	if strings.Contains(n.overrideSummary(n.model), "→") {
-		t.Error("the model summary names a value the API never reported")
+	n.workflow = "adhoc" // the user moves on while the request is in flight
+	n.update(stale)
+	if got := n.agentSummary(); strings.Contains(got, "codex") {
+		t.Errorf("agent summary = %q, want the stale resolution ignored", got)
+	}
+}
+
+// TestNewTaskForgetsAFailedResolution: a resolution that errors clears what
+// was shown. Keeping the old triple would name a model for a workflow the
+// user has since changed.
+func TestNewTaskForgetsAFailedResolution(t *testing.T) {
+	n := loadedForm(t)
+	n.workflow = "two-step"
+	feedResolution(n, twoStepResolution()...)
+	if !strings.Contains(n.agentSummary(), "codex") {
+		t.Fatal("fixture did not take")
+	}
+	n.update(ntResolvedMsg{key: n.resolveKey(), err: errors.New("daemon said no")})
+	if got := n.agentSummary(); strings.Contains(got, "→") {
+		t.Errorf("agent summary = %q, want no names after a failed resolution", got)
 	}
 }
 
@@ -206,13 +287,47 @@ func TestNewTaskFlagsStepsNeedingAnUnavailableAgent(t *testing.T) {
 	if !strings.Contains(out, "⚠ unavailable") {
 		t.Errorf("workflow detail does not flag the codex step:\n%s", out)
 	}
-	// The step that names no agent resolves to §8.6 level 4, which the
-	// registry cannot report. Reporting it is fine; accusing it is not.
+	// Without a resolution the step that names no agent is reported, never
+	// accused: the registry cannot say what §8.6 level 4 resolves to.
 	if !strings.Contains(out, "adapter default") {
 		t.Errorf("unset agent not reported as the adapter default:\n%s", out)
 	}
 	if strings.Count(out, "⚠ unavailable") != 1 {
 		t.Errorf("more than one step flagged:\n%s", out)
+	}
+
+	// With one, the same step is named — and stays unflagged, because the
+	// adapter it resolves to is installed.
+	n.workflow = "two-step"
+	feedResolution(n, twoStepResolution()...)
+	out = strings.Join(n.renderWorkflowDetail("two-step"), "\n")
+	if strings.Contains(out, "adapter default") {
+		t.Errorf("resolved step still described instead of named:\n%s", out)
+	}
+	if strings.Count(out, "⚠ unavailable") != 1 {
+		t.Errorf("resolution changed which steps are flagged:\n%s", out)
+	}
+}
+
+// TestNewTaskFlagsAnUnavailableAdapterDefault is what the resolution buys:
+// a workflow naming no agent anywhere is now checkable, because the daemon
+// says which adapter would run it.
+func TestNewTaskFlagsAnUnavailableAdapterDefault(t *testing.T) {
+	n := loadedForm(t)
+	n.workflow = "two-step"
+	feedResolution(n,
+		apiclient.ResolvedStep{ID: "implement", Type: "agent", Agent: resolveField("claude", apiclient.SourceStep)},
+		apiclient.ResolvedStep{ID: "review", Type: "agent", Agent: resolveField("claude", apiclient.SourceStep)},
+		// The step naming no agent falls to an adapter that is not installed.
+		apiclient.ResolvedStep{ID: "unset", Type: "agent", Agent: resolveField("codex", apiclient.SourceAdapter)},
+		apiclient.ResolvedStep{ID: "publish", Type: "command"},
+	)
+	bad := n.unavailableSteps(*n.workflowEntry("two-step"))
+	if len(bad) != 1 || !strings.Contains(bad[0], "codex") {
+		t.Fatalf("unavailableSteps = %v, want the step whose adapter default is missing", bad)
+	}
+	if !strings.Contains(bad[0], "Whatever the adapter says") {
+		t.Errorf("flagged step = %q, want the one that names no agent", bad[0])
 	}
 }
 

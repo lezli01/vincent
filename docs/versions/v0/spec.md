@@ -875,6 +875,16 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         (shadowing applied); each entry:
                                         { name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
+POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort? } →
+                                        { workflow, steps[] } — §8.6 applied to every step
+                                        under a candidate task-level override. Each agent
+                                        step carries { value, source } per field, source being
+                                        the winning level (step|task|workflow|adapter); non-agent
+                                        steps keep their index with null fields. An empty value
+                                        with source "adapter" means the adapter names no default
+                                        of its own — the CLI decides at run time.
+                                        Resolution is server-side only: clients report it,
+                                        never re-derive it (§8.6).
 
 GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
                                         list rows additionally carry the §15 board fields:

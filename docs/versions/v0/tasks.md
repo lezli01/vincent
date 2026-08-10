@@ -20,8 +20,8 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 7 tasks | 0/7 | ⬜ not started |
-| **Total** | | **38/45** | |
+| 4 — Polish (M4) | 7 tasks | 1/7 | 🚧 in progress |
+| **Total** | | **39/45** | |
 
 ---
 
@@ -587,5 +587,18 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *Done when:* tagged pre-release produces working artifacts installed and smoke-tested on each OS.
 - [ ] **T4.6 — Phase gate (M4 acceptance).** Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
   *Done when:* all three runs under 10 minutes; notes committed. **v1 complete.**
-- [ ] **T4.7 — Report the §8.6 model and effort resolution.** T3.8 finding (2026-08-10), narrowed: the **agent** side landed with the walkthrough fixes — the registry already reports each step's agent, so the new-task form names it. Model and effort have no such field on the wire, so "(workflow default)" is all the form can honestly say about them, and the workflow-step list still cannot name which adapter "adapter default" resolves to. Both need new read-only API surface, which relitigates the PR L decision that kept resolution server-side — do that explicitly, not by having the TUI re-implement §8.6.
+**PR T decisions (T4.7; grill session, 2026-08-10):**
+
+- *The endpoint is `POST /v1/resolve`, not a wider workflow DTO.* The two callers ask different questions: the registry listing asks what a step resolves to *as written*, the new-task form asks what it resolves to *under the overrides being typed* — and those overrides have no server-side existence until the task is created. A DTO field answers only the first. One endpoint with an empty override body answers both. **Spec addition** to §13.2.
+- *Provenance rides the resolver, not the handler.* `agent.Resolve` becomes a wrapper over a new `ResolveWithSources`, so the engine and the endpoint share one implementation of the precedence *and* one of the attribution. A handler that re-derived "which level won" would be the second §8.6 implementation this task exists to prevent.
+- *Level 4 is read from the adapter catalog,* through the same binary-identity cache `GET /v1/agents` uses, with `refresh=false` — resolving must never spawn a probe, because the form resolves on every override change. No adapter reports a `DefaultModel` today, so model and effort legitimately come back empty with source `adapter`; the form renders that as "CLI default" rather than inventing a model name. The seam is wired now so the day an adapter reports one, the form names it with no further change.
+- *Non-agent steps keep their index with null fields.* A resolution lines up positionally with the registry's own step list, which is what lets both renderers zip the two together without matching on ids.
+- *The TUI drops its registry-scanning `workflowAgents` entirely* rather than keeping it as a fallback. Two code paths producing the agent summary — one resolved, one derived — is exactly the drift this task closes. Before the reply lands the suffix is simply absent: "(workflow default)" alone is incomplete, never wrong.
+- *A resolution carries the draft it describes.* `resolveKey` (project, workflow, and the override triple) travels with the request and is compared on arrival: a reply for a draft the user has already moved past is dropped, and a failed one clears rather than leaves stale text naming the wrong model. The workflows view caches per scope+name and drops the cache on registry reload — the file that just changed is precisely the one whose resolution may have moved.
+- *The picker preview keeps the registry's wording.* Resolution belongs to the committed workflow; fetching one per highlighted option would be a request per cursor move. `renderWorkflowDetail` uses the resolution only when the name matches the committed draft.
+- *Unavailability checking grows to level-4 steps.* With a resolved agent in hand, a step naming no agent can finally be checked against adapter availability — "the default adapter is missing" is a warning that was impossible to give before, and the old comment saying such steps are "never accused" no longer applies.
+- *Proof is a live test, not a stub.* `TestWorkflowsViewNamesTheAdapterDefault` drives the real handlers through the real client; a stubbed resolution would only assert the TUI renders what it was handed, which was never in doubt. The new-task live test additionally asserts the form names the resolved agent and spells out the unnamed model.
+
+- [x] **T4.7 — Report the §8.6 model and effort resolution.** ✓ 2026-08-10 T3.8 finding (2026-08-10), narrowed: the **agent** side landed with the walkthrough fixes — the registry already reports each step's agent, so the new-task form names it. Model and effort have no such field on the wire, so "(workflow default)" is all the form can honestly say about them, and the workflow-step list still cannot name which adapter "adapter default" resolves to. Both need new read-only API surface, which relitigates the PR L decision that kept resolution server-side — do that explicitly, not by having the TUI re-implement §8.6.
   *Done when:* the model and effort rows name what an unset override resolves to, and a step with no agent names the adapter that will run it.
+  *2026-08-10:* landed per the PR T decisions above. `POST /v1/resolve` serves the per-step triple with its §8.6 source; `agent.ResolveWithSources` is the single implementation both the engine and the endpoint use. Verified: 12 handler tests (precedence, agent-scoped reset, level-4 naming, scope shadowing, null non-agent steps, error envelope), the resolver table extended to pin every field's source, TUI unit tests for the stale-reply and failed-reply guards, and two live tests against the real handlers.

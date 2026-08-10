@@ -122,12 +122,21 @@ func (w *workflowsView) renderSteps(line wfLine) []string {
 	for _, f := range e.Warnings {
 		out = append(out, styleWarn.Render("      ⚠ "+findingText(f)))
 	}
+	// The daemon's resolution names §8.6 level 4; the registry listing cannot
+	// (T4.7). Until it arrives the old wording stands — "adapter default" is
+	// incomplete, not wrong.
+	res := w.resolutionFor(line)
 	for i, s := range e.Steps {
 		label := firstNonEmpty(s.Name, s.ID)
 		row := fmt.Sprintf("      %d. %s  %s", i+1, label, styleDim.Render(s.Type))
-		if s.Agent != "" {
-			row += "  " + styleDim.Render("→ "+s.Agent)
-		} else if s.Type == "agent" {
+		name := s.Agent
+		if i < len(res.Steps) && res.Steps[i].Agent != nil {
+			name = res.Steps[i].Agent.Value
+		}
+		switch {
+		case name != "":
+			row += "  " + styleDim.Render("→ "+name)
+		case s.Type == "agent":
 			row += "  " + styleDim.Render("→ adapter default")
 		}
 		out = append(out, row)
@@ -136,6 +145,19 @@ func (w *workflowsView) renderSteps(line wfLine) []string {
 		out = append(out, styleDim.Render("      no steps"))
 	}
 	return out
+}
+
+// resolutionFor returns the cached resolution for a line, or the zero value
+// when none has arrived — callers index into Steps, which is empty then.
+func (w *workflowsView) resolutionFor(line wfLine) apiclient.Resolution {
+	if line.entry == nil {
+		return apiclient.Resolution{}
+	}
+	key := wfResolveKey{name: line.entry.Name}
+	if line.block != nil {
+		key.projectID = line.block.projectID
+	}
+	return w.resolutions[key]
 }
 
 // findingText prefixes a validation finding with its source line when the
