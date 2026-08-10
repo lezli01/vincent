@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 8/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 9/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **33/44** | |
+| **Total** | | **34/44** | |
 
 ---
 
@@ -500,8 +500,9 @@ superseded in layout and routing by T3.10–T3.13.
 - *Two action lines is the accepted interim.* Action keys route to the focused panel's bar — board's inside the tasks panel, detail's below the band — both gated on the same `available_actions` for the same selected task. T3.12's footer is the PR that unifies them; dragging that work forward would make this PR two PRs.
 - *`1`/`2` collapse onto the fused screen* (`2` focusing the timeline) and `3..6` keep their meanings until T3.11 retires the digits — capability parity during the interim, no new keys born early.
 
-- [~] **T3.10 — Panel shell; board and detail fused.** `panel` interface (renamed from `view`), `shell.go` owning layout/focus/accordion, `layout.go` as a pure `layout(w, h, focus) → []box`. Three panes (task table · timeline · output|diff tabs), focused-panel borders, single-panel mode below 80×20, explicit too-small below 60×15. Debounced running-task-only SSE subscription. `NO_COLOR` and 16-colour downgrade. *Depends:* T3.9.
+- [x] **T3.10 — Panel shell; board and detail fused.** ✓ 2026-08-10 `panel` interface (renamed from `view`), `shell.go` owning layout/focus/accordion, `layout.go` as a pure `layout(w, h, focus) → []box`. Three panes (task table · timeline · output|diff tabs), focused-panel borders, single-panel mode below 80×20, explicit too-small below 60×15. Debounced running-task-only SSE subscription. `NO_COLOR` and 16-colour downgrade. *Depends:* T3.9.
   *Done when:* `layout` is table-tested across sizes and focus targets; holding `down` across the table asserts one subscription, not one per row; existing board/detail render assertions pass against the boxed sub-models.
+  *2026-08-10:* landed per the PR P decisions above. Also fixed in passing: resizing across a board column breakpoint crashed bubbles' table (stale wider rows re-rendered against the narrower column set) — found by the new single-panel-mode test, fixed in `board.render`.
 - [ ] **T3.11 — Command palette; `1..6` retired.** `bindings.go` registry (key, label, scope, priority) as the single source for palette, footer and `?`. `:` opens a searchable list of valid task actions + navigation to the four takeover screens + panel-local commands, each showing its direct key; invalid task actions omitted. `esc` stack, panel-local `/`, `tab`-commits-filter. Jump-to-next-attention key. *Depends:* T3.10.
   *Done when:* `1..6` is gone and every takeover screen is reachable from `:`; a test asserts every registry entry is reachable from the palette; the `?` overlay renders from the registry, not a literal list.
 - [ ] **T3.12 — Contextual footer.** Generalize `actionbar` into a one-line, never-wrapping footer: focused-panel keys (max 5, priority-ordered) · `available_actions` · right-pinned `: commands  ? help  q quit`. Left-truncates with `…`; the pinned segment never truncates. Attention-jump hint appears only when the count is non-zero. *Depends:* T3.11.
