@@ -65,6 +65,7 @@ var bindings = []binding{
 	{key: "?", label: "toggle this help", scope: scopeGlobal},
 	{key: "tab", label: "move focus between the panels; commits a filter (shift+tab goes back)", scope: scopeGlobal},
 	{key: "!", label: "jump to the next task needing a human", scope: scopeGlobal},
+	{key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	{key: "esc", label: "close one layer: popup → screen → filter — never quits", scope: scopeGlobal, noPalette: true},
 	{key: "q", label: "quit the TUI (the daemon keeps running)", scope: scopeGlobal},
 	{key: "ctrl+c", label: "quit the TUI", scope: scopeGlobal, noPalette: true},

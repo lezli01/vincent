@@ -147,6 +147,11 @@ type detail struct {
 	loadSeq    uint64
 	appliedSeq uint64
 
+	// timelineTop and visibleRuns are the last-rendered timeline geometry,
+	// kept so a click can name the attempt on the line it landed on.
+	timelineTop int
+	visibleRuns []int64
+
 	width, height int
 }
 

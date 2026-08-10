@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -48,7 +49,49 @@ func (d *detail) timelinePanel(height int) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(d.renderTimeline(height - used))
+	d.timelineTop = used
 	return sb.String()
+}
+
+// clickTimeline selects the attempt rendered at the given content line —
+// the mouse half of "selecting an attempt is how scrollback is navigated".
+// Step headers and chrome lines fall through to a plain focus click.
+func (d *detail) clickTimeline(line int) tea.Cmd {
+	idx := line - d.timelineTop
+	if idx < 0 || idx >= len(d.visibleRuns) {
+		return nil
+	}
+	id := d.visibleRuns[idx]
+	if id == 0 || id == d.selectedRun {
+		return nil
+	}
+	d.selectedRun = id
+	return d.syncOutput()
+}
+
+// clickOutputTitle switches the output|diff tab when the click lands on its
+// span in the panel title (§15: click a tab). x,y are box-relative; the
+// focus glyph shifts the spans by two cells.
+func (d *detail) clickOutputTitle(x, y int, focused bool) tea.Cmd {
+	if y != 0 {
+		return nil
+	}
+	start := 3 // after "┌─ "
+	if focused {
+		start += 2 // the "▸ " glyph
+	}
+	const outputW, sepW, diffW = 6, 3, 4
+	switch {
+	case x >= start && x < start+outputW:
+		if d.tab == tabDiff {
+			return d.toggleTab()
+		}
+	case x >= start+outputW+sepW && x < start+outputW+sepW+diffW:
+		if d.tab == tabOutput {
+			return d.toggleTab()
+		}
+	}
+	return nil
 }
 
 // outputPanel renders the output|diff pane's content for the shell. The tab
@@ -166,6 +209,7 @@ func (d *detail) errorLine() string {
 func (d *detail) renderTimeline(height int) string {
 	runs := d.attempts()
 	if len(runs) == 0 {
+		d.visibleRuns = nil
 		if !d.loaded {
 			return styleDim.Render("  loading…")
 		}
@@ -173,6 +217,7 @@ func (d *detail) renderTimeline(height int) string {
 	}
 
 	lines := make([]string, 0, len(runs)*2)
+	ids := make([]int64, 0, len(runs)*2)
 	cursorLine := 0
 	lastStep := -1
 	for _, r := range runs {
@@ -180,6 +225,7 @@ func (d *detail) renderTimeline(height int) string {
 			lastStep = r.StepIndex
 			lines = append(lines, styleStepHeader.Render(
 				fmt.Sprintf("  %d %s", r.StepIndex+1, stepLabel(r))))
+			ids = append(ids, 0)
 		}
 		line := d.attemptLine(r)
 		if r.ID == d.selectedRun {
@@ -187,8 +233,16 @@ func (d *detail) renderTimeline(height int) string {
 			line = styleSelected.Render(line)
 		}
 		lines = append(lines, line)
+		ids = append(ids, r.ID)
 	}
-	return strings.Join(window(lines, cursorLine, height), "\n")
+	// The windowed ids are kept for hit-testing clicks on the same lines.
+	start := windowStart(len(lines), cursorLine, height)
+	end := len(lines)
+	if height > 0 && len(lines) > height {
+		end = start + height
+	}
+	d.visibleRuns = ids[start:end]
+	return strings.Join(lines[start:end], "\n")
 }
 
 func stepLabel(r apiclient.StepRun) string {
@@ -273,9 +327,17 @@ func window(lines []string, focus, height int) []string {
 	if height <= 0 || len(lines) <= height {
 		return lines
 	}
-	start := focus - height/2
-	start = min(max(start, 0), len(lines)-height)
+	start := windowStart(len(lines), focus, height)
 	return lines[start : start+height]
+}
+
+// windowStart is where a height-line window over n lines begins so the
+// focused line stays visible.
+func windowStart(n, focus, height int) int {
+	if height <= 0 || n <= height {
+		return 0
+	}
+	return min(max(focus-height/2, 0), n-height)
 }
 
 func tabLabel(name string, active bool) string {
