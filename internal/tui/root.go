@@ -173,7 +173,17 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamDoneMsg:
 		return m, nil
 	}
-	return m.delegate(msg)
+	// Input is routed; everything else is broadcast. Keys and mouse events
+	// belong to the surface in front of the human and are handled above;
+	// what reaches here is background work — a debounce firing, a fetch
+	// landing, a ticker re-arming — and it belongs to the view that started
+	// it, which is not necessarily the visible one. Delivering these to the
+	// active view only was a wedge: the board's refresh debounce fired while
+	// the new-task form was up, the form dropped it, and `refreshPending`
+	// stayed true forever, so the board ignored every later task event until
+	// the TUI was restarted (T3.8 finding). A tea.Tick that is not re-armed
+	// is gone for good, so the same routing killed the elapsed ticker.
+	return m, m.broadcast(msg)
 }
 
 // updateMouseClick is §15's click scope: a footer hint fires its key, and
