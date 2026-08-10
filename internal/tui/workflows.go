@@ -29,7 +29,21 @@ type (
 	// what the file now says reaches the view through the registry reload,
 	// which is the same path an external editor takes.
 	workflowEditedMsg struct{ err error }
+	// workflowResolvedMsg carries POST /v1/resolve for one expanded entry —
+	// which adapter each agent step would actually run (§8.6, T4.7).
+	workflowResolvedMsg struct {
+		key        wfResolveKey
+		resolution apiclient.Resolution
+		err        error
+	}
 )
+
+// wfResolveKey identifies an entry across scopes: the same name means
+// different files in the global block and in a project's own.
+type wfResolveKey struct {
+	projectID int64
+	name      string
+}
 
 // wfBlock is one scope's entries. The global block comes first and each
 // project follows in project-list order, because shadowing is a relationship
@@ -68,6 +82,11 @@ type workflowsView struct {
 	cursor   int
 	expanded bool
 	err      string
+
+	// resolutions caches what the daemon says each expanded entry resolves
+	// to, keyed by scope + name. A registry reload drops the cache: the file
+	// that just changed is exactly the one whose resolution may have moved.
+	resolutions map[wfResolveKey]apiclient.Resolution
 
 	refreshPending bool
 	width, height  int
@@ -178,6 +197,14 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return w, w.loadCmd()
 	case workflowsLoadedMsg:
 		w.applyLoaded(msg)
+		return w, w.resolveCmd()
+	case workflowResolvedMsg:
+		if msg.err == nil {
+			if w.resolutions == nil {
+				w.resolutions = map[wfResolveKey]apiclient.Resolution{}
+			}
+			w.resolutions[msg.key] = msg.resolution
+		}
 		return w, nil
 	case workflowEditedMsg:
 		if msg.err != nil {
@@ -207,7 +234,39 @@ func (w *workflowsView) applyLoaded(msg workflowsLoadedMsg) {
 	w.loaded = true
 	w.lastLoad = w.now()
 	w.blocks = msg.blocks
+	// A reload is the one event that can change what a step resolves to, so
+	// nothing cached against the old registry survives it.
+	w.resolutions = nil
 	w.snapCursor()
+}
+
+// resolveCmd fetches the resolution for the entry under the cursor, once.
+// It is called when the cursor moves and when the registry reloads — the
+// step list only shows an expanded entry, but resolving on cursor movement
+// means the names are already there when it opens.
+func (w *workflowsView) resolveCmd() tea.Cmd {
+	client := w.client
+	line, ok := w.currentLine()
+	if client == nil || !ok {
+		return nil
+	}
+	key := wfResolveKey{name: line.entry.Name}
+	if line.block != nil {
+		key.projectID = line.block.projectID
+	}
+	if _, cached := w.resolutions[key]; cached {
+		return nil
+	}
+	req := apiclient.ResolveRequest{Workflow: key.name}
+	if key.projectID != 0 {
+		req.ProjectID = ptr(key.projectID)
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		res, err := client.Resolve(ctx, req)
+		return workflowResolvedMsg{key: key, resolution: res, err: err}
+	}
 }
 
 // snapCursor puts the cursor on a selectable line. Line 0 is always a scope
@@ -246,10 +305,13 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		w.moveCursor(-1)
+		return w, w.resolveCmd()
 	case "down", "j":
 		w.moveCursor(1)
+		return w, w.resolveCmd()
 	case "enter":
 		w.expanded = !w.expanded
+		return w, w.resolveCmd()
 	case "e":
 		return w, w.editCmd()
 	case "R":
