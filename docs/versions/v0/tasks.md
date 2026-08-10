@@ -465,6 +465,7 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
   5. `?` showed the underlying surface's footer while open; it now carries its own key row.
   6. The palette's group headings looked like its entries; sections are now styled and ruled, with navigation in its own **views** section.
   7. "(workflow default)" named no agent. The registry already reports each step's agent (§8.6 levels 1 and 3), so the form now reads "(workflow default → claude, adapter default)" from the server's own report. Model and effort stay unnamed — the API does not report them per step, which is exactly T4.7's remaining scope.
+  *2026-08-10 (Windows run recorded):* re-walk of the fixed build — `master` at `3a2d361`, Windows 11 Enterprise 10.0.26200, Windows Terminal + pwsh, real `claude` 2.1.226 on the question leg, `$EDITOR` resolving to `notepad`. Section A L1–L10 **pass**, Section B S1–S18 **pass** with **S14 partial** (mouse judged in Windows Terminal + pwsh only; Git Bash/mintty not walked). **No findings.** Recorded in `m3-gate.md` under Results. **The task stays `[~]`: the gate is Windows *and* one POSIX OS, and macOS has not been walked.** Because the earlier fixes invalidated every prior walk, the macOS run must judge this same commit — anything that lands before it re-walks both. The "both runs on the branch before merge" rule is no longer literally satisfiable now that T3.9–T3.13 have merged; its substance (both runs judge one build) is what carries.
 
 **Phase 3 TUI refactor decisions (grill session, 2026-08-09):**
 

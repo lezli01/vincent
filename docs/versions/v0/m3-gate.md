@@ -100,7 +100,7 @@ invalidates every earlier run.
 | mode | real claude / rehearsal |
 
 Section A: L1 … L10 — pass / fail
-Section B: S1 … S13 — pass / fail / n-a
+Section B: S1 … S18 — pass / fail / n-a
 
 **Findings**
 
@@ -112,4 +112,45 @@ Section B: S1 … S13 — pass / fail / n-a
 
 -->
 
-_No runs recorded yet._
+### Windows 11 — 2026-08-10
+
+| | |
+|---|---|
+| OS / version | Windows 11 Enterprise 10.0.26200 |
+| terminal host | Windows Terminal + pwsh |
+| vincent commit | `3a2d361` |
+| `claude --version` | 2.1.226 (Claude Code) |
+| resolved `$EDITOR` | `notepad` (`VISUAL` and `EDITOR` both unset, so `editorCommand()` took its Windows fallback) |
+| mode | real claude |
+
+Section A: L1 … L10 — **pass**. The §19 loop completed without leaving the TUI.
+
+Section B: S1 … S18 — **pass**, with one partial:
+
+- **S14 partial.** Mouse was judged in Windows Terminal + pwsh only. The second
+  Windows host the item names — Git Bash/mintty — was not walked, so the
+  mouse-reporting behaviour of a non-console host is still unobserved.
+
+**Findings**
+
+| Item | What | Disposition |
+|---|---|---|
+| — | none | — |
+
+The nine findings from the unrecorded first Windows walkthrough (see T3.8 in
+`tasks.md`) were all fixed before this run, so this run judges the fixed build
+and they are not repeated here.
+
+**Verdict:** GATE PASS (Windows). Not yet a gate pass overall — the gate is
+Windows **and** one POSIX OS, and macOS has not been walked.
+
+Two notes on the record itself:
+
+- The "both runs on the branch before it merges" rule in the header is no longer
+  literally satisfiable: T3.9–T3.13 merged first, so this run judges `master` at
+  `3a2d361` rather than a PR branch. The rule's substance — *both runs judge one
+  build* — still binds, so the macOS run must be against `3a2d361`, and anything
+  that lands before it re-walks both.
+- Section A passing on one OS is not the gate. T3.8 stays `[~]`.
+
+
