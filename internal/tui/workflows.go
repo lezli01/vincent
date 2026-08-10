@@ -256,7 +256,13 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		w.err = ""
 		return w, w.loadCmd()
 	case "esc":
-		w.err = ""
+		// One layer per press (§15): an error note clears first; with
+		// nothing left, the takeover closes.
+		if w.err != "" {
+			w.err = ""
+			return w, nil
+		}
+		return w, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	}
 	return w, nil
 }

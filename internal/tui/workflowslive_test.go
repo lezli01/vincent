@@ -119,7 +119,7 @@ func TestWorkflowsViewReflectsFileEdit(t *testing.T) {
 	// first would race the reload event into oblivion.
 	p.until(10*time.Second, "the event stream to go live", func() bool { return m.streamLive })
 
-	_, cmd = m.Update(namedKey("5"))
+	_, cmd = m.Update(selectViewMsg{id: viewWorkflows})
 	p.push(cmd)
 	p.until(10*time.Second, "the workflows view to load", func() bool {
 		return strings.Contains(content(m), "global")

@@ -98,7 +98,7 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 	_, cmd := m.Update(msg)
 	p := newPump(t, m, cmd)
 
-	_, cmd = m.Update(namedKey("6"))
+	_, cmd = m.Update(selectViewMsg{id: viewDaemon})
 	p.push(cmd)
 	p.until(10*time.Second, "the daemon view to load", func() bool {
 		out := content(m)
