@@ -8,12 +8,14 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// viewID indexes the six §15 views; the 1..6 global keys map onto it.
+// viewID indexes the root's routed screens: the fused home screen (§15
+// views 1–2 as one persistent three-panel shell) and the four full-screen
+// takeovers (§15 views 3–6). The digits 1..6 keep their §15 meanings until
+// T3.11 retires them — 1 and 2 both land on the home screen.
 type viewID int
 
 const (
-	viewBoard viewID = iota
-	viewDetail
+	viewHome viewID = iota
 	viewNewTask
 	viewProjects
 	viewWorkflows
@@ -21,11 +23,13 @@ const (
 	viewCount
 )
 
-// view is one routed screen. Views are sub-models: the root delegates
-// non-global messages to the active view only.
-type view interface {
+// panel is one routed screen (T3.10: renamed from view). Screens are
+// sub-models: the root delegates non-global messages to the active one only.
+// The home shell implements it too, and composes the board and detail
+// sub-models into the three §15 panes behind it.
+type panel interface {
 	title() string
-	update(msg tea.Msg) (view, tea.Cmd)
+	update(msg tea.Msg) (panel, tea.Cmd)
 	render(width, height int) string
 }
 
@@ -56,25 +60,25 @@ type dataDirAware interface {
 
 // connectionAware is implemented by views that render while the daemon is
 // unreachable and therefore have to say which of their contents are still
-// true. Only the daemon view is reachable in that state.
+// true: the daemon view, and the home shell whose panels stay on screen
+// marked stale (§15 Disconnected).
 type connectionAware interface {
 	setConnected(bool)
 }
 
 // clientAware is implemented by views that talk to the daemon themselves.
 // The root hands each one the client as the connection comes up (and again
-// after a reconnect) rather than widening the view interface, which every
+// after a reconnect) rather than widening the panel interface, which every
 // stub would then have to implement meaninglessly.
 type clientAware interface {
 	setClient(*apiclient.Client) tea.Cmd
 }
 
 // newViews returns the initial view set. ctx bounds background work a view
-// owns — the detail view's per-task subscription.
-func newViews(ctx context.Context) [viewCount]view {
-	return [viewCount]view{
-		viewBoard:     newBoard(),
-		viewDetail:    newDetail(ctx),
+// owns — the detail sub-model's per-task subscription.
+func newViews(ctx context.Context) [viewCount]panel {
+	return [viewCount]panel{
+		viewHome:      newShell(ctx),
 		viewNewTask:   newNewTask(),
 		viewProjects:  newProjectsView(),
 		viewWorkflows: newWorkflowsView(),

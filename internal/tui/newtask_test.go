@@ -395,7 +395,7 @@ func TestNewTaskEscOnAnUntouchedDraftJustLeaves(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("esc on a clean form did nothing")
 	}
-	if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewBoard {
+	if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewHome {
 		t.Errorf("esc = %#v, want a switch back to the board", cmd())
 	}
 	if n.mode == ntConfirming {

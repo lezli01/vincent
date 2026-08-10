@@ -29,6 +29,13 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "0-1.jsonl")
 	covered := writeTranscript(t, path, "line-one", "line-two")
 
+	// The task must actually be running: T3.10's subscription rule only
+	// opens the live tail for a running task, which is the only state that
+	// produces live output.
+	if _, _, err := h.st.TransitionTask(ctx, task.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("transition to running: %v", err)
+	}
 	run := &store.StepRun{
 		TaskID: task.ID, StepIndex: 0, StepID: "one", StepType: "command",
 		Attempt: 1, State: store.StepRunning, TranscriptPath: path,

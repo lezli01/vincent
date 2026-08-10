@@ -64,7 +64,7 @@ func TestDetailTimelineRendersAttempts(t *testing.T) {
 	live.OutputTokens = ptr(int64(120))
 	loadDetail(d, []apiclient.StepRun{failed, live})
 
-	got := d.render(120, 30)
+	got := d.timelinePanel(30)
 	for _, want := range []string{
 		"#42 detail task", // header names the task
 		"1 implement",     // step group header, 1-based
@@ -168,7 +168,7 @@ func TestDetailChunkForUnknownAttemptIsHeld(t *testing.T) {
 	d.streamID = 3          // a live subscription for this task
 	d.refreshPending = true // a debounce is already pending and must be bypassed
 
-	_, cmd := d.update(taskNoteMsgFor(3, 77, 10, "first line of a new step"))
+	cmd := d.update(taskNoteMsgFor(3, 77, 10, "first line of a new step"))
 	if cmd == nil {
 		t.Fatal("an unknown attempt did not trigger a refetch")
 	}
@@ -209,8 +209,8 @@ func TestDetailFollowDropsAndRearms(t *testing.T) {
 	if d.newLines != 1 {
 		t.Errorf("new-line counter = %d, want 1", d.newLines)
 	}
-	if !strings.Contains(d.paneHeader(), "1 new") {
-		t.Errorf("paused header does not report unread output: %q", d.paneHeader())
+	if !strings.Contains(d.outputTitle(), "1 new") {
+		t.Errorf("paused title does not report unread output: %q", d.outputTitle())
 	}
 
 	d.focus = focusOutput
@@ -218,8 +218,8 @@ func TestDetailFollowDropsAndRearms(t *testing.T) {
 	if !d.following || d.newLines != 0 {
 		t.Errorf("f did not re-arm follow: following=%v new=%d", d.following, d.newLines)
 	}
-	if !strings.Contains(d.paneHeader(), "following") {
-		t.Errorf("following header missing: %q", d.paneHeader())
+	if !strings.Contains(d.outputTitle(), "following") {
+		t.Errorf("following title missing: %q", d.outputTitle())
 	}
 }
 
@@ -257,8 +257,9 @@ func TestDetailEmptyStates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newTestDetail(t)
 			tc.setup(d)
-			if got := d.render(120, 30); !strings.Contains(got, tc.want) {
-				t.Errorf("render missing %q:\n%s", tc.want, got)
+			got := d.timelinePanel(15) + "\n" + d.outputPanel(120, 15)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("panels missing %q:\n%s", tc.want, got)
 			}
 		})
 	}
@@ -318,37 +319,45 @@ func TestDetailRecordCapDropsOldest(t *testing.T) {
 }
 
 // TestDetailStreamLifecycle proves the subscription exists exactly while the
-// view is on screen with a task: a tail nobody is watching costs a connection
-// and unbounded memory for output the transcript already holds.
+// sub-model is on screen with a *running* task: a tail nobody is watching
+// costs a connection and unbounded memory for output the transcript already
+// holds, and a task that is not running has no live output at all (T3.10).
 func TestDetailStreamLifecycle(t *testing.T) {
 	d := newTestDetail(t)
-	d.client = apiclient.New("http://127.0.0.1:1", "token")
+	d.setClient(apiclient.New("http://127.0.0.1:1", "token"))
 
-	d.update(selectTaskMsg{id: 12})
+	d.open(12, stateRunning)
 	if d.streamID != 0 {
-		t.Fatal("subscribed before the view was on screen")
+		t.Fatal("subscribed before the panels were on screen")
 	}
-	d.update(viewActivatedMsg{id: viewDetail})
+	d.active = true
+	d.syncStream()
 	if d.streamID != 12 {
-		t.Fatalf("stream task = %d, want 12 after activation", d.streamID)
+		t.Fatalf("stream task = %d, want 12 once on screen", d.streamID)
 	}
-	d.update(viewDeactivatedMsg{id: viewDetail})
+	d.active = false
+	d.syncStream()
 	if d.streamID != 0 {
-		t.Errorf("stream still open (task %d) after leaving the view", d.streamID)
+		t.Errorf("stream still open (task %d) after leaving the screen", d.streamID)
 	}
-}
 
-// TestDetailEscReturnsToBoard covers the one navigation key the view owns.
-func TestDetailEscReturnsToBoard(t *testing.T) {
-	d := newTestDetail(t)
-	d.taskID = 1
-	_, cmd := d.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if cmd == nil {
-		t.Fatal("esc produced no command")
+	// A parked task has no live output: opening it must not subscribe.
+	d.active = true
+	d.open(13, stateAwaitingInput)
+	if d.streamID != 0 {
+		t.Errorf("stream open (task %d) for a task that is not running", d.streamID)
 	}
-	msg, ok := cmd().(selectViewMsg)
-	if !ok || msg.id != viewBoard {
-		t.Errorf("esc = %#v, want selectViewMsg{viewBoard}", msg)
+
+	// The authoritative fetch overrides the hint in both directions.
+	loadDetail(d, nil) // loadDetail installs stateRunning
+	if d.streamID != 13 {
+		t.Errorf("stream task = %d, want 13 once the fetch says it is running", d.streamID)
+	}
+	d.applyLoaded(detailLoadedMsg{id: 13, task: apiclient.TaskDetail{
+		Task: apiclient.Task{ID: 13, State: stateBlocked},
+	}})
+	if d.streamID != 0 {
+		t.Errorf("stream still open (task %d) after the task stopped running", d.streamID)
 	}
 }
 

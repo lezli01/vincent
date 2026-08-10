@@ -61,7 +61,7 @@ func TestFailureScreenPointsAtTheDaemonView(t *testing.T) {
 // running, and only when the board knows.
 func TestQuitReminderCountsRunningTasks(t *testing.T) {
 	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
-	b := m.views[viewBoard].(*board)
+	b := m.views[viewHome].(*shell).board
 
 	t.Run("board never loaded", func(t *testing.T) {
 		b.loaded = false

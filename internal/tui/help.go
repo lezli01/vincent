@@ -6,7 +6,9 @@ import "strings"
 func helpText() string {
 	rows := [][2]string{
 		{"?", "toggle this help"},
-		{"1..6", "switch view: board · task detail · new task · projects · workflows · daemon"},
+		{"tab", "move focus between the panels (shift+tab goes back)"},
+		{"1..6", "switch screen: home (board+detail) · new task · projects · workflows · daemon"},
+		{"esc", "back to the task table; on it, clear the filter"},
 		{"n", "start a new task for the project you are looking at"},
 		{"q", "quit the TUI (the daemon keeps running)"},
 		{"ctrl+c", "quit the TUI"},
@@ -23,23 +25,20 @@ func helpText() string {
 		{"A", "archive a finished task (asks first — the worktree is removed)"},
 	}
 	boardRows := [][2]string{
-		{"↑/↓", "move the selection"},
-		{"enter", "open the selected task"},
+		{"↑/↓", "move the selection (the panels below follow the cursor)"},
+		{"enter", "open the selected task in the panels — or its answer form when it is asking"},
 		{"/", "filter by id, title, project or state"},
-		{"esc", "clear the filter"},
 	}
 	detailRows := [][2]string{
-		{"tab", "move focus: timeline → output → answer form"},
 		{"d", "switch the pane between output and diff (reloads the diff)"},
 		{"↑/↓", "select an attempt, or scroll the pane"},
 		{"f / G", "follow the live output again"},
-		{"esc", "back to the board"},
 	}
 	formRows := [][2]string{
 		{"space", "pick an option (toggles, for a multi-select question)"},
 		{"e", "type your own answer — options are suggestions, never a list"},
 		{"enter", "submit the answer; the run resumes where it stopped"},
-		{"esc", "leave the form without answering"},
+		{"esc", "close the popup without answering (what you picked is kept)"},
 	}
 	newTaskRows := [][2]string{
 		{"↑/↓", "move between fields"},
