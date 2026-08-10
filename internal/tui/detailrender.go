@@ -109,14 +109,21 @@ func (d *detail) detailHints() []string {
 	if d.form != nil {
 		hints = append(hints, styleAsk.Render("enter answer"))
 	}
-	if d.target().has("retry") {
-		if step, ok := d.task.Step(d.task.CurrentStep); ok {
-			if _, _, editable := step.EditableText(); editable {
-				hints = append(hints, styleKey.Render("E")+" edit+retry")
-			}
-		}
+	if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
+		hints = append(hints, styleKey.Render("E")+" edit+retry")
 	}
 	return hints
+}
+
+// stepEditable reports whether the current step carries text E could edit —
+// the same gate the action bar's hint and the palette share.
+func (d *detail) stepEditable() bool {
+	step, ok := d.task.Step(d.task.CurrentStep)
+	if !ok {
+		return false
+	}
+	_, _, editable := step.EditableText()
+	return editable
 }
 
 func (d *detail) headerLine() string {

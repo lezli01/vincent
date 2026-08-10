@@ -269,11 +269,14 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		p.filter.Focus()
 		return p, nil
 	case "esc":
-		if p.filter.Value() != "" {
+		// One layer per press (§15): a committed filter or an error note
+		// clears first; with nothing left, the takeover closes.
+		if p.filter.Value() != "" || p.err != "" {
 			p.filter.SetValue("")
+			p.err = ""
+			return p, nil
 		}
-		p.err = ""
-		return p, nil
+		return p, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	case "a":
 		p.err = ""
 		p.form = newProjectForm(p.client, nil)

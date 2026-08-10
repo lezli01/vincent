@@ -242,6 +242,9 @@ func (d *daemonView) applyLog(msg daemonLogMsg) {
 
 func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
+	case "esc":
+		// The takeover layer of the §15 esc stack: back to the home screen.
+		return d, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	case "R":
 		return d, d.refreshCmd()
 	case "f", "G", "end":
