@@ -8,7 +8,9 @@ M1 and M2 are asserted by `curl` in CI. M3 cannot be: its acceptance is a
 judgement about a terminal program, and the Phase 3 decision ruled out driving
 one from tests. So this is a human walkthrough. `scripts/m3-gate.sh` seeds the
 world and prints the launch instructions; everything below is done by hand, on
-**Windows 11 and macOS**, both runs on the PR branch before it merges.
+**Windows 11 and macOS**, both runs against the same build. The shakeout runs
+were walked on the PR branches whose fixes they produced; the two recorded runs
+were walked on `master` at `40fbffe`, the first commit carrying all of them.
 
 Linux is not hand-run: it executes the full Go suite and both existing gates on
 every PR across all three OSes. That is a stated choice, not an omission.
@@ -174,4 +176,98 @@ Section B: S1 … S13 — pass / fail / n-a
 
 -->
 
-_No runs recorded yet._
+Both recorded runs judge **`40fbffe`** — the first build carrying every
+shakeout fix above (mouse row hit-testing, paste routing, one-shot launch env).
+Nothing loop-blocking was found in either, so neither run invalidates the other.
+
+### Windows 11 — 2026-08-10
+
+| | |
+|---|---|
+| OS / version | Windows 11 |
+| terminal host | Windows Terminal (pwsh); Git Bash/mintty for the second S14 host |
+| vincent commit | `40fbffe` |
+| `claude --version` | 2.1.226 (Claude Code) |
+| resolved `$EDITOR` | unset → `notepad` (platform default, `internal/tui/editor.go`) |
+| mode | real claude on the question leg |
+
+Section A: L1–L10 — **pass** (the §19 loop completed without leaving the TUI).
+Section B: S1–S18 — **pass**.
+
+**Findings**
+
+| Item | What | Disposition |
+|---|---|---|
+| — | none | — |
+
+Everything surfaced by the Windows shakeout (the nine findings written up under
+T3.8 in `tasks.md`) was already fixed in this build and re-checked here: the
+task table keeps updating while the new-task form is open, clicks land only on
+rendered rows, the Projects table degrades instead of overflowing, `?` shows the
+focused surface's keys with its own footer, the palette's sections are ruled,
+and the new-task form names the workflow-default agent.
+
+**Verdict:** GATE PASS
+
+### macOS — 2026-08-10
+
+| | |
+|---|---|
+| OS / version | macOS 26.5.2 (25F84) |
+| terminal host | Ghostty 1.3.1 |
+| vincent commit | `40fbffe` |
+| `claude --version` | 2.1.226 (Claude Code) |
+| resolved `$EDITOR` | unset → `vi` (platform default, `internal/tui/editor.go`) |
+| mode | real claude on the question leg |
+
+Section A: L1–L10 — **pass** (the §19 loop completed without leaving the TUI).
+Section B: S1–S18 — **pass**, with S14 read as its POSIX equivalent: the mouse
+items are exercised in Ghostty, not on the two Windows hosts, which the Windows
+run above covers.
+
+**Findings**
+
+| Item | What | Disposition |
+|---|---|---|
+| — | none | — |
+
+The three macOS shakeout findings are fixed in this build and re-checked here:
+a click selects the row under the cursor (S14), bracketed paste and `ctrl+v`
+both fill the focused field (L2, S5, S6), and the gate banner's launch block no
+longer exports `FAKEAGENT_*` into the shell that later runs `go test`.
+
+**Verdict:** GATE PASS
+
+## Friction record dispositions (T3.9)
+
+`tui-friction.md` requires every finding it recorded before the refactor to come
+back here carrying **fixed**, **deferred** to a Phase 4 ID, or **won't-fix**.
+Judged against the same `40fbffe` walkthroughs; the sweep item that exercised
+each one is named, so a disposition is a thing that was looked at, not a thing
+the mechanism's PR claimed.
+
+| Finding | Disposition | Seen in |
+|---|---|---|
+| F1 42 keys, no complete on-screen list | fixed — palette is searchable by intent and shows each entry's direct key | S16 |
+| F2 `?` is a full-screen 45-row modal | fixed — `?` is the focused surface's keys plus globals, framed and titled | S1 |
+| F3 bindings in three places, already drifted | fixed — one registry feeds palette, footer and `?`; drift is a test failure | S1, S16 |
+| F4 `1..6` navigation with no legend | fixed — `1..6` retired; takeovers are palette entries under a **views** section | L2, L3, S16 |
+| F5 board↔detail modal round-trip | fixed — one screen; the queue and a live tail are visible together | L6, L7 |
+| F6 same key, different meaning per view | fixed — footer names the focused panel's keys | S1, S9 |
+| F7 only task actions get a hint | fixed — the action bar generalised into the footer for every panel | S1, S4 |
+| F8 no way to *go* to an attention task | fixed — `!` jumps, surfaced only when the count is non-zero | L8 |
+| F9 no mouse | fixed — focus, row select, wheel, hints, tabs, `M` to disable | S14 |
+| F10 no command surface | fixed — `:` opens on every surface | S16 |
+| F11 `esc` overloaded and positional | fixed — explicit popup → takeover → filter → no-op stack; never quits | L8, S5, S15 |
+| F12 answer form is a stop in a `tab` cycle | fixed — a popup with a row badge and a footer hint | L8, S5 |
+
+No finding is deferred or won't-fix. The one item T3.8 deferred is not from this
+record: naming what "(workflow default)" resolves to for **model and effort** is
+**T4.7**, which needs the API to report §8.6 resolution per step — the agent half
+was fixed during the Windows shakeout.
+
+### Gate result
+
+**T3.8 passes.** §19's M3 acceptance holds on Windows 11 and macOS against one
+build, `40fbffe`. Linux keeps its coverage from CI — the full Go suite plus the
+M1 and M2 gates on every PR.
