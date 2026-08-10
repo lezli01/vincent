@@ -126,9 +126,11 @@ func TestShellFocusCycling(t *testing.T) {
 	if s.focus != panelOutput {
 		t.Fatalf("shift+tab focus = %v, want output", s.focus)
 	}
+	// esc is not a focus key (§15 stack): with no popup and no filter it is
+	// a no-op, and it never quits.
 	press(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if s.focus != panelTasks {
-		t.Fatalf("esc focus = %v, want back on the task table", s.focus)
+	if s.focus != panelOutput {
+		t.Fatalf("esc moved focus to %v, want it to stay put", s.focus)
 	}
 }
 
@@ -219,6 +221,76 @@ func TestShellReopensAfterALostSettle(t *testing.T) {
 	}
 	if *subs != 1 {
 		t.Fatalf("subscriptions = %d, want 1 for the reopened running task", *subs)
+	}
+}
+
+// TestShellTabCommitsFilter: a filter is view state, not a mode — tab
+// commits it and moves focus, the committed value names itself in the
+// panel title, and only esc clears it (§15).
+func TestShellTabCommitsFilter(t *testing.T) {
+	s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateDone))
+	s.update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	if !s.board.filtering {
+		t.Fatal("/ did not start the filter")
+	}
+	for _, r := range "running" {
+		s.update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	s.update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if s.board.filtering {
+		t.Fatal("tab did not commit the filter")
+	}
+	if got := s.board.filter.Value(); got != "running" {
+		t.Fatalf("filter value = %q, want it kept", got)
+	}
+	if s.focus != panelTimeline {
+		t.Fatalf("focus = %v, want tab to have moved it", s.focus)
+	}
+	if title := s.panelTitle(panelTasks); !strings.Contains(title, "/running") {
+		t.Fatalf("panel title = %q, want the committed filter named", title)
+	}
+	// esc clears the filter from any panel focus — the filter layer of the
+	// stack sits below the popups.
+	s.update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if got := s.board.filter.Value(); got != "" {
+		t.Fatalf("filter value = %q after esc, want cleared", got)
+	}
+	if title := s.panelTitle(panelTasks); strings.Contains(title, "/running") {
+		t.Fatalf("panel title = %q still names a cleared filter", title)
+	}
+}
+
+// TestShellJumpAttention: ! cycles through the tasks needing a human,
+// opening each immediately — the board has always pinned and belled those
+// tasks without offering any way to go to one.
+func TestShellJumpAttention(t *testing.T) {
+	s, _ := newShellFixture(t,
+		task(1, stateRunning), task(2, stateAwaitingInput), task(3, stateBlocked))
+	var want []int64
+	for _, row := range s.board.visible() {
+		if needsAttention(row.State) {
+			want = append(want, row.ID)
+		}
+	}
+	if len(want) != 2 {
+		t.Fatalf("fixture: %d attention rows, want 2", len(want))
+	}
+
+	// The attention rows are pinned to the top, so the cursor already sits
+	// on the first one: the jump goes to the *next*, then wraps.
+	s.update(jumpAttentionMsg{})
+	if s.detail.taskID != want[1] {
+		t.Fatalf("first jump opened #%d, want #%d", s.detail.taskID, want[1])
+	}
+	s.render(120, 37) // seat the cursor on the jumped row
+	s.update(jumpAttentionMsg{})
+	if s.detail.taskID != want[0] {
+		t.Fatalf("second jump opened #%d, want the wrap to #%d", s.detail.taskID, want[0])
+	}
+	s.render(120, 37)
+	s.update(jumpAttentionMsg{})
+	if s.detail.taskID != want[1] {
+		t.Fatalf("third jump opened #%d, want #%d", s.detail.taskID, want[1])
 	}
 }
 

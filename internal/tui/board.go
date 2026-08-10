@@ -550,12 +550,13 @@ func (b *board) agentsSummary() string {
 	return strings.Join(parts, " ")
 }
 
-// statusLine surfaces a stale board and the filter prompt. A refresh that
+// statusLine surfaces a stale board and the filter prompt while it is being
+// typed — a committed filter moves to the panel title (§15). A refresh that
 // failed says so and says how old the rows are, rather than the board
 // quietly showing yesterday's truth.
 func (b *board) statusLine() string {
 	switch {
-	case b.filtering || b.filter.Value() != "":
+	case b.filtering:
 		line := " " + b.filter.View()
 		if b.loadErr != nil {
 			line += styleBad.Render("  ⚠ " + b.staleNote())
@@ -566,6 +567,25 @@ func (b *board) statusLine() string {
 	default:
 		return ""
 	}
+}
+
+// filterActive reports there is a filter to clear — typing or committed.
+func (b *board) filterActive() bool {
+	return b.filtering || b.filter.Value() != ""
+}
+
+// commitFilter leaves the typed filter applied and stops capturing (§15:
+// tab commits; only esc clears).
+func (b *board) commitFilter() {
+	b.filtering = false
+	b.filter.Blur()
+}
+
+// clearFilter is the esc-stack layer: the filter disappears entirely.
+func (b *board) clearFilter() {
+	b.filtering = false
+	b.filter.SetValue("")
+	b.filter.Blur()
 }
 
 func (b *board) staleNote() string {
@@ -590,7 +610,7 @@ func (b *board) emptyBody(rows []apiclient.Task) (string, bool) {
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true
 	default:
-		return styleDim.Render("\n  no tasks yet — press 3 to create one\n"), true
+		return styleDim.Render("\n  no tasks yet — press n to create one\n"), true
 	}
 }
 

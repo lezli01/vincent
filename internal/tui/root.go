@@ -67,6 +67,10 @@ type root struct {
 	active viewID
 	views  [viewCount]panel
 	help   bool
+	// palette is the §15 command palette, open when non-nil. It lives on
+	// the root because it must overlay every screen, takeovers included —
+	// while disconnected it is how the daemon view stays reachable.
+	palette *palette
 	// notice is §16's full-auto warning. It owns the whole screen until it
 	// is dismissed, ahead of and independent of the connect flow: the
 	// warning is about what the daemon will do, so it must not wait on the
@@ -163,6 +167,11 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
+	// An open palette owns every key but ctrl+c — it is a popup, the top of
+	// the §15 esc stack.
+	if m.palette != nil && msg.String() != "ctrl+c" {
+		return m.updatePaletteKey(msg)
+	}
 	// A view that is capturing text (the board's filter) owns every key but
 	// ctrl+c: typing "q" into a filter must not quit the TUI.
 	if msg.String() != "ctrl+c" && m.activeCapturesInput() {
@@ -173,29 +182,27 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key := msg.String(); key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case ":":
+		m.openPalette()
+		return m, nil
 	case "?":
 		m.help = !m.help
 		return m, nil
 	case "esc":
-		// esc closes the help overlay when one is open, and otherwise belongs
-		// to the view: it is "back to the board" in the detail view and "leave
-		// the field, then the form" in the new-task flow. Swallowing it here
-		// unconditionally made both of those dead code.
+		// The top layers of the §15 esc stack that the root owns: the help
+		// overlay, then a takeover screen's own layers (the views handle
+		// those, ending in leave-to-home). The home shell owns the filter
+		// layer, and the bottom is a no-op — esc never quits.
 		if m.help {
 			m.help = false
 			return m, nil
 		}
-	case "1", "2":
-		// Board and detail are one screen now; the digits keep their §15
-		// meanings until T3.11 retires them, so 2 lands focused on the
-		// timeline.
-		cmds := []tea.Cmd{m.switchTo(viewHome)}
-		if key == "2" {
-			cmds = append(cmds, m.deliver(viewHome, focusPanelMsg{id: panelTimeline}))
+	case "!":
+		// Jump to the next task needing a human — global, so it also pulls
+		// a takeover screen back to the board it acts on.
+		if m.phase == phaseConnected {
+			return m, tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{}))
 		}
-		return m, tea.Batch(cmds...)
-	case "3", "4", "5", "6":
-		return m, m.switchTo(viewID(key[0]-'3') + viewNewTask)
 	case "n":
 		// Not while the form is already up: there, n is "no" to the discard
 		// prompt, and re-opening would throw away the draft it is asking
@@ -209,6 +216,74 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.delegate(msg)
+}
+
+// updatePaletteKey routes keys into the open palette, and runs whatever it
+// picks: a keyed entry replays its direct keypress through the normal
+// routing — one execution path, so the palette cannot diverge from the
+// shortcut it teaches — and a keyless navigation entry switches screens.
+func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	run, done, cmd := m.palette.update(msg)
+	if done {
+		m.palette = nil
+	}
+	if run == nil {
+		return m, cmd
+	}
+	if run.nav && run.key == "" {
+		return m, m.switchTo(run.navTarget)
+	}
+	return m.updateKey(synthKey(run.key))
+}
+
+// openPalette builds the palette for the active surface.
+func (m *root) openPalette() {
+	var (
+		ctx      bindingContext
+		target   taskActions
+		editable bool
+	)
+	switch m.active {
+	case viewNewTask:
+		ctx = ctxNewTask
+	case viewProjects:
+		ctx = ctxProjects
+	case viewWorkflows:
+		ctx = ctxWorkflows
+	case viewDaemon:
+		ctx = ctxDaemon
+	default:
+		s := m.views[viewHome].(*shell)
+		ctx = s.focusedContext()
+		target = s.board.target()
+		editable = s.detail.stepEditable()
+	}
+	m.palette = newPalette(paletteEntries(ctx, target, editable, m.phase == phaseConnected))
+}
+
+// synthKey rebuilds the key message a terminal would deliver for one
+// registry key.
+func synthKey(key string) tea.KeyPressMsg {
+	switch key {
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "down":
+		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "space":
+		return tea.KeyPressMsg{Code: ' ', Text: " "}
+	case "ctrl+s":
+		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+	case "ctrl+c":
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	default:
+		return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
+	}
 }
 
 // updateNoticeKey is the §16 overlay's key handling: it swallows everything
@@ -399,7 +474,16 @@ func (m *root) View() tea.View {
 	b.WriteString(m.body())
 	b.WriteString("\n")
 	b.WriteString(m.footerLine())
-	return tea.NewView(b.String())
+	frame := b.String()
+	if m.palette != nil {
+		pw := min(m.width-8, 64)
+		if pw < 24 {
+			pw = max(m.width-2, 10)
+		}
+		ph := min(18, max(m.height-4, 6))
+		frame = overlay(frame, m.palette.render(pw, ph), max((m.width-pw)/2, 0), 2)
+	}
+	return tea.NewView(frame)
 }
 
 func (m *root) headerLine() string {
@@ -468,7 +552,7 @@ func (m *root) body() string {
 		return "\n  starting daemon…\n"
 	case phaseFailed:
 		return fmt.Sprintf(
-			"\n  %s\n\n  log: %s\n\n  press r to retry, 6 for the daemon log, q to quit\n",
+			"\n  %s\n\n  log: %s\n\n  press r to retry, : for the daemon view and its log, q to quit\n",
 			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath)
 	case phaseReconnecting:
 		return fmt.Sprintf("\n  %s\n\n  retrying in %s — press r to restart the daemon if it stays down\n",
@@ -513,7 +597,7 @@ func (m *root) homeLoaded() bool {
 }
 
 func (m *root) footerLine() string {
-	hints := " tab panels · 1-6 views · n new task · ? help · q quit"
+	hints := " tab panels · : commands · ? help · q quit"
 	if m.phase == phaseFailed || m.phase == phaseReconnecting {
 		hints += " · r retry"
 	}

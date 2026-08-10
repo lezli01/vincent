@@ -24,9 +24,11 @@ type (
 	// the task it was armed for, so a window opened for a row the cursor
 	// has since left is ignored.
 	selectionSettledMsg struct{ id int64 }
-	// focusPanelMsg asks the shell to focus one panel — the root sends it
-	// for the interim `2` key.
+	// focusPanelMsg asks the shell to focus one panel.
 	focusPanelMsg struct{ id panelID }
+	// jumpAttentionMsg asks the shell to jump to the next task needing a
+	// human — the root routes `!` here from any screen.
+	jumpAttentionMsg struct{}
 )
 
 // shell is the fused home screen (§15 layout): the task table, the step
@@ -115,6 +117,8 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 	case focusPanelMsg:
 		s.focus = msg.id
 		return s, nil
+	case jumpAttentionMsg:
+		return s, s.jumpAttention()
 	case selectTaskMsg:
 		// An explicit open — task creation, or a caller that knows the id.
 		// It skips the settle window: a deliberate action is not a cursor
@@ -173,6 +177,19 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return s, cmd
 	}
 	if s.focusedCaptures() {
+		// While the filter field is being typed into, tab commits it and
+		// moves focus (§15): the filter is view state, not a mode, and
+		// glancing at the output pane must not lose it. Only esc clears it.
+		if key := msg.String(); (key == "tab" || key == "shift+tab") &&
+			s.focus == panelTasks && s.board.filtering {
+			s.board.commitFilter()
+			if key == "tab" {
+				s.cycleFocus(1)
+			} else {
+				s.cycleFocus(-1)
+			}
+			return s, nil
+		}
 		// A filter or a confirmation owns every key; the cursor may still
 		// move underneath (a filter narrowing the rows), so reconcile.
 		return s, tea.Batch(s.routeKey(msg), s.checkSelection())
@@ -185,12 +202,15 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		s.cycleFocus(-1)
 		return s, nil
 	case "esc":
-		// The full §15 esc stack lands in T3.11; until then esc walks back
-		// to the navigation spine, and on it, clears the board's filter.
-		if s.focus != panelTasks {
-			s.focus = panelTasks
-			return s, nil
+		// The shell's layer of the §15 esc stack: clear the active filter,
+		// from any panel focus. Below that is nothing — esc never quits,
+		// and "back to the board" is not a meaning any more because the
+		// board is always on screen; tab is the focus key.
+		if s.board.filterActive() {
+			s.board.clearFilter()
+			return s, s.checkSelection()
 		}
+		return s, nil
 	case "enter":
 		if s.openAnswer() {
 			return s, nil
@@ -299,6 +319,42 @@ func (s *shell) checkSelection() tea.Cmd {
 	})
 }
 
+// jumpAttention moves to the next task needing a human, wrapping through
+// the pinned attention rows in board order, and opens it immediately — a
+// jump is deliberate, like enter, so it skips the settle window.
+func (s *shell) jumpAttention() tea.Cmd {
+	var attention []int64
+	for _, t := range s.board.visible() {
+		if needsAttention(t.State) {
+			attention = append(attention, t.ID)
+		}
+	}
+	if len(attention) == 0 {
+		return nil
+	}
+	cur, _ := s.board.selected()
+	next := attention[0]
+	for i, id := range attention {
+		if id == cur && i+1 < len(attention) {
+			next = attention[i+1]
+			break
+		}
+	}
+	return s.openNow(next)
+}
+
+// focusedContext names the focused panel for the binding registry.
+func (s *shell) focusedContext() bindingContext {
+	switch s.focus {
+	case panelTimeline:
+		return ctxTimeline
+	case panelOutput:
+		return ctxOutput
+	default:
+		return ctxTasks
+	}
+}
+
 // stateOf reads a task's state off the board's rows — the hint that decides
 // whether an open subscribes before the authoritative fetch lands.
 func (s *shell) stateOf(id int64) string {
@@ -363,6 +419,12 @@ func (s *shell) renderBox(b box) string {
 func (s *shell) panelTitle(id panelID) string {
 	switch id {
 	case panelTasks:
+		// A committed filter is view state, applied and named here (§15) —
+		// losing track of why rows are missing trains people to distrust
+		// the table.
+		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
+			return "Tasks — /" + v
+		}
 		return "Tasks"
 	case panelTimeline:
 		if s.detail.taskID != 0 {
