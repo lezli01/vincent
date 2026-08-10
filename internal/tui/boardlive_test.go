@@ -156,14 +156,14 @@ func TestBoardRendersLiveFromSSE(t *testing.T) {
 	if err := h.st.SetTaskProgress(ctx, task.ID, &step, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
-	h.p.until(20*time.Second, "the step counter to advance", func() bool {
-		return strings.Contains(content(h.m), "2/3")
+	// The step name travels with the counter, so the board says what is
+	// running. Waiting for the name, not the count: since the panels fused,
+	// "2/3" can render on the detail header from its own fetch before the
+	// board's debounced refresh lands, so a bare count is not proof the
+	// *board* updated (macOS CI caught the gap).
+	h.p.until(20*time.Second, "the advanced step to render on the board", func() bool {
+		return strings.Contains(content(h.m), "2/3 two")
 	})
-
-	// The step name travels with it, so the board says what is running.
-	if got := content(h.m); !strings.Contains(got, "two") {
-		t.Errorf("board does not name the current step: %q", got)
-	}
 }
 
 // TestBoardPinsAndBadgesAwaitingInput is the rest of the done-when: a task
