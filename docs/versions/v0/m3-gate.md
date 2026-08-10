@@ -125,21 +125,24 @@ Section B: S1 … S18 — pass / fail / n-a
 
 Section A: L1 … L10 — **pass**. The §19 loop completed without leaving the TUI.
 
-Section B: S1 … S18 — **pass except S14, which failed.**
+Section B: S1 … S18 — **pass.** S14 failed on the first pass, was fixed in this
+PR, and was re-checked on the fixed build.
 
-- **S14 fail.** Clicking a task row selected a row **two above** the one clicked;
-  reaching a given task meant clicking two lines below it, and the top two rows
-  were unreachable entirely (the move clamps). Fixed in this PR — see the
-  findings table.
-- **S14 also partial in coverage.** Mouse was judged in Windows Terminal + pwsh
-  only. The second Windows host the item names — Git Bash/mintty — was not
-  walked, so a non-console host's mouse reporting is still unobserved.
+- **S14 failed, then passed.** Clicking a task row selected a row **two above**
+  the one clicked; reaching a given task meant clicking two lines below it, and
+  the top two rows were unreachable entirely (the move clamps). Fixed in this
+  PR — see the findings table — and re-checked at the terminal on the fixed
+  build, where a click now lands on the row under the pointer.
+- **S14 coverage stays partial.** Mouse was judged in Windows Terminal + pwsh
+  only, before and after the fix. The second Windows host the item names —
+  Git Bash/mintty — has not been walked, so a non-console host's mouse
+  reporting is still unobserved.
 
 **Findings**
 
 | Item | What | Disposition |
 |---|---|---|
-| S14 | Click-to-select landed two rows above the click. `shell.updateClick` skipped `board.chromeLines()` to find the first table row, but that is the table's *vertical budget* — it counts the action line and the shell's blank **below** the table as well as the header above it. The offset needed only the lines above. Split into `headerLines()` (what is drawn above the table) with `chromeLines()` now derived from it, so the two cannot drift apart again. | fixed in this PR |
+| S14 | Click-to-select landed two rows above the click. `shell.updateClick` skipped `board.chromeLines()` to find the first table row, but that is the table's *vertical budget* — it counts the action line and the shell's blank **below** the table as well as the header above it. The offset needed only the lines above. Split into `headerLines()` (what is drawn above the table) with `chromeLines()` now derived from it, so the two cannot drift apart again. | fixed in this PR; re-checked at the terminal on the fixed build, passes |
 
 Why the existing tests did not catch it: `TestShellClickSelectsRow` and
 `TestShellClickBelowTheRowsIsIgnored` built their click coordinate from
@@ -159,20 +162,21 @@ The nine findings from the unrecorded first Windows walkthrough (see T3.8 in
 `tasks.md`) were all fixed before this run, so this run judges the fixed build
 and they are not repeated here.
 
-**Verdict:** GATE PASS (Windows). S14 failed but did not block Section A — the
-§19 loop is keyboard-driven throughout — so under the grading rule it does not
-fail the gate. Not yet a gate pass overall: the gate is Windows **and** one
-POSIX OS, and macOS has not been walked.
+**Verdict:** GATE PASS (Windows). S14's failure did not block Section A — the
+§19 loop is keyboard-driven throughout — so under the grading rule it never
+threatened the gate, and it is fixed and re-checked regardless. Not yet a gate
+pass overall: the gate is Windows **and** one POSIX OS, and macOS has not been
+walked.
 
 Three notes on the record itself:
 
-- **The S14 fix moves the build, and only S14 needs re-checking.** The grading
+- **The S14 fix moved the build, and only S14 needed re-checking.** The grading
   rule re-walks *both* OS runs only for a loop-blocking fix; this was not one.
   The fix is also provably narrow: `chromeLines()` returns exactly what it
   returned before (`headerLines() + 2`), so the table's height budget and every
   rendered frame are unchanged — only the click offset moved. So the Windows
-  run above stands as recorded, with S14 to be re-checked on the fixed build,
-  and the macOS run judges the fixed commit.
+  run above stands as recorded, S14 was re-checked at the terminal and passes,
+  and the macOS run judges this same fixed commit.
 
 - The "both runs on the branch before it merges" rule in the header is no longer
   literally satisfiable: T3.9–T3.13 merged first, so this run judges `master` at
