@@ -104,6 +104,17 @@ func (f *answerForm) sameRequest(req apiclient.InputRequest) bool {
 // capturing reports that the free-text field owns the keyboard.
 func (f *answerForm) capturing() bool { return f.editing }
 
+// paste types into the free-text answer. Option rows are keyboard-only —
+// pasting onto one would be a paste with no field under it.
+func (f *answerForm) paste(text string) tea.Cmd {
+	if !f.editing {
+		return nil
+	}
+	var cmd tea.Cmd
+	f.input, cmd = f.input.Update(tea.PasteMsg{Content: text})
+	return cmd
+}
+
 // update handles one key. exit=true asks the caller to leave the form.
 func (f *answerForm) update(msg tea.KeyPressMsg, client *apiclient.Client, taskID int64) (cmd tea.Cmd, exit bool) {
 	if f.editing {

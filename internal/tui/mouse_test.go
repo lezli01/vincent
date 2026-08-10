@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -82,9 +84,9 @@ func TestShellClickSelectsRow(t *testing.T) {
 	}
 	rows := s.board.visible()
 
-	// The third data row: box top border, board header, table header, then
-	// row 0, 1, 2…
-	y := s.lastBoxes[0].y + 2 + s.board.chromeLines() + 2
+	// The third data row: box top border, the board's lines above the table,
+	// then row 0, 1, 2…
+	y := s.lastBoxes[0].y + 1 + s.board.firstRowLine() + 2
 	s.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
 	s.render(120, 37)
 
@@ -103,6 +105,44 @@ func TestShellClickSelectsRow(t *testing.T) {
 	}
 }
 
+// TestShellClickSelectsTheRowItPointsAt derives the target line from the
+// *rendered frame* rather than from the same arithmetic updateClick uses, so
+// the two cannot agree on a wrong answer. They did: the click offset borrowed
+// the board's height budget and landed two rows high, which is what the M3
+// gate hit on macOS ("I have to click a few lines below the task").
+func TestShellClickSelectsTheRowItPointsAt(t *testing.T) {
+	tasks := make([]apiclient.Task, 0, 5)
+	for id := int64(1); id <= 5; id++ {
+		tasks = append(tasks, task(id, stateRunning))
+	}
+	s, _ := newShellFixture(t, tasks...)
+	s.settle()
+
+	lines := strings.Split(s.render(120, 37), "\n")
+	for _, want := range s.board.visible() {
+		y := lineOfTaskRow(t, lines, want.ID)
+		s.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
+		s.render(120, 37)
+		if got, ok := s.board.selected(); !ok || got != want.ID {
+			t.Fatalf("clicking line %d (task #%d's row) selected #%d", y, want.ID, got)
+		}
+	}
+}
+
+// lineOfTaskRow finds the rendered line whose ID column holds id.
+func lineOfTaskRow(t *testing.T, lines []string, id int64) int {
+	t.Helper()
+	want := strconv.FormatInt(id, 10)
+	for i, line := range lines {
+		fields := strings.Fields(strings.Trim(ansi.Strip(line), "│ "))
+		if len(fields) > 0 && fields[0] == want {
+			return i
+		}
+	}
+	t.Fatalf("task #%d has no row in the frame", id)
+	return 0
+}
+
 // TestShellClickBelowTheRowsIsIgnored is a T3.8 finding: the table is
 // padded with blank lines when it has fewer rows than pane, and clicking
 // one used to select the last task because the move clamps.
@@ -114,7 +154,7 @@ func TestShellClickBelowTheRowsIsIgnored(t *testing.T) {
 		t.Fatal("fixture selected nothing")
 	}
 	box := s.lastBoxes[0]
-	firstRow := box.y + 2 + s.board.chromeLines()
+	firstRow := box.y + 1 + s.board.firstRowLine()
 
 	// Well past two rows, still inside the panel.
 	for _, offset := range []int{2, 3, 5} {

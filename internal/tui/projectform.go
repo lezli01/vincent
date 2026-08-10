@@ -131,6 +131,32 @@ func (f *projectForm) capturesInput() bool {
 	return f.editing || (f.pick != nil && f.pick.editing)
 }
 
+// paste types into the row being edited, or into the picker's free-text
+// entry when one is open.
+func (f *projectForm) paste(text string) tea.Cmd {
+	if f.pick != nil {
+		return f.pick.paste(text)
+	}
+	if !f.editing {
+		return nil
+	}
+	var cmd tea.Cmd
+	switch f.cursor {
+	case pfPath:
+		f.path, cmd = f.path.Update(tea.PasteMsg{Content: text})
+	case pfName:
+		f.name, cmd = f.name.Update(tea.PasteMsg{Content: text})
+	case pfBranch:
+		f.branch, cmd = f.branch.Update(tea.PasteMsg{Content: text})
+	case pfCap:
+		f.cap, cmd = f.cap.Update(tea.PasteMsg{Content: text})
+	case pfWorkflow, pfSave, pfRowCount:
+		return nil
+	}
+	delete(f.rowErr, f.cursor)
+	return cmd
+}
+
 // loadCmd fetches the registry for the default-workflow picker. It is
 // project-scoped (§5.2), so an edit sees the project's own workflows and an
 // add sees the global ones — the only registry a project that does not exist
