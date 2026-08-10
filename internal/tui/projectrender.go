@@ -39,8 +39,6 @@ func (p *projectsView) render(width, height int) string {
 	p.tbl.SetHeight(max(3, p.height-len(p.statusLines())-3))
 	p.restoreSelection(rows)
 	sb.WriteString(p.tbl.View())
-	sb.WriteString("\n")
-	sb.WriteString(p.footer())
 	return sb.String()
 }
 
@@ -115,16 +113,6 @@ func (p *projectsView) emptyBody(rows []apiclient.Project) (string, bool) {
 	default:
 		return styleDim.Render("\n  no projects registered — press a to add a repository\n"), true
 	}
-}
-
-func (p *projectsView) footer() string {
-	return styleDim.Render(" ") + strings.Join([]string{
-		styleKey.Render("a") + " add",
-		styleKey.Render("e") + " edit",
-		styleKey.Render("d") + " delete",
-		styleKey.Render("/") + " filter",
-		styleKey.Render("n") + " new task here",
-	}, styleDim.Render(" · "))
 }
 
 func (f *projectForm) render() string {
