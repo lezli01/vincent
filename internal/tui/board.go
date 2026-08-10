@@ -74,10 +74,11 @@ type board struct {
 	filter    textinput.Model
 	filtering bool
 
-	// actions drives §15's action keys against the row under the cursor —
-	// the same component the detail view renders as a bar, gated on the same
-	// available_actions.
-	actions actionBar
+	// actions drives §15's action keys against the row under the cursor.
+	// The shell shares one instance between board and detail — a pending
+	// confirmation is the same question wherever the eye lands — and the
+	// footer renders it (T3.12).
+	actions *actionBar
 
 	refreshPending bool
 	ticking        bool
@@ -100,10 +101,11 @@ func newBoard() *board {
 	fi.Placeholder = "filter by id, title, project or state"
 	fi.Prompt = "/"
 	b := &board{
-		now:    time.Now,
-		filter: fi,
-		bell:   ringBell,
-		tbl:    table.New(table.WithFocused(true)),
+		now:     time.Now,
+		filter:  fi,
+		bell:    ringBell,
+		actions: &actionBar{},
+		tbl:     table.New(table.WithFocused(true)),
 	}
 	b.applyStyles()
 	return b

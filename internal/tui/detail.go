@@ -99,9 +99,10 @@ type detail struct {
 	tab         detailTab
 	active      bool
 
-	// actions is the §6 action bar; form is the §7.4 answer form, present
-	// exactly while the task is parked on a request.
-	actions actionBar
+	// actions is the §6 action bar — the shell's shared instance, rendered
+	// by the footer (T3.12); form is the §7.4 answer form, present exactly
+	// while the task is parked on a request.
+	actions *actionBar
 	form    *answerForm
 	diff    diffPane
 	// exec runs $EDITOR for edit+retry, injected so the path is testable
@@ -148,6 +149,7 @@ func newDetail(ctx context.Context) *detail {
 		now:       time.Now,
 		vp:        viewport.New(),
 		following: true,
+		actions:   &actionBar{},
 		diff:      newDiffPane(),
 		exec:      tea.ExecProcess,
 	}

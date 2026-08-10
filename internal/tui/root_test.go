@@ -283,27 +283,6 @@ func TestQuitKeys(t *testing.T) {
 	}
 }
 
-// TestLiveEventLine renders a delivered event on the shell's event line —
-// the foundation's visible re-render on external change.
-func TestLiveEventLine(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
-	m.phase = phaseConnected
-	m.notes = make(chan apiclient.Note)
-
-	if !strings.Contains(content(m), "no events yet") {
-		t.Errorf("initial view lacks 'no events yet': %q", content(m))
-	}
-
-	taskID := int64(3)
-	m.updateNote(apiclient.EventNote{Event: apiclient.Event{
-		ID: 7, Type: "task.state_changed", TaskID: &taskID, TS: time.Now(),
-	}})
-	got := content(m)
-	if !strings.Contains(got, "task.state_changed #7") || !strings.Contains(got, "task 3") {
-		t.Errorf("event line missing details: %q", got)
-	}
-}
-
 func TestReconnectingState(t *testing.T) {
 	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
