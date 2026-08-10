@@ -376,6 +376,50 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return b, cmd
 }
 
+// clickRow selects the table row rendered at the given body line (0 = the
+// first row under the column header). The table's scroll offset is private,
+// so the clicked line's distance from the *styled cursor row* drives the
+// same MoveUp/MoveDown path the keys use — bubbles keeps its own scroll
+// bookkeeping consistent that way.
+func (b *board) clickRow(line int) {
+	marker, _, _ := strings.Cut(tableSelectedStyle().Render("~"), "~")
+	if marker == "" {
+		return
+	}
+	rows := strings.Split(b.tbl.View(), "\n")
+	if len(rows) < 2 {
+		return
+	}
+	cursorLine := -1
+	for i, row := range rows[1:] { // the column header is line 0
+		if strings.Contains(row, marker) {
+			cursorLine = i
+			break
+		}
+	}
+	if cursorLine < 0 {
+		return
+	}
+	switch delta := line - cursorLine; {
+	case delta > 0:
+		b.tbl.MoveDown(delta)
+	case delta < 0:
+		b.tbl.MoveUp(-delta)
+	}
+	b.rememberSelection()
+}
+
+// wheelMove is one wheel notch on the task table: the cursor moves, and the
+// panels below follow it through the usual settle window.
+func (b *board) wheelMove(delta int) {
+	if delta > 0 {
+		b.tbl.MoveDown(delta)
+	} else {
+		b.tbl.MoveUp(-delta)
+	}
+	b.rememberSelection()
+}
+
 // visible is the filtered, sorted task list currently on screen.
 func (b *board) visible() []apiclient.Task {
 	tasks := filterTasks(b.tasks, b.filter.Value())

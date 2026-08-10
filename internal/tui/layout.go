@@ -62,6 +62,18 @@ const (
 // focused band expands and the other collapses (PR P decision) — collapsing
 // the output while navigating the timeline would defeat why they sit side
 // by side.
+// hitTest reports which box contains the cell at x,y — the pure half of
+// click-to-focus (§15 Mouse). Coordinates are in the same panel-area space
+// the boxes were laid out in.
+func hitTest(x, y int, boxes []box) (panelID, bool) {
+	for _, b := range boxes {
+		if x >= b.x && x < b.x+b.w && y >= b.y && y < b.y+b.h {
+			return b.id, true
+		}
+	}
+	return 0, false
+}
+
 func layout(w, h int, focus panelID) []box {
 	if w < minTermW || h < minAreaH1 {
 		return nil
