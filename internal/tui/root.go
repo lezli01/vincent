@@ -558,7 +558,7 @@ func (m *root) body() string {
 	// tail comes off the filesystem, and a daemon that is down is exactly
 	// when that log is worth reading.
 	if m.active == viewDaemon && m.phase != phaseConnected {
-		return m.views[viewDaemon].render(m.width, m.bodyHeight())
+		return m.framedView(viewDaemon)
 	}
 	// The home panels stay on screen while the daemon is unreachable, marked
 	// stale behind the shell's banner (§15 Disconnected) — provided there was
@@ -582,8 +582,23 @@ func (m *root) body() string {
 		return fmt.Sprintf("\n  %s\n\n  retrying in %s — press r to restart the daemon if it stays down\n",
 			styleWarn.Render("connection lost: "+errString(m.connErr)), m.retryIn)
 	default:
-		return m.views[m.active].render(m.width, m.bodyHeight())
+		if m.active == viewHome {
+			return m.views[viewHome].render(m.width, m.bodyHeight())
+		}
+		return m.framedView(m.active)
 	}
+}
+
+// framedView wraps a takeover screen in the same bordered chrome the home
+// panels wear (T3.8 finding: the six surfaces should read as one program).
+// A takeover is the only surface on screen, so its frame is always focused.
+func (m *root) framedView(id viewID) string {
+	h := m.bodyHeight()
+	if m.width < 4 || h < 3 {
+		return m.views[id].render(m.width, h)
+	}
+	content := m.views[id].render(m.width-2, h-2)
+	return frame(m.views[id].title(), content, m.width, h, true)
 }
 
 // quitReminder is §15's exit line: the daemon keeps working after the TUI

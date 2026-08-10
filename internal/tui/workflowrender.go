@@ -27,7 +27,6 @@ func (w *workflowsView) render(width, height int) string {
 			out = append(out, w.renderSteps(line)...)
 		}
 	}
-	out = append(out, "", w.footer())
 	return strings.Join(out, "\n")
 }
 
@@ -146,12 +145,4 @@ func findingText(f apiclient.WorkflowFinding) string {
 		return fmt.Sprintf("line %d: %s", f.Line, f.Message)
 	}
 	return f.Message
-}
-
-func (w *workflowsView) footer() string {
-	return styleDim.Render(" ") + strings.Join([]string{
-		styleKey.Render("e") + " edit the file",
-		styleKey.Render("enter") + " steps",
-		styleKey.Render("R") + " re-read",
-	}, styleDim.Render(" · "))
 }
