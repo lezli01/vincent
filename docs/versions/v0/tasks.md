@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 11/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 12/13 | 🟡 in progress |
 | 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **36/44** | |
+| **Total** | | **37/44** | |
 
 ---
 
@@ -540,8 +540,9 @@ superseded in layout and routing by T3.10–T3.13.
 - *Takeover screens get wheel delegation for free and no click surfaces.* Nothing §15 lists exists there; their lists stay keyboard until someone misses it at the gate.
 - *The T3.8 sweep grows five items and three are reworded:* S1/S8/S11 were written against the retired digits and the old connect screen; they now walk the palette route and the stale-panels banner. New items cover mouse on both Windows hosts, resize across both floors, palette completeness, the accordion at 24 rows, and `NO_COLOR`.
 
-- [~] **T3.13 — Mouse.** Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
+- [x] **T3.13 — Mouse.** ✓ 2026-08-10 Click-to-focus, click-row-select, wheel scroll in the focused panel, click a footer hint to fire it, click a tab. `hitTest(x, y, []box) → panelID` as a pure function. On by default, `M` toggles, toggle listed in the palette. Grow the T3.8 checklist: mouse on Windows Terminal + Git Bash, resize across both floors, palette reachable and complete, accordion at 24 rows, `NO_COLOR`. *Depends:* T3.12.
   *Done when:* `hitTest` is table-tested; `MouseClickMsg` tests assert focus and selection changes; `m3-gate.md`'s sweep carries the new items.
+  *2026-08-10:* landed per the PR S decisions above; the sweep gained S14–S18 and S1/S8/S11 were reworded off the retired digits.
 
 ## Phase 4 — Polish (M4)
 
