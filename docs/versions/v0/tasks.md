@@ -20,8 +20,8 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 12/13 | 🟡 in progress |
-| 4 — Polish (M4) | 6 tasks | 0/6 | ⬜ not started |
-| **Total** | | **37/44** | |
+| 4 — Polish (M4) | 7 tasks | 0/7 | ⬜ not started |
+| **Total** | | **37/45** | |
 
 ---
 
@@ -456,6 +456,7 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
 - [~] **T3.8 — Phase gate (M3 acceptance).** Manual scripted walkthrough of the §19 M3 loop on Windows + one POSIX OS, using fake agents for parallelism and real `claude` for one task; results recorded here.
   *Done when:* walkthrough passes on both; notes committed.
   *2026-08-09:* deferred behind T3.9–T3.13 (see the TUI refactor decisions below). The walkthrough runs **once**, against the panel UI, and never against the one being replaced; its sweep section grows the items listed in T3.13. `scripts/m3-gate.sh` and section A of `m3-gate.md` carry over unchanged — the seed is UI-agnostic and the §19 loop is spec-derived.
+  *2026-08-10:* first Windows pass surfaced four findings before any run was recorded; graded per the rule above (none block the loop). Fixed pre-run: console windows flashing for every daemon child (procx/gitx `CREATE_NO_WINDOW`), the takeovers' duplicate key rows and missing frames (both runs will judge the fixed build). Deferred: naming what "(workflow default)" resolves to in the new-task form → T4.7.
 
 **Phase 3 TUI refactor decisions (grill session, 2026-08-09):**
 
@@ -560,3 +561,5 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *Done when:* tagged pre-release produces working artifacts installed and smoke-tested on each OS.
 - [ ] **T4.6 — Phase gate (M4 acceptance).** Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
   *Done when:* all three runs under 10 minutes; notes committed. **v1 complete.**
+- [ ] **T4.7 — Name what "default" resolves to in the new-task form.** T3.8 finding (2026-08-10): the agent/model/effort pickers offer "(workflow default)" without saying what that is; a spend decision deserves a name. Needs new read-only API surface exposing the §8.6 resolution (the PR L decision deliberately kept resolution server-side and left the "adapter default" hole open — this task relitigates that explicitly).
+  *Done when:* the pickers show the resolved value beside "(workflow default)" wherever the server can know it, and the workflow-step list's "adapter default" names the adapter.

@@ -274,11 +274,9 @@ func (n *newTask) statusLines() []string {
 	case n.submitting:
 		return []string{styleDim.Render("  creating…")}
 	}
-	hint := "  ↑↓ move · enter open · ctrl+s create · R re-probe adapters · esc back"
-	if n.cursor == ntDescription {
-		hint = "  ↑↓ move · enter type · e $EDITOR · ctrl+s create · esc back"
-	}
-	return []string{styleDim.Render(hint)}
+	// The key hints live in the registry footer (T3.12); only form *state*
+	// earns a line here.
+	return nil
 }
 
 // priorityValue is the integer the form would send, for tests and for the

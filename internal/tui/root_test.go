@@ -267,6 +267,43 @@ func TestViewRoutingAndHelp(t *testing.T) {
 	}
 }
 
+// TestTakeoversShareThePanelChrome pins a T3.8 walkthrough finding: the
+// four takeover screens wear the same bordered frame as the home panels,
+// and the key guidance appears once — in the registry footer — not again
+// as a second, differently-styled row inside the view.
+func TestTakeoversShareThePanelChrome(t *testing.T) {
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+	m.phase = phaseConnected
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	views := map[viewID]string{
+		viewNewTask:   "New task",
+		viewProjects:  "Projects",
+		viewWorkflows: "Workflows",
+		viewDaemon:    "Daemon",
+	}
+	for id, title := range views {
+		m.Update(selectViewMsg{id: id})
+		body := content(m)
+		if !strings.Contains(body, focusGlyph+" "+title) {
+			t.Errorf("%s: no framed title in the body", title)
+		}
+		if !strings.Contains(body, "┌─") || !strings.Contains(body, "└") {
+			t.Errorf("%s: no frame borders", title)
+		}
+		// The retired duplicate rows must be gone; the registry footer is
+		// the one key surface.
+		for _, stale := range []string{"new task here", "follow the log", "re-read", "re-probe adapters · esc back"} {
+			if strings.Contains(body, stale) {
+				t.Errorf("%s: the old in-view key row is back: %q", title, stale)
+			}
+		}
+		if got := strings.Count(body, "commands"); got != 1 {
+			t.Errorf("%s: %d key rows mention the palette, want exactly the footer's 1", title, got)
+		}
+	}
+}
+
 func TestQuitKeys(t *testing.T) {
 	for _, k := range []tea.KeyPressMsg{
 		key("q"),

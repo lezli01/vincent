@@ -31,8 +31,8 @@ func (d *daemonView) render(width, height int) string {
 	out = append(out, "")
 
 	head := strings.Join(out, "\n")
-	paneHeight := max(d.height-len(out)-2, logPaneMinHeight)
-	return head + "\n" + d.renderLog(paneHeight) + "\n" + d.footer()
+	paneHeight := max(d.height-len(out)-1, logPaneMinHeight)
+	return head + "\n" + d.renderLog(paneHeight)
 }
 
 // identityLines is what the daemon is: version, process, and the three paths
@@ -208,15 +208,6 @@ func (d *daemonView) logPathOrUnknown() string {
 		return styleDim.Render("(unresolved)")
 	}
 	return daemon.LogPath(d.dataDir)
-}
-
-func (d *daemonView) footer() string {
-	keys := []string{
-		styleKey.Render("R") + " refresh",
-		styleKey.Render("f/G") + " follow the log",
-		styleKey.Render("↑/↓") + " scroll",
-	}
-	return styleDim.Render(" ") + strings.Join(keys, styleDim.Render(" · "))
 }
 
 func field(label, value string) string {
