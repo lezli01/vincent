@@ -65,8 +65,10 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	return out
 }
 
-// agentOf reports the agent a step would use before task-level overrides
-// (§8.6 levels 1 and 3); the full resolution engine lands in T2.11.
+// agentOf reports the agent a step *names* — §8.6 levels 1 and 3 only, with
+// no override applied and level 4 left empty. That is deliberately the
+// registry's question ("what does this file say"); the resolved answer,
+// including the adapter default, is what POST /v1/resolve serves (T4.7).
 func agentOf(wf *workflow.Workflow, st workflow.Step) string {
 	if st.Type != workflow.StepAgent {
 		return ""

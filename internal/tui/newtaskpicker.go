@@ -262,8 +262,11 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 	case ntEffort:
 		n.effort = value
 	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+		return nil
 	}
-	return nil
+	// Every row that falls through here is a §8.6 input, so what the draft
+	// resolves to has just changed.
+	return n.resolveCmd()
 }
 
 func (n *newTask) projectOptions() []pickerOption {
@@ -300,7 +303,7 @@ func (n *newTask) agentOptions() []pickerOption {
 	out := []pickerOption{{
 		value: "",
 		label: "(workflow default)",
-		note:  strings.TrimPrefix(n.workflowAgents(), " → "),
+		note:  strings.TrimPrefix(n.resolvedAgents(), " → "),
 	}}
 	for _, a := range n.agents {
 		opt := pickerOption{value: a.Name, label: a.Name}

@@ -271,6 +271,22 @@ func TestNewTaskFlowCreatesRunnableTask(t *testing.T) {
 		t.Fatalf("workflow = %q, want the one just picked", n.workflow)
 	}
 
+	// T4.7: picking a workflow asks the daemon what the unset overrides
+	// resolve to, and the rows say so. The agent comes back named because the
+	// workflow's defaults name it; the model comes back unnamed because no
+	// adapter reports a default of its own — which is the CLI's call at run
+	// time, and the form says exactly that instead of guessing a model.
+	h.p.until(10*time.Second, "the resolution to arrive", func() bool {
+		_, ok := n.resolved()
+		return ok
+	})
+	if got := n.agentSummary(); !strings.Contains(got, "claude") {
+		t.Errorf("agent summary = %q, want the resolved agent named", got)
+	}
+	if got := n.overrideSummary(n.model, apiclient.ModelOf); !strings.Contains(got, "CLI default") {
+		t.Errorf("model summary = %q, want the unnamed adapter default spelled out", got)
+	}
+
 	moveTo(n, ntTitle)
 	h.sendKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	h.typeText("wire the form")
