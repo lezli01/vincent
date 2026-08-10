@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -80,6 +82,7 @@ func TestAutoStartRealDaemon(t *testing.T) {
 	}
 
 	m := newRoot(testCtx(t), cn, ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(probeFailedMsg); !ok {
 		t.Fatalf("probe with no daemon = %T, want probeFailedMsg", msg)
@@ -134,9 +137,38 @@ func TestAutoStartRealDaemon(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("register project: status %s: %s", resp.Status, respBody)
 	}
+	var project struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(respBody.Bytes(), &project); err != nil || project.ID == 0 {
+		t.Fatalf("register project: no id in %s", respBody)
+	}
 
-	pmp.until(30*time.Second, "project.created to render", func() bool {
-		return strings.Contains(content(m), "project.created")
+	// A second external change the screen can prove: a task created over
+	// plain HTTP has to appear on the board without the TUI being told —
+	// the event stream driving the refresh is the whole point (§13.3).
+	body, _ = json.Marshal(map[string]any{
+		"project_id": project.ID, "title": "e2e live proof",
+		"description": "created behind the TUI's back",
+	})
+	req, err = http.NewRequest(http.MethodPost,
+		fmt.Sprintf("http://127.0.0.1:%d/v1/tasks", ri.Port), bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build task request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create task: status %s", resp.Status)
+	}
+
+	pmp.until(30*time.Second, "the externally created task to render", func() bool {
+		return strings.Contains(content(m), "e2e live proof")
 	})
 
 	// Graceful stop through the real CLI; the daemon must not linger.

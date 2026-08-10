@@ -38,6 +38,9 @@ type (
 type shell struct {
 	board  *board
 	detail *detail
+	// bar is the one §6 action bar both sub-models drive and the footer
+	// renders (T3.12).
+	bar *actionBar
 
 	focus panelID
 	// popup shows the §7.4 answer form over the panels. It never opens
@@ -67,8 +70,13 @@ func newShell(ctx context.Context) *shell {
 	s := &shell{
 		board:     newBoard(),
 		detail:    newDetail(ctx),
+		bar:       &actionBar{},
 		connected: true,
 	}
+	// One bar: a confirmation started from any panel is the same pending
+	// question wherever the eye lands, and the footer renders it once.
+	s.board.actions = s.bar
+	s.detail.actions = s.bar
 	// The home screen starts on screen: the detail sub-model is live from
 	// the first frame, unlike the old detail view that waited to be opened.
 	s.detail.active = true
@@ -374,7 +382,7 @@ func (s *shell) render(width, height int) string {
 		s.bodyH = height
 	}
 
-	areaH := s.bodyH - 1 // the action-bar line under the panels
+	areaH := s.bodyH
 	var banner string
 	if !s.connected {
 		banner = styleWarn.Render(" ⚠ daemon unreachable — panels show the last known state · ") +
@@ -400,7 +408,6 @@ func (s *shell) render(width, height int) string {
 			lipgloss.JoinHorizontal(lipgloss.Top,
 				s.renderBox(boxes[1]), s.renderBox(boxes[2])))
 	}
-	parts = append(parts, s.actionBarLine())
 	out := strings.Join(parts, "\n")
 	if s.popup && s.detail.form != nil {
 		out = s.overlayPopup(out)
@@ -461,18 +468,6 @@ func (s *shell) detailPlaceholder() (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-// actionBarLine is the detail action bar under the panels: the §6 actions
-// for the tracked task plus detail's own hints. Blank until the tracked
-// task's detail is loaded — the board's own action line covers the settle
-// window. (Two action lines is the accepted PR P interim; T3.12's footer
-// unifies them.)
-func (s *shell) actionBarLine() string {
-	if s.lastSel == 0 || s.detail.taskID != s.lastSel {
-		return ""
-	}
-	return s.detail.actions.render(s.detail.target(), s.detail.detailHints()...)
 }
 
 // overlayPopup draws the answer form over the panels. A popup gets the full

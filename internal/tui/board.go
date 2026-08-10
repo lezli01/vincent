@@ -35,8 +35,12 @@ const (
 type (
 	// boardRefreshMsg fires when the debounce window closes.
 	boardRefreshMsg struct{}
-	// boardLoadedMsg carries a completed task fetch.
+	// boardLoadedMsg carries a completed task fetch. seq orders concurrent
+	// fetches: commands run on their own goroutines, so an older response
+	// can land after a newer one and must not clobber it (zero = untracked,
+	// for tests that build the message directly).
 	boardLoadedMsg struct {
+		seq   uint64
 		tasks []apiclient.Task
 		err   error
 	}
@@ -74,13 +78,19 @@ type board struct {
 	filter    textinput.Model
 	filtering bool
 
-	// actions drives §15's action keys against the row under the cursor —
-	// the same component the detail view renders as a bar, gated on the same
-	// available_actions.
-	actions actionBar
+	// actions drives §15's action keys against the row under the cursor.
+	// The shell shares one instance between board and detail — a pending
+	// confirmation is the same question wherever the eye lands — and the
+	// footer renders it (T3.12).
+	actions *actionBar
 
 	refreshPending bool
 	ticking        bool
+
+	// loadSeq stamps outgoing fetches; appliedSeq is the newest one
+	// installed. A response older than what is on screen is dropped.
+	loadSeq    uint64
+	appliedSeq uint64
 
 	// bell rings the terminal. Injected so tests can count rings; the
 	// default writes BEL straight to stdout, because tea.Printf is
@@ -100,10 +110,11 @@ func newBoard() *board {
 	fi.Placeholder = "filter by id, title, project or state"
 	fi.Prompt = "/"
 	b := &board{
-		now:    time.Now,
-		filter: fi,
-		bell:   ringBell,
-		tbl:    table.New(table.WithFocused(true)),
+		now:     time.Now,
+		filter:  fi,
+		bell:    ringBell,
+		actions: &actionBar{},
+		tbl:     table.New(table.WithFocused(true)),
 	}
 	b.applyStyles()
 	return b
@@ -157,11 +168,13 @@ func (b *board) loadCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
+	b.loadSeq++
+	seq := b.loadSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{})
-		return boardLoadedMsg{tasks: tasks, err: err}
+		return boardLoadedMsg{seq: seq, tasks: tasks, err: err}
 	}
 }
 
@@ -236,6 +249,9 @@ func (b *board) target() taskActions {
 }
 
 func (b *board) updateLoaded(msg boardLoadedMsg) {
+	if msg.seq != 0 && msg.seq <= b.appliedSeq {
+		return // a slower, older fetch landing after a newer one
+	}
 	if msg.err != nil {
 		// Keep the rows already on screen. A failed refresh is not a lost
 		// connection, and blanking a board full of running work because one
@@ -247,6 +263,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	b.loaded = true
 	b.lastLoad = b.now()
 	b.tasks = msg.tasks
+	b.appliedSeq = msg.seq
 }
 
 // updateNote reacts to the event stream. Every task event schedules a

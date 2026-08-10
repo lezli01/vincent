@@ -59,7 +59,6 @@ type root struct {
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
-	lastEvent  *apiclient.Event
 	// streamLive reports that the SSE subscription is established, as
 	// opposed to the daemon merely answering health checks.
 	streamLive bool
@@ -238,27 +237,32 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // openPalette builds the palette for the active surface.
 func (m *root) openPalette() {
-	var (
-		ctx      bindingContext
-		target   taskActions
-		editable bool
-	)
-	switch m.active {
-	case viewNewTask:
-		ctx = ctxNewTask
-	case viewProjects:
-		ctx = ctxProjects
-	case viewWorkflows:
-		ctx = ctxWorkflows
-	case viewDaemon:
-		ctx = ctxDaemon
-	default:
-		s := m.views[viewHome].(*shell)
-		ctx = s.focusedContext()
+	ctx, s := m.activeContext()
+	target := taskActions{}
+	editable := false
+	if s != nil {
 		target = s.board.target()
 		editable = s.detail.stepEditable()
 	}
 	m.palette = newPalette(paletteEntries(ctx, target, editable, m.phase == phaseConnected))
+}
+
+// activeContext names the focused surface for the registry, and returns the
+// home shell when that surface is one of its panels.
+func (m *root) activeContext() (bindingContext, *shell) {
+	switch m.active {
+	case viewNewTask:
+		return ctxNewTask, nil
+	case viewProjects:
+		return ctxProjects, nil
+	case viewWorkflows:
+		return ctxWorkflows, nil
+	case viewDaemon:
+		return ctxDaemon, nil
+	default:
+		s := m.views[viewHome].(*shell)
+		return s.focusedContext(), s
+	}
 }
 
 // synthKey rebuilds the key message a terminal would deliver for one
@@ -369,9 +373,6 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch n := n.(type) {
-	case apiclient.EventNote:
-		ev := n.Event
-		m.lastEvent = &ev
 	case apiclient.ConnectedNote:
 		m.phase = phaseConnected
 		m.connErr = nil
@@ -465,8 +466,6 @@ func (m *root) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.headerLine())
 	b.WriteString("\n")
-	b.WriteString(m.eventLine())
-	b.WriteString("\n")
 	if line, ok := m.notice.statusLine(); ok {
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -509,21 +508,6 @@ func (m *root) connBadge() string {
 	default:
 		return styleBad.Render("✗ disconnected")
 	}
-}
-
-// eventLine renders the last durable event received — the foundation's
-// visible proof that external state changes reach the TUI live (T3.1).
-func (m *root) eventLine() string {
-	if m.lastEvent == nil {
-		return styleDim.Render(" no events yet")
-	}
-	ev := m.lastEvent
-	line := fmt.Sprintf(" last event: %s #%d", ev.Type, ev.ID)
-	if ev.TaskID != nil {
-		line += fmt.Sprintf(" · task %d", *ev.TaskID)
-	}
-	line += " · " + ev.TS.Local().Format("15:04:05")
-	return styleDim.Render(line)
 }
 
 func (m *root) body() string {
@@ -596,18 +580,30 @@ func (m *root) homeLoaded() bool {
 	return ok && s.board.loaded
 }
 
+// footerLine is the §15 contextual footer, rendered from the registry and
+// the shell's action bar.
 func (m *root) footerLine() string {
-	hints := " tab panels · : commands · ? help · q quit"
-	if m.phase == phaseFailed || m.phase == phaseReconnecting {
-		hints += " · r retry"
+	ctx, s := m.activeContext()
+	var (
+		bar       *actionBar
+		target    taskActions
+		attention int
+	)
+	if s != nil {
+		bar = s.bar
+		attention = countAttention(s.board.tasks)
+		if m.phase == phaseConnected {
+			target = s.board.target()
+		}
 	}
-	return styleDim.Render(hints)
+	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
+	return renderFooter(m.width, bindingsFor(ctx), bar, target, attention, retry)
 }
 
 // bodyHeight is the space left for the active view: total minus header,
 // event line, and footer.
 func (m *root) bodyHeight() int {
-	chrome := 3
+	chrome := 2
 	if _, ok := m.notice.statusLine(); ok {
 		chrome++
 	}

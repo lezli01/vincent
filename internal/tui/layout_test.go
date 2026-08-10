@@ -87,16 +87,16 @@ func TestLayoutFloors(t *testing.T) {
 // honor every focus target.
 func TestLayoutSinglePanel(t *testing.T) {
 	for _, focus := range []panelID{panelTasks, panelTimeline, panelOutput} {
-		boxes := layout(70, 12, focus)
+		boxes := layout(70, minAreaH1, focus)
 		if len(boxes) != 1 {
-			t.Fatalf("layout(70, 12, %v) returned %d boxes, want 1", focus, len(boxes))
+			t.Fatalf("layout(70, %d, %v) returned %d boxes, want 1", minAreaH1, focus, len(boxes))
 		}
 		b := boxes[0]
 		if b.id != focus {
 			t.Errorf("single panel = %v, want the focused %v", b.id, focus)
 		}
-		if b.x != 0 || b.y != 0 || b.w != 70 || b.h != 12 {
-			t.Errorf("single panel box = %+v, want the full 70×12 area", b)
+		if b.x != 0 || b.y != 0 || b.w != 70 || b.h != minAreaH1 {
+			t.Errorf("single panel box = %+v, want the full 70×%d area", b, minAreaH1)
 		}
 	}
 }
