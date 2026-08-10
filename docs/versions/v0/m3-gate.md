@@ -44,13 +44,13 @@ session, and *leaving the TUI to get something done is itself a failure*.
 | ID | Step | Passes when |
 |---|---|---|
 | **L1** | Launch `vincent` with no daemon running. | The TUI comes up on its own, shows it is starting the daemon, and reaches the board without you starting anything by hand. On the very first launch the full-auto notice appears; `enter` dismisses it. |
-| **L2** | Register the app repo: view `4`, `a`, paste the seeded app-repo path, `ctrl+s`. | The project appears in the list with its name derived from the directory, and no error. |
-| **L3** | Author a workflow: view `5`, select **m3-parallel** on the app project, `e`. | Your `$EDITOR` opens *the project-scoped file* (`.vincent/workflows/m3-parallel.yaml`, 2 steps — not the 1-step global copy). Change the step id `work-shadow` to something you will recognise, save, quit the editor. The row updates **without a restart**. |
+| **L2** | Register the app repo: `:` → projects, `a`, paste the seeded app-repo path, `ctrl+s`. | The project appears in the list with its name derived from the directory, and no error. |
+| **L3** | Author a workflow: `:` → workflows, select **m3-parallel** on the app project, `e`. | Your `$EDITOR` opens *the project-scoped file* (`.vincent/workflows/m3-parallel.yaml`, 2 steps — not the 1-step global copy). Change the step id `work-shadow` to something you will recognise, save, quit the editor. The row updates **without a restart**. |
 | **L4** | Read the shadowing row on the Workflows view. | **m3-parallel** is one row, not two, and says it shadows the global entry. |
 | **L5** | Create four tasks on the app project with **m3-parallel**: `n`, title, pick the workflow, override `agent` to `codex`, `ctrl+s`. Repeat. | Four tasks exist. |
 | **L6** | Watch the board. | Exactly **three** run at once and the fourth sits `queued`; each running row shows the step name you typed in L3 (proving the shadow ran, not the global copy) and a step count of 2. When the first finishes, the fourth starts on its own — no keypress, no refresh. |
 | **L7** | Open one running task (`enter`), watch the output pane. | Output is still arriving while you watch; `f`/`G` re-follows after you scroll away. Press `d` for the diff — it shows the agent's README.md edit. |
-| **L8** | Create a task on the app project with **m3-loop** (agent `claude`, the real CLI). Wait. | The task reaches `awaiting_input` and the TUI alerts you. Open it, `tab` to the answer form, pick an option, `enter`. The run resumes in place — no new attempt, no restart — and finishes the agent step. |
+| **L8** | Create a task on the app project with **m3-loop** (agent `claude`, the real CLI). Wait. | The task reaches `awaiting_input` and the TUI alerts you. Jump to it (`!`), open the answer popup (`enter`), pick an option, `enter`. The run resumes in place — no new attempt, no restart — and finishes the agent step. |
 | **L9** | The task stops at the gate. Approve it: `a`. | The manual step shows as approved, the publish step runs, and the task reaches `done`. `git -C <bare remote> log --oneline --all` shows the branch with the agent's commit. |
 | **L10** | Archive the finished loop task: `A`, confirm. | It asks first, naming the consequence; on `y` the task shows as archived and its worktree is gone from disk. |
 
