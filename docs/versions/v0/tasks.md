@@ -19,9 +19,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 0 — Scaffolding | 4 tasks | 4/4 | ✅ done |
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
-| 3 — TUI (M3) | 13 tasks | 12/13 | 🟡 in progress |
+| 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
 | 4 — Polish (M4) | 7 tasks | 0/7 | ⬜ not started |
-| **Total** | | **37/45** | |
+| **Total** | | **38/45** | |
 
 ---
 
@@ -453,7 +453,7 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
 - *Results shape:* per run a header block (date, OS + version, terminal host, vincent commit, `claude --version`, resolved `$EDITOR`), a pass/fail/n-a table keyed to item IDs, and findings each carrying a Phase 4 task ID or "fixed in PR N" — Q6's rule only works if a finding is written next to its disposition, or "deferred" and "forgotten" become the same artifact.
 - *Commit order:* tasks.md `[~]` + this block → spec (§19 footnote, §15 cross-reference) → `cmd/fakeagent` delay knob + test → `scripts/m3-gate.sh` → `m3-gate.md` checklist → walkthroughs → results + tasks.md `[x]`. Docs-first per PR C/I/J/K/M.
 
-- [~] **T3.8 — Phase gate (M3 acceptance).** Manual scripted walkthrough of the §19 M3 loop on Windows + one POSIX OS, using fake agents for parallelism and real `claude` for one task; results recorded here.
+- [x] **T3.8 — Phase gate (M3 acceptance).** ✓ 2026-08-10 Manual scripted walkthrough of the §19 M3 loop on Windows + one POSIX OS, using fake agents for parallelism and real `claude` for one task; results recorded here.
   *Done when:* walkthrough passes on both; notes committed.
   *2026-08-09:* deferred behind T3.9–T3.13 (see the TUI refactor decisions below). The walkthrough runs **once**, against the panel UI, and never against the one being replaced; its sweep section grows the items listed in T3.13. `scripts/m3-gate.sh` and section A of `m3-gate.md` carry over unchanged — the seed is UI-agnostic and the §19 loop is spec-derived.
   *2026-08-10:* first Windows pass surfaced four findings before any run was recorded; graded per the rule above (none block the loop). Fixed pre-run: console windows flashing for every daemon child (procx/gitx `CREATE_NO_WINDOW`), the takeovers' duplicate key rows and missing frames (both runs will judge the fixed build). Deferred: naming what "(workflow default)" resolves to in the new-task form → T4.7.
@@ -470,6 +470,7 @@ Milestone acceptance (§19 M3): the full loop — register project, author workf
   2. Paste did nothing anywhere, so L2's "paste the seeded app-repo path" was not performable. `tea.PasteMsg` is neither a key nor a mouse event, so the root broadcast it and every view dropped it; `ctrl+v` failed separately because bubbles answers it with an unexported message only textinput understands. Paste now follows the *key* routing to the one field holding the keyboard, and `ctrl+v` reads the system clipboard into that same path. A paste with no field under it is dropped rather than replayed as keystrokes — on the board that would fire `a`/`c`/`r` as task actions.
   3. The gate banner's `export` lines outlive the walkthrough, and the next `go test ./...` in that shell inherits `FAKEAGENT_DELAY_MS` and `FAKEAGENT_SCENARIO_CODEX` — `cmd/fakeagent` and `internal/agent/codex` fail looking exactly like real regressions. The POSIX launch block is one-shot `env VAR=… vincent` now, and teardown tells pwsh how to clear its session.
   Also fixed while enumerating paste targets: the new-task form's key/value editor was missing from `capturesInput()`, so typing `q` into a field name quit the TUI.
+  *2026-08-10 (recorded runs — **GATE PASS**):* both walkthroughs re-walked on `master` at `40fbffe`, the first build carrying every shakeout fix, so the commit-SHA-per-run rule holds with one build for both. **Windows 11** (Windows Terminal/pwsh, plus Git Bash/mintty for S14's second host) and **macOS 26.5.2** (Ghostty 1.3.1), real `claude` 2.1.226 on the question leg, platform-default editor on each. Section A L1–L10 pass on both — the §19 loop completes without leaving the TUI — and Section B S1–S18 pass, with macOS reading S14 as its Ghostty equivalent since the two Windows hosts are the Windows run's item. No new findings in either recorded run; every earlier finding was re-checked against this build. Results tables in `docs/versions/v0/m3-gate.md`. Phase 3 closes at 13/13; T4.7 carries the only deferred item (naming what "(workflow default)" resolves to for model and effort, which the API does not report per step).
 
 **Phase 3 TUI refactor decisions (grill session, 2026-08-09):**
 
