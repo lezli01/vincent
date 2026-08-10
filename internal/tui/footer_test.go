@@ -52,13 +52,13 @@ func TestFooterFiveKeyCap(t *testing.T) {
 			key: "k", hint: "k hint" + strings.Repeat("!", i+1), priority: 7 - i,
 		})
 	}
-	hints := footerHints(rows)
+	hints := footerHintSegs(rows)
 	if len(hints) != maxFooterHints {
 		t.Fatalf("footer shows %d hints, want the cap of %d", len(hints), maxFooterHints)
 	}
 	// Priority order: the lowest numbers made the cut, lowest first.
-	if !strings.Contains(hints[0], strings.Repeat("!", 7)) {
-		t.Errorf("first hint = %q, want the priority-1 row", ansi.Strip(hints[0]))
+	if !strings.Contains(hints[0].text, strings.Repeat("!", 7)) {
+		t.Errorf("first hint = %q, want the priority-1 row", ansi.Strip(hints[0].text))
 	}
 }
 

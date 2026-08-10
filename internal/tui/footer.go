@@ -21,64 +21,149 @@ import (
 // maxFooterHints caps the focused surface's key segment.
 const maxFooterHints = 5
 
-// renderFooter composes the line. bar is the shell's action bar (nil on a
-// takeover); a pending confirmation replaces the left segments outright —
-// it owns the keyboard, so nothing else is actionable anyway. attention is
-// the needs-a-human count behind the `!` hint, shown only when non-zero;
-// retry adds the reconnect hint while the daemon is unreachable.
+// footerHit is one clickable span: clicking it fires the key it shows
+// (§15 Mouse) — the palette's one-execution-path rule again.
+type footerHit struct {
+	x0, x1 int
+	key    string
+}
+
+// footerSeg is one composed segment; key is empty for unclickable text
+// (statuses).
+type footerSeg struct {
+	text string
+	key  string
+}
+
+// renderFooter composes the line; buildFooter additionally reports the
+// clickable spans. bar is the shell's action bar (nil on a takeover); a
+// pending confirmation replaces the left segments outright — it owns the
+// keyboard, so nothing else is actionable anyway. attention is the
+// needs-a-human count behind the `!` hint, shown only when non-zero; retry
+// adds the reconnect hint while the daemon is unreachable.
 func renderFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) string {
-	pinned := styleKey.Render(":") + styleDim.Render(" commands  ") +
-		styleKey.Render("?") + styleDim.Render(" help  ") +
-		styleKey.Render("q") + styleDim.Render(" quit")
+	line, _ := buildFooter(width, panelRows, bar, target, attention, retry)
+	return line
+}
 
-	var left string
+func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) (string, []footerHit) {
+	pinnedSegs := []footerSeg{
+		{text: styleKey.Render(":") + styleDim.Render(" commands  "), key: ":"},
+		{text: styleKey.Render("?") + styleDim.Render(" help  "), key: "?"},
+		{text: styleKey.Render("q") + styleDim.Render(" quit"), key: "q"},
+	}
+
+	var segs []footerSeg
 	if bar != nil && bar.capturing() {
-		left = strings.TrimPrefix(bar.render(target), " ")
+		// The pending y/n owns the keyboard and the left of the line.
+		segs = []footerSeg{{text: strings.TrimPrefix(bar.render(target), " ")}}
 	} else {
-		sep := styleDim.Render(" · ")
-		segs := make([]string, 0, 4)
-		if hints := footerHints(panelRows); len(hints) > 0 {
-			segs = append(segs, strings.Join(hints, sep))
-		}
-		if bar != nil && target.id != 0 {
-			var extra []string
-			if target.has(apiclient.ActionAnswer) {
-				extra = append(extra, styleAsk.Render("enter answer"))
-			}
-			if actions := strings.TrimPrefix(bar.render(target, extra...), " "); actions != "" {
-				segs = append(segs, actions)
-			}
-		}
-		if attention > 0 {
-			segs = append(segs, styleWarn.Render(fmt.Sprintf("! next attention (%d)", attention)))
-		}
-		if retry {
-			segs = append(segs, styleKey.Render("r")+" retry")
-		}
-		left = strings.Join(segs, sep)
+		segs = footerLeftSegs(panelRows, bar, target, attention, retry)
 	}
 
-	line := " " + left
-	if width <= 0 {
-		return line + "  " + pinned
+	sep := styleDim.Render(" · ")
+	sepW := ansi.StringWidth(sep)
+	var sb strings.Builder
+	sb.WriteString(" ")
+	x := 1
+	hits := make([]footerHit, 0, len(segs)+3)
+	for i, s := range segs {
+		if i > 0 {
+			sb.WriteString(sep)
+			x += sepW
+		}
+		w := ansi.StringWidth(s.text)
+		if s.key != "" {
+			hits = append(hits, footerHit{x0: x, x1: x + w, key: s.key})
+		}
+		sb.WriteString(s.text)
+		x += w
 	}
-	pw := ansi.StringWidth(pinned)
+	line := sb.String()
+
+	var pinned strings.Builder
+	for _, s := range pinnedSegs {
+		pinned.WriteString(s.text)
+	}
+	pw := ansi.StringWidth(pinned.String())
+
+	if width <= 0 {
+		return line + "  " + pinned.String(), nil
+	}
 	avail := width - pw - 2
 	if avail <= 0 {
 		// Below any §15 floor: the pinned segment alone, never truncated.
-		return " " + pinned
+		return " " + pinned.String(), pinnedHits(1, pinnedSegs)
 	}
 	lw := ansi.StringWidth(line)
 	if lw > avail {
-		line = "…" + ansi.TruncateLeft(line, lw-avail+1, "")
+		cut := lw - avail + 1
+		line = "…" + ansi.TruncateLeft(line, cut, "")
 		lw = ansi.StringWidth(line)
+		// Shift the spans left; a hint that was cut cannot be clicked.
+		kept := hits[:0]
+		for _, h := range hits {
+			h.x0 -= cut - 1
+			h.x1 -= cut - 1
+			if h.x0 >= 1 {
+				kept = append(kept, h)
+			}
+		}
+		hits = kept
 	}
-	return line + strings.Repeat(" ", max(width-lw-pw, 2)) + pinned
+	pad := max(width-lw-pw, 2)
+	hits = append(hits, pinnedHits(lw+pad, pinnedSegs)...)
+	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
-// footerHints renders the surface's footer-worthy keys: rows with a hint,
-// in priority order, at most five.
-func footerHints(rows []binding) []string {
+func pinnedHits(x int, segs []footerSeg) []footerHit {
+	out := make([]footerHit, 0, len(segs))
+	for _, s := range segs {
+		w := ansi.StringWidth(s.text)
+		out = append(out, footerHit{x0: x, x1: x + w, key: s.key})
+		x += w
+	}
+	return out
+}
+
+// footerLeftSegs builds the non-confirming left side: panel hints, the
+// task's valid actions, the answer/attention/retry extras, and the action
+// bar's last status.
+func footerLeftSegs(panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) []footerSeg {
+	segs := footerHintSegs(panelRows)
+	if bar != nil && target.id != 0 {
+		for _, o := range actionOrder {
+			if target.has(o.action) {
+				segs = append(segs, footerSeg{
+					text: styleKey.Render(o.key) + " " + o.action, key: o.key,
+				})
+			}
+		}
+		if target.has(apiclient.ActionAnswer) {
+			segs = append(segs, footerSeg{text: styleAsk.Render("enter answer"), key: "enter"})
+		}
+	}
+	if attention > 0 {
+		segs = append(segs, footerSeg{
+			text: styleWarn.Render(fmt.Sprintf("! next attention (%d)", attention)), key: "!",
+		})
+	}
+	if retry {
+		segs = append(segs, footerSeg{text: styleKey.Render("r") + " retry", key: "r"})
+	}
+	if bar != nil && bar.status != "" {
+		style := styleDim
+		if bar.statusBad {
+			style = styleBad
+		}
+		segs = append(segs, footerSeg{text: style.Render(bar.status)})
+	}
+	return segs
+}
+
+// footerHintSegs renders the surface's footer-worthy keys: rows with a
+// hint, in priority order, at most five.
+func footerHintSegs(rows []binding) []footerSeg {
 	hinted := make([]binding, 0, len(rows))
 	for _, r := range rows {
 		if r.hint != "" {
@@ -89,14 +174,16 @@ func footerHints(rows []binding) []string {
 	if len(hinted) > maxFooterHints {
 		hinted = hinted[:maxFooterHints]
 	}
-	out := make([]string, 0, len(hinted))
+	out := make([]footerSeg, 0, len(hinted))
 	for _, r := range hinted {
 		key, rest, ok := strings.Cut(r.hint, " ")
 		if !ok {
-			out = append(out, styleKey.Render(r.hint))
+			out = append(out, footerSeg{text: styleKey.Render(r.hint), key: r.key})
 			continue
 		}
-		out = append(out, styleKey.Render(key)+" "+styleDim.Render(rest))
+		out = append(out, footerSeg{
+			text: styleKey.Render(key) + " " + styleDim.Render(rest), key: r.key,
+		})
 	}
 	return out
 }

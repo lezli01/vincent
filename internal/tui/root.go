@@ -70,6 +70,11 @@ type root struct {
 	// the root because it must overlay every screen, takeovers included —
 	// while disconnected it is how the daemon view stays reachable.
 	palette *palette
+	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
+	// Mouse). Off restores native click-drag text selection.
+	mouseOn bool
+	// footerHits are the clickable spans of the last-rendered footer.
+	footerHits []footerHit
 	// notice is §16's full-auto warning. It owns the whole screen until it
 	// is dismissed, ahead of and independent of the connect flow: the
 	// warning is about what the daemon will do, so it must not wait on the
@@ -95,6 +100,7 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		phase:   phaseProbing,
 		dataDir: dataDir,
 		views:   newViews(ctx),
+		mouseOn: true,
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 	}
 	m.setDataDir(dataDir)
@@ -154,12 +160,39 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logPath = msg.logPath
 		m.setConnected(false)
 		return m, nil
+	case tea.MouseClickMsg:
+		return m.updateMouseClick(msg)
+	case tea.MouseWheelMsg:
+		if m.notice.active || m.palette != nil || m.help {
+			return m, nil
+		}
+		msg.Y-- // the body starts under the header line
+		return m, m.deliver(m.active, msg)
 	case noteMsg:
 		return m.updateNote(msg.note)
 	case streamDoneMsg:
 		return m, nil
 	}
 	return m.delegate(msg)
+}
+
+// updateMouseClick is §15's click scope: a footer hint fires its key, and
+// everything else lands in the active screen's body. Popups stay keyboard;
+// right-clicks and the rest are out of scope.
+func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.help {
+		return m, nil
+	}
+	if m.height > 0 && msg.Y == m.height-1 {
+		for _, h := range m.footerHits {
+			if msg.X >= h.x0 && msg.X < h.x1 {
+				return m.updateKey(synthKey(h.key))
+			}
+		}
+		return m, nil
+	}
+	msg.Y-- // the body starts under the header line
+	return m, m.deliver(m.active, msg)
 }
 
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -196,6 +229,9 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 			return m, nil
 		}
+	case "M":
+		m.mouseOn = !m.mouseOn
+		return m, nil
 	case "!":
 		// Jump to the next task needing a human — global, so it also pulls
 		// a takeover screen back to the board it acts on.
@@ -482,7 +518,11 @@ func (m *root) View() tea.View {
 		ph := min(18, max(m.height-4, 6))
 		frame = overlay(frame, m.palette.render(pw, ph), max((m.width-pw)/2, 0), 2)
 	}
-	return tea.NewView(frame)
+	v := tea.NewView(frame)
+	if m.mouseOn && !m.notice.active {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 func (m *root) headerLine() string {
@@ -597,7 +637,9 @@ func (m *root) footerLine() string {
 		}
 	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-	return renderFooter(m.width, bindingsFor(ctx), bar, target, attention, retry)
+	line, hits := buildFooter(m.width, bindingsFor(ctx), bar, target, attention, retry)
+	m.footerHits = hits
+	return line
 }
 
 // bodyHeight is the space left for the active view: total minus header,
