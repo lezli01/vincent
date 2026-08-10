@@ -43,8 +43,9 @@ type binding struct {
 	scope bindingScope
 	// context is the owning surface for scopePanel rows.
 	context bindingContext
-	// priority orders the footer's panel segment (T3.12); lower renders
-	// first, zero means "not a footer key".
+	// hint is the short footer form ("enter open"); rows without one stay
+	// out of the footer. priority orders the segment; lower renders first.
+	hint     string
 	priority int
 	// action is the §6 action a scopeTaskAction row is gated on.
 	action string
@@ -90,41 +91,41 @@ var bindings = []binding{
 	{key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8},
 
 	// Task table.
-	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks},
-	{key: "enter", label: "open the selected task — or its answer form when it is asking", scope: scopePanel, context: ctxTasks, priority: 1},
-	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, priority: 2},
+	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
+	{key: "enter", label: "open the selected task — or its answer form when it is asking", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1},
+	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2},
 
 	// Timeline.
-	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, priority: 1},
+	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 1},
 
 	// Output pane.
-	{key: "]", label: "switch the tab between output and diff ([/], d kept as an alias)", scope: scopePanel, context: ctxOutput, priority: 1},
-	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, priority: 2},
-	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput},
+	{key: "]", label: "switch the tab between output and diff ([/], d kept as an alias)", scope: scopePanel, context: ctxOutput, hint: "[/] tabs", priority: 1},
+	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
+	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 3},
 
 	// New task.
-	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask},
-	{key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask},
-	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask},
-	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask},
-	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask},
+	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
+	{key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask, hint: "e $EDITOR", priority: 3},
+	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
+	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5},
+	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
 
 	// Projects.
-	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects},
-	{key: "enter", label: "edit the selected project (enter/e)", scope: scopePanel, context: ctxProjects},
-	{key: "d", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects},
-	{key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects},
-	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects},
+	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1},
+	{key: "enter", label: "edit the selected project (enter/e)", scope: scopePanel, context: ctxProjects, hint: "enter edit", priority: 2},
+	{key: "d", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "d remove", priority: 3},
+	{key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 4},
+	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 5},
 
 	// Workflows.
-	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows},
-	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows},
-	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows},
+	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
+	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2},
+	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3},
 
 	// Daemon.
-	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon},
-	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon},
-	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon},
+	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
+	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
+	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon, hint: "↑/↓ scroll", priority: 3},
 
 	// Answer form: these exist only while the popup owns the keyboard, and
 	// the popup prints them itself — they are here so ? stays complete.
