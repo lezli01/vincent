@@ -304,6 +304,47 @@ func TestTakeoversShareThePanelChrome(t *testing.T) {
 	}
 }
 
+// TestBackgroundMessagesReachTheirOwnView is the T3.8 finding: background
+// work belongs to the view that started it, not to whichever screen the
+// human is looking at. The board's refresh debounce fired while the
+// new-task form was up, the form swallowed it, and the board never
+// refetched again — "0/3 running" with tasks in the daemon until restart.
+func TestBackgroundMessagesReachTheirOwnView(t *testing.T) {
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+	m.phase = phaseConnected
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	b := m.views[viewHome].(*shell).board
+	b.client = apiclient.New("http://127.0.0.1:1", "token")
+
+	// A task event opens the debounce window, then the human opens the form.
+	if cmd := b.scheduleRefresh(); cmd == nil {
+		t.Fatal("scheduleRefresh returned no tick")
+	}
+	m.Update(selectViewMsg{id: viewNewTask})
+	if m.active != viewNewTask {
+		t.Fatalf("active = %v, want the takeover", m.active)
+	}
+
+	// The tick lands while the form is on screen. It must reach the board.
+	_, cmd := m.Update(boardRefreshMsg{})
+	if b.refreshPending {
+		t.Fatal("the board's debounce is still pending; the refresh was swallowed")
+	}
+	if cmd == nil {
+		t.Fatal("the debounce fired without issuing a refetch")
+	}
+	// And the window reopens, so later events are not ignored either.
+	if next := b.scheduleRefresh(); next == nil {
+		t.Fatal("the board cannot schedule another refresh; it is wedged")
+	}
+
+	// The elapsed ticker survives a takeover for the same reason: an
+	// unre-armed tea.Tick never comes back.
+	if _, cmd = m.Update(boardTickMsg(testNow)); cmd == nil {
+		t.Fatal("the elapsed ticker died while a takeover was on screen")
+	}
+}
+
 func TestQuitKeys(t *testing.T) {
 	for _, k := range []tea.KeyPressMsg{
 		key("q"),
