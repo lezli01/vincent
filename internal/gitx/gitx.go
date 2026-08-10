@@ -63,6 +63,7 @@ func New() *Git { return &Git{path: "git"} }
 // returned as *Error with stderr captured.
 func (g *Git) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, g.path, args...)
+	hideConsole(cmd)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
