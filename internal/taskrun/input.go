@@ -25,9 +25,10 @@ const (
 
 // Run-context cancel causes: they tell classifyAgent why the process died.
 var (
-	errStepTimeout   = errors.New("step timeout")
-	errInputTimeout  = errors.New("input timeout")
-	errInputProtocol = errors.New("input protocol error")
+	errStepTimeout     = errors.New("step timeout")
+	errInputTimeout    = errors.New("input timeout")
+	errInputProtocol   = errors.New("input protocol error")
+	errTranscriptLimit = errors.New("transcript limit")
 )
 
 // PendingInput is the normalized input request as persisted in

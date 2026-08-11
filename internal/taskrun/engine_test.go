@@ -36,7 +36,13 @@ type engineHarness struct {
 	projectID int64
 }
 
-func newEngineHarness(t *testing.T) *engineHarness {
+func newEngineHarness(t *testing.T) *engineHarness { return newEngineHarnessWith(t, nil) }
+
+// newEngineHarnessWith is newEngineHarness with the daemon config adjusted —
+// the transcript cap has to be shrunk to be testable, and a test-only
+// override hatch was exactly what the PR V decision rejected in favour of a
+// real config field.
+func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarness {
 	t.Helper()
 	fake := agenttest.BuildFakeAgent(t)
 	dataDir := t.TempDir()
@@ -53,9 +59,13 @@ func newEngineHarness(t *testing.T) *engineHarness {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+	if mutate != nil {
+		mutate(&cfg)
+	}
 	runner := New(Deps{
 		Store:     st,
-		Config:    config.Default,
+		Config:    func() config.Config { return cfg },
 		Worktrees: worktree.NewManager(git, dataDir),
 		Agents: agent.NewRegistry(
 			claude.New(func() string { return fake }),
@@ -765,6 +775,51 @@ steps:
 	}
 	if run.CostUSD != nil {
 		t.Errorf("cost = %v, want nil (cursor reports no cost)", *run.CostUSD)
+	}
+}
+
+// TestEngineTranscriptLimitFailsTheStep is the T4.3 done-when for the cap, at
+// a shrunk threshold: an agent that will not stop talking is killed and the
+// attempt fails `transcript_limit` rather than filling the disk (§12.3, §18).
+func TestEngineTranscriptLimitFailsTheStep(t *testing.T) {
+	h := newEngineHarnessWith(t, func(c *config.Config) {
+		c.TranscriptMaxBytes = 8 << 10 // 8KB — the flood passes it in moments
+	})
+	t.Setenv("FAKEAGENT_SCENARIO", "flood")
+	task := h.createTask(t, `name: floody
+steps:
+  - id: talk
+    type: agent
+    max_retries: 0
+    prompt: say too much
+`)
+	h.start(t)
+
+	final := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if final.State != store.TaskBlocked {
+		t.Fatalf("task = %s (%s), want blocked", final.State, final.BlockReason)
+	}
+	if final.BlockReason != ReasonTranscriptLimit {
+		t.Errorf("block reason = %q, want %q", final.BlockReason, ReasonTranscriptLimit)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 || runs[0].FailureReason != ReasonTranscriptLimit {
+		t.Fatalf("step runs = %+v, want one failed %s", runs, ReasonTranscriptLimit)
+	}
+
+	// The partial transcript is kept — the lines that got there are exactly
+	// what explains the runaway — and it ends with the annotation saying why
+	// it stops.
+	body, err := os.ReadFile(runs[0].TranscriptPath)
+	if err != nil {
+		t.Fatalf("read transcript: %v", err)
+	}
+	if !strings.Contains(string(body), "vincent.transcript_limit") {
+		t.Error("the transcript does not record why it stopped")
+	}
+	// Bounded by roughly one line past the cap, not by the flood's appetite.
+	if len(body) > 64<<10 {
+		t.Errorf("transcript is %d bytes with an 8KB cap; the cap did not bound it", len(body))
 	}
 }
 

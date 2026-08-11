@@ -257,6 +257,7 @@ type configResponse struct {
 	MaxParallelTasks        int                  `json:"max_parallel_tasks"`
 	Defaults                configDefaults       `json:"defaults"`
 	TranscriptRetentionDays int                  `json:"transcript_retention_days"`
+	TranscriptMaxBytes      int64                `json:"transcript_max_bytes"`
 	LogLevel                string               `json:"log_level"`
 	Agents                  map[string]agentPath `json:"agents"`
 }
@@ -282,6 +283,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 			InputTimeout:   cfg.Defaults.InputTimeout.String(),
 		},
 		TranscriptRetentionDays: cfg.TranscriptRetentionDays,
+		TranscriptMaxBytes:      cfg.TranscriptMaxBytes.Bytes(),
 		LogLevel:                cfg.LogLevel,
 		Agents: map[string]agentPath{
 			"claude": {Path: cfg.Agents.Claude.Path},
