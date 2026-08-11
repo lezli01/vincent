@@ -47,14 +47,25 @@ go test -race ./internal/tui -run TestLiveChangeFromRealServer
 ```
 
 Acceptance gates — bash scripts that drive a real daemon end to end over curl
-against the fake agent; CI runs both on Linux, macOS, and Windows:
+against the fake agent; CI runs all three on Linux, macOS, and Windows:
 
 ```sh
 ./scripts/m1-gate.sh
 ./scripts/m2-gate.sh
-VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh   # single scenario, for debugging
-VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh # manual run against the real CLI
+./scripts/m5-gate.sh                            # cursor adapter (§9.7)
+VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
+VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
+VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
+
+`scripts/m3-gate.sh` seeds a human walkthrough instead of asserting — M3's
+acceptance is a judgement about a TUI. The manual legs of M5 are walked
+through in `docs/versions/v0/m5-gate.md`, which also records the runs.
+
+New gate scripts must be committed **executable** (`git update-index
+--chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the
+bit, so a non-executable gate passes on Windows and fails both POSIX legs with
+exit 126 before running an assertion.
 
 Requires bash, go, git, curl, jq.
 
@@ -101,10 +112,19 @@ is a correctness bug, not a style issue:
 | `internal/api` | Localhost REST + SSE, bearer auth, snake_case error envelope |
 | `internal/apiclient` | Typed HTTP+SSE client — the one client for TUI and CLI; owns its wire types (server DTOs stay unexported) |
 | `internal/workflow` | YAML registry (builtin < global < project shadowing), live reload, `text/template` step engine |
-| `internal/taskrun` | Step executors (agent/command/manual/check), retries, timeouts, human actions, recovery, transcripts |
-| `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex` implement it |
+| `internal/taskrun` | Step executors — there are **three** step types (agent, command, manual); `check` is a *field* agent and command steps may carry, not a fourth type — plus retries, timeouts, human actions, recovery, transcripts |
+| `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |
+
+Adapters differ in what they *can* do, and the differences are documented, never
+faked: codex ships no model catalog and no mid-run input; cursor has no effort
+concept at all (it lives in the model id), probes its models over an
+authenticated network call rather than from `--help`, and cannot honor
+`restricted` on Windows — where it returns `agent.ErrRestrictedUnsupported` from
+`Start` so the engine fails the step rather than silently running it full-auto.
+A capability an adapter lacks is stated in spec §9.x and ignored at run time; it
+is never emulated.
 
 `internal/worktree` and `internal/taskrun/engine.go` share one snake_case vocabulary
 for failure/block reasons (`ReasonTimeout`, `ReasonWorktreeDirty`, …) — a
@@ -123,10 +143,13 @@ daemon, no shared fixtures:
 - `internal/testrepo` — throwaway git repos (skips when git is absent).
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
-  argv shape (`exec` first arg ⇒ codex-shaped, otherwise claude-shaped); scenarios
-  come from env (`FAKEAGENT_SCENARIO`, `FAKEAGENT_VERSION`, `FAKEAGENT_EDIT_FILE`,
-  …) so argv stays faithful to the real CLIs. Add scenarios here rather than
-  special-casing adapters for tests.
+  argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;
+  otherwise claude-shaped — cursor's run argv is claude's plus flags, and `--trust`
+  is the one flag only cursor passes, in both permission modes); `models` and
+  `status` as argv[1] answer cursor's option and login probes. Scenarios come from
+  env (`FAKEAGENT_SCENARIO`, `FAKEAGENT_VERSION`, `FAKEAGENT_EDIT_FILE`,
+  `FAKEAGENT_CURSOR_LOGGED_OUT`, …) so argv stays faithful to the real CLIs. Add
+  scenarios here rather than special-casing adapters for tests.
 - `*live_test.go` — the TUI/apiclient wired to the **real** API handlers over
   `httptest`, which is what keeps client and server wire types from drifting.
 - `e2e_test.go` in `internal/cli` and `internal/tui` build the real binary in

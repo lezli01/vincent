@@ -83,8 +83,13 @@ Two things to know about the Cursor adapter specifically:
   running a cursor step overwrites the model you last picked in an
   interactive `cursor-agent` session.
 - **`restricted` permission mode needs macOS or Linux.** Cursor's sandbox is
-  unavailable on Windows, so a restricted cursor step fails there with a
-  stated reason rather than silently running full-auto.
+  unavailable on Windows, so a restricted cursor step fails there with
+  `restricted_unsupported` rather than silently running full-auto. That is
+  deliberate: a restricted mode that quietly isn't restricted is worse than
+  none.
+
+A ready-to-copy cursor workflow ships in
+[`examples/cursor-review.yaml`](examples/cursor-review.yaml).
 
 ## Project Status
 
@@ -114,8 +119,11 @@ follows the task breakdown:
   the commands below.
 - **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
   dialect, config and registry wiring, windowed/filterable option pickers,
-  and `logged_in` reporting are **built**; docs, example workflow, and the
-  M5 acceptance walkthrough remain.
+  `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an
+  example workflow are **built and green in CI**. What remains is the
+  workflow authoring guide (it belongs to Phase 4) and the hand-run legs of
+  the M5 gate against the real `cursor-agent` — see
+  [docs/versions/v0/m5-gate.md](docs/versions/v0/m5-gate.md).
 
 See [docs/versions/v0/spec.md](docs/versions/v0/spec.md) for the product and
 implementation spec, and
@@ -146,9 +154,9 @@ Tests are self-contained: they run against temporary SQLite databases,
 throwaway git repositories, and a fake agent built from `cmd/fakeagent` on
 the fly — no real agent CLI, network access, or running daemon required.
 CI runs lint, the race-enabled tests, and the build on Linux, macOS, and
-Windows, plus the phase acceptance gates — `scripts/m1-gate.sh` and
-`scripts/m2-gate.sh` — which drive a real daemon end to end against the fake
-agent on all three platforms.
+Windows, plus the phase acceptance gates — `scripts/m1-gate.sh`,
+`scripts/m2-gate.sh`, and `scripts/m5-gate.sh` — which drive a real daemon end
+to end against the fake agent on all three platforms.
 
 ## Contributing
 
