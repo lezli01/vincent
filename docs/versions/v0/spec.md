@@ -682,7 +682,11 @@ every consumer that assumed two adapters.
   **An adapter that cannot restrict on the host platform fails the step rather
   than running it unrestricted** — cursor on Windows is the one such case
   today (§9.7). A restricted mode that silently isn't restricted is worse than
-  no restricted mode.
+  no restricted mode. The adapter signals this by returning
+  `agent.ErrRestrictedUnsupported` from `Start`, which the engine classifies
+  as `restricted_unsupported`; the sentinel lives in the adapter *interface*
+  package so the engine recognizes the condition without depending on any
+  implementation.
 
 Set at workflow `defaults` or per step; there is no daemon-global hardcoded policy.
 
@@ -1473,7 +1477,7 @@ currently true to show (§15 view 6).
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails with the CLI's auth error |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
-| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with the adapter's reason (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto |
+| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch `vincent/{id}-{slug}` already exists | Task blocked with clear reason (never reuse) |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives |

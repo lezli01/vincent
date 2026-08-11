@@ -58,7 +58,14 @@ func (r *Runner) runAgentStep(
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
 		env.log.Error("start agent", "agent", sel.Agent, "error", err)
-		return stepOutcome{state: store.StepFailed, reason: ReasonAgentUnavailable}
+		// An adapter that cannot restrict on this platform is not a missing
+		// adapter (§9.4); saying so keeps the user from reinstalling a CLI
+		// that is present and working.
+		reason := ReasonAgentUnavailable
+		if errors.Is(err, agent.ErrRestrictedUnsupported) {
+			reason = ReasonRestrictedUnsupported
+		}
+		return stepOutcome{state: store.StepFailed, reason: reason}
 	}
 	// Register the live process so a cancel can reach it (§6).
 	defer r.setProc(env.task.ID, handle)()

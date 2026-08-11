@@ -1,0 +1,61 @@
+# cursor-review — a review pass driven by the Cursor CLI (spec §9.7).
+#
+# Copy into {config_dir}/workflows/ for every project, or into
+# .vincent/workflows/ inside one repo (project scope shadows global, §8.1).
+#
+# Two things differ from a claude or codex workflow, and both are cursor
+# properties rather than vincent's:
+#
+#   * There is no `effort:` field anywhere below. Cursor has no effort flag —
+#     reasoning depth is part of the model id (`claude-sonnet-5-thinking-high`,
+#     `gpt-5.4-mini-xhigh`). An `effort:` on a cursor step is ignored, and a
+#     claude/codex effort value is rejected outright by the §8.2 catalog check.
+#     Run `cursor-agent models` to see what your account offers.
+#
+#   * `model: auto` is spelled out rather than left unset. Cursor persists the
+#     model it is given to ~/.cursor/cli-config.json, so vincent always sends
+#     one; naming it here keeps the workflow's behavior readable instead of
+#     depending on an adapter default.
+#
+# Permission mode is left at the default (full-auto). `restricted` requires
+# cursor's sandbox, which needs macOS or Linux — on Windows a restricted
+# cursor step fails with `restricted_unsupported` rather than quietly running
+# unrestricted (§9.4).
+name: cursor-review
+description: Review the working tree with Cursor, write the findings to a file, and commit them.
+
+defaults:
+  agent: cursor
+  model: auto
+  max_retries: 1
+
+steps:
+  - id: review
+    type: agent
+    prompt: |
+      Review this repository for correctness bugs and obvious simplifications.
+
+      Task: {{.Task.Title}}
+      {{if .Task.Description}}Context: {{.Task.Description}}{{end}}
+
+      Write your findings to REVIEW.md in the repository root, most severe
+      first, each with a file:line reference. If you find nothing worth
+      reporting, write "No findings." and stop. Do not change any other file.
+
+  - id: commit
+    type: command
+    # Single-quoted: the commit message contains ": ", which a plain YAML
+    # scalar cannot carry.
+    #
+    # This step is also the verification. If the agent wrote nothing, `git
+    # add` finds no REVIEW.md and the step fails with nonzero_exit — the task
+    # blocks instead of reporting a review that never happened. Nothing more
+    # portable is needed: `&&` behaves the same under bash, cmd, and
+    # PowerShell 7, which is what §8.3 may hand a command step.
+    run: 'git add REVIEW.md && git commit -m "review: {{.Task.Title}}"'
+
+  - id: read
+    type: manual
+    instructions: |
+      Read REVIEW.md on branch {{.Task.BranchName}} before merging anything.
+      The agent ran full-auto: everything it did is in the task transcript.

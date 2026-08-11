@@ -142,17 +142,33 @@ func (a *Adapter) loggedIn(ctx context.Context, path string) *bool {
 // A var rather than a constant so tests exercise both legs on any host.
 var sandboxAvailable = runtime.GOOS != "windows"
 
-// ErrRestrictedUnsupported is returned instead of starting a restricted step
-// on a platform where cursor cannot restrict anything.
+// SetSandboxAvailable overrides the platform capability and returns a restore
+// func. It exists so tests in *other* packages — the engine's classification
+// of the refusal, the M5 gate — can exercise both legs on every OS CI runs,
+// instead of the Windows leg being the only one ever executed. Production
+// code never calls it.
+func SetSandboxAvailable(v bool) (restore func()) {
+	prev := sandboxAvailable
+	sandboxAvailable = v
+	return func() { sandboxAvailable = prev }
+}
+
+// errRestricted is returned instead of starting a restricted step on a
+// platform where cursor cannot restrict anything. It wraps the shared
+// agent.ErrRestrictedUnsupported so the engine can classify it (as
+// restricted_unsupported rather than agent_unavailable — the CLI is installed
+// and fine, it just cannot restrict here) without knowing this package
+// exists.
 //
 // The alternative — quietly falling back to --force — would run a step
 // full-auto that explicitly asked not to be, turning a §9.4 safety choice
 // into its opposite on one OS. Failing is the only honest option: the step
-// fails under the retry policy with this reason, which is visible, rather
-// than succeeding with permissions nobody granted (spec §9.7).
-var ErrRestrictedUnsupported = errors.New(
-	"cursor restricted mode needs the CLI sandbox, which requires macOS or Linux; " +
-		"refusing to silently run the step full-auto instead (spec §9.7)")
+// fails under the retry policy with a stated reason, rather than succeeding
+// with permissions nobody granted (spec §9.7).
+var errRestricted = fmt.Errorf(
+	"cursor restricted mode needs the CLI sandbox, which requires macOS or Linux; "+
+		"refusing to silently run the step full-auto instead (spec §9.7): %w",
+	agent.ErrRestrictedUnsupported)
 
 // buildArgs assembles the pinned CLI invocation (spec §9.7, verified against
 // cursor-agent 2026.08.04-aaa8809).
@@ -166,7 +182,7 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 	args := []string{"-p", "--output-format", "stream-json", "--trust"}
 	if spec.PermissionMode == agent.Restricted {
 		if !sandboxAvailable {
-			return nil, ErrRestrictedUnsupported
+			return nil, errRestricted
 		}
 		args = append(args, "--sandbox", "enabled")
 	} else {
