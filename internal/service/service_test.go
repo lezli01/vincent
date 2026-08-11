@@ -33,12 +33,29 @@ func TestResolveCapturesTheDirsInEffect(t *testing.T) {
 	}
 }
 
+// TestResolveCapturesThePathInEffect: the agent CLIs are resolved with
+// exec.LookPath, and a service manager's default PATH contains none of the
+// places they install to (T4.15). The PATH of the shell running the install is
+// the one that works, so it is captured the same way the dirs are.
+func TestResolveCapturesThePathInEffect(t *testing.T) {
+	t.Setenv("PATH", "/opt/homebrew/bin"+string(os.PathListSeparator)+"/usr/bin")
+
+	got, err := Options{}.resolve()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got.Path != os.Getenv("PATH") {
+		t.Errorf("path = %q, want the PATH in effect %q", got.Path, os.Getenv("PATH"))
+	}
+}
+
 // TestResolveKeepsExplicitValues: a caller that supplies paths gets them
 // back untouched, which is what makes the installer testable and scriptable.
 func TestResolveKeepsExplicitValues(t *testing.T) {
 	want := Options{
 		Exe:  filepath.Join(t.TempDir(), "vincent"),
 		Dirs: config.Dirs{Config: "/etc/vincent", Data: "/var/lib/vincent"},
+		Path: "/usr/local/bin",
 	}
 	got, err := want.resolve()
 	if err != nil {

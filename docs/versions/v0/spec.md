@@ -941,6 +941,25 @@ the unit.** A service does not inherit the shell that installed it, so
 CLI and not to the service, and the two would silently use different
 databases.
 
+**So is `PATH`, for the same reason** (T4.15, found on the macOS service leg).
+A service manager supplies its own minimal `PATH` — launchd's is
+`/usr/bin:/bin:/usr/sbin:/sbin`, a systemd user manager's is barely wider —
+and every agent CLI installs outside it: Homebrew, an npm prefix, an nvm shim
+dir, `~/.local/bin`. Since §9.5 resolves adapters with `exec.LookPath`, an
+installed service found **none** of them while the same daemon started by hand
+found them all: the daemon ran, the TUI listed every adapter as missing, and
+nothing in either said why. The shell running `service install` has, by
+construction, the `PATH` that works.
+
+Two consequences are deliberate. The captured `PATH` goes **stale**: a CLI
+installed somewhere new after the service was installed needs a
+`vincent service install` to be seen again, which is the same "reinstall to
+recapture" contract the dirs already have. And **Windows is excluded** — the
+SCM has no per-service environment, so the service inherits the machine
+environment, which does not contain a per-user npm prefix. On every platform
+the standing answer to an agent that will not resolve is the §12.3
+`agents.<name>.path` knob, which is absolute and never consults `PATH`.
+
 ### 12.2 Directories (platform-native)
 
 | Purpose | Linux | macOS | Windows |
@@ -1578,6 +1597,12 @@ README documents that path, including `xattr -d com.apple.quarantine`. The M4
 acceptance clock in T4.6 absorbs that friction deliberately — it is vincent's
 own cost — while excluding agent-CLI installation and authentication, which is
 a documented prerequisite of the walkthrough.
+
+**M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
+per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
+Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the
+ten-minute budget, and the slowest is the OS carrying SmartScreen, which prices
+the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 
 ## 20. Future work (explicitly out of v1)
 
