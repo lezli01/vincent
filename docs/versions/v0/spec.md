@@ -1579,6 +1579,12 @@ acceptance clock in T4.6 absorbs that friction deliberately — it is vincent's
 own cost — while excluding agent-CLI installation and authentication, which is
 a documented prerequisite of the walkthrough.
 
+**M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
+per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
+Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the
+ten-minute budget, and the slowest is the OS carrying SmartScreen, which prices
+the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
+
 ## 20. Future work (explicitly out of v1)
 
 - Web UI on the same API; auth story for non-loopback exposure.

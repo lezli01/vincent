@@ -8,42 +8,18 @@ free-text notes. When you are done (or done with any one section), tell me and
 I will fold the results into `docs/versions/v0/tasks.md`,
 `docs/versions/v0/m5-gate.md` and the spec, then delete this file.
 
-The four sections left are independent — take them in any order.
+The three sections left are independent — take them in any order.
 
 > **Done: the release tag.** `v0.1.0-rc1`, 2026-08-11,
 > [run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218).
-> Verified and recorded against **T4.5, now closed**. §1 below is the direct
-> beneficiary: the artifacts its clock starts from exist at
-> [the release page](https://github.com/lezli01/vincent/releases/tag/v0.1.0-rc1).
+> Verified and recorded against **T4.5, now closed**.
 
----
-
-## 1. T4.6 — M4 acceptance: fresh machine to first completed task
-
-**Why you:** needs a clean VM per OS with **no Go toolchain** — that is what
-proves the released artifact self-sufficient.
-
-**The clock** starts at downloading the release artifact and stops at the first
-completed task. It **includes** Gatekeeper/SmartScreen friction (vincent's own
-cost) and **excludes** installing and authenticating the agent CLI (a
-documented prerequisite). Target: **under 10 minutes**.
-
-Walkthrough: download → unpack → `vincent project add` → copy an example
-workflow → `vincent task add` → watch it finish. The README quickstart is the
-script; deviating from it is itself a finding.
-
-| OS | Clean VM | Time taken | Under 10 min? | Notes |
-|---|---|---|---|---|
-| Windows 11 |  |  | ☐ yes ☐ no |  |
-| macOS |  |  | ☐ yes ☐ no |  |
-| Linux |  |  | ☐ yes ☐ no |  |
-
-Where the time actually went (this is the useful part — I can only act on
-specifics):
-
-```
-
-```
+> **Done: §1, the M4 acceptance gate.** Clean VM per OS against those
+> artifacts: **Windows 11 5:00, macOS 4:30, Linux 3:35** — all under half the
+> ten-minute budget, no deviations from the README quickstart reported.
+> Folded into **T4.6, now closed** and into spec §19. **M4's acceptance is
+> met.** If you remember where the time actually went, tell me and I will add
+> it — the totals are recorded, the breakdown is the part I can act on.
 
 ---
 
