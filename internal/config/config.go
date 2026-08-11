@@ -70,6 +70,9 @@ type Defaults struct {
 type Agents struct {
 	Claude Agent `yaml:"claude"`
 	Codex  Agent `yaml:"codex"`
+	// Cursor's empty path resolves the `cursor-agent` binary, never `cursor`
+	// — that one is the editor launcher (spec §9.7).
+	Cursor Agent `yaml:"cursor"`
 }
 
 // Agent is the per-adapter configuration. An empty Path means the binary is

@@ -5,19 +5,31 @@
 // is always compiled by ./... and excluded from release packaging (T4.5).
 //
 // The dialect is selected by argv shape: a first argument of "exec" is
-// codex-shaped (T2.9); anything else is claude-shaped. Scenario selection is
-// environment-driven so argv stays true to the real CLIs:
+// codex-shaped (T2.9); `--trust` anywhere on argv is cursor-shaped (T5.2 —
+// cursor's run argv is otherwise claude-shaped, and --trust is the one flag
+// only cursor passes, in both permission modes); anything else is
+// claude-shaped. `models` and `status` as argv[1] answer cursor's option and
+// login probes (§9.7). Scenario selection is environment-driven so argv stays
+// true to the real CLIs:
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
 //	                      hang | big-usage | ask-question | ask-permission |
-//	                      bad-input-request | sleep (internal: silent child)
+//	                      bad-input-request | no-result (cursor: stderr
+//	                      failure with no terminal event) |
+//	                      sleep (internal: silent child)
 //	FAKEAGENT_SCENARIO_CODEX
 //	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
 //	                      only — lets one process environment drive two
 //	                      adapters pointed at this binary differently
-//	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style
-//	                      (run dialect is argv-driven; this only affects the
-//	                      version probe, which carries no dialect hint)
+//	FAKEAGENT_SCENARIO_CURSOR
+//	                      the same override for cursor-shaped argv
+//	FAKEAGENT_CURSOR_LOGGED_OUT
+//	                      "1" makes `status` report logged out and exit 1,
+//	                      driving the §9.5 logged_in probe's negative leg
+//	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
+//	                      "cursor" the calver+sha style (run dialect is
+//	                      argv-driven; this only affects the version probe,
+//	                      which carries no dialect hint)
 //	FAKEAGENT_VERSION     claude dialect: version number --version reports
 //	                      (default 2.1.224) — lets tests drive the §7.4
 //	                      supports_input version gate
@@ -83,9 +95,12 @@ func main() {
 	for _, a := range os.Args[1:] {
 		switch a {
 		case "--version", "-v", "-V":
-			if os.Getenv("FAKEAGENT_DIALECT") == "codex" {
+			switch os.Getenv("FAKEAGENT_DIALECT") {
+			case "codex":
 				fmt.Println(codexVersion)
-			} else {
+			case "cursor":
+				fmt.Println(cursorVersion)
+			default:
 				v := os.Getenv("FAKEAGENT_VERSION")
 				if v == "" {
 					v = defaultVersion
@@ -107,6 +122,24 @@ func main() {
 		block() // silent child for tree-kill tests; killed by the test
 	}
 
+	// Cursor's subcommand probes answer before any dialect dispatch: they are
+	// argv[1] with no run flags at all, so neither the codex nor the cursor
+	// run-shape test would reach them.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "models":
+			fmt.Print(cursorModels)
+			return
+		case "status":
+			if os.Getenv("FAKEAGENT_CURSOR_LOGGED_OUT") == "1" {
+				fmt.Println("Not logged in")
+				os.Exit(1)
+			}
+			fmt.Println("Logged in as fake@example.com")
+			return
+		}
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "exec" {
 		// A dialect-scoped override, because a gate can point both adapters
 		// at this binary and they then share one process environment: the
@@ -116,6 +149,17 @@ func main() {
 			scenario = s
 		}
 		codexMain(scenario)
+		return
+	}
+
+	// Cursor's run argv is claude-shaped (`-p --output-format stream-json`),
+	// so the dialect is discriminated on --trust: cursor is the only adapter
+	// that passes it, and it passes it in both permission modes (T5.2).
+	if hasFlag("--trust") {
+		if s := os.Getenv("FAKEAGENT_SCENARIO_CURSOR"); s != "" {
+			scenario = s
+		}
+		cursorMain(scenario)
 		return
 	}
 

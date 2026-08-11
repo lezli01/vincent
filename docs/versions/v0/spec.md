@@ -35,7 +35,10 @@ steps.
 - Full decoupling: daemon runs and progresses tasks with zero clients attached.
 - Unlimited projects, workflows, and tasks; every task isolated in its own worktree.
 - Workflow-defined delivery: agent, command, and manual-gate step types; linear execution.
-- Two agent adapters — Claude Code and Codex — behind one interface.
+- Two agent adapters — Claude Code and Codex — behind one interface. (A third,
+  Cursor, is **post-v1**: §9.7, milestone M5. This goal is not restated as
+  "three" — v1 shipped on two, and the §9.7 section documents an adapter added
+  after that line was met.)
 - Agent, model, and effort selectable per workflow, per step, and per task at
   creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
@@ -589,6 +592,15 @@ type Option struct {
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
 adapter with zero core changes.
 
+**Scored against a third adapter (§9.7, M5):** the claim held for the daemon,
+the API, and the engine — cursor is one package plus registry wiring. It did
+**not** hold for two edges the interface does not cover: the `§15` option
+picker renders every option with no viewport, which a ~180-model catalog
+overflows, and `cmd/fakeagent` selects its dialect from argv shape, which
+cursor's claude-shaped argv collides with. Both are recorded as M5 tasks
+rather than glossed: "zero core changes" is true of the adapter seam, not of
+every consumer that assumed two adapters.
+
 ### 9.2 Claude Code adapter
 
 - Invocation (indicative; exact flags pinned per detected CLI version at
@@ -666,13 +678,21 @@ adapter with zero core changes.
 - `restricted`: adapter-specific allowlists. On input-capable adapters, denied
   actions surface as `permission` input requests (§7.4, subject to `on_input`);
   on others, steps may stall or fail on denied actions. For sensitive projects.
+  **An adapter that cannot restrict on the host platform fails the step rather
+  than running it unrestricted** — cursor on Windows is the one such case
+  today (§9.7). A restricted mode that silently isn't restricted is worse than
+  no restricted mode.
 
 Set at workflow `defaults` or per step; there is no daemon-global hardcoded policy.
 
 ### 9.5 Detection
 
 `GET /v1/info` reports, per adapter: found/not-found, path, version,
-`supports_input` (§7.4). Availability is served from the §9.6 binary-identity
+`supports_input` (§7.4), and `logged_in` — `null` when the adapter has no
+cheap authentication probe (claude, codex), a definite boolean when it does
+(cursor, §9.7). The distinction is load-bearing: an installed-but-unauthenticated
+CLI probes as healthy and then fails every single run, so a client that can
+only say "found" misleads. Availability is served from the §9.6 binary-identity
 cache (primed asynchronously at startup, stat-checked per request), so
 installing or upgrading a CLI becomes visible on the next request without a
 daemon restart. The TUI surfaces
@@ -688,7 +708,7 @@ defaults:
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
-    "supports_input": true,
+    "supports_input": true, "logged_in": null,
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
     "default_model": "", "default_effort": "",
@@ -708,6 +728,112 @@ defaults:
   curated catalog otherwise — they never spawn a probe subprocess (§8.2).
 - Catalogs are advisory: pickers (§15) always accept free text, and validation
   treats catalog membership per §8.2.
+- **Server-side enumeration (§9.7):** an adapter's option probe is normally a
+  pure function of the installed binary (`--help`), which is what makes the
+  binary-identity key exact. The Cursor adapter breaks that assumption — its
+  model list comes from an authenticated network call — so for it binary
+  identity is a *floor*, not a guarantee: a plan change adds models the cache
+  will not notice until the binary changes or `?refresh=true` is passed. The
+  probe is bounded by a timeout and degrades to the curated catalog with
+  `probe_error` set, exactly like a failed help parse.
+
+### 9.7 Cursor adapter (M5)
+
+Placed after §9.6 rather than between §9.3 and §9.4 deliberately: section
+numbers are identifiers cited from code comments, and renumbering §9.4–§9.6
+would invalidate every one of them.
+
+- **Binary is `cursor-agent`, never `cursor`.** `cursor` on PATH is the editor
+  launcher and would open a GUI; the adapter resolves `cursor-agent` only. The
+  adapter's `Name()` — and therefore the workflow `agent:` value and the
+  `agents.cursor.path` config key — is `cursor`.
+- Invocation (pinned against cursor-agent 2026.08.04-aaa8809):
+  `cursor-agent -p --output-format stream-json --trust`, cwd = worktree,
+  prompt via **stdin** (piped, no prompt argument — verified: the echoed
+  `user` line carries the piped text). Full-auto adds `--force`; restricted
+  adds `--sandbox enabled` instead. `--trust` is passed in **both** modes: a
+  vincent task runs in a git worktree the CLI has never seen, and a workspace
+  trust prompt in a headless run is a hang, not a question.
+- **Restricted mode is unavailable on Windows, and fails rather than
+  degrades.** `--sandbox enabled` exits 1 with *"Sandbox mode is enabled but
+  not available on this system. Sandbox requires macOS or Linux"* before doing
+  any work. A cursor step whose permission mode is `restricted` therefore
+  **fails to start on Windows** with a stated reason, under the retry policy
+  like any other step failure. Falling back to `--force` was rejected outright:
+  it would run full-auto a step that explicitly asked not to be, converting a
+  §9.4 safety choice into its opposite on exactly one OS — the failure mode a
+  user would never think to check for. Cursor's other approval paths do not
+  substitute: `--auto-review` prompts for anything its classifier doesn't
+  clear (a hang, headless) and is account-gated, and allowlist mode is global
+  user config in `cli-config.json` with no per-run flag. This is the first
+  place a vincent capability is genuinely platform-dependent; it is stated
+  here, in §9.4, and in §18 rather than discovered.
+- **`--worktree` / `--worktree-base` are never passed.** Cursor has its own
+  worktree feature; worktrees belong to vincent (§10), and two owners of the
+  same concept is a defect.
+- Normalizes Cursor's stream-json events. The dialect is claude-*shaped* but
+  is not claude's, and is parsed by its own package:
+  `system/init` → `user` → `thinking/{delta,completed}` →
+  `assistant` → `tool_call/{started,completed}` → `result/{success,error}`.
+  - `assistant` messages arrive whole (content blocks), not as deltas, and
+    normalize to `output`.
+  - `thinking` events normalize to `unknown` — transcripted verbatim, never
+    surfaced live. They are token-level deltas; a live tail of reasoning
+    fragments buries the assistant text it exists to show.
+  - `tool_call` carries the tool as the **object key** (`editToolCall`,
+    `shellToolCall`), not a `name` field; the `ToolCall` suffix is stripped
+    for the normalized name (`edit`, `shell`). `started` is the tool_use
+    event, mirroring codex's `item.started`.
+  - Usage keys are camelCase (`inputTokens`, `outputTokens`, plus
+    `cacheReadTokens`/`cacheWriteTokens` which vincent does not record);
+    **`CostUSD` is nil** — cursor reports no cost.
+  - `result.result` is the concatenation of *every* assistant message in the
+    turn, not the last one; it is used verbatim as the result text.
+- **Errors do not arrive in the stream.** An invalid model id exits 1 with
+  `ActionRequiredError: … Model name is not valid: "…"` on **stderr** and no
+  `result` line at all. The adapter therefore keeps codex's stderr tail and
+  reports "stream ended without a result event" plus that tail — this is the
+  likely shape of an everyday user mistake, so the tail is what makes it
+  diagnosable.
+- **Effort is not supported.** Cursor has no effort flag: effort is encoded in
+  the model id (`claude-sonnet-5-thinking-xhigh`, `gpt-5.4-mini-high`) or in
+  an undocumented per-model bracket override
+  (`claude-opus-4-8[context=1m,effort=high]`, whose parameter name varies by
+  model — `reasoning` for the gpt-5.4 family). The catalog's `Efforts` is
+  therefore **empty**, the adapter ignores `RunSpec.Effort`, and §9.7 steps
+  select reasoning depth through `model`. This mirrors codex having no curated
+  models, and `on_input` having no effect on codex steps: a field an adapter
+  cannot honor is documented as ignored, not faked. §8.2 already rejects a
+  claude/codex effort value on a cursor step ("it belongs to claude's
+  catalog"), which is the error message a workflow author needs.
+- **Models are enumerated, and the enumeration is not authoritative.**
+  `cursor-agent models` lists ~180 ids (source `cli`); the curated floor is
+  `auto` alone. The list is account-scoped *and still over-broad*: a listed id
+  can be rejected at run time (`gpt-5.4-nano-low` → `AI Model Not Found`), so
+  membership is advisory in both directions and free text stays accepted
+  (§9.6). The probe is a network call — see the §9.6 note above.
+- **`--model` mutates global CLI state.** Cursor persists the selection in
+  `~/.cursor/cli-config.json` (`selectedModel`), so an unset model means "what
+  the last invocation chose", not "the CLI default" — including a selection
+  made by a *previous vincent step*. The adapter therefore **always passes
+  `--model`**, defaulting to `auto` when §8.6 resolves empty, making cursor the
+  first adapter with a non-empty `DefaultModel` (the `/v1/resolve` level-4 seam
+  from T4.7 reports it with no further change). The cost is accepted and
+  documented: running a cursor step overwrites the user's saved interactive
+  model selection. Determinism is worth more to an orchestrator than preserving
+  an interactive preference, and pinning to `auto` at least lands on cursor's
+  own default rather than on wherever the previous task left it.
+- **`supports_input: false`.** `cursor-agent` has no input-format flag and no
+  control channel; cursor steps never enter `awaiting_input` and `on_input`
+  has no effect on them (§7.4), exactly as with codex.
+- **Version is recorded verbatim** (`2026.08.04-aaa8809`) — calver plus a
+  commit sha, not semver. No version gate exists to parse it into, and the
+  sha is part of the binary's identity.
+- **`logged_in` is answerable here.** `cursor-agent status` reports
+  authentication cheaply, making cursor the first adapter that can populate
+  the §9.5 field. This matters because "installed, version-probes fine, fails
+  every run at the API" is otherwise indistinguishable from a healthy adapter
+  (§9.5).
 
 ## 10. Worktree management
 
@@ -805,6 +931,10 @@ defaults:
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 log_level: info
+agents:
+  claude: { path: "" }         # "" = resolve from PATH
+  codex:  { path: "" }
+  cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 ```
 
 Config is authoritative in the file; the daemon watches and hot-reloads it. The API
@@ -1135,6 +1265,12 @@ stream for the live tail.
    priority → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
+   **Pickers are windowed and type-filterable (M5, §9.7):** through v1 every
+   catalog fit on a screen (claude: 3 models, 5 efforts; codex: efforts only),
+   so the picker rendered all options unconditionally. Cursor's ~180-model
+   catalog makes a viewport with a scroll indicator and incremental filtering
+   mandatory; the flagging of unavailable agents grows a second reason —
+   *installed but not authenticated* (`logged_in: false`, §9.5).
 4. **Projects.** List/add/edit/remove; per-project cap and defaults.
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
@@ -1302,6 +1438,14 @@ currently true to show (§15 view 6).
   token file gates only the vincent API itself.
 - Command steps and checks execute user-authored workflow content — same trust level
   as the user's own shell; no additional sandboxing is attempted or implied.
+- **Adapter full-auto switches are all equivalent in blast radius**:
+  `--dangerously-skip-permissions` (claude),
+  `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
+  Cursor's reads mildest and is not; the first-run notice covers all three.
+- **vincent writes to one CLI's own config**: a cursor step passes `--model`,
+  which cursor persists to `~/.cursor/cli-config.json` (§9.7). It is not a
+  secret and not an escalation, but it is the one place vincent mutates state
+  outside its own data dir, so it is recorded here rather than discovered.
 
 ## 17. Observability
 
@@ -1325,6 +1469,10 @@ currently true to show (§15 view 6).
 | Agent CLI missing at step start | Step fails (retry policy applies) with a `agent_unavailable` reason; typically → blocked |
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
+| Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
+| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails with the CLI's auth error |
+| `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
+| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with the adapter's reason (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch `vincent/{id}-{slug}` already exists | Task blocked with clear reason (never reuse) |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives |
@@ -1347,6 +1495,7 @@ currently true to show (§15 view 6).
 | **M2 — Workflow engine** | YAML registry (global+project, watch/validate/snapshot), all three step types, templates, checks, retry/blocked flow, gates, scheduler with both caps, pause/cancel/skip/edit+retry, SSE, crash recovery, Codex adapter, agent option catalog (`GET /v1/agents`) + §8.6 resolution/validation, agent input requests (`awaiting_input`, answer endpoint, `input_timeout`, `on_input`, §7.4) | Multi-step workflow incl. gate + command publish step runs unattended to the gate; an agent question round-trips awaiting_input → answer → resume; kill -9 of the daemon mid-step recovers correctly; caps honored under load |
 | **M3 — TUI** | All six views, live tail, diff view, all actions, input-request alerts + answer form, `$EDITOR` integration, daemon auto-start | The full loop (register → author workflow\* → run 3 parallel tasks → answer an agent question → approve gate → archive) is doable without leaving the TUI |
 | **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries†) | Fresh-machine install to first completed task in under 10 minutes on each OS |
+| **M5 — Cursor adapter** (post-v1‡) | `internal/agent/cursor` (§9.7), fakeagent cursor dialect, config/registry wiring, picker viewport + filter, `logged_in` on the wire, docs | A workflow whose steps name `agent: cursor` runs unattended to completion against the real `cursor-agent`, on each OS |
 
 \* **"author workflow" means editing in place,** not creating a file. §15 view 5
 records that creating a workflow file from the TUI is out of v1: `e` opens an
@@ -1354,6 +1503,15 @@ existing entry in `$EDITOR` and the registry reload reflects the save, while new
 files are written in the editor and appear on the next reload. The M3 acceptance
 walkthrough exercises the edit path; it does not require a create path the TUI
 deliberately does not have.
+
+‡ **M5 is deliberately after M4, 2026-08-11** (Phase 5 grill session). Cursor
+support is a feature, and M4's charter is polish; more concretely, T4.6's
+ten-minute fresh-machine clock excludes agent-CLI installation as a documented
+prerequisite, and folding a third CLI into that phase would either inflate the
+prerequisite list or tempt the gate into measuring someone else's onboarding.
+M5 may be developed on a branch in parallel with M4 — it touches no file M4
+owns except `config.go`, `daemon.go`, and the README — but it merges after M4,
+so v1 ships on the two adapters §2 promised.
 
 † **"Signed binaries" is descoped, 2026-08-10** (Phase 4 grill session). Releases
 carry cosign keyless signatures, checksums, and GitHub build attestations —
@@ -1369,7 +1527,8 @@ a documented prerequisite of the walkthrough.
 
 - Web UI on the same API; auth story for non-loopback exposure.
 - OS desktop notifications (blocked / gate / awaiting input / done) — natural M4+1.
-- More adapters (Gemini CLI, opencode, …); adapter capability flags.
+- ~~More adapters~~ — **Cursor promoted out of future work to M5, 2026-08-11**
+  (§9.7). Gemini CLI, opencode, and adapter capability flags remain here.
 - Workflow branching/conditionals, parallel steps, and step fan-out.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.

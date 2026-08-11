@@ -280,6 +280,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		Agents: map[string]agentPath{
 			"claude": {Path: cfg.Agents.Claude.Path},
 			"codex":  {Path: cfg.Agents.Codex.Path},
+			"cursor": {Path: cfg.Agents.Cursor.Path},
 		},
 	})
 }
