@@ -593,6 +593,9 @@ func (b *board) rowsFor(tasks []apiclient.Task, set columnSet) []table.Row {
 		if set.project {
 			row = append(row, t.ProjectName)
 		}
+		if set.workflow {
+			row = append(row, t.Workflow)
+		}
 		elapsed := "—"
 		if d, ok := t.Elapsed(now); ok {
 			elapsed = formatElapsed(d)

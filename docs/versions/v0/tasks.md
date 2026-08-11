@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 11 tasks | 7/11 | 🚧 in progress (T4.8–T4.10 from Windows testing; T4.11 open; T4.1/T4.4 pending manual sign-off) |
+| 4 — Polish (M4) | 14 tasks | 9/14 | 🚧 in progress (T4.8–T4.10 from Windows testing; T4.11 open; T4.1/T4.4 pending manual sign-off) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **53/58** | |
+| **Total** | | **55/61** | |
 
 ---
 
@@ -632,6 +632,16 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 - [x] **T4.9 — The shipped `docs-update` example set `permission_mode: restricted`.** ✓ 2026-08-11 Two of the five reports were this one example: cursor **refused every step on Windows** (no sandbox, §9.4) and claude **prompted for permission on every non-allowlisted tool** — both correct behavior for restricted, and both read as bugs to someone who never asked for it. A shipped example is copied on day one; demonstrating an edge case that breaks one adapter on one OS is a bad trade. Now full-auto like the others, with the restricted opt-in documented in a comment and in `docs/workflows.md`. The engine's default was never wrong: `resolvePermission` returns `FullAuto` for anything unset.
 
 - [x] **T4.10 — README: archive logo and global workflows.** ✓ 2026-08-11 The README inside a release archive rendered no logo — it referenced `docs/assets/logo.png`, which the archive does not carry — so the image is now an absolute raw URL that works in the repo, in the archive, and anywhere else the file travels. The quickstart also only documented **project-scoped** workflows; it now names the config-dir location per OS, states that project scope shadows global, and shows both.
+
+- [x] **T4.12 — `debug` config knob.** ✓ 2026-08-11 Requested after a run that prompted for permissions gave no way to see it had resolved to `restricted` — diagnosing it meant reading the stored snapshot out of the API by hand. `debug: true` in `config.yaml` writes a `vincent.debug` line into every step's transcript: resolved agent/model/effort, **permission mode**, `on_input`, workdir, timeout, attempt, and the **full argv** of the spawned process. Command steps get the same, including which shell §8.3 resolved. The daemon also logs the transcript path at info, so "where did it write the log" has an answer you can grep for.
+  *Design:* the record goes in the transcript rather than the daemon log, so it travels with the run a user pastes into an issue. Off by default because argv carries the rendered prompt. `agent.RunHandle` gained `Argv()` — the argv was unanswerable from outside the adapter, which is exactly the question a misbehaving run raises.
+  *Verified:* a real claude run with `debug: true` recorded `permission_mode: full-auto` and the complete argv — the two facts whose absence cost an hour of debugging on 2026-08-11.
+
+- [x] **T4.13 — Board shows the workflow.** ✓ 2026-08-11 The board named the current step but not the workflow it belongs to, and "survey" means nothing without "docs-update". New WORKFLOW column, dropped **after** the step name under width pressure: a workflow alone still says what a task is doing, while a step name alone does not.
+
+- [ ] **T4.14 — Richer agent output in the detail view.** The output pane renders a tool use as its bare name (`▸ Bash`) and drops everything it does not normalize, so watching a run shows keywords rather than what is happening. `agent.ToolUse` carries only `Name`; the adapters all have the detail to hand and throw it away — claude's `input`, cursor's `args` (command, path), codex's item fields.
+  *Done when:* a tool use renders with its subject (the command run, the file edited), and unnormalized lines are visible rather than silently dropped.
+  *Shape:* `ToolUse` gains a summary the adapters fill; it rides the existing `agent.tool_use` record to `renderRecord`. Touches the interface, three adapters, the wire DTO and the TUI — filed rather than rushed into a fix PR.
 
 - [ ] **T4.11 — The TUI cannot show a full transcript.** The detail view fetches a bounded *tail* (`DefaultTailBytes`, capped at `maxRecords`) with no way to page back, so a failed step cannot be diagnosed from the TUI — which is where a user is when it fails. The transcript on disk is the complete record and the ranged endpoint already serves it; only the UI is missing. Partial mitigation shipped: `vincent task show` now prints each attempt's transcript path.
   *Done when:* a step's whole transcript is reachable from the detail view — scrollback, or `$EDITOR`/pager the way `e` already opens a workflow file.

@@ -112,6 +112,12 @@ type RunHandle interface {
 	// PID returns the OS process id of the run — recorded on the StepRun
 	// (spec §14 pid column) for crash-recovery journaling (§12.4).
 	PID() int
+	// Argv is the command line the adapter actually spawned, for the §12.3
+	// debug record. It exists because "which flags did this run get" was
+	// unanswerable from outside the adapter, and that is precisely the
+	// question a misbehaving run raises — a step that prompted for
+	// permissions could not be shown to have resolved to `restricted`.
+	Argv() []string
 }
 
 // EventType classifies normalized agent events (spec §9.1).

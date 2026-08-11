@@ -276,6 +276,12 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	// on the retry rather than after a daemon restart.
 	tr.SetMax(r.deps.Config().TranscriptMaxBytes.Bytes())
 	run.TranscriptPath = tr.Path()
+	if r.deps.Config().Debug {
+		// Where the log went, said out loud. A transcript nobody can find is
+		// not a record — this is the line a user greps for when asked to
+		// paste one.
+		env.log.Info("step transcript", "attempt", run.Attempt, "path", tr.Path())
+	}
 
 	// An `edit + retry` left its text on the task, because the handler ran
 	// while the task was blocked and this row did not exist yet (§6). The
