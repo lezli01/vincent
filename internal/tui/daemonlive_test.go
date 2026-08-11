@@ -153,9 +153,22 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 		t.Errorf("the unavailable adapter is missing:\n%s", out)
 	}
 	// The §9.5 third state, end to end: a real `status` probe said no, the
-	// daemon put logged_in=false on the wire, and the view says so instead of
-	// showing a healthy tick.
-	if !strings.Contains(out, "not logged in") {
+	// daemon put logged_in=false on the wire, and the view marks the row
+	// instead of showing a healthy tick.
+	//
+	// The assertion is on the marker rather than the phrase because the
+	// adapters block elides to the pane width: the row carries the fake
+	// binary's absolute path, and on a runner whose temp dirs are long
+	// (macOS: /var/folders/df/djsxfhc…/T/…) "not logged in" is cut mid-word.
+	// The marker sits at the start of the row, where nothing can push it off.
+	flagged := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "cursor") && strings.Contains(line, "⚠") {
+			flagged = true
+			break
+		}
+	}
+	if !flagged {
 		t.Errorf("the installed-but-unauthenticated adapter is not flagged:\n%s", out)
 	}
 	for _, a := range info.Agents {
