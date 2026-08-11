@@ -223,7 +223,23 @@ func newTaskShowCmd() *cobra.Command {
 						dash(deref(s.Agent)), dash(deref(s.FailureReason)),
 					})
 				}
-				return table(out, []string{"RUN", "STEP", "STATE", "AGENT", "REASON"}, rows)
+				if err := table(out, []string{"RUN", "STEP", "STATE", "AGENT", "REASON"}, rows); err != nil {
+					return err
+				}
+				// The transcript is the complete record of what the agent did
+				// (§17); the TUI shows only its tail. Naming the file is what
+				// lets someone diagnose a failed step at all right now.
+				var paths []string
+				for _, s := range t.Steps {
+					if p := deref(s.TranscriptPath); p != "" {
+						paths = append(paths, fmt.Sprintf("  %d  %s", s.ID, p))
+					}
+				}
+				if len(paths) == 0 {
+					return nil
+				}
+				_, err = fmt.Fprintf(out, "\ntranscripts:\n%s\n", strings.Join(paths, "\n"))
+				return err
 			})
 		},
 	}

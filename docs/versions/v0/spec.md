@@ -339,8 +339,18 @@ Behavior with `on_input: wait` (the default):
 3. The engineer answers via `POST /v1/tasks/{id}/answer` or the TUI answer form
    (§15). The adapter translates the answer back to its native protocol and
    writes it to the live process; the task returns to `running` and the step
-   clock resumes. Requests are serial — an agent blocks on its pending request,
-   so at most one `pending_input` exists per task.
+   clock resumes. **At most one `pending_input` exists per task**, because a
+   task has one `awaiting_input` state.
+
+   That is enforced by the *adapter*, not assumed of the CLI. The original
+   wording said requests were serial because an agent blocks on its pending
+   request; real claude disproves it — it batches parallel tool calls, so a
+   restricted run can raise several `can_use_tool` requests at once. Treating
+   the second as a protocol violation failed live runs (Windows testing,
+   2026-08-11). An adapter that receives a concurrent request now **queues**
+   it, transcripts it verbatim, and surfaces it when the current one is
+   answered — the CLI is blocked on both, so nothing else would ever carry
+   it. Clients and the engine are unchanged: they still see one at a time.
 
 `on_input: deny` (workflow `defaults` or per step) keeps runs strictly unattended:
 vincent immediately auto-responds through the adapter's `Respond()` — questions
@@ -548,7 +558,7 @@ type RunHandle interface {
     Kill() error
 }
 
-type InputRequest struct {          // §7.4; at most one pending per run
+type InputRequest struct {          // §7.4; one surfaced at a time, adapter-queued
     Kind       string           // "question" | "permission"
     Questions  []Question       // kind=question: one or more structured questions
     Permission *PermissionReq   // kind=permission: tool name + action summary

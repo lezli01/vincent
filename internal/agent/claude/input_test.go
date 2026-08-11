@@ -7,11 +7,13 @@ package claude
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -284,18 +286,89 @@ func TestControlProtocolViolations(t *testing.T) {
 	}
 }
 
-func TestSecondRequestWhilePendingIsViolation(t *testing.T) {
+// TestConcurrentRequestsAreQueued replaces an assertion that the adapter
+// treated a second concurrent control_request as a protocol violation.
+//
+// The real CLI issues them: it batches parallel tool calls, so a restricted
+// run can ask about several at once. Failing the attempt on the second one
+// killed real runs (Windows testing, 2026-08-11). The engine still sees one
+// at a time — a task has one awaiting_input state — but the *adapter*
+// serializes them now instead of the CLI being expected to.
+func TestConcurrentRequestsAreQueued(t *testing.T) {
 	r := &run{inputMode: true}
 	first := `{"type":"control_request","request_id":"a","request":{"subtype":"can_use_tool","tool_name":"Write","input":{}}}`
 	second := `{"type":"control_request","request_id":"b","request":{"subtype":"can_use_tool","tool_name":"Edit","input":{}}}`
-	if ev := r.parseStreamLine([]byte(first)); ev.Request == nil {
+
+	ev := r.parseStreamLine([]byte(first))
+	if ev.Request == nil {
 		t.Fatalf("first request rejected: %s", ev.Message)
 	}
-	ev := r.parseStreamLine([]byte(second))
-	if ev.Type != agent.EventInputRequest || ev.Request != nil {
-		t.Errorf("second concurrent request = %+v, want a protocol violation", ev)
+
+	ev = r.parseStreamLine([]byte(second))
+	if ev.Type != agent.EventUnknown {
+		t.Errorf("second concurrent request = %v, want it queued (unknown, transcripted)", ev.Type)
+	}
+	if len(ev.Raw) == 0 {
+		t.Error("queued request lost its raw line; the transcript must stay verbatim")
+	}
+	if len(r.queue) != 1 || r.queue[0].pend.id != "b" {
+		t.Fatalf("queue = %+v, want the second request held", r.queue)
+	}
+	if r.pending == nil || r.pending.id != "a" {
+		t.Errorf("pending = %+v, want the first still awaiting an answer", r.pending)
 	}
 }
+
+// TestQueuedRequestIsPromotedOnAnswer: the CLI is blocked on both requests,
+// so it emits no further lines to carry the second. Respond surfacing it is
+// the only way the engine ever sees it.
+func TestQueuedRequestIsPromotedOnAnswer(t *testing.T) {
+	r := newTestRun(t)
+	first := `{"type":"control_request","request_id":"a","request":{"subtype":"can_use_tool","tool_name":"Write","input":{}}}`
+	second := `{"type":"control_request","request_id":"b","request":{"subtype":"can_use_tool","tool_name":"Edit","input":{}}}`
+	r.parseStreamLine([]byte(first))
+	r.parseStreamLine([]byte(second))
+
+	allow := true
+	if err := r.Respond(agent.InputResponse{Allow: &allow}); err != nil {
+		t.Fatalf("Respond: %v", err)
+	}
+	select {
+	case ev := <-r.events:
+		if ev.Type != agent.EventInputRequest || ev.Request == nil {
+			t.Fatalf("promoted event = %+v, want the queued input request", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the queued request was never surfaced; the run would hang here")
+	}
+	if r.pending == nil || r.pending.id != "b" {
+		t.Errorf("pending = %+v, want the promoted request", r.pending)
+	}
+	if len(r.queue) != 0 {
+		t.Errorf("queue = %+v, want it drained", r.queue)
+	}
+}
+
+// newTestRun builds a run with the channels and mux wired but no process, so
+// the queue and promotion can be driven directly.
+func newTestRun(t *testing.T) *run {
+	t.Helper()
+	r := &run{
+		inputMode:  true,
+		stdin:      nopWriteCloser{io.Discard},
+		events:     make(chan agent.Event, 64),
+		raw:        make(chan agent.Event, 64),
+		promote:    make(chan agent.Event, 8),
+		readerDone: make(chan struct{}),
+	}
+	go r.mux()
+	t.Cleanup(func() { close(r.raw) })
+	return r
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 func TestControlCancelRequest(t *testing.T) {
 	r := &run{inputMode: true}
