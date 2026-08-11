@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="vincent" width="520">
+  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/logo.png" alt="vincent" width="520">
 </p>
 
 <p align="center">
@@ -233,14 +233,33 @@ vincent project add /path/to/your/repo
 vincent project ls
 ```
 
-**2. Add a workflow.** Copy one of the shipped examples into the repo, so it
-travels with it:
+**2. Add a workflow.** Two places to put one:
+
+- **Global** — available to every project. Drop it in the `workflows/` folder
+  of your config directory:
+  `%APPDATA%\vincent\workflows\` (Windows),
+  `~/Library/Application Support/vincent/workflows/` (macOS),
+  `~/.config/vincent/workflows/` (Linux).
+- **Project** — travels with the repo, and shadows a global file of the same
+  name: `.vincent/workflows/` inside the repo.
+
+Either way the daemon picks it up on save; there is no restart or apply step.
+Global is the easier start:
 
 ```sh
-mkdir -p /path/to/your/repo/.vincent/workflows
-cp examples/feature-pr.yaml /path/to/your/repo/.vincent/workflows/
-vincent workflow validate /path/to/your/repo/.vincent/workflows/feature-pr.yaml
-vincent workflow ls --project 1        # project-scoped files need --project
+# Windows (PowerShell)
+mkdir -Force $env:APPDATA\vincent\workflows
+copy examples\feature-pr.yaml $env:APPDATA\vincent\workflows\
+
+# macOS / Linux
+mkdir -p ~/.config/vincent/workflows          # macOS: ~/Library/Application\ Support/vincent/workflows
+cp examples/feature-pr.yaml ~/.config/vincent/workflows/
+```
+
+```sh
+vincent workflow validate examples/feature-pr.yaml
+vincent workflow ls              # global + built-in
+vincent workflow ls --project 1  # add this project's own .vincent/workflows
 ```
 
 `feature-pr` runs an agent, checks that the result still builds and passes
