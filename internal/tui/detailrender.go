@@ -440,7 +440,7 @@ func renderRecord(rec apiclient.TranscriptRecord) (string, bool) {
 		if len(rec.Tools) == 0 {
 			return "", false
 		}
-		return styleTool.Render("▸ " + strings.Join(rec.Tools, ", ")), true
+		return toolUseLine(rec.Tools), true
 	case "agent.usage":
 		return "", false
 	case "agent.error":
@@ -466,6 +466,31 @@ func renderRecord(rec apiclient.TranscriptRecord) (string, bool) {
 		}
 		return "", false
 	}
+}
+
+// toolUseLine renders tool invocations as name plus subject. The name is
+// what the agent chose to run and stays in the tool color; the subject is
+// what it ran it on and is dimmed, so a column of tool calls scans by name
+// while still saying what each one touched. A tool whose arguments yielded
+// no subject renders exactly as it did before T4.14 — its bare name.
+func toolUseLine(tools []apiclient.TranscriptTool) string {
+	parts := make([]string, 0, len(tools))
+	for i, t := range tools {
+		// The marker joins the first name inside one Render so the rendered
+		// line contains "▸ Edit" as contiguous text: a style boundary
+		// between them would put an escape sequence mid-phrase, which is
+		// invisible to a reader and fatal to a substring assertion.
+		name := t.Name
+		if i == 0 {
+			name = "▸ " + name
+		}
+		part := styleTool.Render(name)
+		if t.Summary != "" {
+			part += " " + styleDim.Render(t.Summary)
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, styleDim.Render(", "))
 }
 
 func renderResult(rec apiclient.TranscriptRecord) string {

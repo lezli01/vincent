@@ -97,6 +97,25 @@ func TestParseToolsFixture(t *testing.T) {
 	if strings.Join(tools, ",") != "edit,shell" {
 		t.Errorf("tools = %v, want [edit shell]", tools)
 	}
+	// T4.14: the subject lives one level down under `args`, and the call id
+	// is the line-level `call_id` shared by started and completed.
+	var uses []agent.ToolUse
+	for _, ev := range events {
+		if ev.Type == agent.EventToolUse {
+			uses = append(uses, ev.Tools...)
+		}
+	}
+	if len(uses) != 2 {
+		t.Fatalf("tool uses = %d, want 2", len(uses))
+	}
+	if uses[0].Summary != "/tmp/wt/hi.txt" || uses[0].CallID != "tool_1" {
+		t.Errorf("edit call = %+v, want the edited path and tool_1", uses[0])
+	}
+	// The shell call carries both `command` and `description`; the command
+	// is the subject a reader wants.
+	if uses[1].Summary != "git status" || uses[1].CallID != "tool_2" {
+		t.Errorf("shell call = %+v, want the command and tool_2", uses[1])
+	}
 	// The result text is every assistant message concatenated, not the last.
 	last := events[len(events)-1]
 	if last.Result == nil {

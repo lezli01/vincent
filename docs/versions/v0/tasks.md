@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 15 tasks | 11/15 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; T4.15 from the macOS service leg; T4.11/T4.14 open; T4.1/T4.4 pending manual sign-off) |
+| 4 — Polish (M4) | 17 tasks | 12/17 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; T4.15 from the macOS service leg; T4.11, T4.16, T4.17 open; T4.1/T4.4 pending manual sign-off) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **57/62** | |
+| **Total** | | **58/64** | |
 
 ---
 
@@ -651,9 +651,18 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 
 - [x] **T4.13 — Board shows the workflow.** ✓ 2026-08-11 The board named the current step but not the workflow it belongs to, and "survey" means nothing without "docs-update". New WORKFLOW column, dropped **after** the step name under width pressure: a workflow alone still says what a task is doing, while a step name alone does not.
 
-- [ ] **T4.14 — Richer agent output in the detail view.** The output pane renders a tool use as its bare name (`▸ Bash`) and drops everything it does not normalize, so watching a run shows keywords rather than what is happening. `agent.ToolUse` carries only `Name`; the adapters all have the detail to hand and throw it away — claude's `input`, cursor's `args` (command, path), codex's item fields.
-  *Done when:* a tool use renders with its subject (the command run, the file edited), and unnormalized lines are visible rather than silently dropped.
-  *Shape:* `ToolUse` gains a summary the adapters fill; it rides the existing `agent.tool_use` record to `renderRecord`. Touches the interface, three adapters, the wire DTO and the TUI — filed rather than rushed into a fix PR.
+- [x] **T4.14 — Richer agent output in the detail view.** ✓ 2026-08-11 The output pane rendered a tool use as its bare name (`▸ Bash`) — a keyword, not an event — while all three adapters had the detail to hand and threw it away. `ToolUse` now carries `Summary` and `CallID`, filled by **one shared extractor** over an ordered preference of *argument names* (`command`, `file_path`, `pattern`, `path`, `url`, `query`, `prompt`, `description`) rather than three tables of tool-name → field: the names converge because the underlying tools do, and a key nobody sends costs nothing — the summary comes back empty and the bare name renders exactly as before. `pattern` deliberately precedes `path` (a search carries both, and "Grep TODO" says more than "Grep internal"); `command` precedes `description` (cursor's shell calls carry both, and the command is the subject while the description is a sentence about it).
+  *Two things the grill session pulled forward.* **`CallID`** was not in the original filing: claude batches parallel tool calls (T4.8), so "the result under the call is that call's result" is false in exactly the case that matters, and correlation had to be on the wire before anything could render a result beneath its call. And the summary is **flattened to one line and capped at the adapter** (200 runes) — a heredoc otherwise decides how many rows a record occupies, and a cap in the TUI would leave every future client to reinvent it.
+  *Wire (§13.2, v0 change):* `tools: []string` → `tools: [{name, summary, call_id}]`. Nothing durable broke — normalized records are recomputed from the raw file on every read and never stored, live chunks are ephemeral — so the handler, the live publisher and the one in-tree client moved in one commit rather than carrying two shapes. The unrecognized-line half of the original done-when moved to **T4.16**, which is where the flood protection it has to respect lives.
+  *Verified:* the extractor table-tested over all three dialects incl. truncation and the rune-safe cut; claude asserted against the **verbatim captured** `tool_use` line from `stream_permission_allow_2.1.226.jsonl`, cursor against both calls in `tools_2026.08.04.jsonl` (the edit's `args.path` one level down, the shell call's `command` beating its `description`), codex against `tooluse.jsonl`; and the round trip through the real handler in `apiclient`'s live test, which is what would catch client and server drifting.
+
+- [ ] **T4.16 — The output view shows what the agent is doing.** The pane renders assistant text and tool names and nothing else: the model's reasoning is captured on disk and shown to nobody, a tool call is never followed by its outcome, unrecognized lines collapse behind a count with no way to see them, and **long lines are clipped at the pane width** — the viewport never sets `SoftWrap`, so a paragraph of assistant text is cut and the remainder is unreachable.
+  *Done when:* thinking and tool outcomes render, unrecognized lines are reachable, and no line is silently cut.
+  *Shape (grill session, 2026-08-11):* `EventThinking` + `EventToolResult` on §9.1, both riding the live stream **and** scrollback so a running task and a finished one render alike; a glyph gutter with assistant prose flush-left and results indented under their call id; manual wrap with a hanging indent (wrap plain, then style — no ANSI-aware wrapping); `v` cycles compact/normal/verbose.
+
+- [ ] **T4.17 — Codex reasoning items are not normalized.** T4.16 surfaces thinking for claude and cursor. Codex emits reasoning too, but **no capture in this repo contains one**, and the convention is table-driven tests against captured real-CLI output. Implementing against a documented-but-unobserved shape fails silently if it is wrong — reasoning simply never appears, and nothing distinguishes that from a model that did not reason.
+  *Blocked on:* a real `codex exec --json` capture containing a reasoning item.
+  *Done when:* codex reasoning normalizes to `agent.thinking` like the others, asserted against that capture.
 
 - [ ] **T4.11 — The TUI cannot show a full transcript.** The detail view fetches a bounded *tail* (`DefaultTailBytes`, capped at `maxRecords`) with no way to page back, so a failed step cannot be diagnosed from the TUI — which is where a user is when it fails. The transcript on disk is the complete record and the ranged endpoint already serves it; only the UI is missing. Partial mitigation shipped: `vincent task show` now prints each attempt's transcript path.
   *Done when:* a step's whole transcript is reachable from the detail view — scrollback, or `$EDITOR`/pager the way `e` already opens a workflow file.

@@ -102,6 +102,19 @@ func TestParseToolUseFixture(t *testing.T) {
 	if len(toolNames) != 1 || toolNames[0] != "command_execution" {
 		t.Errorf("tool uses = %v, want exactly one command_execution (from item.started)", toolNames)
 	}
+	// T4.14: the subject is read out of the item's own fields, which differ
+	// per item type — the item is kept raw rather than modeled per type.
+	for _, ev := range events {
+		if ev.Type != agent.EventToolUse {
+			continue
+		}
+		if got := ev.Tools[0].Summary; got != `pwsh -Command 'echo vincent-fixture'` {
+			t.Errorf("summary = %q, want the executed command", got)
+		}
+		if got := ev.Tools[0].CallID; got != "item_0" {
+			t.Errorf("call id = %q, want item_0", got)
+		}
+	}
 	res := terminal(t, events)
 	if res.IsError {
 		t.Errorf("IsError = true (%s), want success", res.ErrorMessage)

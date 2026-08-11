@@ -19,9 +19,30 @@ type execLine struct {
 }
 
 type execItem struct {
+	ID      string `json:"id"`
 	Type    string `json:"type"`
 	Text    string `json:"text"`    // agent_message
 	Message string `json:"message"` // item type=error (advisory notices)
+	// raw is the item object as it arrived. The field that says *what* a
+	// tool item is doing differs per item type (`command` for
+	// command_execution, `query` for web_search, …), and enumerating them
+	// would mean inventing names for the types no capture exists for; the
+	// raw object lets agent.ToolSummary read whichever is present and
+	// return nothing when none is (T4.14).
+	raw json.RawMessage
+}
+
+// UnmarshalJSON keeps the item's own bytes alongside the decoded fields.
+// The local type drops the method set, so this does not recurse.
+func (it *execItem) UnmarshalJSON(b []byte) error {
+	type item execItem
+	var decoded item
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		return err
+	}
+	*it = execItem(decoded)
+	it.raw = append(json.RawMessage(nil), b...)
+	return nil
 }
 
 type execUsage struct {
@@ -70,9 +91,13 @@ func (s *stream) parse(raw []byte) agent.Event {
 	case "item.started":
 		if line.Item != nil && toolItems[line.Item.Type] {
 			return agent.Event{
-				Type:  agent.EventToolUse,
-				Tools: []agent.ToolUse{{Name: line.Item.Type}},
-				Raw:   raw,
+				Type: agent.EventToolUse,
+				Tools: []agent.ToolUse{{
+					Name:    line.Item.Type,
+					Summary: agent.ToolSummary(line.Item.raw),
+					CallID:  line.Item.ID,
+				}},
+				Raw: raw,
 			}
 		}
 	case "item.completed":

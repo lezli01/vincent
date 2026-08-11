@@ -80,7 +80,8 @@ func TestLineBoundaryAsTailStart(t *testing.T) {
 func TestNormalizeTranscript(t *testing.T) {
 	raw := strings.Join([]string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","id":"toolu_01",` +
+			`"input":{"file_path":"internal/auth/token.go"}}]}}`,
 		`{"type":"vincent.output","phase":"run","stream":"stdout","text":"building"}`,
 		`{"type":"system","subtype":"init"}`,
 		`{"type":"result","subtype":"success","result":"done","total_cost_usd":0.5,` +
@@ -116,8 +117,11 @@ func TestNormalizeTranscript(t *testing.T) {
 	if !strings.Contains(lines[0], `"text":"hello"`) {
 		t.Errorf("output text lost: %s", lines[0])
 	}
-	if !strings.Contains(lines[1], `"tools":["Edit"]`) {
-		t.Errorf("tool name lost: %s", lines[1])
+	// T4.14: the record carries the call's subject and its id, not just a
+	// name — the wire shape a client renders "▸ Edit token.go" from.
+	if !strings.Contains(lines[1],
+		`"tools":[{"name":"Edit","summary":"internal/auth/token.go","call_id":"toolu_01"}]`) {
+		t.Errorf("tool call not normalized whole: %s", lines[1])
 	}
 	// The vincent line passes through byte-for-byte, phase and stream intact.
 	if !strings.Contains(lines[2], `"phase":"run"`) || !strings.Contains(lines[2], `"text":"building"`) {

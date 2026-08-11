@@ -81,17 +81,41 @@ func trimLine(line []byte) []byte {
 // normalizedLine is one line of a normalized transcript. Every field is
 // omitempty so each type carries only what it means; `type` is always set.
 type normalizedLine struct {
-	Type         string   `json:"type"`
-	Text         string   `json:"text,omitempty"`
-	Tools        []string `json:"tools,omitempty"`
-	Message      string   `json:"message,omitempty"`
-	Raw          string   `json:"raw,omitempty"`
-	Line         string   `json:"line,omitempty"`
-	ResultText   string   `json:"result_text,omitempty"`
-	IsError      bool     `json:"is_error,omitempty"`
-	InputTokens  int64    `json:"input_tokens,omitempty"`
-	OutputTokens int64    `json:"output_tokens,omitempty"`
-	CostUSD      *float64 `json:"cost_usd,omitempty"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	// Tools was `[]string` through M4 and became objects with T4.14: a bare
+	// name renders as a keyword, and the subject a reader wants — the
+	// command run, the file edited — has nowhere else to ride. Nothing
+	// durable broke in the change: normalized transcripts are computed from
+	// the raw file on every read and never stored (§13.2).
+	Tools        []toolLine `json:"tools,omitempty"`
+	Message      string     `json:"message,omitempty"`
+	Raw          string     `json:"raw,omitempty"`
+	Line         string     `json:"line,omitempty"`
+	ResultText   string     `json:"result_text,omitempty"`
+	IsError      bool       `json:"is_error,omitempty"`
+	InputTokens  int64      `json:"input_tokens,omitempty"`
+	OutputTokens int64      `json:"output_tokens,omitempty"`
+	CostUSD      *float64   `json:"cost_usd,omitempty"`
+}
+
+// toolLine names one tool invocation inside an agent.tool_use record.
+// Summary is the call's subject and is absent when the dialect's arguments
+// carried nothing recognizable; call_id correlates the invocation with the
+// agent.tool_result that reports its outcome (§13.2, T4.14).
+type toolLine struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary,omitempty"`
+	CallID  string `json:"call_id,omitempty"`
+}
+
+// toolLines maps normalized tool uses onto their wire shape.
+func toolLines(tools []agent.ToolUse) []toolLine {
+	out := make([]toolLine, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, toolLine{Name: t.Name, Summary: t.Summary, CallID: t.CallID})
+	}
+	return out
 }
 
 // vincentLine sniffs vincent's own annotations, which are already normalized
@@ -124,11 +148,7 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 	case agent.EventOutput:
 		return normalizedLine{Type: "agent.output", Text: ev.Text}
 	case agent.EventToolUse:
-		names := make([]string, 0, len(ev.Tools))
-		for _, t := range ev.Tools {
-			names = append(names, t.Name)
-		}
-		return normalizedLine{Type: "agent.tool_use", Tools: names}
+		return normalizedLine{Type: "agent.tool_use", Tools: toolLines(ev.Tools)}
 	case agent.EventUsage:
 		return normalizedLine{Type: "agent.usage", Raw: string(ev.Raw)}
 	case agent.EventError:

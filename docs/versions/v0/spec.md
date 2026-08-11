@@ -579,6 +579,13 @@ type InputResponse struct {
                                  // or the message a permission denial carries (PR F addition)
 }
 
+type ToolUse struct {                // T4.14
+    Name    string
+    Summary string // the call's subject: the command run, the file edited; "" when
+                   // the dialect's arguments carried nothing recognizable
+    CallID  string // correlates with the ToolResult reporting this call's outcome
+}
+
 type RunResult struct {
     ExitCode     int
     ResultText   string   // agent's final answer/summary
@@ -602,6 +609,18 @@ type Option struct {
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
 adapter with zero core changes.
+
+**Tool subjects (T4.14).** `ToolUse` carried only a name through M4, so the
+output pane rendered `▸ Bash` — a keyword, not an event. Every dialect has the
+detail to hand and threw it away: claude's `input`, cursor's `args`, codex's
+item fields. `Summary` is filled by one shared extractor over an ordered
+preference of *argument names* (`command`, `file_path`, `pattern`, `path`,
+`url`, `query`, `prompt`, `description`) rather than three tables of
+tool-name → field: the names converge because the underlying tools do, an
+absent key costs nothing, and the summary is flattened to one line and capped
+at the adapter so no client needs its own guard. `CallID` exists because
+claude batches parallel tool calls (T4.8) — "the result below the call is that
+call's result" is false exactly when an agent is doing several things at once.
 
 **Scored against a third adapter (§9.7, M5):** the claim held for the daemon,
 the API, and the engine — cursor is one package plus registry wiring. It did
@@ -1138,6 +1157,13 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         `agent.raw` for anything the parser doesn't recognize —
                                         one render path for live tail and scrollback alike.
                                         Default (absent) is the raw file, byte for byte.
+                                        **v0 wire change (T4.14):** `agent.tool_use` records
+                                        carry `tools: [{name, summary, call_id}]`; through M4
+                                        the field was `tools: []string`. Nothing durable broke
+                                        — normalized records are computed from the raw file on
+                                        every read and never stored, and live chunks are
+                                        ephemeral — so the handler and the one in-tree client
+                                        moved together rather than carrying two shapes.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
 

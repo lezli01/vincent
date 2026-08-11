@@ -28,6 +28,11 @@ type streamBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 	Name string `json:"name"`
+	// ID and Input describe a tool_use block: the id a later tool_result
+	// refers back to, and the tool's arguments — free-form per tool, so they
+	// are kept raw and read by agent.ToolSummary (T4.14).
+	ID    string          `json:"id"`
+	Input json.RawMessage `json:"input"`
 }
 
 type streamUsage struct {
@@ -70,7 +75,11 @@ func parseAssistant(line *streamLine, raw []byte) agent.Event {
 				texts = append(texts, b.Text)
 			}
 		case "tool_use":
-			ev.Tools = append(ev.Tools, agent.ToolUse{Name: b.Name})
+			ev.Tools = append(ev.Tools, agent.ToolUse{
+				Name:    b.Name,
+				Summary: agent.ToolSummary(b.Input),
+				CallID:  b.ID,
+			})
 		}
 	}
 	ev.Text = strings.Join(texts, "\n")
