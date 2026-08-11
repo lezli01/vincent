@@ -309,6 +309,36 @@ func (s *Store) CountNonArchivedTasks(ctx context.Context, projectID int64) (int
 		projectID, string(TaskArchived))
 }
 
+// ArchivedTaskIDsBefore returns the ids of tasks archived before cutoff —
+// the input to transcript pruning (§17 retention).
+//
+// It selects on `archived_at`, not on `state`, because retention is measured
+// from when the task was archived rather than from when it finished: a task
+// left running for a week and archived yesterday is a day old, not eight.
+// Rows are never deleted, only their transcripts (§17: rows are small,
+// history is valuable).
+func (s *Store) ArchivedTaskIDsBefore(ctx context.Context, cutoff time.Time) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM tasks WHERE archived_at IS NOT NULL AND archived_at < ? ORDER BY id`,
+		formatTime(cutoff))
+	if err != nil {
+		return nil, fmt.Errorf("list archived tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan archived task id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate archived tasks: %w", err)
+	}
+	return ids, nil
+}
+
 // RequestPause records a pause against a running task without changing its
 // state: §6 lets the current step finish first, and the engine applies the
 // transition at the step boundary. The write is conditional on the task

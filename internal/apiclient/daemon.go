@@ -73,6 +73,7 @@ type Config struct {
 	MaxParallelTasks        int                  `json:"max_parallel_tasks"`
 	Defaults                ConfigDefaults       `json:"defaults"`
 	TranscriptRetentionDays int                  `json:"transcript_retention_days"`
+	TranscriptMaxBytes      int64                `json:"transcript_max_bytes"`
 	LogLevel                string               `json:"log_level"`
 	Agents                  map[string]AgentPath `json:"agents"`
 }
