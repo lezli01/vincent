@@ -36,9 +36,10 @@ steps.
 - Unlimited projects, workflows, and tasks; every task isolated in its own worktree.
 - Workflow-defined delivery: agent, command, and manual-gate step types; linear execution.
 - Two agent adapters — Claude Code and Codex — behind one interface. (A third,
-  Cursor, is **post-v1**: §9.7, milestone M5. This goal is not restated as
-  "three" — v1 shipped on two, and the §9.7 section documents an adapter added
-  after that line was met.)
+  Cursor, is **milestone M5**: §9.7. Its adapter merged ahead of M4 on
+  2026-08-11 — see §19 ‡ — so the tree carries three. This goal is annotated
+  rather than restated as "three": it records what v1 was *scoped* to deliver,
+  and the scope was met before the third arrived.)
 - Agent, model, and effort selectable per workflow, per step, and per task at
   creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
@@ -1504,14 +1505,23 @@ files are written in the editor and appear on the next reload. The M3 acceptance
 walkthrough exercises the edit path; it does not require a create path the TUI
 deliberately does not have.
 
-‡ **M5 is deliberately after M4, 2026-08-11** (Phase 5 grill session). Cursor
+‡ **M5 is sequenced after M4, 2026-08-11** (Phase 5 grill session). Cursor
 support is a feature, and M4's charter is polish; more concretely, T4.6's
 ten-minute fresh-machine clock excludes agent-CLI installation as a documented
 prerequisite, and folding a third CLI into that phase would either inflate the
 prerequisite list or tempt the gate into measuring someone else's onboarding.
-M5 may be developed on a branch in parallel with M4 — it touches no file M4
-owns except `config.go`, `daemon.go`, and the README — but it merges after M4,
-so v1 ships on the two adapters §2 promised.
+M5 was developed on a branch in parallel with M4 — it touches no file M4 owns
+except `config.go`, `daemon.go`, and the README.
+
+**Revised the same day, at the owner's direction:** M5's adapter work
+(T5.1–T5.5) **merged into `master` ahead of M4** rather than waiting for it.
+The *sequencing* rationale above still holds for the milestone — M5's gate
+(T5.7) and its remaining docs (T5.6) come after M4 — but the code no longer
+waits, so **v1's tree carries three adapters**. §2's goal is annotated
+accordingly rather than restated: the two-adapter line describes what v1 was
+scoped to deliver, not what the repository contains. T4.6's fresh-machine
+clock is unaffected: cursor is not a prerequisite of the M4 walkthrough, and
+an uninstalled `cursor-agent` is simply an unavailable adapter (§9.5).
 
 † **"Signed binaries" is descoped, 2026-08-10** (Phase 4 grill session). Releases
 carry cosign keyless signatures, checksums, and GitHub build attestations —
