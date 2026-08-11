@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/workflow"
 )
@@ -28,6 +29,7 @@ func newAgentsServer(t *testing.T) *httptest.Server {
 	reg := agent.NewRegistry(
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return "/nonexistent/codex-not-here" }),
+		cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
 	)
 	cache := agent.NewCatalogCache(reg)
 	s := New(Deps{
@@ -46,6 +48,65 @@ func newAgentsServer(t *testing.T) *httptest.Server {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+// TestAgentsReportLoggedIn pins the three states of the §9.5 field. The
+// distinction is the point of adding it: null means the adapter cannot tell,
+// which is normal, while false means installed-and-doomed — a state that was
+// previously indistinguishable from healthy.
+func TestAgentsReportLoggedIn(t *testing.T) {
+	fake := agenttest.BuildFakeAgent(t)
+	probe := func(t *testing.T) []agentResponse {
+		t.Helper()
+		reg := agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			cursor.New(func() string { return fake }),
+		)
+		s := New(Deps{
+			Token: testToken, Config: config.Default, StartedAt: time.Now(),
+			ListenAddr: "127.0.0.1:0", RequestStop: func() {},
+			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Catalog: agent.NewCatalogCache(reg),
+		})
+		ts := httptest.NewServer(s.Handler())
+		t.Cleanup(ts.Close)
+		resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("agents: %d %s", resp.StatusCode, body)
+		}
+		var out struct {
+			Agents []agentResponse `json:"agents"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("agents body: %v", err)
+		}
+		if len(out.Agents) != 2 {
+			t.Fatalf("agents = %d, want claude and cursor", len(out.Agents))
+		}
+		return out.Agents
+	}
+
+	t.Run("logged in", func(t *testing.T) {
+		agents := probe(t)
+		if agents[0].LoggedIn != nil {
+			t.Errorf("claude logged_in = %v, want null — it has no cheap probe (§9.5)", *agents[0].LoggedIn)
+		}
+		if agents[1].LoggedIn == nil || !*agents[1].LoggedIn {
+			t.Errorf("cursor logged_in = %v, want a definite true", agents[1].LoggedIn)
+		}
+	})
+
+	t.Run("logged out", func(t *testing.T) {
+		t.Setenv("FAKEAGENT_CURSOR_LOGGED_OUT", "1")
+		agents := probe(t)
+		cu := agents[1]
+		if !cu.Available {
+			t.Error("cursor available = false; a logged-out CLI is still installed")
+		}
+		if cu.LoggedIn == nil || *cu.LoggedIn {
+			t.Errorf("cursor logged_in = %v, want a definite false", cu.LoggedIn)
+		}
+	})
 }
 
 // postValidate POSTs a workflow to /v1/workflows/validate.
@@ -123,10 +184,11 @@ func TestAgentsEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("agents body: %v", err)
 	}
-	if len(out.Agents) != 2 {
-		t.Fatalf("agents = %d entries, want claude and codex", len(out.Agents))
+	// Three adapters, in registration order — the daemon's own order (T5.3).
+	if len(out.Agents) != 3 {
+		t.Fatalf("agents = %d entries, want claude, codex and cursor", len(out.Agents))
 	}
-	cl, cx := out.Agents[0], out.Agents[1]
+	cl, cx, cu := out.Agents[0], out.Agents[1], out.Agents[2]
 	if cl.Name != "claude" || !cl.Available || cl.Version != "2.1.224" {
 		t.Errorf("claude = %+v, want available 2.1.224", cl)
 	}
@@ -146,6 +208,20 @@ func TestAgentsEndpoint(t *testing.T) {
 	if cx.ProbedAt == "" {
 		t.Error("codex probed_at empty")
 	}
+	// Cursor's catalog is the mirror image of codex's: models but no efforts,
+	// because effort is encoded in the model id (§9.7). Its curated floor
+	// survives the missing binary, and it is the one adapter that reports a
+	// non-empty default model.
+	if cu.Name != "cursor" || cu.Available {
+		t.Errorf("cursor = %+v, want unavailable", cu)
+	}
+	if len(cu.Efforts) != 0 || len(cu.Models) != 1 {
+		t.Errorf("cursor catalog = %d efforts %d models, want curated 0/1 (auto) despite the missing binary (§9.6, §9.7)",
+			len(cu.Efforts), len(cu.Models))
+	}
+	if cu.DefaultModel != "auto" {
+		t.Errorf("cursor default_model = %q, want auto — the only non-empty adapter default (§9.7)", cu.DefaultModel)
+	}
 
 	// /v1/info serves availability from the same cache (T2.11): same truth.
 	resp, body = doRequest(t, ts, http.MethodGet, "/v1/info", testToken)
@@ -158,8 +234,9 @@ func TestAgentsEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &info); err != nil {
 		t.Fatalf("info body: %v", err)
 	}
-	if len(info.Agents) != 2 || !info.Agents[0].Available || info.Agents[1].Available {
-		t.Errorf("info agents = %+v, want claude available + codex not", info.Agents)
+	if len(info.Agents) != 3 || !info.Agents[0].Available ||
+		info.Agents[1].Available || info.Agents[2].Available {
+		t.Errorf("info agents = %+v, want claude available + codex and cursor not", info.Agents)
 	}
 
 	// ?refresh=true still answers 200 with the same shape.

@@ -105,8 +105,13 @@ func (d *daemonView) adapterLines() []string {
 	}
 	for _, a := range d.info.Agents {
 		mark := styleOK.Render("✓")
-		if !a.Available {
+		switch {
+		case !a.Available:
 			mark = styleBad.Render("✗")
+		case a.NotAuthenticated():
+			// A tick beside "not logged in" would contradict itself: the
+			// binary is there, the adapter still cannot run a step.
+			mark = styleWarn.Render("⚠")
 		}
 		row := "   " + mark + " " + a.Name
 		switch {
@@ -115,6 +120,13 @@ func (d *daemonView) adapterLines() []string {
 		case !a.Available:
 			row += "  " + styleBad.Render("not found")
 		default:
+			// The blocking condition leads: rows carry absolute binary paths
+			// and elide to the pane width, so anything after the path is the
+			// first thing lost on a narrow terminal. "not logged in" means
+			// every step will fail and must not be what gets cut.
+			if a.NotAuthenticated() {
+				row += "  " + styleBad.Render("not logged in")
+			}
 			if a.Version != "" {
 				row += "  " + styleDim.Render(a.Version)
 			}

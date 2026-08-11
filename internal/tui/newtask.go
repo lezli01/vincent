@@ -196,7 +196,10 @@ func (n *newTask) capturesInput() bool {
 	case ntEditing:
 		return true
 	case ntPicking:
-		return n.pick != nil && n.pick.editing
+		// The filter types too. Omitting it here would repeat the M3 gate
+		// finding below one row up: "q" typed into a picker filter would quit
+		// the TUI mid-selection.
+		return n.pick != nil && (n.pick.editing || n.pick.filtering)
 	case ntFieldsOpen:
 		// The key/value editor types too, and was missing here: a "q" typed
 		// into a field name quit the TUI (M3 gate finding).

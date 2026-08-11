@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
@@ -151,6 +152,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		agents = agent.NewRegistry(
 			claude.New(func() string { return currentConfig().Agents.Claude.Path }),
 			codex.New(func() string { return currentConfig().Agents.Codex.Path }),
+			cursor.New(func() string { return currentConfig().Agents.Cursor.Path }),
 		)
 	}
 	catalog := agent.NewCatalogCache(agents)

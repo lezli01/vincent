@@ -249,7 +249,11 @@ func (n *newTask) renderPicker() []string {
 			"    replaces the workflow's defaults; steps that pin their own keep them (§8.6)"))
 	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
 	}
-	out = append(out, styleDim.Render("    enter select · esc cancel"))
+	hint := "    enter select · esc cancel"
+	if len(p.options) > pickerWindow {
+		hint = "    enter select · / filter · esc cancel"
+	}
+	out = append(out, styleDim.Render(hint))
 	return out
 }
 

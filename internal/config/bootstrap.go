@@ -44,6 +44,10 @@ agents:
     path: ""
   codex:
     path: ""
+  # cursor resolves the "cursor-agent" binary — not "cursor", which is the
+  # editor launcher (§9.7).
+  cursor:
+    path: ""
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

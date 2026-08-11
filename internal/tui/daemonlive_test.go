@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -60,13 +61,17 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 	t.Cleanup(broker.Close)
 	st.SetEventHook(broker.Publish)
 
-	// One adapter that resolves and one that does not, so the availability
-	// column is exercised in both directions against a real probe.
+	// One adapter that resolves, one that does not, and one that resolves but
+	// is logged out — so the availability column is exercised in all three
+	// directions against a real probe, including the §9.5 distinction between
+	// "missing" and "present but unable to run anything".
 	fake := agenttest.BuildFakeAgent(t)
 	missing := filepath.Join(dataDir, "no-codex-here")
+	t.Setenv("FAKEAGENT_CURSOR_LOGGED_OUT", "1")
 	reg := agent.NewRegistry(
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return missing }),
+		cursor.New(func() string { return fake }),
 	)
 	startedAt := time.Now().Add(-90 * time.Minute)
 	s := api.New(api.Deps{
@@ -146,6 +151,33 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 	}
 	if !strings.Contains(out, "codex") {
 		t.Errorf("the unavailable adapter is missing:\n%s", out)
+	}
+	// The §9.5 third state, end to end: a real `status` probe said no, the
+	// daemon put logged_in=false on the wire, and the view marks the row
+	// instead of showing a healthy tick.
+	//
+	// The assertion is on the marker rather than the phrase because the
+	// adapters block elides to the pane width: the row carries the fake
+	// binary's absolute path, and on a runner whose temp dirs are long
+	// (macOS: /var/folders/df/djsxfhc…/T/…) "not logged in" is cut mid-word.
+	// The marker sits at the start of the row, where nothing can push it off.
+	flagged := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "cursor") && strings.Contains(line, "⚠") {
+			flagged = true
+			break
+		}
+	}
+	if !flagged {
+		t.Errorf("the installed-but-unauthenticated adapter is not flagged:\n%s", out)
+	}
+	for _, a := range info.Agents {
+		if a.Name != "cursor" {
+			continue
+		}
+		if !a.NotAuthenticated() {
+			t.Errorf("cursor status = %+v, want available with logged_in=false", a)
+		}
 	}
 
 	// The log pane: lines this very server wrote, read back off disk with no

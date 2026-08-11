@@ -28,6 +28,9 @@ type Agent struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5); false
+	// means installed but unauthenticated, which fails every run.
+	LoggedIn *bool `json:"logged_in"`
 	// Error explains an unavailable adapter (not found, unusable version).
 	Error string `json:"error,omitempty"`
 
@@ -57,6 +60,18 @@ func (a Agents) Find(name string) (Agent, bool) {
 	return Agent{}, false
 }
 
+// NotAuthenticated reports an adapter that is installed and probes cleanly
+// but will fail every run for lack of a login. It is deliberately false when
+// LoggedIn is nil: an adapter that cannot answer must never be accused (§9.5).
+func (a Agent) NotAuthenticated() bool {
+	return a.Available && a.LoggedIn != nil && !*a.LoggedIn
+}
+
+// Unusable reports an adapter that will not complete a step — missing, or
+// present but unauthenticated. The two are one question for a caller deciding
+// whether to warn, and two different sentences when it explains why.
+func (a Agent) Unusable() bool { return !a.Available || a.NotAuthenticated() }
+
 // Unavailable reports whether name is a known adapter that is not usable
 // right now. An unknown name is not "unavailable" — the catalog simply has
 // nothing to say about it, and neither should a warning badge. An empty name
@@ -67,7 +82,7 @@ func (a Agents) Unavailable(name string) bool {
 		return false
 	}
 	ag, ok := a.Find(name)
-	return ok && !ag.Available
+	return ok && ag.Unusable()
 }
 
 // ListAgents fetches the adapter catalog. refresh forces a live re-probe;

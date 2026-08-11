@@ -44,7 +44,7 @@ The name is an acronym, and every part of it maps to the system:
   execution.
 - **Executing** — vincent runs workloads rather than merely observing them.
 - **Native agent tooling** — it invokes locally installed tools such as
-  Claude Code and Codex.
+  Claude Code, Codex, and Cursor.
 
 It is released under the [MIT License](LICENSE) and created by `lezli01` at
 [lezli01.is-a.dev](https://lezli01.is-a.dev). Contributions are welcome — see
@@ -55,9 +55,36 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 A background daemon owns all state and execution: register local git
 repositories, author reusable workflows (agent prompts, shell commands, manual
 gates), and run any number of tasks, each isolated in its own git worktree.
-Agent steps drive locally installed agent CLIs (Claude Code and Codex first)
-headlessly. A TUI — and later a web UI — is a thin client over the daemon's
-API, so work keeps running when no client is attached.
+Agent steps drive locally installed agent CLIs (Claude Code, Codex, and
+Cursor) headlessly. A TUI — and later a web UI — is a thin client over the
+daemon's API, so work keeps running when no client is attached.
+
+### Agent CLIs
+
+Each adapter runs the CLI you already have installed and authenticated;
+vincent stores no credentials of its own. Select one per workflow, per step,
+or per task (`agent: claude` / `codex` / `cursor`).
+
+| Agent | Binary | Notes |
+|---|---|---|
+| Claude Code | `claude` | Mid-run questions supported — a step can pause in `awaiting_input` and be answered from the TUI |
+| Codex | `codex` | Non-interactive once started; reports no cost |
+| Cursor | **`cursor-agent`** | Non-interactive; reports no cost |
+
+Two things to know about the Cursor adapter specifically:
+
+- **Reasoning effort lives in the model id**, not in the `effort` field —
+  `claude-sonnet-5-thinking-xhigh`, `gpt-5.4-mini-high`. Cursor has no effort
+  flag, so `effort:` is ignored on cursor steps. Run `cursor-agent models` to
+  see what your account offers.
+- **A cursor step sets your saved CLI model.** Cursor persists the `--model`
+  it is given to `~/.cursor/cli-config.json`, so vincent always passes one
+  (defaulting to `auto`) to keep runs reproducible. The trade-off is that
+  running a cursor step overwrites the model you last picked in an
+  interactive `cursor-agent` session.
+- **`restricted` permission mode needs macOS or Linux.** Cursor's sandbox is
+  unavailable on Windows, so a restricted cursor step fails there with a
+  stated reason rather than silently running full-auto.
 
 ## Project Status
 
@@ -82,9 +109,13 @@ follows the task breakdown:
   with the one-time full-auto risk notice shown on first run. What remains
   is the manual M3 walkthrough on Windows and one POSIX OS.
 - **Phase 4 — polish** (service install, CLI subcommands, retention and
-  limits, docs and example workflows, signed release binaries): **not
-  started**. There are no packaged releases yet, so build from source with
+  limits, docs and example workflows, signed release binaries): **in
+  progress**. There are no packaged releases yet, so build from source with
   the commands below.
+- **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
+  dialect, config and registry wiring, windowed/filterable option pickers,
+  and `logged_in` reporting are **built**; docs, example workflow, and the
+  M5 acceptance walkthrough remain.
 
 See [docs/versions/v0/spec.md](docs/versions/v0/spec.md) for the product and
 implementation spec, and
