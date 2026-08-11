@@ -77,7 +77,8 @@ func (d *daemonView) configLines() []string {
 		field("agent timeout", c.Defaults.AgentTimeout)+
 			styleDim.Render("   command "+c.Defaults.CommandTimeout+
 				"   input "+c.Defaults.InputTimeout),
-		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days"),
+		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days")+
+			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
 		field("log level", c.LogLevel),
 	)
 	for _, name := range sortedKeys(c.Agents) {
@@ -140,6 +141,22 @@ func (d *daemonView) adapterLines() []string {
 		out = append(out, row)
 	}
 	return out
+}
+
+// humanBytes renders a byte count the way the config file spells it, so the
+// view and `config.yaml` agree on the wording.
+func humanBytes(n int64) string {
+	switch {
+	case n <= 0:
+		return "unlimited"
+	case n%(1<<30) == 0:
+		return strconv.FormatInt(n/(1<<30), 10) + "GB"
+	case n%(1<<20) == 0:
+		return strconv.FormatInt(n/(1<<20), 10) + "MB"
+	case n%(1<<10) == 0:
+		return strconv.FormatInt(n/(1<<10), 10) + "KB"
+	}
+	return strconv.FormatInt(n, 10) + "B"
 }
 
 func (d *daemonView) renderLog(height int) string {

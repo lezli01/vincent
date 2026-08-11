@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 7 tasks | 2/7 | 🚧 in progress |
+| 4 — Polish (M4) | 7 tasks | 3/7 | 🚧 in progress |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **48/54** | |
+| **Total** | | **49/54** | |
 
 ---
 
@@ -581,8 +581,11 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 - [x] **T4.2 — CLI subcommands.** ✓ 2026-08-11 `project add/ls`, `task add/ls/show/cancel`, `workflow ls/validate` as thin API clients with table/JSON output (§12.1).
   *Done when:* CLI integration tests against a live daemon pass in CI.
   *2026-08-11:* landed per the PR U decisions. Human table by default, `--json` on every subcommand. **No auto-start** — `client()` discovers the daemon and returns exit 2 with a pointer to `vincent daemon start`, and additionally health-probes it, so a stale `daemon.json` from an unclean shutdown gives the same "no daemon" answer instead of a transport error at an arbitrary later point. Exit codes 0/1/2, with 1 meaning the daemon answered and said no (a 409 from the §6 FSM, a missing id) and 2 meaning nothing answered. `workflow validate` parses locally against the **curated** catalogs — no daemon, no probe, no installed CLI — which is what makes it usable from CI and a pre-commit hook. `TestCommandsAgainstLiveDaemon` drives the real binary against a real detached daemon: both output modes, empty results rendering as a header-only table and `[]` rather than `null`, exit 1 on rejection, exit 2 with no daemon, and validate's own 0/1 split.
-- [ ] **T4.3 — Retention & limits.** Transcript pruning for archived tasks past `transcript_retention_days`; per-run transcript size cap failing the step past the limit; daemon log rotation verified (§17, §18).
+- [x] **T4.3 — Retention & limits.** ✓ 2026-08-11 Transcript pruning for archived tasks past `transcript_retention_days`; per-run transcript size cap failing the step past the limit; daemon log rotation verified (§17, §18).
   *Done when:* pruning and cap behavior covered by tests with shrunk thresholds.
+  *2026-08-11:* landed per the PR V decisions. **Config:** new `ByteSize` type so `transcript_max_bytes: 512MB` reads as a size rather than a magic integer, top-level beside its retention sibling (not under `defaults:`, which is timeouts only), surfaced on `GET /v1/config` and in the daemon view. **Cap:** the transcript latches past the limit, drops later writes, and the executors kill the tree — the agent path through the existing cancel-cause seam (`errTranscriptLimit` → `classifyAgent`), the command path by cancelling its run context from the stream goroutine, since a process that never stops producing is exactly what must not be waited on. The tripping line is written **whole** (a half line would turn a size failure into a parse failure for every later JSONL reader) and `NoteOverLimit` bypasses the cap so the file records *why* it ends. **Pruning:** `TranscriptPruner` runs at start and on a 24 h ticker — the ticker is what makes retention work on a daemon that survives reboots (T4.1) rather than only on the restarts it no longer has. Retention is measured from `archived_at`, `0` disables it, and rows are never deleted.
+  *Verified at shrunk thresholds:* prune tests at 7-day retention with tasks aged either side of it, idempotency, disabled-by-zero, and context cancellation; transcript tests for latching, whole-line writes, disabled-by-zero, and the surviving annotation; `TestEngineTranscriptLimitFailsTheStep` drives a new `flood` fakeagent scenario against an 8KB cap end to end and asserts the block reason, the step reason, the annotation and that the file stayed bounded. **The idempotency test earned its keep immediately:** `os.IsNotExist` does not unwrap, `dirSize` wraps with `%w`, so the already-gone branch never matched and every pass re-counted deleted tasks as freshly removed.
+  *Log rotation* had shipped since phase 1 and was never asserted; `TestLoggerRotates` drives the real `newLogger` past 10 MB and checks a backup appears and the live file drops back under the cap.
 - [ ] **T4.4 — Docs & examples.** README (install, quickstart, prominent full-auto risk section §16); workflow authoring guide; 2–3 example workflows shipped in `examples/` (e.g. `feature-pr`, `fix-and-test`).
   *Done when:* a reviewer can follow the quickstart cold; examples validate via `vincent workflow validate`.
 - [ ] **T4.5 — Release packaging.** goreleaser (or equivalent): versioned, signed binaries for all 3 OSes; checksums; install instructions per OS.

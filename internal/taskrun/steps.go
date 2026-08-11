@@ -116,6 +116,17 @@ func (r *Runner) runAgentStep(
 			tail.add(ev.Text)
 		}
 		r.publishAgentEvent(env.task.ID, run.ID, offset, ev)
+		// An agent that will not stop talking is killed at the cap rather
+		// than allowed to fill the disk (§12.3, §18). The stream is left to
+		// drain so Wait still reports an exit; classifyAgent turns the cause
+		// into transcript_limit.
+		if tr.Exceeded() {
+			tr.NoteOverLimit("transcript_limit", map[string]any{
+				"max_bytes": r.deps.Config().TranscriptMaxBytes.Bytes(),
+			})
+			env.log.Warn("transcript limit exceeded", "task", env.task.ID, "step", env.step.ID)
+			cancelCause(errTranscriptLimit)
+		}
 	}
 	// protocolError fails the attempt rather than wait on a request vincent
 	// cannot render (§18): kill the tree, let the stream drain.
@@ -269,6 +280,8 @@ func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *ag
 		return stepOutcome{state: store.StepFailed, reason: ReasonInputTimeout}
 	case causeIs(runCtx, errInputProtocol):
 		return stepOutcome{state: store.StepFailed, reason: ReasonInputProtocolError}
+	case causeIs(runCtx, errTranscriptLimit):
+		return stepOutcome{state: store.StepFailed, reason: ReasonTranscriptLimit}
 	case interrupting && (waitErr != nil || res.ExitCode != 0 || res.IsError):
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
@@ -417,6 +430,9 @@ func (r *Runner) runShellCommand(
 	tail := newOutputTail(outputTailLines)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	// limitOnce keeps the cap's annotation and kill to one, though both
+	// stream goroutines can observe the overflow.
+	var limitOnce sync.Once
 	stream := func(rd io.Reader, name string) {
 		defer wg.Done()
 		scanner := bufio.NewScanner(rd)
@@ -430,6 +446,20 @@ func (r *Runner) runShellCommand(
 			mu.Lock()
 			tail.add(line)
 			mu.Unlock()
+			// A command that floods stdout is capped like a runaway agent
+			// (§12.3, §18). Cancelling here rather than after the scanner
+			// finishes is the point: the whole failure mode is a process that
+			// never stops producing, so waiting for it to stop is waiting
+			// forever. Cancelling runCtx wakes the tree-killer above.
+			if tr.Exceeded() {
+				limitOnce.Do(func() {
+					tr.NoteOverLimit("transcript_limit", map[string]any{
+						"max_bytes": r.deps.Config().TranscriptMaxBytes.Bytes(),
+					})
+					env.log.Warn("transcript limit exceeded", "task", env.task.ID, "step", env.step.ID)
+					cancel()
+				})
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			// A single line past the buffer cap stops the scanner but not the
@@ -452,6 +482,10 @@ func (r *Runner) runShellCommand(
 	switch {
 	case ctx.Err() != nil:
 		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted
+	// Ahead of the exit-code cases: the process was killed *because* of the
+	// cap, so its nonzero exit is a consequence, not the diagnosis (§18).
+	case tr.Exceeded():
+		outcome.state, outcome.reason = store.StepFailed, ReasonTranscriptLimit
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		outcome.state, outcome.reason = store.StepFailed, ReasonTimeout
 	case exitCode != 0 && r.interrupting(env.task.ID):

@@ -40,7 +40,12 @@ const (
 	// purpose: the CLI is installed and healthy, so "not found" would send
 	// the user to reinstall something that is already there.
 	ReasonRestrictedUnsupported = "restricted_unsupported"
-	ReasonInternalError         = "internal_error"
+	// ReasonTranscriptLimit is an attempt whose transcript passed
+	// `transcript_max_bytes` (§12.3, §18). The run is killed rather than
+	// allowed to fill the disk; the partial transcript is kept, because the
+	// lines that got there are exactly what explains the runaway.
+	ReasonTranscriptLimit = "transcript_limit"
+	ReasonInternalError   = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit
@@ -266,6 +271,10 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
 	defer tr.Close()
+	// The cap is read per attempt, not cached: config hot-reloads (§12.3), and
+	// an operator who lowers it after a runaway step should see the new value
+	// on the retry rather than after a daemon restart.
+	tr.SetMax(r.deps.Config().TranscriptMaxBytes.Bytes())
 	run.TranscriptPath = tr.Path()
 
 	// An `edit + retry` left its text on the task, because the handler ran
