@@ -98,6 +98,7 @@ running). The subcommands are thin clients over the same API:
 
 ```sh
 vincent daemon start                       # or stop / status
+vincent service install                    # start at login, survive reboot
 vincent project add /path/to/repo
 vincent project ls
 vincent task add --project 1 --title "Add a health endpoint"
@@ -117,6 +118,14 @@ because that is an interactive session you asked for.
 `vincent workflow validate` runs entirely locally against the built-in agent
 catalogs — no daemon, no installed agent CLI — which makes it usable from CI
 and pre-commit hooks.
+
+`vincent service install` registers the daemon with your OS so it starts at
+login and survives reboot — a Windows Service, a launchd user agent, or a
+systemd user unit. It is per-user everywhere, since the OS user is vincent's
+trust boundary. Two platform notes: on Windows the service manager is
+machine-wide, so install and uninstall need an elevated prompt (status does
+not); on Linux, surviving logout also needs `loginctl enable-linger`, which
+the installer attempts and otherwise prints for you to run.
 
 ## Project Status
 
