@@ -194,6 +194,8 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		stdin:      stdin,
 		inputMode:  inputMode,
 		events:     make(chan agent.Event, 64),
+		raw:        make(chan agent.Event, 64),
+		promote:    make(chan agent.Event, 8),
 		readerDone: make(chan struct{}),
 		procDone:   make(chan struct{}),
 	}
@@ -203,6 +205,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 			return nil, fmt.Errorf("write prompt to claude: %w", err)
 		}
 	}
+	go r.mux()
 	go r.readLoop(bufio.NewScanner(stdout))
 	go func() {
 		select {
@@ -232,22 +235,64 @@ type run struct {
 	readerDone chan struct{}
 	procDone   chan struct{}
 
+	// raw carries readLoop's events to the mux; promote carries requests
+	// surfaced by Respond. One goroutine owns events and closes it, so
+	// Respond can deliver a queued request without racing readLoop's close.
+	raw     chan agent.Event
+	promote chan agent.Event
+
 	mu       sync.Mutex
 	terminal *agent.RunResult // parsed result event, if any
-	pending  *pendingRequest  // at most one (spec §7.4); guarded by mu
+	pending  *pendingRequest  // the one the engine is answering; guarded by mu
+	// queue holds requests that arrived while another was pending. The real
+	// CLI does issue concurrent control requests — it batches parallel tool
+	// calls, so a restricted run can ask about several at once — and failing
+	// the attempt on the second one killed real runs (found in Windows
+	// testing, 2026-08-11). The engine still sees exactly one at a time,
+	// because a task has one awaiting_input state (§6); the adapter
+	// serializes rather than the CLI promising to.
+	queue []queuedRequest
 
 	waitOnce sync.Once
 	waitRes  agent.RunResult
 	waitErr  error
 }
 
+// queuedRequest is a control request waiting for its turn: the event to
+// surface and the state needed to answer it.
+type queuedRequest struct {
+	ev   agent.Event
+	pend *pendingRequest
+}
+
 // maxLineBytes bounds one stream-json line; agent messages embed file
 // contents, so lines can be large.
 const maxLineBytes = 16 * 1024 * 1024
 
+// mux owns the events channel. readLoop and Respond both produce events, and
+// only one goroutine may close a channel — routing both through here is what
+// lets Respond surface a queued request at all. It forwards rather than
+// blocks, so a consumer calling Respond from its own event loop cannot
+// deadlock against it.
+func (r *run) mux() {
+	defer close(r.events)
+	for {
+		select {
+		case ev, ok := <-r.raw:
+			if !ok {
+				// The stream ended; nothing queued can still be answered.
+				return
+			}
+			r.events <- ev
+		case ev := <-r.promote:
+			r.events <- ev
+		}
+	}
+}
+
 func (r *run) readLoop(sc *bufio.Scanner) {
 	defer close(r.readerDone)
-	defer close(r.events)
+	defer close(r.raw)
 	defer r.closeStdin()
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
 	for sc.Scan() {
@@ -266,7 +311,7 @@ func (r *run) readLoop(sc *bufio.Scanner) {
 			// for another user message after the result — end the session.
 			r.closeStdin()
 		}
-		r.events <- ev
+		r.raw <- ev
 	}
 	// A scanner error (over-long line, pipe error) ends normalization; the
 	// process itself is still waited on and its exit code judged.
@@ -291,13 +336,11 @@ func (r *run) parseStreamLine(line []byte) agent.Event {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.pending != nil {
-			// Requests are serial (spec §7.4); a second concurrent request
-			// breaks the contract — fail fast rather than mis-route answers.
-			return agent.Event{
-				Type:    agent.EventInputRequest,
-				Message: "control_request while another is pending",
-				Raw:     line,
-			}
+			// Queue it rather than failing the attempt. The engine answers
+			// one at a time; Respond promotes the next when this one is done.
+			// The line is still returned so the transcript keeps it verbatim.
+			r.queue = append(r.queue, queuedRequest{ev: ev, pend: pend})
+			return agent.Event{Type: agent.EventUnknown, Raw: line}
 		}
 		r.pending = pend
 		return ev
@@ -351,7 +394,25 @@ func (r *run) Respond(resp agent.InputResponse) error {
 	}
 	r.mu.Lock()
 	r.pending = nil
+	var next *queuedRequest
+	if len(r.queue) > 0 {
+		q := r.queue[0]
+		r.queue = r.queue[1:]
+		r.pending = q.pend
+		next = &q
+	}
 	r.mu.Unlock()
+
+	if next != nil {
+		// The CLI is blocked waiting on this one too, so it will emit no
+		// further lines to carry it: surfacing it here is the only way the
+		// engine ever sees it. readerDone guards against a run that died
+		// between the answer and the promotion.
+		select {
+		case r.promote <- next.ev:
+		case <-r.readerDone:
+		}
+	}
 	return nil
 }
 

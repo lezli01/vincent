@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 7 tasks | 4/7 | 🚧 in progress (T4.1/T4.4 code-complete pending manual sign-off; T4.6 now unblocked by `v0.1.0-rc1`) |
+| 4 — Polish (M4) | 11 tasks | 7/11 | 🚧 in progress (T4.8–T4.10 from Windows testing; T4.11 open; T4.1/T4.4 pending manual sign-off) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **50/54** | |
+| **Total** | | **53/58** | |
 
 ---
 
@@ -623,6 +623,18 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 - *The picker preview keeps the registry's wording.* Resolution belongs to the committed workflow; fetching one per highlighted option would be a request per cursor move. `renderWorkflowDetail` uses the resolution only when the name matches the committed draft.
 - *Unavailability checking grows to level-4 steps.* With a resolved agent in hand, a step naming no agent can finally be checked against adapter availability — "the default adapter is missing" is a warning that was impossible to give before, and the old comment saying such steps are "never accused" no longer applies.
 - *Proof is a live test, not a stub.* `TestWorkflowsViewNamesTheAdapterDefault` drives the real handlers through the real client; a stubbed resolution would only assert the TUI renders what it was handed, which was never in doubt. The new-task live test additionally asserts the form names the resolved agent and spells out the unnamed model.
+
+**Windows testing findings (owner, 2026-08-11).** Five reports from a real run on Windows 11 against the `v0.1.0-rc1` artifact. Three were my own doing, two were genuine defects:
+
+- [x] **T4.8 — Concurrent control requests killed live claude runs.** ✓ 2026-08-11 §7.4 asserted requests were serial "because an agent blocks on its pending request". Real claude disproves it: it batches parallel tool calls, so a restricted run raises several `can_use_tool` requests at once, and the adapter failed the attempt on the second with `input_protocol_error`. **No fixture could have caught this** — `cmd/fakeagent` only ever emits one, which is exactly the assumption under test. The adapter now **queues** concurrent requests and promotes the next when the current one is answered; the engine and clients still see one at a time, because a task has one `awaiting_input` state. Delivery needed a mux goroutine: `readLoop` owns and closes the events channel, and the CLI is blocked on *both* requests so no later stream line would ever carry the second. Spec §7.4 rewritten — the serialization is the adapter's job, not a promise the CLI keeps.
+  *Verified:* the old "second request is a violation" test replaced by one asserting the queue, plus a promotion test that fails if the queued request is never surfaced (the shape that would hang a real run).
+
+- [x] **T4.9 — The shipped `docs-update` example set `permission_mode: restricted`.** ✓ 2026-08-11 Two of the five reports were this one example: cursor **refused every step on Windows** (no sandbox, §9.4) and claude **prompted for permission on every non-allowlisted tool** — both correct behavior for restricted, and both read as bugs to someone who never asked for it. A shipped example is copied on day one; demonstrating an edge case that breaks one adapter on one OS is a bad trade. Now full-auto like the others, with the restricted opt-in documented in a comment and in `docs/workflows.md`. The engine's default was never wrong: `resolvePermission` returns `FullAuto` for anything unset.
+
+- [x] **T4.10 — README: archive logo and global workflows.** ✓ 2026-08-11 The README inside a release archive rendered no logo — it referenced `docs/assets/logo.png`, which the archive does not carry — so the image is now an absolute raw URL that works in the repo, in the archive, and anywhere else the file travels. The quickstart also only documented **project-scoped** workflows; it now names the config-dir location per OS, states that project scope shadows global, and shows both.
+
+- [ ] **T4.11 — The TUI cannot show a full transcript.** The detail view fetches a bounded *tail* (`DefaultTailBytes`, capped at `maxRecords`) with no way to page back, so a failed step cannot be diagnosed from the TUI — which is where a user is when it fails. The transcript on disk is the complete record and the ranged endpoint already serves it; only the UI is missing. Partial mitigation shipped: `vincent task show` now prints each attempt's transcript path.
+  *Done when:* a step's whole transcript is reachable from the detail view — scrollback, or `$EDITOR`/pager the way `e` already opens a workflow file.
 
 - [x] **T4.7 — Report the §8.6 model and effort resolution.** ✓ 2026-08-10 T3.8 finding (2026-08-10), narrowed: the **agent** side landed with the walkthrough fixes — the registry already reports each step's agent, so the new-task form names it. Model and effort have no such field on the wire, so "(workflow default)" is all the form can honestly say about them, and the workflow-step list still cannot name which adapter "adapter default" resolves to. Both need new read-only API surface, which relitigates the PR L decision that kept resolution server-side — do that explicitly, not by having the TUI re-implement §8.6.
   *Done when:* the model and effort rows name what an unset override resolves to, and a step with no agent names the adapter that will run it.

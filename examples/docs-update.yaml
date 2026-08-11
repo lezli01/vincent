@@ -5,16 +5,20 @@
 # it. That is the honest shape for a docs task rather than pretending a
 # command can judge writing.
 #
-# It also shows `restricted` permission mode. A docs pass has no business
-# running arbitrary commands, and restricting it costs nothing here.
-# Note: cursor cannot honor restricted on Windows and will refuse the step
-# (§9.4) — this workflow names claude explicitly for that reason.
+# Runs full-auto like every other example. `restricted` would suit a docs pass
+# — it has no business running arbitrary commands — but a *shipped example* is
+# something you copy and run on day one, and restricted changes behavior in two
+# ways that read as bugs when you did not ask for them: claude turns every
+# non-allowlisted tool into a permission prompt, and cursor refuses the step
+# outright on Windows, where its sandbox does not exist (§9.4).
+#
+# If you want it, add `permission_mode: restricted` under defaults below and
+# read the "Permission modes" section of docs/workflows.md first.
 name: docs-update
 description: Update documentation to match the current code, then have a human read it.
 
 defaults:
   agent: claude
-  permission_mode: restricted
   max_retries: 1
   timeout: 30m
 
