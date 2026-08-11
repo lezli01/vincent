@@ -109,7 +109,11 @@ func TestTranscriptNormalizedTailAndResume(t *testing.T) {
 	lines := []string{
 		`{"type":"vincent.step_started","step":"implement"}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"first"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","id":"toolu_01",` +
+			`"input":{"file_path":"internal/auth/token.go","old_string":"a","new_string":"b"}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"weighing the options"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01",` +
+			`"content":"File created successfully"}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"second"}]}}`,
 	}
 	body := strings.Join(lines, "\n") + "\n"
@@ -145,8 +149,31 @@ func TestTranscriptNormalizedTailAndResume(t *testing.T) {
 	if all[1].Type != "agent.output" || all[1].Text != "first" {
 		t.Errorf("agent output not normalized: %+v", all[1])
 	}
-	if all[2].Type != "agent.tool_use" || len(all[2].Tools) != 1 || all[2].Tools[0] != "Edit" {
+	if all[2].Type != "agent.tool_use" || len(all[2].Tools) != 1 || all[2].Tools[0].Name != "Edit" {
 		t.Errorf("tool use not normalized: %+v", all[2])
+	}
+	// The subject and the call id survive the round trip through the real
+	// handler — the fixture line carries an `input` and an `id`, and a
+	// client that only ever sees the name is what T4.14 was filed about.
+	if got := all[2].Tools[0].Summary; got != "internal/auth/token.go" {
+		t.Errorf("tool summary = %q, want the edited file", got)
+	}
+	if got := all[2].Tools[0].CallID; got != "toolu_01" {
+		t.Errorf("tool call id = %q, want toolu_01", got)
+	}
+	// T4.16: reasoning and outcomes survive the same round trip. These are
+	// the records the pane needs to show what a run is doing, and the client
+	// and the handler declare their shapes independently — which is exactly
+	// what this test exists to keep in agreement.
+	if all[3].Type != "agent.thinking" || all[3].Text != "weighing the options" {
+		t.Errorf("thinking not normalized: %+v", all[3])
+	}
+	if all[4].Type != "agent.tool_result" || len(all[4].Results) != 1 {
+		t.Fatalf("tool result not normalized: %+v", all[4])
+	}
+	if res := all[4].Results[0]; res.CallID != "toolu_01" ||
+		!strings.Contains(res.Summary, "File created") || res.IsError {
+		t.Errorf("tool result = %+v, want toolu_01 succeeding", res)
 	}
 
 	// A tail smaller than the file returns a suffix, still whole records.

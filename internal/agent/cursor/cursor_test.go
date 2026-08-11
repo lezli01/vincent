@@ -251,10 +251,11 @@ func TestRunSuccess(t *testing.T) {
 		counts[agent.EventResult] != 1 {
 		t.Errorf("event mix %v, want output + exactly 1 tool_use (started only) + 1 result", counts)
 	}
-	// system, user, thinking×2, tool_call/completed and the fake_marker are
-	// all transcripted-but-unnormalized (§9.7).
-	if counts[agent.EventUnknown] < 5 {
-		t.Errorf("unknown events = %d, want the system/user/thinking/completed/marker lines preserved",
+	// system, user, the thinking deltas and the fake_marker stay
+	// transcripted-but-unnormalized; `completed` lines now normalize —
+	// thinking to one coalesced block, tool_call to a result (T4.16).
+	if counts[agent.EventUnknown] < 3 {
+		t.Errorf("unknown events = %d, want the system/user/marker lines preserved",
 			counts[agent.EventUnknown])
 	}
 }

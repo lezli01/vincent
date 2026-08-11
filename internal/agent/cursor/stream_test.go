@@ -28,6 +28,7 @@ func parseFixture(t *testing.T, name string) []agent.Event {
 	var events []agent.Event
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	parse := (&stream{}).parse
 	for sc.Scan() {
 		line := make([]byte, len(sc.Bytes()))
 		copy(line, sc.Bytes())
@@ -54,10 +55,26 @@ func TestParseSuccessFixture(t *testing.T) {
 	if counts[agent.EventOutput] != 1 {
 		t.Errorf("output events = %d, want 1 (the single assistant message)", counts[agent.EventOutput])
 	}
-	// system, user, thinking×3, thinking/completed — transcripted, not
-	// normalized (§9.7).
-	if counts[agent.EventUnknown] != 6 {
-		t.Errorf("unknown events = %d, want 6 (system, user, 4 thinking)", counts[agent.EventUnknown])
+	// system, user and the three thinking deltas stay unknown — the deltas
+	// are swallowed into the buffer and are still unmodeled lines, which is
+	// what a reader asking for raw lines should see (§9.7, amended by T4.16).
+	if counts[agent.EventUnknown] != 5 {
+		t.Errorf("unknown events = %d, want 5 (system, user, 3 thinking deltas)",
+			counts[agent.EventUnknown])
+	}
+	// The deltas coalesce into exactly one thinking event, emitted when
+	// `completed` closes the block. Per-delta events are what §9.7 refused,
+	// and this is the assertion that would fail if they came back.
+	if counts[agent.EventThinking] != 1 {
+		t.Fatalf("thinking events = %d, want exactly 1 coalesced block", counts[agent.EventThinking])
+	}
+	for _, ev := range events {
+		if ev.Type != agent.EventThinking {
+			continue
+		}
+		if want := `The user requested the exact word "OK" without using any tools.`; ev.Text != want {
+			t.Errorf("thinking text = %q, want the deltas joined verbatim (%q)", ev.Text, want)
+		}
 	}
 	last := events[len(events)-1]
 	if last.Type != agent.EventResult || last.Result == nil {
@@ -96,6 +113,40 @@ func TestParseToolsFixture(t *testing.T) {
 	// `shellToolCall` and would misname every shell invocation.
 	if strings.Join(tools, ",") != "edit,shell" {
 		t.Errorf("tools = %v, want [edit shell]", tools)
+	}
+	// T4.14: the subject lives one level down under `args`, and the call id
+	// is the line-level `call_id` shared by started and completed.
+	var uses []agent.ToolUse
+	for _, ev := range events {
+		if ev.Type == agent.EventToolUse {
+			uses = append(uses, ev.Tools...)
+		}
+	}
+	if len(uses) != 2 {
+		t.Fatalf("tool uses = %d, want 2", len(uses))
+	}
+	if uses[0].Summary != "/tmp/wt/hi.txt" || uses[0].CallID != "tool_1" {
+		t.Errorf("edit call = %+v, want the edited path and tool_1", uses[0])
+	}
+	// The shell call carries both `command` and `description`; the command
+	// is the subject a reader wants.
+	if uses[1].Summary != "git status" || uses[1].CallID != "tool_2" {
+		t.Errorf("shell call = %+v, want the command and tool_2", uses[1])
+	}
+	// T4.16: the edit's `completed` reports what it did, correlated to the
+	// call by id. `+1 −0` rather than the path, which the call line already
+	// showed — an outcome has to say something the invocation did not.
+	var results []agent.ToolResult
+	for _, ev := range events {
+		if ev.Type == agent.EventToolResult {
+			results = append(results, ev.Results...)
+		}
+	}
+	if len(results) != 1 {
+		t.Fatalf("tool results = %d, want 1 (only the edit completed in this capture)", len(results))
+	}
+	if results[0].CallID != "tool_1" || results[0].IsError || results[0].Summary != "+1 −0" {
+		t.Errorf("edit result = %+v, want tool_1 succeeding with +1 −0", results[0])
 	}
 	// The result text is every assistant message concatenated, not the last.
 	last := events[len(events)-1]
@@ -138,9 +189,13 @@ func TestParseTable(t *testing.T) {
 			want: agent.EventToolUse, tool: "read",
 		},
 		{
-			name: "tool_call completed is not a tool_use",
+			// completed is the outcome, never a second invocation —
+			// normalizing it as a tool_use would double-count every call.
+			// With no `result.success` it reports failure with no detail
+			// rather than inventing a failure shape nobody has captured.
+			name: "tool_call completed is a tool_result, not a tool_use",
 			line: `{"type":"tool_call","subtype":"completed","tool_call":{"readToolCall":{}}}`,
-			want: agent.EventUnknown,
+			want: agent.EventToolResult,
 		},
 		{
 			name: "tool_call with no tool-shaped key is not a tool_use",
@@ -148,8 +203,18 @@ func TestParseTable(t *testing.T) {
 			want: agent.EventUnknown,
 		},
 		{
-			name: "thinking is transcripted but never normalized",
+			// A delta on its own emits nothing: it is buffered, and the
+			// block surfaces only once `completed` closes it. This is the
+			// half of §9.7 that survived — no per-fragment events.
+			name: "a thinking delta emits nothing on its own",
 			line: `{"type":"thinking","subtype":"delta","text":"pondering"}`,
+			want: agent.EventUnknown,
+		},
+		{
+			// A completed with nothing buffered — a transcript opened
+			// mid-block, or a run killed and resumed — has no text to emit.
+			name: "thinking completed with an empty buffer stays unknown",
+			line: `{"type":"thinking","subtype":"completed"}`,
 			want: agent.EventUnknown,
 		},
 		{
@@ -170,7 +235,7 @@ func TestParseTable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ev := parse([]byte(tt.line))
+			ev := (&stream{}).parse([]byte(tt.line))
 			if ev.Type != tt.want {
 				t.Fatalf("type = %q, want %q", ev.Type, tt.want)
 			}
@@ -200,10 +265,12 @@ func TestParseTable(t *testing.T) {
 	}
 }
 
-// TestNewLineParserIsStateless documents why cursor's parser needs no
-// per-file instance the way codex's does: the terminal result carries the
-// whole result text, so replaying a transcript out of order cannot corrupt it.
-func TestNewLineParserIsStateless(t *testing.T) {
+// TestResultNeedsNoState documents what is still stateless about cursor's
+// parser: the terminal result carries the whole result text (unlike codex,
+// whose result is the last agent_message it saw), so replaying a transcript
+// out of order cannot corrupt it. Thinking is the one thing that does carry
+// state, and TestNewLineParserIsolatesThinking covers that.
+func TestResultNeedsNoState(t *testing.T) {
 	a := New(nil)
 	line := []byte(`{"type":"result","subtype":"success","result":"done","usage":{"inputTokens":1,"outputTokens":2}}`)
 	first := a.NewLineParser()(line)
@@ -211,5 +278,44 @@ func TestNewLineParserIsStateless(t *testing.T) {
 	if first.Result.ResultText != second.Result.ResultText ||
 		first.Result.InputTokens != second.Result.InputTokens {
 		t.Error("two parser instances disagreed on the same line")
+	}
+}
+
+// TestNewLineParserIsolatesThinking is why NewLineParser stopped returning a
+// shared function: a half-accumulated reasoning block leaking into another
+// file would attribute one run's reasoning to a different run.
+func TestNewLineParserIsolatesThinking(t *testing.T) {
+	a := New(nil)
+	first, second := a.NewLineParser(), a.NewLineParser()
+	first([]byte(`{"type":"thinking","subtype":"delta","text":"belongs to the first run"}`))
+
+	if ev := second([]byte(`{"type":"thinking","subtype":"completed"}`)); ev.Type != agent.EventUnknown {
+		t.Errorf("second parser emitted %q from the first parser's buffer: %q", ev.Type, ev.Text)
+	}
+	ev := first([]byte(`{"type":"thinking","subtype":"completed"}`))
+	if ev.Type != agent.EventThinking || ev.Text != "belongs to the first run" {
+		t.Errorf("first parser lost its own block: %q / %q", ev.Type, ev.Text)
+	}
+	// The buffer is spent, so closing again emits nothing.
+	if ev := first([]byte(`{"type":"thinking","subtype":"completed"}`)); ev.Type != agent.EventUnknown {
+		t.Errorf("block re-emitted after completion: %q", ev.Text)
+	}
+}
+
+// TestCoalescedThinkingRawIsTheClosingLine pins the documented exception to
+// Event.Raw: a coalesced block's text came from the delta lines, so its Raw
+// is the line that closed it. The transcript is written from Raw, and the
+// offsets that pair live chunks with fetched scrollback are byte positions
+// in that file — the closing line is the one that had just been written.
+func TestCoalescedThinkingRawIsTheClosingLine(t *testing.T) {
+	parse := (&stream{}).parse
+	parse([]byte(`{"type":"thinking","subtype":"delta","text":"reasoning"}`))
+	closing := `{"type":"thinking","subtype":"completed","timestamp_ms":1}`
+	ev := parse([]byte(closing))
+	if ev.Type != agent.EventThinking {
+		t.Fatalf("type = %q, want thinking", ev.Type)
+	}
+	if string(ev.Raw) != closing {
+		t.Errorf("Raw = %s, want the closing line verbatim", ev.Raw)
 	}
 }
