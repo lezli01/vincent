@@ -485,3 +485,6 @@ func (w *tailWriter) String() string {
 	defer w.mu.Unlock()
 	return strings.TrimSpace(string(w.buf))
 }
+
+// Argv implements agent.RunHandle: the command line actually spawned.
+func (r *run) Argv() []string { return r.cmd.Args }
