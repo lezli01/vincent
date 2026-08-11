@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 14 tasks | 10/14 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; T4.11/T4.14 open; T4.1/T4.4 pending manual sign-off) |
+| 4 — Polish (M4) | 15 tasks | 11/15 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; T4.15 from the macOS service leg; T4.11/T4.14 open; T4.1/T4.4 pending manual sign-off) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **56/61** | |
+| **Total** | | **57/62** | |
 
 ---
 
@@ -586,8 +586,10 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 | OS | Installed | Survived reboot | Uninstalled | Notes |
 |---|---|---|---|---|
 | Windows 11 | | | | needs an elevated prompt |
-| macOS | | | | |
+| macOS | ✓ | ✓ | ✓ | 2026-08-11, owner. Clean on all three legs — but the running service could not see any agent CLI: **T4.15** |
 | Linux | | | | check `loginctl enable-linger` |
+
+  *2026-08-11 — macOS leg walked by the owner.* Install, reboot-survival and uninstall all clean. The leg found one defect the automated tests could not: an installed service resolved **no** agent CLI, while the same daemon started by hand found claude and codex. Filed and fixed as **T4.15**; the macOS row stays green for the three things this task asserts, and the fix owes a re-run before T4.1 closes.
 - [x] **T4.2 — CLI subcommands.** ✓ 2026-08-11 `project add/ls`, `task add/ls/show/cancel`, `workflow ls/validate` as thin API clients with table/JSON output (§12.1).
   *Done when:* CLI integration tests against a live daemon pass in CI.
   *2026-08-11:* landed per the PR U decisions. Human table by default, `--json` on every subcommand. **No auto-start** — `client()` discovers the daemon and returns exit 2 with a pointer to `vincent daemon start`, and additionally health-probes it, so a stale `daemon.json` from an unclean shutdown gives the same "no daemon" answer instead of a transport error at an arbitrary later point. Exit codes 0/1/2, with 1 meaning the daemon answered and said no (a 409 from the §6 FSM, a missing id) and 2 meaning nothing answered. `workflow validate` parses locally against the **curated** catalogs — no daemon, no probe, no installed CLI — which is what makes it usable from CI and a pre-commit hook. `TestCommandsAgainstLiveDaemon` drives the real binary against a real detached daemon: both output modes, empty results rendering as a header-only table and `[]` rather than `null`, exit 1 on rejection, exit 2 with no daemon, and validate's own 0/1 split.
@@ -655,6 +657,14 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
 
 - [ ] **T4.11 — The TUI cannot show a full transcript.** The detail view fetches a bounded *tail* (`DefaultTailBytes`, capped at `maxRecords`) with no way to page back, so a failed step cannot be diagnosed from the TUI — which is where a user is when it fails. The transcript on disk is the complete record and the ranged endpoint already serves it; only the UI is missing. Partial mitigation shipped: `vincent task show` now prints each attempt's transcript path.
   *Done when:* a step's whole transcript is reachable from the detail view — scrollback, or `$EDITOR`/pager the way `e` already opens a workflow file.
+
+**macOS testing finding (owner, 2026-08-11).** One report from the T4.1 macOS service leg.
+
+- [x] **T4.15 — An installed service found no agent CLI.** ✓ 2026-08-11 With the daemon running as the installed launchd agent, the TUI reported **every** adapter missing; the same daemon started by hand in a terminal found claude and codex. §9.5 resolves an adapter with `exec.LookPath`, and a LaunchAgent runs with launchd's own `PATH` — `/usr/bin:/bin:/usr/sbin:/sbin` — which contains no Homebrew, no npm prefix, no nvm shim dir and no `~/.local/bin`, i.e. none of the four places an agent CLI actually installs to. Nothing was broken in the daemon; it simply could not see anything.
+  *The fix is the one this package already made for the dirs.* `Options.resolve` captures `os.Getenv("PATH")` at install time and the backends bake it in: `EnvironmentVariables/PATH` in the plist, `Environment="PATH=…"` in the unit. The shell running `service install` has, by construction, the PATH that works. **This was a latent Linux bug too** — a systemd user manager's default PATH is barely wider — found only because macOS was walked first.
+  *Escaping came with it, and is not incidental:* a PATH entry containing `&` or `<` makes launchd reject the whole plist with a message naming neither, and `%` starts a **specifier** anywhere in a systemd unit, so `/opt/50%n` would expand rather than resolve. PATH is additionally quoted in the unit because an unquoted `Environment=` splits on whitespace and would silently truncate at the first space.
+  *Two deliberate limits, both documented in §12.1, the README and `service --help`.* The captured PATH goes **stale** — a CLI installed somewhere new needs a re-install to be seen, the same recapture contract the dirs have. And **Windows is excluded**: the SCM has no per-service environment, so its service inherits the machine environment, which does not carry a per-user npm prefix. The §12.3 `agents.<name>.path` knob is absolute, never consults PATH, and remains the standing answer on all three.
+  *Verified:* plist and unit rendering assert the PATH is present, quoted and escaped, incl. the plist re-parsed as XML with an `&` in it; `resolve` asserts the capture. **Owed:** a re-run of the macOS leg against a service installed by the fixed binary — the defect is only observable through a real launchd.
 
 - [x] **T4.7 — Report the §8.6 model and effort resolution.** ✓ 2026-08-10 T3.8 finding (2026-08-10), narrowed: the **agent** side landed with the walkthrough fixes — the registry already reports each step's agent, so the new-task form names it. Model and effort have no such field on the wire, so "(workflow default)" is all the form can honestly say about them, and the workflow-step list still cannot name which adapter "adapter default" resolves to. Both need new read-only API surface, which relitigates the PR L decision that kept resolution server-side — do that explicitly, not by having the TUI re-implement §8.6.
   *Done when:* the model and effort rows name what an unset override resolves to, and a step with no agent names the adapter that will run it.

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -20,6 +21,10 @@ import (
 // KeepAlive is conditional on a clean exit rather than unconditional. A
 // daemon that exits 0 was asked to stop, and relaunching it would make
 // `vincent daemon stop` impossible.
+//
+// PATH is in the environment because launchd's default one is
+// /usr/bin:/bin:/usr/sbin:/sbin — no Homebrew, no npm prefix, no
+// ~/.local/bin, so none of the agent CLIs resolve (T4.15).
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -34,6 +39,7 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <dict>
     <key>VINCENT_CONFIG_DIR</key><string>%s</string>
     <key>VINCENT_DATA_DIR</key><string>%s</string>
+    <key>PATH</key><string>%s</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
@@ -44,8 +50,22 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 
 // renderPlist fills the template. Split out so the plist's contents are
 // testable without a launchd to install into.
+//
+// Every substituted value is XML-escaped. A home directory containing `&` is
+// unusual; a PATH containing one is not, and launchd rejects a malformed
+// plist with a message that says nothing about which character broke it.
 func renderPlist(o Options) string {
-	return fmt.Sprintf(plistTemplate, LaunchdName, o.Exe, o.Dirs.Config, o.Dirs.Data)
+	return fmt.Sprintf(plistTemplate, LaunchdName,
+		xmlEscape(o.Exe), xmlEscape(o.Dirs.Config), xmlEscape(o.Dirs.Data), xmlEscape(o.Path))
+}
+
+func xmlEscape(s string) string {
+	var b strings.Builder
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		// strings.Builder never fails to write.
+		return s
+	}
+	return b.String()
 }
 
 func plistPath() (string, error) {

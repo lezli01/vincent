@@ -20,6 +20,11 @@ import (
 // Restart=on-failure rather than always: a daemon that exits 0 was asked to
 // stop (`vincent daemon stop`, POST /v1/daemon/stop), and restarting it would
 // make stopping impossible.
+//
+// PATH is set because a user unit inherits the user manager's default, which
+// has no npm prefix, no nvm shim dir and no Homebrew — so the agent CLIs stop
+// resolving the moment the daemon is managed rather than started by hand
+// (T4.15).
 const unitTemplate = `[Unit]
 Description=vincent — local AI workload orchestrator
 Documentation=https://github.com/lezli01/vincent
@@ -30,6 +35,7 @@ Type=simple
 ExecStart=%s daemon
 Environment=VINCENT_CONFIG_DIR=%s
 Environment=VINCENT_DATA_DIR=%s
+Environment="PATH=%s"
 Restart=on-failure
 RestartSec=5
 
@@ -39,8 +45,24 @@ WantedBy=default.target
 
 // renderUnit fills the template. Split out so the unit's contents are
 // testable without a systemd to install into.
+//
+// Values are escaped for the unit-file syntax: `%` introduces a systemd
+// specifier anywhere in a unit, so a directory or PATH entry containing one
+// would expand to something else entirely. PATH is additionally quoted —
+// unquoted `Environment=` splits on whitespace, which would silently truncate
+// a PATH containing a space at that entry.
 func renderUnit(o Options) string {
-	return fmt.Sprintf(unitTemplate, o.Exe, o.Dirs.Config, o.Dirs.Data)
+	return fmt.Sprintf(unitTemplate,
+		unitEscape(o.Exe), unitEscape(o.Dirs.Config), unitEscape(o.Dirs.Data), unitQuoted(o.Path))
+}
+
+func unitEscape(s string) string { return strings.ReplaceAll(s, "%", "%%") }
+
+// unitQuoted escapes a value destined for the inside of a double-quoted
+// unit-file string.
+func unitQuoted(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%")
+	return r.Replace(s)
 }
 
 func unitPath() (string, error) {
