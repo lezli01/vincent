@@ -58,6 +58,7 @@ defaults:
   command_timeout: 90s
   input_timeout: 36h
 transcript_retention_days: 7
+transcript_max_bytes: 32MB
 log_level: warn
 agents:
   claude:
@@ -78,6 +79,7 @@ agents:
 			InputTimeout:   Duration(36 * time.Hour),
 		},
 		TranscriptRetentionDays: 7,
+		TranscriptMaxBytes:      32 << 20,
 		LogLevel:                "warn",
 		Agents: Agents{
 			Claude: Agent{Path: "/opt/bin/claude"},

@@ -35,6 +35,10 @@ defaults:
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 
+# Per-attempt transcript cap. A step whose transcript passes this fails with
+# transcript_limit rather than filling the disk.
+transcript_max_bytes: 512MB
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 

@@ -16,6 +16,7 @@
 //	                      hang | big-usage | ask-question | ask-permission |
 //	                      bad-input-request | no-result (cursor: stderr
 //	                      failure with no terminal event) |
+//	                      flood (emits until killed — the transcript cap) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_SCENARIO_CODEX
 //	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
@@ -198,6 +199,12 @@ func main() {
 	case "big-usage":
 		emitText("burning tokens")
 		emitSuccessResult(prompt, 2_500_000, 1_200_000)
+	case "flood":
+		// An agent that will not stop talking: emits until something kills
+		// it, which is exactly what the §12.3 transcript cap must do.
+		for {
+			emitText(strings.Repeat("flooding the transcript ", 40))
+		}
 	default: // success
 		emitText("Working on: " + firstLine(string(prompt)))
 		emit(map[string]any{"type": "assistant", "message": map[string]any{

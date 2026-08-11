@@ -201,7 +201,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 
 	worktrees := worktree.NewManager(git, dirs.Data)
-	runner := taskrun.New(taskrun.Deps{
+	runnerDeps := taskrun.Deps{
 		Store:     st,
 		Config:    currentConfig,
 		Worktrees: worktrees,
@@ -210,7 +210,12 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		DataDir:   dirs.Data,
 		Logger:    logger,
 		Events:    broker,
-	})
+	}
+	runner := taskrun.New(runnerDeps)
+	// Transcript retention (§17): once at startup and every 24 h after. The
+	// ticker is what makes retention work on a daemon that survives reboots
+	// (T4.1) rather than only on the restarts it no longer has.
+	go taskrun.NewTranscriptPruner(runnerDeps).Run(ctx)
 	sched := scheduler.New(scheduler.Deps{
 		Store:    st,
 		Config:   currentConfig,
