@@ -163,10 +163,22 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
 ## Conventions
 
 - **Cross-platform is a hard requirement.** Windows, macOS, and Linux all run the
-  full suite plus both gates in CI. Platform-specific code goes in
-  `_unix.go`/`_windows.go`/`_darwin.go` files (see `internal/procx`,
-  `internal/daemon/spawn*.go`). Never assume a POSIX shell, `/`-separated paths, or
-  signal semantics.
+  full suite plus every gate in CI. Platform-specific code goes in
+  `_unix.go`/`_windows.go`/`_darwin.go`/`_linux.go` files (see `internal/procx`,
+  `internal/daemon/spawn*.go`, `internal/service`). Never assume a POSIX shell,
+  `/`-separated paths, or signal semantics.
+- **Lint the other platforms before pushing, not just build them.** `go build`
+  cross-compiles with `GOOS=…`, but `go tool golangci-lint` *cross-builds the
+  linter* and then cannot run it. Build it for the host once and run that:
+
+  ```sh
+  LINT=$(go tool -n golangci-lint)
+  for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
+  ```
+
+  A host-only lint hides findings in every build-tagged file — `unparam` fired
+  on macOS alone for a helper whose argument is constant there and varying on
+  Linux, and Windows does not compile that file at all.
 - **Package docs carry the design.** New packages get a `doc.go` explaining their
   role and citing spec sections. Non-obvious choices get a comment saying *why*,
   the way the existing code does.
