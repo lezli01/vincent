@@ -236,6 +236,42 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 	})
 
+	t.Run("service status reports nothing installed", func(t *testing.T) {
+		// Deliberately read-only: installing a real service in CI would need
+		// elevation on Windows and would leave a unit behind on the runner.
+		// The install path itself is covered by the unit tests and by the
+		// manual matrix in tasks.md — this pins the surface a user meets
+		// first, and that querying works with nothing installed.
+		out, code := runVincent(t, dataDir, cfgDir, "service", "status")
+		if code != 0 {
+			t.Fatalf("service status: code %d, out %q", code, out)
+		}
+		if !strings.Contains(out, "no vincent service is installed") {
+			t.Errorf("service status = %q, want the not-installed line", out)
+		}
+
+		out, code = runVincent(t, dataDir, cfgDir, "service", "status", "--json")
+		if code != 0 {
+			t.Fatalf("service status --json: code %d, out %q", code, out)
+		}
+		var st struct {
+			Installed bool `json:"Installed"`
+			Running   bool `json:"Running"`
+		}
+		if err := json.Unmarshal([]byte(jsonObject(out)), &st); err != nil {
+			t.Fatalf("service status --json is not JSON: %v (%q)", err, out)
+		}
+		if st.Installed || st.Running {
+			t.Errorf("status = %+v, want neither installed nor running", st)
+		}
+
+		// Uninstalling nothing is success, matching `daemon stop`.
+		out, code = runVincent(t, dataDir, cfgDir, "service", "uninstall")
+		if code != 0 {
+			t.Errorf("service uninstall with nothing installed: code %d, out %q", code, out)
+		}
+	})
+
 	t.Run("the shipped examples validate", func(t *testing.T) {
 		// T5.6's done-when, met through the actual CLI rather than a unit
 		// test standing in for it: this is exactly what CI now runs.
