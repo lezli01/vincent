@@ -35,7 +35,12 @@ const (
 	// or that broke the serial-request contract — the attempt fails rather
 	// than wait on a request it can't render (§18).
 	ReasonInputProtocolError = "input_protocol_error"
-	ReasonInternalError      = "internal_error"
+	// ReasonRestrictedUnsupported is a `restricted` step whose adapter cannot
+	// restrict on this platform (§9.4). Distinct from agent_unavailable on
+	// purpose: the CLI is installed and healthy, so "not found" would send
+	// the user to reinstall something that is already there.
+	ReasonRestrictedUnsupported = "restricted_unsupported"
+	ReasonInternalError         = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit

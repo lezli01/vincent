@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
@@ -59,6 +60,7 @@ func newEngineHarness(t *testing.T) *engineHarness {
 		Agents: agent.NewRegistry(
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return fake }),
+			cursor.New(func() string { return fake }),
 		),
 		DataDir: dataDir,
 		Logger:  log,
@@ -718,5 +720,83 @@ steps:
 	}
 	if run.CostUSD != nil {
 		t.Errorf("cost = %v, want nil (codex reports no cost)", *run.CostUSD)
+	}
+}
+
+// TestEngineRunsCursorStep is the third adapter's end-to-end through the real
+// engine: rendered prompt over stdin, cursor's own stream normalized, the
+// resolved triple recorded. Effort is deliberately absent from the workflow —
+// cursor has none (§9.7) — and must stay empty on the recorded run.
+func TestEngineRunsCursorStep(t *testing.T) {
+	h := newEngineHarness(t)
+	task := h.createTask(t, `name: cursor-run
+steps:
+  - id: build
+    type: agent
+    agent: cursor
+    model: claude-sonnet-5-thinking-high
+    max_retries: 0
+    prompt: |
+      Implement {{.Task.Title}} with cursor
+`)
+	h.start(t)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 {
+		t.Fatalf("step runs = %d, want 1: %+v", len(runs), runs)
+	}
+	run := runs[0]
+	if run.State != store.StepSucceeded {
+		t.Fatalf("step = %s (%s), want succeeded", run.State, run.FailureReason)
+	}
+	if run.Agent != "cursor" || run.Model != "claude-sonnet-5-thinking-high" || run.Effort != "" {
+		t.Errorf("resolved triple = %s/%s/%s, want cursor/claude-sonnet-5-thinking-high/(none)",
+			run.Agent, run.Model, run.Effort)
+	}
+	if !strings.Contains(run.ResultSummary, "Implement engine test with cursor") {
+		t.Errorf("result summary %q does not contain the rendered prompt", run.ResultSummary)
+	}
+	if run.InputTokens == nil || *run.InputTokens != 100 {
+		t.Errorf("input tokens = %v, want 100 from the camelCase usage keys", run.InputTokens)
+	}
+	if run.CostUSD != nil {
+		t.Errorf("cost = %v, want nil (cursor reports no cost)", *run.CostUSD)
+	}
+}
+
+// TestEngineRestrictedUnsupportedIsItsOwnReason: a restricted step whose
+// adapter cannot restrict on this platform must not be reported as a missing
+// adapter, or the user reinstalls a CLI that is present and working (§9.4).
+//
+// The capability is forced rather than waited for, so the classification is
+// proven on every OS CI runs and not only on Windows.
+func TestEngineRestrictedUnsupportedIsItsOwnReason(t *testing.T) {
+	t.Cleanup(cursor.SetSandboxAvailable(false))
+	h := newEngineHarness(t)
+	task := h.createTask(t, `name: cursor-restricted
+steps:
+  - id: build
+    type: agent
+    agent: cursor
+    permission_mode: restricted
+    max_retries: 0
+    prompt: do the thing
+`)
+	h.start(t)
+
+	final := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if final.State != store.TaskBlocked {
+		t.Fatalf("task = %s, want blocked — a restricted step must never run unrestricted", final.State)
+	}
+	if final.BlockReason != ReasonRestrictedUnsupported {
+		t.Errorf("block reason = %q, want %q", final.BlockReason, ReasonRestrictedUnsupported)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 || runs[0].FailureReason != ReasonRestrictedUnsupported {
+		t.Errorf("step runs = %+v, want one failed %s", runs, ReasonRestrictedUnsupported)
 	}
 }

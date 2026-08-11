@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 // PermissionMode selects how much autonomy the agent CLI gets (spec §9.4).
@@ -29,6 +30,16 @@ const (
 	SourceCLI     = "cli"     // probed from the installed binary
 	SourceCurated = "curated" // catalog shipped with vincent
 )
+
+// ErrRestrictedUnsupported is returned by Start when the adapter cannot
+// honor PermissionMode Restricted on this platform (spec §9.4). It lives here
+// rather than in an adapter package so the engine can recognize the condition
+// without depending on any implementation.
+//
+// Adapters return it instead of silently downgrading to full-auto: running a
+// step unrestricted because restricting was unavailable inverts the very
+// choice the step made. Cursor on Windows is the one case today (§9.7).
+var ErrRestrictedUnsupported = errors.New("restricted permission mode is unsupported on this platform")
 
 // Adapter is the only surface the daemon consumes to run agents (spec §9.1);
 // adding an agent CLI is one new implementation with zero core changes.
