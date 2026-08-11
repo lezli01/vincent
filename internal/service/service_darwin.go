@@ -74,13 +74,13 @@ func install(ctx context.Context, o Options) error {
 	// Replacing an existing registration: bootout first so bootstrap does not
 	// fail with "service already loaded". Its failure is expected and ignored
 	// when nothing was loaded.
-	_, _ = run(ctx, "launchctl", "bootout", domain()+"/"+LaunchdName)
-	if _, err := run(ctx, "launchctl", "bootstrap", domain(), path); err != nil {
+	_, _ = launchctl(ctx, "bootout", domain()+"/"+LaunchdName)
+	if _, err := launchctl(ctx, "bootstrap", domain(), path); err != nil {
 		return err
 	}
 	// RunAtLoad covers boot; kickstart covers *now*, so install and start are
 	// one step as they are on the other two platforms.
-	if _, err := run(ctx, "launchctl", "kickstart", domain()+"/"+LaunchdName); err != nil {
+	if _, err := launchctl(ctx, "kickstart", domain()+"/"+LaunchdName); err != nil {
 		return err
 	}
 	return nil
@@ -98,7 +98,7 @@ func uninstall(ctx context.Context) error {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return ErrNotInstalled
 	}
-	_, _ = run(ctx, "launchctl", "bootout", domain()+"/"+LaunchdName)
+	_, _ = launchctl(ctx, "bootout", domain()+"/"+LaunchdName)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove plist: %w", err)
 	}
@@ -118,7 +118,7 @@ func query(ctx context.Context) (Status, error) {
 	}
 	// `launchctl print` exits nonzero when the label is not loaded, which is
 	// the answer rather than an error.
-	out, _ := run(ctx, "launchctl", "print", domain()+"/"+LaunchdName)
+	out, _ := launchctl(ctx, "print", domain()+"/"+LaunchdName)
 	st.Running = strings.Contains(out, "state = running")
 	if st.Installed {
 		st.Detail = "launchd user agent"
