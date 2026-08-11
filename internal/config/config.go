@@ -147,7 +147,17 @@ type Config struct {
 	// which is timeouts only (PR V decision).
 	TranscriptMaxBytes ByteSize `yaml:"transcript_max_bytes"`
 	LogLevel           string   `yaml:"log_level"`
-	Agents             Agents   `yaml:"agents"`
+	// Debug records, in every step's transcript, the exact conditions the
+	// step ran under: the resolved agent/model/effort, the permission mode,
+	// the working directory, and the full argv of the process spawned.
+	//
+	// It exists because none of that was visible when a run misbehaved. A
+	// step that asked for permissions gave no way to see it had resolved to
+	// `restricted`, and diagnosing it meant reading the stored snapshot out
+	// of the database. Off by default: argv can carry a prompt, and a
+	// transcript is something people paste into issues.
+	Debug  bool   `yaml:"debug"`
+	Agents Agents `yaml:"agents"`
 }
 
 // Defaults holds fallback step timeouts, applied when a workflow step does

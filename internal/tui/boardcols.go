@@ -10,6 +10,7 @@ const (
 	colPadding     = 2
 	widthID        = 5
 	widthProject   = 14
+	widthWorkflow  = 14
 	widthState     = 18 // fits "! awaiting_input"
 	widthStepShort = 7  // "12/12"
 	widthStepLong  = 18
@@ -20,7 +21,11 @@ const (
 
 // columnSet records which optional columns survived the current width.
 type columnSet struct {
-	project  bool
+	project bool
+	// workflow answers "what is this task actually running", which the step
+	// name alone cannot: "survey" means nothing without knowing it belongs to
+	// docs-update.
+	workflow bool
 	stepName bool
 	cost     bool
 }
@@ -31,6 +36,10 @@ func (s columnSet) fixedWidth() int {
 	count := 4 // id, title, state, elapsed
 	if s.project {
 		total += widthProject
+		count++
+	}
+	if s.workflow {
+		total += widthWorkflow
 		count++
 	}
 	if s.stepName {
@@ -55,17 +64,23 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // proportionally leaves a row of unreadable stubs — a 6-character title
 // tells you nothing. Whole columns are dropped instead, in increasing order
 // of how much you navigate by them: cost, then the step name, then the
-// project. Dropping continues until the title clears its minimum, so the
-// thresholds follow from the widths rather than being second-guessed as
-// constants that can silently disagree with them.
+// workflow, then the project. Dropping continues until the title clears its
+// minimum, so the thresholds follow from the widths rather than being
+// second-guessed as constants that can silently disagree with them.
+//
+// The workflow outranks the step name: "survey" is meaningless without
+// knowing it belongs to docs-update, while the workflow alone still tells you
+// what a task is doing.
 func columnsFor(width int) columnSet {
-	set := columnSet{project: true, stepName: true, cost: true}
+	set := columnSet{project: true, workflow: true, stepName: true, cost: true}
 	for set.titleWidth(width) < minTitle {
 		switch {
 		case set.cost:
 			set.cost = false
 		case set.stepName:
 			set.stepName = false
+		case set.workflow:
+			set.workflow = false
 		case set.project:
 			set.project = false
 		default:
@@ -87,10 +102,13 @@ func boardColumns(width int) ([]table.Column, columnSet) {
 		stepWidth = widthStepLong
 	}
 
-	cols := make([]table.Column, 0, 7)
+	cols := make([]table.Column, 0, 8)
 	cols = append(cols, table.Column{Title: "ID", Width: widthID})
 	if set.project {
 		cols = append(cols, table.Column{Title: "PROJECT", Width: widthProject})
+	}
+	if set.workflow {
+		cols = append(cols, table.Column{Title: "WORKFLOW", Width: widthWorkflow})
 	}
 	cols = append(cols,
 		table.Column{Title: "TITLE", Width: title},

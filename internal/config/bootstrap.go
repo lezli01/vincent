@@ -42,6 +42,12 @@ transcript_max_bytes: 512MB
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
+# Record how every step was actually invoked in its transcript: resolved
+# agent/model/effort, permission mode, working directory, and the full argv.
+# Turn this on when a run does something you cannot explain, then paste the
+# transcript. Off by default because argv includes the rendered prompt.
+debug: false
+
 # Agent CLI locations. An empty path resolves the binary from PATH.
 agents:
   claude:
