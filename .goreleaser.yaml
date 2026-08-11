@@ -1,0 +1,104 @@
+# Release packaging (T4.5, spec §19 M4).
+#
+# Cross-compiled from a single ubuntu runner. modernc.org/sqlite is pure Go
+# and no CGO_ENABLED appears in the magefile or CI, so a three-OS *build*
+# matrix would buy nothing; the per-OS runners in release.yml exist only to
+# smoke-test the artifacts this produces (X decision).
+version: 2
+
+project_name: vincent
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: vincent
+    main: ./cmd/vincent
+    binary: vincent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # The same three symbols the mage Build target injects, so a released
+    # binary and a locally built one answer `vincent version` the same way.
+    ldflags:
+      - -s -w
+      - -X github.com/lezli01/vincent/internal/version.version={{.Version}}
+      - -X github.com/lezli01/vincent/internal/version.commit={{.ShortCommit}}
+      - -X github.com/lezli01/vincent/internal/version.date={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# cmd/fakeagent is deliberately absent: it is test scaffolding compiled by
+# ./... and must never ship in a release archive.
+
+archives:
+  - id: vincent
+    ids: [vincent]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - examples/*.yaml
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Keyless cosign: an OIDC identity from the workflow itself, verifiable
+# without vincent publishing or rotating a key. Authenticode and Apple
+# notarization are recurring certificate costs v1 does not take on — §19's ‡
+# note records that descope, and the README documents the SmartScreen and
+# Gatekeeper prompts a user will therefore meet.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Verifying a download
+
+    ```sh
+    cosign verify-blob checksums.txt \
+      --certificate checksums.txt.pem \
+      --signature checksums.txt.sig \
+      --certificate-identity-regexp 'https://github.com/lezli01/vincent/.*' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    sha256sum -c checksums.txt --ignore-missing
+    ```
+
+    First launch prompts on macOS (Gatekeeper) and Windows (SmartScreen):
+    the binaries carry cosign signatures and build attestations, not OS code
+    signing. See the README for the exact steps, including
+    `xattr -d com.apple.quarantine`.
