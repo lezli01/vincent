@@ -91,6 +91,33 @@ Two things to know about the Cursor adapter specifically:
 A ready-to-copy cursor workflow ships in
 [`examples/cursor-review.yaml`](examples/cursor-review.yaml).
 
+### Command line
+
+`vincent` with no arguments opens the TUI (starting a daemon if none is
+running). The subcommands are thin clients over the same API:
+
+```sh
+vincent daemon start                       # or stop / status
+vincent project add /path/to/repo
+vincent project ls
+vincent task add --project 1 --title "Add a health endpoint"
+vincent task ls --state running
+vincent task show 7
+vincent task cancel 7
+vincent workflow ls
+vincent workflow validate .vincent/workflows/feature-pr.yaml
+```
+
+Every subcommand takes `--json` for scripting. Exit codes are `0` success,
+`1` the daemon answered and rejected the request, and `2` no daemon answered
+— so a script can tell "start the daemon" from "fix your request" without
+parsing stderr. The subcommands never auto-start a daemon; only the TUI does,
+because that is an interactive session you asked for.
+
+`vincent workflow validate` runs entirely locally against the built-in agent
+catalogs — no daemon, no installed agent CLI — which makes it usable from CI
+and pre-commit hooks.
+
 ## Project Status
 
 **Implementation in progress.** The v0 specification is complete and work
@@ -115,8 +142,9 @@ follows the task breakdown:
   is the manual M3 walkthrough on Windows and one POSIX OS.
 - **Phase 4 — polish** (service install, CLI subcommands, retention and
   limits, docs and example workflows, signed release binaries): **in
-  progress**. There are no packaged releases yet, so build from source with
-  the commands below.
+  progress** — the CLI subcommands and the §8.6 resolution endpoint have
+  landed. There are no packaged releases yet, so build from source with the
+  commands below.
 - **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
   dialect, config and registry wiring, windowed/filterable option pickers,
   `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an
