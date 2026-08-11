@@ -38,7 +38,10 @@ func newRootCmd() *cobra.Command {
 			return tui.Run(cmd.Context())
 		},
 	}
-	root.AddCommand(newDaemonCmd(), newVersionCmd())
+	root.AddCommand(
+		newDaemonCmd(), newVersionCmd(),
+		newProjectCmd(), newTaskCmd(), newWorkflowCmd(),
+	)
 	return root
 }
 
