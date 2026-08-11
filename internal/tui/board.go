@@ -637,10 +637,15 @@ func (b *board) agentsSummary() string {
 	}
 	parts := make([]string, 0, len(b.info.Agents))
 	for _, a := range b.info.Agents {
-		if a.Available {
-			parts = append(parts, styleOK.Render(a.Name+" ✓"))
-		} else {
+		switch {
+		case !a.Available:
 			parts = append(parts, styleBad.Render(a.Name+" ✗"))
+		case a.NotAuthenticated():
+			// Present but unable to run a step (§9.5) — the board's one-glance
+			// summary must not read as healthy.
+			parts = append(parts, styleWarn.Render(a.Name+" ⚠"))
+		default:
+			parts = append(parts, styleOK.Render(a.Name+" ✓"))
 		}
 	}
 	return strings.Join(parts, " ")

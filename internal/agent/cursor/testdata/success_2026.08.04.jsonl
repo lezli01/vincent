@@ -1,0 +1,8 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/wt","session_id":"SESSION","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply with exactly the word OK. Do not use any tools."}]},"session_id":"SESSION"}
+{"type":"thinking","subtype":"delta","text":"The user requested the","session_id":"SESSION","timestamp_ms":1786427200353}
+{"type":"thinking","subtype":"delta","text":" exact word \"OK\" without","session_id":"SESSION","timestamp_ms":1786427200357}
+{"type":"thinking","subtype":"delta","text":" using any tools.","session_id":"SESSION","timestamp_ms":1786427200357}
+{"type":"thinking","subtype":"completed","session_id":"SESSION","timestamp_ms":1786427200357}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"session_id":"SESSION"}
+{"type":"result","subtype":"success","duration_ms":2002,"duration_api_ms":2002,"is_error":false,"result":"OK","session_id":"SESSION","request_id":"REQ","usage":{"inputTokens":8274,"outputTokens":39,"cacheReadTokens":8000,"cacheWriteTokens":0}}

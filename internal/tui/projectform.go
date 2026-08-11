@@ -128,7 +128,9 @@ func workingDir() string {
 func (f *projectForm) adding() bool { return f.original == nil }
 
 func (f *projectForm) capturesInput() bool {
-	return f.editing || (f.pick != nil && f.pick.editing)
+	// The picker's filter types as surely as its free-text row does; both must
+	// stand the global single-key bindings down.
+	return f.editing || (f.pick != nil && (f.pick.editing || f.pick.filtering))
 }
 
 // paste types into the row being edited, or into the picker's free-text

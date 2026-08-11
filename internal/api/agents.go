@@ -16,6 +16,7 @@ type agentResponse struct {
 	Path          string         `json:"path,omitempty"`
 	Version       string         `json:"version,omitempty"`
 	SupportsInput bool           `json:"supports_input"`
+	LoggedIn      *bool          `json:"logged_in"` // null = the adapter cannot tell (§9.5)
 	Error         string         `json:"error,omitempty"`
 	Models        []agent.Option `json:"models"`
 	Efforts       []agent.Option `json:"efforts"`
@@ -48,6 +49,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			Path:          e.Availability.Path,
 			Version:       e.Availability.Version,
 			SupportsInput: e.Availability.SupportsInput,
+			LoggedIn:      e.Availability.LoggedIn,
 			Error:         e.Availability.Error,
 			Models:        e.Options.Models,
 			Efforts:       e.Options.Efforts,
