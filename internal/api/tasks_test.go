@@ -439,6 +439,41 @@ func TestTaskListFilters(t *testing.T) {
 	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
 }
 
+// TestTaskDetailCarriesProjectName: the list endpoint has always carried
+// project_name, and the detail endpoint silently did not — so every client's
+// TaskDetail.ProjectName was empty and `vincent task show` printed a blank
+// project. Found by walking the README quickstart (T4.4); asserted on both
+// endpoints so the two cannot drift apart again.
+func TestTaskDetailCarriesProjectName(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	created := h.createTask(t, map[string]any{"title": "named"})
+
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d", created.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("detail: %d %s", resp.StatusCode, body)
+	}
+	var detail taskResponse
+	if err := json.Unmarshal(body, &detail); err != nil {
+		t.Fatalf("detail body: %v", err)
+	}
+	if detail.ProjectName == "" {
+		t.Error("detail project_name is empty; clients cannot name the project without a second request")
+	}
+
+	resp, body = h.doJSON(t, http.MethodGet, "/v1/tasks", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: %d %s", resp.StatusCode, body)
+	}
+	var list []listTaskResponse
+	if err := json.Unmarshal(body, &list); err != nil || len(list) == 0 {
+		t.Fatalf("list body: %v (%d rows)", err, len(list))
+	}
+	if list[0].ProjectName != detail.ProjectName {
+		t.Errorf("list says %q, detail says %q; the two endpoints disagree",
+			list[0].ProjectName, detail.ProjectName)
+	}
+}
+
 func TestTaskDiffWithoutWorktree(t *testing.T) {
 	h := newTaskHarness(t, 0, false)
 	created := h.createTask(t, map[string]any{"title": "not started"})

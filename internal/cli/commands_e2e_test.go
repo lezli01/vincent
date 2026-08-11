@@ -118,7 +118,12 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("task show: code %d, out %q", code, out)
 		}
-		for _, want := range []string{"cli e2e task", "created by the CLI test", created.BranchName} {
+		// The project name is included deliberately: `task show` printed a
+		// blank project row until the detail endpoint learned to carry it
+		// (T4.4 walkthrough finding).
+		for _, want := range []string{
+			"cli e2e task", "created by the CLI test", created.BranchName, filepath.Base(repo),
+		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("task show is missing %q:\n%s", want, out)
 			}
