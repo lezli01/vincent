@@ -8,42 +8,18 @@ free-text notes. When you are done (or done with any one section), tell me and
 I will fold the results into `docs/versions/v0/tasks.md`,
 `docs/versions/v0/m5-gate.md` and the spec, then delete this file.
 
-The four sections left are independent — take them in any order.
+The three sections left are independent — take them in any order.
 
 > **Done: the release tag.** `v0.1.0-rc1`, 2026-08-11,
 > [run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218).
-> Verified and recorded against **T4.5, now closed**. §1 below is the direct
-> beneficiary: the artifacts its clock starts from exist at
-> [the release page](https://github.com/lezli01/vincent/releases/tag/v0.1.0-rc1).
+> Verified and recorded against **T4.5, now closed**.
 
----
-
-## 1. T4.6 — M4 acceptance: fresh machine to first completed task
-
-**Why you:** needs a clean VM per OS with **no Go toolchain** — that is what
-proves the released artifact self-sufficient.
-
-**The clock** starts at downloading the release artifact and stops at the first
-completed task. It **includes** Gatekeeper/SmartScreen friction (vincent's own
-cost) and **excludes** installing and authenticating the agent CLI (a
-documented prerequisite). Target: **under 10 minutes**.
-
-Walkthrough: download → unpack → `vincent project add` → copy an example
-workflow → `vincent task add` → watch it finish. The README quickstart is the
-script; deviating from it is itself a finding.
-
-| OS | Clean VM | Time taken | Under 10 min? | Notes |
-|---|---|---|---|---|
-| Windows 11 |  |  | ☐ yes ☐ no |  |
-| macOS |  |  | ☐ yes ☐ no |  |
-| Linux |  |  | ☐ yes ☐ no |  |
-
-Where the time actually went (this is the useful part — I can only act on
-specifics):
-
-```
-
-```
+> **Done: §1, the M4 acceptance gate.** Clean VM per OS against those
+> artifacts: **Windows 11 5:00, macOS 4:30, Linux 3:35** — all under half the
+> ten-minute budget, no deviations from the README quickstart reported.
+> Folded into **T4.6, now closed** and into spec §19. **M4's acceptance is
+> met.** If you remember where the time actually went, tell me and I will add
+> it — the totals are recorded, the breakdown is the part I can act on.
 
 ---
 
@@ -64,8 +40,22 @@ vincent service status         # must report nothing installed
 | OS | Installed | Survived reboot | Uninstalled cleanly | Notes |
 |---|---|---|---|---|
 | Windows 11 | ☐ | ☐ | ☐ |  |
-| macOS | ☐ | ☐ | ☐ |  |
+| macOS | ✓ | ✓ | ✓ | **folded, 2026-08-11** — three legs clean; the no-CLIs finding fixed and re-verified as T4.15 |
 | Linux | ☐ | ☐ | ☐ |  |
+
+> **macOS: recorded, and your finding was a real defect.** A launchd agent runs
+> with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
+> prefix, no `~/.local/bin` — and §9.5 resolves adapters with `exec.LookPath`,
+> so an installed service could see none of them while the same daemon started
+> by hand saw them all. `service install` now bakes the installing shell's PATH
+> into the plist and the systemd unit, the way it already did for the config
+> and data dirs (**T4.15**). Linux had the same latent bug; Windows cannot be
+> fixed this way — the SCM has no per-service environment — so there
+> `agents.<name>.path` in `config.yaml` stays the answer.
+>
+> **Re-verified by you against a real launchd, 2026-08-11:** an installed
+> service now sees the agent CLIs. T4.15 is closed. T4.1 itself stays open for
+> the Windows and Linux rows.
 
 Linux only — did `loginctl enable-linger` succeed automatically, or did the
 installer print the manual command?

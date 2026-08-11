@@ -129,6 +129,15 @@ machine-wide, so install and uninstall need an elevated prompt (status does
 not); on Linux, surviving logout also needs `loginctl enable-linger`, which
 the installer attempts and otherwise prints for you to run.
 
+The config directory, the data directory **and your `PATH`** are captured at
+install time, because a service does not inherit the shell that installed it —
+and a service manager's own `PATH` contains none of the places agent CLIs
+install to, so without this the daemon would run and report every agent as
+missing. Two things follow: install a CLI somewhere new and you want
+`vincent service install` again to recapture, and on Windows, whose services
+inherit the machine environment instead, point at an agent explicitly with
+`agents.<name>.path` in `config.yaml` if it is not found.
+
 ## Project Status
 
 **Implementation in progress.** The v0 specification is complete and work

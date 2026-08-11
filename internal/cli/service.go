@@ -17,7 +17,11 @@ func newServiceCmd() *cobra.Command {
 			"login and survives reboot: a Windows Service, a launchd user agent, or a\n" +
 			"systemd user unit (§12.1).\n\n" +
 			"The config and data directories in effect at install time are baked into\n" +
-			"the unit, because a service does not inherit the shell that installed it.",
+			"the unit, because a service does not inherit the shell that installed it.\n" +
+			"So is PATH, so the service resolves the same agent CLIs this shell does:\n" +
+			"install again after installing an agent CLI somewhere new. Windows is the\n" +
+			"exception — its services inherit the machine environment, so set\n" +
+			"agents.<name>.path in config.yaml there if an agent is not found.",
 	}
 	cmd.AddCommand(newServiceInstallCmd(), newServiceUninstallCmd(), newServiceStatusCmd())
 	return cmd
