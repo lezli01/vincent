@@ -40,8 +40,13 @@ func ptrValue(p *string) string {
 // taskResponse is the JSON shape of a task (spec §5.3). Optional fields
 // render as null.
 type taskResponse struct {
-	ID             int64             `json:"id"`
-	ProjectID      int64             `json:"project_id"`
+	ID        int64 `json:"id"`
+	ProjectID int64 `json:"project_id"`
+	// ProjectName saves every client the projects join. It lives on the
+	// shared response rather than on the list row because the detail endpoint
+	// needs it too — omitting it there left every client's ProjectName empty
+	// and `vincent task show` printing a blank project (T4.4 finding).
+	ProjectName    string            `json:"project_name,omitempty"`
 	Title          string            `json:"title"`
 	Description    string            `json:"description"`
 	Fields         map[string]string `json:"fields,omitempty"`
@@ -201,8 +206,6 @@ type stepRunResponse struct {
 // steps[], and a rollup there would be a second, redundant answer.
 type listTaskResponse struct {
 	taskResponse
-	// ProjectName saves every client the projects join.
-	ProjectName string `json:"project_name"`
 	// StepName is the current step's name (or id), empty for a task whose
 	// cursor has run past the last step. Distinct from a step row's own
 	// step_name, which names *that* attempt's step.
@@ -483,11 +486,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		summary := s.snaps.get(t.ID, t.WorkflowSnapshot)
 		row := listTaskResponse{
 			taskResponse: toTaskResponse(t, summary),
-			ProjectName:  names[t.ProjectID],
 			StepName:     summary.stepName(t.CurrentStep),
 			InputTokens:  rollups[t.ID].InputTokens,
 			OutputTokens: rollups[t.ID].OutputTokens,
 		}
+		row.ProjectName = names[t.ProjectID]
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
 			row.CostUSD = &cost
@@ -511,6 +514,13 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	resp := toTaskResponse(t, summary)
 	resp.Snapshot = t.WorkflowSnapshot
 	resp.WorkflowSteps = workflowSteps(summary)
+	// The list endpoint has always carried project_name; the detail endpoint
+	// never did, so every client's TaskDetail.ProjectName was silently empty
+	// and `vincent task show` printed a blank project. One row read is cheaper
+	// than making each client join it back (T4.4 walkthrough finding).
+	if p, err := s.deps.Store.GetProject(r.Context(), t.ProjectID); err == nil {
+		resp.ProjectName = p.Name
+	}
 	resp.Steps = make([]stepRunResponse, 0, len(runs))
 	for i := range runs {
 		resp.Steps = append(resp.Steps, toStepRunResponse(&runs[i], summary))
