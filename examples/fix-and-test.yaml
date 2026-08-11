@@ -1,0 +1,61 @@
+# fix-and-test — reproduce a bug with a failing test, then fix it.
+#
+# Two agent steps rather than one, on purpose. Asking a single agent to "fix
+# the bug and add a test" reliably produces a test written to pass against the
+# fix it just made. Splitting the work makes the first step's output — a test
+# that *fails* — a thing the second step has to satisfy.
+#
+# The first step's check is inverted: it succeeds when the test suite fails,
+# because at that point a red test is the deliverable.
+name: fix-and-test
+description: Write a failing test that reproduces a bug, then make it pass.
+
+defaults:
+  agent: claude
+  max_retries: 2
+  timeout: 30m
+
+steps:
+  - id: reproduce
+    type: agent
+    prompt: |
+      Reproduce this bug with a failing test. Do not fix it yet.
+
+      Bug: {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+
+      Add the smallest test that fails because of this bug, in the package
+      where the bug lives, following the testing conventions already in this
+      repository. Change nothing else. When you are done the test suite must
+      fail, and it must fail on your new test.
+    # Inverted deliberately: this step is done when the suite is red.
+    # `!` is understood by bash, cmd and PowerShell 7 alike (§8.3).
+    check: '! go test ./...'
+    check_timeout: 15m
+
+  - id: fix
+    type: agent
+    prompt: |
+      A previous step added a failing test that reproduces this bug:
+
+      {{.Steps.reproduce.Result}}
+
+      Now make it pass. Fix the underlying cause rather than the symptom, and
+      do not weaken, skip or delete the test. Leave the rest of the suite
+      green.
+    check: go test ./...
+    check_timeout: 15m
+
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "fix: {{.Task.Title}}"'
+
+  - id: review
+    type: manual
+    instructions: |
+      Check that the test in task #{{.Task.ID}} genuinely fails without the
+      fix — `git stash` the non-test changes and run it — and that the fix
+      addresses the cause rather than the assertion.

@@ -1,0 +1,57 @@
+# docs-update — bring the documentation back in line with the code.
+#
+# The one workflow here with no build to hide behind: prose has no compiler,
+# so the check is a link/spelling pass and the real gate is a human reading
+# it. That is the honest shape for a docs task rather than pretending a
+# command can judge writing.
+#
+# It also shows `restricted` permission mode. A docs pass has no business
+# running arbitrary commands, and restricting it costs nothing here.
+# Note: cursor cannot honor restricted on Windows and will refuse the step
+# (§9.4) — this workflow names claude explicitly for that reason.
+name: docs-update
+description: Update documentation to match the current code, then have a human read it.
+
+defaults:
+  agent: claude
+  permission_mode: restricted
+  max_retries: 1
+  timeout: 30m
+
+steps:
+  - id: survey
+    type: agent
+    prompt: |
+      Find where this repository's documentation has drifted from its code.
+
+      Scope: {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+
+      Report only. List each drift as a file:line reference with one sentence
+      on what is now wrong. Change nothing yet. If you find nothing, say
+      exactly "No drift found."
+
+  - id: update
+    type: agent
+    prompt: |
+      A survey of documentation drift found:
+
+      {{.Steps.survey.Result}}
+
+      Fix exactly those items. Match the surrounding voice and formatting.
+      Do not restructure, do not add sections nobody asked for, and do not
+      touch code — only documentation.
+
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "docs: {{.Task.Title}}"'
+
+  - id: read
+    type: manual
+    instructions: |
+      Read the diff for task #{{.Task.ID}}. Prose has no compiler: the only
+      check that matters is whether a person who did not write it understands
+      it. Reject if it reads as filler.

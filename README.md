@@ -21,6 +21,7 @@
   <a href="#why-vincent">Why</a> &bull;
   <a href="#what-it-does">What It Does</a> &bull;
   <a href="#install">Install</a> &bull;
+  <a href="#quickstart">Quickstart</a> &bull;
   <a href="#project-status">Status</a> &bull;
   <a href="#build--test">Build &amp; Test</a> &bull;
   <a href="#contributing">Contributing</a> &bull;
@@ -89,8 +90,8 @@ Two things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-A ready-to-copy cursor workflow ships in
-[`examples/cursor-review.yaml`](examples/cursor-review.yaml).
+Four ready-to-copy workflows ship in [`examples/`](examples), and
+[docs/workflows.md](docs/workflows.md) is the authoring guide.
 
 ### Command line
 
@@ -153,8 +154,9 @@ follows the task breakdown:
 - **Phase 4 — polish** (service install, CLI subcommands, retention and
   limits, docs and example workflows, signed release binaries): **in
   progress** — CLI subcommands, retention and limits, service install, the
-  §8.6 resolution endpoint and release packaging have landed. What remains is
-  the workflow authoring guide and the M4 fresh-machine acceptance run.
+  §8.6 resolution endpoint, release packaging, and the docs and example
+  workflows have landed. What remains is the M4 fresh-machine acceptance run
+  and the hand-run service-install matrix.
 - **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
   dialect, config and registry wiring, windowed/filterable option pickers,
   `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an
@@ -208,12 +210,68 @@ cosign verify-blob checksums.txt \
 sha256sum -c checksums.txt --ignore-missing
 ```
 
-Then get going:
+## Quickstart
+
+> [!WARNING]
+> **Agents run full-auto by default: they can execute arbitrary commands as
+> you.** This is the design (spec §16), not an oversight — unattended
+> orchestration is the point. The git worktree isolates tasks from *each
+> other*, not from your machine: an agent can still reach your home
+> directory, your credentials and the network. Nothing is pushed or merged
+> unless a workflow step does it, everything is transcripted, and any step can
+> be set to `permission_mode: restricted`. Run it on repositories you would
+> hand to a new contributor, and read [Security](#security) before pointing it
+> at anything else.
+
+Five minutes, one real task:
+
+**1. Register a repository.** Any git repo with a clean working tree.
 
 ```sh
 vincent project add /path/to/your/repo
-vincent                                    # the TUI; starts the daemon for you
+vincent project ls
 ```
+
+**2. Add a workflow.** Copy one of the shipped examples into the repo, so it
+travels with it:
+
+```sh
+mkdir -p /path/to/your/repo/.vincent/workflows
+cp examples/feature-pr.yaml /path/to/your/repo/.vincent/workflows/
+vincent workflow validate /path/to/your/repo/.vincent/workflows/feature-pr.yaml
+vincent workflow ls --project 1        # project-scoped files need --project
+```
+
+`feature-pr` runs an agent, checks that the result still builds and passes
+tests, stops at a human gate, and pushes only after you approve. The others
+are [`fix-and-test`](examples/fix-and-test.yaml) (write a failing test, then
+fix it), [`docs-update`](examples/docs-update.yaml), and
+[`cursor-review`](examples/cursor-review.yaml).
+
+**3. Run a task.**
+
+```sh
+vincent task add --project 1 --workflow feature-pr \
+  --title "Add a --version flag to the CLI"
+vincent task ls
+```
+
+**4. Watch it, then approve it.**
+
+```sh
+vincent            # the TUI: board, live output, diff, and the gate
+```
+
+The task appears on the board, runs in its own worktree on branch
+`vincent/{id}-{slug}`, and stops at the `review` gate. Read the diff in the
+TUI, press `a` to approve, and the publish step pushes the branch. `q` quits
+the TUI — the daemon and any running task keep going without it.
+
+Everything the TUI does is also a subcommand (`vincent task show 1`,
+`vincent task cancel 1`), and everything either does is the same localhost
+API. To keep the daemon running across reboots, `vincent service install`.
+
+**Next:** [writing your own workflows](docs/workflows.md).
 
 ## Build & Test
 

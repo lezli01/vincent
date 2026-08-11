@@ -1,0 +1,60 @@
+# feature-pr — implement a change, prove it builds, gate it, then publish.
+#
+# The shape most work takes: an agent step that writes code, a check that the
+# agent cannot talk its way past, a human gate, and a publish step that only
+# runs once a person approved.
+#
+# Copy into {config_dir}/workflows/ for every project, or .vincent/workflows/
+# inside one repo (project scope shadows global, §8.1).
+#
+# The publish step assumes a remote named `origin` you can push to. Delete it
+# if you would rather push by hand — everything before it still leaves the
+# work on a branch.
+name: feature-pr
+description: Implement a task on its own branch, verify it, gate it, and push.
+
+defaults:
+  agent: claude
+  max_retries: 2
+  timeout: 45m
+
+steps:
+  - id: implement
+    type: agent
+    prompt: |
+      Implement the following task in this repository.
+
+      Title: {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+      {{with index .Task.Fields "ticket"}}Ticket: {{.}}{{end}}
+
+      Work on the current branch ({{.Task.BranchName}}). Make the smallest
+      change that does the job, follow the conventions already in the code,
+      and add or update tests alongside it. Do not commit — a later step does
+      that.
+    # The check runs after the agent and decides whether the attempt
+    # succeeded (§7.1). An agent that reports success on code that does not
+    # build fails here and retries with the failure block appended to its
+    # prompt (§8.4), which is the point: the build is not negotiable.
+    check: go build ./... && go test ./...
+    check_timeout: 15m
+
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "{{.Task.Title}}"'
+
+  - id: review
+    type: manual
+    instructions: |
+      Review the diff for task #{{.Task.ID}} on branch {{.Task.BranchName}}.
+
+      The agent ran full-auto: everything it did is in the transcript, and
+      `git diff {{.Task.BaseBranch}}...{{.Task.BranchName}}` is the change
+      itself. Approve to push, reject to stop here.
+
+  - id: publish
+    type: command
+    run: git push -u origin {{.Task.BranchName}}
