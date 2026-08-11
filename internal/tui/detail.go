@@ -127,6 +127,12 @@ type detail struct {
 	// first moments of every step.
 	buffer []apiclient.OutputNote
 
+	// level is how much of each record the output pane shows (§15 `v`). It
+	// is set from the shell's session-wide value rather than owned here:
+	// switching attempts or tasks must not silently reset what a reader
+	// chose to look at.
+	level outputLevel
+
 	following bool
 	newLines  int
 	// outputDirty marks the rendered content stale; the pane rebuilds on the
@@ -160,6 +166,7 @@ func newDetail(ctx context.Context) *detail {
 		ctx:       ctx,
 		now:       time.Now,
 		vp:        viewport.New(),
+		level:     levelNormal,
 		following: true,
 		actions:   &actionBar{},
 		diff:      newDiffPane(),
@@ -610,6 +617,12 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "f":
 		d.setFollowing(true)
 		return nil
+	case "v":
+		// Handled here, alongside `d` and `f`, so it works from either focus
+		// within the detail view — the key acts on the output pane, and
+		// having to focus the pane first to change what it shows is a step
+		// nobody would guess at.
+		return d.cycleLevel()
 	}
 
 	// Action keys work from any focus: they act on the task, not on a pane.
@@ -648,6 +661,18 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	d.syncFollowToViewport()
+	return nil
+}
+
+// cycleLevel advances the output pane's verbosity and rebuilds the pane.
+//
+// The level needs no plumbing to outlive a task: the shell builds one detail
+// sub-model at startup and re-points it as the cursor moves, so this field is
+// already session state. Nothing resets it, which is the whole requirement —
+// a reader who asked for verbose keeps it when they open the next task.
+func (d *detail) cycleLevel() tea.Cmd {
+	d.level = d.level.next()
+	d.outputDirty = true
 	return nil
 }
 

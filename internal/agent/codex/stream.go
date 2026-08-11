@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -54,6 +55,33 @@ type execError struct {
 	Message string `json:"message"`
 }
 
+// result describes a completed tool item. `exit_code` and `status` are the
+// two fields the captured shapes carry; an item type that reports neither
+// yields a bare success, because "completed with nothing to say" is what a
+// completion without a failure signal means. Nothing here guesses at fields
+// no capture contains — the same rule that keeps codex reasoning filed as
+// T4.17 rather than implemented blind.
+func (it *execItem) result() agent.ToolResult {
+	var fields struct {
+		ExitCode *int   `json:"exit_code"`
+		Status   string `json:"status"`
+	}
+	res := agent.ToolResult{CallID: it.ID, Name: it.Type}
+	if err := json.Unmarshal(it.raw, &fields); err != nil {
+		return res
+	}
+	if fields.ExitCode != nil {
+		res.Summary = fmt.Sprintf("exit %d", *fields.ExitCode)
+		res.IsError = *fields.ExitCode != 0
+		return res
+	}
+	if fields.Status != "" && fields.Status != "completed" {
+		res.Summary = fields.Status
+		res.IsError = fields.Status == "failed"
+	}
+	return res
+}
+
 // toolItems are the item types surfaced as tool_use when they start —
 // item.started is the moment the agent invokes something, the analog of a
 // claude tool_use content block.
@@ -103,6 +131,15 @@ func (s *stream) parse(raw []byte) agent.Event {
 	case "item.completed":
 		if line.Item == nil {
 			break
+		}
+		if toolItems[line.Item.Type] {
+			// The completion of a tool item is its outcome, correlated to
+			// the item.started that opened it by the shared item id (T4.16).
+			return agent.Event{
+				Type:    agent.EventToolResult,
+				Results: []agent.ToolResult{line.Item.result()},
+				Raw:     raw,
+			}
 		}
 		switch line.Item.Type {
 		case "agent_message":

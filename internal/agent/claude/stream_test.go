@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -128,5 +129,127 @@ func TestParseLine(t *testing.T) {
 			}
 			tt.want(t, ev)
 		})
+	}
+}
+
+// TestParseThinkingAndToolResultsFixture runs a captured permission-mode run
+// and asserts on the two shapes the parser ignored through M4 (T4.16). Both
+// were in this fixture the whole time.
+func TestParseThinkingAndToolResultsFixture(t *testing.T) {
+	events, _ := fixtureEvents(t, "stream_permission_allow_2.1.226.jsonl")
+
+	var thinking []agent.Event
+	var results []agent.ToolResult
+	for _, ev := range events {
+		switch ev.Type {
+		case agent.EventThinking:
+			thinking = append(thinking, ev)
+		case agent.EventToolResult:
+			results = append(results, ev.Results...)
+		}
+	}
+
+	if len(thinking) == 0 {
+		t.Fatal("no thinking events: claude's reasoning blocks are in this capture and were dropped")
+	}
+	for _, ev := range thinking {
+		if ev.Text == "" {
+			t.Error("thinking event with no text")
+		}
+		// The block also carries `signature`, an opaque attestation blob.
+		// It is not text and must never reach a pane.
+		if strings.Contains(ev.Text, "signature") || strings.Contains(ev.Text, "EucCCpMB") {
+			t.Errorf("thinking text carries the signature blob: %q", ev.Text)
+		}
+	}
+
+	if len(results) == 0 {
+		t.Fatal("no tool results: claude replays them on `user` lines and they were dropped")
+	}
+	// The captured Write reports where it wrote, and correlates back to the
+	// tool_use block by id rather than by position.
+	var found bool
+	for _, r := range results {
+		if r.CallID != "toolu_01PSqBeA6sKydYaELf8NTXHH" {
+			continue
+		}
+		found = true
+		if r.IsError {
+			t.Errorf("Write result marked an error: %+v", r)
+		}
+		if !strings.Contains(r.Summary, "File created successfully") {
+			t.Errorf("summary = %q, want the tool's reported outcome", r.Summary)
+		}
+	}
+	if !found {
+		t.Errorf("no result correlated to the Write call; got %+v", results)
+	}
+}
+
+// TestToolResultSummaryShapes covers claude sending a tool_result's content
+// as either a bare string or an array of blocks, which varies by tool.
+func TestToolResultSummaryShapes(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			name: "string content",
+			line: `{"type":"user","message":{"content":[{"type":"tool_result",` +
+				`"tool_use_id":"t1","content":"wrote 3 lines"}]}}`,
+			want: "wrote 3 lines",
+		},
+		{
+			name: "block array content",
+			line: `{"type":"user","message":{"content":[{"type":"tool_result",` +
+				`"tool_use_id":"t1","content":[{"type":"text","text":"first"},` +
+				`{"type":"text","text":"second"}]}]}}`,
+			want: "first second",
+		},
+		{
+			// Neither shape: no guess, and the outcome still renders from
+			// its error flag alone.
+			name: "unrecognized content",
+			line: `{"type":"user","message":{"content":[{"type":"tool_result",` +
+				`"tool_use_id":"t1","content":{"weird":true}}]}}`,
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := parseLine([]byte(tc.line))
+			if ev.Type != agent.EventToolResult || len(ev.Results) != 1 {
+				t.Fatalf("got %q with %d results, want one tool_result", ev.Type, len(ev.Results))
+			}
+			if ev.Results[0].Summary != tc.want {
+				t.Errorf("summary = %q, want %q", ev.Results[0].Summary, tc.want)
+			}
+		})
+	}
+}
+
+// TestUserLineWithoutToolResultsStaysUnknown guards the other `user` line
+// claude sends — the replayed prompt — from becoming an empty result event.
+func TestUserLineWithoutToolResultsStaysUnknown(t *testing.T) {
+	line := `{"type":"user","message":{"content":[{"type":"text","text":"do the thing"}]}}`
+	if ev := parseLine([]byte(line)); ev.Type != agent.EventUnknown {
+		t.Errorf("type = %q, want unknown for a user line carrying no tool results", ev.Type)
+	}
+}
+
+// TestErrorToolResultIsFlagged pins that a denied or failed tool surfaces as
+// an error rather than a quiet outcome — the §7.4 deny path produces exactly
+// this line.
+func TestErrorToolResultIsFlagged(t *testing.T) {
+	line := `{"type":"user","message":{"content":[{"type":"tool_result",` +
+		`"content":"no user is available; permission denied","is_error":true,` +
+		`"tool_use_id":"toolu_01NfZSDqXQKXwt59MWGhoqgw"}]}}`
+	ev := parseLine([]byte(line))
+	if ev.Type != agent.EventToolResult || len(ev.Results) != 1 {
+		t.Fatalf("got %q, want a tool_result", ev.Type)
+	}
+	if !ev.Results[0].IsError {
+		t.Errorf("result = %+v, want IsError", ev.Results[0])
 	}
 }

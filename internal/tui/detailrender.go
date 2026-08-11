@@ -139,7 +139,15 @@ func (d *detail) outputTitle() string {
 		}
 		return strip
 	}
-	return strip + d.followIndicator()
+	// The level rides in the title rather than only in the footer: `v` is
+	// the one key here whose effect can be invisible — pressing it on a run
+	// with no reasoning and no unrecognized lines changes nothing on screen,
+	// and a reader needs to see that the key did something.
+	level := ""
+	if d.level != levelNormal {
+		level = styleDim.Render(" · " + d.level.String())
+	}
+	return strip + level + d.followIndicator()
 }
 
 // detailHints are the view's own keys, shown beside the task's actions so the
@@ -399,72 +407,143 @@ func (d *detail) outputEmptyState() (string, bool) {
 	}
 }
 
-// outputLines renders the normalized records. Consecutive unparsed lines
-// collapse into a count: a dialect vincent does not model must not be able to
-// drown the output a human is reading.
+// outputLines renders the normalized records into wrapped pane lines.
+//
+// Two rules shape the result beyond the per-record rendering. Consecutive
+// unrecognized lines collapse into a count — a dialect vincent does not model
+// must not be able to drown the output a human is reading — and `v` expands
+// them rather than leaving the count a dead end. And an assistant message
+// that follows anything else gets a blank line before it, which is what
+// separates one turn from the next without spending a column on it.
 func (d *detail) outputLines() []string {
+	width := max(d.width, 1)
 	lines := make([]string, 0, len(d.records)+1)
 	if d.truncated {
-		lines = append(lines, styleDim.Render("  … earlier output truncated"))
+		lines = append(lines, styleDim.Render(gutterNone+"… earlier output truncated"))
 	}
+	// sawOutput drives the T4.16 result de-duplication: every dialect's
+	// result text repeats assistant messages already on screen — cursor's is
+	// the whole turn concatenated — so the final record shows its outcome
+	// alone, unless nothing else ever rendered.
+	var sawOutput, lastWasOutput bool
 	rawRun := 0
 	flushRaw := func() {
-		if rawRun > 0 {
-			lines = append(lines, styleDim.Render(
-				fmt.Sprintf("  … %d unparsed line(s)", rawRun)))
-			rawRun = 0
+		if rawRun == 0 {
+			return
 		}
+		lines = append(lines, styleDim.Render(
+			fmt.Sprintf("%s… %d unrecognized line(s) (v)", gutterNone, rawRun)))
+		rawRun = 0
 	}
 	for _, rec := range d.records {
 		if rec.Type == "agent.raw" {
+			if d.level == levelVerbose {
+				flushRaw()
+				lines = append(lines, wrapLine(paneLine{
+					gutter:      gutterNone,
+					gutterStyle: styleDim,
+					segs:        []segment{{text: rec.Line, style: styleDim}},
+				}, width)...)
+				lastWasOutput = false
+				continue
+			}
 			rawRun++
 			continue
 		}
 		flushRaw()
-		if line, ok := renderRecord(rec); ok {
-			lines = append(lines, line)
+		if rec.Type == "agent.thinking" {
+			if block := thinkingBlock(rec.Text, d.level, width); len(block) > 0 {
+				lines = append(lines, block...)
+				lastWasOutput = false
+			}
+			continue
 		}
+		pl, ok := d.renderRecord(rec, sawOutput)
+		if !ok {
+			continue
+		}
+		if pl.isOutput {
+			if !lastWasOutput && len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			sawOutput = true
+		}
+		lines = append(lines, wrapLine(pl, width)...)
+		lastWasOutput = pl.isOutput
 	}
 	flushRaw()
 	return lines
 }
 
-// renderRecord maps one normalized record to a display line. A record with
+// renderRecord maps one normalized record to a pane line. A record with
 // nothing a reader wants mid-tail reports ok=false: agent.usage is the whole
-// point of that rule, since the timeline row already carries its numbers.
-func renderRecord(rec apiclient.TranscriptRecord) (string, bool) {
+// point of that rule, since the timeline row already carries its numbers —
+// though levelVerbose does show it, adapter-native payload and all, because
+// that level means "show me the machine".
+func (d *detail) renderRecord(rec apiclient.TranscriptRecord, sawOutput bool) (paneLine, bool) {
 	switch rec.Type {
 	case "agent.output":
-		return rec.Text, rec.Text != ""
+		return plain(rec.Text, lipgloss.NewStyle(), true), rec.Text != ""
 	case "agent.tool_use":
 		if len(rec.Tools) == 0 {
-			return "", false
+			return paneLine{}, false
 		}
-		return toolUseLine(rec.Tools), true
+		return toolUsePane(rec.Tools), true
+	case "agent.tool_result":
+		if len(rec.Results) == 0 {
+			return paneLine{}, false
+		}
+		// One record can report several outcomes; the first owns the line
+		// and the rest are rare enough to share it rather than earn rows.
+		return toolResultLine(rec.Results[0]), true
 	case "agent.usage":
-		return "", false
+		if d.level != levelVerbose {
+			return paneLine{}, false
+		}
+		return plain(string(rec.Raw), styleDim, false), len(rec.Raw) > 0
 	case "agent.error":
-		return styleBad.Render("✗ " + rec.Message), true
+		return marked("✗ ", rec.Message, styleBad), true
 	case "agent.result":
-		return renderResult(rec), true
+		return renderResult(rec, sawOutput), true
 	case "command.output", "vincent.output":
 		if rec.Stream == "stderr" {
-			return styleStderr.Render(rec.Text), true
+			return plain(rec.Text, styleStderr, false), true
 		}
-		return rec.Text, true
+		return plain(rec.Text, lipgloss.NewStyle(), false), true
 	case "vincent.command_started":
-		return styleDim.Render("$ " + fieldOf(rec.Raw, "command")), true
+		return marked("$ ", fieldOf(rec.Raw, "command"), styleDim), true
 	case "vincent.input_request":
-		return styleAsk.Render("? " + firstNonEmpty(rec.Summary, rec.Kind, "input requested")), true
+		return marked("? ", firstNonEmpty(rec.Summary, rec.Kind, "input requested"), styleAsk), true
 	case "vincent.input_response":
-		return styleAsk.Render("✓ answered"), true
+		return marked("✓ ", "answered", styleAsk), true
 	case "vincent.input_timeout", "vincent.input_protocol_error", "vincent.error":
-		return styleBad.Render("✗ " + firstNonEmpty(rec.Message, fieldOf(rec.Raw, "error"), rec.Type)), true
+		return marked("✗ ",
+			firstNonEmpty(rec.Message, fieldOf(rec.Raw, "error"), rec.Type), styleBad), true
 	default:
 		if strings.HasPrefix(rec.Type, "vincent.") {
-			return styleDim.Render("· " + strings.TrimPrefix(rec.Type, "vincent.")), true
+			return marked("· ", strings.TrimPrefix(rec.Type, "vincent."), styleDim), true
 		}
-		return "", false
+		return paneLine{}, false
+	}
+}
+
+// plain is a record with the blank gutter: assistant prose and command
+// output, which sit flush against the pane's edge.
+func plain(text string, style lipgloss.Style, isOutput bool) paneLine {
+	return paneLine{
+		gutter:      gutterNone,
+		gutterStyle: style,
+		segs:        []segment{{text: text, style: style}},
+		isOutput:    isOutput,
+	}
+}
+
+// marked is a record whose two-column gutter is a glyph in its own style.
+func marked(glyph, text string, style lipgloss.Style) paneLine {
+	return paneLine{
+		gutter:      glyph,
+		gutterStyle: style,
+		segs:        []segment{{text: text, style: style}},
 	}
 }
 
@@ -473,31 +552,54 @@ func renderRecord(rec apiclient.TranscriptRecord) (string, bool) {
 // what it ran it on and is dimmed, so a column of tool calls scans by name
 // while still saying what each one touched. A tool whose arguments yielded
 // no subject renders exactly as it did before T4.14 — its bare name.
-func toolUseLine(tools []apiclient.TranscriptTool) string {
-	parts := make([]string, 0, len(tools))
+// toolUsePane lays out tool invocations as name plus subject. The name is
+// what the agent chose to run and stays in the tool color; the subject is
+// what it ran it on and is dimmed, so a column of tool calls scans by name
+// while still saying what each one touched. A tool whose arguments yielded no
+// subject renders exactly as it did before T4.14 — its bare name.
+func toolUsePane(tools []apiclient.TranscriptTool) paneLine {
+	segs := make([]segment, 0, len(tools)*3)
 	for i, t := range tools {
-		// The marker joins the first name inside one Render so the rendered
-		// line contains "▸ Edit" as contiguous text: a style boundary
-		// between them would put an escape sequence mid-phrase, which is
-		// invisible to a reader and fatal to a substring assertion.
-		name := t.Name
-		if i == 0 {
-			name = "▸ " + name
+		if i > 0 {
+			segs = append(segs, segment{text: ", ", style: styleDim})
 		}
-		part := styleTool.Render(name)
+		segs = append(segs, segment{text: t.Name, style: styleTool})
 		if t.Summary != "" {
-			part += " " + styleDim.Render(t.Summary)
+			segs = append(segs, segment{text: " " + t.Summary, style: styleDim})
 		}
-		parts = append(parts, part)
 	}
-	return strings.Join(parts, styleDim.Render(", "))
+	return paneLine{
+		gutter:      gutterTool,
+		gutterStyle: styleTool,
+		segs:        segs,
+	}
 }
 
-func renderResult(rec apiclient.TranscriptRecord) string {
+// renderResult renders the terminal record. On success it shows the outcome
+// and nothing else: every dialect's result text repeats assistant messages
+// already on screen — cursor's is the entire turn concatenated — so printing
+// it again is the same words twice. The text is kept when nothing else
+// rendered, which is what a codex turn with no agent_message looks like, and
+// always on error, where it is the error and may be the only content there is.
+func renderResult(rec apiclient.TranscriptRecord, sawOutput bool) paneLine {
 	if rec.IsError {
-		return styleBad.Render("✗ " + firstNonEmpty(rec.Message, rec.ResultText, "run failed"))
+		return marked("✗ ", firstNonEmpty(rec.Message, rec.ResultText, "run failed"), styleBad)
 	}
-	return styleOK.Render("✓ " + firstNonEmpty(rec.ResultText, "run finished"))
+	if !sawOutput {
+		return marked("✓ ", firstNonEmpty(rec.ResultText, "run finished"), styleOK)
+	}
+	return marked("✓ ", resultOutcome(rec), styleOK)
+}
+
+// resultOutcome is the one-line summary that replaces a repeated result text.
+// Tokens are deliberately absent — the attempt's own timeline row already
+// carries them, and the point of this line is to stop saying things twice.
+// Cost is here because it is reported nowhere else in this view.
+func resultOutcome(rec apiclient.TranscriptRecord) string {
+	if rec.CostUSD != nil {
+		return fmt.Sprintf("done · %s", formatCost(rec.CostUSD))
+	}
+	return "done"
 }
 
 // fieldOf reads one string field out of a record's raw JSON — the annotation

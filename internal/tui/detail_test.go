@@ -285,12 +285,21 @@ func TestDetailOutputRendering(t *testing.T) {
 	got := strings.Join(d.outputLines(), "\n")
 	for _, want := range []string{
 		"reading token.go", "▸ Edit", "internal/auth/token.go",
-		"… 2 unparsed line(s)", "boom",
-		"? Which colour?", "✓ all done",
+		"… 2 unrecognized line(s)", "boom",
+		"? Which colour?",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
+	}
+	// T4.16: the result's text repeats an assistant message already on
+	// screen — cursor's is the whole turn — so a succeeding run reports its
+	// outcome instead of saying the same words twice.
+	if strings.Contains(got, "all done") {
+		t.Errorf("result text repeated after the assistant message:\n%s", got)
+	}
+	if !strings.Contains(got, "✓ done") {
+		t.Errorf("no outcome line for the finished run:\n%s", got)
 	}
 	if strings.Contains(got, `"raw"`) {
 		t.Errorf("usage payload rendered into the tail:\n%s", got)

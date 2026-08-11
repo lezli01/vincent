@@ -88,15 +88,27 @@ type normalizedLine struct {
 	// command run, the file edited — has nowhere else to ride. Nothing
 	// durable broke in the change: normalized transcripts are computed from
 	// the raw file on every read and never stored (§13.2).
-	Tools        []toolLine `json:"tools,omitempty"`
-	Message      string     `json:"message,omitempty"`
-	Raw          string     `json:"raw,omitempty"`
-	Line         string     `json:"line,omitempty"`
-	ResultText   string     `json:"result_text,omitempty"`
-	IsError      bool       `json:"is_error,omitempty"`
-	InputTokens  int64      `json:"input_tokens,omitempty"`
-	OutputTokens int64      `json:"output_tokens,omitempty"`
-	CostUSD      *float64   `json:"cost_usd,omitempty"`
+	Tools []toolLine `json:"tools,omitempty"`
+	// Results carries an agent.tool_result record's outcomes (T4.16).
+	Results      []resultLine `json:"results,omitempty"`
+	Message      string       `json:"message,omitempty"`
+	Raw          string       `json:"raw,omitempty"`
+	Line         string       `json:"line,omitempty"`
+	ResultText   string       `json:"result_text,omitempty"`
+	IsError      bool         `json:"is_error,omitempty"`
+	InputTokens  int64        `json:"input_tokens,omitempty"`
+	OutputTokens int64        `json:"output_tokens,omitempty"`
+	CostUSD      *float64     `json:"cost_usd,omitempty"`
+}
+
+// resultLine reports one tool invocation's outcome. It never carries the
+// tool's output body — that is in the transcript, and a single grep result
+// would otherwise drown the pane (§13.2, T4.16).
+type resultLine struct {
+	CallID  string `json:"call_id,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
 }
 
 // toolLine names one tool invocation inside an agent.tool_use record.
@@ -114,6 +126,17 @@ func toolLines(tools []agent.ToolUse) []toolLine {
 	out := make([]toolLine, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, toolLine{Name: t.Name, Summary: t.Summary, CallID: t.CallID})
+	}
+	return out
+}
+
+// resultLines maps normalized tool results onto their wire shape.
+func resultLines(results []agent.ToolResult) []resultLine {
+	out := make([]resultLine, 0, len(results))
+	for _, r := range results {
+		out = append(out, resultLine{
+			CallID: r.CallID, Name: r.Name, Summary: r.Summary, IsError: r.IsError,
+		})
 	}
 	return out
 }
@@ -149,6 +172,10 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 		return normalizedLine{Type: "agent.output", Text: ev.Text}
 	case agent.EventToolUse:
 		return normalizedLine{Type: "agent.tool_use", Tools: toolLines(ev.Tools)}
+	case agent.EventToolResult:
+		return normalizedLine{Type: "agent.tool_result", Results: resultLines(ev.Results)}
+	case agent.EventThinking:
+		return normalizedLine{Type: "agent.thinking", Text: ev.Text}
 	case agent.EventUsage:
 		return normalizedLine{Type: "agent.usage", Raw: string(ev.Raw)}
 	case agent.EventError:
