@@ -893,7 +893,7 @@ One Go binary, `vincent`:
 | `vincent` | Launches the TUI; auto-starts the daemon in the background if unreachable |
 | `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers) |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
-| `vincent service install / uninstall` | Registers OS-native autostart: Windows Service, launchd agent, systemd user unit |
+| `vincent service install / uninstall / status` | Registers OS-native autostart: Windows Service, launchd agent, systemd user unit |
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
@@ -901,6 +901,35 @@ One Go binary, `vincent`:
 
 Single-instance enforcement: a lock file in the data dir; a second daemon exits with a
 pointer to the running instance.
+
+**Service registration** (T4.1) is per-user on every platform, because the OS
+user is the trust boundary (§16) and the daemon reads that user's config and
+writes that user's data dir:
+
+- **launchd** — a LaunchAgent in `~/Library/LaunchAgents`, not a root
+  LaunchDaemon. `KeepAlive` is conditional on a *non*-clean exit: a daemon
+  that exits 0 was asked to stop, and relaunching it would make
+  `vincent daemon stop` impossible. The same reasoning makes the systemd unit
+  `Restart=on-failure` rather than `always`.
+- **systemd** — a user unit in `~/.config/systemd/user`. Surviving logout
+  additionally needs `loginctl enable-linger`, which the installer attempts
+  and, on failure, reports as the exact command to run: the service is
+  installed and running either way, so this is a warning, not a failed
+  install.
+- **Windows** — the SCM is machine-wide and has no per-user equivalent, so
+  install and uninstall require elevation and say so. Reporting *status* does
+  not: it opens the SCM with `SC_MANAGER_CONNECT` and the service with
+  `SERVICE_QUERY_STATUS`, so an ordinary prompt can always ask what is
+  installed. `vincent daemon` detects `svc.IsWindowsService()` and speaks the
+  SCM's control protocol when started as a service — without it the SCM kills
+  the process after ~30 s with error 1053. The Stop handler cancels the very
+  context the daemon already drains, so §12.4's shutdown is not reimplemented.
+
+**The config and data directories in effect at install time are written into
+the unit.** A service does not inherit the shell that installed it, so
+`VINCENT_CONFIG_DIR`/`VINCENT_DATA_DIR` overrides would otherwise apply to the
+CLI and not to the service, and the two would silently use different
+databases.
 
 ### 12.2 Directories (platform-native)
 

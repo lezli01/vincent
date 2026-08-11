@@ -28,7 +28,12 @@ func newDaemonCmd() *cobra.Command {
 		Use:   "daemon",
 		Short: "Run the vincent daemon in the foreground",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return daemon.Run(cmd.Context(), daemon.Options{Foreground: true})
+			// RunManaged is Run everywhere but Windows, where it speaks the
+			// SCM's control protocol when the process was started as a
+			// service (§12.1). Foreground stays true: under a service manager
+			// stderr is captured by the manager's own log, and losing it
+			// there would make a failed service start undiagnosable.
+			return daemon.RunManaged(cmd.Context(), daemon.Options{Foreground: true})
 		},
 	}
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
