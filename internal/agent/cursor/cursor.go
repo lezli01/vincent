@@ -272,6 +272,9 @@ func (r *run) readLoop(sc *bufio.Scanner) {
 	defer close(r.readerDone)
 	defer close(r.events)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
+	// One parser per run: thinking deltas are accumulated across lines, so
+	// the state belongs to this stream and nothing else (§9.7).
+	parse := (&stream{}).parse
 	for sc.Scan() {
 		line := make([]byte, len(sc.Bytes()))
 		copy(line, sc.Bytes())

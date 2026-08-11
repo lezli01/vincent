@@ -298,3 +298,65 @@ func TestNormalizeUnknownEventKeepsLine(t *testing.T) {
 		t.Errorf("input lines not preserved: %s", out.String())
 	}
 }
+
+// TestNormalizeThinkingAndToolResults covers the two record types T4.16 added
+// (§13.2). Both come out of a captured claude run: the reasoning blocks and
+// the tool_result lines were in the stream all along and normalized to
+// agent.raw.
+func TestNormalizeThinkingAndToolResults(t *testing.T) {
+	lines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"thinking",` +
+			`"thinking":"The user wants hello.txt.","signature":"EucCCpMBCBAY"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_01",` +
+			`"name":"Write","input":{"file_path":"hello.txt","content":"hi"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01",` +
+			`"content":"File created successfully at: hello.txt"}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_02",` +
+			`"content":"permission denied","is_error":true}]}}`,
+	}
+	var buf bytes.Buffer
+	parser := claude.New(func() string { return "" }).NewLineParser()
+	if err := normalizeTranscript(&buf, strings.NewReader(strings.Join(lines, "\n")+"\n"), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	out := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	if len(out) != len(lines) {
+		t.Fatalf("got %d normalized lines, want %d:\n%s", len(out), len(lines), buf.String())
+	}
+
+	types := make([]string, len(out))
+	for i, l := range out {
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(l), &probe); err != nil {
+			t.Fatalf("line %d is not JSON: %v", i, err)
+		}
+		types[i] = probe.Type
+	}
+	want := []string{"agent.thinking", "agent.tool_use", "agent.tool_result", "agent.tool_result"}
+	for i := range want {
+		if types[i] != want[i] {
+			t.Errorf("line %d type = %q, want %q", i, types[i], want[i])
+		}
+	}
+
+	// The reasoning text rides on `text`, like assistant output — and the
+	// signature blob, which is an attestation rather than prose, does not.
+	if !strings.Contains(out[0], `"text":"The user wants hello.txt."`) {
+		t.Errorf("thinking text lost: %s", out[0])
+	}
+	if strings.Contains(out[0], "EucCCpMBCBAY") {
+		t.Errorf("signature blob reached the wire: %s", out[0])
+	}
+
+	// A result correlates to its call and says what happened; the failed one
+	// is flagged rather than reading as a quiet success.
+	if !strings.Contains(out[2], `"call_id":"toolu_01"`) ||
+		!strings.Contains(out[2], "File created successfully") {
+		t.Errorf("tool result not normalized: %s", out[2])
+	}
+	if !strings.Contains(out[3], `"is_error":true`) {
+		t.Errorf("failed tool result not flagged: %s", out[3])
+	}
+}

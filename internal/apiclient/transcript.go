@@ -28,6 +28,8 @@ type TranscriptRecord struct {
 	// vincent.output.
 	Text  string           `json:"text"`
 	Tools []TranscriptTool `json:"tools"`
+	// Results carries an agent.tool_result record's outcomes.
+	Results []TranscriptToolResult `json:"results"`
 	// Phase and Stream tag command output: which command produced it (the
 	// step's own or its check) and whether it came from stdout or stderr.
 	Phase  string `json:"phase"`
@@ -42,6 +44,12 @@ type TranscriptRecord struct {
 	Line       string `json:"line"`
 	ResultText string `json:"result_text"`
 	IsError    bool   `json:"is_error"`
+	// Usage as the terminal agent.result reported it. Zero means unreported,
+	// which is different from zero tokens; CostUSD is nil for the adapters
+	// that report no cost at all (codex, cursor).
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
+	CostUSD      *float64 `json:"cost_usd"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
@@ -56,6 +64,16 @@ type TranscriptTool struct {
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
 	CallID  string `json:"call_id"`
+}
+
+// TranscriptToolResult is one tool invocation's outcome. Summary says what
+// happened in a few words ("exit 0", "+1 −0"); it is never the tool's output
+// body, which stays in the transcript where a reader can page through it.
+type TranscriptToolResult struct {
+	CallID  string `json:"call_id"`
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+	IsError bool   `json:"is_error"`
 }
 
 // TranscriptOptions selects a byte range of one attempt's transcript. Offset

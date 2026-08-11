@@ -552,6 +552,18 @@ func (r *Runner) publishAgentEvent(taskID, runID, offset int64, ev agent.Event) 
 	case agent.EventToolUse:
 		r.publishOutput(taskID, runID, offset, "agent.tool_use",
 			map[string]any{"tools": toolChunks(ev.Tools)})
+	case agent.EventToolResult:
+		r.publishOutput(taskID, runID, offset, "agent.tool_result",
+			map[string]any{"results": resultChunks(ev.Results)})
+	case agent.EventThinking:
+		// Thinking goes live like everything else (T4.16). §9.7 held it back
+		// when it meant one chunk per token; coalescing removed that, and a
+		// record that appears only after a step finishes reads as output that
+		// went missing while the step was running.
+		if ev.Text == "" {
+			return
+		}
+		r.publishOutput(taskID, runID, offset, "agent.thinking", map[string]any{"text": ev.Text})
 	case agent.EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
 		r.publishOutput(taskID, runID, offset, "agent.usage", map[string]any{"raw": string(ev.Raw)})
@@ -575,6 +587,27 @@ func toolChunks(tools []agent.ToolUse) []map[string]string {
 		}
 		if t.CallID != "" {
 			chunk["call_id"] = t.CallID
+		}
+		out = append(out, chunk)
+	}
+	return out
+}
+
+// resultChunks maps tool results onto the §13.3 live-chunk shape, matching
+// what api.normalizeLine writes for the same event.
+func resultChunks(results []agent.ToolResult) []map[string]any {
+	out := make([]map[string]any, 0, len(results))
+	for _, r := range results {
+		chunk := map[string]any{}
+		for k, v := range map[string]string{
+			"call_id": r.CallID, "name": r.Name, "summary": r.Summary,
+		} {
+			if v != "" {
+				chunk[k] = v
+			}
+		}
+		if r.IsError {
+			chunk["is_error"] = true
 		}
 		out = append(out, chunk)
 	}

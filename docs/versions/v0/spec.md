@@ -586,6 +586,14 @@ type ToolUse struct {                // T4.14
     CallID  string // correlates with the ToolResult reporting this call's outcome
 }
 
+type ToolResult struct {             // T4.16
+    CallID  string // the ToolUse this reports on
+    Name    string // when the dialect repeats it; "" is normal
+    Summary string // the outcome in a few words: "exit 0", "+1 −0" — never the
+                   // tool's output body, which stays in the transcript
+    IsError bool   // "known to have failed", never "assumed fine"
+}
+
 type RunResult struct {
     ExitCode     int
     ResultText   string   // agent's final answer/summary
@@ -621,6 +629,35 @@ absent key costs nothing, and the summary is flattened to one line and capped
 at the adapter so no client needs its own guard. `CallID` exists because
 claude batches parallel tool calls (T4.8) — "the result below the call is that
 call's result" is false exactly when an agent is doing several things at once.
+
+**Reasoning and outcomes (T4.16).** Two event types join the normalized
+stream, and both were reconstructible from streams vincent was already
+recording and discarding:
+
+- **`ToolResult`** reports what an invocation *did*. Claude replays results on
+  `user` lines as `tool_result` blocks, codex closes a tool item with
+  `item.completed`, cursor with `tool_call/completed` — all three fell through
+  to `agent.raw`, so a tool call was never followed by its outcome. The event
+  carries an **outcome only**, capped at the adapter: the tool's output body
+  can be hundreds of lines, and the transcript already holds it verbatim.
+- **`Thinking`** carries the model's reasoning. Adapters emit it only for
+  **whole blocks**; a dialect that streams token-level deltas coalesces them
+  itself and emits when the block closes. See the §9.7 amendment for why that
+  constraint is the part of the original decision worth keeping.
+
+Both ride the live stream *and* scrollback. A record that appeared only after
+a step finished would read as output that went missing while it was running,
+and the two mappings — `taskrun.publishAgentEvent` for §13.3 chunks,
+`api.normalizeLine` for §13.2 records — are kept in agreement deliberately,
+because a client renders both through one path.
+
+An adapter that cannot produce one of these stays silent rather than
+approximating it: codex reasoning items are **not** normalized, because no
+capture of one exists and the repo's convention is table-driven tests against
+captured real-CLI output. Implementing a documented-but-unobserved shape fails
+*silently* if it is wrong — the reasoning simply never appears, and nothing
+distinguishes that from a model that did not reason. Filed as T4.17, blocked
+on a capture.
 
 **Scored against a third adapter (§9.7, M5):** the claim held for the daemon,
 the API, and the engine — cursor is one package plus registry wiring. It did
@@ -811,13 +848,40 @@ would invalidate every one of them.
   `assistant` → `tool_call/{started,completed}` → `result/{success,error}`.
   - `assistant` messages arrive whole (content blocks), not as deltas, and
     normalize to `output`.
-  - `thinking` events normalize to `unknown` — transcripted verbatim, never
+  - ~~`thinking` events normalize to `unknown` — transcripted verbatim, never
     surfaced live. They are token-level deltas; a live tail of reasoning
-    fragments buries the assistant text it exists to show.
+    fragments buries the assistant text it exists to show.~~
+    **Amended 2026-08-11 (T4.16).** Reasoning is now surfaced, coalesced. The
+    original decision was right about cursor's *shape* and wrong to generalize
+    from it: claude delivers thinking as whole blocks and never had the
+    fragment problem, so a rule written against `thinking/delta` was
+    suppressing reasoning for an adapter that does not stream deltas at all —
+    and it was captured on disk, in this repo's own fixtures, and shown to
+    nobody. What the decision actually protected survives as a constraint on
+    the **interface** rather than a ban on the feature: `EventThinking` is
+    emitted for whole blocks only, so this parser accumulates `delta` lines
+    and emits one event at `completed`. Two costs, both accepted and both
+    pinned by tests. `Event.Raw` gains a documented exception — a coalesced
+    block's Raw is the line that *closed* it, while its Text came from the
+    deltas before it, which keeps transcript offsets correct because the
+    closing line is the one just written. And a run killed mid-block loses the
+    buffer, which is the right trade for reasoning text. The swallowed delta
+    lines still normalize to `unknown`: they are genuinely unmodeled lines,
+    and a reader who asks to see raw lines should see them.
   - `tool_call` carries the tool as the **object key** (`editToolCall`,
     `shellToolCall`), not a `name` field; the `ToolCall` suffix is stripped
     for the normalized name (`edit`, `shell`). `started` is the tool_use
-    event, mirroring codex's `item.started`.
+    event, mirroring codex's `item.started`, and `completed` is the
+    **tool_result** (T4.16) — never a second tool_use, which would
+    double-count every call. Its outcome keys on the *presence* of
+    `result.success`: present is a success carrying its detail (an edit's
+    `linesAdded`/`linesRemoved` render as `+1 −0`, which says something the
+    invocation line did not), absent is a failure with **no detail at all**.
+    No capture of a failed cursor tool call exists — the fixture's `completed`
+    payloads are reconstructed, because the capture machine had a user-level
+    hook that rejected every call — so keying on presence is correct in both
+    directions today and degrades to a true statement rather than a silent
+    hole, where a guessed failure shape would not.
   - Usage keys are camelCase (`inputTokens`, `outputTokens`, plus
     `cacheReadTokens`/`cacheWriteTokens` which vincent does not record);
     **`CostUSD` is nil** — cursor reports no cost.
@@ -1164,6 +1228,12 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         every read and never stored, and live chunks are
                                         ephemeral — so the handler and the one in-tree client
                                         moved together rather than carrying two shapes.
+                                        **T4.16** adds two record types: `agent.thinking`
+                                        (`text`) and `agent.tool_result`
+                                        (`results: [{call_id, name, summary, is_error}]`).
+                                        Because normalization is re-run on read, enriching a
+                                        parser improves transcripts **already on disk** — the
+                                        reasoning in a run recorded last week renders today.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
 
@@ -1201,6 +1271,7 @@ Two kinds of streams:
    history unasked; state catch-up is a REST snapshot, then the stream.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
+   `agent.tool_result`, `agent.thinking` (T4.16),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -1409,6 +1480,33 @@ Below **60×15** it renders the size it has and the size it needs, and nothing
 else. A layout that silently becomes illegible is worse than one that says so, and
 a floor is testable where "looks cramped" is not.
 
+**The output pane's line model (T4.16).** Every record renders as a two-column
+**gutter** plus its content: assistant prose gets a blank gutter and sits flush
+left, reasoning is `· `, a tool call `▸ `, and its outcome is indented under it
+with `✓ `/`✗ `. What the agent *says* is unmarked and what it *does* is glyphed
+— a scheme a monochrome terminal or an SSH session loses nothing to, which
+colour alone would not survive. An assistant message following anything else
+gets a blank line before it, which is what separates one turn from the next
+without spending a column on it. There are **no timestamps**: on an 80-column
+pane they would cost nine columns of every line to answer a question the
+timeline panel already answers per attempt.
+
+The pane **wraps its own lines**, with a hanging indent the width of the
+gutter, rather than setting the viewport's soft wrap. Two reasons, and the
+first is a defect this fixes: the viewport never enabled wrapping at all, so a
+paragraph of assistant text was **clipped at the pane width** and the rest was
+unreachable. Soft wrap would fix the clipping and fold every continuation to
+column 0, where a wrapped line of reasoning is indistinguishable from assistant
+prose — destroying the one distinction the gutter exists to make. Plain text is
+wrapped first and each resulting line styled after, so no ANSI-aware wrapping
+is involved and no escape sequence is ever split by a break.
+
+A run's terminal `agent.result` shows its **outcome**, not its text: every
+dialect's result text repeats assistant messages already on screen, and
+cursor's is the entire turn concatenated. The text is kept when the attempt
+rendered no output at all — a codex turn with no `agent_message` — and always
+on an error, where it is the error and may be the only content there is.
+
 Views 3–6 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are for
@@ -1456,7 +1554,14 @@ live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 Panel-local: `/` filters **whichever list has focus** — tasks, projects, workflows
 — so one key means one thing everywhere. `enter` opens or expands. `[`/`]` switch
 the output pane's tabs (`d` kept as an alias). `f`/`G` re-arm follow on a live
-tail or the daemon log. `e` opens `$EDITOR` where a view has a file to edit. `R`
+tail or the daemon log. `v` cycles how much of the output pane's records show —
+compact → normal → verbose (T4.16): reasoning is hidden, truncated to its first
+lines, then whole, and unrecognized lines expand out from behind their count at
+verbose. One key rather than a toggle per record type, because "show me more" is
+one intention; the level is **session state**, so switching task does not reset
+what a reader chose to see, and the pane's title names any level but the default
+— `v` is the one key here whose effect can be invisible, on a run that has no
+reasoning and nothing unrecognized. `e` opens `$EDITOR` where a view has a file to edit. `R`
 re-reads a registry or the daemon blocks. One key jumps to the next task needing a
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
