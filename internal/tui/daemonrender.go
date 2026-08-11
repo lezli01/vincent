@@ -105,8 +105,13 @@ func (d *daemonView) adapterLines() []string {
 	}
 	for _, a := range d.info.Agents {
 		mark := styleOK.Render("✓")
-		if !a.Available {
+		switch {
+		case !a.Available:
 			mark = styleBad.Render("✗")
+		case a.NotAuthenticated():
+			// A tick beside "not logged in" would contradict itself: the
+			// binary is there, the adapter still cannot run a step.
+			mark = styleWarn.Render("⚠")
 		}
 		row := "   " + mark + " " + a.Name
 		switch {
@@ -120,6 +125,9 @@ func (d *daemonView) adapterLines() []string {
 			}
 			if a.Path != "" {
 				row += "  " + styleDim.Render(a.Path)
+			}
+			if a.NotAuthenticated() {
+				row += "  " + styleBad.Render("not logged in")
 			}
 			if !a.SupportsInput {
 				row += "  " + styleWarn.Render("no interactive input")

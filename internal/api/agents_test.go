@@ -50,6 +50,65 @@ func newAgentsServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
+// TestAgentsReportLoggedIn pins the three states of the §9.5 field. The
+// distinction is the point of adding it: null means the adapter cannot tell,
+// which is normal, while false means installed-and-doomed — a state that was
+// previously indistinguishable from healthy.
+func TestAgentsReportLoggedIn(t *testing.T) {
+	fake := agenttest.BuildFakeAgent(t)
+	probe := func(t *testing.T) []agentResponse {
+		t.Helper()
+		reg := agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			cursor.New(func() string { return fake }),
+		)
+		s := New(Deps{
+			Token: testToken, Config: config.Default, StartedAt: time.Now(),
+			ListenAddr: "127.0.0.1:0", RequestStop: func() {},
+			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Catalog: agent.NewCatalogCache(reg),
+		})
+		ts := httptest.NewServer(s.Handler())
+		t.Cleanup(ts.Close)
+		resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("agents: %d %s", resp.StatusCode, body)
+		}
+		var out struct {
+			Agents []agentResponse `json:"agents"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("agents body: %v", err)
+		}
+		if len(out.Agents) != 2 {
+			t.Fatalf("agents = %d, want claude and cursor", len(out.Agents))
+		}
+		return out.Agents
+	}
+
+	t.Run("logged in", func(t *testing.T) {
+		agents := probe(t)
+		if agents[0].LoggedIn != nil {
+			t.Errorf("claude logged_in = %v, want null — it has no cheap probe (§9.5)", *agents[0].LoggedIn)
+		}
+		if agents[1].LoggedIn == nil || !*agents[1].LoggedIn {
+			t.Errorf("cursor logged_in = %v, want a definite true", agents[1].LoggedIn)
+		}
+	})
+
+	t.Run("logged out", func(t *testing.T) {
+		t.Setenv("FAKEAGENT_CURSOR_LOGGED_OUT", "1")
+		agents := probe(t)
+		cu := agents[1]
+		if !cu.Available {
+			t.Error("cursor available = false; a logged-out CLI is still installed")
+		}
+		if cu.LoggedIn == nil || *cu.LoggedIn {
+			t.Errorf("cursor logged_in = %v, want a definite false", cu.LoggedIn)
+		}
+	})
+}
+
 // postValidate POSTs a workflow to /v1/workflows/validate.
 func postValidate(t *testing.T, ts *httptest.Server, yaml string) validateResponse {
 	t.Helper()
