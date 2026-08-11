@@ -120,14 +120,18 @@ func (d *daemonView) adapterLines() []string {
 		case !a.Available:
 			row += "  " + styleBad.Render("not found")
 		default:
+			// The blocking condition leads: rows carry absolute binary paths
+			// and elide to the pane width, so anything after the path is the
+			// first thing lost on a narrow terminal. "not logged in" means
+			// every step will fail and must not be what gets cut.
+			if a.NotAuthenticated() {
+				row += "  " + styleBad.Render("not logged in")
+			}
 			if a.Version != "" {
 				row += "  " + styleDim.Render(a.Version)
 			}
 			if a.Path != "" {
 				row += "  " + styleDim.Render(a.Path)
-			}
-			if a.NotAuthenticated() {
-				row += "  " + styleBad.Render("not logged in")
 			}
 			if !a.SupportsInput {
 				row += "  " + styleWarn.Render("no interactive input")
