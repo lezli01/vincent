@@ -29,46 +29,95 @@ type pickerOption struct {
 // row is an opaque identifier the owning form gives back to itself when a
 // value is chosen — an ntRow in the new-task flow, a pfRow in the project
 // form — so the picker itself stays ignorant of either row set.
+// pickerWindow bounds how many option rows are drawn at once.
+//
+// Through v1 every catalog fit on a screen — claude ships 3 models, codex
+// none — so the list was drawn whole. Cursor's catalog is ~180 models (§9.7),
+// which would push the rest of the form, the hints and the error line off the
+// terminal. The window is fixed rather than derived from the terminal height
+// because the picker is embedded in a form with rows above and below it: a
+// full-height list would be wrong even on a tall terminal.
+const pickerWindow = 10
+
 type picker struct {
 	row       int
 	heading   string
 	options   []pickerOption
-	cursor    int
+	cursor    int // index into matches, not into options
+	top       int // first visible match; the window scrolls to follow cursor
 	allowFree bool
 	input     textinput.Model
 	editing   bool
+	// filter narrows the list incrementally. matches holds the indices of
+	// options passing it, so the full catalog is never mutated and clearing
+	// the filter is free.
+	filter    textinput.Model
+	filtering bool
+	matches   []int
 	err       string
 }
 
 func newPicker(row int, heading string, options []pickerOption, allowFree bool, current string) *picker {
 	in := textinput.New()
 	in.Placeholder = "type a value"
-	p := &picker{row: row, heading: heading, options: options, allowFree: allowFree, input: in}
-	for i, o := range options {
-		if o.value == current {
+	fl := textinput.New()
+	fl.Placeholder = "filter"
+	p := &picker{row: row, heading: heading, options: options, allowFree: allowFree, input: in, filter: fl}
+	p.applyFilter()
+	for i, idx := range p.matches {
+		if options[idx].value == current {
 			p.cursor = i
 			break
 		}
 	}
+	p.scrollToCursor()
 	return p
+}
+
+// applyFilter recomputes matches from the filter text, case-insensitively
+// over both the label and the note — a user hunting "sonnet" and one hunting
+// "curated" are both searching what they can see.
+func (p *picker) applyFilter() {
+	q := strings.ToLower(strings.TrimSpace(p.filter.Value()))
+	p.matches = p.matches[:0]
+	for i, o := range p.options {
+		if q == "" || strings.Contains(strings.ToLower(o.label), q) ||
+			strings.Contains(strings.ToLower(o.note), q) {
+			p.matches = append(p.matches, i)
+		}
+	}
+	p.cursor = min(p.cursor, max(p.rowCount()-1, 0))
+	p.scrollToCursor()
+}
+
+// scrollToCursor keeps the cursor inside the window, moving it the least
+// distance needed.
+func (p *picker) scrollToCursor() {
+	if p.cursor < p.top {
+		p.top = p.cursor
+	}
+	if p.cursor >= p.top+pickerWindow {
+		p.top = p.cursor - pickerWindow + 1
+	}
+	p.top = max(p.top, 0)
 }
 
 // rowCount includes the free-text row when there is one.
 func (p *picker) rowCount() int {
 	if p.allowFree {
-		return len(p.options) + 1
+		return len(p.matches) + 1
 	}
-	return len(p.options)
+	return len(p.matches)
 }
 
-func (p *picker) onFreeRow() bool { return p.allowFree && p.cursor == len(p.options) }
+func (p *picker) onFreeRow() bool { return p.allowFree && p.cursor == len(p.matches) }
 
 // current is the option under the cursor, if the cursor is on one.
 func (p *picker) current() (pickerOption, bool) {
-	if p.cursor < 0 || p.cursor >= len(p.options) {
+	if p.cursor < 0 || p.cursor >= len(p.matches) {
 		return pickerOption{}, false
 	}
-	return p.options[p.cursor], true
+	return p.options[p.matches[p.cursor]], true
 }
 
 // pickerResult reports what a keystroke did to the picker.
@@ -109,15 +158,40 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 		p.input, cmd = p.input.Update(msg)
 		return pickerResult{cmd: cmd}
 	}
+	if p.filtering {
+		switch msg.String() {
+		case "enter":
+			// Accept the narrowing and go back to navigating it; the text
+			// stays visible so it is obvious the list is a subset.
+			p.filtering = false
+			p.filter.Blur()
+			return pickerResult{}
+		case "esc":
+			p.filtering = false
+			p.filter.Blur()
+			p.filter.SetValue("")
+			p.applyFilter()
+			return pickerResult{}
+		}
+		var cmd tea.Cmd
+		p.filter, cmd = p.filter.Update(msg)
+		p.applyFilter()
+		return pickerResult{cmd: cmd}
+	}
 	switch msg.String() {
 	case "up", "k":
 		if p.cursor > 0 {
 			p.cursor--
+			p.scrollToCursor()
 		}
 	case "down", "j":
 		if p.cursor < p.rowCount()-1 {
 			p.cursor++
+			p.scrollToCursor()
 		}
+	case "/":
+		p.filtering = true
+		p.filter.Focus()
 	case "e":
 		if p.allowFree {
 			p.startFree()
@@ -137,6 +211,14 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 		}
 		return pickerResult{value: opt.value, chosen: true, closed: true}
 	case "esc":
+		// A narrowed list clears back to the whole catalog first; only an
+		// already-whole list closes. Otherwise escaping a typo'd filter costs
+		// the whole selection.
+		if p.filter.Value() != "" {
+			p.filter.SetValue("")
+			p.applyFilter()
+			return pickerResult{}
+		}
 		return pickerResult{closed: true}
 	}
 	return pickerResult{}
@@ -146,10 +228,22 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 // error. Whatever explanatory lines a particular row deserves are the owning
 // form's business, appended after this.
 func (p *picker) renderBody() []string {
-	out := []string{styleDim.Render("    " + p.heading + ":")}
-	for i, opt := range p.options {
+	heading := "    " + p.heading + ":"
+	if q := p.filter.Value(); q != "" {
+		heading += fmt.Sprintf("  (%d of %d match %q)", len(p.matches), len(p.options), q)
+	}
+	out := []string{styleDim.Render(heading)}
+	if p.filtering {
+		out = append(out, "      "+p.filter.View())
+	}
+	end := min(p.top+pickerWindow, len(p.matches))
+	if p.top > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ▲ %d more", p.top)))
+	}
+	for i := p.top; i < end; i++ {
+		opt := p.options[p.matches[i]]
 		marker := "  "
-		if i == p.cursor && !p.editing {
+		if i == p.cursor && !p.editing && !p.filtering {
 			marker = styleFocus.Render("▸ ")
 		}
 		label := opt.label
@@ -165,6 +259,14 @@ func (p *picker) renderBody() []string {
 		}
 		out = append(out, line)
 	}
+	if rest := len(p.matches) - end; rest > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ▼ %d more", rest)))
+	}
+	if len(p.matches) == 0 && p.filter.Value() != "" {
+		out = append(out, styleDim.Render("    nothing matches — esc clears the filter"))
+	}
+	// The free-text row survives filtering on purpose: the likeliest reason a
+	// catalog has no match is that the value is newer than the catalog (§9.6).
 	if p.allowFree {
 		marker := "  "
 		if p.onFreeRow() && !p.editing {
@@ -183,7 +285,9 @@ func (p *picker) renderBody() []string {
 
 func (p *picker) startFree() {
 	p.editing = true
-	p.cursor = len(p.options)
+	p.filtering = false
+	p.filter.Blur()
+	p.cursor = len(p.matches)
 	p.input.SetValue("")
 	p.input.Focus()
 }
@@ -310,6 +414,11 @@ func (n *newTask) agentOptions() []pickerOption {
 		switch {
 		case !a.Available:
 			opt.note = "⚠ unavailable: " + firstNonEmpty(a.Error, "not found")
+		case a.NotAuthenticated():
+			// Installed and probing clean, but every run would fail at the
+			// API — a distinct sentence from "not found" because the fix is
+			// different (§9.5).
+			opt.note = "⚠ installed but not logged in"
 		case a.Version != "":
 			opt.note = a.Version
 		}

@@ -12,7 +12,18 @@ type AgentStatus struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
-	Error         string `json:"error,omitempty"`
+	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5). Renderers
+	// must distinguish nil from false: "unknown" is the normal state for
+	// claude and codex, while false means every run will fail at the API.
+	LoggedIn *bool  `json:"logged_in"`
+	Error    string `json:"error,omitempty"`
+}
+
+// NotAuthenticated reports an adapter that is installed and probes cleanly
+// but will fail every run for lack of a login. It is deliberately false when
+// LoggedIn is nil: an adapter that cannot answer must never be accused.
+func (a AgentStatus) NotAuthenticated() bool {
+	return a.Available && a.LoggedIn != nil && !*a.LoggedIn
 }
 
 // Info is the GET /v1/info body: the daemon's own identity, its global cap

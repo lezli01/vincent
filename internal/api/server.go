@@ -74,7 +74,12 @@ type AgentStatus struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
-	Error         string `json:"error,omitempty"`
+	// LoggedIn is null where the adapter has no cheap authentication probe
+	// (claude, codex) and a definite boolean where it has one (cursor). The
+	// distinction carries weight: an installed-but-unauthenticated CLI probes
+	// as available and then fails every run (spec §9.5).
+	LoggedIn *bool  `json:"logged_in"`
+	Error    string `json:"error,omitempty"`
 }
 
 // Server is the vincent HTTP API server.
@@ -227,6 +232,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 				Path:          e.Availability.Path,
 				Version:       e.Availability.Version,
 				SupportsInput: e.Availability.SupportsInput,
+				LoggedIn:      e.Availability.LoggedIn,
 				Error:         e.Availability.Error,
 			})
 		}
