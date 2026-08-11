@@ -20,6 +20,7 @@
 <p align="center">
   <a href="#why-vincent">Why</a> &bull;
   <a href="#what-it-does">What It Does</a> &bull;
+  <a href="#install">Install</a> &bull;
   <a href="#project-status">Status</a> &bull;
   <a href="#build--test">Build &amp; Test</a> &bull;
   <a href="#contributing">Contributing</a> &bull;
@@ -151,9 +152,9 @@ follows the task breakdown:
   is the manual M3 walkthrough on Windows and one POSIX OS.
 - **Phase 4 — polish** (service install, CLI subcommands, retention and
   limits, docs and example workflows, signed release binaries): **in
-  progress** — the CLI subcommands and the §8.6 resolution endpoint have
-  landed. There are no packaged releases yet, so build from source with the
-  commands below.
+  progress** — CLI subcommands, retention and limits, service install, the
+  §8.6 resolution endpoint and release packaging have landed. What remains is
+  the workflow authoring guide and the M4 fresh-machine acceptance run.
 - **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
   dialect, config and registry wiring, windowed/filterable option pickers,
   `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an
@@ -166,6 +167,53 @@ See [docs/versions/v0/spec.md](docs/versions/v0/spec.md) for the product and
 implementation spec, and
 [docs/versions/v0/tasks.md](docs/versions/v0/tasks.md) for the task breakdown
 and progress.
+
+## Install
+
+Download the archive for your platform from the
+[latest release](https://github.com/lezli01/vincent/releases/latest), unpack
+it, and put `vincent` somewhere on your `PATH`. There is nothing else to
+install — the binary is self-contained, with no runtime, no CGO and no
+database server.
+
+```sh
+# macOS (Apple silicon) / Linux — adjust the asset name for your platform
+tar -xzf vincent_*_darwin_arm64.tar.gz
+sudo mv vincent /usr/local/bin/
+vincent version
+```
+
+On Windows, unzip the archive and move `vincent.exe` somewhere on your `PATH`.
+
+**First launch will be flagged.** Releases carry cosign signatures, checksums
+and GitHub build attestations, but not OS code signing — Authenticode and
+Apple notarization are recurring certificate costs this project does not take
+on. So:
+
+- **macOS** shows "cannot be opened because it is from an unidentified
+  developer". Clear the quarantine attribute once:
+  ```sh
+  xattr -d com.apple.quarantine /usr/local/bin/vincent
+  ```
+- **Windows** shows a SmartScreen prompt: *More info → Run anyway*.
+
+To verify a download instead of trusting it:
+
+```sh
+cosign verify-blob checksums.txt \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/lezli01/vincent/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c checksums.txt --ignore-missing
+```
+
+Then get going:
+
+```sh
+vincent project add /path/to/your/repo
+vincent                                    # the TUI; starts the daemon for you
+```
 
 ## Build & Test
 
