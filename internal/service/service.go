@@ -54,6 +54,11 @@ type Options struct {
 	Exe string
 	// Dirs are the config and data directories baked into the unit.
 	Dirs config.Dirs
+	// Path is the PATH the service runs with. Empty captures the PATH in
+	// effect at install time — see resolve. Ignored on Windows, where the SCM
+	// has no per-service environment and a service inherits the machine
+	// environment instead (T4.15).
+	Path string
 }
 
 // resolve fills in defaults and returns an absolute executable path.
@@ -63,6 +68,15 @@ type Options struct {
 // set in a terminal would silently not apply and the service would quietly
 // use a different database than the CLI. Writing the resolved paths into the
 // unit makes "install now" mean "run with the directories I am using now".
+//
+// PATH is captured for the same reason, found the same way (T4.15, macOS
+// service leg): a launchd agent runs with launchd's own minimal PATH and a
+// systemd user unit with systemd's, neither of which contains Homebrew, npm
+// globals, or `~/.local/bin` — so every agent CLI resolved by exec.LookPath
+// went missing the moment the daemon was managed rather than started by hand,
+// and the TUI reported no adapters at all. The shell that runs `service
+// install` has the PATH that works; baking it in is what "install this
+// binary, as it runs now" already meant for the dirs.
 func (o Options) resolve() (Options, error) {
 	if o.Exe == "" {
 		exe, err := os.Executable()
@@ -82,6 +96,9 @@ func (o Options) resolve() (Options, error) {
 		if o.Dirs.Data == "" {
 			o.Dirs.Data = dirs.Data
 		}
+	}
+	if o.Path == "" {
+		o.Path = os.Getenv("PATH")
 	}
 	return o, nil
 }

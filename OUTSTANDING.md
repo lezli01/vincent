@@ -40,8 +40,26 @@ vincent service status         # must report nothing installed
 | OS | Installed | Survived reboot | Uninstalled cleanly | Notes |
 |---|---|---|---|---|
 | Windows 11 | ☐ | ☐ | ☐ |  |
-| macOS | ☐ | ☐ | ☐ |  |
+| macOS | ✓ | ✓ | ✓ | **folded, 2026-08-11** — three legs clean; the no-CLIs finding is fixed as T4.15, re-check below |
 | Linux | ☐ | ☐ | ☐ |  |
+
+> **macOS: recorded, and your finding was a real defect.** A launchd agent runs
+> with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
+> prefix, no `~/.local/bin` — and §9.5 resolves adapters with `exec.LookPath`,
+> so an installed service could see none of them while the same daemon started
+> by hand saw them all. `service install` now bakes the installing shell's PATH
+> into the plist and the systemd unit, the way it already did for the config
+> and data dirs (**T4.15**, fixed and tested). Linux had the same latent bug;
+> Windows cannot be fixed this way — the SCM has no per-service environment —
+> so there `agents.<name>.path` in `config.yaml` stays the answer.
+>
+> **One re-check owed, on a build with the fix** (only a real launchd can show
+> it): `vincent service install`, then open the TUI and confirm the daemon view
+> lists claude and codex as found.
+>
+> - Adapters visible under the installed service: ☐ yes ☐ no
+>
+> T4.1 itself stays open for the Windows and Linux rows.
 
 Linux only — did `loginctl enable-linger` succeed automatically, or did the
 installer print the manual command?
