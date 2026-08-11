@@ -26,8 +26,8 @@ type TranscriptRecord struct {
 	Type string `json:"type"`
 	// Text is the human-readable line of agent.output, command.output and
 	// vincent.output.
-	Text  string   `json:"text"`
-	Tools []string `json:"tools"`
+	Text  string           `json:"text"`
+	Tools []TranscriptTool `json:"tools"`
 	// Phase and Stream tag command output: which command produced it (the
 	// step's own or its check) and whether it came from stdout or stderr.
 	Phase  string `json:"phase"`
@@ -45,6 +45,17 @@ type TranscriptRecord struct {
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
+}
+
+// TranscriptTool is one tool invocation inside an agent.tool_use record.
+// Summary is the call's subject — the command run, the file edited — and is
+// empty when the dialect's arguments carried nothing recognizable. CallID
+// correlates the call with the agent.tool_result reporting its outcome; it
+// is what makes that pairing correct when an agent runs tools in parallel.
+type TranscriptTool struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+	CallID  string `json:"call_id"`
 }
 
 // TranscriptOptions selects a byte range of one attempt's transcript. Offset

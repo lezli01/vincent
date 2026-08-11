@@ -128,7 +128,16 @@ type EventType string
 const (
 	EventOutput  EventType = "output"
 	EventToolUse EventType = "tool_use"
-	EventUsage   EventType = "usage"
+	// EventToolResult reports what a tool invocation did (T4.16). It carries
+	// an outcome, not the tool's output — see ToolResult.
+	EventToolResult EventType = "tool_result"
+	// EventThinking carries the model's reasoning text (T4.16). It is
+	// emitted only for whole reasoning blocks: a dialect that streams
+	// token-level deltas coalesces them itself rather than emitting one
+	// event per fragment, so a live tail is never a stream of half-words
+	// (spec §9.7, amended).
+	EventThinking EventType = "thinking"
+	EventUsage    EventType = "usage"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -154,17 +163,53 @@ type LineParser func(raw []byte) Event
 // Event is one normalized agent stream event.
 type Event struct {
 	Type    EventType
-	Text    string        // EventOutput: assistant text
+	Text    string        // EventOutput: assistant text; EventThinking: reasoning text
 	Tools   []ToolUse     // tools invoked in this event
+	Results []ToolResult  // EventToolResult: outcomes reported by this line
 	Request *InputRequest // EventInputRequest
 	Result  *RunResult    // EventResult
 	Message string        // EventError: what went wrong
-	Raw     []byte        // verbatim stream line — transcripts write this
+	// Raw is the verbatim stream line, which transcripts write. The one
+	// exception is a coalesced EventThinking: its Text was accumulated
+	// across earlier delta lines, so Raw is the line that closed the block
+	// rather than the line the text came from (spec §9.7). Nothing downstream
+	// pairs Text with Raw, and offsets stay correct because the closing line
+	// is the one that had just been written.
+	Raw []byte
 }
 
 // ToolUse is one tool invocation surfaced by the agent.
 type ToolUse struct {
 	Name string
+	// Summary is the invocation's subject — the command run, the file
+	// edited — extracted from the dialect's arguments by ToolSummary
+	// (T4.14). Empty when the payload carried nothing recognizable, which
+	// is not an error: a name alone is what the pane rendered before.
+	Summary string
+	// CallID correlates this invocation with the ToolResult that reports its
+	// outcome (claude `tool_use_id`, cursor `toolCallId`, codex `item.id`).
+	// Position cannot substitute: claude batches parallel tool calls (T4.8),
+	// so the result following a call is routinely not that call's.
+	CallID string
+}
+
+// ToolResult reports the outcome of one ToolUse (T4.16). It carries an
+// outcome, never the tool's output body — a single grep result can be
+// hundreds of lines, and the transcript already holds it verbatim.
+type ToolResult struct {
+	// CallID matches the ToolUse this reports on; empty when the dialect
+	// gave no id, in which case a client can only render it standalone.
+	CallID string
+	// Name is the tool, when the dialect repeats it on the result. Empty is
+	// normal — claude names the tool only on the call.
+	Name string
+	// Summary is the outcome in a few words: "exit 0", "created (+1 −0)",
+	// the first line of the result text.
+	Summary string
+	// IsError reports a failed invocation. A dialect that says nothing about
+	// success reports false — the flag means "known to have failed", never
+	// "assumed fine".
+	IsError bool
 }
 
 // InputRequest is a normalized mid-run input request (spec §7.4, §9.1); at

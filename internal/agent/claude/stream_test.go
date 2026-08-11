@@ -31,6 +31,27 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 		{
+			// Verbatim from testdata/stream_permission_allow_2.1.226.jsonl:
+			// the subject and the id claude actually sends (T4.14). `content`
+			// is deliberately not the summary — the preference list picks the
+			// file being written, not the bytes going into it.
+			name: "tool_use carries its subject and id",
+			line: `{"type":"assistant","message":{"content":[{"type":"tool_use",` +
+				`"id":"toolu_01PSqBeA6sKydYaELf8NTXHH","name":"Write",` +
+				`"input":{"file_path":"C:\\work\\repo\\hello.txt","content":"hi"},` +
+				`"caller":{"type":"direct"}}]}}`,
+			want: func(t *testing.T, ev agent.Event) {
+				if ev.Type != agent.EventToolUse || len(ev.Tools) != 1 {
+					t.Fatalf("got %q tools=%v, want one tool_use", ev.Type, ev.Tools)
+				}
+				tu := ev.Tools[0]
+				if tu.Name != "Write" || tu.Summary != `C:\work\repo\hello.txt` ||
+					tu.CallID != "toolu_01PSqBeA6sKydYaELf8NTXHH" {
+					t.Errorf("tool = %+v, want Write on the written path with its id", tu)
+				}
+			},
+		},
+		{
 			name: "mixed content is output with tools attached",
 			line: `{"type":"assistant","message":{"content":[{"type":"text","text":"editing"},{"type":"tool_use","name":"Write"}]}}`,
 			want: func(t *testing.T, ev agent.Event) {

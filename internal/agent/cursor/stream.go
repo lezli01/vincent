@@ -26,9 +26,14 @@ type streamLine struct {
 	// `{"shellToolCall":{…}}` — rather than by a name field, so it is decoded
 	// as a map and the key is the name.
 	ToolCall map[string]json.RawMessage `json:"tool_call"`
-	IsError  bool                       `json:"is_error"` // type=result
-	Result   string                     `json:"result"`   // type=result
-	Usage    *struct {
+	// CallID is the line-level id shared by a tool_call's started and
+	// completed events, which is what correlates a result with its call
+	// (T4.14). The payload repeats it as `toolCallId`; the line-level field
+	// is preferred because it is present on both subtypes at the same depth.
+	CallID  string `json:"call_id"`
+	IsError bool   `json:"is_error"` // type=result
+	Result  string `json:"result"`   // type=result
+	Usage   *struct {
 		InputTokens  int64 `json:"inputTokens"`
 		OutputTokens int64 `json:"outputTokens"`
 		// cacheReadTokens/cacheWriteTokens are reported and deliberately not
@@ -63,11 +68,15 @@ func parse(raw []byte) agent.Event {
 		// a claude tool_use block and of codex's item.started. `completed`
 		// carries the result and would double-count the invocation.
 		if line.Subtype == "started" {
-			if name := toolName(line.ToolCall); name != "" {
+			if name, payload := toolCall(line.ToolCall); name != "" {
 				return agent.Event{
-					Type:  agent.EventToolUse,
-					Tools: []agent.ToolUse{{Name: name}},
-					Raw:   raw,
+					Type: agent.EventToolUse,
+					Tools: []agent.ToolUse{{
+						Name:    name,
+						Summary: callSummary(payload),
+						CallID:  line.CallID,
+					}},
+					Raw: raw,
 				}
 			}
 		}
@@ -118,8 +127,9 @@ func assistantText(line streamLine) string {
 // toolCallSuffix marks the one key of a tool_call object that names the tool.
 const toolCallSuffix = "ToolCall"
 
-// toolName derives the normalized tool name from the tool_call object's
-// tool-shaped key: `editToolCall` → `edit`, `shellToolCall` → `shell`.
+// toolCall derives the normalized tool name from the tool_call object's
+// tool-shaped key — `editToolCall` → `edit`, `shellToolCall` → `shell` — and
+// returns that key's value, which holds the call's arguments and result.
 //
 // Only keys ending in "ToolCall" qualify. The object carries siblings —
 // `toolCallId`, `startedAtMs`, `hookAdditionalContexts` — so "the single key"
@@ -127,7 +137,7 @@ const toolCallSuffix = "ToolCall"
 // precedes `shellToolCall` and every shell invocation would be misnamed.
 // Remaining keys are sorted only to keep a hypothetical multi-tool payload
 // deterministic rather than map-order noise.
-func toolName(call map[string]json.RawMessage) string {
+func toolCall(call map[string]json.RawMessage) (string, json.RawMessage) {
 	var keys []string
 	for k := range call {
 		if strings.HasSuffix(k, toolCallSuffix) && k != toolCallSuffix {
@@ -135,8 +145,25 @@ func toolName(call map[string]json.RawMessage) string {
 		}
 	}
 	if len(keys) == 0 {
-		return ""
+		return "", nil
 	}
 	sort.Strings(keys)
-	return strings.TrimSuffix(keys[0], toolCallSuffix)
+	return strings.TrimSuffix(keys[0], toolCallSuffix), call[keys[0]]
+}
+
+// callSummary reads the subject out of a tool call's payload. The arguments
+// live one level down under `args`; the payload itself is tried second
+// because a shell call repeats its `description` as a sibling of `args`, and
+// a description is better than nothing when the arguments carry no key
+// agent.ToolSummary knows.
+func callSummary(payload json.RawMessage) string {
+	var wrapper struct {
+		Args json.RawMessage `json:"args"`
+	}
+	if err := json.Unmarshal(payload, &wrapper); err == nil {
+		if s := agent.ToolSummary(wrapper.Args); s != "" {
+			return s
+		}
+	}
+	return agent.ToolSummary(payload)
 }

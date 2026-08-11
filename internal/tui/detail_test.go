@@ -272,7 +272,9 @@ func TestDetailOutputRendering(t *testing.T) {
 	d := newTestDetail(t)
 	d.records = []apiclient.TranscriptRecord{
 		{Type: "agent.output", Text: "reading token.go"},
-		{Type: "agent.tool_use", Tools: []string{"Edit"}},
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{
+			{Name: "Edit", Summary: "internal/auth/token.go", CallID: "toolu_01"},
+		}},
 		{Type: "agent.usage", Raw: json.RawMessage(`{"raw":"{}"}`)},
 		{Type: "agent.raw", Line: `{"type":"system"}`},
 		{Type: "agent.raw", Line: `{"type":"system"}`},
@@ -282,7 +284,8 @@ func TestDetailOutputRendering(t *testing.T) {
 	}
 	got := strings.Join(d.outputLines(), "\n")
 	for _, want := range []string{
-		"reading token.go", "▸ Edit", "… 2 unparsed line(s)", "boom",
+		"reading token.go", "▸ Edit", "internal/auth/token.go",
+		"… 2 unparsed line(s)", "boom",
 		"? Which colour?", "✓ all done",
 	} {
 		if !strings.Contains(got, want) {
