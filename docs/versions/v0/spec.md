@@ -975,6 +975,7 @@ defaults:
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 log_level: info
+debug: false                 # record each step's resolved settings and full argv in its transcript
 agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }

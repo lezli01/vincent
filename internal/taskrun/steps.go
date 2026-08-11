@@ -70,6 +70,23 @@ func (r *Runner) runAgentStep(
 	// Register the live process so a cancel can reach it (§6).
 	defer r.setProc(env.task.ID, handle)()
 
+	// The §12.3 debug record: what this step actually resolved to and how the
+	// process was actually invoked. Written into the transcript rather than
+	// the daemon log so it travels with the run a user pastes into an issue.
+	if r.deps.Config().Debug {
+		tr.Note("debug", map[string]any{
+			"agent":           sel.Agent,
+			"model":           sel.Model,
+			"effort":          sel.Effort,
+			"permission_mode": string(resolvePermission(env.step, env.wf.Defaults)),
+			"on_input":        string(onInput),
+			"workdir":         env.task.WorktreePath,
+			"argv":            handle.Argv(),
+			"timeout":         timeout.String(),
+			"attempt":         run.Attempt,
+		})
+	}
+
 	pid := handle.PID()
 	started := time.Now()
 	run.PID = &pid
@@ -379,6 +396,15 @@ func (r *Runner) runShellCommand(
 	tr.Note("command_started", map[string]any{
 		"phase": sc.phase, "shell": sh.Name, "command": sc.script, "cwd": sc.workDir,
 	})
+	if r.deps.Config().Debug {
+		// The shell a command step gets is platform-resolved (§8.3), so
+		// "which shell ran this" is exactly as invisible as an agent's argv
+		// was, and just as often the answer.
+		tr.Note("debug", map[string]any{
+			"phase": sc.phase, "shell": sh.Name, "shell_path": sh.Path,
+			"argv": argv, "cwd": sc.workDir, "timeout": sc.timeout.String(),
+		})
+	}
 
 	runCtx, cancel := context.WithTimeout(ctx, sc.timeout)
 	defer cancel()

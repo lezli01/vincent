@@ -160,22 +160,28 @@ func TestFilterTasks(t *testing.T) {
 }
 
 // TestColumnsDropByPriority pins the degradation order: cost, then the step
-// name, then the project.
+// name, then the workflow, then the project.
+//
+// The workflow outranks the step name deliberately. "survey" tells a reader
+// nothing on its own — it needs the workflow it belongs to — while the
+// workflow alone still says what a task is doing.
 func TestColumnsDropByPriority(t *testing.T) {
 	for _, tc := range []struct {
-		width                   int
-		project, stepName, cost bool
+		width                             int
+		project, workflow, stepName, cost bool
 	}{
-		{200, true, true, true},
-		{140, true, true, true},
-		{100, true, true, false},  // cost goes first
-		{85, true, false, false},  // then the step name
-		{70, false, false, false}, // then the project
+		{220, true, true, true, true},
+		{160, true, true, true, true},
+		{115, true, true, true, false},   // cost goes first
+		{100, true, true, false, false},  // then the step name
+		{85, true, false, false, false},  // then the workflow
+		{70, false, false, false, false}, // then the project
 	} {
 		got := columnsFor(tc.width)
-		if got.project != tc.project || got.stepName != tc.stepName || got.cost != tc.cost {
-			t.Errorf("width %d = %+v, want project=%v stepName=%v cost=%v",
-				tc.width, got, tc.project, tc.stepName, tc.cost)
+		if got.project != tc.project || got.workflow != tc.workflow ||
+			got.stepName != tc.stepName || got.cost != tc.cost {
+			t.Errorf("width %d = %+v, want project=%v workflow=%v stepName=%v cost=%v",
+				tc.width, got, tc.project, tc.workflow, tc.stepName, tc.cost)
 		}
 	}
 }
