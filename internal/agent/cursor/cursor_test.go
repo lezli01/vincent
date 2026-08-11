@@ -121,8 +121,8 @@ func withSandbox(t *testing.T, available bool) {
 func TestRestrictedWithoutSandboxRefuses(t *testing.T) {
 	withSandbox(t, false)
 	args, err := buildArgs(agent.RunSpec{PermissionMode: agent.Restricted})
-	if !errors.Is(err, ErrRestrictedUnsupported) {
-		t.Fatalf("buildArgs error = %v, want ErrRestrictedUnsupported", err)
+	if !errors.Is(err, agent.ErrRestrictedUnsupported) {
+		t.Fatalf("buildArgs error = %v, want agent.ErrRestrictedUnsupported", err)
 	}
 	if args != nil {
 		t.Errorf("args = %v, want none alongside the refusal", args)
@@ -144,8 +144,8 @@ func TestStartRefusesRestrictedWithoutSandbox(t *testing.T) {
 		WorkDir:        t.TempDir(),
 		PermissionMode: agent.Restricted,
 	})
-	if !errors.Is(err, ErrRestrictedUnsupported) {
-		t.Fatalf("Start error = %v, want ErrRestrictedUnsupported", err)
+	if !errors.Is(err, agent.ErrRestrictedUnsupported) {
+		t.Fatalf("Start error = %v, want agent.ErrRestrictedUnsupported", err)
 	}
 	if h != nil {
 		t.Error("Start returned a handle; no process may be spawned")
