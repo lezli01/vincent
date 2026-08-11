@@ -26,8 +26,10 @@ type TranscriptRecord struct {
 	Type string `json:"type"`
 	// Text is the human-readable line of agent.output, command.output and
 	// vincent.output.
-	Text  string   `json:"text"`
-	Tools []string `json:"tools"`
+	Text  string           `json:"text"`
+	Tools []TranscriptTool `json:"tools"`
+	// Results carries an agent.tool_result record's outcomes.
+	Results []TranscriptToolResult `json:"results"`
 	// Phase and Stream tag command output: which command produced it (the
 	// step's own or its check) and whether it came from stdout or stderr.
 	Phase  string `json:"phase"`
@@ -42,9 +44,36 @@ type TranscriptRecord struct {
 	Line       string `json:"line"`
 	ResultText string `json:"result_text"`
 	IsError    bool   `json:"is_error"`
+	// Usage as the terminal agent.result reported it. Zero means unreported,
+	// which is different from zero tokens; CostUSD is nil for the adapters
+	// that report no cost at all (codex, cursor).
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
+	CostUSD      *float64 `json:"cost_usd"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
+}
+
+// TranscriptTool is one tool invocation inside an agent.tool_use record.
+// Summary is the call's subject — the command run, the file edited — and is
+// empty when the dialect's arguments carried nothing recognizable. CallID
+// correlates the call with the agent.tool_result reporting its outcome; it
+// is what makes that pairing correct when an agent runs tools in parallel.
+type TranscriptTool struct {
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+	CallID  string `json:"call_id"`
+}
+
+// TranscriptToolResult is one tool invocation's outcome. Summary says what
+// happened in a few words ("exit 0", "+1 −0"); it is never the tool's output
+// body, which stays in the transcript where a reader can page through it.
+type TranscriptToolResult struct {
+	CallID  string `json:"call_id"`
+	Name    string `json:"name"`
+	Summary string `json:"summary"`
+	IsError bool   `json:"is_error"`
 }
 
 // TranscriptOptions selects a byte range of one attempt's transcript. Offset

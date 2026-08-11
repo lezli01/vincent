@@ -97,10 +97,37 @@ func TestParseToolUseFixture(t *testing.T) {
 			}
 		}
 	}
-	// tool_use fires on item.started; the item.completed of the same command
-	// is transcripted but not normalized (no double-count).
+	// tool_use fires on item.started only — the matching item.completed is a
+	// tool_result, not a second invocation (T4.16), so the count stays 1.
 	if len(toolNames) != 1 || toolNames[0] != "command_execution" {
 		t.Errorf("tool uses = %v, want exactly one command_execution (from item.started)", toolNames)
+	}
+	// T4.14: the subject is read out of the item's own fields, which differ
+	// per item type — the item is kept raw rather than modeled per type.
+	for _, ev := range events {
+		if ev.Type != agent.EventToolUse {
+			continue
+		}
+		if got := ev.Tools[0].Summary; got != `pwsh -Command 'echo vincent-fixture'` {
+			t.Errorf("summary = %q, want the executed command", got)
+		}
+		if got := ev.Tools[0].CallID; got != "item_0" {
+			t.Errorf("call id = %q, want item_0", got)
+		}
+	}
+	// T4.16: the completion reports the exit code, correlated to the call by
+	// the shared item id — the fixture's command exits 0.
+	var results []agent.ToolResult
+	for _, ev := range events {
+		if ev.Type == agent.EventToolResult {
+			results = append(results, ev.Results...)
+		}
+	}
+	if len(results) != 1 {
+		t.Fatalf("tool results = %d, want 1 from item.completed", len(results))
+	}
+	if results[0].CallID != "item_0" || results[0].Summary != "exit 0" || results[0].IsError {
+		t.Errorf("result = %+v, want item_0 exiting 0 without error", results[0])
 	}
 	res := terminal(t, events)
 	if res.IsError {
