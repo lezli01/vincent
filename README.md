@@ -155,8 +155,9 @@ follows the task breakdown:
   limits, docs and example workflows, signed release binaries): **in
   progress** — CLI subcommands, retention and limits, service install, the
   §8.6 resolution endpoint, release packaging, and the docs and example
-  workflows have landed. What remains is the M4 fresh-machine acceptance run
-  and the hand-run service-install matrix.
+  workflows have landed. **`v0.1.0-rc1` is the first pre-release**: signed,
+  checksummed, attested, and smoke-tested on all three OSes. What remains is
+  the M4 fresh-machine acceptance run and the hand-run service-install matrix.
 - **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
   dialect, config and registry wiring, windowed/filterable option pickers,
   `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an

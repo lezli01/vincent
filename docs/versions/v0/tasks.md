@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 7 tasks | 3/7 | 🚧 in progress |
+| 4 — Polish (M4) | 7 tasks | 4/7 | 🚧 in progress (T4.1/T4.4 code-complete pending manual sign-off; T4.6 now unblocked by `v0.1.0-rc1`) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **49/54** | |
+| **Total** | | **50/54** | |
 
 ---
 
@@ -602,13 +602,14 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *README:* a Quickstart section walking register → workflow → task → approve, with the **full-auto warning as a callout at the point of first run** rather than only in the Security section near the bottom — a reader following Install → Quickstart meets the agent before they would ever reach it. Install landed with T4.5.
   *Walking my own quickstart found two real defects*, which is what the exercise is for: `vincent workflow ls` does not show project-scoped workflows without `--project` (the quickstart said otherwise), and **`vincent task show` printed a blank project** — `project_name` was on the list response only, so every client's `TaskDetail.ProjectName` was silently empty. Moved to the shared `taskResponse`, with a handler test asserting both endpoints agree and a CLI e2e assertion on the rendered row.
   **Remaining:** "a reviewer can follow the quickstart cold" needs a reviewer who is not its author. Every command in it is verified to run against a real daemon; whether the prose lands is a human call.
-- [~] **T4.5 — Release packaging.** goreleaser (or equivalent): versioned, signed binaries for all 3 OSes; checksums; install instructions per OS.
+- [x] **T4.5 — Release packaging.** ✓ 2026-08-11 goreleaser (or equivalent): versioned, signed binaries for all 3 OSes; checksums; install instructions per OS.
   *Done when:* tagged pre-release produces working artifacts installed and smoke-tested on each OS.
   *2026-08-11:* landed per the PR X decisions. `.goreleaser.yaml` builds six archives (linux/darwin/windows × amd64/arm64) from **one ubuntu runner** — the binaries are pure Go with `CGO_ENABLED=0`, so a build matrix would produce identical artifacts three times — plus `checksums.txt`, cosign **keyless** signatures over it, and `actions/attest-build-provenance` over every archive. `cmd/fakeagent` is deliberately excluded: it is test scaffolding and must never ship. The ldflags match the mage Build target's three symbols, so a released binary and a locally built one answer `vincent version` the same way. Distribution is GitHub Releases only — no tap, bucket or winget manifest.
   *`.github/workflows/release.yml`* runs on `v*` tags, with a `workflow_dispatch` dry run that builds a snapshot without publishing or signing. The per-OS `smoke` job is the done-when's other half: it unpacks the **real archive** and runs the **real binary** — `version` must report the tag rather than `dev`, `workflow validate` must accept the shipped example, and `task ls` must exit **2** with no daemon. Unpacking is what catches a broken archive layout, a missing execute bit, or a binary that will not start on the OS it was cross-compiled for.
   *Verified locally on Windows:* `goreleaser check` passes; a full `--snapshot` build produced all six archives; the Windows archive contains exactly `LICENSE`, `README.md`, `examples/cursor-review.yaml` and `vincent.exe`; the produced binary reports its injected version, validates the shipped example, and exits 2 with no daemon — the same three assertions the CI smoke job makes. (`checksums:` was the wrong key, caught by `goreleaser check` rather than at release time.)
   *README* gained the install section this task owes: per-OS unpack instructions, the `cosign verify-blob` incantation, and the Gatekeeper/SmartScreen prompts a user **will** meet, including `xattr -d com.apple.quarantine` — §19's ‡ note descoped OS code signing, so documenting the consequence is part of the deal.
-  **Remaining:** the done-when says *tagged* pre-release. Cutting a tag is the repo owner's call, and the signing and attestation steps only execute on a real tag push — the dry run deliberately skips them.
+  *2026-08-11 — done-when met.* **`v0.1.0-rc1`** cut by the owner ([run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218)), the first execution of `release.yml` and therefore of the signing and attestation steps, which no PR build can reach. Verified independently of the report: the release carries **9 assets** (6 archives, `checksums.txt`, `.sig`, `.pem`), `isPrerelease: true` — so `prerelease: auto` read the `-rc1` suffix correctly — the run reports `release: success` plus **all three smoke jobs green** (ubuntu, windows, macos), and the Windows archive's digest resolves to an `application/vnd.in-toto+json` build attestation. Nothing unexpected reported.
+  *This unblocks T4.6:* the artifacts its ten-minute clock starts from now exist and are downloadable.
 - [ ] **T4.6 — Phase gate (M4 acceptance).** Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
   *Done when:* all three runs under 10 minutes; notes committed. **v1 complete.**
 **PR T decisions (T4.7; grill session, 2026-08-10):**
