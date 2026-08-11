@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 14 tasks | 9/14 | 🚧 in progress (T4.8–T4.10 from Windows testing; T4.11 open; T4.1/T4.4 pending manual sign-off) |
+| 4 — Polish (M4) | 14 tasks | 10/14 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; T4.11/T4.14 open; T4.1/T4.4 pending manual sign-off) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 8/9 | 🚧 in progress (only T5.7 open — needs macOS + a local hook fix) |
-| **Total** | | **55/61** | |
+| **Total** | | **56/61** | |
 
 ---
 
@@ -610,8 +610,18 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *README* gained the install section this task owes: per-OS unpack instructions, the `cosign verify-blob` incantation, and the Gatekeeper/SmartScreen prompts a user **will** meet, including `xattr -d com.apple.quarantine` — §19's ‡ note descoped OS code signing, so documenting the consequence is part of the deal.
   *2026-08-11 — done-when met.* **`v0.1.0-rc1`** cut by the owner ([run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218)), the first execution of `release.yml` and therefore of the signing and attestation steps, which no PR build can reach. Verified independently of the report: the release carries **9 assets** (6 archives, `checksums.txt`, `.sig`, `.pem`), `isPrerelease: true` — so `prerelease: auto` read the `-rc1` suffix correctly — the run reports `release: success` plus **all three smoke jobs green** (ubuntu, windows, macos), and the Windows archive's digest resolves to an `application/vnd.in-toto+json` build attestation. Nothing unexpected reported.
   *This unblocks T4.6:* the artifacts its ten-minute clock starts from now exist and are downloadable.
-- [ ] **T4.6 — Phase gate (M4 acceptance).** Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
+- [x] **T4.6 — Phase gate (M4 acceptance).** ✓ 2026-08-11 Fresh-machine (VM) timed test per §19 M4 on each OS; results recorded here.
   *Done when:* all three runs under 10 minutes; notes committed. **v1 complete.**
+  *2026-08-11 — done-when met.* Walked by the owner on a clean VM per OS with **no Go toolchain**, against the `v0.1.0-rc1` artifacts: download → unpack → `vincent project add` → copy an example workflow → `vincent task add` → task completes. The clock includes Gatekeeper/SmartScreen friction (§19 †) and excludes installing and authenticating the agent CLI.
+
+  | OS | Time | Under 10 min? |
+  |---|---|---|
+  | Windows 11 | 5:00 | ✓ |
+  | macOS | 4:30 | ✓ |
+  | Linux | 3:35 | ✓ |
+
+  *Every run under half the budget,* with the slowest OS the one carrying SmartScreen — so the descoped code signing costs roughly the difference against Linux, not the gate. **No breakdown of where the time went and no deviations from the README quickstart were reported**; the walkthrough script is the README's, so "deviating from it is itself a finding" produced none. The reader-facing half of the same prose is T4.4's remaining item, which this gate does not settle — the walker here wrote it.
+  *M4's acceptance is met.* Phase 4 is not yet closed: T4.1 (needs a reboot per OS) and T4.4 (needs a cold reader) still await manual sign-off, and T4.11/T4.14 were appended after the gate was written.
 **PR T decisions (T4.7; grill session, 2026-08-10):**
 
 - *The endpoint is `POST /v1/resolve`, not a wider workflow DTO.* The two callers ask different questions: the registry listing asks what a step resolves to *as written*, the new-task form asks what it resolves to *under the overrides being typed* — and those overrides have no server-side existence until the task is created. A DTO field answers only the first. One endpoint with an empty override body answers both. **Spec addition** to §13.2.
