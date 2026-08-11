@@ -1,0 +1,141 @@
+name: Release
+
+# Tag-driven (T4.5). The build runs once on ubuntu — the binaries are pure Go,
+# so a build matrix would produce identical artifacts three times — and the
+# per-OS jobs afterwards exist to smoke-test what it produced, which is the
+# part a single runner genuinely cannot do.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build a snapshot without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload archives
+      id-token: write # keyless cosign + build attestations
+      attestations: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # goreleaser needs tags for the changelog
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: sigstore/cosign-installer@v3
+
+      - id: meta
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run)
+                && 'release --snapshot --clean --skip=publish,sign'
+                || 'release --clean' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Provenance for every archive, so a downloader can prove which workflow
+      # and commit produced the file they hold.
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          retention-days: 7
+
+  # The done-when: the produced artifact runs on each OS. Unpacking the real
+  # archive and running the real binary is the only thing that catches a
+  # broken archive layout, a missing execute bit, or a binary that will not
+  # start on the OS it was cross-compiled for.
+  smoke:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            pattern: "*_linux_amd64.tar.gz"
+          - os: macos-latest
+            pattern: "*_darwin_arm64.tar.gz"
+          - os: windows-latest
+            pattern: "*_windows_amd64.zip"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Unpack and run
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(ls dist/${{ matrix.pattern }})"
+          echo "unpacking $archive"
+          mkdir -p out
+          case "$archive" in
+            *.zip) unzip -q "$archive" -d out ;;
+            *)     tar -xzf "$archive" -C out ;;
+          esac
+          bin="out/vincent"
+          [ -f "$bin.exe" ] && bin="$bin.exe"
+
+          # The version must be the tag, not "dev": a release whose binary
+          # cannot say what it is defeats the point of tagging one.
+          "$bin" version
+          if [ "${{ github.event_name }}" = "push" ]; then
+            "$bin" version | grep -q "${{ needs.release.outputs.version }}" \
+              || { echo "version does not report the tag"; exit 1; }
+          fi
+
+          # A subcommand that needs no daemon, no network and no agent CLI —
+          # proof the binary actually runs rather than merely existing.
+          "$bin" workflow validate out/examples/cursor-review.yaml
+
+          # And one that must fail cleanly rather than hang when no daemon is
+          # running: exit 2, the documented "nothing answered" code.
+          set +e
+          "$bin" task ls >/dev/null 2>&1
+          code=$?
+          set -e
+          [ "$code" -eq 2 ] || { echo "task ls with no daemon exited $code, want 2"; exit 1; }
+
+      - name: Verify checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          archive="$(ls ${{ matrix.pattern }})"
+          if command -v sha256sum >/dev/null; then
+            grep " $archive\$" checksums.txt | sha256sum -c -
+          else
+            want="$(grep " $archive\$" checksums.txt | awk '{print $1}')"
+            got="$(shasum -a 256 "$archive" | awk '{print $1}')"
+            [ "$want" = "$got" ] || { echo "checksum mismatch"; exit 1; }
+          fi
