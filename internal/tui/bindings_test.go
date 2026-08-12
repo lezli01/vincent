@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -172,6 +173,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.updateKey(registryKey(t, "down"))
 			if !d.following {
 				t.Fatal("down did not reach the output pane's scroll path (follow was never re-synced)")
+			}
+		},
+		"e": func(t *testing.T) {
+			var opened []string
+			path := writeWholeTranscript(t)
+			d := transcriptDetail(t, path, &opened)
+			if cmd := d.updateKey(registryKey(t, "e")); cmd != nil {
+				runCmd(t, cmd, 10*time.Second)
+			}
+			if len(opened) != 1 || opened[0] != path {
+				t.Fatalf("e opened %v, want the attempt's transcript at %s", opened, path)
 			}
 		},
 	},
