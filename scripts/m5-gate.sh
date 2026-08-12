@@ -54,6 +54,23 @@ hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
+# The daemon inherits the environment of the shell that starts it and hands it
+# to the agent process unchanged: `RunSpec.Env` is never populated for agent
+# steps (internal/taskrun/steps.go), the adapter only overrides a non-nil one
+# (internal/agent/cursor/cursor.go), and the detached spawn sets no environment
+# of its own (internal/daemon/spawn.go). Tools downstream of cursor-agent
+# branch on SHELL, and on Windows that is precisely what differs between launch
+# contexts — Git Bash exports it to native children as a real Windows path,
+# while PowerShell and the §12.1 Scheduled Task backend leave it unset. It is
+# enough to decide whether a hook is written for one shell and evaluated by
+# another, which is the failure scenario 1 diagnoses below. A result recorded
+# without it is not reproducible, so print it here.
+echo "== launch environment (copy into the docs/versions/v0/m5-gate.md row)"
+echo "   SHELL=${SHELL:-<unset>}  MSYSTEM=${MSYSTEM:-<unset>}  COMSPEC=${COMSPEC:-<unset>}"
+if (( REAL_AGENT )); then
+  echo "   cursor-agent $(cursor-agent --version 2>/dev/null || echo '<not on PATH>')"
+fi
+
 echo "== build vincent + fakeagent"
 (cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
 
@@ -220,7 +237,11 @@ EOF
       cursor-agent -p --output-format stream-json --trust --force --model auto
   and look for tool_call results with \"rejected\":{\"reason\":\"Hook blocked...\"}.
   A hook that errors blocks the tool; hooks registered with PowerShell syntax
-  fail because cursor-agent runs them through bash."
+  fail because cursor-agent runs them through bash.
+  On Windows, try this from PowerShell before touching any hook: the shell a
+  hook is written for and the shell it is evaluated by are both chosen from
+  SHELL, which Git Bash exports and PowerShell does not — see the launch
+  environment printed at the top of this run."
     fi
     api GET "/tasks/$task_id" | jq . >&2
     fail "task $task_id never reached done"
