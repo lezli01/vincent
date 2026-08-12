@@ -14,14 +14,18 @@ func newServiceCmd() *cobra.Command {
 		Use:   "service",
 		Short: "Install the daemon as an OS-managed background service",
 		Long: "Register the daemon with the platform service manager so it starts at\n" +
-			"login and survives reboot: a Windows Service, a launchd user agent, or a\n" +
-			"systemd user unit (§12.1).\n\n" +
-			"The config and data directories in effect at install time are baked into\n" +
-			"the unit, because a service does not inherit the shell that installed it.\n" +
-			"So is PATH, so the service resolves the same agent CLIs this shell does:\n" +
-			"install again after installing an agent CLI somewhere new. Windows is the\n" +
-			"exception — its services inherit the machine environment, so set\n" +
-			"agents.<name>.path in config.yaml there if an agent is not found.",
+			"login and survives reboot: a launchd user agent, a systemd user unit, or a\n" +
+			"Windows Scheduled Task (§12.1).\n\n" +
+			"It runs as you on every platform, since the OS user is vincent's trust\n" +
+			"boundary — an agent gets exactly your privileges, your agent-CLI logins and\n" +
+			"your git identity, no more.\n\n" +
+			"The config and data directories in effect at install time are baked in,\n" +
+			"because a service does not inherit the shell that installed it. On macOS\n" +
+			"and Linux so is PATH, so the service resolves the same agent CLIs this\n" +
+			"shell does: install again after installing an agent CLI somewhere new.\n" +
+			"Windows needs no capture — the task runs in your logon session with your\n" +
+			"own PATH. If an agent still will not resolve, set agents.<name>.path in\n" +
+			"config.yaml, which is absolute and never consults PATH.",
 	}
 	cmd.AddCommand(newServiceInstallCmd(), newServiceUninstallCmd(), newServiceStatusCmd())
 	return cmd

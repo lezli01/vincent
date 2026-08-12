@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,10 +25,14 @@ const (
 )
 
 func newDaemonCmd() *cobra.Command {
+	var dirs config.Dirs
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the vincent daemon in the foreground",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := applyDirFlags(dirs); err != nil {
+				return err
+			}
 			// RunManaged is Run everywhere but Windows, where it speaks the
 			// SCM's control protocol when the process was started as a
 			// service (§12.1). Foreground stays true: under a service manager
@@ -36,8 +41,36 @@ func newDaemonCmd() *cobra.Command {
 			return daemon.RunManaged(cmd.Context(), daemon.Options{Foreground: true})
 		},
 	}
+	// These exist for the Windows Scheduled Task (T4.17), whose Exec action
+	// carries a command and arguments and has no environment to set — while
+	// the launchd plist and the systemd unit pin the same two directories with
+	// VINCENT_CONFIG_DIR/VINCENT_DATA_DIR. Both routes end at the environment
+	// config.ResolveDirs reads, so §12.2 keeps one resolution point rather
+	// than growing a second precedence rule.
+	cmd.Flags().StringVar(&dirs.Config, "config-dir", "",
+		"config directory to run against (default $VINCENT_CONFIG_DIR, else the platform default)")
+	cmd.Flags().StringVar(&dirs.Data, "data-dir", "",
+		"data directory to run against (default $VINCENT_DATA_DIR, else the platform default)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
 	return cmd
+}
+
+// applyDirFlags publishes the flags as the directory overrides, so everything
+// downstream — startup, hot reload, and any child process that inherits the
+// environment — resolves them the one way §12.2 describes.
+func applyDirFlags(dirs config.Dirs) error {
+	for _, o := range []struct{ env, val string }{
+		{config.EnvConfigDir, dirs.Config},
+		{config.EnvDataDir, dirs.Data},
+	} {
+		if o.val == "" {
+			continue
+		}
+		if err := os.Setenv(o.env, o.val); err != nil {
+			return fmt.Errorf("set %s: %w", o.env, err)
+		}
+	}
+	return nil
 }
 
 func newDaemonStartCmd() *cobra.Command {

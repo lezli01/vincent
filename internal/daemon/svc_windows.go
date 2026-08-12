@@ -17,6 +17,14 @@ import (
 // ("the service did not respond to the start or control request in a timely
 // fashion"). Nothing about shutdown is reimplemented here — the Stop handler
 // cancels the very context Run already drains.
+//
+// `vincent service install` no longer registers a service (T4.17: it runs as
+// LocalSystem, which is the wrong user); it registers a Scheduled Task, whose
+// parent is the scheduler's svchost rather than services.exe, so
+// IsWindowsService reports false and this falls through to Run. The branch
+// stays because it is what makes a hand-rolled `sc.exe create` work at all,
+// and because a daemon that cannot tell it is under the SCM would be killed
+// by it rather than diagnosed.
 func RunManaged(ctx context.Context, opts Options) error {
 	inService, err := svc.IsWindowsService()
 	if err != nil || !inService {

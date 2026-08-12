@@ -984,9 +984,9 @@ One Go binary, `vincent`:
 | Command | Behavior |
 |---|---|
 | `vincent` | Launches the TUI; auto-starts the daemon in the background if unreachable |
-| `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers) |
+| `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers). `--config-dir`/`--data-dir` pin the §12.2 directories for a manager with no per-process environment |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
-| `vincent service install / uninstall / status` | Registers OS-native autostart: Windows Service, launchd agent, systemd user unit |
+| `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
@@ -1009,14 +1009,45 @@ writes that user's data dir:
   and, on failure, reports as the exact command to run: the service is
   installed and running either way, so this is a warning, not a failed
   install.
-- **Windows** — the SCM is machine-wide and has no per-user equivalent, so
-  install and uninstall require elevation and say so. Reporting *status* does
-  not: it opens the SCM with `SC_MANAGER_CONNECT` and the service with
-  `SERVICE_QUERY_STATUS`, so an ordinary prompt can always ask what is
-  installed. `vincent daemon` detects `svc.IsWindowsService()` and speaks the
-  SCM's control protocol when started as a service — without it the SCM kills
-  the process after ~30 s with error 1053. The Stop handler cancels the very
-  context the daemon already drains, so §12.4's shutdown is not reimplemented.
+- **Windows** — a **Scheduled Task triggered at logon**, running as the
+  invoking user with an `InteractiveToken` principal (T4.17). Not a Windows
+  Service: the SCM has no per-user services, and an empty `ServiceStartName`
+  defaults to **LocalSystem**, so the daemon resolved `LOCALAPPDATA` to the
+  SYSTEM profile, wrote its database and `daemon.json` under
+  `C:\Windows\System32\config\systemprofile\`, and every TUI launch found
+  nothing there and auto-started a second daemon of its own. Pinning the
+  directories alone would have hidden that behind a worse defect — §16's
+  full-auto agents running as SYSTEM, without the user's agent-CLI
+  credentials, `.gitconfig` or `PATH`. A task in the user's own session is the
+  per-user registration this section already required, and it needs **no
+  elevation** to install, uninstall or query.
+
+  Four scheduler defaults are overridden because each one stops a long-running
+  daemon: `ExecutionTimeLimit` (`P3D` by default) is `PT0S`, both battery
+  settings and `StopOnIdleEnd` are `false`. `RestartOnFailure` is the analog of
+  `Restart=on-failure` and works for the same reason — a nonzero exit is a
+  failure, a daemon that exited 0 was asked to stop. The directories travel as
+  `--config-dir`/`--data-dir` **arguments**, since a task's `Exec` action has no
+  environment; both flags simply publish the same variables the plist and the
+  unit set, so §12.2 keeps one resolution point. The definition is handed to
+  `schtasks /Create /XML` as UTF-16LE, which is the encoding it accepts for
+  anything not pure ASCII.
+
+  What this costs is boot survival: the task starts at the next **logon**, not
+  at boot. That is exactly what a LaunchAgent does and what a systemd user unit
+  does without lingering, so the promise is now the same on all three
+  platforms. Running with nobody logged in needs a service account with a
+  stored password, which is a different feature.
+
+  A pre-T4.17 LocalSystem service is detected and refused by `install`, removed
+  by `uninstall`, and named by `status` — it is machine-wide, so removing it is
+  the one Windows operation that still asks for an elevated prompt, and says
+  so. `vincent daemon` keeps its `svc.IsWindowsService()` branch: nothing
+  vincent installs trips it (a task's parent is the scheduler's `svchost`, not
+  `services.exe`), but it is what makes a hand-rolled `sc.exe create` work at
+  all, since the SCM kills a silent process after ~30 s with error 1053. Its
+  Stop handler cancels the very context the daemon already drains, so §12.4's
+  shutdown is not reimplemented.
 
 **The config and data directories in effect at install time are written into
 the unit.** A service does not inherit the shell that installed it, so
@@ -1037,10 +1068,13 @@ construction, the `PATH` that works.
 Two consequences are deliberate. The captured `PATH` goes **stale**: a CLI
 installed somewhere new after the service was installed needs a
 `vincent service install` to be seen again, which is the same "reinstall to
-recapture" contract the dirs already have. And **Windows is excluded** — the
-SCM has no per-service environment, so the service inherits the machine
-environment, which does not contain a per-user npm prefix. On every platform
-the standing answer to an agent that will not resolve is the §12.3
+recapture" contract the dirs already have. And **Windows does not capture it**
+— since T4.17 the task runs in the user's logon session and therefore already
+has the user's own `PATH`, including the `%APPDATA%\npm` prefix this finding
+was about; freezing a copy would replace a live correct value with a stale one.
+(Before T4.17 the reason was the opposite one: a LocalSystem service inherited
+the *machine* environment, which has no per-user npm prefix at all.) On every
+platform the standing answer to an agent that will not resolve is the §12.3
 `agents.<name>.path` knob, which is absolute and never consults `PATH`.
 
 ### 12.2 Directories (platform-native)

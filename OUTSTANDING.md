@@ -25,23 +25,43 @@ The three sections left are independent — take them in any order.
 
 ## 2. T4.1 — service install matrix
 
-**Why you:** requires a reboot per OS, and an elevated prompt on Windows.
+**Why you:** requires a reboot per OS. (No longer an elevated prompt on
+Windows — see the note below.)
 
 ```sh
-vincent service install        # Windows: from an Administrator prompt
+vincent service install        # no elevation needed on any OS since T4.19
 vincent service status
-# reboot
+# reboot, and log back in
 vincent service status         # must still report running
 vincent task ls                # must reach the daemon with no manual start
+vincent                        # and the TUI must NOT say "starting daemon…"
 vincent service uninstall
 vincent service status         # must report nothing installed
 ```
 
 | OS | Installed | Survived reboot | Uninstalled cleanly | Notes |
 |---|---|---|---|---|
-| Windows 11 | ☐ | ☐ | ☐ |  |
+| Windows 11 | ✓ | ☐ | ✓ | **re-walk owed** — your ✓✓✓ was against the old service backend, which T4.19 replaced. Install and uninstall re-verified in-session 2026-08-12; only the reboot leg is open |
 | macOS | ✓ | ✓ | ✓ | **folded, 2026-08-11** — three legs clean; the no-CLIs finding fixed and re-verified as T4.15 |
-| Linux | ☐ | ☐ | ☐ |  |
+| Linux | ✓ | ✓ | ✓ |  |
+
+> **Windows: your finding was a real defect, and a worse one than it looked.**
+> "Install and uninstall work but the TUI still starts its own daemon" was the
+> SCM running the service as **LocalSystem** (event 7045 confirms it). That
+> daemon resolved `LOCALAPPDATA` to the SYSTEM profile, so its database and
+> `daemon.json` lived in `C:\Windows\System32\config\systemprofile\` and no
+> client in your session could ever find them — hence a second daemon every
+> time. Pinning the directories would have hidden it behind something worse:
+> §16's full-auto agents running as SYSTEM, without your agent-CLI logins or
+> git identity. The backend is now a **Scheduled Task triggered at logon**,
+> running as you, needing no elevation (**T4.19**).
+>
+> Two things change for this walkthrough. Install and uninstall no longer want
+> an Administrator prompt — if yours *does* ask, that is the old service still
+> registered and the error says so; remove it elevated once. And the middle
+> column now means "starts at the next **logon**", the same promise a
+> LaunchAgent and a non-lingering systemd user unit make, so log back in after
+> the reboot before checking.
 
 > **macOS: recorded, and your finding was a real defect.** A launchd agent runs
 > with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
@@ -49,9 +69,10 @@ vincent service status         # must report nothing installed
 > so an installed service could see none of them while the same daemon started
 > by hand saw them all. `service install` now bakes the installing shell's PATH
 > into the plist and the systemd unit, the way it already did for the config
-> and data dirs (**T4.15**). Linux had the same latent bug; Windows cannot be
-> fixed this way — the SCM has no per-service environment — so there
-> `agents.<name>.path` in `config.yaml` stays the answer.
+> and data dirs (**T4.15**). Linux had the same latent bug; Windows did not need
+> the fix once T4.19 moved it into your logon session, where it already has
+> your `PATH`. `agents.<name>.path` in `config.yaml` stays the answer anywhere
+> a CLI still will not resolve.
 >
 > **Re-verified by you against a real launchd, 2026-08-11:** an installed
 > service now sees the agent CLIs. T4.15 is closed. T4.1 itself stays open for
