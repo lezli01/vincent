@@ -23,6 +23,14 @@ Two documents govern the work and are **not** optional reading:
   the same edit, and the rule that tasks are never deleted. Update it when a PR
   completes a task, and mention the task ID in the PR.
 
+User-facing documentation is a separate tree rooted at `docs/README.md`
+(`getting-started/`, `guides/`, `platforms/`, `reference/`, plus
+`security-model.md` and `faq.md`). It is derived from the source, not from the
+spec: the config reference tracks `internal/config`, the CLI page the cobra
+tree, the API page `internal/api/server.go`'s route table, the TUI key tables
+`internal/tui/bindings.go`, and the block reasons the `Reason*` constants. A
+change to any of those is a change to its page.
+
 Phase decisions ("phase 2 decision", "PR G decision", "T1.5/T1.6 decision") recorded
 inline in comments and in tasks.md are binding — they are the outcome of design
 sessions, not incidental notes. Don't relitigate one without saying so explicitly.

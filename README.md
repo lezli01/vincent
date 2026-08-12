@@ -22,10 +22,10 @@
   <a href="#what-it-does">What It Does</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#quickstart">Quickstart</a> &bull;
-  <a href="#project-status">Status</a> &bull;
+  <a href="#documentation">Documentation</a> &bull;
   <a href="#build--test">Build &amp; Test</a> &bull;
   <a href="#contributing">Contributing</a> &bull;
-  <a href="docs/versions/v0/spec.md">Spec</a>
+  <a href="#security">Security</a>
 </p>
 
 ---
@@ -48,6 +48,14 @@ The name is an acronym, and every part of it maps to the system:
 - **Native agent tooling** — it invokes locally installed tools such as
   Claude Code, Codex, and Cursor.
 
+The v0 scope is **near complete**: the daemon, the workflow engine, the TUI, the
+CLI subcommands, OS service registration and all three agent adapters are built,
+released as signed binaries, and exercised on Windows, macOS and Linux in CI on
+every pull request — unit tests, the race detector, the linter, and three
+end-to-end acceptance gates that drive a real daemon over HTTP. A few polish
+tasks are still open; the [task breakdown](docs/versions/v0/tasks.md) tracks
+them.
+
 It is released under the [MIT License](LICENSE) and created by `lezli01` at
 [lezli01.is-a.dev](https://lezli01.is-a.dev). Contributions are welcome — see
 [Contributing](#contributing).
@@ -58,8 +66,22 @@ A background daemon owns all state and execution: register local git
 repositories, author reusable workflows (agent prompts, shell commands, manual
 gates), and run any number of tasks, each isolated in its own git worktree.
 Agent steps drive locally installed agent CLIs (Claude Code, Codex, and
-Cursor) headlessly. A TUI — and later a web UI — is a thin client over the
-daemon's API, so work keeps running when no client is attached.
+Cursor) headlessly. The TUI is a thin client over the daemon's API, so work
+keeps running when no client is attached.
+
+- **The daemon owns everything.** Clients never touch git, the database or an
+  agent process — only the API. Killing every client changes nothing about
+  running work.
+- **Crash-first.** Every transition is persisted before it is acted on, so a
+  daemon that dies mid-step finalizes the attempt on restart, kills verified
+  orphans, and re-runs the step without consuming a retry.
+- **Checks, not claims.** A step succeeds when its `check` command agrees, not
+  when the agent says so — and a failed check retries with the failure appended
+  to the prompt.
+- **Nothing is silently abandoned.** A step that exhausts its retries blocks the
+  task and waits for a human, keeping its worktree, branch and transcripts.
+- **Differences are documented, never faked.** A capability an adapter lacks is
+  stated and ignored at run time; it is never emulated.
 
 ### Agent CLIs
 
@@ -73,7 +95,7 @@ or per task (`agent: claude` / `codex` / `cursor`).
 | Codex | `codex` | Non-interactive once started; reports no cost |
 | Cursor | **`cursor-agent`** | Non-interactive; reports no cost |
 
-Two things to know about the Cursor adapter specifically:
+Three things to know about the Cursor adapter specifically:
 
 - **Reasoning effort lives in the model id**, not in the `effort` field —
   `claude-sonnet-5-thinking-xhigh`, `gpt-5.4-mini-high`. Cursor has no effort
@@ -90,8 +112,9 @@ Two things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Four ready-to-copy workflows ship in [`examples/`](examples), and
-[docs/workflows.md](docs/workflows.md) is the authoring guide.
+Four ready-to-copy workflows ship in [`examples/`](examples);
+[Writing workflows](docs/guides/workflows.md) is the authoring guide and
+[Agent CLIs](docs/guides/agents.md) covers the adapters in full.
 
 ### Command line
 
@@ -152,48 +175,6 @@ LocalSystem, which is why your TUI kept starting a daemon of its own.
 `vincent service uninstall` from an elevated prompt removes it — once — and
 then `vincent service install` needs no elevation again.
 
-## Project Status
-
-**Implementation in progress.** The v0 specification is complete and work
-follows the task breakdown:
-
-- **Phase 0 — scaffolding** (Go module, CLI stubs, dev tooling,
-  cross-platform CI): **done**.
-- **Phase 1 — the daemon spine** (config, SQLite store, daemon lifecycle +
-  HTTP API, projects and worktrees, the Claude agent adapter, first
-  end-to-end task run): **done** — the M1 acceptance gate passes in CI.
-- **Phase 2 — the workflow engine** (workflow registry with live reload, the
-  template engine, the task state machine, step executors for agent,
-  command, manual-gate and check steps with retries and timeouts, the
-  scheduler with global and per-project caps, the human actions API, durable
-  events and SSE, crash recovery, the Codex adapter, the agent option
-  catalog, and interactive input requests): **done** — the M2 acceptance
-  gate passes in CI.
-- **Phase 3 — the TUI**: **feature-complete**. All six views are built —
-  board, task detail (step timeline, live output tail, diff, action bar),
-  the new-task flow, projects, workflows, and the daemon view — together
-  with the one-time full-auto risk notice shown on first run. What remains
-  is the manual M3 walkthrough on Windows and one POSIX OS.
-- **Phase 4 — polish** (service install, CLI subcommands, retention and
-  limits, docs and example workflows, signed release binaries): **in
-  progress** — CLI subcommands, retention and limits, service install, the
-  §8.6 resolution endpoint, release packaging, and the docs and example
-  workflows have landed. **`v0.1.0-rc1` is the first pre-release**: signed,
-  checksummed, attested, and smoke-tested on all three OSes. What remains is
-  the M4 fresh-machine acceptance run and the hand-run service-install matrix.
-- **Phase 5 — the Cursor adapter** (post-v1): the adapter, its fakeagent
-  dialect, config and registry wiring, windowed/filterable option pickers,
-  `logged_in` reporting, the `scripts/m5-gate.sh` acceptance gate and an
-  example workflow are **built and green in CI**. What remains is the
-  workflow authoring guide (it belongs to Phase 4) and the hand-run legs of
-  the M5 gate against the real `cursor-agent` — see
-  [docs/versions/v0/m5-gate.md](docs/versions/v0/m5-gate.md).
-
-See [docs/versions/v0/spec.md](docs/versions/v0/spec.md) for the product and
-implementation spec, and
-[docs/versions/v0/tasks.md](docs/versions/v0/tasks.md) for the task breakdown
-and progress.
-
 ## Install
 
 Download the archive for your platform from the
@@ -234,6 +215,12 @@ cosign verify-blob checksums.txt \
 sha256sum -c checksums.txt --ignore-missing
 ```
 
+You also need **git** and at least one agent CLI (`claude`, `codex` or
+`cursor-agent`) installed and logged in — vincent runs the CLI you already have
+and stores no credentials of its own. Per-platform detail, build-from-source
+and upgrade instructions:
+[Installation](docs/getting-started/installation.md).
+
 ## Quickstart
 
 > [!WARNING]
@@ -244,8 +231,8 @@ sha256sum -c checksums.txt --ignore-missing
 > directory, your credentials and the network. Nothing is pushed or merged
 > unless a workflow step does it, everything is transcripted, and any step can
 > be set to `permission_mode: restricted`. Run it on repositories you would
-> hand to a new contributor, and read [Security](#security) before pointing it
-> at anything else.
+> hand to a new contributor, and read the
+> [Security model](docs/security-model.md) before pointing it at anything else.
 
 Five minutes, one real task:
 
@@ -291,6 +278,10 @@ are [`fix-and-test`](examples/fix-and-test.yaml) (write a failing test, then
 fix it), [`docs-update`](examples/docs-update.yaml), and
 [`cursor-review`](examples/cursor-review.yaml).
 
+Its check is `go build ./... && go test ./...`, so open the file and change
+that line to whatever proves *your* repository still works before pointing it
+somewhere else.
+
 **3. Run a task.**
 
 ```sh
@@ -314,7 +305,40 @@ Everything the TUI does is also a subcommand (`vincent task show 1`,
 `vincent task cancel 1`), and everything either does is the same localhost
 API. To keep the daemon running across reboots, `vincent service install`.
 
-**Next:** [writing your own workflows](docs/workflows.md).
+**Next:** [writing your own workflows](docs/guides/workflows.md), or the
+[longer quickstart](docs/getting-started/quickstart.md).
+
+## Documentation
+
+Full documentation lives in **[docs/](docs/README.md)**.
+
+**Start here**
+
+- [Installation](docs/getting-started/installation.md) — download, verify, and
+  install an agent CLI
+- [Quickstart](docs/getting-started/quickstart.md) — first task, end to end
+- [Concepts](docs/getting-started/concepts.md) — daemon, project, workflow,
+  task, worktree
+
+**Guides**
+
+- [Writing workflows](docs/guides/workflows.md) · [Agent CLIs](docs/guides/agents.md)
+- [Using the TUI](docs/guides/tui.md) · [Scripting vincent](docs/guides/scripting.md)
+- [Running at login](docs/guides/running-at-login.md) · [Troubleshooting](docs/guides/troubleshooting.md)
+
+**Platforms** — [Windows](docs/platforms/windows.md) ·
+[macOS](docs/platforms/macos.md) · [Linux](docs/platforms/linux.md)
+
+**Reference** — [CLI](docs/reference/cli.md) ·
+[Configuration](docs/reference/configuration.md) ·
+[Files and directories](docs/reference/files.md) ·
+[Workflow schema](docs/reference/workflow-schema.md) ·
+[Task lifecycle](docs/reference/task-lifecycle.md) ·
+[HTTP API](docs/reference/api.md)
+
+**Also** — [Security model](docs/security-model.md) · [FAQ](docs/faq.md) ·
+[Specification](docs/versions/v0/spec.md) ·
+[Task breakdown](docs/versions/v0/tasks.md)
 
 ## Build & Test
 
@@ -363,11 +387,13 @@ Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Security
 
 vincent executes AI agents in full-auto mode by default — a documented design
-decision (see [the spec](docs/versions/v0/spec.md), §16), not a vulnerability.
-In full-auto an agent can run arbitrary commands **as the invoking user**, and
-a git worktree isolates collisions between tasks, not privileges; the TUI shows
-this warning once on first run. Security reports are still taken seriously —
-please report vulnerabilities
+decision, not a vulnerability. In full-auto an agent can run arbitrary commands
+**as the invoking user**, and a git worktree isolates collisions between tasks,
+not privileges; the TUI shows this warning once on first run. The full picture —
+the trust boundary, what `restricted` mode does per adapter, and how to tighten
+a setup — is in the [Security model](docs/security-model.md).
+
+Security reports are taken seriously — please report vulnerabilities
 privately via GitHub's
 [security advisories](https://github.com/lezli01/vincent/security/advisories/new)
 rather than a public issue. See [SECURITY.md](SECURITY.md) for details.
