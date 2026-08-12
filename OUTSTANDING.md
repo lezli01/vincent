@@ -8,7 +8,11 @@ free-text notes. When you are done (or done with any one section), tell me and
 I will fold the results into `docs/versions/v0/tasks.md`,
 `docs/versions/v0/m5-gate.md` and the spec, then delete this file.
 
-The two sections left are independent — take them in any order.
+**Nothing is left.** All five sections are resolved and folded in as of
+2026-08-12 — the release tag, the M4 acceptance gate, the service-install
+matrix, the T5.7 real-`cursor-agent` legs, the T4.4 quickstart read, and both
+decisions in §5. This file has done its job; say the word and it goes, or keep
+it as the record of how the manual legs were walked.
 
 > **Done: the release tag.** `v0.1.0-rc1`, 2026-08-11,
 > [run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218).
@@ -90,26 +94,16 @@ The two sections left are independent — take them in any order.
 
 ## 4. T4.4 — read the quickstart cold
 
-**Why you:** I wrote it, so I cannot judge it. Ideally someone who has never
-seen vincent; you are the next best thing.
-
-Read [README.md](README.md) from **Install** through **Quickstart** and follow
-it exactly, without filling gaps from what you already know.
-
-- Could you get to a completed task without leaving the README? ☐ yes ☐ no
-- Where did you have to guess, backtrack, or look elsewhere?
-
-  ```
-  
-  ```
-
-- Did the full-auto warning land *before* you ran an agent? ☐ yes ☐ no
-- Anything that read as filler or as obviously written by someone who already
-  knew the answer:
-
-  ```
-  
-  ```
+> **Done 2026-08-12 — confirmed by the owner.** The quickstart reads correctly
+> as written; no gaps, backtracks or filler reported. That was the whole of
+> T4.4's remaining done-when, so **T4.4 is closed** and folded into
+> `tasks.md`. The examples half had been machine-verified since 2026-08-11 by
+> `TestCommandsAgainstLiveDaemon`.
+>
+> The read landed against the post-revamp README, which had just lost its
+> phase-by-phase `Project Status` section to a `docs/` tree
+> ([PR #62](https://github.com/lezli01/vincent/pull/62)) — same command
+> sequence, more places to go afterwards.
 
 ---
 

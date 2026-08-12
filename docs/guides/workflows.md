@@ -2,10 +2,24 @@
 
 A workflow is a YAML file describing an ordered list of steps. Every task runs
 one, in its own git worktree on its own branch. This guide is the practical
-companion to [spec §8](versions/v0/spec.md), which is the normative reference
-when the two disagree.
+companion to [spec §8](../versions/v0/spec.md), which is the normative reference
+when the two disagree; the field-by-field version is the
+[workflow schema](../reference/workflow-schema.md).
 
-Four ready-to-copy workflows live in [`examples/`](../examples). Start there.
+Four ready-to-copy workflows live in [`examples/`](../../examples). Start there.
+
+- [Where files live](#where-files-live)
+- [The shape of a file](#the-shape-of-a-file)
+- [Three step types](#three-step-types)
+- [Checks](#checks-are-how-you-stop-an-agent-grading-its-own-homework)
+- [Templates](#templates)
+- [Retries and timeouts](#retries-and-timeouts)
+- [Choosing an agent](#choosing-an-agent)
+- [Permission modes](#permission-modes)
+- [Mid-run questions](#mid-run-questions)
+- [Writing portable command steps](#writing-portable-command-steps)
+- [Patterns that work](#patterns-that-work)
+- [A checklist before you commit one](#a-checklist-before-you-commit-one)
 
 ---
 
@@ -18,8 +32,10 @@ Four ready-to-copy workflows live in [`examples/`](../examples). Start there.
 | Built-in | `adhoc` — one agent step, always available | |
 
 `{config_dir}` is `%APPDATA%\vincent` on Windows, `~/Library/Application
-Support/vincent` on macOS, `~/.config/vincent` on Linux. `vincent workflow ls`
-shows the merged registry with its scope badges.
+Support/vincent` on macOS, `~/.config/vincent` on Linux (the full table is in
+[Files and directories](../reference/files.md)). `vincent workflow ls` shows the
+merged registry with its scope badges; add `--project <id>` to include that
+repository's own files.
 
 The daemon watches both directories and reloads on save — there is no restart
 and no "apply" step. A file that fails to parse is reported as invalid and the
@@ -206,6 +222,97 @@ adapter which cannot restrict on your platform **fails the step** rather than
 running it unrestricted, because a restricted mode that quietly isn't
 restricted is worse than none.
 
+The full picture, including what "restricted" means for each CLI, is in
+[Agent CLIs](agents.md) and the [Security model](../security-model.md).
+
+## Mid-run questions
+
+An input-capable adapter (claude today) can surface a structured question from
+the agent mid-step. Only machine-readable requests from the agent's event stream
+qualify — vincent never guesses that some output text "looks like a question".
+
+```yaml
+defaults:
+  on_input: wait        # wait (default) | deny
+  input_timeout: 24h    # bounds each wait; also settable per step
+```
+
+- **`wait`** — the task moves to `awaiting_input`, **keeping its concurrency
+  slot** (the agent process is alive, idle on its stdin). The step's own timeout
+  clock pauses: it measures agent work, not human latency. The board pins the
+  task, rings the terminal bell, and the answer form opens on `enter`. Answering
+  resumes the same session where it stopped.
+- **`deny`** — for runs that must stay strictly unattended. vincent answers
+  immediately through the adapter: questions get a canned "no user is available;
+  decide with your best judgment", permission requests are denied. The task never
+  leaves `running`.
+
+`input_timeout` is measured **per request** — a new question starts a fresh
+window. On expiry the process is killed and the attempt fails under the normal
+retry policy.
+
+Adapters that report `supports_input: false` (codex, cursor) never produce input
+requests, and `on_input` has no effect on their steps.
+
+## Writing portable command steps
+
+`run` and `check` are rendered, then handed to a shell:
+
+| Platform | Shell |
+|---|---|
+| POSIX | `/bin/sh -c "<rendered>"` |
+| Windows | `pwsh -NoProfile -Command "<rendered>"`, falling back to `powershell` |
+
+Pin one explicitly with `shell: sh | pwsh | cmd` when a step is only ever meant
+to run one way. vincent makes no attempt to translate between them: cross-OS
+portability of command steps is the author's job.
+
+Every command and check step runs with cwd set to the worktree, inherits the
+daemon's environment, and additionally gets:
+
+```
+VINCENT_TASK_ID       VINCENT_TASK_TITLE     VINCENT_PROJECT_NAME
+VINCENT_PROJECT_PATH  VINCENT_WORKTREE       VINCENT_BRANCH
+VINCENT_BASE_BRANCH   VINCENT_STEP_ID        VINCENT_STEP_ATTEMPT
+VINCENT_WORKFLOW
+```
+
+Those are the portable way to reach task context from a script you would rather
+keep out of the YAML:
+
+```yaml
+  - id: notify
+    type: command
+    run: ./scripts/notify.sh
+    env:
+      SLACK_CHANNEL: "#builds"
+```
+
+## Patterns that work
+
+**Split what an agent does badly in one go.** A survey step whose output feeds a
+fix step beats one prompt asking for both, because `.Steps` carries the first
+result into the second and each half is individually retryable.
+
+**Make the deliverable checkable.** `check: go build ./... && go test ./...` on
+the step that writes code turns "the agent said it was done" into "the compiler
+agrees". If a step genuinely produces nothing checkable, that is usually a sign
+it is doing two things.
+
+**Invert the check when failure is the point.** `check: '! go test ./...'` on a
+step whose job is to produce a red test — see
+[`fix-and-test`](../../examples/fix-and-test.yaml). Without it, an agent asked
+to "add a failing test and fix it" reliably writes a test that passes against
+its own fix.
+
+**Gate before anything leaves the machine.** Put a `manual` step in front of any
+step that pushes, publishes, deploys or deletes. The gate costs you one
+keystroke and is the difference between "an agent wrote to a branch" and "an
+agent wrote to production".
+
+**Use `restricted` for steps that only read and write text.** A docs pass has no
+business running commands; the mode says so, and the adapter enforces it.
+
 ## A checklist before you commit one
 
 - `vincent workflow validate` passes with no warnings.
@@ -215,3 +322,14 @@ restricted is worse than none.
 - Optional `.Task.Fields` reads are wrapped in `{{with}}`.
 - Commands work in the shell your teammates have — `&&` is fine everywhere;
   `test -f` is not.
+
+---
+
+## See also
+
+- [Workflow schema](../reference/workflow-schema.md) — every field, every
+  default, in one table.
+- [Agent CLIs](agents.md) — what each adapter can and cannot do.
+- [Task lifecycle](../reference/task-lifecycle.md) — what `blocked` means and
+  what you can do from there.
+- [Example workflows](../../examples) — the four shipped files.

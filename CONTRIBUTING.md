@@ -20,6 +20,13 @@ Thanks for your interest in contributing!
 
 ## Before you start
 
+User-facing documentation lives in [docs/](docs/README.md) — getting started,
+guides, per-platform notes and reference. It is written **from the source**: the
+configuration reference tracks `internal/config`, the CLI page the cobra command
+tree, the API page the route table in `internal/api/server.go`, the TUI key
+tables `internal/tui/bindings.go`, and the failure reasons the `Reason*`
+constants. If your PR changes one of those, update its page in the same PR.
+
 The project is specified in [docs/versions/v0/spec.md](docs/versions/v0/spec.md)
 and work is tracked in [docs/versions/v0/tasks.md](docs/versions/v0/tasks.md).
 Check the task breakdown first — if what you want to do maps to a task, mention
