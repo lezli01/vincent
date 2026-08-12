@@ -210,3 +210,72 @@ func TestOptionsCuratedOnly(t *testing.T) {
 		t.Error("defaults must stay empty — the CLI decides")
 	}
 }
+
+// TestParseReasoningFixture is T4.17, against a real `codex exec --json` run
+// (codex-cli 0.147.0) at `-c model_reasoning_effort=high`. The task stayed
+// open for exactly one reason — no capture in this repo contained a reasoning
+// item, and normalizing a documented-but-unobserved shape fails silently: the
+// reasoning simply never appears, which is indistinguishable from a model that
+// did not reason.
+//
+// The capture settles the shape. Reasoning arrives as `item.completed` with
+// item type `reasoning`, carrying whole `text`, four times in one turn — no
+// `item.started` to correlate against and no deltas to accumulate. That is
+// claude's shape rather than cursor's, which is why this needs none of the
+// cursor parser's buffering.
+func TestParseReasoningFixture(t *testing.T) {
+	events := parseFixture(t, "reasoning_0.147.0.jsonl")
+
+	var thinking []string
+	for _, ev := range events {
+		if ev.Type == agent.EventThinking {
+			thinking = append(thinking, ev.Text)
+		}
+	}
+	if len(thinking) != 4 {
+		t.Fatalf("thinking events = %d, want 4 (one per reasoning item in the capture)", len(thinking))
+	}
+	for i, text := range thinking {
+		if text == "" {
+			t.Errorf("thinking event %d has no text", i)
+		}
+	}
+	if !strings.Contains(thinking[0], "Designing shortest subarray sum algorithm") {
+		t.Errorf("first reasoning block = %q, want the captured text verbatim", thinking[0])
+	}
+
+	// Reasoning is not output: it must not become the result text, and it
+	// must not be counted as an assistant message.
+	res := terminal(t, events)
+	if res.IsError {
+		t.Errorf("IsError = true (%s), want success", res.ErrorMessage)
+	}
+	if !strings.HasPrefix(res.ResultText, "Let `P[i]`") {
+		t.Errorf("ResultText = %.40q, want the agent_message, not a reasoning block", res.ResultText)
+	}
+	for _, ev := range events {
+		if ev.Type == agent.EventOutput && strings.HasPrefix(ev.Text, "**Designing") {
+			t.Error("a reasoning block was normalized as assistant output")
+		}
+	}
+	if res.InputTokens != 17792 || res.OutputTokens != 3333 {
+		t.Errorf("tokens = %d/%d, want 17792/3333", res.InputTokens, res.OutputTokens)
+	}
+	// Every reasoning line still carries its raw bytes, so a transcript keeps
+	// the record even where a renderer chooses to hide it.
+	for _, ev := range events {
+		if ev.Type == agent.EventThinking && len(ev.Raw) == 0 {
+			t.Error("a thinking event lost its raw line")
+		}
+	}
+}
+
+// A reasoning item with no text is not an event: emitting an empty thinking
+// block would put a blank gutter line in the pane for nothing.
+func TestParseReasoningWithoutText(t *testing.T) {
+	st := &stream{}
+	ev := st.parse([]byte(`{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":""}}`))
+	if ev.Type != agent.EventUnknown {
+		t.Errorf("empty reasoning normalized to %v, want unknown", ev.Type)
+	}
+}
