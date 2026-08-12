@@ -48,13 +48,15 @@ The name is an acronym, and every part of it maps to the system:
 - **Native agent tooling** — it invokes locally installed tools such as
   Claude Code, Codex, and Cursor.
 
-The v0 scope is **near complete**: the daemon, the workflow engine, the TUI, the
-CLI subcommands, OS service registration and all three agent adapters are built,
-released as signed binaries, and exercised on Windows, macOS and Linux in CI on
-every pull request — unit tests, the race detector, the linter, and three
-end-to-end acceptance gates that drive a real daemon over HTTP. A few polish
-tasks are still open; the [task breakdown](docs/versions/v0/tasks.md) tracks
-them.
+**All 70 tasks in the [v0 breakdown](docs/versions/v0/tasks.md) are done.** The
+daemon, the workflow engine, the TUI, the CLI subcommands, OS service
+registration and all three agent adapters are built, released as signed
+binaries, and exercised on Windows, macOS and Linux in CI on every pull
+request — unit tests, the race detector, the linter, and three end-to-end
+acceptance gates that drive a real daemon over HTTP. Releases are
+pre-release tags so far; the binaries on the
+[releases page](https://github.com/lezli01/vincent/releases) are signed,
+checksummed and attested.
 
 It is released under the [MIT License](LICENSE) and created by `lezli01` at
 [lezli01.is-a.dev](https://lezli01.is-a.dev). Contributions are welcome — see
