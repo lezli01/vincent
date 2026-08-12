@@ -419,7 +419,10 @@ func (d *detail) outputLines() []string {
 	width := max(d.width, 1)
 	lines := make([]string, 0, len(d.records)+1)
 	if d.truncated {
-		lines = append(lines, styleDim.Render(gutterNone+"… earlier output truncated"))
+		// Naming the key here is the whole point of T4.11: this line is the
+		// one moment a reader is looking straight at the missing output, so
+		// it is where the way to the rest of it belongs.
+		lines = append(lines, styleDim.Render(gutterNone+"… earlier output truncated — press e for the whole transcript"))
 	}
 	// sawOutput drives the T4.16 result de-duplication: every dialect's
 	// result text repeats assistant messages already on screen — cursor's is
