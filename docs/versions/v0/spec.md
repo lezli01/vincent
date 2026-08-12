@@ -1025,7 +1025,7 @@ writes that user's data dir:
   installed and running either way, so this is a warning, not a failed
   install.
 - **Windows** — a **Scheduled Task triggered at logon**, running as the
-  invoking user with an `InteractiveToken` principal (T4.17). Not a Windows
+  invoking user with an `InteractiveToken` principal (T4.19). Not a Windows
   Service: the SCM has no per-user services, and an empty `ServiceStartName`
   defaults to **LocalSystem**, so the daemon resolved `LOCALAPPDATA` to the
   SYSTEM profile, wrote its database and `daemon.json` under
@@ -1100,7 +1100,7 @@ writes that user's data dir:
   platforms. Running with nobody logged in needs a service account with a
   stored password, which is a different feature.
 
-  A pre-T4.17 LocalSystem service is detected and refused by `install`, removed
+  A pre-T4.19 LocalSystem service is detected and refused by `install`, removed
   by `uninstall`, and named by `status` — it is machine-wide, so removing it is
   the one Windows operation that still asks for an elevated prompt, and says
   so. `vincent daemon` keeps its `svc.IsWindowsService()` branch: nothing
@@ -1130,10 +1130,10 @@ Two consequences are deliberate. The captured `PATH` goes **stale**: a CLI
 installed somewhere new after the service was installed needs a
 `vincent service install` to be seen again, which is the same "reinstall to
 recapture" contract the dirs already have. And **Windows does not capture it**
-— since T4.17 the task runs in the user's logon session and therefore already
+— since T4.19 the task runs in the user's logon session and therefore already
 has the user's own `PATH`, including the `%APPDATA%\npm` prefix this finding
 was about; freezing a copy would replace a live correct value with a stale one.
-(Before T4.17 the reason was the opposite one: a LocalSystem service inherited
+(Before T4.19 the reason was the opposite one: a LocalSystem service inherited
 the *machine* environment, which has no per-user npm prefix at all.) On every
 platform the standing answer to an agent that will not resolve is the §12.3
 `agents.<name>.path` knob, which is absolute and never consults `PATH`.
