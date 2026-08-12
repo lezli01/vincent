@@ -69,10 +69,21 @@ bash ./scripts/m5-gate.sh
 ```
 
 The gate is a bash script either way; what matters is that PowerShell rather
-than Git Bash is the **parent**, so `SHELL` never enters the environment the
-daemon inherits. The script now prints its launch environment as its first
-line — confirm it reads `SHELL=<unset>`. If it doesn't, the parent leaked one:
-re-run the last line as `env -u SHELL bash ./scripts/m5-gate.sh`.
+than Git Bash is the **parent**.
+
+**Do not check this with `echo $SHELL`** — it will tell you Git Bash either
+way. bash assigns `SHELL` the current user's login shell when it inherited
+none, and does not export it, so the variable you see inside the script is
+bash's own invention rather than anything the daemon will get. Measured
+2026-08-12: from a PowerShell parent, `$SHELL` inside bash reads
+`/usr/bin/bash` while a **native child of that bash sees no `SHELL` at all** —
+which is what `vincent.exe` is. The banner reads the exported environment with
+`printenv` for exactly this reason, and is the thing to trust.
+
+Confirm its first lines say `SHELL=<not exported>`. If one names a bash, the
+parent really did export it: re-run as `env -u SHELL bash ./scripts/m5-gate.sh`.
+`MSYSTEM` may still be listed — it leaks into PowerShell sessions started from
+a Git Bash ancestor and is not what the hook chain reads.
 
 - Launch environment the script printed: `SHELL=__________ MSYSTEM=__________`
 - Result: ☐ pass ☐ fail → output:

@@ -65,8 +65,20 @@ hostpath() {
 # enough to decide whether a hook is written for one shell and evaluated by
 # another, which is the failure scenario 1 diagnoses below. A result recorded
 # without it is not reproducible, so print it here.
+#
+# Read the *exported* environment rather than shell variables. bash assigns
+# SHELL the current user's login shell when it did not inherit one (bash(1)),
+# so "$SHELL" reports Git Bash even from a PowerShell parent that exported
+# nothing — it would report the launch context this gate exists to record as
+# exactly backwards. `printenv` reads what a native child actually inherits,
+# which is what reaches the daemon and then cursor-agent.
+show_env() { # show_env NAME
+  printf '   %s=%s\n' "$1" "$(printenv "$1" || echo '<not exported>')"
+}
 echo "== launch environment (copy into the docs/versions/v0/m5-gate.md row)"
-echo "   SHELL=${SHELL:-<unset>}  MSYSTEM=${MSYSTEM:-<unset>}  COMSPEC=${COMSPEC:-<unset>}"
+show_env SHELL
+show_env MSYSTEM
+show_env COMSPEC
 if (( REAL_AGENT )); then
   echo "   cursor-agent $(cursor-agent --version 2>/dev/null || echo '<not on PATH>')"
 fi
