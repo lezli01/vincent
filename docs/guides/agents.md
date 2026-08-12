@@ -90,6 +90,11 @@ plain-text prompt. Nothing degrades silently.
   type is passed through with a warning, not rejected.
 - **No cost reporting**, and `supports_input: false`: a codex step never enters
   `awaiting_input`, and `on_input` has no effect on it.
+- **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
+  shows at the `normal` and `verbose` output levels (`v` cycles them) and the
+  transcript records as `agent.thinking`. Whether any are emitted depends on
+  the effort you asked for — a low-effort turn can spend reasoning tokens and
+  produce no blocks at all.
 
 > **Caveat on `restricted` + git.** In a linked worktree the real git directory
 > lives under the main repository, outside the sandbox, so a `git commit` from a
