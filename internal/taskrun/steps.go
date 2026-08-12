@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -54,6 +53,17 @@ func (r *Runner) runAgentStep(
 		Effort:         sel.Effort,
 		PermissionMode: resolvePermission(env.step, env.wf.Defaults),
 		OnInput:        onInput,
+		// Always explicit, even when the policy inherits everything (T4.23).
+		// Passing nil would hand the adapter the ambient environment again,
+		// and "decided" is the whole point: what a step runs under is now a
+		// value this engine computed, not whatever the daemon was started
+		// from.
+		Env: r.childEnv(),
+		// Always explicit, even when the policy inherits everything (T4.23).
+		// Passing nil would hand the adapter the ambient environment again,
+		// and "decided" is the whole point: what a step runs under is now a
+		// value this engine computed, not whatever the daemon was started
+		// from.
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -326,7 +336,7 @@ func (r *Runner) runCommandStep(
 		phase:    "run",
 		script:   script,
 		shellPin: env.step.Shell,
-		env:      commandEnv(rc, env.step.Env),
+		env:      commandEnv(r.childEnv(), rc, env.step.Env),
 		workDir:  env.task.WorktreePath,
 		timeout:  timeout,
 	})
@@ -346,7 +356,7 @@ func (r *Runner) runCheck(
 		phase:    "check",
 		script:   script,
 		shellPin: env.step.Shell,
-		env:      commandEnv(rc, env.step.Env),
+		env:      commandEnv(r.childEnv(), rc, env.step.Env),
 		workDir:  env.task.WorktreePath,
 		timeout:  resolveCheckTimeout(env.step, r.deps.Config()),
 	})
@@ -617,8 +627,25 @@ func resultChunks(results []agent.ToolResult) []map[string]any {
 // commandEnv builds the environment of a command or check step: the
 // daemon's own environment, the §8.5 vincent variables, then the step's
 // declared `env` (which wins, so a workflow can override anything).
-func commandEnv(rc workflow.RenderContext, stepEnvVars map[string]string) []string {
-	out := os.Environ()
+// childEnv resolves the §12.3 environment policy against this process's own
+// environment (T4.23).
+//
+// It is resolved per spawn rather than cached at startup because the config
+// hot-reloads: a step that starts after a reload must run under the policy in
+// force when it started, not the one the daemon booted with. Resolving is a
+// map build over os.Environ() — cheaper by orders of magnitude than the
+// process it is about to launch.
+func (r *Runner) childEnv() []string {
+	return r.deps.Config().Environment.ResolveProcess()
+}
+
+// commandEnv builds a command or check step's environment: the §12.3 resolved
+// base, then the §8.5 VINCENT_* variables, then the step's own `env:`. The
+// order is the precedence — Go's exec keeps the last of any duplicate name —
+// and it is why `environment.unset` cannot reach a VINCENT_* variable. Those
+// are facts about the run, not inherited state.
+func commandEnv(base []string, rc workflow.RenderContext, stepEnvVars map[string]string) []string {
+	out := append([]string(nil), base...)
 	out = append(out, workflow.Env(rc)...)
 	for k, v := range stepEnvVars {
 		out = append(out, k+"="+v)

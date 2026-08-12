@@ -48,6 +48,24 @@ log_level: info
 # transcript. Off by default because argv includes the rendered prompt.
 debug: false
 
+# What child processes — agent steps, command steps and their checks —
+# inherit from the daemon (T4.23). Resolved in one order: inherit, then
+# unset, then set. Command steps layer the VINCENT_* variables and their own
+# "env:" on top, so those are never affected.
+#
+# The default inherits everything, which is what the daemon always did
+# implicitly. Pin it when a run has to be reproducible, or drop a single
+# variable that breaks a CLI — on Windows, a daemon started from Git Bash
+# carries MSYSTEM, which blocks every cursor tool call.
+#
+# Values under "set" are literal: "$" is not special and nothing is expanded.
+environment:
+  inherit: all          # all | none | a list of names, e.g. [PATH, HOME]
+  # unset:
+  #   - MSYSTEM
+  # set:
+  #   LANG: C.UTF-8
+
 # Agent CLI locations. An empty path resolves the binary from PATH.
 agents:
   claude:

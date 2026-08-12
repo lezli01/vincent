@@ -17,7 +17,10 @@
 //	                      bad-input-request | no-result (cursor: stderr
 //	                      failure with no terminal event) |
 //	                      flood (emits until killed — the transcript cap) |
-//	                      sleep (internal: silent child)
+//	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
+//	                      variables as its result — the §12.3 environment
+//	                      policy) | sleep (internal: silent child)
+//	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
 //	FAKEAGENT_SCENARIO_CODEX
 //	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
 //	                      only — lets one process environment drive two
@@ -199,6 +202,20 @@ func main() {
 	case "big-usage":
 		emitText("burning tokens")
 		emitSuccessResult(prompt, 2_500_000, 1_200_000)
+	case "report-env":
+		// Reports the environment the process was actually given, so a test
+		// can assert what an agent step inherited (T4.23). The variables are
+		// named by the test rather than dumped wholesale: a scenario that
+		// printed every variable would put the developer's own environment
+		// into a transcript on every run.
+		var reported []string
+		for _, name := range strings.Split(os.Getenv("FAKEAGENT_REPORT_ENV"), ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				reported = append(reported, name+"=["+os.Getenv(name)+"]")
+			}
+		}
+		emitText(strings.Join(reported, " "))
+		emitSuccessResult([]byte(strings.Join(reported, " ")), 1, 1)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.

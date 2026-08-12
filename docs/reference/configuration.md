@@ -180,6 +180,81 @@ restricted, did it get it?" is otherwise unanswerable without reading the stored
 snapshot out of the database. Off by default because argv carries the rendered
 prompt and transcripts are something people paste into issues.
 
+### `environment`
+
+```yaml
+environment:
+  inherit: all          # all (default) | none | a list of names
+  unset: [MSYSTEM]      # dropped after inherit
+  set:                  # literal values, last word
+    LANG: C.UTF-8
+```
+
+What child processes inherit from the daemon — **agent steps, command steps
+and their checks alike**. Resolved in one order: `inherit`, then `unset`, then
+`set`.
+
+Before this key existed nothing decided it. The detached daemon inherits the
+shell that started it, so the same task, workflow and agent ran differently
+depending on what launched the daemon, and nothing recorded which. The default
+`inherit: all` is exactly that old behaviour, so this changes nothing until you
+ask it to.
+
+| Field | Meaning |
+|---|---|
+| `inherit` | `all` takes the daemon's whole environment; `none` takes nothing; a list takes only those names. An **empty list means nothing**, not everything |
+| `unset` | Names dropped after inheriting. This is the "inherit all except" case |
+| `set` | Literal values, applied last — so `set` wins over both `inherit` and `unset` |
+
+**Values under `set` are literal.** `$` is not special and nothing is
+expanded, so `PATH: "${PATH}:/opt/bin"` sets that string verbatim rather than
+appending.
+
+Command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#writing-portable-command-steps)
+and then their own `env:` on top. Neither `unset` nor `set` can touch those —
+they are facts about the run, not inherited state — and a step's `env:` still
+wins over everything.
+
+#### What it is for
+
+The case that motivated it: on Windows, a daemon started from Git Bash carries
+`MSYSTEM`, and Cursor imports Claude Code's hooks and evaluates them under
+bash, so **every** cursor tool call is silently blocked. No amount of
+`unset MSYSTEM` in the launching shell helps — the MSYS runtime re-injects it
+into every child. vincent sets the child's environment block directly, so:
+
+```yaml
+environment:
+  unset: [MSYSTEM]
+```
+
+genuinely removes it.
+
+More generally: pin the environment when a run has to be reproducible, and
+`inherit: none` plus an explicit `set` when it has to be hermetic.
+
+#### Two things to know
+
+**vincent honours the policy as written and warns rather than correcting it.**
+If the resolved environment has no `PATH` (or no `SystemRoot` on Windows) the
+daemon logs a warning at startup and runs anyway. The failure it is warning
+about is silent and late: adapters are resolved with `exec.LookPath` inside the
+daemon and started by absolute path, so an agent with no `PATH` starts
+perfectly and then fails several steps in, when the CLI shells out to git.
+
+**The resolved variable names are logged, and never the values.** At startup
+and again whenever a hot-reload changes the set:
+
+```
+level=INFO msg="child environment resolved" inherit=all unset=1 set=0 count=42
+  names="APPDATA,HOME,LANG,PATH,USERPROFILE,…"
+```
+
+Values are never written to the log at any level — an environment block is
+where every agent CLI's credentials live, and a log is something people paste
+into issues. For the same reason the resolved environment is **not** recorded
+in step transcripts, even under `debug: true`.
+
 ### `agents`
 
 ```yaml

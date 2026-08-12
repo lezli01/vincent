@@ -131,6 +131,10 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		}
 	}
 
+	// What every child of this daemon will inherit (§12.3, T4.23). Logged
+	// before anything is spawned, so the record precedes the runs it explains.
+	envNames := logEnvironment(logger, cfg.Environment)
+
 	token, err := EnsureToken(dirs.Data)
 	if err != nil {
 		logger.Error("startup failed: token", "error", err)
@@ -290,6 +294,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			level.Set(lvl)
 		}
 		current.Store(&next)
+		// Re-report the environment when a reload actually moves it. "Once at
+		// startup" would go stale the moment someone edits the policy, and a
+		// log that quietly describes a set no longer in force is worse than
+		// one that never spoke (T4.23).
+		if names := next.Environment.ResolveProcess(); !sameNames(envNames, config.Names(names)) {
+			envNames = logEnvironment(logger, next.Environment)
+		}
 		// A reload may follow a shell install; pick it up without a restart
 		// (§8.3).
 		shells.Reprobe()

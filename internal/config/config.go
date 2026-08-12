@@ -156,8 +156,12 @@ type Config struct {
 	// `restricted`, and diagnosing it meant reading the stored snapshot out
 	// of the database. Off by default: argv can carry a prompt, and a
 	// transcript is something people paste into issues.
-	Debug  bool   `yaml:"debug"`
-	Agents Agents `yaml:"agents"`
+	Debug bool `yaml:"debug"`
+	// Environment decides what child processes inherit (§12.3, T4.23). Its
+	// zero value is not the default — Default() sets inherit: all, which is
+	// what every version before it did implicitly.
+	Environment Environment `yaml:"environment"`
+	Agents      Agents      `yaml:"agents"`
 }
 
 // Defaults holds fallback step timeouts, applied when a workflow step does
@@ -198,6 +202,9 @@ func Default() Config {
 		TranscriptRetentionDays: 90,
 		TranscriptMaxBytes:      512 << 20, // 512MB (§12.3)
 		LogLevel:                "info",
+		// Inherit everything: exactly what the daemon did before the policy
+		// existed, so nothing changes for anyone who does not ask.
+		Environment: Environment{Inherit: InheritAll()},
 	}
 }
 
@@ -253,7 +260,7 @@ func (c Config) validate() error {
 	default:
 		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.LogLevel)
 	}
-	return nil
+	return c.Environment.validate()
 }
 
 func isLoopbackHost(host string) bool {

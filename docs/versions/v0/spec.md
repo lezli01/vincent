@@ -1173,11 +1173,54 @@ transcript_retention_days: 90   # transcripts of *archived* tasks older than thi
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 log_level: info
 debug: false                 # record each step's resolved settings and full argv in its transcript
+environment:                 # what child processes inherit (T4.23)
+  inherit: all               # all (default) | none | [PATH, HOME, …]; an empty list means none
+  unset: []                  # names dropped after inherit
+  set: {}                    # literal values, applied last; no expansion
 agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 ```
+
+**`environment` (T4.23).** Governs every process the daemon spawns — agent
+steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
+environment — resolved in one order: `inherit` → `unset` → `set`. Command
+steps then layer the §8.5 `VINCENT_*` variables and their own `env:` on top,
+so neither `unset` nor `set` can reach those, and a step's `env:` still wins.
+
+The default `inherit: all` is what the daemon did implicitly before the key
+existed: the detached spawn inherits the launching shell, `RunSpec.Env` was
+never populated, and each adapter overrides only a non-nil one — so a task's
+environment was decided by whatever started the daemon and recorded nowhere.
+Scrubbing variables by default was rejected: an inherited `USERPROFILE` is
+where an agent CLI's own credentials live, and deleting it would trade a rare
+loud failure for quiet breakage across every adapter. The defect was that the
+value was *accidental and unrecorded*, not that it was set.
+
+- **Values under `set` are literal.** `$` is not special. Expansion would have
+  to arrive as its own key rather than as a change of meaning here, since
+  adding it later would silently reinterpret an existing literal containing
+  `${`.
+- **An empty `inherit` list means nothing, not everything.** The form is an
+  explicit mode rather than an inference from list length, so the narrowest
+  request expressible cannot be read as the widest.
+- **The policy is honored as written; a missing load-bearing variable is
+  warned about, not corrected.** §9.5 resolves adapters with `exec.LookPath`
+  *in the daemon* and starts them by absolute path, so an agent with no `PATH`
+  starts and then fails when the CLI shells out — silent and late. A hermetic
+  environment with an absolute-path toolchain is a legitimate request, so
+  vincent says so and runs.
+- **The daemon logs the resolved variable *names* at startup and on any reload
+  that changes the set — never the values, at any level.** An environment
+  block holds credentials and a log gets pasted into issues; the same
+  reasoning keeps `debug` off by default because argv can carry a prompt. For
+  that reason the resolved environment is not written to step transcripts
+  either.
+- **Daemon-global.** A workflow cannot pin its own; command steps already
+  carry `env:` for additions. Per-workflow environment would need a §8.2
+  schema addition and a second precedence chain beside §8.6's, and is additive
+  later if it is ever asked for.
 
 Config is authoritative in the file; the daemon watches and hot-reloads it. The API
 exposes it read-only (`GET /v1/config`). Per-project settings live in the DB and are
