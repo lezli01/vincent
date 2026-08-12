@@ -34,82 +34,34 @@ The two sections left are independent — take them in any order.
 
 ## 3. T5.7 — M5 gate, the real-`cursor-agent` legs
 
-### 3a. Re-run scenario 1 from PowerShell (do this first — it may be the whole fix)
+> **Done: the Windows real-CLI legs.** Scenario 1 **passed** against the real
+> `cursor-agent` on 2026-08-12, recorded in `docs/versions/v0/m5-gate.md`. Your
+> `fail` is what got us there: `SHELL=<not exported>` and it still failed
+> identically, which killed my "it's the launching shell" theory and sent me
+> looking properly.
+>
+> **The cause, at last — and it was never on the Cursor side.** Cursor
+> **imports Claude Code's hooks**. Its own log says so: it looks for
+> `~/.cursor/hooks.json`, finds none, then loads `~/.claude/settings.json`, and
+> `cursor-agent` does the same. It wraps each imported command in a PowerShell
+> preamble and then evaluates that string with **bash**, so every one errors —
+> and an erroring hook blocks the tool call. Your two blockers were `rtk hook
+> claude` (from your Claude settings) and `npx -y context-mode hook cursor
+> pretooluse` (a Claude plugin hook). That is why neither of us could find a
+> registration: there wasn't one. A Cursor bug on Windows, not yours and not
+> vincent's.
+>
+> **The remedy disables nothing.** Run the daemon with `USERPROFILE` and `HOME`
+> pointed at a scratch dir holding a junction to the real `.cursor` and no
+> `.claude`. Confirmed twice — the bare CLI probe went from 3 rejections and no
+> file written to **0 rejections and `hi.txt` created**, and the full gate then
+> passed end to end. The procedure is written up in `m5-gate.md`.
+>
+> One thing I would still take: **is it worth reporting upstream to Cursor?**
+> You have the reproduction, and the fix is theirs to make — right now every
+> Windows user with Claude Code hooks has a silently crippled `cursor-agent`.
 
-**The premise of the old §3a was wrong, and it is worth a paragraph because it
-cost a day.** The blocker was written up as "two `pretooluse` hooks registered
-in PowerShell syntax while `cursor-agent` evaluates them through bash, and they
-are generated at runtime rather than stored in a config file I could point at."
-The error message says exactly that — but there is nothing to go and fix: as of
-2026-08-12 there are **no** hooks in `~/.cursor/cli-config.json`, no
-`~/.cursor/hooks.json`, and no project-level `.cursor/`.
-
-What does vary between runs is **the shell the daemon was launched from**.
-vincent hands its own environment to `cursor-agent` unchanged — `RunSpec.Env`
-is never populated for agent steps (`internal/taskrun/steps.go`), the adapter
-overrides only a non-nil one (`internal/agent/cursor/cursor.go`), and the
-detached spawn sets none of its own (`internal/daemon/spawn.go`). Git Bash
-exports `SHELL` to native children as a **real Windows path** (it path-converts
-on the way out, so a downstream Node process sees `C:\Program
-Files\Git\bin\bash.exe`, finds it exists, and honors it); PowerShell leaves
-`SHELL` unset. The hook chain picks both the shell it *runs* a hook with and
-the syntax it *writes* that hook in from that one variable — so a mismatched
-pair is what a Git Bash launch produces and a PowerShell launch does not.
-
-That also explains why the same workload works when vincent is started from
-PowerShell, and why it will work under `vincent service install` (a Scheduled
-Task has no `SHELL` either) — i.e. in the configuration that actually ships.
-
-So, from a **PowerShell** window:
-
-```powershell
-vincent daemon stop
-$env:VINCENT_GATE_AGENT="cursor"; $env:VINCENT_GATE_SCENARIO="1"
-bash ./scripts/m5-gate.sh
-```
-
-The gate is a bash script either way; what matters is that PowerShell rather
-than Git Bash is the **parent**.
-
-**Do not check this with `echo $SHELL`** — it will tell you Git Bash either
-way. bash assigns `SHELL` the current user's login shell when it inherited
-none, and does not export it, so the variable you see inside the script is
-bash's own invention rather than anything the daemon will get. Measured
-2026-08-12: from a PowerShell parent, `$SHELL` inside bash reads
-`/usr/bin/bash` while a **native child of that bash sees no `SHELL` at all** —
-which is what `vincent.exe` is. The banner reads the exported environment with
-`printenv` for exactly this reason, and is the thing to trust.
-
-Confirm its first lines say `SHELL=<not exported>`. If one names a bash, the
-parent really did export it: re-run as `env -u SHELL bash ./scripts/m5-gate.sh`.
-`MSYSTEM` may still be listed — it leaks into PowerShell sessions started from
-a Git Bash ancestor and is not what the hook chain reads.
-
-- Launch environment the script printed: `SHELL=__________ MSYSTEM=__________`
-- Result: ☐ pass ☐ fail → output:
-
-  ```
-  
-  ```
-
-### 3b. Only if 3a still fails: check hooks for real
-
-```sh
-cd "$(mktemp -d)" && git init -q && echo hi > readme.txt
-printf 'Create a file named hi.txt containing hello. Nothing else.' \
-  | cursor-agent -p --output-format stream-json --trust --force --model auto \
-  | grep -o '"rejected":{[^}]*}' | head
-```
-
-Any output means something is still blocking tool calls. Run it from the *same*
-shell that failed, then from the other one — if the two disagree, it is the
-environment and not a registration, and §3a is the answer rather than hook
-surgery.
-
-- Probe returns nothing: ☐ yes ☐ no
-- If it differs between PowerShell and Git Bash: ☐ yes ☐ no
-
-### 3c. macOS legs
+### 3a. macOS legs — the only thing left on T5.7
 
 Scenarios 1, 2 and 4 on a Mac. Scenario 4 matters most: it is the **only**
 place `restricted` genuinely runs rather than being refused, and the refusal
@@ -180,11 +132,12 @@ cursor step resets the model you picked in your own interactive
 
 `internal/agent/cursor/testdata/tools_2026.08.04.jsonl` has **reconstructed**
 `tool_call/completed` payloads: every tool call was rejected during capture by
-the blocked hooks §3a is about. The `started` lines — the only ones the adapter
+the blocked hooks §3 is about. The `started` lines — the only ones the adapter
 normalises — are verbatim, and the file says so in its test header.
 
-If §3a turns out to be the launching shell, this capture is cheap to redo from
-PowerShell. Worth re-capturing?
+This is now cheap to redo: the scratch-home procedure in `m5-gate.md` gives a
+run whose tool calls actually complete, which is exactly what the fixture is
+missing. Worth re-capturing?
 
 - ☐ Yes, re-capture from a clean run
 - ☐ No, the reconstruction is documented and sufficient
