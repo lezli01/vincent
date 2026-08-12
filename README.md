@@ -122,21 +122,35 @@ catalogs — no daemon, no installed agent CLI — which makes it usable from CI
 and pre-commit hooks.
 
 `vincent service install` registers the daemon with your OS so it starts at
-login and survives reboot — a Windows Service, a launchd user agent, or a
-systemd user unit. It is per-user everywhere, since the OS user is vincent's
-trust boundary. Two platform notes: on Windows the service manager is
-machine-wide, so install and uninstall need an elevated prompt (status does
-not); on Linux, surviving logout also needs `loginctl enable-linger`, which
-the installer attempts and otherwise prints for you to run.
+login and survives reboot — a launchd user agent, a systemd user unit, or a
+Windows Scheduled Task. It runs as **you** on every platform, since the OS user
+is vincent's trust boundary: an agent gets your privileges, your agent-CLI
+logins and your git identity, and nothing more. No elevation is needed
+anywhere. One platform note: on Linux, surviving logout also needs `loginctl
+enable-linger`, which the installer attempts and otherwise prints for you to
+run.
 
-The config directory, the data directory **and your `PATH`** are captured at
-install time, because a service does not inherit the shell that installed it —
-and a service manager's own `PATH` contains none of the places agent CLIs
-install to, so without this the daemon would run and report every agent as
-missing. Two things follow: install a CLI somewhere new and you want
-`vincent service install` again to recapture, and on Windows, whose services
-inherit the machine environment instead, point at an agent explicitly with
-`agents.<name>.path` in `config.yaml` if it is not found.
+The config and data directories are captured at install time, because a service
+does not inherit the shell that installed it. On macOS and Linux **your `PATH`**
+is captured too: those service managers supply their own minimal one, which
+contains none of the places agent CLIs install to, so without this the daemon
+would run and report every agent as missing. Install a CLI somewhere new and
+you want `vincent service install` again to recapture it. Windows needs no
+capture — the task runs in your logon session with your own `PATH`. If an agent
+still will not resolve, point at it with `agents.<name>.path` in `config.yaml`,
+which is absolute and never consults `PATH`.
+
+On Windows it is a Scheduled Task and **not** a Windows Service, so it appears
+in Task Scheduler as `vincent` and never in `services.msc`. It runs with no
+visible window; `vincent service status` and `vincent daemon status` are how you
+check on it. Install it from an **ordinary** prompt: a task registered by an
+elevated one is owned by Administrators and leaves your own account unable to
+replace or remove it, and both commands say so if you hit it.
+
+Upgrading from a version that installed a Windows *Service*: it ran as
+LocalSystem, which is why your TUI kept starting a daemon of its own.
+`vincent service uninstall` from an elevated prompt removes it — once — and
+then `vincent service install` needs no elevation again.
 
 ## Project Status
 

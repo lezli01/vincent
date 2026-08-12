@@ -47,6 +47,12 @@ const processGrace = 15 * time.Second
 type Options struct {
 	// Foreground mirrors logs to stderr in addition to the log file.
 	Foreground bool
+	// Console records what `--hide-console` did with the console this process
+	// was handed, for the startup log record: "detached", "shared", "none",
+	// "kept", "attached", or "" when the flag was not passed. A window left on
+	// the desktop at logon is then a log line rather than a screenshot
+	// (T4.21); see DetachConsole for what each word means.
+	Console string
 }
 
 // Run runs the daemon until the context is canceled, a termination signal
@@ -97,8 +103,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	if lvl, err := parseLevel(cfg.LogLevel); err == nil {
 		level.Set(lvl)
 	}
-	logger.Info("starting vincent daemon",
-		"version", version.Version(), "pid", os.Getpid(), "data_dir", dirs.Data)
+	startup := []any{
+		"version", version.Version(), "pid", os.Getpid(), "data_dir", dirs.Data,
+	}
+	if opts.Console != "" {
+		startup = append(startup, "console", opts.Console)
+	}
+	logger.Info("starting vincent daemon", startup...)
 
 	st, err := store.Open(filepath.Join(dirs.Data, "vincent.db"))
 	if err != nil {

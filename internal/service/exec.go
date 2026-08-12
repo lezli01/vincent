@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build windows || darwin || linux
 
 package service
 
@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// combined runs cmd and folds its output into any error — launchctl and
-// systemctl put their diagnosis on stdout as often as stderr, and losing it
-// turns a fixable problem into "exit status 1".
+// combined runs cmd and folds its output into any error — launchctl, systemctl
+// and schtasks all put their diagnosis on stdout as often as stderr, and
+// losing it turns a fixable problem into "exit status 1".
 //
 // The command is built by the caller rather than named here: macOS only ever
 // shells out to launchctl, while Linux drives both systemctl and loginctl, so

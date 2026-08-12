@@ -187,12 +187,66 @@ func TestCatalogCacheMissingBinaryDegrades(t *testing.T) {
 	if len(e.Options.Efforts) == 0 {
 		t.Error("Options empty; probe failure must still serve the curated catalog (§9.6)")
 	}
-	// A still-missing binary is a stable identity: no re-probe per request.
+	// A still-missing binary is a stable identity: no re-probe per request,
+	// until failureTTL expires (TestCatalogCacheFailureExpires).
 	if _, ok := c.Entry(t.Context(), "codex", false); !ok {
 		t.Fatal("Entry: adapter unknown")
 	}
 	if stub.detects != 1 {
 		t.Fatalf("detects = %d, want 1 (missing binary cached)", stub.detects)
+	}
+}
+
+// TestCatalogCacheFailureExpires pins T4.22: a probe that failed is a fact
+// about a moment, not about the binary, so it expires — while a probe that
+// answered stays cached against the binary's identity as §9.6 says.
+//
+// The bug it exists for: a cold logon timed out `codex --version`, and because
+// nothing about codex.cmd had changed since, the daemon served "unavailable —
+// exit status 1" for its whole lifetime against a healthy CLI.
+func TestCatalogCacheFailureExpires(t *testing.T) {
+	bin := fakeBinary(t)
+	stub := &stubAdapter{
+		name: "codex", path: bin,
+		av:      Availability{Path: bin, Error: "codex --version failed: timed out after 20s"},
+		curated: cachedOpts("gpt-5.4"),
+	}
+	stub.opts = stub.curated
+	c := NewCatalogCache(NewRegistry(stub))
+	now := time.Now()
+	c.now = func() time.Time { return now }
+
+	if e, _ := c.Entry(t.Context(), "codex", false); e.Availability.Found {
+		t.Fatal("Found = true for a failing probe")
+	}
+	if _, ok := c.Entry(t.Context(), "codex", false); !ok {
+		t.Fatal("Entry: adapter unknown")
+	}
+	if stub.detects != 1 {
+		t.Fatalf("detects = %d within failureTTL, want the failure cached", stub.detects)
+	}
+
+	// Past the TTL the daemon asks again — and this time the CLI answers.
+	now = now.Add(failureTTL)
+	stub.av = Availability{Found: true, Path: bin, Version: "0.147.0"}
+	e, ok := c.Entry(t.Context(), "codex", false)
+	if !ok {
+		t.Fatal("Entry: adapter unknown")
+	}
+	if stub.detects != 2 {
+		t.Fatalf("detects = %d past failureTTL, want a re-probe", stub.detects)
+	}
+	if !e.Availability.Found || e.Availability.Version != "0.147.0" {
+		t.Fatalf("availability = %+v, want the healed probe", e.Availability)
+	}
+
+	// A clean probe is a property of the binary: it does not expire.
+	now = now.Add(100 * failureTTL)
+	if _, ok := c.Entry(t.Context(), "codex", false); !ok {
+		t.Fatal("Entry: adapter unknown")
+	}
+	if stub.detects != 2 {
+		t.Fatalf("detects = %d, want a successful probe to stay cached (§9.6)", stub.detects)
 	}
 }
 

@@ -28,8 +28,11 @@ const binaryName = "cursor-agent"
 // always is what makes a run reproducible (spec §9.7).
 const defaultModel = "auto"
 
-// versionTimeout bounds the --version and status probe subprocesses.
-const versionTimeout = 10 * time.Second
+// versionTimeout bounds the --version and status probe subprocesses. 20 s, the
+// same bound the other two adapters carry for the same cold-logon reason
+// (T4.22) — and `status` is a network call, where it was already the tighter of
+// the two bounds this adapter uses.
+const versionTimeout = 20 * time.Second
 
 // Adapter runs agents through the Cursor CLI.
 type Adapter struct {
@@ -83,9 +86,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	if err != nil {
 		return agent.Availability{Error: err.Error()}, nil
 	}
-	vctx, cancel := context.WithTimeout(ctx, versionTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(vctx, path, "--version").Output()
+	out, _, err := agent.Probe(ctx, versionTimeout, path, "--version")
 	if err != nil {
 		return agent.Availability{
 			Path:  path,
@@ -113,18 +114,26 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 // is true, and anything else is unknown rather than guessed. T5.7 pins the
 // logged-out leg by hand.
 func (a *Adapter) loggedIn(ctx context.Context, path string) *bool {
-	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "status").CombinedOutput()
+	out, errOut, err := agent.Probe(ctx, versionTimeout, path, "status")
 	no, yes := false, true
 	if err != nil {
+		// A probe that ran out of time exits 1 on Windows, where the deadline
+		// is a TerminateProcess(pid, 1) — so the exit-status branch below
+		// would read a cold machine as a definite "not authenticated"
+		// (T4.22). Never a verdict; the §9.5 contract has a value for this.
+		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return &no // ran and refused: a definite answer
 		}
 		return nil // could not run it at all
 	}
-	text := strings.ToLower(string(out))
+	// Both streams: the wording this parses is not fixture-verified, so which
+	// stream carries it is not something to assume either (the probe used to
+	// read them combined).
+	text := strings.ToLower(string(out) + string(errOut))
 	switch {
 	case strings.Contains(text, "not logged in"), strings.Contains(text, "not authenticated"):
 		return &no

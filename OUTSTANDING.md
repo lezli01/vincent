@@ -8,7 +8,7 @@ free-text notes. When you are done (or done with any one section), tell me and
 I will fold the results into `docs/versions/v0/tasks.md`,
 `docs/versions/v0/m5-gate.md` and the spec, then delete this file.
 
-The three sections left are independent — take them in any order.
+The two sections left are independent — take them in any order.
 
 > **Done: the release tag.** `v0.1.0-rc1`, 2026-08-11,
 > [run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218).
@@ -21,54 +21,14 @@ The three sections left are independent — take them in any order.
 > met.** If you remember where the time actually went, tell me and I will add
 > it — the totals are recorded, the breakdown is the part I can act on.
 
----
-
-## 2. T4.1 — service install matrix
-
-**Why you:** requires a reboot per OS, and an elevated prompt on Windows.
-
-```sh
-vincent service install        # Windows: from an Administrator prompt
-vincent service status
-# reboot
-vincent service status         # must still report running
-vincent task ls                # must reach the daemon with no manual start
-vincent service uninstall
-vincent service status         # must report nothing installed
-```
-
-| OS | Installed | Survived reboot | Uninstalled cleanly | Notes |
-|---|---|---|---|---|
-| Windows 11 | ☐ | ☐ | ☐ |  |
-| macOS | ✓ | ✓ | ✓ | **folded, 2026-08-11** — three legs clean; the no-CLIs finding fixed and re-verified as T4.15 |
-| Linux | ☐ | ☐ | ☐ |  |
-
-> **macOS: recorded, and your finding was a real defect.** A launchd agent runs
-> with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
-> prefix, no `~/.local/bin` — and §9.5 resolves adapters with `exec.LookPath`,
-> so an installed service could see none of them while the same daemon started
-> by hand saw them all. `service install` now bakes the installing shell's PATH
-> into the plist and the systemd unit, the way it already did for the config
-> and data dirs (**T4.15**). Linux had the same latent bug; Windows cannot be
-> fixed this way — the SCM has no per-service environment — so there
-> `agents.<name>.path` in `config.yaml` stays the answer.
->
-> **Re-verified by you against a real launchd, 2026-08-11:** an installed
-> service now sees the agent CLIs. T4.15 is closed. T4.1 itself stays open for
-> the Windows and Linux rows.
-
-Linux only — did `loginctl enable-linger` succeed automatically, or did the
-installer print the manual command?
-
-```
-
-```
-
-If anything failed, the exact error:
-
-```
-
-```
+> **Done: §2, the service install matrix.** Windows re-walked against the
+> Scheduled Task backend and reported clean on all three legs, 2026-08-12. That
+> logon is also the leg **T4.21** was waiting for — the cold terminal start whose
+> ordering defeated T4.20's hide — so both close: **T4.1 and T4.21 are done**,
+> with macOS and Linux already recorded. One thing I would still take if you
+> remember it: on Linux, did the installer run `loginctl enable-linger` itself or
+> print the manual command? That is the difference between surviving **logout**
+> and only surviving logon, and no other check asks.
 
 ---
 
