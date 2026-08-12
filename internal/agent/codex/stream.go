@@ -22,7 +22,7 @@ type execLine struct {
 type execItem struct {
 	ID      string `json:"id"`
 	Type    string `json:"type"`
-	Text    string `json:"text"`    // agent_message
+	Text    string `json:"text"`    // agent_message, reasoning
 	Message string `json:"message"` // item type=error (advisory notices)
 	// raw is the item object as it arrived. The field that says *what* a
 	// tool item is doing differs per item type (`command` for
@@ -59,8 +59,8 @@ type execError struct {
 // two fields the captured shapes carry; an item type that reports neither
 // yields a bare success, because "completed with nothing to say" is what a
 // completion without a failure signal means. Nothing here guesses at fields
-// no capture contains — the same rule that keeps codex reasoning filed as
-// T4.17 rather than implemented blind.
+// no capture contains — the rule that kept codex reasoning unimplemented
+// until `testdata/reasoning_0.147.0.jsonl` showed what one looks like.
 func (it *execItem) result() agent.ToolResult {
 	var fields struct {
 		ExitCode *int   `json:"exit_code"`
@@ -146,6 +146,16 @@ func (s *stream) parse(raw []byte) agent.Event {
 			if line.Item.Text != "" {
 				s.lastMessage = line.Item.Text
 				return agent.Event{Type: agent.EventOutput, Text: line.Item.Text, Raw: raw}
+			}
+		case "reasoning":
+			// Whole blocks, so this needs none of the cursor parser's
+			// delta accumulation (T4.16): codex delivers each reasoning
+			// item complete on its own `item.completed`, with no
+			// `item.started` to correlate against and no partial text to
+			// buffer. That is claude's shape, not cursor's, and it is what
+			// EventThinking's whole-blocks-only contract asks for.
+			if line.Item.Text != "" {
+				return agent.Event{Type: agent.EventThinking, Text: line.Item.Text, Raw: raw}
 			}
 		case "error":
 			// Advisory error items (e.g. model-metadata notices) are not

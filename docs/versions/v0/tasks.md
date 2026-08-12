@@ -20,9 +20,9 @@ implementation progress; the executing agent updates it in place as work proceed
 | 1 — Spine (M1) | 9 tasks | 9/9 | ✅ done |
 | 2 — Workflow engine (M2) | 12 tasks | 12/12 | ✅ done |
 | 3 — TUI (M3) | 13 tasks | 13/13 | ✅ done |
-| 4 — Polish (M4) | 23 tasks | 22/23 | 🚧 in progress (**M4 acceptance met — T4.6 ✓**; only T4.17 remains, blocked on a real codex capture. Every task needing a human is signed off: T4.1 and T4.21 by the owner's logon walk, **T4.4 by the owner's quickstart read**, both 2026-08-12) |
+| 4 — Polish (M4) | 23 tasks | 23/23 | ✅ done (**M4 acceptance met — T4.6 ✓**. Every task needing a human was signed off by the owner on 2026-08-12: T4.1 and T4.21 by the logon walk, T4.4 by the quickstart read, T4.17 by the codex reasoning capture) |
 | 5 — Cursor adapter (M5, post-v1) | 9 tasks | 9/9 | ✅ done (**M5 acceptance met 2026-08-12** — real-CLI legs recorded on Windows and macOS, Linux covered by CI) |
-| **Total** | | **69/70** | |
+| **Total** | | **70/70** | |
 
 ---
 
@@ -682,9 +682,13 @@ Milestone acceptance (§19 M4): fresh machine → first completed task in under 
   *The two scroll rows are the one honest exception:* an unrendered viewport cannot scroll, so they assert the press reached the pane's scroll path (which re-syncs follow) and leave movement to the existing follow and mouse-wheel tests.
   *Verified by reverting:* with the handler put back to `case "d"`, `output/]` fails along with both alias tests, and `d` keeps passing — the shape of the original bug exactly. Full suite green; lint clean on all three GOOS.
 
-- [ ] **T4.17 — Codex reasoning items are not normalized.** T4.16 surfaces thinking for claude and cursor. Codex emits reasoning too, but **no capture in this repo contains one**, and the convention is table-driven tests against captured real-CLI output. Implementing against a documented-but-unobserved shape fails silently if it is wrong — reasoning simply never appears, and nothing distinguishes that from a model that did not reason.
+- [x] **T4.17 — Codex reasoning items are not normalized.** ✓ 2026-08-12 T4.16 surfaces thinking for claude and cursor. Codex emits reasoning too, but **no capture in this repo contains one**, and the convention is table-driven tests against captured real-CLI output. Implementing against a documented-but-unobserved shape fails silently if it is wrong — reasoning simply never appears, and nothing distinguishes that from a model that did not reason.
   *Blocked on:* a real `codex exec --json` capture containing a reasoning item.
   *Done when:* codex reasoning normalizes to `agent.thinking` like the others, asserted against that capture.
+  *2026-08-12 — unblocked by the owner and closed the same day.* `testdata/reasoning_0.147.0.jsonl` is a real `codex exec --json` run at `-c model_reasoning_effort=high`, captured by the owner. **The wait paid for itself in one line:** reasoning arrives as `item.completed` with item type `reasoning`, carrying whole `text`, **four times in one turn** — no `item.started` to correlate against and no deltas to accumulate. That is claude's shape, not cursor's, so it needs none of the cursor parser's delta buffering and satisfies `EventThinking`'s whole-blocks-only contract directly. A blind implementation had a real chance of guessing cursor's shape and failing exactly the way this task predicted: silently.
+  *Emission is effort-dependent, which the old fixture already hinted at and nobody read.* `success.jsonl` ends with `reasoning_output_tokens: 25` and contains no reasoning item at all. Tokens spent is not evidence of an item to parse — worth knowing before anyone reports reasoning as missing.
+  *The change is nine lines* in `stream.go`'s `item.completed` switch; every consumer already existed. `EventThinking` has been carried by `taskrun.publishAgentEvent` and `api.normalizeLine` since T4.16, so codex reasoning reaches the live tail, the transcript and the `v` levels with no further wiring — and because §13.2 normalizes on **read**, the reasoning in codex runs recorded before today renders now.
+  *Verified by removing the case:* the fixture test drops to `thinking events = 0, want 4`. It also pins the two things a wrong implementation would get away with — reasoning must not become `ResultText`, and must not be normalized as assistant output — plus an empty-text item staying `EventUnknown`, since a blank thinking block would put an empty gutter line in the pane for nothing. Spec §9.1's "filed as T4.17, blocked on a capture" paragraph is rewritten to record what the capture said.
 
 - [x] **T4.11 — The TUI cannot show a full transcript.** ✓ 2026-08-12 The detail view fetches a bounded *tail* (`DefaultTailBytes`, capped at `maxRecords`) with no way to page back, so a failed step cannot be diagnosed from the TUI — which is where a user is when it fails. The transcript on disk is the complete record and the ranged endpoint already serves it; only the UI is missing. Partial mitigation shipped: `vincent task show` now prints each attempt's transcript path.
   *Done when:* a step's whole transcript is reachable from the detail view — scrollback, or `$EDITOR`/pager the way `e` already opens a workflow file.

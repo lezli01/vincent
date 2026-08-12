@@ -652,12 +652,23 @@ and the two mappings — `taskrun.publishAgentEvent` for §13.3 chunks,
 because a client renders both through one path.
 
 An adapter that cannot produce one of these stays silent rather than
-approximating it: codex reasoning items are **not** normalized, because no
-capture of one exists and the repo's convention is table-driven tests against
-captured real-CLI output. Implementing a documented-but-unobserved shape fails
-*silently* if it is wrong — the reasoning simply never appears, and nothing
-distinguishes that from a model that did not reason. Filed as T4.17, blocked
-on a capture.
+approximating it. Codex reasoning items went unnormalized through M4 for
+exactly that reason: no capture of one existed, the convention is table-driven
+tests against captured real-CLI output, and implementing a
+documented-but-unobserved shape fails *silently* if it is wrong — the
+reasoning simply never appears, and nothing distinguishes that from a model
+that did not reason.
+
+**Closed by capture (T4.17, `codex-cli 0.147.0`).** Reasoning arrives as
+`item.completed` with item type `reasoning`, carrying whole `text`, several
+times per turn — no `item.started` to correlate against and no deltas to
+accumulate. That is claude's shape, not cursor's, so it needs none of the
+cursor parser's buffering and satisfies `EventThinking`'s whole-blocks-only
+contract directly. The wait was the point: the observed shape settled in one
+line a question a blind implementation would have answered wrongly and
+silently. Note that emission is effort-dependent — an earlier capture spent
+`reasoning_output_tokens: 25` and emitted no item at all, so tokens spent is
+not evidence of an item to parse.
 
 **Scored against a third adapter (§9.7, M5):** the claim held for the daemon,
 the API, and the engine — cursor is one package plus registry wiring. It did
