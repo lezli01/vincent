@@ -62,26 +62,29 @@ The two sections left are independent — take them in any order.
 > Check it before assuming the workaround is still needed; if Cursor fixes the
 > interop, the scratch-home procedure in `m5-gate.md` should be deleted rather
 > than kept as ritual.
-
-### 3a. macOS legs — the only thing left on T5.7
-
-Scenarios 1, 2 and 4 on a Mac. Scenario 4 matters most: it is the **only**
-place `restricted` genuinely runs rather than being refused, and the refusal
-half has only ever been proven on Windows.
-
-```sh
-./scripts/m5-gate.sh                              # all four, fakeagent
-VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh    # real CLI (1 and 2)
-```
-
-| Leg | Result | Notes |
-|---|---|---|
-| All four, fakeagent | ☐ pass ☐ fail |  |
-| Scenario 1, real CLI | ☐ pass ☐ fail |  |
-| Scenario 2, real CLI | ☐ pass ☐ fail |  |
-| Scenario 4 — restricted actually runs | ☐ pass ☐ fail |  |
-
-cursor-agent version used: `________________`
+>
+> **Refinement — the trigger is one variable, `MSYSTEM`.** Isolated on a fresh
+> registry-derived environment plus exactly one addition: clean → file written,
+> 0 blocks; clean + `MSYSTEM=MINGW64` → **no file, 5 blocks**; clean + Git Bash
+> on `PATH` without `MSYSTEM` → file written, 0 blocks. Not `PATH`, not `SHELL`,
+> not the availability of bash. **And it cannot be unset from inside Git Bash** —
+> the MSYS runtime injects it into every child's environment block, so `env -u`
+> and `unset` both leave a native child seeing `MINGW64` (tried against the real
+> gate; it still failed). Which means **your very first message was right**:
+> "works from PowerShell, not from Git Bash." Every later "PowerShell" test of
+> mine still had bash as the daemon's parent, so I kept measuring the broken
+> case while believing I had controlled for it.
+>
+> **macOS: all four legs pass** (`2026.08.11-e8db854`) — all four scenarios
+> against the fakeagent, 1 and 2 against the real CLI, no prerequisite dance,
+> and scenario 4's *other* half confirmed: `restricted` genuinely running rather
+> than being refused, which no other platform can prove. **M5 is complete**;
+> T5.7 is closed.
+>
+> **The shipped configuration was never affected.** Your installed,
+> logon-started daemon ran task 22 to `done`: 28 edit tool calls, zero hook
+> blocks, a real commit (4 files, +31/−20). My prediction that it would be
+> silently crippled was wrong, and T4.23 goes back to latent.
 
 ---
 

@@ -258,9 +258,12 @@ EOF
   Claude Code's hooks from ~/.claude/settings.json (and Claude plugin hooks),
   wraps each command in a PowerShell preamble, then evaluates that string with
   bash — so every imported hook errors, and an erroring hook blocks the tool.
-  The remedy needs no change to your Claude setup: run the daemon with
-  USERPROFILE and HOME pointed at a scratch dir holding a junction to the real
-  .cursor and no .claude. docs/versions/v0/m5-gate.md carries the procedure."
+  The trigger is MSYSTEM, printed at the top of this run: set it and Cursor uses
+  bash, unset it and the same hooks are fine. You cannot drop it from inside Git
+  Bash (the MSYS runtime re-injects it into every child), so the remedy works on
+  the other half instead: run the daemon with USERPROFILE and HOME pointed at a
+  scratch dir holding a junction to the real .cursor and no .claude.
+  docs/versions/v0/m5-gate.md carries the procedure."
     fi
     api GET "/tasks/$task_id" | jq . >&2
     fail "task $task_id never reached done"
