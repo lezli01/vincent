@@ -91,7 +91,31 @@ the two panels are side by side and both always visible.
 | `]` | Switch the output pane tab: Output ⇄ Diff (`[`, `]` and `d` all work) |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
+| `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Scroll; scrolling up pauses follow |
+
+### Reading the whole transcript
+
+The output pane holds the **end** of a transcript — the last 256 KB, capped at
+5000 records — because a single attempt is allowed to produce gigabytes. When a
+step fails, the part you want is often the beginning, which is exactly the part
+not on screen. The pane says so when it has dropped something:
+
+```
+… earlier output truncated — press e for the whole transcript
+```
+
+`e` hands the complete file to your `$EDITOR`, the same way `e` opens a
+workflow file in the workflows view. What opens is the raw JSONL on disk —
+the lossless record, including lines vincent's parsers do not recognize —
+rather than the pane's rendering. It is the same file
+`vincent task show <id>` prints the path of.
+
+Two cases answer instead of opening: a step that never wrote a transcript (a
+manual gate), and a transcript that retention has already
+[pruned](../reference/configuration.md#transcript_retention_days). Neither
+opens an empty buffer, because an empty buffer reads as "the step produced
+nothing".
 
 **Follow mode belongs to the live attempt.** It is unavailable on a finished
 one, and a step advance moves your selection only if the cursor was already on

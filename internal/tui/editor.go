@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -167,4 +168,53 @@ func (d *detail) retryCmd(override apiclient.Override) tea.Cmd {
 		task, err := client.Retry(ctx, id, override)
 		return actionResultMsg{taskID: id, action: apiclient.ActionRetry, task: task, err: err}
 	}
+}
+
+// transcriptOpenedMsg reports that the transcript viewer exited. It carries
+// no content: the file is read, never written, so there is nothing to send
+// back — only a failure worth naming.
+type transcriptOpenedMsg struct{ err error }
+
+// openTranscript hands the displayed attempt's whole transcript to $EDITOR
+// (T4.11).
+//
+// The pane holds the last apiclient.DefaultTailBytes of a file §18 allows to
+// reach gigabytes, so when a step fails the part a reader wants — how it
+// started — is exactly the part not on screen. Paging the pane backwards was
+// the alternative and is rejected: the §13.2 range reads *forwards* from a
+// byte position, so "the window before this one" has no primitive, and the
+// pane would have to grow without bound or refetch from zero on every page.
+// Handing the file to a program built for reading whole files costs nothing,
+// and `e` already means exactly this in the workflows view.
+//
+// What opens is the file as it sits on disk — raw JSONL, the lossless record
+// — not the pane's normalized rendering. That is the same file
+// `vincent task show` prints the path of, so the two ways in agree, and it is
+// the only form in which nothing has been dropped.
+func (d *detail) openTranscript() tea.Cmd {
+	if d.displayRun == 0 {
+		d.actions.setStatus("no attempt selected", true)
+		return nil
+	}
+	run := d.runByID(d.displayRun)
+	if run.TranscriptPath == nil {
+		d.actions.setStatus("this step wrote no transcript", true)
+		return nil
+	}
+	path := *run.TranscriptPath
+	// openEditorPath must not create the file, so a pruned transcript would
+	// otherwise open as an empty buffer — which reads as "the step produced
+	// nothing" rather than "this was deleted". §12.3 prunes archived tasks
+	// past transcript_retention_days, so it is a state a reader will meet.
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			d.actions.setStatus("transcript is gone — pruned by retention (§12.3)", true)
+			return nil
+		}
+		d.actions.setStatus("transcript: "+errString(err), true)
+		return nil
+	}
+	return openEditorPath(d.exec, path, func(err error) tea.Msg {
+		return transcriptOpenedMsg{err: err}
+	})
 }
