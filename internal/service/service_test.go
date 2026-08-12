@@ -83,9 +83,9 @@ func TestResolveDefaultsToTheRunningBinary(t *testing.T) {
 }
 
 // TestLabelsAreStable pins the identifiers the OS stores. Changing one turns
-// an installed service into an orphan the next uninstall cannot find, and on
-// Windows it must also match the name the SCM handshake registers
-// (internal/daemon.serviceName).
+// an installed service into an orphan the next uninstall cannot find — on
+// Windows that means both the Scheduled Task's name and the legacy service
+// still being cleaned up (legacy_windows.go), which shared it.
 func TestLabelsAreStable(t *testing.T) {
 	if Label != "vincent" {
 		t.Errorf("Label = %q; it must match internal/daemon.serviceName", Label)

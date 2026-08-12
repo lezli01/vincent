@@ -247,15 +247,15 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		// The install path itself is covered by the unit tests and by the
 		// manual matrix in tasks.md — this pins the surface a user meets
 		// first, and that querying works with nothing installed.
-		out, code := runVincent(t, dataDir, cfgDir, "service", "status")
-		if code != 0 {
-			t.Fatalf("service status: code %d, out %q", code, out)
-		}
-		if !strings.Contains(out, "no vincent service is installed") {
-			t.Errorf("service status = %q, want the not-installed line", out)
-		}
-
-		out, code = runVincent(t, dataDir, cfgDir, "service", "status", "--json")
+		//
+		// The service backends are the one thing VINCENT_CONFIG_DIR and
+		// VINCENT_DATA_DIR cannot isolate: a registration lives in the host's
+		// launchd, systemd or Task Scheduler, and there is one per user. So this
+		// bails out when the host has a real one instead of asserting it away —
+		// a developer's own machine legitimately has vincent installed, and the
+		// `uninstall` leg below would otherwise take it away, from the platform
+		// where install is unelevated and *nothing would stop it* (T4.20).
+		out, code := runVincent(t, dataDir, cfgDir, "service", "status", "--json")
 		if code != 0 {
 			t.Fatalf("service status --json: code %d, out %q", code, out)
 		}
@@ -266,8 +266,20 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		if err := json.Unmarshal([]byte(jsonObject(out)), &st); err != nil {
 			t.Fatalf("service status --json is not JSON: %v (%q)", err, out)
 		}
-		if st.Installed || st.Running {
+		if st.Installed {
+			t.Skipf("this host has a real vincent service installed (%+v); "+
+				"the not-installed surface is asserted on a clean runner", st)
+		}
+		if st.Running {
 			t.Errorf("status = %+v, want neither installed nor running", st)
+		}
+
+		out, code = runVincent(t, dataDir, cfgDir, "service", "status")
+		if code != 0 {
+			t.Fatalf("service status: code %d, out %q", code, out)
+		}
+		if !strings.Contains(out, "no vincent service is installed") {
+			t.Errorf("service status = %q, want the not-installed line", out)
 		}
 
 		// Uninstalling nothing is success, matching `daemon stop`.

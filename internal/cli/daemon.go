@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,20 +25,77 @@ const (
 )
 
 func newDaemonCmd() *cobra.Command {
+	var (
+		dirs        config.Dirs
+		hideConsole bool
+	)
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the vincent daemon in the foreground",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := applyDirFlags(dirs); err != nil {
+				return err
+			}
+			// Before anything slow, so the window the Scheduled Task's action
+			// gets is gone in the time the daemon takes to open its database
+			// rather than for as long as it runs (T4.20). What it did travels
+			// into the startup log record (T4.21).
+			var console string
+			if hideConsole {
+				console = daemon.DetachConsole()
+			}
 			// RunManaged is Run everywhere but Windows, where it speaks the
 			// SCM's control protocol when the process was started as a
 			// service (§12.1). Foreground stays true: under a service manager
 			// stderr is captured by the manager's own log, and losing it
 			// there would make a failed service start undiagnosable.
-			return daemon.RunManaged(cmd.Context(), daemon.Options{Foreground: true})
+			return daemon.RunManaged(cmd.Context(),
+				daemon.Options{Foreground: true, Console: console})
 		},
 	}
+	// These exist for the Windows Scheduled Task (T4.17), whose Exec action
+	// carries a command and arguments and has no environment to set — while
+	// the launchd plist and the systemd unit pin the same two directories with
+	// VINCENT_CONFIG_DIR/VINCENT_DATA_DIR. Both routes end at the environment
+	// config.ResolveDirs reads, so §12.2 keeps one resolution point rather
+	// than growing a second precedence rule.
+	cmd.Flags().StringVar(&dirs.Config, "config-dir", "",
+		"config directory to run against (default $VINCENT_CONFIG_DIR, else the platform default)")
+	cmd.Flags().StringVar(&dirs.Data, "data-dir", "",
+		"data directory to run against (default $VINCENT_DATA_DIR, else the platform default)")
+	// Windows-only in effect, and set by the same Scheduled Task action: the
+	// scheduler runs it on the user's desktop, where a console-subsystem binary
+	// is given a console window that closing would kill the daemon. The console
+	// is kept unless this process is its only owner, so passing this in a
+	// terminal by hand cannot take that terminal down.
+	//
+	// The name outlived the mechanism — T4.21 releases the console rather than
+	// hiding its window — and is kept because every task registered by T4.20
+	// carries this spelling in its definition. Renaming it would leave those
+	// registrations passing a flag the daemon no longer accepts: a daemon that
+	// fails to start at logon, to fix a word.
+	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
+		"detach from the console the OS allocated for this process (Windows only; no-op elsewhere)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
 	return cmd
+}
+
+// applyDirFlags publishes the flags as the directory overrides, so everything
+// downstream — startup, hot reload, and any child process that inherits the
+// environment — resolves them the one way §12.2 describes.
+func applyDirFlags(dirs config.Dirs) error {
+	for _, o := range []struct{ env, val string }{
+		{config.EnvConfigDir, dirs.Config},
+		{config.EnvDataDir, dirs.Data},
+	} {
+		if o.val == "" {
+			continue
+		}
+		if err := os.Setenv(o.env, o.val); err != nil {
+			return fmt.Errorf("set %s: %w", o.env, err)
+		}
+	}
+	return nil
 }
 
 func newDaemonStartCmd() *cobra.Command {

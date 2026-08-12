@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -17,12 +16,7 @@ import (
 // command step would flash a new console window at the user (T3.8 finding).
 // Tree containment still comes from the Job object assigned in attach; the
 // flag does not affect the pipes or the job.
-func setSysProcAttr(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: windows.CREATE_NO_WINDOW,
-	}
-}
+func setSysProcAttr(cmd *exec.Cmd) { NoWindow(cmd) }
 
 // signalProcess has no graceful equivalent on Windows for a console-less
 // child, so the fallback path kills outright.

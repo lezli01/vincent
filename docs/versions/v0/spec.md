@@ -794,6 +794,21 @@ defaults:
 - **Probe failure degrades, never blocks:** if the CLI is missing or its help
   output can't be parsed, the endpoint serves the curated catalog with
   `probe_error` set; free-text entry is unaffected.
+- **A failed probe expires; a clean one does not** (T4.22). Binary identity is a
+  sound cache key for an answer, not for a failure: nothing about the binary
+  changes when a probe times out, so a single bad moment would otherwise be
+  served for the daemon's whole lifetime — which is exactly what happened at the
+  logon after a reboot, where a cold `codex --version` exceeded its bound and a
+  healthy CLI read as unavailable until the daemon was restarted. An entry whose
+  availability failed, or whose option probe failed, is re-probed by the next
+  request more than a minute later. Re-probing an absent CLI costs no subprocess:
+  an unresolved path fails before anything is spawned.
+- **Probes never put a window on screen.** The daemon usually has no console of
+  its own, and on Windows a console-subsystem child of a console-less parent is
+  given a console unless its creator passes `CREATE_NO_WINDOW` (§12.1, T3.8,
+  T4.21). Every probe goes through one runner that sets it — and that also
+  distinguishes a timeout from a nonzero exit, which a Windows deadline
+  (`TerminateProcess(pid, 1)`) otherwise renders identical.
 - **Only this endpoint probes:** validation paths (registry load/reload,
   `/validate`, task creation) read the cached catalog when primed and the
   curated catalog otherwise — they never spawn a probe subprocess (§8.2).
@@ -984,9 +999,9 @@ One Go binary, `vincent`:
 | Command | Behavior |
 |---|---|
 | `vincent` | Launches the TUI; auto-starts the daemon in the background if unreachable |
-| `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers) |
+| `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers). `--config-dir`/`--data-dir` pin the §12.2 directories for a manager with no per-process environment |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
-| `vincent service install / uninstall / status` | Registers OS-native autostart: Windows Service, launchd agent, systemd user unit |
+| `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
@@ -1009,14 +1024,91 @@ writes that user's data dir:
   and, on failure, reports as the exact command to run: the service is
   installed and running either way, so this is a warning, not a failed
   install.
-- **Windows** — the SCM is machine-wide and has no per-user equivalent, so
-  install and uninstall require elevation and say so. Reporting *status* does
-  not: it opens the SCM with `SC_MANAGER_CONNECT` and the service with
-  `SERVICE_QUERY_STATUS`, so an ordinary prompt can always ask what is
-  installed. `vincent daemon` detects `svc.IsWindowsService()` and speaks the
-  SCM's control protocol when started as a service — without it the SCM kills
-  the process after ~30 s with error 1053. The Stop handler cancels the very
-  context the daemon already drains, so §12.4's shutdown is not reimplemented.
+- **Windows** — a **Scheduled Task triggered at logon**, running as the
+  invoking user with an `InteractiveToken` principal (T4.19). Not a Windows
+  Service: the SCM has no per-user services, and an empty `ServiceStartName`
+  defaults to **LocalSystem**, so the daemon resolved `LOCALAPPDATA` to the
+  SYSTEM profile, wrote its database and `daemon.json` under
+  `C:\Windows\System32\config\systemprofile\`, and every TUI launch found
+  nothing there and auto-started a second daemon of its own. Pinning the
+  directories alone would have hidden that behind a worse defect — §16's
+  full-auto agents running as SYSTEM, without the user's agent-CLI
+  credentials, `.gitconfig` or `PATH`. A task in the user's own session is the
+  per-user registration this section already required, and it needs **no
+  elevation** to install, uninstall or query.
+
+  Four scheduler defaults are overridden because each one stops a long-running
+  daemon: `ExecutionTimeLimit` (`P3D` by default) is `PT0S`, both battery
+  settings and `StopOnIdleEnd` are `false`. `RestartOnFailure` is the analog of
+  `Restart=on-failure` and works for the same reason — a nonzero exit is a
+  failure, a daemon that exited 0 was asked to stop. The directories travel as
+  `--config-dir`/`--data-dir` **arguments**, since a task's `Exec` action has no
+  environment; both flags simply publish the same variables the plist and the
+  unit set, so §12.2 keeps one resolution point. The definition is handed to
+  `schtasks /Create /XML` as UTF-16LE, which is the encoding it accepts for
+  anything not pure ASCII.
+
+  The action runs `vincent daemon --hide-console` (T4.20). An `InteractiveToken`
+  principal runs on the user's desktop, and nothing in a task definition
+  suppresses a console-subsystem process's window — `<Hidden>` governs whether
+  the *task* is listed in Task Scheduler, not whether its process draws
+  anything. So every logon left a terminal on the desktop whose close button
+  stopped the daemon, since closing a console sends `CTRL_CLOSE_EVENT` to
+  everything attached to it. Only the creator of a process can suppress its
+  console and here that is the scheduler, so the daemon deals with the console it
+  is handed, and only when it is that console's sole owner — passed by hand in a
+  terminal the flag does nothing, rather than taking the user's own shell down.
+
+  The daemon **releases** the console (`FreeConsole`) rather than hiding its
+  window (T4.21, revising T4.20). Hiding is a race it cannot win: on Windows 11
+  the default terminal is Windows Terminal, so the console is handed off to it,
+  the handoff *replaces* the console window, and Windows Terminal's cold start at
+  logon far outlasts the daemon's first few milliseconds — so the hide applied to
+  a superseded window and a live terminal tab was still on the desktop after a
+  reboot. Releasing the console is not a window property but a terminal state:
+  the last client leaving ends the console session, so the host exits and takes
+  any window with it, including a handoff still in flight. The standard handles
+  are pointed at `NUL` first, since they are console handles until they are not:
+  foreground logging writes stderr and the log file through one `io.MultiWriter`
+  that stops at the first error, and every child process inherits them. What
+  remains is one flash between the scheduler creating the process and the daemon
+  reaching that call. Because the daemon then has no console, every probe
+  subprocess must pass `CREATE_NO_WINDOW` too (§9.5, §9.6) or each would be given
+  a console — a window — of its own.
+
+  Running `daemon start` from the action and letting the existing detached spawn
+  give the daemon no console at all was the alternative, and is rejected: the
+  task's process would be a launcher that exits immediately, so the registration
+  would report `Ready` while the daemon ran, and `RestartOnFailure` would
+  supervise the launcher's exit code instead of the daemon. The daemon stays the
+  task's own process, which is what keeps this section's promise identical on all
+  three platforms.
+
+  **Install unelevated.** A task registered by an *elevated* process is owned by
+  `BUILTIN\Administrators`, and the ACL Task Scheduler writes leaves the account
+  itself read-only — so a later `/Create /F` or `/Delete` from an ordinary prompt
+  fails with `ERROR: Access is denied`, naming neither the owner nor the remedy.
+  Installed from an ordinary prompt, `CREATOR OWNER` grants the account full
+  control and every later install and uninstall needs no elevation. `install` and
+  `uninstall` detect the denied case — from the definition's ACL, not from
+  schtasks' localized message — and answer with the elevated `uninstall` that
+  clears it.
+
+  What this costs is boot survival: the task starts at the next **logon**, not
+  at boot. That is exactly what a LaunchAgent does and what a systemd user unit
+  does without lingering, so the promise is now the same on all three
+  platforms. Running with nobody logged in needs a service account with a
+  stored password, which is a different feature.
+
+  A pre-T4.19 LocalSystem service is detected and refused by `install`, removed
+  by `uninstall`, and named by `status` — it is machine-wide, so removing it is
+  the one Windows operation that still asks for an elevated prompt, and says
+  so. `vincent daemon` keeps its `svc.IsWindowsService()` branch: nothing
+  vincent installs trips it (a task's parent is the scheduler's `svchost`, not
+  `services.exe`), but it is what makes a hand-rolled `sc.exe create` work at
+  all, since the SCM kills a silent process after ~30 s with error 1053. Its
+  Stop handler cancels the very context the daemon already drains, so §12.4's
+  shutdown is not reimplemented.
 
 **The config and data directories in effect at install time are written into
 the unit.** A service does not inherit the shell that installed it, so
@@ -1037,10 +1129,13 @@ construction, the `PATH` that works.
 Two consequences are deliberate. The captured `PATH` goes **stale**: a CLI
 installed somewhere new after the service was installed needs a
 `vincent service install` to be seen again, which is the same "reinstall to
-recapture" contract the dirs already have. And **Windows is excluded** — the
-SCM has no per-service environment, so the service inherits the machine
-environment, which does not contain a per-user npm prefix. On every platform
-the standing answer to an agent that will not resolve is the §12.3
+recapture" contract the dirs already have. And **Windows does not capture it**
+— since T4.19 the task runs in the user's logon session and therefore already
+has the user's own `PATH`, including the `%APPDATA%\npm` prefix this finding
+was about; freezing a copy would replace a live correct value with a stale one.
+(Before T4.19 the reason was the opposite one: a LocalSystem service inherited
+the *machine* environment, which has no per-user npm prefix at all.) On every
+platform the standing answer to an agent that will not resolve is the §12.3
 `agents.<name>.path` knob, which is absolute and never consults `PATH`.
 
 ### 12.2 Directories (platform-native)

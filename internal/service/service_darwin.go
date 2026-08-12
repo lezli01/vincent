@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -49,23 +48,15 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 // renderPlist fills the template. Split out so the plist's contents are
-// testable without a launchd to install into.
+// testable without a launchd to load it.
 //
-// Every substituted value is XML-escaped. A home directory containing `&` is
-// unusual; a PATH containing one is not, and launchd rejects a malformed
-// plist with a message that says nothing about which character broke it.
+// Every substituted value is XML-escaped (see xmlEscape). A home directory
+// containing `&` is unusual; a PATH containing one is not, and launchd rejects
+// a malformed plist with a message that says nothing about which character
+// broke it.
 func renderPlist(o Options) string {
 	return fmt.Sprintf(plistTemplate, LaunchdName,
 		xmlEscape(o.Exe), xmlEscape(o.Dirs.Config), xmlEscape(o.Dirs.Data), xmlEscape(o.Path))
-}
-
-func xmlEscape(s string) string {
-	var b strings.Builder
-	if err := xml.EscapeText(&b, []byte(s)); err != nil {
-		// strings.Builder never fails to write.
-		return s
-	}
-	return b.String()
 }
 
 func plistPath() (string, error) {
