@@ -54,6 +54,13 @@ clean`. Scenario 1 detects this shape and says so rather than reporting a bare
 context cannot be reproduced, and one has already been written up as a blocker
 when the launching shell was the variable.
 
+It reads them with `printenv`, and the distinction is load-bearing rather than
+fussy: bash assigns `SHELL` the user's login shell when it inherited none and
+does not export it, so `$SHELL` inside the script reports Git Bash even from a
+PowerShell parent that exported nothing — the launch context backwards. Only
+the **exported** environment reaches the daemon and then the agent. `<not
+exported>` in the banner is the answer you want on Windows.
+
 On Windows, prefer **PowerShell** for a real-CLI run: it is also how the daemon
 runs once installed through `vincent service install`, which is the
 configuration that ships.
