@@ -67,15 +67,37 @@ vincent service status         # must report nothing installed
 > (T4.20).** The task ran the daemon in a visible console window, so at logon a
 > terminal appeared on the desktop and closing it stopped the daemon — a console
 > close sends `CTRL_CLOSE_EVENT` to everything attached. Nothing in a task
-> definition suppresses that window, so the daemon now hides its own, and only
-> when it is the console's sole owner. Two things to do before the re-walk:
-> **`vincent service uninstall` from an elevated prompt once**, because the task
-> on your machine was registered elevated and your own account cannot replace it
-> (both commands now tell you this instead of printing `Access is denied`); then
-> **`vincent service install` from an ordinary prompt**, which is what keeps
-> every later install and uninstall unelevated. Expect one brief console flash at
-> logon and no window after it — the scheduler creates the console before the
-> daemon can hide it.
+> definition suppresses that window, so the daemon deals with the console it is
+> handed, and only when it is that console's sole owner. Two things were owed
+> before the re-walk and are done: **`vincent service uninstall` from an elevated
+> prompt once**, because the task on your machine was registered elevated and
+> your own account cannot replace it (both commands now say so instead of
+> printing `Access is denied`), then **`vincent service install` from an ordinary
+> prompt**, which is what keeps every later install and uninstall unelevated.
+>
+> **Your third finding is that T4.20 did not hold at a real logon, and it is
+> fixed differently (T4.21/T4.22).** The window titled `C:\windows\system32\cmd.exe`
+> was the daemon's own console: npm's `codex.cmd` shim runs `title %COMSPEC%`, and
+> the agent probes inherited that console, so a probe renamed the daemon's window
+> after itself. Hiding it was a race it cannot win — Windows 11 hands consoles off
+> to Windows Terminal, the handoff replaces the console window, and its cold start
+> at logon outlasts the daemon's first milliseconds, so the hide landed on a
+> window that was then superseded. The daemon now **releases** the console
+> instead, which no later handoff can undo, and every agent probe passes
+> `CREATE_NO_WINDOW` so a console-less daemon does not hand each probe a window of
+> its own. **No reinstall is owed for this one:** the flag spelling in your task
+> definition is unchanged, so the next logon runs the rebuilt binary as it stands.
+> Expect one brief flash at logon — the scheduler creates the console before the
+> daemon exists — and nothing on the desktop after it.
+>
+> The same logon also logged `agent not available agent=codex error="codex
+> --version failed: exit status 1"` against a healthy CLI. That was the 10 s probe
+> bound expiring on a cold disk, reported as an exit status because a Windows
+> deadline is `TerminateProcess(pid, 1)` — and then cached for the daemon's whole
+> lifetime, because binary identity is only a sound cache key for a probe that
+> answered. Timeouts now say so, the bounds are 20 s, and a failed probe expires
+> after a minute (T4.22). **On the re-walk, check the startup line**: it now
+> carries `console=detached`, which is the fix reporting itself.
 
 > **macOS: recorded, and your finding was a real defect.** A launchd agent runs
 > with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
