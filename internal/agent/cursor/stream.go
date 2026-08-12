@@ -165,11 +165,12 @@ func (s *stream) parseThinking(line streamLine, raw []byte) agent.Event {
 // completedResult reads a tool call's outcome out of its completed payload.
 //
 // It keys on the **presence** of `result.success` rather than on any failure
-// shape: no capture of a failed cursor tool call exists (the fixture's
-// completed payloads are reconstructed to their documented success shape —
-// the capture machine had a hook that rejected every call), so a failure
-// branch would be invented. Presence is correct in both directions today and
-// degrades to a true statement rather than a silent hole.
+// shape, and that choice survives now that the fixtures are real: the
+// success payloads are verbatim (T5.7 re-capture), and the one failure shape
+// observed in the wild — a hook rejection, `result.rejected` with a reason —
+// carries no `success`, so presence classifies it correctly without this code
+// having to know the name `rejected` or any sibling that follows it. Keying on
+// a failure shape would mean enumerating shapes the CLI has never documented.
 func completedResult(name, callID string, payload json.RawMessage) agent.ToolResult {
 	res := agent.ToolResult{CallID: callID, Name: name}
 	var wrapper struct {

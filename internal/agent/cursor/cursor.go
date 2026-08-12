@@ -201,6 +201,15 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 	if model == "" {
 		model = defaultModel
 	}
+	// --model is always passed, even when nothing resolved one, and the cost of
+	// that is real: cursor *persists* --model to ~/.cursor/cli-config.json, so
+	// every step run here resets the model the user picked in their own
+	// interactive cursor-agent sessions. Confirmed as deliberate by the owner
+	// (2026-08-12) after being offered the alternative. Passing it only when
+	// §8.6 resolves one would leave their default alone, but a task recorded as
+	// "adapter default" could then have run under whatever they last picked by
+	// hand — the record would become a guess. A truthful record outranks an
+	// annoyance in another tool; the side effect is documented in the README.
 	args = append(args, "--model", model)
 	// spec.Effort is deliberately dropped: cursor has no effort flag, and
 	// reasoning depth is selected through the model id (spec §9.7).
