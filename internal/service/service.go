@@ -1,6 +1,7 @@
 // Package service installs the daemon as an OS-managed background service so
-// it survives logout and reboot (spec §12.1): a Windows Service, a launchd
-// user agent, or a systemd user unit.
+// it starts again at the next logon (spec §12.1): a launchd user agent, a
+// systemd user unit, or — since T4.19 reversed PR W's Windows Service, which
+// the SCM ran as LocalSystem — a Windows Scheduled Task.
 //
 // Each platform is hand-rolled in a build-tagged file rather than delegated
 // to a service library. That keeps the one platform seam this repo has always
@@ -18,9 +19,9 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 )
 
-// Label is the service's OS-level identity: the Windows service name, the
-// launchd label, and the systemd unit name. Reverse-DNS on macOS convention,
-// plain elsewhere.
+// Label is the service's OS-level identity: the Windows Scheduled Task name,
+// the launchd label, and the systemd unit name. Reverse-DNS on macOS
+// convention, plain elsewhere.
 const (
 	Label       = "vincent"
 	LaunchdName = "dev.lezli01.vincent"
@@ -39,8 +40,9 @@ type Status struct {
 	// Name is the OS-level identifier a user would type into their own
 	// tooling (`sc query vincent`, `systemctl --user status vincent`).
 	Name string
-	// Unit is the on-disk unit/plist path; empty on Windows, where the
-	// registration lives in the SCM rather than a file.
+	// Unit locates the registration: the on-disk unit/plist path on macOS and
+	// Linux, and on Windows the task's path as Task Scheduler shows it, since
+	// there is no file to point at.
 	Unit string
 	// Detail is platform-native extra context, shown verbatim.
 	Detail string
@@ -55,9 +57,9 @@ type Options struct {
 	// Dirs are the config and data directories baked into the unit.
 	Dirs config.Dirs
 	// Path is the PATH the service runs with. Empty captures the PATH in
-	// effect at install time — see resolve. Ignored on Windows, where the SCM
-	// has no per-service environment and a service inherits the machine
-	// environment instead (T4.15).
+	// effect at install time — see resolve. Ignored on Windows, where the task
+	// runs in the user's own logon session and so already has the user's PATH;
+	// a captured copy could only be staler (T4.15, revised by T4.19).
 	Path string
 }
 

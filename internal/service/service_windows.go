@@ -4,9 +4,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"unicode/utf16"
 
@@ -115,11 +118,28 @@ const taskTemplate = `<?xml version="1.0" encoding="UTF-16"?>
 // renderTask fills the template. Split out so the definition is testable
 // without a Task Scheduler to register it into.
 func renderTask(o Options, userID string) string {
-	args := fmt.Sprintf("daemon --config-dir %s --data-dir %s",
+	args := fmt.Sprintf("daemon --hide-console --config-dir %s --data-dir %s",
 		quoteArg(o.Dirs.Config), quoteArg(o.Dirs.Data))
 	return fmt.Sprintf(taskTemplate,
 		xmlEscape(userID), Label, xmlEscape(o.Exe), xmlEscape(args))
 }
+
+// --hide-console is what makes the action invisible, and it belongs to the
+// daemon rather than to this definition (T4.20). An `InteractiveToken`
+// principal runs on the user's desktop, `<Hidden>` above governs the task's
+// visibility in Task Scheduler and not its process's, and only the creator of a
+// process can suppress its console — here, the scheduler. So the daemon hides
+// the window it is handed; see daemon.HideConsole for why the console is hidden
+// rather than freed.
+//
+// Running `daemon start` instead, and letting the existing detached spawn give
+// the daemon no console at all, was the alternative. It was rejected because the
+// task's process would then be a launcher that exits immediately: the
+// registration would go back to `Ready` while the daemon ran unsupervised, and
+// `RestartOnFailure` — the whole reason a crashed daemon comes back the way
+// systemd's `Restart=on-failure` and launchd's `KeepAlive` bring it back — would
+// only ever see the launcher's exit code. Keeping the daemon as the task's own
+// process is what keeps §12.1's promise the same on all three platforms.
 
 // The dirs travel as **arguments**, not as environment variables, because a
 // task's Exec action has no environment to set: the definition holds a
@@ -197,7 +217,7 @@ func install(ctx context.Context, o Options) error {
 	// /F replaces an existing registration rather than failing, matching the
 	// idempotence of `daemon start` and of the other two backends.
 	if _, err := schtasks(ctx, "/Create", "/TN", Label, "/XML", path, "/F"); err != nil {
-		return err
+		return taskOwnerHint(err)
 	}
 	// The trigger covers every future logon; /Run covers *now*, so install and
 	// start are one step as they are on the other two platforms. A daemon that
@@ -240,9 +260,56 @@ func uninstall(ctx context.Context) error {
 	stopDaemon(ctx)
 	_, _ = schtasks(ctx, "/End", "/TN", Label)
 	if _, err := schtasks(ctx, "/Delete", "/TN", Label, "/F"); err != nil {
-		return err
+		return taskOwnerHint(err)
 	}
 	return nil
+}
+
+// taskOwnerHint explains the one failure an ordinary prompt cannot get past
+// (T4.20). A task registered by an **elevated** process is owned by
+// BUILTIN\Administrators, and the ACL Task Scheduler writes leaves the account
+// itself nothing but read: `/Create /F` and `/Delete` both come back "ERROR:
+// Access is denied", naming neither the owner nor the remedy. Installing from an
+// ordinary prompt is the case that behaves — CREATOR OWNER then grants the
+// account full control, so every later install and uninstall needs no elevation
+// at all — but the first install after §16's Windows Service era is exactly the
+// one likely to have been run elevated, because removing that service required
+// it.
+//
+// The evidence is the ACL rather than the message text, which schtasks writes
+// in the machine's UI language.
+func taskOwnerHint(err error) error {
+	if !taskWriteDenied() {
+		return err
+	}
+	return fmt.Errorf("%w\n\nthe registered vincent task was created by an elevated process, so an "+
+		"ordinary prompt can neither replace nor remove it\n\n"+
+		"run this once from an elevated (Administrator) prompt:\n"+
+		"    vincent service uninstall\n\n"+
+		"then `vincent service install` from an ordinary prompt — installed unelevated, "+
+		"it stays that way", err)
+}
+
+// taskWriteDenied reports whether the task's definition exists and this process
+// is refused write access to it.
+//
+// It reads %SystemRoot%\System32\Tasks\<name>, where Task Scheduler has kept
+// task definitions since Vista. That is a lower-level detail than the rest of
+// this file, and it is deliberately used for nothing but wording an error: an
+// absent file, a path we cannot resolve, or a definition held open by the
+// scheduler all fall through to reporting the failure exactly as schtasks did.
+// Opening for write neither truncates nor writes.
+func taskWriteDenied() bool {
+	root := os.Getenv("SystemRoot")
+	if root == "" {
+		return false
+	}
+	f, err := os.OpenFile(filepath.Join(root, "System32", "Tasks", Label), os.O_WRONLY, 0)
+	if err == nil {
+		_ = f.Close()
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission)
 }
 
 // stopDaemon asks a running daemon to shut down gracefully, ignoring every
@@ -268,10 +335,15 @@ func stopDaemon(ctx context.Context) {
 }
 
 func query(ctx context.Context) (Status, error) {
-	st := Status{Name: Label, Unit: `\` + Label}
+	// Unit names the task the way Task Scheduler displays it, folder included,
+	// and Detail says outright that this is not a Windows Service. Both are
+	// answers to a real report (T4.20): told that `service install` had
+	// succeeded, the first thing its owner did was look in services.msc, find
+	// nothing, and conclude the install was broken.
+	st := Status{Name: Label, Unit: `Task Scheduler Library\` + Label}
 	if taskInstalled(ctx) {
 		st.Installed = true
-		st.Detail = "Scheduled Task, at logon"
+		st.Detail = "Scheduled Task, at logon — in Task Scheduler, not services.msc"
 		st.Running = taskRunning(ctx)
 		return st, nil
 	}

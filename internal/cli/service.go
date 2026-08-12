@@ -16,6 +16,10 @@ func newServiceCmd() *cobra.Command {
 		Long: "Register the daemon with the platform service manager so it starts at\n" +
 			"login and survives reboot: a launchd user agent, a systemd user unit, or a\n" +
 			"Windows Scheduled Task (§12.1).\n\n" +
+			"On Windows it is a Scheduled Task and not a Windows Service, so it appears\n" +
+			"in Task Scheduler as \"vincent\" and never in services.msc. It runs without\n" +
+			"a visible window; `vincent service status` and `vincent daemon status` are\n" +
+			"how you check on it.\n\n" +
 			"It runs as you on every platform, since the OS user is vincent's trust\n" +
 			"boundary — an agent gets exactly your privileges, your agent-CLI logins and\n" +
 			"your git identity, no more.\n\n" +

@@ -143,9 +143,33 @@ func TestRenderTaskPinsTheDirs(t *testing.T) {
 	if want := `C:\bin\vincent.exe`; got.Actions.Exec.Command != want {
 		t.Errorf("command = %q, want %q", got.Actions.Exec.Command, want)
 	}
-	want := `daemon --config-dir "C:\cfg" --data-dir "C:\data"`
+	want := `daemon --hide-console --config-dir "C:\cfg" --data-dir "C:\data"`
 	if got.Actions.Exec.Arguments != want {
 		t.Errorf("arguments = %q, want %q", got.Actions.Exec.Arguments, want)
+	}
+}
+
+// TestRenderTaskHidesTheConsole guards T4.20's fix. The action runs on the
+// user's desktop under an InteractiveToken principal, and nothing in a task
+// definition suppresses a console-subsystem process's window — `<Hidden>` hides
+// the task from Task Scheduler's list, not the window from the desktop. Without
+// the flag every logon left a terminal sitting there whose close button stopped
+// the daemon.
+func TestRenderTaskHidesTheConsole(t *testing.T) {
+	got := parseTask(t, renderTask(Options{
+		Exe:  `C:\bin\vincent.exe`,
+		Dirs: config.Dirs{Config: `C:\cfg`, Data: `C:\data`},
+	}, testSID))
+
+	if !strings.Contains(got.Actions.Exec.Arguments, "--hide-console") {
+		t.Errorf("arguments = %q, want --hide-console: the task's window is a kill switch without it",
+			got.Actions.Exec.Arguments)
+	}
+	// The daemon must stay the task's *own* process, not a launcher that spawns
+	// it and exits, or RestartOnFailure supervises the wrong process and the
+	// registration reports Ready while the daemon runs.
+	if !strings.HasPrefix(got.Actions.Exec.Arguments, "daemon --") {
+		t.Errorf("arguments = %q, want the foreground `daemon` subcommand", got.Actions.Exec.Arguments)
 	}
 }
 
@@ -162,7 +186,7 @@ func TestRenderTaskEscapes(t *testing.T) {
 	if got.Actions.Exec.Command != exe {
 		t.Errorf("command = %q, want %q", got.Actions.Exec.Command, exe)
 	}
-	if want := `daemon --config-dir "C:\a&b\cfg" --data-dir "C:\data"`; got.Actions.Exec.Arguments != want {
+	if want := `daemon --hide-console --config-dir "C:\a&b\cfg" --data-dir "C:\data"`; got.Actions.Exec.Arguments != want {
 		t.Errorf("arguments = %q, want %q", got.Actions.Exec.Arguments, want)
 	}
 }
