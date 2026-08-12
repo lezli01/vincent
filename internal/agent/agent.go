@@ -90,7 +90,11 @@ type RunSpec struct {
 	Effort         string // resolved per §8.6; adapter-native; "" = CLI default
 	PermissionMode PermissionMode
 	OnInput        InputPolicy // ignored when the adapter lacks input support
-	Env            []string    // nil = inherit the daemon environment
+	// Env is the child's environment, resolved from §12.3 `environment:`
+	// (T4.23). nil still means "inherit the daemon's", which is what tests
+	// and any other caller get; the engine always populates it, so a running
+	// step's environment is a decided value rather than an inherited one.
+	Env []string
 }
 
 // RunHandle is a live agent run (spec §9.1).

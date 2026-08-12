@@ -81,6 +81,10 @@ agents:
 		TranscriptRetentionDays: 7,
 		TranscriptMaxBytes:      32 << 20,
 		LogLevel:                "warn",
+		// The file omits `environment:`, so the §12.3 default survives an
+		// otherwise fully-overriding config — which is the property that
+		// keeps T4.23 invisible to anyone who does not ask for it.
+		Environment: Environment{Inherit: InheritAll()},
 		Agents: Agents{
 			Claude: Agent{Path: "/opt/bin/claude"},
 			Codex:  Agent{Path: `C:\tools\codex.exe`},
