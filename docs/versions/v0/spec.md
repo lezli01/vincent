@@ -1033,6 +1033,39 @@ writes that user's data dir:
   `schtasks /Create /XML` as UTF-16LE, which is the encoding it accepts for
   anything not pure ASCII.
 
+  The action runs `vincent daemon --hide-console` (T4.20). An `InteractiveToken`
+  principal runs on the user's desktop, and nothing in a task definition
+  suppresses a console-subsystem process's window — `<Hidden>` governs whether
+  the *task* is listed in Task Scheduler, not whether its process draws
+  anything. So every logon left a terminal on the desktop whose close button
+  stopped the daemon, since closing a console sends `CTRL_CLOSE_EVENT` to
+  everything attached to it. Only the creator of a process can suppress its
+  console and here that is the scheduler, so the daemon hides the window it is
+  handed, and only when it is the console's sole owner — passed by hand in a
+  terminal the flag does nothing, rather than hiding the user's own shell. The
+  window is *hidden* rather than released with `FreeConsole`, because foreground
+  logging writes stderr and the log file through one `io.MultiWriter` that stops
+  at the first error: an invalid stderr handle would take the file half of every
+  record with it.
+
+  Running `daemon start` from the action and letting the existing detached spawn
+  give the daemon no console at all was the alternative, and is rejected: the
+  task's process would be a launcher that exits immediately, so the registration
+  would report `Ready` while the daemon ran, and `RestartOnFailure` would
+  supervise the launcher's exit code instead of the daemon. The daemon stays the
+  task's own process, which is what keeps this section's promise identical on all
+  three platforms.
+
+  **Install unelevated.** A task registered by an *elevated* process is owned by
+  `BUILTIN\Administrators`, and the ACL Task Scheduler writes leaves the account
+  itself read-only — so a later `/Create /F` or `/Delete` from an ordinary prompt
+  fails with `ERROR: Access is denied`, naming neither the owner nor the remedy.
+  Installed from an ordinary prompt, `CREATOR OWNER` grants the account full
+  control and every later install and uninstall needs no elevation. `install` and
+  `uninstall` detect the denied case — from the definition's ACL, not from
+  schtasks' localized message — and answer with the elevated `uninstall` that
+  clears it.
+
   What this costs is boot survival: the task starts at the next **logon**, not
   at boot. That is exactly what a LaunchAgent does and what a systemd user unit
   does without lingering, so the promise is now the same on all three

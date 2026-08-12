@@ -140,6 +140,13 @@ capture — the task runs in your logon session with your own `PATH`. If an agen
 still will not resolve, point at it with `agents.<name>.path` in `config.yaml`,
 which is absolute and never consults `PATH`.
 
+On Windows it is a Scheduled Task and **not** a Windows Service, so it appears
+in Task Scheduler as `vincent` and never in `services.msc`. It runs with no
+visible window; `vincent service status` and `vincent daemon status` are how you
+check on it. Install it from an **ordinary** prompt: a task registered by an
+elevated one is owned by Administrators and leaves your own account unable to
+replace or remove it, and both commands say so if you hit it.
+
 Upgrading from a version that installed a Windows *Service*: it ran as
 LocalSystem, which is why your TUI kept starting a daemon of its own.
 `vincent service uninstall` from an elevated prompt removes it — once — and

@@ -62,6 +62,20 @@ vincent service status         # must report nothing installed
 > column now means "starts at the next **logon**", the same promise a
 > LaunchAgent and a non-lingering systemd user unit make, so log back in after
 > the reboot before checking.
+>
+> **Your second finding closed that gap, and the reboot leg is what proves it
+> (T4.20).** The task ran the daemon in a visible console window, so at logon a
+> terminal appeared on the desktop and closing it stopped the daemon — a console
+> close sends `CTRL_CLOSE_EVENT` to everything attached. Nothing in a task
+> definition suppresses that window, so the daemon now hides its own, and only
+> when it is the console's sole owner. Two things to do before the re-walk:
+> **`vincent service uninstall` from an elevated prompt once**, because the task
+> on your machine was registered elevated and your own account cannot replace it
+> (both commands now tell you this instead of printing `Access is denied`); then
+> **`vincent service install` from an ordinary prompt**, which is what keeps
+> every later install and uninstall unelevated. Expect one brief console flash at
+> logon and no window after it — the scheduler creates the console before the
+> daemon can hide it.
 
 > **macOS: recorded, and your finding was a real defect.** A launchd agent runs
 > with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm

@@ -25,13 +25,22 @@ const (
 )
 
 func newDaemonCmd() *cobra.Command {
-	var dirs config.Dirs
+	var (
+		dirs        config.Dirs
+		hideConsole bool
+	)
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the vincent daemon in the foreground",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := applyDirFlags(dirs); err != nil {
 				return err
+			}
+			// Before anything slow, so the window the Scheduled Task's action
+			// gets is gone in the time the daemon takes to open its database
+			// rather than for as long as it runs (T4.20).
+			if hideConsole {
+				daemon.HideConsole()
 			}
 			// RunManaged is Run everywhere but Windows, where it speaks the
 			// SCM's control protocol when the process was started as a
@@ -51,6 +60,13 @@ func newDaemonCmd() *cobra.Command {
 		"config directory to run against (default $VINCENT_CONFIG_DIR, else the platform default)")
 	cmd.Flags().StringVar(&dirs.Data, "data-dir", "",
 		"data directory to run against (default $VINCENT_DATA_DIR, else the platform default)")
+	// Windows-only in effect, and set by the same Scheduled Task action: the
+	// scheduler runs it on the user's desktop, where a console-subsystem binary
+	// is given a console window that closing would kill the daemon. Hiding is
+	// skipped unless this process is the console's only owner, so passing it in
+	// a terminal by hand cannot take that terminal down.
+	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
+		"hide the console window the OS allocated for this process (Windows only; no-op elsewhere)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
 	return cmd
 }
