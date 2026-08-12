@@ -34,23 +34,54 @@ The two sections left are independent — take them in any order.
 
 ## 3. T5.7 — M5 gate, the real-`cursor-agent` legs
 
-### 3a. Fix the Cursor hooks on this machine (blocks scenario 1)
+### 3a. Re-run scenario 1 from PowerShell (do this first — it may be the whole fix)
 
-Two `pretooluse` hooks are registered in **PowerShell** syntax while
-`cursor-agent` runs hooks through **bash**, so every hook errors — and a hook
-that errors *blocks* the tool call. `cursor-agent` can currently think and read
-on this box but cannot edit or run anything.
+**The premise of the old §3a was wrong, and it is worth a paragraph because it
+cost a day.** The blocker was written up as "two `pretooluse` hooks registered
+in PowerShell syntax while `cursor-agent` evaluates them through bash, and they
+are generated at runtime rather than stored in a config file I could point at."
+The error message says exactly that — but there is nothing to go and fix: as of
+2026-08-12 there are **no** hooks in `~/.cursor/cli-config.json`, no
+`~/.cursor/hooks.json`, and no project-level `.cursor/`.
 
+What does vary between runs is **the shell the daemon was launched from**.
+vincent hands its own environment to `cursor-agent` unchanged — `RunSpec.Env`
+is never populated for agent steps (`internal/taskrun/steps.go`), the adapter
+overrides only a non-nil one (`internal/agent/cursor/cursor.go`), and the
+detached spawn sets none of its own (`internal/daemon/spawn.go`). Git Bash
+exports `SHELL` to native children as a **real Windows path** (it path-converts
+on the way out, so a downstream Node process sees `C:\Program
+Files\Git\bin\bash.exe`, finds it exists, and honors it); PowerShell leaves
+`SHELL` unset. The hook chain picks both the shell it *runs* a hook with and
+the syntax it *writes* that hook in from that one variable — so a mismatched
+pair is what a Git Bash launch produces and a PowerShell launch does not.
+
+That also explains why the same workload works when vincent is started from
+PowerShell, and why it will work under `vincent service install` (a Scheduled
+Task has no `SHELL` either) — i.e. in the configuration that actually ships.
+
+So, from a **PowerShell** window:
+
+```powershell
+vincent daemon stop
+$env:VINCENT_GATE_AGENT="cursor"; $env:VINCENT_GATE_SCENARIO="1"
+bash ./scripts/m5-gate.sh
 ```
-Hook blocked: --: eval: line 1: syntax error near unexpected token `&'
-`$OutputEncoding = … | & { $input | npx -y context-mode hook cursor pretooluse }'
-`$OutputEncoding = … | & { $input | rtk hook claude }'
-```
 
-They come from the `context-mode` plugin and `rtk`, and are generated at
-runtime rather than stored in a config file I could point at.
+The gate is a bash script either way; what matters is that PowerShell rather
+than Git Bash is the **parent**, so `SHELL` never enters the environment the
+daemon inherits. The script now prints its launch environment as its first
+line — confirm it reads `SHELL=<unset>`. If it doesn't, the parent leaked one:
+re-run the last line as `env -u SHELL bash ./scripts/m5-gate.sh`.
 
-Confirm they are fixed:
+- Launch environment the script printed: `SHELL=__________ MSYSTEM=__________`
+- Result: ☐ pass ☐ fail → output:
+
+  ```
+  
+  ```
+
+### 3b. Only if 3a still fails: check hooks for real
 
 ```sh
 cd "$(mktemp -d)" && git init -q && echo hi > readme.txt
@@ -59,24 +90,15 @@ printf 'Create a file named hi.txt containing hello. Nothing else.' \
   | grep -o '"rejected":{[^}]*}' | head
 ```
 
-Any output means hooks are still blocking.
+Any output means something is still blocking tool calls. Run it from the *same*
+shell that failed, then from the other one — if the two disagree, it is the
+environment and not a registration, and §3a is the answer rather than hook
+surgery.
 
-- Hooks fixed: ☐ yes ☐ no — how: `____________________________________`
-- Probe above returns nothing: ☐ yes ☐ no
+- Probe returns nothing: ☐ yes ☐ no
+- If it differs between PowerShell and Git Bash: ☐ yes ☐ no
 
-Then re-run scenario 1 against the real CLI:
-
-```sh
-VINCENT_GATE_AGENT=cursor VINCENT_GATE_SCENARIO=1 ./scripts/m5-gate.sh
-```
-
-- Result: ☐ pass ☐ fail → output:
-
-  ```
-  
-  ```
-
-### 3b. macOS legs
+### 3c. macOS legs
 
 Scenarios 1, 2 and 4 on a Mac. Scenario 4 matters most: it is the **only**
 place `restricted` genuinely runs rather than being refused, and the refusal
@@ -146,11 +168,12 @@ cursor step resets the model you picked in your own interactive
 ### 5b. Re-capture the contaminated test fixture
 
 `internal/agent/cursor/testdata/tools_2026.08.04.jsonl` has **reconstructed**
-`tool_call/completed` payloads: the hooks in §3a rejected every tool call
-during capture. The `started` lines — the only ones the adapter normalises —
-are verbatim, and the file says so in its test header.
+`tool_call/completed` payloads: every tool call was rejected during capture by
+the blocked hooks §3a is about. The `started` lines — the only ones the adapter
+normalises — are verbatim, and the file says so in its test header.
 
-Worth re-capturing once §3a is fixed?
+If §3a turns out to be the launching shell, this capture is cheap to redo from
+PowerShell. Worth re-capturing?
 
 - ☐ Yes, re-capture from a clean run
 - ☐ No, the reconstruction is documented and sufficient
