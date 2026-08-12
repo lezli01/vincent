@@ -607,7 +607,11 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	switch msg.String() {
-	case "d":
+	case "]", "[", "d":
+		// The registry names `]` canonical with `[` and `d` as aliases, and
+		// all three toggle: with two tabs, "next" and "previous" and "the
+		// other one" are the same move. A third tab would have to split them,
+		// and this is the place that changes.
 		return d.toggleTab()
 	case "E":
 		if d.target().has(apiclient.ActionRetry) {
