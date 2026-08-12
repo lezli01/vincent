@@ -20,63 +20,75 @@ VINCENT_GATE_SCENARIO=2 ./scripts/m5-gate.sh     # one scenario, for debugging
 | 3 | An installed-but-unauthenticated CLI reports `logged_in: false` while staying `available: true`, on both `/v1/agents` and `/v1/info`; adapters that cannot tell report `null` (§9.5) | no — it would mean signing you out |
 | 4 | A `restricted` step is refused with `restricted_unsupported` where cursor's sandbox is unavailable, and **no process is spawned**; elsewhere the same workflow simply runs (§9.4) | no — asserts vincent's own behavior |
 
-## Prerequisite: record the launch environment
+## Prerequisite (Windows): hide `~/.claude` from Cursor
 
-The daemon inherits the environment of the shell that starts it and hands it to
-the agent process unchanged — `RunSpec.Env` is never populated for agent steps
-(`internal/taskrun/steps.go`), the adapter overrides only a non-nil one
-(`internal/agent/cursor/cursor.go`), and the detached spawn sets none of its own
-(`internal/daemon/spawn.go`). The shell you type `vincent` into therefore
-reaches `cursor-agent`, and everything `cursor-agent` spawns.
+**Cursor imports Claude Code's hooks.** On a machine that has Claude Code
+configured, this is what stands between a real-CLI run and a passing scenario 1,
+and it took two days to find because nothing about it lives in Cursor's own
+config. Cursor's hook log states it plainly:
 
-On Windows that is not academic. Git Bash exports `SHELL` to native children as
-a real Windows path — it path-converts on the way out, so a downstream process
-sees `C:\Program Files\Git\bin\bash.exe`, a path that exists and is honored.
-PowerShell leaves `SHELL` unset, as does the §12.1 Scheduled Task backend.
-Tooling in the hook chain both **chooses the shell it runs a hook with** and
-**chooses the syntax it writes that hook in** from that one variable. Get the
-two answers from different launches and a hook written for one shell is
-evaluated by the other:
+```
+User config path:        c:\Users\<you>\.cursor\hooks.json
+Claude user config path: c:\Users\<you>\.claude\settings.json
+No user hooks configuration found       <- no Cursor hooks exist
+Loaded Claude user hooks                <- yours are adopted from Claude Code
+```
+
+`cursor-agent` does the same (`claudeUserHooks`, `claudeProjectHooks`,
+`claudeProjectLocalHooks` in its bundle). It then wraps each imported command in
+a **PowerShell** preamble — writing the payload to `%TEMP%\cursor-hooks-XXXXXX\`
+— and evaluates that string with **bash**:
 
 ```
 Hook blocked with message: --: eval: line 1: syntax error near unexpected token `&'
 --: eval: line 1: `$OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -LiteralPath '…payload.json' -Raw | & { $input | … }'
 ```
 
-A hook that errors **blocks** the tool call, and the symptom is confusing rather
-than obvious: the agent step **succeeds** — cursor exits 0 and emits a clean
-`result` — and the *next* step fails with `nothing to commit, working tree
-clean`. Scenario 1 detects this shape and says so rather than reporting a bare
-`nonzero_exit`.
+Composed for one shell, executed by another, so **every** imported hook errors —
+and an erroring hook **blocks** the tool call. The symptom is confusing rather
+than obvious: the agent step **succeeds** (cursor exits 0 with a clean `result`)
+and the *next* step fails with `nothing to commit, working tree clean`. Scenario
+1 detects that shape and says so rather than reporting a bare `nonzero_exit`.
 
-`m5-gate.sh` prints `SHELL`, `MSYSTEM` and `COMSPEC` at the top of every run.
-**Copy them into the row you record below.** A leg recorded without its launch
-context cannot be reproduced, and one has already been written up as a blocker
-when the launching shell was the variable.
+This is a Cursor bug, not a vincent one, and not something you misconfigured —
+having Claude Code hooks at all is enough to trigger it.
 
-It reads them with `printenv`, and the distinction is load-bearing rather than
-fussy: bash assigns `SHELL` the user's login shell when it inherited none and
-does not export it, so `$SHELL` inside the script reports Git Bash even from a
-PowerShell parent that exported nothing — the launch context backwards. Only
-the **exported** environment reaches the daemon and then the agent. `<not
-exported>` in the banner is the answer you want on Windows.
+### The remedy: a scratch home
 
-On Windows, prefer **PowerShell** for a real-CLI run: it is also how the daemon
-runs once installed through `vincent service install`, which is the
-configuration that ships.
+Give `cursor-agent` a home directory with your real `.cursor` and no `.claude`.
+Nothing on the machine changes, and no Claude Code hook has to be disabled:
 
-Then check hooks — if a run still fails after the above:
+```powershell
+$fh = "$env:TEMP\vincent-gate-home"
+New-Item -ItemType Directory -Force $fh | Out-Null
+cmd /c mklink /J "$fh\.cursor" "$env:USERPROFILE\.cursor"   # no elevation needed
 
-```sh
-cd "$(mktemp -d)" && git init -q && echo hi > readme.txt
-printf 'Create a file named hi.txt containing hello. Nothing else.' \
-  | cursor-agent -p --output-format stream-json --trust --force --model auto \
-  | grep -o '"rejected":{[^}]*}' | head
+$env:USERPROFILE = $fh; $env:HOME = $fh
+$env:GOPATH = (go env GOPATH); $env:GOMODCACHE = (go env GOMODCACHE); $env:GOCACHE = (go env GOCACHE)
+$env:VINCENT_GATE_AGENT = "cursor"; $env:VINCENT_GATE_SCENARIO = "1"
+bash ./scripts/m5-gate.sh
 ```
 
-Any output means hooks are blocking tools; the gate cannot pass until they are
-fixed or removed. Run it from **both** shells before concluding that: if the
-two disagree, the environment is the cause and there is no hook to fix.
+The junction keeps authentication working — it is the real `~/.cursor`. Pinning
+Go's three cache variables is needed because the build runs under the same
+relocated home and would otherwise re-resolve every module. Repo git identity is
+set per-repo by the gate, so a missing global `.gitconfig` does not matter.
+
+Verify the remedy on its own before blaming anything else — this probe writes
+`hi.txt` when hooks are clear and writes nothing when they are not:
+
+```powershell
+cursor-agent -p "Create a file named hi.txt containing hello. Nothing else." `
+  --output-format stream-json --trust --force --model auto > out.jsonl
+Test-Path hi.txt      # False, plus "rejected" entries in out.jsonl, means hooks are blocking
+```
+
+`m5-gate.sh` prints `SHELL`, `MSYSTEM` and `USERPROFILE` at the top of every run
+— **copy them into the row you record below**, since a relocated `USERPROFILE`
+is exactly what distinguishes a passing real-CLI leg from a blocked one. It
+reads them with `printenv` rather than `$SHELL`, because bash assigns itself the
+user's login shell when it inherited none and does not export it; only the
+**exported** environment reaches the daemon and then the agent.
 
 Also confirm you are logged in — `cursor-agent status` — or every run fails at
 the API. vincent surfaces that as `logged_in: false` before a task is created
@@ -91,7 +103,8 @@ every push, so this table only tracks what CI cannot.
 |---|---|---|---|---|---|
 | 2026-08-11 | Windows 11 (26200) | not recorded | `2026.08.04-aaa8809` | all 4, fakeagent | **pass** |
 | 2026-08-11 | Windows 11 (26200) | not recorded | `2026.08.04-aaa8809` | 2, real CLI | **pass** — invalid model exited 1 with no `result` event; the stderr tail reached the step record |
-| 2026-08-11 | Windows 11 (26200) | not recorded — **suspect Git Bash** | `2026.08.04-aaa8809` | 1, real CLI | **blocked, environmental** — `--version`, `status` and the `models` probe all answered from the real binary (`available: true`, `default_model: auto`, zero efforts), and the agent step itself succeeded; the edit was rejected by local `pretooluse` hooks whose PowerShell syntax was evaluated by bash, so the commit step found nothing to commit. Not a vincent defect. **Re-run from PowerShell before doing anything else** — 2026-08-12 found no hooks registered in `~/.cursor/cli-config.json`, no `~/.cursor/hooks.json` and no project `.cursor/`, so the launching shell is the better explanation than a stale registration |
+| 2026-08-11 | Windows 11 (26200) | not recorded | `2026.08.04-aaa8809` | 1, real CLI | **blocked, environmental** — `--version`, `status` and the `models` probe all answered from the real binary (`available: true`, `default_model: auto`, zero efforts) and the agent step itself succeeded, but every edit was rejected by a blocked hook, so the commit step found nothing to commit. Not a vincent defect. **Cause identified 2026-08-12** (see the prerequisite above): Cursor imports Claude Code's hooks from `~/.claude/settings.json`, wraps them in PowerShell and evaluates them with bash. Superseded by the row below |
+| 2026-08-12 | Windows 11 (26200) | PowerShell; `USERPROFILE`/`HOME` → scratch home (junction to real `.cursor`, no `.claude`) | `2026.08.11-e8db854` | 1, real CLI | **pass** — every assertion ran: catalog reported, task reached `done`, step recorded `agent=cursor` with tokens, no cost and no effort, transcript carried cursor-shaped lines, **and the branch carried the edit** — the assertion that had been failing since 2026-08-11 |
 | | macOS | | | 1, 2, 4 | **not run** — needs a macOS box |
 
 Scenario 4's Windows leg is the one that cannot be exercised anywhere else: it
@@ -100,5 +113,6 @@ the refusal is real rather than forced. It passed above. The corresponding
 "restricted actually runs" leg needs macOS or Linux; CI covers it with
 fakeagent on both.
 
-**M5 is not complete until the macOS row is filled and scenario 1 passes
-against the real CLI on at least one OS.**
+Scenario 1 against the real CLI **has now passed on Windows** (2026-08-12), so
+the second half of that promise is met. **M5 is not complete until the macOS row
+is filled.**
