@@ -8,7 +8,7 @@ free-text notes. When you are done (or done with any one section), tell me and
 I will fold the results into `docs/versions/v0/tasks.md`,
 `docs/versions/v0/m5-gate.md` and the spec, then delete this file.
 
-The three sections left are independent — take them in any order.
+The two sections left are independent — take them in any order.
 
 > **Done: the release tag.** `v0.1.0-rc1`, 2026-08-11,
 > [run 31484132218](https://github.com/lezli01/vincent/actions/runs/31484132218).
@@ -21,111 +21,14 @@ The three sections left are independent — take them in any order.
 > met.** If you remember where the time actually went, tell me and I will add
 > it — the totals are recorded, the breakdown is the part I can act on.
 
----
-
-## 2. T4.1 — service install matrix
-
-**Why you:** requires a reboot per OS. (No longer an elevated prompt on
-Windows — see the note below.)
-
-```sh
-vincent service install        # no elevation needed on any OS since T4.19
-vincent service status
-# reboot, and log back in
-vincent service status         # must still report running
-vincent task ls                # must reach the daemon with no manual start
-vincent                        # and the TUI must NOT say "starting daemon…"
-vincent service uninstall
-vincent service status         # must report nothing installed
-```
-
-| OS | Installed | Survived reboot | Uninstalled cleanly | Notes |
-|---|---|---|---|---|
-| Windows 11 | ✓ | ☐ | ✓ | **re-walk owed** — your ✓✓✓ was against the old service backend, which T4.19 replaced. Install and uninstall re-verified in-session 2026-08-12; only the reboot leg is open |
-| macOS | ✓ | ✓ | ✓ | **folded, 2026-08-11** — three legs clean; the no-CLIs finding fixed and re-verified as T4.15 |
-| Linux | ✓ | ✓ | ✓ |  |
-
-> **Windows: your finding was a real defect, and a worse one than it looked.**
-> "Install and uninstall work but the TUI still starts its own daemon" was the
-> SCM running the service as **LocalSystem** (event 7045 confirms it). That
-> daemon resolved `LOCALAPPDATA` to the SYSTEM profile, so its database and
-> `daemon.json` lived in `C:\Windows\System32\config\systemprofile\` and no
-> client in your session could ever find them — hence a second daemon every
-> time. Pinning the directories would have hidden it behind something worse:
-> §16's full-auto agents running as SYSTEM, without your agent-CLI logins or
-> git identity. The backend is now a **Scheduled Task triggered at logon**,
-> running as you, needing no elevation (**T4.19**).
->
-> Two things change for this walkthrough. Install and uninstall no longer want
-> an Administrator prompt — if yours *does* ask, that is the old service still
-> registered and the error says so; remove it elevated once. And the middle
-> column now means "starts at the next **logon**", the same promise a
-> LaunchAgent and a non-lingering systemd user unit make, so log back in after
-> the reboot before checking.
->
-> **Your second finding closed that gap, and the reboot leg is what proves it
-> (T4.20).** The task ran the daemon in a visible console window, so at logon a
-> terminal appeared on the desktop and closing it stopped the daemon — a console
-> close sends `CTRL_CLOSE_EVENT` to everything attached. Nothing in a task
-> definition suppresses that window, so the daemon deals with the console it is
-> handed, and only when it is that console's sole owner. Two things were owed
-> before the re-walk and are done: **`vincent service uninstall` from an elevated
-> prompt once**, because the task on your machine was registered elevated and
-> your own account cannot replace it (both commands now say so instead of
-> printing `Access is denied`), then **`vincent service install` from an ordinary
-> prompt**, which is what keeps every later install and uninstall unelevated.
->
-> **Your third finding is that T4.20 did not hold at a real logon, and it is
-> fixed differently (T4.21/T4.22).** The window titled `C:\windows\system32\cmd.exe`
-> was the daemon's own console: npm's `codex.cmd` shim runs `title %COMSPEC%`, and
-> the agent probes inherited that console, so a probe renamed the daemon's window
-> after itself. Hiding it was a race it cannot win — Windows 11 hands consoles off
-> to Windows Terminal, the handoff replaces the console window, and its cold start
-> at logon outlasts the daemon's first milliseconds, so the hide landed on a
-> window that was then superseded. The daemon now **releases** the console
-> instead, which no later handoff can undo, and every agent probe passes
-> `CREATE_NO_WINDOW` so a console-less daemon does not hand each probe a window of
-> its own. **No reinstall is owed for this one:** the flag spelling in your task
-> definition is unchanged, so the next logon runs the rebuilt binary as it stands.
-> Expect one brief flash at logon — the scheduler creates the console before the
-> daemon exists — and nothing on the desktop after it.
->
-> The same logon also logged `agent not available agent=codex error="codex
-> --version failed: exit status 1"` against a healthy CLI. That was the 10 s probe
-> bound expiring on a cold disk, reported as an exit status because a Windows
-> deadline is `TerminateProcess(pid, 1)` — and then cached for the daemon's whole
-> lifetime, because binary identity is only a sound cache key for a probe that
-> answered. Timeouts now say so, the bounds are 20 s, and a failed probe expires
-> after a minute (T4.22). **On the re-walk, check the startup line**: it now
-> carries `console=detached`, which is the fix reporting itself.
-
-> **macOS: recorded, and your finding was a real defect.** A launchd agent runs
-> with launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no Homebrew, no npm
-> prefix, no `~/.local/bin` — and §9.5 resolves adapters with `exec.LookPath`,
-> so an installed service could see none of them while the same daemon started
-> by hand saw them all. `service install` now bakes the installing shell's PATH
-> into the plist and the systemd unit, the way it already did for the config
-> and data dirs (**T4.15**). Linux had the same latent bug; Windows did not need
-> the fix once T4.19 moved it into your logon session, where it already has
-> your `PATH`. `agents.<name>.path` in `config.yaml` stays the answer anywhere
-> a CLI still will not resolve.
->
-> **Re-verified by you against a real launchd, 2026-08-11:** an installed
-> service now sees the agent CLIs. T4.15 is closed. T4.1 itself stays open for
-> the Windows and Linux rows.
-
-Linux only — did `loginctl enable-linger` succeed automatically, or did the
-installer print the manual command?
-
-```
-
-```
-
-If anything failed, the exact error:
-
-```
-
-```
+> **Done: §2, the service install matrix.** Windows re-walked against the
+> Scheduled Task backend and reported clean on all three legs, 2026-08-12. That
+> logon is also the leg **T4.21** was waiting for — the cold terminal start whose
+> ordering defeated T4.20's hide — so both close: **T4.1 and T4.21 are done**,
+> with macOS and Linux already recorded. One thing I would still take if you
+> remember it: on Linux, did the installer run `loginctl enable-linger` itself or
+> print the manual command? That is the difference between surviving **logout**
+> and only surviving logon, and no other check asks.
 
 ---
 
