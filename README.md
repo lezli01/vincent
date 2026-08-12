@@ -53,8 +53,7 @@ daemon, the workflow engine, the TUI, the CLI subcommands, OS service
 registration and all three agent adapters are built, released as signed
 binaries, and exercised on Windows, macOS and Linux in CI on every pull
 request — unit tests, the race detector, the linter, and three end-to-end
-acceptance gates that drive a real daemon over HTTP. Releases are
-pre-release tags so far; the binaries on the
+acceptance gates that drive a real daemon over HTTP. Binaries on the
 [releases page](https://github.com/lezli01/vincent/releases) are signed,
 checksummed and attested.
 
