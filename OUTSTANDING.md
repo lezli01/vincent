@@ -124,14 +124,13 @@ passes one (defaulting to `auto`) to keep runs reproducible. The cost: every
 cursor step resets the model you picked in your own interactive
 `cursor-agent` sessions.
 
-- ☐ Keep it (reproducible runs, your interactive default gets reset)
+- **x Keep it** (reproducible runs, your interactive default gets reset) —
+  **decided 2026-08-12 by the owner.** Recorded as a binding decision in
+  `tasks.md`'s phase 5 block and as a comment at the point of the behaviour in
+  `internal/agent/cursor/cursor.go`, so the next reader meets the reason where
+  they meet the code rather than having to find this file.
 - ☐ Change it (pass `--model` only when §8.6 resolves one; a task's recorded
   model then may not be what actually ran)
-- Notes:
-
-  ```
-  
-  ```
 
 ### 5b. Re-capture the contaminated test fixture
 
@@ -140,12 +139,17 @@ cursor step resets the model you picked in your own interactive
 the blocked hooks §3 is about. The `started` lines — the only ones the adapter
 normalises — are verbatim, and the file says so in its test header.
 
-This is now cheap to redo: the scratch-home procedure in `m5-gate.md` gives a
-run whose tool calls actually complete, which is exactly what the fixture is
-missing. Worth re-capturing?
+**Done 2026-08-12 — re-captured.** `tools_2026.08.11.jsonl` replaces it, taken
+from a real `cursor-agent 2026.08.11-e8db854` run in an `MSYSTEM`-free shell,
+identifiers and the capture path scrubbed, every line verbatim.
 
-- ☐ Yes, re-capture from a clean run
-- ☐ No, the reconstruction is documented and sufficient
+It earned its keep immediately: the reconstruction carried **only the edit's**
+outcome, and a real run also completes the **shell** call. That second result
+was invented-by-omission, and the test now covers it. It also exposed one
+honest wart, pinned rather than fixed — a shell outcome is summarised by its
+own `command`, so it repeats the invocation instead of reporting the `exitCode`
+and `stdout` the payload actually carries. Say the word if that should change;
+it is a `ToolSummary` preference-order question, not a cursor one.
 
 ---
 
