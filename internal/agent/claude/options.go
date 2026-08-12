@@ -3,7 +3,6 @@ package claude
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -27,9 +26,7 @@ func (a *Adapter) Options(ctx context.Context) (agent.Options, error) {
 	if err != nil {
 		return mergeOptions(nil, nil), err
 	}
-	ctx, cancel := context.WithTimeout(ctx, helpTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--help").Output()
+	out, _, err := agent.Probe(ctx, helpTimeout, path, "--help")
 	if err != nil {
 		return mergeOptions(nil, nil), fmt.Errorf("claude --help failed: %w", err)
 	}

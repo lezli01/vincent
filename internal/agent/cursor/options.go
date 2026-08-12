@@ -3,7 +3,6 @@ package cursor
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -37,9 +36,7 @@ func (a *Adapter) Options(ctx context.Context) (agent.Options, error) {
 	if err != nil {
 		return a.Curated(), err
 	}
-	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "models").Output()
+	out, _, err := agent.Probe(ctx, modelsTimeout, path, "models")
 	if err != nil {
 		return a.Curated(), fmt.Errorf("cursor-agent models failed: %w", err)
 	}

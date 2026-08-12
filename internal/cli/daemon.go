@@ -38,16 +38,19 @@ func newDaemonCmd() *cobra.Command {
 			}
 			// Before anything slow, so the window the Scheduled Task's action
 			// gets is gone in the time the daemon takes to open its database
-			// rather than for as long as it runs (T4.20).
+			// rather than for as long as it runs (T4.20). What it did travels
+			// into the startup log record (T4.21).
+			var console string
 			if hideConsole {
-				daemon.HideConsole()
+				console = daemon.DetachConsole()
 			}
 			// RunManaged is Run everywhere but Windows, where it speaks the
 			// SCM's control protocol when the process was started as a
 			// service (§12.1). Foreground stays true: under a service manager
 			// stderr is captured by the manager's own log, and losing it
 			// there would make a failed service start undiagnosable.
-			return daemon.RunManaged(cmd.Context(), daemon.Options{Foreground: true})
+			return daemon.RunManaged(cmd.Context(),
+				daemon.Options{Foreground: true, Console: console})
 		},
 	}
 	// These exist for the Windows Scheduled Task (T4.17), whose Exec action
@@ -62,11 +65,17 @@ func newDaemonCmd() *cobra.Command {
 		"data directory to run against (default $VINCENT_DATA_DIR, else the platform default)")
 	// Windows-only in effect, and set by the same Scheduled Task action: the
 	// scheduler runs it on the user's desktop, where a console-subsystem binary
-	// is given a console window that closing would kill the daemon. Hiding is
-	// skipped unless this process is the console's only owner, so passing it in
-	// a terminal by hand cannot take that terminal down.
+	// is given a console window that closing would kill the daemon. The console
+	// is kept unless this process is its only owner, so passing this in a
+	// terminal by hand cannot take that terminal down.
+	//
+	// The name outlived the mechanism — T4.21 releases the console rather than
+	// hiding its window — and is kept because every task registered by T4.20
+	// carries this spelling in its definition. Renaming it would leave those
+	// registrations passing a flag the daemon no longer accepts: a daemon that
+	// fails to start at logon, to fix a word.
 	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
-		"hide the console window the OS allocated for this process (Windows only; no-op elsewhere)")
+		"detach from the console the OS allocated for this process (Windows only; no-op elsewhere)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
 	return cmd
 }

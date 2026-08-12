@@ -104,10 +104,25 @@ type catalogSlot struct {
 	entry   CatalogEntry
 }
 
+// failureTTL is how long a *failed* probe is trusted.
+//
+// The binary-identity key (§9.6) is only sound for a probe that answered: help
+// output is a pure function of the binary, a failure is not. A cold logon timed
+// out `codex --version` once and the daemon then served "codex is unavailable —
+// exit status 1" for its whole lifetime against a healthy CLI, because nothing
+// about the binary had changed since the moment it was too slow (T4.22).
+//
+// A minute is chosen so the failure survives a burst of requests — the TUI's
+// board, detail and new-task views each ask — and does not survive the user
+// noticing and looking again. Re-probing an agent that is genuinely absent
+// costs no subprocess at all: an unresolved path fails in Detect before it
+// spawns anything.
+const failureTTL = time.Minute
+
 // CatalogCache caches Detect+Options per adapter, keyed by binary identity.
-// Only Entry probes (and only when the identity changed or refresh is set);
-// validation paths read Catalogs, which never spawns a subprocess (§8.2,
-// §9.6 — T2.11 decisions).
+// Only Entry probes (and only when the identity changed, the last probe failed
+// more than failureTTL ago, or refresh is set); validation paths read Catalogs,
+// which never spawns a subprocess (§8.2, §9.6 — T2.11 decisions).
 type CatalogCache struct {
 	reg   *Registry
 	now   func() time.Time
@@ -127,8 +142,9 @@ func NewCatalogCache(reg *Registry) *CatalogCache {
 func (c *CatalogCache) Names() []string { return c.reg.Names() }
 
 // Entry returns the adapter's catalog entry, probing only when the binary
-// identity changed or refresh is set. The bool is false for an unknown
-// adapter. A request-time call costs a path resolution and one stat.
+// identity changed, the cached entry is a stale failure, or refresh is set. The
+// bool is false for an unknown adapter. A request-time call costs a path
+// resolution and one stat.
 func (c *CatalogCache) Entry(ctx context.Context, name string, refresh bool) (CatalogEntry, bool) {
 	slot, ok := c.slots[name]
 	if !ok {
@@ -138,14 +154,15 @@ func (c *CatalogCache) Entry(ctx context.Context, name string, refresh bool) (Ca
 	slot.probeMu.Lock()
 	defer slot.probeMu.Unlock()
 	key := identity(a)
+	now := c.now()
 	slot.dataMu.RLock()
-	hit := slot.valid && !refresh && key == slot.key
+	hit := slot.valid && !refresh && key == slot.key && !staleFailure(slot.entry, now)
 	entry := slot.entry
 	slot.dataMu.RUnlock()
 	if hit {
 		return entry, true
 	}
-	entry = probe(ctx, a, c.now())
+	entry = probe(ctx, a, now)
 	slot.dataMu.Lock()
 	slot.valid, slot.key, slot.entry = true, key, entry
 	slot.dataMu.Unlock()
@@ -170,6 +187,17 @@ func (c *CatalogCache) Catalogs() Catalogs {
 		out[name] = opts
 	}
 	return out
+}
+
+// staleFailure reports whether an entry that did not fully answer is old enough
+// to be worth asking again. Either half counts: an adapter can be available and
+// still have failed its options probe (cursor's network catalog), and a stale
+// curated fallback is the same kind of wrong answer as a stale "unavailable".
+func staleFailure(e CatalogEntry, now time.Time) bool {
+	if e.Availability.Found && e.ProbeError == "" {
+		return false
+	}
+	return now.Sub(e.ProbedAt) >= failureTTL
 }
 
 // identity resolves the binary identity without spawning it.
