@@ -223,6 +223,13 @@ func (d *detail) update(msg tea.Msg) tea.Cmd {
 		return d.applyAction(msg)
 	case editRetryMsg:
 		return d.applyEdit(msg)
+	case transcriptOpenedMsg:
+		// Nothing to apply — the file was only read. A failed viewer is worth
+		// saying, since the terminal handover leaves no other trace of it.
+		if msg.err != nil {
+			d.actions.setStatus("transcript viewer: "+errString(msg.err), true)
+		}
+		return nil
 	case tea.KeyPressMsg:
 		return d.updateKey(msg)
 	}
@@ -613,6 +620,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// other one" are the same move. A third tab would have to split them,
 		// and this is the place that changes.
 		return d.toggleTab()
+	case "e":
+		return d.openTranscript()
 	case "E":
 		if d.target().has(apiclient.ActionRetry) {
 			return d.editRetry()
