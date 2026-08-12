@@ -20,12 +20,44 @@ VINCENT_GATE_SCENARIO=2 ./scripts/m5-gate.sh     # one scenario, for debugging
 | 3 | An installed-but-unauthenticated CLI reports `logged_in: false` while staying `available: true`, on both `/v1/agents` and `/v1/info`; adapters that cannot tell report `null` (§9.5) | no — it would mean signing you out |
 | 4 | A `restricted` step is refused with `restricted_unsupported` where cursor's sandbox is unavailable, and **no process is spawned**; elsewhere the same workflow simply runs (§9.4) | no — asserts vincent's own behavior |
 
-## Prerequisite (Windows): hide `~/.claude` from Cursor
+## Prerequisite (Windows, when the daemon is parented by Git Bash)
 
-**Cursor imports Claude Code's hooks.** On a machine that has Claude Code
-configured, this is what stands between a real-CLI run and a passing scenario 1,
-and it took two days to find because nothing about it lives in Cursor's own
-config. Cursor's hook log states it plainly:
+Two conditions have to be true together, and neither alone is enough:
+
+1. Claude Code hooks are configured (`~/.claude/settings.json`, or a Claude
+   plugin hook), **and**
+2. **`MSYSTEM` is set in the daemon's environment** — which is true of every
+   process descended from Git Bash / MSYS2, and false everywhere else.
+
+Isolated on one machine, same CLI, same hooks, minutes apart — each run a fresh
+registry-derived environment plus exactly one addition:
+
+| Environment | `hi.txt` written | `Hook blocked` |
+|---|---|---|
+| clean default environment | yes | 0 |
+| clean + `MSYSTEM=MINGW64` | **no** | **5** |
+| clean + Git Bash `\usr\bin` on `PATH`, no `MSYSTEM` | yes | 0 |
+
+So it is not `PATH` and not the mere availability of bash. **`MSYSTEM` alone
+decides it**, and `m5-gate.sh` is a bash script, so a gate run from Git Bash
+always has it.
+
+**You cannot remove it from inside Git Bash.** The MSYS runtime injects
+`MSYSTEM` into the environment block of every child process: `env -u MSYSTEM`
+and `unset MSYSTEM` both still leave a *native* Windows child seeing
+`MSYSTEM=MINGW64`. Verified — do not spend time on that route. The remedy below
+works on the other condition instead.
+
+A daemon started from **PowerShell**, `cmd`, or the §12.1 Scheduled Task has no
+`MSYSTEM` and is unaffected. That is the shipped configuration, and it is proven
+working: an installed, logon-started daemon ran a cursor workflow to `done` with
+28 edit tool calls, **zero** hook blocks and a real commit on the branch.
+
+### Why it happens
+
+**Cursor imports Claude Code's hooks.** Nothing about it lives in Cursor's own
+config, which is what made it take two days to find. Cursor's hook log states it
+plainly:
 
 ```
 User config path:        c:\Users\<you>\.cursor\hooks.json
@@ -50,9 +82,8 @@ than obvious: the agent step **succeeds** (cursor exits 0 with a clean `result`)
 and the *next* step fails with `nothing to commit, working tree clean`. Scenario
 1 detects that shape and says so rather than reporting a bare `nonzero_exit`.
 
-This is a Cursor bug, not a vincent one, and not something you misconfigured —
-having Claude Code hooks at all is enough to trigger it. **Reported upstream
-2026-08-12:**
+This is a Cursor bug, not a vincent one, and not something you misconfigured.
+**Reported upstream 2026-08-12:**
 [forum.cursor.com/t/…/168129](https://forum.cursor.com/t/cursor-agent-windows-imported-claude-code-hooks-are-composed-as-powershell-but-executed-with-bash-silently-blocking-every-tool-call/168129).
 Check whether it is fixed before following the remedy below — when it is, this
 whole section should go rather than survive as ritual.
@@ -88,11 +119,12 @@ Test-Path hi.txt      # False, plus "rejected" entries in out.jsonl, means hooks
 ```
 
 `m5-gate.sh` prints `SHELL`, `MSYSTEM` and `USERPROFILE` at the top of every run
-— **copy them into the row you record below**, since a relocated `USERPROFILE`
-is exactly what distinguishes a passing real-CLI leg from a blocked one. It
-reads them with `printenv` rather than `$SHELL`, because bash assigns itself the
-user's login shell when it inherited none and does not export it; only the
-**exported** environment reaches the daemon and then the agent.
+— **copy them into the row you record below.** Those two together say whether a
+Windows leg was exposed: `MSYSTEM` present is the trigger, a relocated
+`USERPROFILE` is the remedy. It reads them with `printenv` rather than
+`$SHELL`/`$MSYSTEM`, because a shell variable is not the same thing as what a
+native child inherits — only the **exported** environment reaches the daemon and
+then the agent.
 
 Also confirm you are logged in — `cursor-agent status` — or every run fails at
 the API. vincent surfaces that as `logged_in: false` before a task is created
@@ -109,7 +141,9 @@ every push, so this table only tracks what CI cannot.
 | 2026-08-11 | Windows 11 (26200) | not recorded | `2026.08.04-aaa8809` | 2, real CLI | **pass** — invalid model exited 1 with no `result` event; the stderr tail reached the step record |
 | 2026-08-11 | Windows 11 (26200) | not recorded | `2026.08.04-aaa8809` | 1, real CLI | **blocked, environmental** — `--version`, `status` and the `models` probe all answered from the real binary (`available: true`, `default_model: auto`, zero efforts) and the agent step itself succeeded, but every edit was rejected by a blocked hook, so the commit step found nothing to commit. Not a vincent defect. **Cause identified 2026-08-12** (see the prerequisite above): Cursor imports Claude Code's hooks from `~/.claude/settings.json`, wraps them in PowerShell and evaluates them with bash. Superseded by the row below |
 | 2026-08-12 | Windows 11 (26200) | PowerShell; `USERPROFILE`/`HOME` → scratch home (junction to real `.cursor`, no `.claude`) | `2026.08.11-e8db854` | 1, real CLI | **pass** — every assertion ran: catalog reported, task reached `done`, step recorded `agent=cursor` with tokens, no cost and no effort, transcript carried cursor-shaped lines, **and the branch carried the edit** — the assertion that had been failing since 2026-08-11 |
-| | macOS | | | 1, 2, 4 | **not run** — needs a macOS box |
+| 2026-08-12 | macOS | — (no `MSYSTEM` on macOS) | `2026.08.11-e8db854` | all 4, fakeagent | **pass** — including scenario 4's *other* half: this is the only place `restricted` genuinely **runs** rather than being refused, which had never been proven anywhere |
+| 2026-08-12 | macOS | — | `2026.08.11-e8db854` | 1 and 2, real CLI | **pass** — no prerequisite dance needed; the hook trigger is Windows-only |
+| 2026-08-12 | Windows 11 (26200) | Scheduled Task (installed daemon, no `MSYSTEM`) | `2026.08.11-e8db854` | cursor workflow by hand, not the gate | **pass** — task reached `done`, 28 `editToolCall`s, **0** hook blocks, real commit on the branch (4 files, +31/−20). The shipped configuration is unaffected |
 
 Scenario 4's Windows leg is the one that cannot be exercised anywhere else: it
 is the only OS where cursor's sandbox is unavailable, so it is the only place
@@ -117,6 +151,7 @@ the refusal is real rather than forced. It passed above. The corresponding
 "restricted actually runs" leg needs macOS or Linux; CI covers it with
 fakeagent on both.
 
-Scenario 1 against the real CLI **has now passed on Windows** (2026-08-12), so
-the second half of that promise is met. **M5 is not complete until the macOS row
-is filled.**
+**M5 is complete (2026-08-12).** Scenario 1 passed against the real CLI on
+Windows and on macOS; macOS also carried scenario 4's "restricted actually runs"
+half, the one leg no other platform can prove. Linux stays covered by the
+fakeagent gate in CI.

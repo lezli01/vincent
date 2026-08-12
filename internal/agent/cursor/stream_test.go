@@ -10,13 +10,20 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 )
 
-// The fixtures are captured from real cursor-agent 2026.08.04-aaa8809 runs
-// with absolute paths, session ids and account identifiers scrubbed. In
-// tools_2026.08.04.jsonl the two `tool_call/completed` payloads and the
-// closing messages are reconstructed to their documented success shape: the
-// capture machine had a user-level Cursor hook that rejected every tool call,
-// which is an artifact of that machine, not of the CLI. The `started` lines —
-// the only ones this adapter normalizes — are verbatim.
+// The fixtures are captured from real cursor-agent runs with absolute paths,
+// session ids and account identifiers scrubbed, each named for the CLI version
+// it came from: success_2026.08.04.jsonl from 2026.08.04-aaa8809,
+// tools_2026.08.11.jsonl from 2026.08.11-e8db854.
+//
+// tools_2026.08.11.jsonl replaces a 2026.08.04 capture whose `completed`
+// payloads had to be reconstructed to their documented shape, because that
+// machine rejected every tool call: Cursor imports Claude Code's hooks and —
+// when MSYSTEM is set — runs them through bash after composing them for
+// PowerShell, so each one errors and a hook that errors blocks the call
+// (T5.7). Re-captured from a shell without MSYSTEM, so every line is now
+// verbatim, both outcomes included. That is not cosmetic: the reconstruction
+// carried only the edit's result, and a real run also completes the *shell*
+// call, which is now covered below.
 
 func parseFixture(t *testing.T, name string) []agent.Event {
 	t.Helper()
@@ -97,7 +104,7 @@ func TestParseSuccessFixture(t *testing.T) {
 }
 
 func TestParseToolsFixture(t *testing.T) {
-	events := parseFixture(t, "tools_2026.08.04.jsonl")
+	events := parseFixture(t, "tools_2026.08.11.jsonl")
 	var tools []string
 	for _, ev := range events {
 		if ev.Type == agent.EventToolUse {
@@ -142,11 +149,22 @@ func TestParseToolsFixture(t *testing.T) {
 			results = append(results, ev.Results...)
 		}
 	}
-	if len(results) != 1 {
-		t.Fatalf("tool results = %d, want 1 (only the edit completed in this capture)", len(results))
+	if len(results) != 2 {
+		t.Fatalf("tool results = %d, want 2 (both calls complete in a real run)", len(results))
 	}
 	if results[0].CallID != "tool_1" || results[0].IsError || results[0].Summary != "+1 −0" {
 		t.Errorf("edit result = %+v, want tool_1 succeeding with +1 −0", results[0])
+	}
+	// The shell outcome falls through to ToolSummary, whose first preference is
+	// `command` — so it repeats the invocation rather than reporting what came
+	// of it. The real payload carries `exitCode`, `stdout` and `stderr`, none of
+	// which reach the summary because ToolSummary only considers string fields
+	// and `command` wins the order. Asserted as-is because it is what today's
+	// code does, and pinned here so a change to that is a deliberate one: this
+	// is the one place the "an outcome must say something the invocation did
+	// not" rule above is not honoured.
+	if results[1].CallID != "tool_2" || results[1].IsError || results[1].Summary != "git status" {
+		t.Errorf("shell result = %+v, want tool_2 succeeding, summarised by its command", results[1])
 	}
 	// The result text is every assistant message concatenated, not the last.
 	last := events[len(events)-1]
