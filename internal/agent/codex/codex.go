@@ -22,8 +22,10 @@ import (
 // binaryName is what PATH resolution looks for when no path is configured.
 const binaryName = "codex"
 
-// versionTimeout bounds the --version probe subprocess.
-const versionTimeout = 10 * time.Second
+// versionTimeout bounds the --version probe subprocess. 20 s rather than 10 s
+// because the probe that this bound actually killed was this one, at the logon
+// after a reboot (T4.22).
+const versionTimeout = 20 * time.Second
 
 // Adapter runs agents through the Codex CLI.
 type Adapter struct {
@@ -74,9 +76,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	if err != nil {
 		return agent.Availability{Error: err.Error()}, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	out, _, err := agent.Probe(ctx, versionTimeout, path, "--version")
 	if err != nil {
 		return agent.Availability{
 			Path:  path,

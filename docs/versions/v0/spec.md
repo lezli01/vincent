@@ -794,6 +794,21 @@ defaults:
 - **Probe failure degrades, never blocks:** if the CLI is missing or its help
   output can't be parsed, the endpoint serves the curated catalog with
   `probe_error` set; free-text entry is unaffected.
+- **A failed probe expires; a clean one does not** (T4.22). Binary identity is a
+  sound cache key for an answer, not for a failure: nothing about the binary
+  changes when a probe times out, so a single bad moment would otherwise be
+  served for the daemon's whole lifetime — which is exactly what happened at the
+  logon after a reboot, where a cold `codex --version` exceeded its bound and a
+  healthy CLI read as unavailable until the daemon was restarted. An entry whose
+  availability failed, or whose option probe failed, is re-probed by the next
+  request more than a minute later. Re-probing an absent CLI costs no subprocess:
+  an unresolved path fails before anything is spawned.
+- **Probes never put a window on screen.** The daemon usually has no console of
+  its own, and on Windows a console-subsystem child of a console-less parent is
+  given a console unless its creator passes `CREATE_NO_WINDOW` (§12.1, T3.8,
+  T4.21). Every probe goes through one runner that sets it — and that also
+  distinguishes a timeout from a nonzero exit, which a Windows deadline
+  (`TerminateProcess(pid, 1)`) otherwise renders identical.
 - **Only this endpoint probes:** validation paths (registry load/reload,
   `/validate`, task creation) read the cached catalog when primed and the
   curated catalog otherwise — they never spawn a probe subprocess (§8.2).
@@ -1040,13 +1055,26 @@ writes that user's data dir:
   anything. So every logon left a terminal on the desktop whose close button
   stopped the daemon, since closing a console sends `CTRL_CLOSE_EVENT` to
   everything attached to it. Only the creator of a process can suppress its
-  console and here that is the scheduler, so the daemon hides the window it is
-  handed, and only when it is the console's sole owner — passed by hand in a
-  terminal the flag does nothing, rather than hiding the user's own shell. The
-  window is *hidden* rather than released with `FreeConsole`, because foreground
-  logging writes stderr and the log file through one `io.MultiWriter` that stops
-  at the first error: an invalid stderr handle would take the file half of every
-  record with it.
+  console and here that is the scheduler, so the daemon deals with the console it
+  is handed, and only when it is that console's sole owner — passed by hand in a
+  terminal the flag does nothing, rather than taking the user's own shell down.
+
+  The daemon **releases** the console (`FreeConsole`) rather than hiding its
+  window (T4.21, revising T4.20). Hiding is a race it cannot win: on Windows 11
+  the default terminal is Windows Terminal, so the console is handed off to it,
+  the handoff *replaces* the console window, and Windows Terminal's cold start at
+  logon far outlasts the daemon's first few milliseconds — so the hide applied to
+  a superseded window and a live terminal tab was still on the desktop after a
+  reboot. Releasing the console is not a window property but a terminal state:
+  the last client leaving ends the console session, so the host exits and takes
+  any window with it, including a handoff still in flight. The standard handles
+  are pointed at `NUL` first, since they are console handles until they are not:
+  foreground logging writes stderr and the log file through one `io.MultiWriter`
+  that stops at the first error, and every child process inherits them. What
+  remains is one flash between the scheduler creating the process and the daemon
+  reaching that call. Because the daemon then has no console, every probe
+  subprocess must pass `CREATE_NO_WINDOW` too (§9.5, §9.6) or each would be given
+  a console — a window — of its own.
 
   Running `daemon start` from the action and letting the existing detached spawn
   give the daemon no console at all was the alternative, and is rejected: the

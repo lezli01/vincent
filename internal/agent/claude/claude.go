@@ -31,10 +31,14 @@ const binaryName = "claude"
 // without it they degrade per §9.4 as before.
 const restrictedTools = "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(git:*)"
 
-// Probe timeouts bound the --version and --help subprocesses.
+// Probe timeouts bound the --version and --help subprocesses. Raised from
+// 10 s/15 s after a cold logon timed out three probes that all answered in
+// well under a second on a warm machine (T4.22): the first minute after logon
+// is when every agent CLI is paged in from disk and scanned, and it is also
+// exactly when the daemon primes its catalog.
 const (
-	versionTimeout = 10 * time.Second
-	helpTimeout    = 15 * time.Second
+	versionTimeout = 20 * time.Second
+	helpTimeout    = 25 * time.Second
 )
 
 // Adapter runs agents through the Claude Code CLI.
@@ -102,9 +106,7 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 // to the raw output when no semver is found (an unparseable version never
 // enables input mode — supportsInput rejects it).
 func probeVersion(ctx context.Context, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	out, _, err := agent.Probe(ctx, versionTimeout, path, "--version")
 	if err != nil {
 		return "", fmt.Errorf("claude --version failed: %w", err)
 	}
