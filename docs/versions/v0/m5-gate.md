@@ -51,7 +51,11 @@ and the *next* step fails with `nothing to commit, working tree clean`. Scenario
 1 detects that shape and says so rather than reporting a bare `nonzero_exit`.
 
 This is a Cursor bug, not a vincent one, and not something you misconfigured —
-having Claude Code hooks at all is enough to trigger it.
+having Claude Code hooks at all is enough to trigger it. **Reported upstream
+2026-08-12:**
+[forum.cursor.com/t/…/168129](https://forum.cursor.com/t/cursor-agent-windows-imported-claude-code-hooks-are-composed-as-powershell-but-executed-with-bash-silently-blocking-every-tool-call/168129).
+Check whether it is fixed before following the remedy below — when it is, this
+whole section should go rather than survive as ritual.
 
 ### The remedy: a scratch home
 

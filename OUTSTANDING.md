@@ -57,9 +57,11 @@ The two sections left are independent — take them in any order.
 > file written to **0 rejections and `hi.txt` created**, and the full gate then
 > passed end to end. The procedure is written up in `m5-gate.md`.
 >
-> One thing I would still take: **is it worth reporting upstream to Cursor?**
-> You have the reproduction, and the fix is theirs to make — right now every
-> Windows user with Claude Code hooks has a silently crippled `cursor-agent`.
+> **Reported upstream 2026-08-12** —
+> [forum.cursor.com/t/…/168129](https://forum.cursor.com/t/cursor-agent-windows-imported-claude-code-hooks-are-composed-as-powershell-but-executed-with-bash-silently-blocking-every-tool-call/168129).
+> Check it before assuming the workaround is still needed; if Cursor fixes the
+> interop, the scratch-home procedure in `m5-gate.md` should be deleted rather
+> than kept as ritual.
 
 ### 3a. macOS legs — the only thing left on T5.7
 
