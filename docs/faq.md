@@ -1,0 +1,170 @@
+# FAQ
+
+Short answers, with links to the long ones.
+
+---
+
+### What is vincent, in one sentence?
+
+A local-first control plane for AI coding-agent workloads: a background daemon
+runs agent CLIs against your git repositories under workflows you write, and
+every client is a thin consumer of its localhost API.
+
+### Does it need an API key or an account?
+
+No. vincent stores **no credentials**. It runs the agent CLI you already
+installed and authenticated. There is no vincent account, no telemetry, and no
+network dependency beyond whatever your agent CLI does.
+
+### Which agent CLIs work?
+
+Claude Code (`claude`), Codex (`codex`) and Cursor (`cursor-agent`). Pick one
+per workflow, per step, or per task. See [Agent CLIs](guides/agents.md).
+
+### Does it work on Windows?
+
+Yes — fully, and CI proves it on every pull request alongside macOS and Linux.
+The one genuine gap is that cursor's `restricted` mode requires macOS or Linux,
+where vincent fails the step rather than silently running it full-auto. See
+[Windows](platforms/windows.md).
+
+### Is my repository safe? What does "full-auto" actually mean?
+
+An agent in full-auto can run arbitrary commands **as you**. The git worktree
+isolates tasks from each other, not from your machine. Nothing is pushed or
+merged unless a workflow step does it, everything is transcripted, and any step
+can be `restricted`. Read the [Security model](security-model.md) before
+pointing it at anything sensitive.
+
+### Does it touch my working copy?
+
+No. Each task gets its own `git worktree` on its own branch
+(`vincent/{id}-{slug}`). Your checkout, current branch and stash are untouched.
+
+### Does it delete my branches?
+
+Never. Archiving a task removes its **worktree** and keeps the branch and the
+record. Clean up with `git branch --list 'vincent/*'` when you are ready.
+
+### What happens if I close the TUI?
+
+Nothing. The daemon owns all execution; clients are disposable. Close the TUI,
+close the terminal, log out — tasks keep running (on Linux, surviving logout
+needs `loginctl enable-linger`, which the service installer handles).
+
+### What happens if the daemon crashes mid-run?
+
+Every transition is persisted before it is acted on. On restart, interrupted step
+runs are finalized, verified orphan processes are killed (PID **and** start time
+must match), and the step re-runs as an attempt that **does not consume a
+retry**. See [Task lifecycle](reference/task-lifecycle.md#interruption-is-not-failure).
+
+### Do I have to write YAML?
+
+Not to start: the built-in `adhoc` workflow is one agent step, and four
+[examples](../examples) ship ready to copy. You will want your own soon after —
+[Writing workflows](guides/workflows.md) is short.
+
+### How do I make a workflow only apply to one repository?
+
+Put it in `.vincent/workflows/` inside the repo. Project scope shadows a global
+file of the same name, and the file travels with the repository.
+
+### Do I need to restart anything after editing a workflow or the config?
+
+No. The daemon watches both directories and reloads on save. An invalid file is
+reported and the last good version keeps running. The one exception is `listen:`,
+which takes effect at the next daemon restart.
+
+### My workflow file does not show up in `vincent workflow ls`
+
+Add `--project <id>` — without it you see built-in and global scopes only.
+
+### Why did a step fail when the agent said it succeeded?
+
+Because a `check` disagreed. An agent reporting success is a claim; a build is a
+fact. `check_failed` is the healthy, common failure: read the transcript, then
+press `E` to edit the prompt and retry. See
+[Checks](guides/workflows.md#checks-are-how-you-stop-an-agent-grading-its-own-homework).
+
+### A task is stuck in `queued`
+
+It is waiting for a scheduler slot. Check `max_parallel_tasks` (default 3) and
+the per-project cap, and raise the task's priority to move it up the queue.
+
+### A task is stuck in `awaiting_input`
+
+An agent asked you something. It is pinned to the top of the board with a badge —
+press `enter` on the row to answer. Note that `awaiting_input` **holds a
+concurrency slot**, because the agent process is alive mid-step. Set
+`on_input: deny` on workflows that must stay unattended.
+
+### vincent says my agent CLI is missing, but my shell finds it
+
+Almost always `PATH`. A service-installed daemon captures `PATH` at install time
+on macOS and Linux, so a CLI installed afterwards is invisible to it — rerun
+`vincent service install`. Or skip `PATH` entirely with
+`agents.<name>.path` in [config.yaml](reference/configuration.md). If it is
+cursor: vincent resolves **`cursor-agent`**, never `cursor`.
+
+### Why does running a cursor step change my cursor model?
+
+Cursor persists whatever `--model` it is given to `~/.cursor/cli-config.json`,
+and vincent always passes one (defaulting to `auto`) so runs are reproducible.
+It is the one place vincent writes outside its own directories, and it is
+documented rather than discovered.
+
+### Can I use it in CI?
+
+`vincent workflow validate` yes — it needs no daemon, no network and no agent
+CLI, which makes it ideal for a pre-commit hook or a CI job. Running *tasks* in
+CI is possible via the API but was not the design target: vincent is built for a
+developer machine.
+
+### Can I drive it from a script?
+
+Yes. Every subcommand takes `--json`, exit codes distinguish "fix your request"
+(1) from "no daemon" (2), and the API is a documented localhost REST + SSE
+surface. See [Scripting vincent](guides/scripting.md).
+
+### Is there a web UI?
+
+Not today. The TUI and the CLI are the shipped clients; both are thin consumers
+of the API, so a web UI is a client someone could write against the same
+endpoints.
+
+### Does it cost anything? Does it show me what a run cost?
+
+vincent is MIT-licensed and free. Your agent CLI's usage is billed by its vendor.
+Claude Code reports cost, so the board's cost column sums every attempt for it;
+codex and cursor report none, and vincent shows nothing rather than guessing.
+
+### How do I stop everything right now?
+
+```sh
+vincent daemon stop
+```
+
+Graceful: admission stops, running processes get 15 seconds, then they are
+killed and marked `interrupted` — the same resume path as a crash, so nothing is
+lost. `--force` if it will not go.
+
+### How do I remove it completely?
+
+`vincent service uninstall`, `vincent daemon stop`, delete the binary, delete the
+[config and data directories](reference/files.md), then clean up `vincent/*`
+branches in any repository you used.
+
+### Where do I report a bug?
+
+[GitHub issues](https://github.com/lezli01/vincent/issues/new/choose). Security
+issues go through
+[private advisories](https://github.com/lezli01/vincent/security/advisories/new)
+instead. Include `vincent version`, your OS, and the relevant part of
+`{data_dir}/logs/daemon.log`.
+
+### Can I contribute?
+
+Please. [CONTRIBUTING.md](../CONTRIBUTING.md) has the setup, the commit
+convention and the PR checklist. The [spec](versions/v0/spec.md) and the
+[task breakdown](versions/v0/tasks.md) are the two documents to read first.

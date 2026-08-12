@@ -13,7 +13,7 @@
 # outright on Windows, where its sandbox does not exist (§9.4).
 #
 # If you want it, add `permission_mode: restricted` under defaults below and
-# read the "Permission modes" section of docs/workflows.md first.
+# read the "Permission modes" section of docs/guides/workflows.md first.
 name: docs-update
 description: Update documentation to match the current code, then have a human read it.
 
