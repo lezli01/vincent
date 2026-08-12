@@ -97,6 +97,26 @@ The step fails rather than running unrestricted, which is deliberate — a
 restricted mode that quietly isn't restricted is worse than none. Use claude or
 codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
 
+### Every cursor tool call is blocked on Windows
+
+If cursor steps run, produce no edits, and report blocked tool calls, check
+what started the daemon. A daemon parented by **Git Bash** carries `MSYSTEM`,
+and `cursor-agent` imports Claude Code's hooks and composes them as PowerShell
+while executing them with bash — so every hook errors, and an erroring hook
+blocks the call. It is a Cursor interop bug on Windows, not a vincent one.
+
+`unset MSYSTEM` in the launching shell does not help: the MSYS runtime
+re-injects it into every child. vincent sets the child's environment block
+directly, so this does:
+
+```yaml
+environment:
+  unset: [MSYSTEM]
+```
+
+A daemon started by `vincent service install` (a Scheduled Task in your logon
+session) never had `MSYSTEM` in the first place.
+
 ### A restricted codex step cannot commit
 
 In a linked worktree the real git directory lives under the main repository,
