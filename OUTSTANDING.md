@@ -34,49 +34,34 @@ The two sections left are independent — take them in any order.
 
 ## 3. T5.7 — M5 gate, the real-`cursor-agent` legs
 
-### 3a. Fix the Cursor hooks on this machine (blocks scenario 1)
+> **Done: the Windows real-CLI legs.** Scenario 1 **passed** against the real
+> `cursor-agent` on 2026-08-12, recorded in `docs/versions/v0/m5-gate.md`. Your
+> `fail` is what got us there: `SHELL=<not exported>` and it still failed
+> identically, which killed my "it's the launching shell" theory and sent me
+> looking properly.
+>
+> **The cause, at last — and it was never on the Cursor side.** Cursor
+> **imports Claude Code's hooks**. Its own log says so: it looks for
+> `~/.cursor/hooks.json`, finds none, then loads `~/.claude/settings.json`, and
+> `cursor-agent` does the same. It wraps each imported command in a PowerShell
+> preamble and then evaluates that string with **bash**, so every one errors —
+> and an erroring hook blocks the tool call. Your two blockers were `rtk hook
+> claude` (from your Claude settings) and `npx -y context-mode hook cursor
+> pretooluse` (a Claude plugin hook). That is why neither of us could find a
+> registration: there wasn't one. A Cursor bug on Windows, not yours and not
+> vincent's.
+>
+> **The remedy disables nothing.** Run the daemon with `USERPROFILE` and `HOME`
+> pointed at a scratch dir holding a junction to the real `.cursor` and no
+> `.claude`. Confirmed twice — the bare CLI probe went from 3 rejections and no
+> file written to **0 rejections and `hi.txt` created**, and the full gate then
+> passed end to end. The procedure is written up in `m5-gate.md`.
+>
+> One thing I would still take: **is it worth reporting upstream to Cursor?**
+> You have the reproduction, and the fix is theirs to make — right now every
+> Windows user with Claude Code hooks has a silently crippled `cursor-agent`.
 
-Two `pretooluse` hooks are registered in **PowerShell** syntax while
-`cursor-agent` runs hooks through **bash**, so every hook errors — and a hook
-that errors *blocks* the tool call. `cursor-agent` can currently think and read
-on this box but cannot edit or run anything.
-
-```
-Hook blocked: --: eval: line 1: syntax error near unexpected token `&'
-`$OutputEncoding = … | & { $input | npx -y context-mode hook cursor pretooluse }'
-`$OutputEncoding = … | & { $input | rtk hook claude }'
-```
-
-They come from the `context-mode` plugin and `rtk`, and are generated at
-runtime rather than stored in a config file I could point at.
-
-Confirm they are fixed:
-
-```sh
-cd "$(mktemp -d)" && git init -q && echo hi > readme.txt
-printf 'Create a file named hi.txt containing hello. Nothing else.' \
-  | cursor-agent -p --output-format stream-json --trust --force --model auto \
-  | grep -o '"rejected":{[^}]*}' | head
-```
-
-Any output means hooks are still blocking.
-
-- Hooks fixed: ☐ yes ☐ no — how: `____________________________________`
-- Probe above returns nothing: ☐ yes ☐ no
-
-Then re-run scenario 1 against the real CLI:
-
-```sh
-VINCENT_GATE_AGENT=cursor VINCENT_GATE_SCENARIO=1 ./scripts/m5-gate.sh
-```
-
-- Result: ☐ pass ☐ fail → output:
-
-  ```
-  
-  ```
-
-### 3b. macOS legs
+### 3a. macOS legs — the only thing left on T5.7
 
 Scenarios 1, 2 and 4 on a Mac. Scenario 4 matters most: it is the **only**
 place `restricted` genuinely runs rather than being refused, and the refusal
@@ -146,11 +131,13 @@ cursor step resets the model you picked in your own interactive
 ### 5b. Re-capture the contaminated test fixture
 
 `internal/agent/cursor/testdata/tools_2026.08.04.jsonl` has **reconstructed**
-`tool_call/completed` payloads: the hooks in §3a rejected every tool call
-during capture. The `started` lines — the only ones the adapter normalises —
-are verbatim, and the file says so in its test header.
+`tool_call/completed` payloads: every tool call was rejected during capture by
+the blocked hooks §3 is about. The `started` lines — the only ones the adapter
+normalises — are verbatim, and the file says so in its test header.
 
-Worth re-capturing once §3a is fixed?
+This is now cheap to redo: the scratch-home procedure in `m5-gate.md` gives a
+run whose tool calls actually complete, which is exactly what the fixture is
+missing. Worth re-capturing?
 
 - ☐ Yes, re-capture from a clean run
 - ☐ No, the reconstruction is documented and sufficient
