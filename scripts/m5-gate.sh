@@ -54,6 +54,41 @@ hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
+# The daemon inherits the environment of the shell that starts it and hands it
+# to the agent process unchanged: `RunSpec.Env` is never populated for agent
+# steps (internal/taskrun/steps.go), the adapter only overrides a non-nil one
+# (internal/agent/cursor/cursor.go), and the detached spawn sets no environment
+# of its own (internal/daemon/spawn.go). Everything cursor-agent reads from its
+# environment therefore comes from whoever started vincent, which is why a hand
+# run is only reproducible if its environment is recorded alongside its result.
+# USERPROFILE is on the list because relocating it is what unblocks a Windows
+# real-CLI run (see the hook note in docs/versions/v0/m5-gate.md).
+#
+# Read the *exported* environment rather than shell variables: bash assigns
+# SHELL the current user's login shell when it did not inherit one (bash(1)) and
+# does not export it, so "$SHELL" reports Git Bash even from a PowerShell parent
+# that exported nothing. `printenv` reads what a native child actually inherits.
+show_env() { # show_env NAME
+  printf '   %s=%s\n' "$1" "$(printenv "$1" || echo '<not exported>')"
+}
+echo "== launch environment (copy into the docs/versions/v0/m5-gate.md row)"
+show_env SHELL
+show_env MSYSTEM
+show_env USERPROFILE
+if (( REAL_AGENT )); then
+  # cursor-agent installs as a .cmd shim on Windows. Go's exec.LookPath honors
+  # PATHEXT and resolves it; bash does not resolve a bare name to .cmd, so
+  # asking bash directly reports "not found" for a binary the daemon runs
+  # perfectly well. Ask cmd.exe there instead — the doubled slash stops MSYS
+  # rewriting /c as a path.
+  if (( WINDOWS )); then
+    agent_version="$(cmd //c cursor-agent --version 2>/dev/null | tr -d '\r' | head -1)"
+  else
+    agent_version="$(cursor-agent --version 2>/dev/null | head -1)"
+  fi
+  echo "   cursor-agent ${agent_version:-<could not resolve>}"
+fi
+
 echo "== build vincent + fakeagent"
 (cd "$ROOT" && go build -o "$(hostpath "$BIN")/" ./cmd/vincent ./cmd/fakeagent)
 
@@ -215,12 +250,17 @@ EOF
     local commit_row
     commit_row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "commit")][-1]')"
     if grep -q 'nothing to commit' <<<"$commit_row"; then
-      fail "the agent step reported success but changed no file. If you are running
-  with VINCENT_GATE_AGENT=cursor, check for Cursor hooks blocking tool calls:
-      cursor-agent -p --output-format stream-json --trust --force --model auto
-  and look for tool_call results with \"rejected\":{\"reason\":\"Hook blocked...\"}.
-  A hook that errors blocks the tool; hooks registered with PowerShell syntax
-  fail because cursor-agent runs them through bash."
+      fail "the agent step reported success but changed no file — cursor's tool
+  calls are being rejected by a blocked hook. Confirm it with:
+      cursor-agent -p 'create hi.txt' --output-format stream-json --trust --force --model auto
+  and look for tool_call results carrying \"rejected\":{\"reason\":\"Hook blocked...\"}.
+  On Windows the source is usually not a Cursor hook at all: Cursor imports
+  Claude Code's hooks from ~/.claude/settings.json (and Claude plugin hooks),
+  wraps each command in a PowerShell preamble, then evaluates that string with
+  bash — so every imported hook errors, and an erroring hook blocks the tool.
+  The remedy needs no change to your Claude setup: run the daemon with
+  USERPROFILE and HOME pointed at a scratch dir holding a junction to the real
+  .cursor and no .claude. docs/versions/v0/m5-gate.md carries the procedure."
     fi
     api GET "/tasks/$task_id" | jq . >&2
     fail "task $task_id never reached done"
