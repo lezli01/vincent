@@ -15,7 +15,7 @@ description of how the system actually behaves.
 
 | ID | Work | Status |
 |---|---|---|
-| — | Nothing open yet. | |
+| [001](001-configurable-branch-names.md) | Configurable branch names | ⬜ not started (0/11) |
 
 ## How to add and update a task document
 
