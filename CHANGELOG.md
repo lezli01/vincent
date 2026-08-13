@@ -13,6 +13,13 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Added
 
+- Groundwork for configurable branch names
+  ([task 001](docs/tasks/001-configurable-branch-names.md), 001.1 and 001.2): a
+  branch-name template context and renderer, git-delegated branch-name
+  validation, and a collision probe that catches directory/file ref conflicts an
+  exact-match check reports as free. No user-visible behaviour yet — task
+  branches are still `vincent/{id}-{slug}`.
+
 - `go run mage.go vuln` and a weekly `Vulnerabilities` workflow: govulncheck
   over the module's reachable code, swept across `linux`, `darwin` and `windows`
   because 15 packages (`x/sys/windows/svc`, `modernc.org/libc/*`) reach the
