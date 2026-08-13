@@ -1,6 +1,6 @@
 # 001 — Configurable branch names
 
-**Status:** not started (0/11) · **Opened:** 2026-08-13
+**Status:** in progress (2/11) · **Opened:** 2026-08-13
 
 Today every task's branch is `vincent/{id}-{slug}`, computed by
 `worktree.BranchName` and unchangeable. The goal is that a user can decide what
@@ -108,6 +108,30 @@ it beat, because that is the part that is expensive to reconstruct later.
   phase 2 decision exists to prevent, so the branch context omits them and
   referencing one is an error. It also makes self-reference unrepresentable.
 
+  *2026-08-13 — amended twice while implementing 001.1.*
+
+  **It lives in `internal/worktree`, not `internal/workflow`.** `Slug` and
+  `BranchName` are already there and branch naming is that package's documented
+  role; `worktree` depends only on `gitx`, `workflow` depends on `agent` and
+  `config`, and neither imports the other. Putting the context in `workflow`
+  would have added a package edge to reach `Slug` and bought nothing. The cost is
+  that the `missingkey=error` option is now expressed in two packages, so the
+  comment on `RenderBranch` cites the phase 2 decision to keep them from drifting.
+
+  **`missingkey=error` does not cover the `index` builtin,** which invalidates
+  the example used elsewhere in this document. `{{.Fields.ticket}}` errors when
+  the field is absent; `{{ index .Fields "ticket" }}` renders nothing — and
+  deliberately so, since `workflow.TaskContext` documents `index` as *the* way to
+  read an optional field. So a template written as
+  `feat/{{ index .Fields "ticket" }}-{{.Slug}}` silently yields
+  `feat/-fix-login`, which `git check-ref-format` **accepts**. git only catches
+  the degenerate ends (`feat/`, and the empty string); a hole in the middle is a
+  legal ref. Field syntax is therefore the documented default for branch
+  templates, `{{ with index … }}` is the way to make a segment genuinely
+  optional, and `RenderBranch` rejects an empty result itself rather than leaving
+  it to a git message that names no template. Pinned by
+  `TestIndexIsTheQuietFormAndFieldAccessIsTheLoudOne`.
+
 - **Resolution stays server-side.** The branch chain is precedence resolution,
   and `POST /v1/resolve` exists "so no client re-implements the precedence"
   (T4.7; the PR L decision that resolution is server-side is honored, not
@@ -136,24 +160,49 @@ it beat, because that is the part that is expensive to reconstruct later.
 
 ## Tasks
 
-- [ ] **001.1 — `BranchContext` and the branch template renderer.** New type in
-  `internal/workflow` holding `ID()` (method, errors while nil), `Title`, `Slug`,
-  `BaseBranch`, `Fields`, `Project`; a `slug` template func for arbitrary values;
+- [x] **001.1 — `BranchContext` and the branch template renderer.** ✓ 2026-08-13
+  `internal/worktree/branch.go` — see the amended decision above for why it is
+  there rather than in `internal/workflow`. Holds `ID()` (method, errors while
+  nil), `Title`, `Slug`, `BaseBranch`, `Fields`, `Project`; a `slug` template func
+  for arbitrary values; `ValidateBranchTemplate` for parse-time checking;
   rendering through the same `missingkey=error` option `Render` uses. Sentinel
   `ErrBranchNeedsID`.
   *Done when:* table tests cover `{{.Slug}}`, `{{ slug (index .Fields "ticket") }}`,
   a missing field erroring, `.Worktree`/`.BranchName` failing, and `{{.ID}}`
   returning `ErrBranchNeedsID` with a nil id and the real id otherwise.
+  *(Verified: 14 tests in `branch_test.go`.
+  `TestIDBeforeInsertIsRoutingSignal` pins the assumption the whole routing
+  design rests on — that `errors.Is` reaches `ErrBranchNeedsID` through
+  `text/template`'s `ExecError` wrapping of a method error — because if that ever
+  stops holding, `RenderBranch` silently reports a generic failure and the caller
+  takes the wrong path. `TestWithIDDoesNotMutateReceiver` pins that the pre-insert
+  context stays id-less after `WithID`, since pass 1 renders it first.
+  `TestDefaultShapeIsExpressibleAsATemplate` asserts the faithful template equals
+  `BranchName` across five titles including the empty-slug case, **and** that the
+  naive form does not — so the trap recorded in the decision cannot quietly stop
+  being true.)*
 
-- [ ] **001.2 — Ref legality and the widened collision check.** `gitx` gains
-  `CheckRefFormat` (delegating to `git check-ref-format --branch`).
-  `internal/worktree` gains a conflict probe covering the exact ref, refs under
-  the name, and refs that are prefixes of it, plus
-  `ReasonBranchNameInvalid = "branch_name_invalid"`.
+- [x] **001.2 — Ref legality and the widened collision check.** ✓ 2026-08-13
+  `gitx.CheckRefFormat` delegates to `git check-ref-format --branch`, run with no
+  working directory so `--branch`'s shorthand expansion has nothing to resolve
+  against. `worktree.ValidateBranchName` wraps it in the reason taxonomy as
+  `ReasonBranchNameInvalid = "branch_name_invalid"`, and
+  `worktree.BranchConflict` probes the exact ref, refs under the name (a
+  trailing-slash `for-each-ref` pattern, which cannot match the name itself), and
+  every `/`-prefix of the name.
   *Done when:* tests in a `testrepo` prove the D/F case both directions
   (`feat/foo` blocked by `feat/foo/bar`, and `feat/foo/bar` blocked by
   `feat/foo`), and a table of illegal names is rejected — including `a..b`,
   `a~b`, `a.lock`, `-a`, `a.`, `a//b`, `a@{b}`, and one with a control character.
+  *(Verified: `branchcheck_test.go`. Both D/F directions asserted, and the
+  under-the-name case first asserts that `localBranchExists` reports the name as
+  **free** — so the test fails loudly if the trap this task exists for ever
+  disappears. `TestBranchConflictAgreesWithGit` cross-checks the probe against
+  `git branch` in both directions, catching false alarms as well as a false
+  all-clear. Delegation earned itself twice over: git **accepts** `refs/heads/x`
+  as a branch name and **accepts** the single character `@`, contradicting its own
+  documentation — both were assertions I had written the other way, and both are
+  now pinned so a future git change surfaces here rather than in a user's repo.)*
 
 - [ ] **001.3 — Resolve the chain server-side.** `config.branch_template`
   (global, hot-reloaded like the rest of `config.yaml`), a `branch_template`

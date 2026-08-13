@@ -84,6 +84,30 @@ func (g *Git) Run(ctx context.Context, dir string, args ...string) (string, erro
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+// CheckRefFormat reports whether name is usable as a branch name, returning a
+// *Error when it is not.
+//
+// It asks git rather than reimplementing git's grammar (task 001 decision). That
+// grammar rejects `..`, `~^:?*[\`, control characters, `@{`, a `.lock` suffix, a
+// leading `-`, a trailing `.`, `//` and the name `HEAD` — a list a hand-rolled
+// matcher would have to reproduce and then keep correct on three platforms as git
+// evolves. git is also the thing that will ultimately accept or reject the name,
+// so any second opinion is one that can disagree.
+//
+// Two behaviours worth knowing, both verified against git 2.x rather than
+// assumed. It needs no repository, so it runs with no working directory — which
+// also means `--branch`'s shorthand expansion (`@{-1}`) has nothing to resolve
+// against and is simply rejected, exactly what vincent wants when it is about to
+// store the literal. And `refs/heads/x` is *accepted*: git considers it a legal
+// branch name, which would produce `refs/heads/refs/heads/x`. That is git's call
+// to make, and inventing a rule against it is the thing this delegation avoids.
+func (g *Git) CheckRefFormat(ctx context.Context, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, QueryTimeout)
+	defer cancel()
+	_, err := g.Run(ctx, "", "check-ref-format", "--branch", name)
+	return err
+}
+
 // Version returns the raw `git version` line and the parsed major/minor.
 func (g *Git) Version(ctx context.Context) (raw string, major, minor int, err error) {
 	ctx, cancel := context.WithTimeout(ctx, QueryTimeout)
