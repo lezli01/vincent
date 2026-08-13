@@ -61,7 +61,7 @@ func newHarness(t *testing.T) *harness {
 		ProjectID: p.ID, Title: "t", WorkflowName: "adhoc", WorkflowSnapshot: "x",
 		BaseBranch: "main", BranchName: "b", State: store.TaskQueued,
 	}
-	if err := st.CreateTask(ctx, task); err != nil {
+	if err := st.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func (h *harness) snapshotTask(t *testing.T) int64 {
 		WorkflowSnapshot: snapshotWorkflow,
 		BaseBranch:       "main", BranchName: "vincent/2-snapshot", State: store.TaskQueued,
 	}
-	if err := h.st.CreateTask(t.Context(), task); err != nil {
+	if err := h.st.CreateTask(t.Context(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task.ID
@@ -162,7 +162,7 @@ func (h *harness) taskInWorktree(t *testing.T, repo string) int64 {
 		WorkflowSnapshot: snapshotWorkflow, BaseBranch: "main",
 		BranchName: "vincent/3-diffable", WorktreePath: repo, State: store.TaskRunning,
 	}
-	if err := h.st.CreateTask(t.Context(), task); err != nil {
+	if err := h.st.CreateTask(t.Context(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task.ID

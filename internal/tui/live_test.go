@@ -45,7 +45,7 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 		ProjectID: p.ID, Title: "t", WorkflowName: "adhoc", WorkflowSnapshot: "x",
 		BaseBranch: "main", BranchName: "b", State: store.TaskQueued,
 	}
-	if err := st.CreateTask(ctx, task); err != nil {
+	if err := st.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 

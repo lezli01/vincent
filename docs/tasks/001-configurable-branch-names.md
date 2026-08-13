@@ -1,6 +1,6 @@
 # 001 — Configurable branch names
 
-**Status:** in progress (2/11) · **Opened:** 2026-08-13
+**Status:** done (11/11) · **Opened:** 2026-08-13 · **Completed:** 2026-08-13
 
 Today every task's branch is `vincent/{id}-{slug}`, computed by
 `worktree.BranchName` and unchangeable. The goal is that a user can decide what
@@ -204,7 +204,7 @@ it beat, because that is the part that is expensive to reconstruct later.
   documentation — both were assertions I had written the other way, and both are
   now pinned so a future git change surfaces here rather than in a user's repo.)*
 
-- [ ] **001.3 — Resolve the chain server-side.** `config.branch_template`
+- [x] **001.3 — Resolve the chain server-side.** `config.branch_template`
   (global, hot-reloaded like the rest of `config.yaml`), a `branch_template`
   column on projects (append-only migration), and the resolver producing
   `(name, source)` where source is `default|config|project|task`. Templates are
@@ -213,8 +213,18 @@ it beat, because that is the part that is expensive to reconstruct later.
   *Done when:* unit tests cover each level winning, a project template shadowing
   config, a literal beating both, and an unparseable template rejected at
   `PATCH /v1/projects` with a 400 rather than accepted.
+  ✓ 2026-08-13 `config.branch_template`, a `branch_template` column on projects
+  (migration `0005`), and `worktree.ResolveBranchName` returning `(name, source)`.
+  *(Verified: the resolver's chain is unit-tested in `branch_test.go`;
+  `TestProjectBranchTemplateIsValidatedOnWrite` proves an unparseable template is a
+  400 at `PATCH /v1/projects` and that clearing it restores inheritance. One
+  correction to the plan: `internal/config` is a leaf package and cannot import
+  `worktree`, so the **config-level** template is validated in `internal/daemon`
+  instead — a hard failure at startup, and on hot-reload the previous value is kept
+  with a warning rather than dropping the whole reload, so one bad edit does not
+  also revert an unrelated change in the same save.)*
 
-- [ ] **001.4 — Atomic persist; delete the second write and the recompute.**
+- [x] **001.4 — Atomic persist; delete the second write and the recompute.**
   Resolve inside `CreateTask`'s existing transaction: pass 1 without an id (final
   name → collision-checked before the transaction opens → single `INSERT`), or on
   `ErrBranchNeedsID` render after `LastInsertId` and `UPDATE` in the same
@@ -226,38 +236,67 @@ it beat, because that is the part that is expensive to reconstruct later.
   `task.created` event; and a test proves a literal survives what used to be the
   crash window — the recompute is gone, so a custom name cannot degrade to a
   default.
+  ✓ 2026-08-13 `CreateTask` takes a `resolveBranch` callback, so a name needing the
+  id is rendered and written inside the insert's own transaction; the claim query
+  runs there too, on both paths. `SetTaskBranchName` survives repurposed for the
+  retry rename only, and `engine.go`'s recompute is gone.
+  *(Verified: `TestCreateTaskBranchIsAtomic` proves no committed row carries an
+  empty `branch_name` and that a rejected creation leaves none behind. The new
+  invariant immediately caught ~25 test fixtures that had been creating tasks with
+  no branch name or a shared literal — `taskrun`'s own helper was doing
+  insert-then-`UpdateTask`, i.e. the very two-write pattern this task removed, so it
+  now goes through the resolver like production does.)*
 
-- [ ] **001.5 — `POST /v1/tasks` accepts `branch_name`.** Request field, 400s for
+- [x] **001.5 — `POST /v1/tasks` accepts `branch_name`.** Request field, 400s for
   `branch_name_invalid` and for both collision kinds, and the resolved name in
   the response. *Depends: 001.4.*
   *Done when:* handler tests cover an invalid ref, a name taken by an existing
   git branch, a name claimed by another queued task, and a happy path asserting
   the stored name.
+  ✓ 2026-08-13 *(Verified: `TestCreateTaskWithBranchName` covers an illegal ref, a
+  name an existing branch holds, a **directory/file conflict** an exact-match check
+  would have called free, and a name another live task claims — the last of which
+  git cannot see, since neither branch exists yet.
+  `TestCreateTaskDefaultBranchUnchanged` is the regression guard for every existing
+  user.)*
 
-- [ ] **001.6 — `POST /v1/tasks/{id}/retry` accepts `branch_override`.**
+- [x] **001.6 — `POST /v1/tasks/{id}/retry` accepts `branch_override`.**
   Blocked-only, validated and collision-checked exactly as creation, persisted
   before the block is cleared. *Depends: 001.5.*
   *Done when:* a test drives a task to `blocked`/`branch_exists`, retries with a
   free name, and asserts the worktree is created on the new branch with the
   task's history intact; a second asserts a still-colliding override returns 400
   and leaves the task blocked.
+  ✓ 2026-08-13 *(Verified: `TestRetryWithBranchOverride` covers adoption plus
+  re-admission, an illegal name leaving the branch untouched, a still-colliding name
+  leaving the task blocked, and a 409 on a non-blocked task — the rename is refused
+  before it happens rather than left behind by a retry that then fails.)*
 
-- [ ] **001.7 — `POST /v1/resolve` previews the branch.** Request gains `title`,
+- [x] **001.7 — `POST /v1/resolve` previews the branch.** Request gains `title`,
   `fields`, `base_branch`; response gains `branch: {value, source}`. An id-bearing
   template renders with an `<id>` placeholder rather than a fabricated number.
   *Depends: 001.3.*
   *Done when:* a live test through the real handlers asserts each source level is
   reported, and that an id-bearing template previews with the placeholder and
   never `0`.
+  ✓ 2026-08-13 *(Verified: `TestResolvePreviewsTheBranch` asserts each source level
+  and that an id-bearing template previews as `vincent/<id>-fix-login` — a literal
+  marker, never a guessed number, because guessing is wrong the moment two drafts
+  are open.)*
 
-- [ ] **001.8 — CLI surface.** `--branch` on `task add` and on `task retry`,
+- [x] **001.8 — CLI surface.** `--branch` on `task add` and on `task retry`,
   following the existing pointer-flag pattern in `internal/cli/task.go`.
   *Depends: 001.5, 001.6.*
   *Done when:* the flags round-trip through `apiclient` and appear in
   `vincent task add --help`; a `task ls` run shows a custom branch in the branch
   column.
+  ✓ 2026-08-13 `--branch` on `task add`.
+  *(Scope correction: the plan also said `task retry`, but **the CLI has no retry
+  subcommand** — only `add`, `ls`, `show`, `cancel`. Adding one is its own surface
+  with its own questions, so `branch_override` is reachable from the API and the TUI
+  and not from the CLI. Recorded rather than quietly dropped.)*
 
-- [ ] **001.9 — TUI new-task row and live preview.** A branch-name row distinct
+- [x] **001.9 — TUI new-task row and live preview.** A branch-name row distinct
   from the existing base-branch input — which is labelled "base branch" and must
   not read as renamed — reusing the debounced `/v1/resolve` round-trip and the
   `resolveKey` stale-reply drop the form already has. Shows the resolved name and
@@ -265,8 +304,12 @@ it beat, because that is the part that is expensive to reconstruct later.
   *Done when:* a live test types a title and asserts the previewed branch updates
   from the real handlers; a second asserts a stale reply for a superseded draft is
   dropped; `bindings.go` and the TUI key docs updated if a key is added.
+  ✓ 2026-08-13 A `branch` row distinct from `base branch`, previewing the resolved
+  name and the level it came from through the existing debounced `/v1/resolve`
+  round-trip. `resolveKey` grew the branch inputs so a stale preview is dropped like
+  any other; `fields` is digested to a string because the key is compared with `==`.
 
-- [ ] **001.10 — Spec amendments and user docs.** Dated in-place amendments to
+- [x] **001.10 — Spec amendments and user docs.** Dated in-place amendments to
   [../spec.md](../spec.md): §5.3 (`branch_name`), §10 (branch naming, and the
   retirement of "collisions are impossible"), §17 row 17, §18 (the
   `branch_exists` row, plus `branch_name_invalid`), §12.2 (the `retry` payload)
@@ -277,8 +320,12 @@ it beat, because that is the part that is expensive to reconstruct later.
   to `vincent task ls --archived`. *Depends: 001.1–001.9.*
   *Done when:* no page still states `vincent/{id}-{slug}` as the only possible
   shape, and §10 no longer claims collisions are impossible.
+  ✓ 2026-08-13 Eight dated amendments to `../spec.md` (§5.2, §5.3, §10, §12.2, §13.2
+  ×2, §17, §18) and eight user-facing pages, including a full `branch_template`
+  reference section. The cleanup guidance moved off `git branch --list 'vincent/*'`,
+  which configurable names break.
 
-- [ ] **001.11 — Acceptance gate.** Extend
+- [x] **001.11 — Acceptance gate.** Extend
   [`scripts/m2-gate.sh`](../../scripts/m2-gate.sh) with a scenario that drives a
   real daemon over curl: create a task with a project template and assert the
   branch, create a second task that collides and assert the 400, force a
@@ -286,6 +333,15 @@ it beat, because that is the part that is expensive to reconstruct later.
   worktree lands on the new branch. *Depends: 001.10.*
   *Done when:* the new scenario is green on ubuntu, macOS and Windows in CI, and
   [`CHANGELOG.md`](../../CHANGELOG.md) carries the feature under `## [Unreleased]`.
+  ✓ 2026-08-13 `scripts/m2-gate.sh` scenario 4.
+  *(It drives the **real** admission race rather than simulating it: the global cap
+  is 1, a slow task holds the only slot, and the conflicting branch is created while
+  the second task sits queued — so admission is what discovers it, which is the
+  scenario the "creation check is a courtesy, not a guarantee" decision exists for.
+  The gate earned its keep on the first run by failing an assertion I had written
+  from a wrong mental model: a task blocked at worktree creation has run no steps,
+  so there was no step history to preserve. The assertion now states what is
+  actually true and says why.)*
 
 ## Notes
 

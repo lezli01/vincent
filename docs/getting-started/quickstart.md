@@ -130,12 +130,13 @@ vincent task ls
 ```
 
 The task is `queued` immediately. When a scheduler slot frees up it becomes
-`running` in its own git worktree, on a branch named `vincent/{id}-{slug}`.
-Nothing touches your checkout.
+`running` in its own git worktree, on a branch named `vincent/{id}-{slug}` unless
+you configured a different convention. Nothing touches your checkout.
 
 Useful additions at creation time:
 
 ```sh
+--branch feat/OPS-123  # name this task's branch outright
 --priority 10          # higher runs first
 --agent codex          # override the workflow's agent for this task only
 --model sonnet         # …and its model

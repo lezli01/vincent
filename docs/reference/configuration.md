@@ -101,6 +101,55 @@ belongs to.
 
 Real agents cost money; this is the knob that bounds it.
 
+### `branch_template`
+
+```yaml
+branch_template: "vincent/{{.ID}}{{with .Slug}}-{{.}}{{end}}"
+```
+
+The naming convention for task branches. Empty (the default) means the built-in
+`vincent/{id}-{slug}`, with `vincent/{id}` when a title sanitizes to nothing.
+
+Names resolve through a chain, most specific first:
+
+| Level | Set where |
+|---|---|
+| the task's own name | `--branch` / `branch_name`, used **verbatim**, never rendered |
+| project template | `PATCH /v1/projects/{id}` → `branch_template` |
+| global template | this key |
+| built-in | nothing configured |
+
+Available in a template:
+
+| Reference | Meaning |
+|---|---|
+| `{{.ID}}` | The task id. Resolved after the row exists, so it is always unique |
+| `{{.Title}}` | The title verbatim |
+| `{{.Slug}}` | The title slugged the way the built-in name does it |
+| `{{.BaseBranch}}` | What the task branches from |
+| `{{.Fields.NAME}}` | A task field — **errors** when the task does not set it |
+| `{{.Project.Name}}`, `.Path`, `.DefaultBranch` | The project |
+| `{{ slug X }}` | Slug any value: `{{ slug (index .Fields "ticket") }}` |
+
+Two things to get right, because git will not catch them for you:
+
+**Put a discriminator in it.** vincent never deletes branches, so a template like
+`feat/{{.Fields.ticket}}` collides on the *second* task for the same ticket. Include
+`{{.ID}}`, or expect to name repeats by hand.
+
+**Prefer `{{.Fields.x}}` over `{{ index .Fields "x" }}`.** The first fails loudly when
+the field is missing; the second renders *nothing*, giving you `feat/-fix-login` — a
+perfectly legal branch name that is not what you meant. Use `index` only for a segment
+you deliberately want optional, and wrap it:
+
+```yaml
+branch_template: 'feat/{{ with index .Fields "ticket" }}{{.}}-{{ end }}{{.Slug}}'
+```
+
+An invalid template fails at startup rather than silently reverting to the built-in
+name. On hot-reload the previous value is kept and a warning logged, so one bad edit
+does not also revert an unrelated change in the same save.
+
 ### `defaults`
 
 ```yaml
@@ -284,6 +333,7 @@ them in the TUI's projects view, or `PATCH /v1/projects/{id}`:
 | `default_branch` | What new tasks branch from |
 | `default_workflow` | Used when a task names none |
 | `max_parallel_tasks` | Per-project cap, applied on top of the global one |
+| `branch_template` | This repository's branch convention; overrides the global [`branch_template`](#branch_template). Set it to `null` or `""` to inherit the global one again |
 
 ```sh
 vincent project add /path/to/repo --name api --default-branch develop \

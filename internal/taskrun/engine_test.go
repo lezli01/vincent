@@ -112,12 +112,14 @@ func (h *engineHarness) createTask(t *testing.T, snapshot string) *store.Task {
 		BaseBranch:       "main",
 		State:            store.TaskQueued,
 	}
-	if err := h.store.CreateTask(t.Context(), task); err != nil {
+	// The branch name is assigned through the resolver, inside the insert's own
+	// transaction, exactly as the API does it (task 001). This helper used to
+	// insert and then UpdateTask the name in — which is the two-write window
+	// CreateTask closed, so a fixture that kept doing it would no longer be
+	// testing the path production takes.
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := h.store.CreateTask(t.Context(), task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
-	}
-	task.BranchName = worktree.BranchName(task.ID, task.Title)
-	if err := h.store.UpdateTask(t.Context(), task); err != nil {
-		t.Fatalf("UpdateTask: %v", err)
 	}
 	return task
 }

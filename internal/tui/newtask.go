@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +21,8 @@ import (
 const loadTimeout = 10 * time.Second
 
 // ntRow identifies one line of the form. The order is §15's: project →
-// workflow → title → description → fields → base branch → priority →
-// agent/model/effort → create. It is one screen rather than nine, because
+// workflow → title → description → fields → base branch → branch name →
+// priority → agent/model/effort → create. It is one screen rather than nine, because
 // the arrows in §15 are field order, not screen count, and a form gets
 // back-navigation and review-before-submit for free.
 type ntRow int
@@ -33,6 +34,7 @@ const (
 	ntDescription
 	ntFields
 	ntBranch
+	ntBranchName
 	ntPriority
 	ntAgent
 	ntModel
@@ -124,10 +126,14 @@ type newTask struct {
 	desc      textarea.Model
 	fields    []kv
 	branch    textinput.Model
-	priority  textinput.Model
-	agent     string
-	model     string
-	effort    string
+	// branchName is the task's own branch, distinct from branch above, which is
+	// the *base* it forks from. Two adjacent rows about branches need labels that
+	// cannot be misread as one having been renamed (task 001).
+	branchName textinput.Model
+	priority   textinput.Model
+	agent      string
+	model      string
+	effort     string
 
 	cursor   ntRow
 	mode     ntMode
@@ -220,6 +226,8 @@ func (n *newTask) paste(text string) tea.Cmd {
 			n.titleIn, cmd = n.titleIn.Update(tea.PasteMsg{Content: text})
 		case ntBranch:
 			n.branch, cmd = n.branch.Update(tea.PasteMsg{Content: text})
+		case ntBranchName:
+			n.branchName, cmd = n.branchName.Update(tea.PasteMsg{Content: text})
 		case ntPriority:
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
@@ -277,16 +285,45 @@ type resolveKey struct {
 	projectID               int64
 	workflow                string
 	agent, model, effortSel string
+	// The branch inputs, so a reply previewing a name the draft has moved past is
+	// dropped like any other stale one (task 001). fields is digested rather than
+	// held as a map because resolveKey is compared with ==.
+	title, baseBranch, branchName, fields string
 }
 
 func (n *newTask) resolveKey() resolveKey {
 	return resolveKey{
-		projectID: n.projectID,
-		workflow:  n.workflow,
-		agent:     n.agent,
-		model:     n.model,
-		effortSel: n.effort,
+		projectID:  n.projectID,
+		workflow:   n.workflow,
+		agent:      n.agent,
+		model:      n.model,
+		effortSel:  n.effort,
+		title:      n.titleText(),
+		baseBranch: strings.TrimSpace(n.branch.Value()),
+		branchName: strings.TrimSpace(n.branchName.Value()),
+		fields:     fieldsDigest(n.fieldMap()),
 	}
+}
+
+// fieldsDigest renders a field map as a comparable, order-independent string, so
+// the map can take part in resolveKey's equality.
+func fieldsDigest(f map[string]string) string {
+	if len(f) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(f))
+	for k := range f {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(f[k])
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // resolveCmd asks the daemon what the current draft would run. It fires on
@@ -300,10 +337,14 @@ func (n *newTask) resolveCmd() tea.Cmd {
 		return nil
 	}
 	req := apiclient.ResolveRequest{
-		Workflow: key.workflow,
-		Agent:    key.agent,
-		Model:    key.model,
-		Effort:   key.effortSel,
+		Workflow:   key.workflow,
+		Agent:      key.agent,
+		Model:      key.model,
+		Effort:     key.effortSel,
+		Title:      key.title,
+		BaseBranch: key.baseBranch,
+		BranchName: key.branchName,
+		Fields:     n.fieldMap(),
 	}
 	if key.projectID != 0 {
 		req.ProjectID = ptr(key.projectID)
@@ -552,7 +593,7 @@ func (n *newTask) activate() tea.Cmd {
 	switch n.cursor {
 	case ntProject, ntWorkflow, ntAgent, ntModel, ntEffort:
 		n.openPicker(n.cursor)
-	case ntTitle, ntBranch, ntPriority, ntDescription:
+	case ntTitle, ntBranch, ntBranchName, ntPriority, ntDescription:
 		n.startEditing()
 	case ntFields:
 		n.fieldsEd = newFieldsEditor(n.fields)
@@ -584,6 +625,7 @@ func (n *newTask) stopEditing() {
 	n.mode = ntNavigating
 	n.titleIn.Blur()
 	n.branch.Blur()
+	n.branchName.Blur()
 	n.priority.Blur()
 	n.desc.Blur()
 }
@@ -607,6 +649,8 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		n.titleIn, cmd = n.titleIn.Update(msg)
 	case ntBranch:
 		n.branch, cmd = n.branch.Update(msg)
+	case ntBranchName:
+		n.branchName, cmd = n.branchName.Update(msg)
 	case ntPriority:
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
@@ -732,6 +776,9 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	if b := strings.TrimSpace(n.branch.Value()); b != "" {
 		req.BaseBranch = ptr(b)
 	}
+	if b := strings.TrimSpace(n.branchName.Value()); b != "" {
+		req.BranchName = ptr(b)
+	}
 	if p, err := strconv.Atoi(strings.TrimSpace(n.priority.Value())); err == nil && p != 0 {
 		req.Priority = ptr(p)
 	}
@@ -773,6 +820,7 @@ func (n *newTask) applyFailure(err error) {
 		row    ntRow
 	}{
 		{"base_branch", ntBranch},
+		{"branch", ntBranchName},
 		{"workflow", ntWorkflow},
 		{"title", ntTitle},
 		{"project", ntProject},

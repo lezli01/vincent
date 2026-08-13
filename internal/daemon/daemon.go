@@ -100,6 +100,16 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Error("startup failed: invalid config", "error", err)
 		return err
 	}
+	// Checked here rather than in config.validate: internal/config is a leaf
+	// package and the branch template's context lives in internal/worktree
+	// (task 001). A hard failure, not a warning — a daemon that ignored the
+	// configured convention would create every branch under the wrong name, and
+	// the user would not find out until they looked at their repository.
+	if err := worktree.ValidateBranchTemplate(cfg.BranchTemplate); err != nil {
+		logger.Error("startup failed: branch_template does not compile",
+			"branch_template", cfg.BranchTemplate, "error", err)
+		return fmt.Errorf("invalid branch_template: %w", err)
+	}
 	if lvl, err := parseLevel(cfg.LogLevel); err == nil {
 		level.Set(lvl)
 	}
@@ -289,6 +299,20 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			logger.Warn("listen change ignored until restart",
 				"effective", prev.Listen, "requested", next.Listen)
 			next.Listen = prev.Listen
+		}
+		// A branch template that does not compile is refused on its own rather
+		// than dropping the whole reload: a typo here should not also revert an
+		// unrelated log_level edit in the same save. Keeping the previous value is
+		// the honest fallback — silently falling back to the built-in name would
+		// create every branch under a convention the user did not ask for
+		// (task 001). config cannot check this itself; it is a leaf package and
+		// the template context lives in internal/worktree.
+		if next.BranchTemplate != prev.BranchTemplate {
+			if err := worktree.ValidateBranchTemplate(next.BranchTemplate); err != nil {
+				logger.Warn("branch_template change ignored: it does not compile",
+					"effective", prev.BranchTemplate, "requested", next.BranchTemplate, "error", err)
+				next.BranchTemplate = prev.BranchTemplate
+			}
 		}
 		if lvl, err := parseLevel(next.LogLevel); err == nil {
 			level.Set(lvl)
