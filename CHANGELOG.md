@@ -36,7 +36,7 @@ type — that is the exhaustive index; this is the human summary.
 ## [0.1.0] — 2026-08-12
 
 First release. All 70 tasks of the
-[v0 breakdown](docs/versions/v0/tasks.md) are complete, and the M1, M2, M4 and
+[v0 breakdown](docs/history/v0-tasks.md) are complete, and the M1, M2, M4 and
 M5 acceptance gates are met.
 
 ### Added
@@ -64,7 +64,7 @@ M5 acceptance gates are met.
 ### Security
 
 - Agents run **full-auto by default** — a documented design decision
-  ([spec §16](docs/versions/v0/spec.md)), surfaced once by the TUI on first run.
+  ([spec §16](docs/spec.md)), surfaced once by the TUI on first run.
   Git worktrees isolate collisions between tasks, not privileges.
 - The daemon's trust boundary is the OS user: loopback-only listener, bearer
   token stored `0600` in the data directory, and no agent credentials stored.

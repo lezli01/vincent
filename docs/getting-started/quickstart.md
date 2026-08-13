@@ -8,7 +8,7 @@ If you have not installed vincent yet, start with
 
 > [!WARNING]
 > **Agents run full-auto by default: they can execute arbitrary commands as
-> you.** This is the design ([spec §16](../versions/v0/spec.md)), not an
+> you.** This is the design ([spec §16](../spec.md)), not an
 > oversight — unattended orchestration is the point. The git worktree isolates
 > tasks from *each other*, not from your machine: an agent can still reach your
 > home directory, your credentials and the network. Nothing is pushed or merged

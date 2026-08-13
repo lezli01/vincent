@@ -11,7 +11,7 @@
 # (scenarios 1 and 2 only — 3 and 4 assert vincent's own behavior, and
 # scenario 3 would mean signing the operator out). That manual run is the
 # other half of the gate and is walked through in
-# docs/versions/v0/m5-gate.md. VINCENT_GATE_SCENARIO=1|2|3|4 runs one
+# docs/gates/m5-gate.md. VINCENT_GATE_SCENARIO=1|2|3|4 runs one
 # scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
@@ -62,7 +62,7 @@ hostpath() {
 # environment therefore comes from whoever started vincent, which is why a hand
 # run is only reproducible if its environment is recorded alongside its result.
 # USERPROFILE is on the list because relocating it is what unblocks a Windows
-# real-CLI run (see the hook note in docs/versions/v0/m5-gate.md).
+# real-CLI run (see the hook note in docs/gates/m5-gate.md).
 #
 # Read the *exported* environment rather than shell variables: bash assigns
 # SHELL the current user's login shell when it did not inherit one (bash(1)) and
@@ -71,7 +71,7 @@ hostpath() {
 show_env() { # show_env NAME
   printf '   %s=%s\n' "$1" "$(printenv "$1" || echo '<not exported>')"
 }
-echo "== launch environment (copy into the docs/versions/v0/m5-gate.md row)"
+echo "== launch environment (copy into the docs/gates/m5-gate.md row)"
 show_env SHELL
 show_env MSYSTEM
 show_env USERPROFILE
@@ -263,7 +263,7 @@ EOF
   Bash (the MSYS runtime re-injects it into every child), so the remedy works on
   the other half instead: run the daemon with USERPROFILE and HOME pointed at a
   scratch dir holding a junction to the real .cursor and no .claude.
-  docs/versions/v0/m5-gate.md carries the procedure."
+  docs/gates/m5-gate.md carries the procedure."
     fi
     api GET "/tasks/$task_id" | jq . >&2
     fail "task $task_id never reached done"
