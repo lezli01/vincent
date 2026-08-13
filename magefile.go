@@ -39,6 +39,30 @@ func Lint() error {
 	return sh.RunV("go", "tool", "golangci-lint", "run")
 }
 
+// Vuln reports known vulnerabilities reachable from this module's code, for
+// every platform vincent ships on, via govulncheck pinned by the go.mod tool
+// directive. Needs network access to fetch the Go vulnerability database.
+//
+// The GOOS sweep is not ceremony: 15 packages reach the binary only on Windows
+// (golang.org/x/sys/windows/svc, modernc.org/libc/*), so a host-only run would
+// report a vulnerability in one of those as unreachable. And it has to invoke
+// one host-built binary with GOOS set in its environment rather than
+// `GOOS=… go tool govulncheck`, which cross-builds the tool and then cannot
+// execute it — the same trap `go tool golangci-lint` has (see CLAUDE.md).
+func Vuln() error {
+	bin, err := sh.Output("go", "tool", "-n", "govulncheck")
+	if err != nil {
+		return fmt.Errorf("locating govulncheck: %w", err)
+	}
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		fmt.Printf("== govulncheck GOOS=%s\n", goos)
+		if err := sh.RunWithV(map[string]string{"GOOS": goos}, bin, "./..."); err != nil {
+			return fmt.Errorf("govulncheck GOOS=%s: %w", goos, err)
+		}
+	}
+	return nil
+}
+
 func ldflags() string {
 	version := "dev"
 	if v, err := sh.Output("git", "describe", "--tags", "--always", "--dirty"); err == nil && v != "" {

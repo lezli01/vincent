@@ -1,0 +1,44 @@
+name: Vulnerabilities
+
+# Separate from CI on purpose. A newly published advisory can make this fail
+# without a single line of vincent changing, so it needs a schedule to surface
+# on its own rather than waiting for the next PR — and a failure here should be
+# readable as "the dependency graph changed under us", not as "the PR is broken".
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - go.mod
+      - go.sum
+      - .github/workflows/vuln.yml
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, a few minutes off the hour to dodge the rush
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # One runner, three GOOS values: the mage target sweeps linux, darwin and
+      # windows from a host-built govulncheck, because reachability differs per
+      # platform (x/sys/windows/svc and modernc.org/libc/* are Windows-only) and
+      # cross-building the tool would produce a binary the runner cannot execute.
+      - name: govulncheck (linux, darwin, windows)
+        run: go run mage.go vuln

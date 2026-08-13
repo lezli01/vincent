@@ -193,6 +193,14 @@ vincent version
 
 On Windows, unzip the archive and move `vincent.exe` somewhere on your `PATH`.
 
+With a Go toolchain already installed, you can skip the archive entirely — this
+builds from source, so it is not signed and not flagged, but it is also not
+reproducible against a published checksum:
+
+```sh
+go install github.com/lezli01/vincent/cmd/vincent@latest
+```
+
 **First launch will be flagged.** Releases carry cosign signatures, checksums
 and GitHub build attestations, but not OS code signing — Authenticode and
 Apple notarization are recurring certificate costs this project does not take
@@ -221,6 +229,12 @@ You also need **git** and at least one agent CLI (`claude`, `codex` or
 and stores no credentials of its own. Per-platform detail, build-from-source
 and upgrade instructions:
 [Installation](docs/getting-started/installation.md).
+
+**vincent is `0.x`.** The config file, workflow YAML schema, REST API and CLI
+flags may change in any minor release — pin a version if you script against
+them. Patch releases are fixes only, and the on-disk database migrates forward
+automatically. Full policy and release history:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Quickstart
 

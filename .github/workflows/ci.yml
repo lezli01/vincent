@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,12 +16,15 @@ concurrency:
 jobs:
   ci:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:
@@ -41,61 +45,45 @@ jobs:
         shell: bash
         run: ./bin/vincent* version
 
-  # M1 acceptance (spec §19): the scripted curl flow against the fake agent.
-  m1-gate:
+  # Acceptance gates (spec §19). One job per OS, not one per gate: each script
+  # is self-isolating — its own `mktemp -d` state dirs via VINCENT_CONFIG_DIR /
+  # VINCENT_DATA_DIR, its own ephemeral port read from daemon.json, its own
+  # `trap cleanup EXIT` — so sequencing them shares one checkout and one
+  # toolchain setup instead of paying for three. The gates themselves run in
+  # seconds; the setup they each repeated was the larger cost. Failure
+  # attribution survives because every gate is still its own named step.
+  gates:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
+      # M1: the scripted curl flow against the fake agent.
       - name: M1 gate (fake agent)
         shell: bash
         run: ./scripts/m1-gate.sh
 
-  # M2 acceptance (spec §19): multi-step workflow with an input round-trip,
-  # hard-kill recovery, and cap stress — all against the fake agent.
-  m2-gate:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
+      # M2: multi-step workflow with an input round-trip, hard-kill recovery,
+      # and cap stress — all against the fake agent.
       - name: M2 gate (fake agent)
         shell: bash
         run: ./scripts/m2-gate.sh
 
-  # M5 acceptance (spec §19 M5): a cursor workflow runs to completion, a
-  # stderr-only failure stays diagnosable, an unauthenticated CLI is flagged,
-  # and a restricted step is refused rather than downgraded. Scenario 4 is the
-  # reason this runs on all three OSes rather than one: the refusal is only
-  # real on Windows, and "restricted simply runs" is only real off it.
-  m5-gate:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
+      # M5: a cursor workflow runs to completion, a stderr-only failure stays
+      # diagnosable, an unauthenticated CLI is flagged, and a restricted step is
+      # refused rather than downgraded. Scenario 4 is the reason this runs on
+      # all three OSes rather than one: the refusal is only real on Windows, and
+      # "restricted simply runs" is only real off it.
       - name: M5 gate (fake agent)
         shell: bash
         run: ./scripts/m5-gate.sh

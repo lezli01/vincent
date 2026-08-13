@@ -72,9 +72,25 @@ signs:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+# Grouped by Conventional Commit type and stripped of commit hashes, because the
+# defaults render one flat list where every line opens with a 40-char SHA —
+# accurate, and unreadable as release notes (see the v0.1.0 notes). CHANGELOG.md
+# carries the curated prose; this is the generated index of what landed between
+# two tags. Note that `groups`, `sort` and `abbrev` all require `use: github`
+# rather than `github-native`, which disables every formatting feature.
 changelog:
   use: github
   sort: asc
+  abbrev: -1 # drop the commit hash; the subject is the information
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
   filters:
     exclude:
       - "^docs:"
