@@ -96,7 +96,7 @@ first (force-removing worktrees), and is refused while any task is running.
 |---|---|---|
 | `GET` | `/v1/workflows?project_id=` | The merged registry: built-in + global + that project's, with shadowing applied |
 | `POST` | `/v1/workflows/validate` | `{ yaml }` → `{ valid, errors[], warnings[] }` |
-| `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort? }` → resolution per step |
+| `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
 `{ name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }`.
@@ -106,6 +106,20 @@ to every step under a candidate task-level override, returning `{ value, source 
 per field — `source` being the winning level (`step`, `task`, `workflow`,
 `adapter`). Non-agent steps keep their index with null fields, so a client can zip
 the two lists positionally.
+
+When the request names a `project_id` it also returns `branch`, the name this draft
+task would get:
+
+```json
+{ "value": "feat/OPS-123-retry-logic", "source": "project", "placeholder": false }
+```
+
+`source` is the winning level of the branch chain (`default`, `config`, `project`,
+`task`). `placeholder: true` means `value` carries a literal `<id>` where the task id
+will go, because the id does not exist until the task is created — the daemon does not
+guess the next one. This is why a client should not render branch templates itself:
+resolution stays server-side so there is only ever one implementation of the
+precedence.
 
 An empty value with source `adapter` means the adapter names no default of its
 own and the CLI decides at run time — which the TUI renders as "CLI default"
@@ -118,7 +132,7 @@ rather than inventing a model name.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=` | List |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, priority?, agent?, model?, effort? }` |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort? }` — `branch_name` is used verbatim and wins over any template |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt |
@@ -130,7 +144,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked | `{ prompt_override?, run_override? }` |
+| `/retry` | blocked | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
 | `/reject` | awaiting_gate | |

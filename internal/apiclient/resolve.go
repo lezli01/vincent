@@ -19,6 +19,14 @@ type ResolveRequest struct {
 	Agent     string `json:"agent,omitempty"`
 	Model     string `json:"model,omitempty"`
 	Effort    string `json:"effort,omitempty"`
+	// The draft's branch inputs, so the daemon can preview the resolved name
+	// (task 001). Sent by the new-task form as the user types; resolution stays
+	// server-side, which is the PR L decision this reuses rather than works
+	// around.
+	Title      string            `json:"title,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
+	BaseBranch string            `json:"base_branch,omitempty"`
+	BranchName string            `json:"branch_name,omitempty"`
 }
 
 // ResolvedField is one §8.6 value and the level that supplied it. Value is
@@ -49,6 +57,41 @@ type ResolvedStep struct {
 type Resolution struct {
 	Workflow string         `json:"workflow"`
 	Steps    []ResolvedStep `json:"steps"`
+	// Branch previews the name a draft task would get. Nil when the request
+	// named no project, since the project template is part of the chain.
+	Branch *ResolvedBranch `json:"branch"`
+}
+
+// Branch-naming levels, as POST /v1/resolve reports them (task 001).
+const (
+	BranchSourceDefault = "default"
+	BranchSourceConfig  = "config"
+	BranchSourceProject = "project"
+	BranchSourceTask    = "task"
+)
+
+// ResolvedBranch is the previewed branch name for a draft task.
+type ResolvedBranch struct {
+	Value  string `json:"value"`
+	Source string `json:"source"`
+	// Placeholder reports that Value carries a literal `<id>` where the task id
+	// will go, because the id does not exist until the task is created. Display
+	// it as-is: the daemon deliberately does not guess the next id.
+	Placeholder bool `json:"placeholder"`
+}
+
+// Explain names the level that decided the branch, for a form's hint line.
+func (b ResolvedBranch) Explain() string {
+	switch b.Source {
+	case BranchSourceTask:
+		return "as typed"
+	case BranchSourceProject:
+		return "from the project template"
+	case BranchSourceConfig:
+		return "from config.yaml"
+	default:
+		return "vincent default"
+	}
 }
 
 // Agents lists the distinct resolved agents across the agent steps, in step

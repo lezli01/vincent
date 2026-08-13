@@ -60,7 +60,7 @@ func (h *pruneHarness) task(t *testing.T, title string, archivedAgo time.Duratio
 		State: store.TaskDone, WorkflowSnapshot: "name: adhoc\nsteps: []\n",
 		BranchName: "vincent/" + title,
 	}
-	if err := h.store.CreateTask(t.Context(), task); err != nil {
+	if err := h.store.CreateTask(t.Context(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	if archivedAgo > 0 {

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const projectColumns = `id, name, path, default_branch, default_workflow, max_parallel_tasks, created_at, updated_at`
+const projectColumns = `id, name, path, default_branch, default_workflow, max_parallel_tasks, branch_template, created_at, updated_at`
 
 // CreateProject inserts p and assigns its ID and timestamps, writing the
 // durable project.created event in the same transaction (spec §13.3). A
@@ -23,10 +23,10 @@ func (s *Store) CreateProject(ctx context.Context, p *Project) error {
 	var ev *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO projects (name, path, default_branch, default_workflow, max_parallel_tasks, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO projects (name, path, default_branch, default_workflow, max_parallel_tasks, branch_template, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
-			formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
+			nullString(p.BranchTemplate), formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
 		if err != nil {
 			return fmt.Errorf("insert project: %w", err)
 		}
@@ -101,10 +101,10 @@ func (s *Store) UpdateProject(ctx context.Context, p *Project) error {
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE projects SET name = ?, path = ?, default_branch = ?, default_workflow = ?,
-				max_parallel_tasks = ?, updated_at = ?
+				max_parallel_tasks = ?, branch_template = ?, updated_at = ?
 			WHERE id = ?`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
-			formatTime(p.UpdatedAt), p.ID)
+			nullString(p.BranchTemplate), formatTime(p.UpdatedAt), p.ID)
 		if err != nil {
 			return fmt.Errorf("update project %d: %w", p.ID, err)
 		}
@@ -195,13 +195,16 @@ func scanProject(r rowScanner) (*Project, error) {
 	var (
 		p                Project
 		workflow         sql.NullString
+		branchTemplate   sql.NullString
 		maxPar           sql.NullInt64
 		created, updated string
 	)
-	if err := r.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultBranch, &workflow, &maxPar, &created, &updated); err != nil {
+	if err := r.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultBranch, &workflow, &maxPar,
+		&branchTemplate, &created, &updated); err != nil {
 		return nil, err
 	}
 	p.DefaultWorkflow = workflow.String
+	p.BranchTemplate = branchTemplate.String
 	if maxPar.Valid {
 		v := int(maxPar.Int64)
 		p.MaxParallelTasks = &v

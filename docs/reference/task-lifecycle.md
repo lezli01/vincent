@@ -143,8 +143,10 @@ same thing wherever it originated.
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 
 Worktree-layer reasons: `project_path_missing`, `base_branch_missing`,
-`branch_exists`, `worktree_dirty`, `worktree_missing`,
-`worktree_path_occupied`, `git_error`. See
+`branch_exists`, `branch_name_invalid`, `worktree_dirty`, `worktree_missing`,
+`worktree_path_occupied`, `git_error`. A `branch_exists` block is recoverable
+without losing the task: `POST /v1/tasks/{id}/retry` accepts a `branch_override`
+that renames the branch and re-admits it. See
 [Troubleshooting](../guides/troubleshooting.md#projects-and-worktrees).
 
 ## Interruption is not failure

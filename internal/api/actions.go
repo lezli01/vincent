@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -60,12 +61,22 @@ func (s *Server) handleTaskReject(w http.ResponseWriter, r *http.Request) {
 type retryRequest struct {
 	PromptOverride string `json:"prompt_override"`
 	RunOverride    string `json:"run_override"`
+	// BranchOverride renames the task's branch before the retry re-admits it.
+	// It is what makes a `branch_exists` block recoverable at all (task 001):
+	// nothing else in the API can change a branch name, so without it a blocked
+	// task would be permanently dead and its transcripts orphaned.
+	BranchOverride string `json:"branch_override"`
 }
 
 func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 	var req retryRequest
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
+	}
+	if branch := strings.TrimSpace(req.BranchOverride); branch != "" {
+		if !s.renameBranchForRetry(w, r, branch) {
+			return
+		}
 	}
 	s.runAction(w, r, func(id int64) (*store.Task, error) {
 		t, err := s.deps.Runner.Retry(r.Context(), id,
@@ -188,12 +199,12 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 
 	case isInvalidAction(err):
 		e, _ := taskrun.AsInvalidAction(err)
-		writeConflict(w, CodeInvalidState, e.Error(),
+		writeConflict(w, e.Error(),
 			map[string]string{"state": string(e.State)})
 
 	case isStateConflict(err):
 		e, _ := store.AsStateConflict(err)
-		writeConflict(w, CodeInvalidState, e.Error(),
+		writeConflict(w, e.Error(),
 			map[string]string{"state": string(e.Got)})
 
 	case isOverrideMismatch(err):
@@ -210,7 +221,7 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	// means the task is untouched — `worktree_dirty` is the one a client
 	// resolves by re-sending with force (§13.2).
 	case worktree.ReasonOf(err) != "":
-		writeConflict(w, CodeInvalidState, err.Error(),
+		writeConflict(w, err.Error(),
 			map[string]string{"reason": worktree.ReasonOf(err)})
 
 	default:

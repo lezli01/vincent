@@ -155,9 +155,12 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	if task.WorktreePath != "" {
 		return nil
 	}
-	if task.BranchName == "" { // crash between insert and branch assignment
-		task.BranchName = worktree.BranchName(task.ID, task.Title)
-	}
+	// No recompute of an empty BranchName here any more (task 001). It used to
+	// cover a crash between the insert and a second write that assigned the name;
+	// CreateTask now writes the name in the insert's own transaction, so the
+	// window is gone. Keeping the recompute would have been actively harmful once
+	// names became configurable: it produced the *built-in* name, so a task whose
+	// user chose `feat/OPS-123` would have silently run on `vincent/{id}-{slug}`.
 	path, err := r.deps.Worktrees.Create(ctx, project.Path, task.ID, task.BranchName, task.BaseBranch)
 	if err != nil {
 		if ctx.Err() != nil {

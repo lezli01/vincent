@@ -272,10 +272,13 @@ type CreateTaskRequest struct {
 	Description *string           `json:"description,omitempty"`
 	Fields      map[string]string `json:"fields,omitempty"`
 	BaseBranch  *string           `json:"base_branch,omitempty"`
-	Priority    *int              `json:"priority,omitempty"`
-	Agent       *string           `json:"agent,omitempty"`
-	Model       *string           `json:"model,omitempty"`
-	Effort      *string           `json:"effort,omitempty"`
+	// BranchName names this task's branch outright, overriding the project and
+	// config templates (task 001). Used verbatim, never rendered.
+	BranchName *string `json:"branch_name,omitempty"`
+	Priority   *int    `json:"priority,omitempty"`
+	Agent      *string `json:"agent,omitempty"`
+	Model      *string `json:"model,omitempty"`
+	Effort     *string `json:"effort,omitempty"`
 }
 
 // CreateTask creates a task and returns it as the daemon recorded it. The

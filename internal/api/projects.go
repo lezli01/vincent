@@ -15,6 +15,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // projectResponse is the JSON shape of a project (spec §5.1). Optional fields
@@ -27,6 +28,7 @@ type projectResponse struct {
 	DefaultBranch    string  `json:"default_branch"`
 	DefaultWorkflow  *string `json:"default_workflow"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks"`
+	BranchTemplate   *string `json:"branch_template"`
 	CreatedAt        string  `json:"created_at"`
 	UpdatedAt        string  `json:"updated_at"`
 }
@@ -44,6 +46,10 @@ func toProjectResponse(p *store.Project) projectResponse {
 	if p.DefaultWorkflow != "" {
 		w := p.DefaultWorkflow
 		r.DefaultWorkflow = &w
+	}
+	if p.BranchTemplate != "" {
+		t := p.BranchTemplate
+		r.BranchTemplate = &t
 	}
 	return r
 }
@@ -67,6 +73,10 @@ type projectCreateRequest struct {
 	DefaultBranch    *string `json:"default_branch"`
 	DefaultWorkflow  *string `json:"default_workflow"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks"`
+	// BranchTemplate is this project's branch convention (task 001, §5.3). It is
+	// parsed here rather than at task creation, so a broken template fails where
+	// it was written instead of on every task from then on.
+	BranchTemplate *string `json:"branch_template"`
 }
 
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +136,14 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		p.MaxParallelTasks = req.MaxParallelTasks
 	}
+	if req.BranchTemplate != nil {
+		tmpl := strings.TrimSpace(*req.BranchTemplate)
+		if msg := validateBranchTemplate(tmpl); msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		p.BranchTemplate = tmpl
+	}
 	if err := s.deps.Store.CreateProject(ctx, &p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: projects.name") {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
@@ -155,6 +173,7 @@ type projectPatchRequest struct {
 	DefaultBranch    opt[string] `json:"default_branch"`
 	DefaultWorkflow  opt[string] `json:"default_workflow"`
 	MaxParallelTasks opt[int]    `json:"max_parallel_tasks"`
+	BranchTemplate   opt[string] `json:"branch_template"`
 }
 
 func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +254,19 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 			v := req.MaxParallelTasks.val
 			p.MaxParallelTasks = &v
 		}
+	}
+	if req.BranchTemplate.set {
+		// null and "" both mean "inherit config.yaml again", which is how a
+		// project's convention is removed without inventing a delete endpoint.
+		tmpl := ""
+		if !req.BranchTemplate.null {
+			tmpl = strings.TrimSpace(req.BranchTemplate.val)
+		}
+		if msg := validateBranchTemplate(tmpl); msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		p.BranchTemplate = tmpl
 	}
 	if err := s.deps.Store.UpdateProject(ctx, p); err != nil {
 		s.internalError(w, "update project", err)
@@ -519,4 +551,21 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 func (s *Server) internalError(w http.ResponseWriter, what string, err error) {
 	s.deps.Logger.Error(what, "error", err)
 	writeError(w, http.StatusInternalServerError, CodeInternal, what+" failed")
+}
+
+// validateBranchTemplate parses a project's branch template, returning the 400
+// message when it does not compile (task 001). An empty template is valid and
+// means "inherit config.yaml".
+//
+// Parsing here is the point: a template that only failed when a task was created
+// would turn one bad edit into a project that cannot start work, with the error
+// arriving far from the change that caused it.
+func validateBranchTemplate(tmpl string) string {
+	if tmpl == "" {
+		return ""
+	}
+	if err := worktree.ValidateBranchTemplate(tmpl); err != nil {
+		return fmt.Sprintf("branch_template is not a valid template: %v", err)
+	}
+	return ""
 }

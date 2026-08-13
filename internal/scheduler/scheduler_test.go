@@ -89,7 +89,7 @@ func (h *harness) task(
 		Priority: priority, State: state,
 		CreatedAt: time.Now().Add(-age),
 	}
-	if err := h.store.CreateTask(t.Context(), task); err != nil {
+	if err := h.store.CreateTask(t.Context(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

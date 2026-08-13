@@ -28,6 +28,7 @@ func newTaskAddCmd() *cobra.Command {
 		description string
 		baseBranch  string
 		priority    int
+		branch      string
 		agent       string
 		model       string
 		effort      string
@@ -47,6 +48,7 @@ func newTaskAddCmd() *cobra.Command {
 					{"workflow", &req.Workflow, &workflow},
 					{"description", &req.Description, &description},
 					{"base-branch", &req.BaseBranch, &baseBranch},
+					{"branch", &req.BranchName, &branch},
 					{"agent", &req.Agent, &agent},
 					{"model", &req.Model, &model},
 					{"effort", &req.Effort, &effort},
@@ -89,6 +91,8 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "Task title (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Task description")
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "Base branch (default: the project's)")
+	cmd.Flags().StringVar(&branch, "branch", "",
+		"Name for the task's branch, used verbatim (default: the project or config template)")
 	cmd.Flags().IntVar(&priority, "priority", 0, "Scheduling priority; higher runs first")
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent override (§8.6 level 2)")
 	cmd.Flags().StringVar(&model, "model", "", "Model override (§8.6 level 2)")

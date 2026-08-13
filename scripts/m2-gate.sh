@@ -7,7 +7,7 @@
 # load (scenario 3). Runs against the committed fakeagent so CI never calls a
 # real API; run manually with VINCENT_GATE_AGENT=claude to exercise the real
 # CLI (scenario 1 only — killing a paid run and 8× cap spend prove nothing
-# extra). VINCENT_GATE_SCENARIO=1|2|3 runs a single scenario for debugging.
+# extra). VINCENT_GATE_SCENARIO=1|2|3|4 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -400,6 +400,123 @@ EOF
   echo "=== scenario 3 PASS (max global $max_global/3, max per-project $max_project/2)"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 4 — configurable branch names (task 001, spec §5.3/§10).
+#
+# The interesting half is the recovery path. A `branch_exists` block used to be
+# unreachable, because `vincent/{id}-{slug}` cannot collide; now it is routine, and
+# the creation-time check that catches most collisions is explicitly *not* a
+# guarantee — a branch can appear between that check and admission. So this drives
+# the real race rather than a simulation of it: the global cap is 1, a slow task
+# holds the only slot, the conflicting branch is created while the second task sits
+# queued, and admission is what discovers it.
+# ---------------------------------------------------------------------------
+scenario4() {
+  echo "=== scenario 4: configurable branch names"
+  scenario_dirs s4
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+max_parallel_tasks: 1
+EOF
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-branch.yaml" <<EOF
+name: m2-branch
+description: M2 gate branch naming — one command step, valid in sh and pwsh alike.
+steps:
+  - id: nap
+    type: command
+    run: sleep 1
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s4/repo" proj
+  make_repo "$repo"
+  proj="$(register_project "$repo" ', branch_template: "feat/{{.Slug}}"')"
+
+  echo "== a project template names the branch"
+  local t1 b1
+  t1="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Retry logic\"}" | jq -r .id)"
+  b1="$(api GET "/tasks/$t1" | jq -r .branch_name)"
+  [[ "$b1" == "feat/retry-logic" ]] \
+    || fail "project template ignored: branch is $b1, want feat/retry-logic"
+  wait_for_state "$t1" done 60
+  git -C "$repo" rev-parse --verify --quiet refs/heads/feat/retry-logic >/dev/null \
+    || fail "the templated branch was never created in the repo"
+
+  echo "== a per-task literal beats the template"
+  local t2 b2
+  t2="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Second\",\"branch_name\":\"release/hotfix\"}" | jq -r .id)"
+  b2="$(api GET "/tasks/$t2" | jq -r .branch_name)"
+  [[ "$b2" == "release/hotfix" ]] || fail "literal ignored: branch is $b2"
+  wait_for_state "$t2" done 60
+
+  echo "== the same template output twice is rejected at creation, not silently renamed"
+  local status
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Retry logic\"}" \
+    "$BASE/tasks")"
+  [[ "$status" == "400" ]] \
+    || fail "a repeat of an existing branch should be 400 at creation, got $status"
+
+  echo "== an illegal branch name is refused with 400"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"bad\",\"branch_name\":\"feat/../escape\"}" \
+    "$BASE/tasks")"
+  [[ "$status" == "400" ]] || fail "an illegal ref name should be 400, got $status"
+
+  # The race the creation check cannot close. The slow task holds the only slot,
+  # so the second one is still queued when the branch appears under it.
+  echo "== a branch appearing after creation blocks the task at admission"
+  local hold late
+  hold="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Holder\",\"branch_name\":\"gate/holder\"}" | jq -r .id)"
+  late="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Late\",\"branch_name\":\"gate/contended\"}" | jq -r .id)"
+  git -C "$repo" branch gate/contended
+  wait_for_state "$late" blocked 90
+  local reason
+  reason="$(api GET "/tasks/$late" | jq -r .block_reason)"
+  [[ "$reason" == "branch_exists" ]] \
+    || fail "task $late blocked with $reason, want branch_exists"
+  wait_for_state "$hold" done 90
+
+  echo "== retry with branch_override recovers the blocked task, keeping its id"
+  local recovered
+  recovered="$(api POST "/tasks/$late/retry" '{"branch_override":"gate/recovered"}' | jq -r .branch_name)"
+  [[ "$recovered" == "gate/recovered" ]] \
+    || fail "branch_override ignored: branch is $recovered"
+  wait_for_state "$late" done 90
+  git -C "$repo" rev-parse --verify --quiet refs/heads/gate/recovered >/dev/null \
+    || fail "the recovered branch was never created"
+  # The rename kept the task rather than replacing it: same id, block cleared, and
+  # it went on to actually run a step on the new branch.
+  #
+  # Note what is deliberately *not* asserted. This task blocked at worktree
+  # creation, which happens before any step starts, so it had no step runs to
+  # preserve — what survived is the task row, its id and its event trail. A task
+  # that blocks mid-workflow is where step history matters, and scenario 2 already
+  # covers attempt rows surviving a restart.
+  [[ "$(api GET "/tasks/$late" | jq -r '.block_reason // "null"')" == "null" ]] \
+    || fail "task $late still carries a block reason after a successful retry"
+  [[ "$(api GET "/tasks/$late/steps" | jq 'length')" -ge 1 ]] \
+    || fail "task $late ran no step after the rename, so it never used the new branch"
+
+  echo "== a still-colliding override is refused and the task stays blocked"
+  local t3
+  t3="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-branch\",\"title\":\"Third\",\"branch_name\":\"gate/second-clash\"}" | jq -r .id)"
+  git -C "$repo" branch gate/second-clash
+  wait_for_state "$t3" blocked 90
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"branch_override":"gate/recovered"}' "$BASE/tasks/$t3/retry")"
+  [[ "$status" == "400" ]] || fail "a colliding override should be 400, got $status"
+  [[ "$(api GET "/tasks/$t3" | jq -r .state)" == "blocked" ]] \
+    || fail "task $t3 should still be blocked after a refused override"
+
+  "$VINCENT" daemon stop
+  echo "=== scenario 4 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -409,7 +526,8 @@ case "$WHICH" in
   1) scenario1 ;;
   2) scenario2 ;;
   3) scenario3 ;;
-  all) scenario1; scenario2; scenario3 ;;
+  4) scenario4 ;;
+  all) scenario1; scenario2; scenario3; scenario4 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

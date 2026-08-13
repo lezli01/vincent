@@ -312,7 +312,7 @@ vincent            # the TUI: board, live output, diff, and the gate
 ```
 
 The task appears on the board, runs in its own worktree on branch
-`vincent/{id}-{slug}`, and stops at the `review` gate. Read the diff in the
+`vincent/{id}-{slug}` by default, and stops at the `review` gate. Read the diff in the
 TUI, press `a` to approve, and the publish step pushes the branch. `q` quits
 the TUI — the daemon and any running task keep going without it.
 

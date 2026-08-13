@@ -21,6 +21,7 @@ const (
 	ReasonProjectPathMissing   = "project_path_missing"
 	ReasonBaseBranchMissing    = "base_branch_missing"
 	ReasonBranchExists         = "branch_exists"
+	ReasonBranchNameInvalid    = "branch_name_invalid"
 	ReasonWorktreeDirty        = "worktree_dirty"
 	ReasonWorktreeMissing      = "worktree_missing"
 	ReasonWorktreePathOccupied = "worktree_path_occupied"
@@ -146,6 +147,64 @@ func (m *Manager) Create(ctx context.Context, projectPath string, taskID int64, 
 		return "", &Error{Reason: ReasonGitError, Message: "git worktree add failed", Err: err}
 	}
 	return target, nil
+}
+
+// ValidateBranchName reports whether branch is a legal branch name, returning a
+// ReasonBranchNameInvalid error when it is not (task 001). Rejection is loud
+// rather than sanitized: quietly rewriting a name the user typed is the same
+// dishonesty as faking a capability an adapter lacks.
+func (m *Manager) ValidateBranchName(ctx context.Context, branch string) error {
+	if err := m.git.CheckRefFormat(ctx, branch); err != nil {
+		return &Error{
+			Reason:  ReasonBranchNameInvalid,
+			Message: fmt.Sprintf("%q is not a valid git branch name", branch),
+			Err:     err,
+		}
+	}
+	return nil
+}
+
+// BranchConflict returns the name of an existing branch that would prevent
+// creating branch, or "" when the name is free.
+//
+// An exact-match check is not enough, because git stores refs as a path
+// hierarchy: `feat/foo` cannot be created while `feat/foo/bar` exists, and
+// `feat/foo/bar` cannot be created while `feat/foo` does. In the first case
+// `git rev-parse --verify refs/heads/feat/foo` reports *not found*, so an
+// exact-only pre-flight passes and `git worktree add` then fails with a
+// directory/file-conflict message that maps to no named reason. Unreachable while
+// every name is `vincent/{id}-{slug}` — one slash, and the id makes it unique —
+// and reachable as soon as the user chooses the name (task 001).
+//
+// It is a pre-flight courtesy, not a guarantee: a branch can appear between this
+// check and the worktree creation that follows, which is why Create still refuses
+// a pre-existing branch and remains the authority.
+func (m *Manager) BranchConflict(ctx context.Context, repo, branch string) (string, error) {
+	if m.localBranchExists(ctx, repo, branch) {
+		return branch, nil
+	}
+	// Refs *under* the name. The trailing slash in the pattern is what keeps this
+	// from also matching the name itself.
+	listCtx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	out, err := m.git.Run(listCtx, repo, "for-each-ref", "--count=1",
+		"--format=%(refname:short)", "refs/heads/"+branch+"/")
+	if err != nil {
+		return "", &Error{Reason: ReasonGitError, Message: "git for-each-ref failed", Err: err}
+	}
+	if out != "" {
+		return out, nil
+	}
+	// A prefix of the name that is itself a branch.
+	for i := range len(branch) {
+		if branch[i] != '/' {
+			continue
+		}
+		if prefix := branch[:i]; m.localBranchExists(ctx, repo, prefix) {
+			return prefix, nil
+		}
+	}
+	return "", nil
 }
 
 // IsDirty reports whether the worktree has any local changes; untracked
