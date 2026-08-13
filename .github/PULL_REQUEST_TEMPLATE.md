@@ -4,8 +4,9 @@
 
 ## Related
 
-<!-- Issue link. (v0 is complete, so there is no open task ID to cite; if this
-     revisits a recorded decision in docs/versions/v0/tasks.md, say so and why.) -->
+<!-- Issue link, and/or a task ID from docs/tasks/ (e.g. "closes 001.4").
+     If this revisits a decision recorded in a task document or in the closed
+     v0 ledger (docs/history/v0-tasks.md), say so explicitly and why. -->
 
 ## Checklist
 

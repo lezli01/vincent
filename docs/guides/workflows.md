@@ -2,7 +2,7 @@
 
 A workflow is a YAML file describing an ordered list of steps. Every task runs
 one, in its own git worktree on its own branch. This guide is the practical
-companion to [spec §8](../versions/v0/spec.md), which is the normative reference
+companion to [spec §8](../spec.md), which is the normative reference
 when the two disagree; the field-by-field version is the
 [workflow schema](../reference/workflow-schema.md).
 

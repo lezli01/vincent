@@ -61,16 +61,30 @@ that is *not* true are stated rather than smoothed over.
 - [Security model](security-model.md) — what full-auto means, what the worktree
   does and does not isolate, and how to tighten it.
 - [FAQ](faq.md) — the short answers.
-- [Specification](versions/v0/spec.md) — the normative document. Section
-  numbers (§7.2, §9.7 …) are cited throughout the code and these docs; when a
-  guide and the spec disagree, the spec wins.
-- [Task breakdown](versions/v0/tasks.md) — how the implementation was
-  delivered, task by task, with the decisions behind each one.
 - [Example workflows](../examples) — four ready-to-copy files.
+
+## Design and internals
+
+Everything above is written for people *using* vincent. These are for people
+changing it.
+
+- [Specification](spec.md) — the normative document, and the only one. Section
+  numbers (§7.2, §9.7 …) are cited throughout the code and these docs; when a
+  guide and the spec disagree, the spec wins. It is not versioned: it describes
+  the system as it is now, amended in place with dated notes.
+- [Tasks](tasks/README.md) — planned and in-flight work, one document per piece
+  of work, with the design decisions behind it.
+- [Acceptance gates](gates/m5-gate.md) — the manual walkthroughs behind the
+  scripted gates in [`scripts/`](../scripts), and the record of when each was
+  last walked. ([M3](gates/m3-gate.md) seeds a TUI walkthrough instead of
+  asserting.)
+- [History](history/v0-tasks.md) — the closed v0 ledger: how the first release
+  was delivered, task by task, with the decision behind each one. Frozen, and
+  still worth reading — code comments cite its decisions by name.
 
 ## Conventions in these docs
 
 - `{config_dir}` and `{data_dir}` are the platform-native directories resolved
   in [Files and directories](reference/files.md).
 - Shell samples are POSIX unless a PowerShell equivalent is shown beside them.
-- `§n` references point at [the spec](versions/v0/spec.md).
+- `§n` references point at [the spec](spec.md).
