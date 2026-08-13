@@ -48,7 +48,7 @@ The name is an acronym, and every part of it maps to the system:
 - **Native agent tooling** — it invokes locally installed tools such as
   Claude Code, Codex, and Cursor.
 
-**All 70 tasks in the [v0 breakdown](docs/versions/v0/tasks.md) are done.** The
+**All 70 tasks in the [v0 breakdown](docs/history/v0-tasks.md) are done.** The
 daemon, the workflow engine, the TUI, the CLI subcommands, OS service
 registration and all three agent adapters are built, released as signed
 binaries, and exercised on Windows, macOS and Linux in CI on every pull
@@ -352,8 +352,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 [HTTP API](docs/reference/api.md)
 
 **Also** — [Security model](docs/security-model.md) · [FAQ](docs/faq.md) ·
-[Specification](docs/versions/v0/spec.md) ·
-[Task breakdown](docs/versions/v0/tasks.md)
+[Specification](docs/spec.md) · [Tasks](docs/tasks/README.md) ·
+[v0 ledger](docs/history/v0-tasks.md)
 
 ## Build & Test
 

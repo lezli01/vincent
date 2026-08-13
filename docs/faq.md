@@ -166,5 +166,8 @@ instead. Include `vincent version`, your OS, and the relevant part of
 ### Can I contribute?
 
 Please. [CONTRIBUTING.md](../CONTRIBUTING.md) has the setup, the commit
-convention and the PR checklist. The [spec](versions/v0/spec.md) and the
-[task breakdown](versions/v0/tasks.md) are the two documents to read first.
+convention and the PR checklist. Read the [spec](spec.md) first — it is the
+normative description of the system — then [Tasks](tasks/README.md) for what is
+planned or in flight. The [v0 ledger](history/v0-tasks.md) is a closed record of
+how the first release was built, and still the best explanation of *why* most of
+it works the way it does.

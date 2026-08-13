@@ -196,4 +196,4 @@ Stated so you do not assume otherwise:
 - [SECURITY.md](../SECURITY.md) — reporting a vulnerability.
 - [Agent CLIs](guides/agents.md) — per-adapter behavior.
 - [Writing workflows](guides/workflows.md#permission-modes).
-- Spec [§16](versions/v0/spec.md) — the normative version.
+- Spec [§16](spec.md) — the normative version.

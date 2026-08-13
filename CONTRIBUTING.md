@@ -27,18 +27,24 @@ tree, the API page the route table in `internal/api/server.go`, the TUI key
 tables `internal/tui/bindings.go`, and the failure reasons the `Reason*`
 constants. If your PR changes one of those, update its page in the same PR.
 
-The project is specified in [docs/versions/v0/spec.md](docs/versions/v0/spec.md),
-and the v0 work is tracked in
-[docs/versions/v0/tasks.md](docs/versions/v0/tasks.md).
+The project is specified in [docs/spec.md](docs/spec.md) — one spec, not
+versioned, describing the system as it is now. Behaviour changes are amended into
+it in the same PR as the code, never ahead of it.
 
-**v0 is complete — all 70 tasks are done and `v0.1.0` is released.** So the
-task breakdown is now a closed record, not a to-do list: read it for the design
-decisions it carries (they are binding, and cited from code comments as
-"phase 2 decision", "T1.5/T1.6 decision"), but there is no open task ID to claim.
+Planned and in-flight work lives in [docs/tasks/](docs/tasks/README.md), one
+document per piece of work. If what you want to do is a task there, mention its
+ID in your PR (e.g. "closes 001.4") and mark it `[~]` before you start. That
+README also defines the status markers and the rule that a decision recorded in a
+task document is binding.
 
-For new work, **open an issue first** and let it be agreed before you invest
-significant effort. Reference the issue in your PR the way v0 PRs referenced a
-task ID. If your change touches an area the spec covers, say which section
+For anything not in that folder, **open an issue first** and let it be agreed
+before you invest significant effort, then reference the issue in your PR.
+
+The v0 ledger, [docs/history/v0-tasks.md](docs/history/v0-tasks.md), is a
+**closed** record — all 70 tasks are done and `v0.1.0` is released. There is no
+open task ID in it to claim, but it is worth reading: the design decisions it
+carries are binding, and code comments cite them by name ("phase 2 decision",
+"T1.5/T1.6 decision"). If your change touches an area the spec covers, say which section
 (`§9.7`) and whether you believe the spec needs updating alongside the code —
 a change that contradicts the spec without amending it will be sent back.
 

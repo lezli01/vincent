@@ -250,4 +250,4 @@ authority there, and you find out at run time.
 - [Security model](../security-model.md) — what `full-auto` and `restricted`
   actually mean.
 - [Troubleshooting](troubleshooting.md#an-agent-cli-is-not-found).
-- Spec [§9](../versions/v0/spec.md) — the normative adapter contract.
+- Spec [§9](../spec.md) — the normative adapter contract.
