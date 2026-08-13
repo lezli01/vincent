@@ -2,7 +2,7 @@
 
 The complete YAML field reference. The practical, prose version is
 [Writing workflows](../guides/workflows.md); the normative one is
-[spec §8](../versions/v0/spec.md).
+[spec §8](../spec.md).
 
 **Unknown keys are errors, not ignored.** A typo fails validation instead of
 becoming a setting that silently never applied.

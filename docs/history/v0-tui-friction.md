@@ -4,7 +4,7 @@ The "before" the panel refactor (T3.10–T3.13) is graded against. Every item he
 comes back as a checkbox in the T3.8 walkthrough, each carrying its disposition:
 **fixed**, **deferred** to a Phase 4 task ID, or **won't-fix** with a reason.
 Those dispositions are recorded — all twelve fixed — in
-[m3-gate.md](./m3-gate.md#friction-record-dispositions-t39).
+[m3-gate.md](../gates/m3-gate.md#friction-record-dispositions-t39).
 
 Written *before* the refactor on purpose. Without a fixed record, "is the TUI
 easier now?" is settled by whoever argues hardest in the PR thread — which is how

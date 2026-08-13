@@ -8,7 +8,7 @@
 # from tests (no teatest, no golden frames). So this script builds the
 # binaries, seeds two repos, a bare remote, three workflows and a config, and
 # then prints what a human needs to run the walkthrough in
-# docs/versions/v0/m3-gate.md. It never starts the daemon and never registers
+# docs/gates/m3-gate.md. It never starts the daemon and never registers
 # a project: auto-start and registration are the first two checklist items.
 #
 # It deliberately does not exec `vincent` either. On Windows this runs under
@@ -268,7 +268,7 @@ H_VINCENT="$(hostpath "$VINCENT")"
 cat <<EOF
 
 =====================================================================
- M3 gate seeded.  Checklist: docs/versions/v0/m3-gate.md
+ M3 gate seeded.  Checklist: docs/gates/m3-gate.md
 =====================================================================
 
  mode              $( (( REAL_AGENT )) && echo "real claude on the question leg" || echo "rehearsal — fakeagent everywhere" )

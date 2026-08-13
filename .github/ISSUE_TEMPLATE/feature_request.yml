@@ -23,4 +23,4 @@ body:
     id: spec
     attributes:
       label: Spec reference
-      placeholder: Related section of docs/versions/v0/spec.md, if any (e.g. §11)
+      placeholder: Related section of docs/spec.md, if any (e.g. §11)

@@ -12,16 +12,26 @@ roles.
 
 ## Spec-driven workflow
 
-Two documents govern the work and are **not** optional reading:
+These documents govern the work and are **not** optional reading:
 
-- `docs/versions/v0/spec.md` — the product and implementation spec. Section numbers
-  (§6, §12.2, §13.3 …) are used as identifiers throughout the code comments. When a
-  comment says "spec §9.1", go read it before changing that code.
-- `docs/versions/v0/tasks.md` — the single source of truth for progress, broken into
-  task IDs (`T2.5`, `T3.7`). Its "How to update this file" header defines the status
-  markers (`[ ]`/`[~]`/`[x]`/`[!]`), the requirement to update the dashboard table in
-  the same edit, and the rule that tasks are never deleted. Update it when a PR
-  completes a task, and mention the task ID in the PR.
+- `docs/spec.md` — the product and implementation spec, and the **only** one.
+  Section numbers (§6, §12.2, §13.3 …) are used as identifiers throughout the code
+  comments. When a comment says "spec §9.1", go read it before changing that code.
+  It is deliberately **not versioned**: it describes the system as it is now, and is
+  amended in place with dated notes, in the same PR as the code that makes an
+  amendment true. Two specs would make every `spec §9.1` citation ambiguous, which
+  is why v0's copy was extracted here rather than forked.
+- `docs/tasks/` — planned and in-flight work, one document per piece of work
+  (`001-configurable-branch-names.md`), with its decisions. `docs/tasks/README.md`
+  is the index and defines the conventions: status markers
+  (`[ ]`/`[~]`/`[x]`/`[!]`), `NNN.n` task IDs, updating the index row in the same
+  edit, and never deleting a task. Mention the task ID in the PR ("closes 001.4").
+- `docs/history/v0-tasks.md` — the **closed** v0 ledger (70/70, released as
+  `v0.1.0`). Frozen: there is no open task in it to claim. Read it for the design
+  decisions it carries, which are binding and are cited from code comments
+  ("phase 2 decision", "T1.5/T1.6 decision", "PR L decision").
+- `docs/gates/` — the manual walkthroughs behind the scripted acceptance gates,
+  and the record of when each was last walked.
 
 User-facing documentation is a separate tree rooted at `docs/README.md`
 (`getting-started/`, `guides/`, `platforms/`, `reference/`, plus
@@ -68,7 +78,7 @@ VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 
 `scripts/m3-gate.sh` seeds a human walkthrough instead of asserting — M3's
 acceptance is a judgement about a TUI. The manual legs of M5 are walked
-through in `docs/versions/v0/m5-gate.md`, which also records the runs.
+through in `docs/gates/m5-gate.md`, which also records the runs.
 
 New gate scripts must be committed **executable** (`git update-index
 --chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the

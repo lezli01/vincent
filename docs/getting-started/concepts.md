@@ -194,4 +194,4 @@ transcripts already on disk.
 - [Quickstart](quickstart.md) — do it.
 - [Writing workflows](../guides/workflows.md) — the part you will spend time in.
 - [Task lifecycle](../reference/task-lifecycle.md) — states and actions in full.
-- [The spec](../versions/v0/spec.md) — the normative version of everything above.
+- [The spec](../spec.md) — the normative version of everything above.
