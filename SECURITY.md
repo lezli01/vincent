@@ -1,5 +1,22 @@
 # Security Policy
 
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| latest `0.x` release | ✅ fixes ship in the next patch or minor |
+| any earlier release | ❌ upgrade to the latest |
+
+vincent is a pre-1.0, single-maintainer project: there are no backport branches
+and no long-term support line. A security fix lands on `master` and ships in the
+next release, so "supported" means **the newest release** — see
+[CHANGELOG.md § Versioning and stability](CHANGELOG.md#versioning-and-stability)
+for what a minor or patch bump is allowed to change.
+
+Known vulnerabilities in the dependency graph are swept weekly by
+[`.github/workflows/vuln.yml`](.github/workflows/vuln.yml) (govulncheck across
+all three target platforms), and on every change to `go.mod`/`go.sum`.
+
 ## Reporting a vulnerability
 
 Please **do not** open a public issue for security vulnerabilities.
