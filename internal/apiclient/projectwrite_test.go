@@ -10,6 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 func TestCreateProjectDerivesNameAndBranchFromThePath(t *testing.T) {
@@ -218,7 +219,10 @@ func (h *createHarness) newTask(ctx context.Context, t *testing.T, state store.T
 		BaseBranch:   "main",
 		State:        state,
 	}
-	if err := h.store.CreateTask(ctx, task); err != nil {
+	// Unique per task, because CreateTask now refuses an empty name and refuses
+	// one another live task already holds (task 001).
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := h.store.CreateTask(ctx, task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

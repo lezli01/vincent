@@ -16,6 +16,7 @@ var ntLabels = [ntRowCount]string{
 	ntDescription: "description",
 	ntFields:      "fields",
 	ntBranch:      "base branch",
+	ntBranchName:  "branch",
 	ntPriority:    "priority",
 	ntAgent:       "agent",
 	ntModel:       "model",
@@ -106,6 +107,11 @@ func (n *newTask) rowValue(row ntRow) string {
 			return n.branch.View()
 		}
 		return firstNonEmpty(strings.TrimSpace(n.branch.Value()), styleDim.Render("(project default)"))
+	case ntBranchName:
+		if n.mode == ntEditing && n.cursor == ntBranchName {
+			return n.branchName.View()
+		}
+		return n.branchNameValue()
 	case ntPriority:
 		if n.mode == ntEditing && n.cursor == ntPriority {
 			return n.priority.View()
@@ -350,4 +356,23 @@ func (n *newTask) priorityValue() int {
 		return 0
 	}
 	return v
+}
+
+// branchNameValue renders the branch row when it is not being edited: the name
+// the daemon says this draft would get, and which level of the chain decided it.
+//
+// The preview comes from POST /v1/resolve rather than from rendering the template
+// here. Branch naming is precedence resolution, and the PR L decision keeps
+// resolution server-side — a form that rendered its own would be a second
+// implementation to keep in step with the daemon's forever.
+func (n *newTask) branchNameValue() string {
+	typed := strings.TrimSpace(n.branchName.Value())
+	res, ok := n.resolved()
+	if !ok || res.Branch == nil {
+		// No resolution yet. Show what was typed, or say nothing rather than
+		// guess a name.
+		return firstNonEmpty(typed, styleDim.Render("(from the project template)"))
+	}
+	b := res.Branch
+	return b.Value + "  " + styleDim.Render("("+b.Explain()+")")
 }

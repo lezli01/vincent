@@ -14,7 +14,7 @@ func testTask(t *testing.T, s *Store) *Task {
 	t.Helper()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "t", TaskRunning)
-	if err := s.CreateTask(t.Context(), task); err != nil {
+	if err := s.CreateTask(t.Context(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

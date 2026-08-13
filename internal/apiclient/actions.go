@@ -25,12 +25,17 @@ const (
 	ActionArchive = "archive"
 )
 
-// Override is the edit+retry body of POST /v1/tasks/{id}/retry (§6): the
-// text replaces the failing step's prompt or command in this task's snapshot
-// only. Both empty is a plain retry.
+// Override is the body of POST /v1/tasks/{id}/retry (§6). Prompt and Run are
+// edit+retry: the text replaces the failing step's prompt or command in this
+// task's snapshot only. All empty is a plain retry.
 type Override struct {
 	Prompt string `json:"prompt_override,omitempty"`
 	Run    string `json:"run_override,omitempty"`
+	// Branch renames the task's branch before the retry re-admits it, which is
+	// how a `branch_exists` block is recovered without losing the task and its
+	// transcripts (task 001). Unlike the other two it does not touch the
+	// snapshot.
+	Branch string `json:"branch_override,omitempty"`
 }
 
 // Cancel aborts the task, killing any live process (§6).

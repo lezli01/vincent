@@ -97,7 +97,9 @@ worth knowing up front:
 ## A worktree
 
 Every task gets its own `git worktree` on its own branch, named
-`vincent/{id}-{slug}`, based on the task's base branch. That is where the agent
+`vincent/{id}-{slug}` by default, based on the task's base branch. You can set a
+different convention per project or globally, or name one task's branch outright —
+see [Configuration](../reference/configuration.md). That is where the agent
 runs and where commands execute.
 
 What this **does** buy you: two tasks in the same repository never collide, your

@@ -178,3 +178,84 @@ func TestDefaultShapeIsExpressibleAsATemplate(t *testing.T) {
 		t.Fatal("naive template matched BranchName; the trailing-dash trap is gone and the decision note is stale")
 	}
 }
+
+func TestResolveBranchName(t *testing.T) {
+	full := BranchSpec{
+		Literal:         "feat/typed-by-hand",
+		ProjectTemplate: `proj/{{.Slug}}`,
+		ConfigTemplate:  `cfg/{{.Slug}}`,
+	}
+	for _, tc := range []struct {
+		name              string
+		spec              BranchSpec
+		wantName, wantSrc string
+	}{
+		{"literal wins over everything", full, "feat/typed-by-hand", BranchSourceTask},
+		{"project beats config", BranchSpec{ProjectTemplate: `proj/{{.Slug}}`, ConfigTemplate: `cfg/{{.Slug}}`}, "proj/fix-login", BranchSourceProject},
+		{"config when no project", BranchSpec{ConfigTemplate: `cfg/{{.Slug}}`}, "cfg/fix-login", BranchSourceConfig},
+		{"built-in when nothing is set", BranchSpec{}, "vincent/9-fix-login", BranchSourceDefault},
+		{"a literal is surrounded-space tolerant", BranchSpec{Literal: "  feat/x  "}, "feat/x", BranchSourceTask},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, src, err := ResolveBranchName(tc.spec, testCtx().WithID(9))
+			if err != nil {
+				t.Fatalf("ResolveBranchName: %v", err)
+			}
+			if got != tc.wantName || src != tc.wantSrc {
+				t.Fatalf("= (%q, %q), want (%q, %q)", got, src, tc.wantName, tc.wantSrc)
+			}
+		})
+	}
+}
+
+// A literal is never rendered, so a brace in a hand-typed name is part of the
+// name and not a template error. git rejects it later, with a message about the
+// name rather than about template syntax.
+func TestResolveBranchNameDoesNotRenderALiteral(t *testing.T) {
+	got, src, err := ResolveBranchName(BranchSpec{Literal: `feat/{{.Nope}}`}, testCtx())
+	if err != nil {
+		t.Fatalf("ResolveBranchName: %v", err)
+	}
+	if got != `feat/{{.Nope}}` || src != BranchSourceTask {
+		t.Fatalf("= (%q, %q), want the literal verbatim", got, src)
+	}
+}
+
+// Which levels need the task id, and therefore force resolution to happen after
+// the insert. The built-in default always does; a literal never does.
+func TestResolveBranchNameReportsWhenTheIDIsNeeded(t *testing.T) {
+	idless := testCtx()
+
+	for _, tc := range []struct {
+		name string
+		spec BranchSpec
+	}{
+		{"built-in default", BranchSpec{}},
+		{"project template using .ID", BranchSpec{ProjectTemplate: `p/{{.ID}}`}},
+		{"config template using .ID", BranchSpec{ConfigTemplate: `c/{{.ID}}`}},
+	} {
+		if _, _, err := ResolveBranchName(tc.spec, idless); !errors.Is(err, ErrBranchNeedsID) {
+			t.Errorf("%s: err = %v, want ErrBranchNeedsID", tc.name, err)
+		}
+	}
+
+	// These resolve fully before the row exists, so they can be collision-checked
+	// outside the transaction.
+	for _, tc := range []struct {
+		name string
+		spec BranchSpec
+		want string
+	}{
+		{"literal", BranchSpec{Literal: "feat/x"}, "feat/x"},
+		{"id-less project template", BranchSpec{ProjectTemplate: `p/{{.Slug}}`}, "p/fix-login"},
+	} {
+		got, _, err := ResolveBranchName(tc.spec, idless)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

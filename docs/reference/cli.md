@@ -154,7 +154,8 @@ Lists registered projects with their ids, paths and defaults.
 ```sh
 vincent task add --project ID --title TITLE
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
-                 [--priority N] [--agent NAME] [--model M] [--effort E] [--json]
+                 [--branch NAME] [--priority N] [--agent NAME] [--model M]
+                 [--effort E] [--json]
 ```
 
 Creates a task. It is `queued` immediately — there is no draft state.
@@ -164,7 +165,8 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | `--project` | **Required** |
 | `--title` | **Required**; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
-| `--base-branch` | Defaults to the project's default branch |
+| `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
+| `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
 | `--priority` | Higher runs first; default 0 |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
 

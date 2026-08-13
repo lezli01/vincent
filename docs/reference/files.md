@@ -75,15 +75,20 @@ vincent/{id}-{slug}
 where `slug` comes from the task title. A title that sanitizes to nothing gives
 `vincent/{id}` with no trailing dash.
 
+That is the **default**. The name is configurable — a template per project or in
+`config.yaml`, or a literal for one task — see
+[Configuration](configuration.md#branch_template).
+
 Two rules worth internalizing:
 
 - **The worktree is disposable.** Archiving a task removes it. If it has
   uncommitted changes, archiving refuses unless forced — that work would be lost.
 - **The branch is not.** vincent never deletes a branch. Task branches accumulate
-  in your repository until you remove them:
+  in your repository until you remove them. The daemon is the reliable list, since
+  a configured name need not start with `vincent/`:
 
   ```sh
-  git branch --list 'vincent/*'
+  vincent task ls --archived      # the branch column
   git worktree list
   ```
 

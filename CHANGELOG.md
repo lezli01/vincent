@@ -13,12 +13,34 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Added
 
-- Groundwork for configurable branch names
-  ([task 001](docs/tasks/001-configurable-branch-names.md), 001.1 and 001.2): a
-  branch-name template context and renderer, git-delegated branch-name
-  validation, and a collision probe that catches directory/file ref conflicts an
-  exact-match check reports as free. No user-visible behaviour yet — task
-  branches are still `vincent/{id}-{slug}`.
+- **Configurable branch names**
+  ([task 001](docs/tasks/001-configurable-branch-names.md)). A task's branch no
+  longer has to be `vincent/{id}-{slug}`. Names resolve through a chain, most
+  specific first: a per-task literal (`vincent task add --branch feat/OPS-123`, or
+  `branch_name` on `POST /v1/tasks`), a project template
+  (`branch_template` on `PATCH /v1/projects/{id}`), the global
+  [`branch_template`](docs/reference/configuration.md#branch_template) in
+  `config.yaml`, and finally the built-in name. **The default is unchanged**, so
+  nothing moves unless you configure it.
+
+  Templates get `{{.ID}}`, `{{.Title}}`, `{{.Slug}}`, `{{.BaseBranch}}`,
+  `{{.Fields.NAME}}`, `{{.Project.*}}` and a `slug` function. The new-task form
+  previews the resolved name and the level it came from as you type, via
+  `POST /v1/resolve`.
+
+  Two things to know. Because vincent never deletes branches, a template with no
+  discriminator in it collides on the *second* task for the same input — put
+  `{{.ID}}` in it or expect to name repeats by hand. And `{{.Fields.x}}` fails
+  loudly on a missing field while `{{ index .Fields "x" }}` renders nothing, which
+  yields a legal-but-wrong name like `feat/-fix-login`; prefer the first.
+
+- `branch_override` on `POST /v1/tasks/{id}/retry`, which makes a `branch_exists`
+  block recoverable: the branch is renamed and the task re-admitted, keeping its
+  id and history. Previously nothing in the API could change a branch name.
+
+- `branch_name_invalid` block reason. Branch names are validated by
+  `git check-ref-format` rather than a hand-rolled matcher, and a rejected name is
+  reported rather than silently rewritten.
 
 - `go run mage.go vuln` and a weekly `Vulnerabilities` workflow: govulncheck
   over the module's reachable code, swept across `linux`, `darwin` and `windows`
@@ -31,6 +53,15 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Changed
 
+- A task's branch name is now resolved and written inside the same transaction as
+  the task row, so no committed task can carry an empty one. This removes a window
+  in which a crash between two writes left the name unset — harmless while names
+  were derived from `(id, title)`, but it would have silently discarded a
+  configured name and run the task on a default branch.
+- `docs/` is no longer versioned: `docs/versions/v0/spec.md` is now
+  [`docs/spec.md`](docs/spec.md), the single platform spec, amended in place.
+  Planned work lives in [`docs/tasks/`](docs/tasks/README.md), the closed v0 ledger
+  in `docs/history/`, and the gate walkthroughs in `docs/gates/`.
 - A `go install`ed binary now reports the module version from `vincent version`
   instead of `dev`.
 - CI runs the three acceptance gates as steps of one per-OS job rather than

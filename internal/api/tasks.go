@@ -261,10 +261,15 @@ type taskCreateRequest struct {
 	Description *string           `json:"description"`
 	Fields      map[string]string `json:"fields"`
 	BaseBranch  *string           `json:"base_branch"`
-	Priority    *int              `json:"priority"`
-	Agent       *string           `json:"agent"`
-	Model       *string           `json:"model"`
-	Effort      *string           `json:"effort"`
+	// BranchName names this task's branch outright, overriding the project and
+	// config templates (§5.3, task 001). It is used verbatim, never rendered:
+	// it is a name the user typed for one task, so a stray brace belongs to the
+	// name rather than being a template error.
+	BranchName *string `json:"branch_name"`
+	Priority   *int    `json:"priority"`
+	Agent      *string `json:"agent"`
+	Model      *string `json:"model"`
+	Effort     *string `json:"effort"`
 }
 
 // handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
@@ -318,6 +323,10 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("base_branch %q does not resolve to a local branch in %s", baseBranch, project.Path))
 		return
 	}
+	var branchName string
+	if req.BranchName != nil {
+		branchName = strings.TrimSpace(*req.BranchName)
+	}
 	var agentOverride string
 	if req.Agent != nil && strings.TrimSpace(*req.Agent) != "" {
 		agentOverride = strings.TrimSpace(*req.Agent)
@@ -358,17 +367,46 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
 		return
 	}
-	if err := s.deps.Store.CreateTask(ctx, &t); err != nil {
-		s.internalError(w, "create task", err)
+	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
+	// Resolve before the insert so a bad name is a 400 rather than a task that
+	// blocks later, and so the git-side checks run with no transaction open.
+	spec := s.branchSpec(branchName, project)
+	bctx := branchContext(t.Title, t.BaseBranch, t.Fields, project)
+	preview, err := resolveBranchPreview(spec, bctx)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("branch name could not be resolved: %v", err))
 		return
 	}
-	// The branch name embeds the task id (§5.3), so it is written right
-	// after the insert; the runner recomputes it if a crash lands between.
-	// The write is branch-name only: the scheduler may have admitted the
-	// task already, and a full-row update would stomp its state.
-	t.BranchName = worktree.BranchName(t.ID, t.Title)
-	if err := s.deps.Store.SetTaskBranchName(ctx, t.ID, t.BranchName); err != nil {
-		s.internalError(w, "assign branch name", err)
+	// Legality is id-independent, so it is checked on both paths. Collision only
+	// on the path whose name is final; see placeholderTaskID.
+	if msg := s.checkBranchLegality(ctx, preview.Name); msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return
+	}
+	var resolveBranch func(int64) (string, error)
+	if preview.NeedsID {
+		// The name needs the id, so it is produced inside the insert transaction.
+		resolveBranch = func(id int64) (string, error) {
+			name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
+			return name, err
+		}
+	} else {
+		if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		t.BranchName = preview.Name
+	}
+	if err := s.deps.Store.CreateTask(ctx, &t, resolveBranch); err != nil {
+		var claimed *store.BranchClaimedError
+		if errors.As(err, &claimed) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("branch %q is already claimed by task %d",
+					claimed.Branch, claimed.TaskID))
+			return
+		}
+		s.internalError(w, "create task", err)
 		return
 	}
 	if s.deps.WakeRunner != nil {

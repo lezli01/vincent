@@ -76,6 +76,54 @@ func (c BranchContext) ID() (int64, error) {
 	return *c.id, nil
 }
 
+// Levels of the branch-naming chain, reported alongside a resolved name so a
+// client can say *why* a task is getting the name it is getting (task 001).
+const (
+	BranchSourceTask    = "task"
+	BranchSourceProject = "project"
+	BranchSourceConfig  = "config"
+	BranchSourceDefault = "default"
+)
+
+// BranchSpec is the branch-naming chain for one task, most specific first: a
+// literal chosen for this task, the project's template, then the global template
+// from config.yaml. An empty field means "nothing set at this level"; with all
+// three empty the built-in name applies.
+type BranchSpec struct {
+	Literal         string
+	ProjectTemplate string
+	ConfigTemplate  string
+}
+
+// ResolveBranchName applies the chain and reports both the name and the level
+// that produced it.
+//
+// A Literal is used verbatim, never rendered: it is a name the user typed for one
+// task, and treating it as a template would make a stray brace a syntax error
+// instead of part of a branch name.
+//
+// The error is ErrBranchNeedsID, unwrapped, when the winning level needs the task
+// id and c has none — including the built-in default, which always needs it. That
+// is the caller's signal to resolve again after the insert rather than a failure.
+func ResolveBranchName(spec BranchSpec, c BranchContext) (name, source string, err error) {
+	switch {
+	case strings.TrimSpace(spec.Literal) != "":
+		return strings.TrimSpace(spec.Literal), BranchSourceTask, nil
+	case spec.ProjectTemplate != "":
+		name, err = RenderBranch(spec.ProjectTemplate, c)
+		return name, BranchSourceProject, err
+	case spec.ConfigTemplate != "":
+		name, err = RenderBranch(spec.ConfigTemplate, c)
+		return name, BranchSourceConfig, err
+	default:
+		id, err := c.ID()
+		if err != nil {
+			return "", BranchSourceDefault, err
+		}
+		return BranchName(id, c.Title), BranchSourceDefault, nil
+	}
+}
+
 // branchFuncs are the functions a branch template may call. `slug` applies the
 // §5.3 rules to any value, so a name can be built from a field carrying spaces
 // or punctuation: {{ slug (index .Fields "ticket") }}.

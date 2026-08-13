@@ -54,7 +54,7 @@ func TestTaskRoundTrip(t *testing.T) {
 		BlockReason:      "",
 		StartedAt:        &started,
 	}
-	if err := s.CreateTask(ctx, in); err != nil {
+	if err := s.CreateTask(ctx, in, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	if in.ID == 0 {
@@ -91,7 +91,7 @@ func TestTaskNullableDefaults(t *testing.T) {
 	p := testProject(t, s, "p1")
 
 	in := newTask(p.ID, "bare", TaskQueued)
-	if err := s.CreateTask(ctx, in); err != nil {
+	if err := s.CreateTask(ctx, in, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	got, err := s.GetTask(ctx, in.ID)
@@ -115,7 +115,7 @@ func TestTaskUpdate(t *testing.T) {
 	p := testProject(t, s, "p1")
 
 	task := newTask(p.ID, "t", TaskQueued)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestTaskListFilters(t *testing.T) {
 
 	mk := func(pid int64, title string, state TaskState) *Task {
 		task := newTask(pid, title, state)
-		if err := s.CreateTask(ctx, task); err != nil {
+		if err := s.CreateTask(ctx, task, nil); err != nil {
 			t.Fatalf("CreateTask(%s): %v", title, err)
 		}
 		return task
@@ -213,7 +213,7 @@ func TestSchedulerQueries(t *testing.T) {
 		task := newTask(pid, title, state)
 		task.Priority = priority
 		task.CreatedAt = base.Add(offset)
-		if err := s.CreateTask(ctx, task); err != nil {
+		if err := s.CreateTask(ctx, task, nil); err != nil {
 			t.Fatalf("CreateTask(%s): %v", title, err)
 		}
 		return task
@@ -253,7 +253,7 @@ func TestSchedulerQueries(t *testing.T) {
 
 func TestTaskForeignKeyEnforced(t *testing.T) {
 	s := openTest(t)
-	if err := s.CreateTask(t.Context(), newTask(9999, "orphan", TaskQueued)); err == nil {
+	if err := s.CreateTask(t.Context(), newTask(9999, "orphan", TaskQueued), nil); err == nil {
 		t.Error("CreateTask with unknown project_id accepted; want FK violation")
 	}
 }
