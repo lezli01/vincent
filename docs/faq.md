@@ -38,13 +38,19 @@ pointing it at anything sensitive.
 
 ### Does it touch my working copy?
 
-No. Each task gets its own `git worktree` on its own branch
-(`vincent/{id}-{slug}`). Your checkout, current branch and stash are untouched.
+No. Each task gets its own `git worktree` on its own branch — `vincent/{id}-{slug}`
+unless you configure a different convention. Your checkout, current branch and
+stash are untouched.
 
 ### Does it delete my branches?
 
 Never. Archiving a task removes its **worktree** and keeps the branch and the
-record. Clean up with `git branch --list 'vincent/*'` when you are ready.
+record. To find what to clean up, ask vincent rather than git — with configurable
+names a glob no longer finds them all:
+
+```sh
+vincent task ls --archived      # the branch column lists every branch vincent made
+```
 
 ### What happens if I close the TUI?
 

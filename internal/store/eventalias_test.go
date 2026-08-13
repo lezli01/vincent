@@ -23,7 +23,7 @@ func TestPublishedEventsDoNotAliasTheCallersTask(t *testing.T) {
 		}
 	})
 	task := newTask(p.ID, "work", TaskQueued)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	if created == nil {

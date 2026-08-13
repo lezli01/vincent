@@ -14,7 +14,7 @@ func TestSetTaskProgressEmitsStepAdvanced(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestSetTaskProgressWorktreeOnlyIsSilent(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -117,11 +117,11 @@ func TestTaskRollupsSumsEveryAttempt(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	other := newTask(p.ID, "other", TaskRunning)
-	if err := s.CreateTask(ctx, other); err != nil {
+	if err := s.CreateTask(ctx, other, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -176,7 +176,7 @@ func TestTaskRollupsDistinguishesFreeFromUnreported(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	in := int64(5)
@@ -218,11 +218,11 @@ func TestListTasksArchivedFilter(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	live := newTask(p.ID, "live", TaskRunning)
-	if err := s.CreateTask(ctx, live); err != nil {
+	if err := s.CreateTask(ctx, live, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	gone := newTask(p.ID, "gone", TaskArchived)
-	if err := s.CreateTask(ctx, gone); err != nil {
+	if err := s.CreateTask(ctx, gone, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 

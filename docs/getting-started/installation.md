@@ -217,9 +217,10 @@ Then delete the binary and, if you want the state gone too, the config and data
 directories listed in [Files and directories](../reference/files.md). Deleting
 the data directory removes the database, transcripts and worktrees.
 
-**Branches are never deleted by vincent.** Task branches named
-`vincent/{id}-{slug}` stay in your repositories until you remove them:
+**Branches are never deleted by vincent.** Task branches stay in your repositories
+until you remove them. Ask vincent which ones it made — branch names are
+configurable, so a `vincent/*` glob is not guaranteed to find them all:
 
 ```sh
-git branch --list 'vincent/*'
+vincent task ls --archived      # read the branch column
 ```

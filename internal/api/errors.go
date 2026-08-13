@@ -49,7 +49,11 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // writeConflict writes a 409 carrying structured details — the current state
 // of a rejected transition, or the reason a precondition failed (§13.1).
 // Conflicts are the only responses in v1 that clients branch on.
-func writeConflict(w http.ResponseWriter, code, message string, details map[string]string) {
+//
+// The code is always CodeInvalidState: every 409 vincent returns is "the thing
+// you asked for does not apply to the state this task is actually in", and the
+// specific reason travels in details rather than in the code.
+func writeConflict(w http.ResponseWriter, message string, details map[string]string) {
 	writeJSON(w, http.StatusConflict,
-		errorBody{Error: errorDetail{Code: code, Message: message, Details: details}})
+		errorBody{Error: errorDetail{Code: CodeInvalidState, Message: message, Details: details}})
 }

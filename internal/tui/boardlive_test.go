@@ -20,6 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 const threeStepWorkflow = `name: three
@@ -118,9 +119,10 @@ func (h *boardLiveHarness) createTask(t *testing.T, title string) *store.Task {
 	task := &store.Task{
 		ProjectID: h.projectID, Title: title, WorkflowName: "three",
 		WorkflowSnapshot: threeStepWorkflow,
-		BaseBranch:       "main", BranchName: "b", State: store.TaskQueued,
+		BaseBranch:       "main", State: store.TaskQueued,
 	}
-	if err := h.st.CreateTask(ctx, task); err != nil {
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := h.st.CreateTask(ctx, task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

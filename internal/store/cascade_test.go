@@ -22,7 +22,7 @@ func TestDeleteProjectCascade(t *testing.T) {
 			ProjectID: pid, Title: "t", WorkflowName: "adhoc", WorkflowSnapshot: "x",
 			BaseBranch: "main", BranchName: "b", State: state,
 		}
-		if err := s.CreateTask(ctx, tk); err != nil {
+		if err := s.CreateTask(ctx, tk, nil); err != nil {
 			t.Fatalf("create task: %v", err)
 		}
 		return tk

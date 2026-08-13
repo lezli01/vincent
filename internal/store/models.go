@@ -50,8 +50,12 @@ type Project struct {
 	DefaultBranch    string
 	DefaultWorkflow  string // "" = none
 	MaxParallelTasks *int   // nil = unlimited (global cap still applies)
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// BranchTemplate names this project's branch convention; "" inherits
+	// config.yaml's, and an unset config falls back to the built-in
+	// vincent/{id}-{slug} (task 001).
+	BranchTemplate string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Task is one unit of work delivered by running a workflow against a project

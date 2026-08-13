@@ -12,7 +12,7 @@ func TestTransitionTaskWritesStateAndEventTogether(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskQueued)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestTransitionTaskConflictLeavesNothingBehind(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestTransitionTaskAppliesChanges(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskRunning)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestTransitionTaskTimestamps(t *testing.T) {
 	p := testProject(t, s, "p1")
 
 	task := newTask(p.ID, "work", TaskQueued)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	running, _, err := s.TransitionTask(ctx, task.ID, TaskQueued, TaskRunning, TaskChange{})
@@ -195,7 +195,7 @@ func TestCountStepAttemptsCursorBoundsOnlyFailures(t *testing.T) {
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
 	task := newTask(p.ID, "work", TaskBlocked)
-	if err := s.CreateTask(ctx, task); err != nil {
+	if err := s.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	base := time.Now().Add(-time.Hour)

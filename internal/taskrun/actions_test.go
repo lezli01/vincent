@@ -71,10 +71,12 @@ func (h *actionHarness) taskAtStep(t *testing.T, state store.TaskState, step int
 	task := &store.Task{
 		ProjectID: h.projectID, Title: "action test",
 		WorkflowName: "test", WorkflowSnapshot: actionSnapshot,
-		BaseBranch: "main", BranchName: "vincent/action-test",
-		State: state, CurrentStep: step,
+		BaseBranch: "main",
+		State:      state, CurrentStep: step,
 	}
-	if err := h.store.CreateTask(t.Context(), task); err != nil {
+	// Derived from the id so two tasks in one test cannot claim the same branch.
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := h.store.CreateTask(t.Context(), task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

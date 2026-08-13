@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 func recoverStore(t *testing.T) (*store.Store, int64) {
@@ -32,9 +33,10 @@ func recoverTask(t *testing.T, st *store.Store, projectID int64, state store.Tas
 	t.Helper()
 	task := &store.Task{
 		ProjectID: projectID, Title: "t-" + string(state), WorkflowName: "adhoc",
-		WorkflowSnapshot: "x", BaseBranch: "main", BranchName: "b", State: state,
+		WorkflowSnapshot: "x", BaseBranch: "main", State: state,
 	}
-	if err := st.CreateTask(context.Background(), task); err != nil {
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := st.CreateTask(context.Background(), task, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

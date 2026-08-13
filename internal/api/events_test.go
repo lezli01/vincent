@@ -53,7 +53,7 @@ func newSSEHarness(t *testing.T) *sseHarness {
 		ProjectID: p.ID, Title: "t", WorkflowName: "adhoc", WorkflowSnapshot: "x",
 		BaseBranch: "main", BranchName: "b", State: store.TaskQueued,
 	}
-	if err := st.CreateTask(ctx, task); err != nil {
+	if err := st.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestTaskStreamResumesDurableEventsForThatTaskOnly(t *testing.T) {
 		ProjectID: h.projectID, Title: "t2", WorkflowName: "adhoc", WorkflowSnapshot: "x",
 		BaseBranch: "main", BranchName: "b2", State: store.TaskQueued,
 	}
-	if err := h.st.CreateTask(ctx, task2); err != nil {
+	if err := h.st.CreateTask(ctx, task2, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 

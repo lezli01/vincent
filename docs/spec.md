@@ -79,7 +79,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 14 | Concurrency | Configurable global cap **and** per-project cap on parallel running tasks |
 | 15 | Task shape | Title, markdown description, project, workflow, base branch, free-form key/value fields |
 | 16 | Monitoring | Board + live tail (SSE) + per-step duration/tokens/cost + durable transcripts |
-| 17 | Worktrees | Under daemon data dir; branch `vincent/{task}-{slug}`; removed only on archive; branches never auto-deleted |
+| 17 | Worktrees | Under daemon data dir; branch `vincent/{task}-{slug}` by default, configurable per project or globally (§10, task 001); removed only on archive; branches never auto-deleted |
 | 18 | Daemon lifecycle | TUI auto-starts daemon; `vincent daemon start/stop/status`; optional OS service install; interrupted steps re-run on restart |
 | 19 | Name | `vincent` |
 | 20 | v1 scope | Everything above, both agent adapters |
@@ -143,6 +143,7 @@ A registered local git repository.
 | `default_branch` | base branch for new tasks (auto-detected from `origin/HEAD`, falls back to `main`/`master`; editable) |
 | `default_workflow` | optional workflow name preselected in task creation |
 | `max_parallel_tasks` | per-project cap; `null` = no per-project limit (global cap still applies) |
+| `branch_template` | *added 2026-08-13 (task 001).* Optional branch-naming template for this project; `null` inherits `config.yaml`'s `branch_template`, and an unset config means the built-in name. Parsed when written, so a broken template fails at `PATCH /v1/projects/{id}` rather than at every task creation |
 
 Registering a project performs validation only (path exists, is a git repo, worktrees
 supported). The repo itself is never modified by registration.
@@ -177,7 +178,7 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch` |
-| `branch_name` | `vincent/{id}-{slug}` (slug: lowercase title, `[a-z0-9-]`, max 40 chars) |
+| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one |
 | `worktree_path` | assigned when the worktree is created |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
@@ -966,9 +967,30 @@ would invalidate every one of them.
 - **Creation** (when the scheduler first admits the task):
   `git -C {project.path} worktree add {worktree_path} -b {branch_name} {base_branch}`.
   If `base_branch` doesn't resolve locally, task creation fails fast with a clear error.
-- **Branch naming:** `vincent/{task_id}-{slug}`; collisions are impossible (ids are
-  unique) but a pre-existing branch of the same name fails the task with a clear error
-  rather than reusing it.
+- **Branch naming:** `vincent/{task_id}-{slug}` by default. A pre-existing branch of
+  the same name fails the task with a clear error rather than reusing it.
+
+  *Amended 2026-08-13 (task 001).* This section used to add "collisions are impossible
+  (ids are unique)". That is no longer true, and the change is the reason most of the
+  rest of this bullet exists. Names are configurable —
+  `built-in < config.yaml < project < per-task literal` — and because vincent **never
+  deletes branches**, a template without a discriminator collides on the *second* task
+  for the same input. So collision is a routine outcome, not a defensive check:
+  - **Legality** is delegated to `git check-ref-format --branch`, never a
+    reimplementation of git's grammar, and a rejected name is `branch_name_invalid`
+    (§18) rather than silently sanitized.
+  - **Collision** is checked twice. At creation, against existing refs and against
+    other unarchived tasks' claimed names → `400`, mirroring how `base_branch` already
+    fails fast. At admission, `branch_exists` remains the **authority**, because the
+    creation check is inherently racy.
+  - The collision probe is wider than an exact ref match: git stores refs as a path
+    hierarchy, so `feat/foo` cannot be created while `feat/foo/bar` exists, and
+    `git rev-parse --verify refs/heads/feat/foo` reports *not found* in that case.
+  - A name that needs the task id is rendered inside the insert transaction; the
+    git-side checks never run with that transaction open, since a slow git would stall
+    every write in the daemon.
+  - `branch_exists` is recoverable through `POST /v1/tasks/{id}/retry`'s
+    `branch_override` (§12.2). Without it a blocked task would be permanently dead.
 - **Isolation caveat (documented, not solved):** git worktrees isolate the working
   tree and index, but share the object store and refs — and **do not** isolate
   process-level resources (global caches, package stores, ports, docker). True
@@ -1301,8 +1323,15 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         (shadowing applied); each entry:
                                         { name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
-POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort? } →
-                                        { workflow, steps[] } — §8.6 applied to every step
+POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
+                                          title?, fields?, base_branch?, branch_name? } →
+                                        { workflow, steps[], branch } — §8.6 applied to every step
+                                        plus, when project_id is given, the branch name this
+                                        draft would get as { value, source, placeholder }.
+                                        source is the winning level (default|config|project|task);
+                                        placeholder means value carries a literal `<id>` because
+                                        the task id does not exist yet — deliberately not a
+                                        guess (task 001)
                                         under a candidate task-level override. Each agent
                                         step carries { value, source } per field, source being
                                         the winning level (step|task|workflow|adapter); non-agent
@@ -1324,7 +1353,10 @@ GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
                                         archived, ?archived=all → both). state=archived
                                         still selects them explicitly
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
-                                          base_branch?, priority?, agent?, model?, effort? }
+                                          base_branch?, branch_name?, priority?, agent?,
+                                          model?, effort? }
+                                        branch_name is used verbatim and wins over every
+                                        template (§10, task 001)
                                         → task (state=queued); agent/model/effort form the
                                         task-level override (§8.6), validated per §8.2 —
                                         known-invalid = 400, catalog-unknown values are
@@ -1343,7 +1375,12 @@ PATCH  /v1/tasks/{id}                   { priority }               (queued/pause
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
-POST   /v1/tasks/{id}/retry            { prompt_override?, run_override? }   (blocked only)
+POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch_override? }
+                                        (blocked only). branch_override renames the task's
+                                        branch before re-admission — the recovery path for a
+                                        branch_exists block (§10, task 001); it is validated
+                                        and collision-checked exactly as creation is, and
+                                        unlike the other two it does not touch the snapshot
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -1820,7 +1857,9 @@ currently true to show (§15 view 6).
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
 | Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
 | Base branch doesn't exist | Task creation fails fast |
-| Branch `vincent/{id}-{slug}` already exists | Task blocked with clear reason (never reuse) |
+| Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
+| Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
+| Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives |
 | Project path missing | New/step-starting tasks in that project → blocked with `project_path_missing` |
 | Daemon port taken | Ephemeral port by default makes this nearly impossible; pinned-port conflict fails startup with a clear message |

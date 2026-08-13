@@ -459,7 +459,7 @@ func insertTask(t *testing.T, st *store.Store, projectID int64, state store.Task
 		ProjectID: projectID, Title: "t", WorkflowName: "adhoc",
 		WorkflowSnapshot: "x", BaseBranch: "main", BranchName: "b", State: state,
 	}
-	if err := st.CreateTask(context.Background(), tk); err != nil {
+	if err := st.CreateTask(context.Background(), tk, nil); err != nil {
 		t.Fatalf("insert task: %v", err)
 	}
 	return tk.ID

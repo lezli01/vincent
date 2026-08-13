@@ -18,14 +18,17 @@ import (
 // "capped at the global figure" — it means this project may take as many of
 // the global slots as it can get.
 type Project struct {
-	ID               int64     `json:"id"`
-	Name             string    `json:"name"`
-	Path             string    `json:"path"`
-	DefaultBranch    string    `json:"default_branch"`
-	DefaultWorkflow  *string   `json:"default_workflow"`
-	MaxParallelTasks *int      `json:"max_parallel_tasks"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               int64   `json:"id"`
+	Name             string  `json:"name"`
+	Path             string  `json:"path"`
+	DefaultBranch    string  `json:"default_branch"`
+	DefaultWorkflow  *string `json:"default_workflow"`
+	MaxParallelTasks *int    `json:"max_parallel_tasks"`
+	// BranchTemplate is this project's branch convention; nil inherits the one in
+	// config.yaml, and an unset config means the built-in name (task 001).
+	BranchTemplate *string   `json:"branch_template"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // Workflow reports the workflow a new task in this project gets when the
@@ -62,6 +65,7 @@ type CreateProjectRequest struct {
 	DefaultBranch    *string `json:"default_branch,omitempty"`
 	DefaultWorkflow  *string `json:"default_workflow,omitempty"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks,omitempty"`
+	BranchTemplate   *string `json:"branch_template,omitempty"`
 }
 
 // PatchProjectRequest is the PATCH /v1/projects/{id} body. Every field is an
@@ -73,6 +77,9 @@ type PatchProjectRequest struct {
 	DefaultBranch    Opt[string] `json:"default_branch,omitzero"`
 	DefaultWorkflow  Opt[string] `json:"default_workflow,omitzero"`
 	MaxParallelTasks Opt[int]    `json:"max_parallel_tasks,omitzero"`
+	// BranchTemplate set to null or "" makes the project inherit config.yaml
+	// again, which is how a convention is removed (task 001).
+	BranchTemplate Opt[string] `json:"branch_template,omitzero"`
 }
 
 // CreateProject registers a repository. The daemon validates the path is a

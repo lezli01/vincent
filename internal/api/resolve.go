@@ -21,6 +21,14 @@ type resolveRequest struct {
 	Agent     string `json:"agent,omitempty"`
 	Model     string `json:"model,omitempty"`
 	Effort    string `json:"effort,omitempty"`
+	// The draft's branch inputs (task 001). They are here for the same reason
+	// the override triple is: the branch chain is precedence resolution, and PR L
+	// put resolution on the server so no client re-implements it. A form showing
+	// its own guess at the name would be a second implementation to keep in step.
+	Title      string            `json:"title,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
+	BaseBranch string            `json:"base_branch,omitempty"`
+	BranchName string            `json:"branch_name,omitempty"`
 }
 
 // resolvedField is one resolved §8.6 value plus the level that supplied it.
@@ -46,6 +54,22 @@ type resolvedStepResponse struct {
 type resolveResponse struct {
 	Workflow string                 `json:"workflow"`
 	Steps    []resolvedStepResponse `json:"steps"`
+	// Branch previews the name this draft would get, and the level of the chain
+	// that decided it. Nil when no project was given, since the project template
+	// is part of the chain.
+	Branch *resolvedBranch `json:"branch"`
+}
+
+// resolvedBranch is the previewed branch name for a draft task.
+type resolvedBranch struct {
+	Value string `json:"value"`
+	// Source is one of default, config, project, task.
+	Source string `json:"source"`
+	// Placeholder reports that the name depends on the task id, which does not
+	// exist yet, so Value carries a literal `<id>` where the number will go. It
+	// is a preview and deliberately not a prediction: guessing the next id would
+	// be wrong the moment two drafts are open.
+	Placeholder bool `json:"placeholder"`
 }
 
 // handleResolve serves POST /v1/resolve: §8.6 applied to every step of a
@@ -107,6 +131,14 @@ func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 		Effort: entry.Workflow.Defaults.Effort,
 	}
 	out := resolveResponse{Workflow: entry.Name, Steps: []resolvedStepResponse{}}
+	if req.ProjectID != nil {
+		branch, err := s.previewBranch(r.Context(), *req.ProjectID, req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, err.Error())
+			return
+		}
+		out.Branch = branch
+	}
 	for _, st := range entry.Workflow.Steps {
 		row := resolvedStepResponse{ID: st.ID, Name: st.DisplayName(), Type: st.Type}
 		if st.Type == workflow.StepAgent {

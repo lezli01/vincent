@@ -168,7 +168,7 @@ func (h *actionLiveHarness) createTask(t *testing.T, title string) *store.Task {
 		BaseBranch:       "main", BranchName: "vincent/live-" + title,
 		State: store.TaskQueued,
 	}
-	if err := h.st.CreateTask(context.Background(), task); err != nil {
+	if err := h.st.CreateTask(context.Background(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	return task

@@ -32,10 +32,40 @@ var slotStates, slotPlaceholders = func() ([]any, string) {
 	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
 }()
 
+// BranchClaimedError reports that another unarchived task in the same project
+// already holds the branch name a new task resolved to (task 001).
+//
+// It is a distinct type because the API turns it into a 400 while every other
+// insert failure is a 500: the name is the caller's input, and "task 41 already
+// has that branch" is something they can act on.
+type BranchClaimedError struct {
+	Branch string
+	TaskID int64
+}
+
+func (e *BranchClaimedError) Error() string {
+	return fmt.Sprintf("branch %q is already claimed by task %d", e.Branch, e.TaskID)
+}
+
 // CreateTask inserts t and assigns its ID and timestamps, writing the
 // durable task.created event in the same transaction (spec §13.3). A
 // caller-set CreatedAt is kept (tests rely on this); zero means now.
-func (s *Store) CreateTask(ctx context.Context, t *Task) error {
+//
+// resolveBranch fills in a branch name that could not be known before the insert
+// because it depends on the task id. When it is nil, t.BranchName is used as
+// given. Either way the name is written inside the same transaction as the row
+// and the task.created event, so no committed task ever carries an empty
+// branch_name and there is no window for a crash to land in (task 001). It
+// replaces SetTaskBranchName, whose second write was that window, and the
+// recompute in taskrun that tried to paper over it — a recompute that silently
+// produced the *default* name and so would have discarded a user's chosen one.
+//
+// Whichever path supplies the name, it is checked against other unarchived tasks
+// in the same project before the commit; a clash returns *BranchClaimedError and
+// rolls back. Archived tasks are excluded on purpose: they keep their
+// branch_name, so counting them would forbid reusing a name even after the user
+// deleted the branch by hand, which is the one case where reuse is legitimate.
+func (s *Store) CreateTask(ctx context.Context, t *Task, resolveBranch func(id int64) (string, error)) error {
 	now := time.Now()
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = now
@@ -67,15 +97,30 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 			return fmt.Errorf("insert task: %w", err)
 		}
 		t.ID = id
+		// The id exists now, so a name that needed it can be produced and written
+		// before this transaction commits.
+		if resolveBranch != nil {
+			branch, err := resolveBranch(id)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE tasks SET branch_name = ? WHERE id = ?`, branch, id); err != nil {
+				return fmt.Errorf("assign branch name: %w", err)
+			}
+			t.BranchName = branch
+		}
+		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
+			return err
+		}
 		payload, err := json.Marshal(map[string]any{
 			"state": string(t.State), "title": t.Title, "workflow": t.WorkflowName,
 		})
 		if err != nil {
 			return fmt.Errorf("marshal task.created event: %w", err)
 		}
-		// Copied, not aliased: the event goes to the broker, and t belongs to
-		// the caller, which keeps writing it (the API assigns BranchName right
-		// after this returns).
+		// Copied, not aliased: the event goes to the broker, and t belongs to the
+		// caller.
 		taskID, projectID := t.ID, t.ProjectID
 		ev = &Event{
 			TS: now, Type: EventTaskCreated,
@@ -88,6 +133,34 @@ func (s *Store) CreateTask(ctx context.Context, t *Task) error {
 	}
 	s.notify(ev)
 	return nil
+}
+
+// claimBranchTx fails when another unarchived task in the project already holds
+// branch. It runs inside the caller's transaction because it is the half of the
+// collision check that can: it is a plain query, whereas the git-side checks
+// shell out and must never hold SQLite's single write lock across a subprocess
+// that has a 30-second timeout.
+//
+// It runs for *every* path, including id-bearing templates, which are not
+// self-protecting: `feat/{{.ID}}` on task 5 and a literal `feat/5` typed on
+// task 9 resolve to the same name.
+func claimBranchTx(ctx context.Context, tx *sql.Tx, projectID int64, branch string, selfID int64) error {
+	if branch == "" {
+		return fmt.Errorf("insert task: branch name is empty")
+	}
+	var other int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id FROM tasks
+		WHERE project_id = ? AND branch_name = ? AND id <> ? AND archived_at IS NULL
+		LIMIT 1`, projectID, branch, selfID).Scan(&other)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("check branch claim: %w", err)
+	default:
+		return &BranchClaimedError{Branch: branch, TaskID: other}
+	}
 }
 
 // GetTask returns the task with the given id, or ErrNotFound.
@@ -168,19 +241,30 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	return s.queryTasks(ctx, q, args...)
 }
 
-// SetTaskBranchName records the branch derived from the task's id right
-// after the insert (§5.3). It writes nothing else on purpose: the scheduler
-// may admit the task between the insert and this write, and a full-row
-// update would overwrite the state its CAS just set (phase 2 decision: only
-// TransitionTask writes state).
-func (s *Store) SetTaskBranchName(ctx context.Context, id int64, branch string) error {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE tasks SET branch_name = ?, updated_at = ? WHERE id = ?`,
-		branch, formatTime(time.Now()), id)
-	if err != nil {
-		return fmt.Errorf("set task %d branch name: %w", id, err)
-	}
-	return oneRowAffected(res, fmt.Sprintf("task %d", id))
+// SetTaskBranchName renames a task's branch, and exists for exactly one caller:
+// recovering a task blocked with `branch_exists` through
+// `POST /v1/tasks/{id}/retry { branch_override }` (task 001). It is no longer
+// part of task creation — CreateTask writes the name inside its own transaction,
+// which is what closed the window this function used to open.
+//
+// It writes nothing but the name on purpose: the scheduler may admit the task
+// between this write and the next, and a full-row update would overwrite the
+// state its CAS just set (phase 2 decision: only TransitionTask writes state).
+// The claim check runs in the same transaction, so a rename cannot take a name
+// another live task already holds.
+func (s *Store) SetTaskBranchName(ctx context.Context, id, projectID int64, branch string) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := claimBranchTx(ctx, tx, projectID, branch, id); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx,
+			`UPDATE tasks SET branch_name = ?, updated_at = ? WHERE id = ?`,
+			branch, formatTime(time.Now()), id)
+		if err != nil {
+			return fmt.Errorf("set task %d branch name: %w", id, err)
+		}
+		return oneRowAffected(res, fmt.Sprintf("task %d", id))
+	})
 }
 
 // UpdateTask writes every mutable field of t (matched by ID) and bumps

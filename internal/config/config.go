@@ -137,8 +137,19 @@ func ParseByteSize(s string) (ByteSize, error) {
 // Config is the daemon configuration (spec §12.3, plus the agents section —
 // a phase 1 spec addition).
 type Config struct {
-	Listen                  string   `yaml:"listen"`
-	MaxParallelTasks        int      `yaml:"max_parallel_tasks"`
+	Listen           string `yaml:"listen"`
+	MaxParallelTasks int    `yaml:"max_parallel_tasks"`
+	// BranchTemplate is the global branch-naming convention, the level between
+	// the built-in `vincent/{id}-{slug}` and a project's own template (task 001,
+	// §5.3). Empty means the built-in name.
+	//
+	// Its *syntax* is not checked here: validating it needs the branch template
+	// context, which lives in internal/worktree, and this package is a leaf that
+	// imports nothing internal. internal/daemon validates it instead — at startup
+	// as a hard failure, and on hot-reload by keeping the previous value with a
+	// warning, because a daemon that quietly ignored the configured convention
+	// would create every branch under the wrong name.
+	BranchTemplate          string   `yaml:"branch_template"`
 	Defaults                Defaults `yaml:"defaults"`
 	TranscriptRetentionDays int      `yaml:"transcript_retention_days"`
 	// TranscriptMaxBytes caps one attempt's transcript (§12.3, §18). Past it

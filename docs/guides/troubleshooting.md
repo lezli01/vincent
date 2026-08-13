@@ -145,14 +145,31 @@ discard, then archive again.
 
 ### `branch_exists` / `worktree_path_occupied`
 
-A branch named `vincent/{id}-{slug}` or the worktree directory already exists
-from an earlier run. vincent **never deletes a branch**, so leftovers accumulate
-if you re-create tasks with the same title. Clean up by hand:
+The branch this task would use, or its worktree directory, already exists from an
+earlier run. vincent **never deletes a branch**, so leftovers accumulate if you
+re-create tasks with the same title — or if a branch template has no discriminator
+in it, in which case the *second* task for the same input collides every time.
+
+Most collisions are caught at creation with a `400`, but the check at creation is
+racy by nature, so this block is the authority.
+
+Two ways out. Give the task a different name and let it re-admit, which keeps its
+history and transcripts:
 
 ```sh
-git branch --list 'vincent/*'
+curl -X POST .../v1/tasks/7/retry -d '{"branch_override":"feat/second-attempt"}'
+```
+
+Or delete the leftover branch yourself, then retry:
+
+```sh
+vincent task ls --archived      # find the branches vincent made
 git worktree list
 ```
+
+A related failure is a **ref hierarchy conflict**: `feat/foo` cannot be created
+while `feat/foo/bar` exists, because git stores refs as a path hierarchy. The
+message names the branch that is in the way.
 
 ### `base_branch_missing` / `project_path_missing`
 
