@@ -14,8 +14,25 @@ var (
 	date    = ""
 )
 
-// Version returns the version string, "dev" when not injected.
-func Version() string { return version }
+// Version returns the version string: the ldflags-injected value when present,
+// otherwise the module version stamped into a `go install …@v1.2.3` binary, and
+// "dev" for a plain `go build`. The middle case is why this is not a bare
+// accessor — `go install` is a documented install path (README), and a binary
+// installed that way reporting "dev" would make `vincent version` useless for
+// exactly the users who cannot check a release archive's name.
+func Version() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		// "(devel)" is what a build from inside the module tree reports; it says
+		// no more than "dev" does, so it is not worth preferring.
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return version
+}
 
 // Commit returns the abbreviated VCS revision, "unknown" when unavailable.
 func Commit() string {

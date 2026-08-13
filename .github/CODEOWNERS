@@ -1,0 +1,7 @@
+# Every path is owned by the maintainer. This file exists so GitHub requests a
+# review automatically rather than relying on the maintainer noticing a PR, and
+# so the owner is a fact in the repo rather than folklore.
+#
+# Branch protection does not currently require code-owner review (a solo
+# maintainer cannot approve their own PR), so this is routing, not a gate.
+* @lezli01

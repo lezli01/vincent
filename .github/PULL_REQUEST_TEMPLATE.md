@@ -4,10 +4,12 @@
 
 ## Related
 
-<!-- Task ID from docs/versions/v0/tasks.md (e.g. T2.5) and/or issue link -->
+<!-- Issue link. (v0 is complete, so there is no open task ID to cite; if this
+     revisits a recorded decision in docs/versions/v0/tasks.md, say so and why.) -->
 
 ## Checklist
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
 - [ ] Tests added/updated for behavior changes
-- [ ] `docs/versions/v0/tasks.md` updated if this completes/changes a task
+- [ ] User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md`
+- [ ] Affected page under `docs/` updated (config, CLI, API, TUI keys, block reasons)
