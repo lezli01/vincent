@@ -1,0 +1,351 @@
+# github-enhancement — pick up a GitHub enhancement issue, evaluate it, deliver it.
+#
+# The task's **title starts with the issue id**: `42`, `#42`, or the issue
+# URL, optionally followed by a short description — `42 add retry to publish`.
+# `fetch` takes the first whitespace-separated token as the id, which keeps the
+# title machine-readable while letting the rest of it do real work: it is what
+# the board row shows, and what `{{.Slug}}` turns into the branch name. A bare
+# id alone still works; it just produces a branch that says nothing.
+#
+# Shape: fetch (cheap guard) → digest (understand, ask, plan) → verdict (stop
+# on a reject) → implement (code, tests, commits) → verify (the expensive
+# cross-platform legs) → gate (a human reads the diff) → publish → report.
+#
+# Why digest and implement are two steps and not one: `digest` runs with
+# `on_input: wait`, so it parks the task in `awaiting_input` and asks you
+# through claude's AskUserQuestion tool (§7.4). If implementation shared that
+# step, every retry after a failed check would replay the questioning and ask
+# you the same things again. Splitting costs `implement` the live Q&A session —
+# which is why `digest` writes its answers into `plan.md` as resolved
+# decisions, not as a transcript. `defaults.on_input: deny` makes the
+# asymmetry explicit: `digest` is the only step allowed to stop and ask.
+#
+# claude-only by construction, like its sibling `github-issue.yaml`. `on_input`
+# is ignored by codex and cursor (`supports_input: false`, §9.3/§9.7), so on
+# those adapters `digest` would silently skip the part that makes this workflow
+# worth running and implement whatever it guessed.
+#
+# POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
+# shell at all (§8.2 rejects `shell` on an agent step), so their `check` runs
+# under the platform default and is written in `sh` regardless. On Windows the
+# whole workflow needs Git Bash's `sh` on PATH. Portability is the author's
+# problem (§8.3) and this workflow declines it deliberately.
+#
+# Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
+# pointing at the repo that owns the issue.
+#
+# On branch names: the built-in name is `vincent/{id}-{slug}` and the slug
+# comes from the title, so the title's description half is the whole reason a
+# branch reads `vincent/7-42-add-retry-to-publish` instead of `vincent/7-42`.
+# Full conformance with this repo's `type/short-description` convention is not
+# reachable from here — the type (feat/fix/docs) is not knowable until someone
+# has read the issue, and the `vincent/` prefix is worth keeping anyway because
+# it marks a branch an agent created. A workflow cannot set a branch name at
+# all; the four levels that can are, most specific first: `task add --branch`
+# (verbatim), the project's template, `branch_template` in config.yaml, then
+# the built-in (task 001, internal/worktree/branch.go).
+name: github-enhancement
+description: Read a GitHub enhancement issue, clarify it with the author, implement it, and open the PR.
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # Only `digest` overrides this. An implement step that stops to ask has
+  # skipped the whole point of the digest/implement split.
+  on_input: deny
+
+steps:
+  - id: fetch
+    name: Fetch and guard the issue
+    type: command
+    shell: sh
+    timeout: 2m
+    # A wrong id, a closed issue or a missing label is not a transient error —
+    # re-reading GitHub returns the same answer. Retrying only delays the
+    # failure.
+    max_retries: 0
+    # This step exists so that a bad id costs two seconds instead of a 45-minute
+    # agent run, and so that exactly these fields — not whatever the agent felt
+    # like fetching — are what enters the digest's context.
+    run: |
+      set -e
+      # First token only: everything after it is the human-readable half of the
+      # title, which exists so the branch slug and the board row say something.
+      id=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}' | sed 's/^#//')
+      if [ -z "$id" ]; then
+        echo "task title is empty; it must start with the issue id (42, #42, or the issue URL)" >&2
+        exit 1
+      fi
+
+      mkdir -p .vincent-enhancement
+      if ! gh issue view "$id" \
+        --json number,title,body,state,url,labels,comments \
+        > .vincent-enhancement/issue.json; then
+        echo "no such issue: $id (the task title's first word must be the issue id)" >&2
+        exit 1
+      fi
+
+      state=$(jq -r .state .vincent-enhancement/issue.json)
+      if [ "$state" != "OPEN" ]; then
+        echo "issue #$id is $state; this workflow only picks up open issues" >&2
+        exit 1
+      fi
+
+      if ! jq -e '[.labels[].name] | index("enhancement")' \
+        .vincent-enhancement/issue.json > /dev/null; then
+        echo "issue #$id is not labeled 'enhancement'; refusing to guess at its type" >&2
+        jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-enhancement/issue.json >&2
+        exit 1
+      fi
+
+      jq -r '"#\(.number) \(.title)\n\(.url)"' .vincent-enhancement/issue.json
+
+  - id: digest
+    name: Digest and clarify
+    type: agent
+    # The whole reason this step is separate: it stops and asks rather than
+    # guessing at an ambiguous requirement or an undecided design.
+    on_input: wait
+    # Parking overnight while you sleep is fine. Parking forever is not.
+    input_timeout: 12h
+    prompt: |
+      You are evaluating a GitHub enhancement issue for this repository. You are
+      NOT implementing it yet, and you must not change a single line of code.
+
+      The issue is in `.vincent-enhancement/issue.json` — number, title, body,
+      state, labels and every comment. Read it first.
+
+      Do this in order:
+
+      1. Understand what is being asked. Read enough of the codebase to know
+         which packages and which spec sections it touches. This repository is
+         spec-driven: read the relevant parts of `docs/spec.md` and any
+         relevant document under `docs/tasks/`, and read `CLAUDE.md`.
+
+      2. Check the issue against what is already true. It may already be
+         implemented, may have been decided against, or may contradict a
+         binding recorded decision — a "phase 2 decision", a "T1.5/T1.6
+         decision", a "PR G decision", or something written in
+         `docs/history/v0-tasks.md`. Those are outcomes of design sessions, not
+         incidental notes. Never relitigate one silently.
+
+      3. Use the AskUserQuestion tool to ask the author about anything you
+         cannot resolve. Ask about two kinds of thing:
+
+         - **Ambiguity** — undefined terms, unstated assumptions, missing
+           acceptance criteria, edge cases the issue leaves open, behaviour it
+           asserts without saying which component owns it.
+         - **Approach** — where several valid designs exist and the choice is
+           not obviously the author's stated one. A wrong architectural pick
+           costs the entire pull request, so surface it now.
+
+         If the issue conflicts with a recorded decision, that is a question,
+         not a judgement call you make alone.
+
+         Ask real questions with concrete options where you can offer them, and
+         batch related questions into as few calls as you can. Do not guess and
+         do not paper over a gap with a plausible-sounding sentence. If the
+         issue is genuinely unambiguous and the approach is obvious, ask
+         nothing and move on.
+
+      4. Write `.vincent-enhancement/plan.md`. Its **first line** must be
+         exactly one of:
+
+             verdict: implement
+             verdict: reject
+
+         Choose `reject` only for an issue that should not be built — already
+         implemented, out of scope, or contradicting a decision the author has
+         agreed to keep. You must have asked the author before rejecting; a
+         reject they have not seen is not a verdict, it is a guess.
+
+         Below that first line, write the plan: what the change is, which files
+         and packages it touches, which spec sections it amends if any, what
+         the tests should prove, and the decisions that came out of your
+         questions — written as settled decisions in prose, not as a Q&A
+         transcript. On a `reject`, write why instead.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-enhancement/`.
+    # Asserts the artifact exists and is machine-readable before a later step
+    # branches on it, and that this step really did keep its hands off the code.
+    # A failure here retries with the reason appended (§8.4).
+    check: >
+      test -s .vincent-enhancement/plan.md &&
+      head -n 1 .vincent-enhancement/plan.md | grep -Eq '^verdict: (implement|reject)$' &&
+      git diff --quiet &&
+      git diff --cached --quiet
+    check_timeout: 1m
+
+  - id: verdict
+    name: Act on the verdict
+    type: command
+    shell: sh
+    timeout: 1m
+    # A reject is a legitimate outcome of `digest`, so `digest` passes its
+    # check either way. This step is what turns a reject into a failed task
+    # with a legible reason, instead of a pull request nobody wanted.
+    max_retries: 0
+    run: |
+      set -e
+      if head -n 1 .vincent-enhancement/plan.md | grep -qx 'verdict: reject'; then
+        echo "digest rejected this issue; nothing will be implemented." >&2
+        echo "--- plan.md ---" >&2
+        cat .vincent-enhancement/plan.md >&2
+        exit 1
+      fi
+      cat .vincent-enhancement/plan.md
+
+  - id: implement
+    name: Implement the enhancement
+    type: agent
+    timeout: 45m
+    # Two attempts, not the default one: this step's check is self-healing —
+    # a failing test or a lint finding comes back in the §8.4 failure block and
+    # the second attempt fixes it. The expensive, non-self-healing checks live
+    # in `verify` instead.
+    max_retries: 2
+    prompt: |
+      Implement the enhancement described in `.vincent-enhancement/plan.md`.
+      That plan is the agreed scope — the author has already answered the open
+      questions and those answers are written into it as decisions. Do not
+      re-open them and do not expand the scope beyond it. The original issue is
+      still in `.vincent-enhancement/issue.json` for reference.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      Write the code and **commit it**. Commits follow Conventional Commits
+      (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`). Never add a
+      co-author trailer.
+
+      This repository's pull request template makes four claims. Satisfy the
+      ones that apply and be honest about the ones that do not:
+
+      - Conventional Commits.
+      - Tests added or updated for behaviour changes.
+      - User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md`.
+      - The affected page under `docs/` updated — the config reference tracks
+        `internal/config`, the CLI page the cobra tree, the API page the route
+        table in `internal/api/server.go`, the TUI key tables
+        `internal/tui/bindings.go`, the block reasons the `Reason*` constants.
+
+      If the change makes something in `docs/spec.md` no longer true, amend the
+      spec in this same branch with a dated note — that is a hard rule of this
+      repository, not a nicety.
+
+      Then write two more files:
+
+      - `.vincent-enhancement/pr-title.txt` — one line, Conventional Commits
+        style, no trailing prose.
+      - `.vincent-enhancement/pr.md` — the pull request body, following
+        `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
+        `Closes #<the issue number from issue.json>` so merging the PR closes
+        the issue. Tick a checklist box only if you actually did that thing; a
+        checklist ticked unconditionally is worth nothing to the reviewer, and
+        leaving a box unticked with a one-line reason is the correct outcome
+        when it does not apply.
+
+      **Never stage or commit `.vincent-enhancement/`.** It is scratch space
+      for this workflow and must not appear in the diff — do not `git add -A`
+      without excluding it. A later step deletes it.
+    # Cheap assertions first, so an obvious failure does not wait out a full
+    # test run: scratch stayed untracked, something was actually committed
+    # (an empty branch would only fail at `gh pr create`, after you had already
+    # approved it at the gate), the PR artifacts exist. Then the real bar.
+    check: >
+      ! git ls-files .vincent-enhancement | grep -q . &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      test -s .vincent-enhancement/pr-title.txt &&
+      test -s .vincent-enhancement/pr.md &&
+      go run mage.go test &&
+      go run mage.go lint
+    check_timeout: 15m
+
+  - id: verify
+    name: Verify across platforms
+    type: command
+    shell: sh
+    timeout: 20m
+    # `max_retries: 0`: nothing here is flaky in a way a second identical run
+    # fixes, and each attempt is expensive. A failure blocks the task for you
+    # to read rather than silently buying another 45-minute agent attempt.
+    max_retries: 0
+    # These are the legs CLAUDE.md requires before pushing but that are too
+    # slow to put in `implement`'s check. `testrace` needs cgo and a C
+    # compiler; on a machine without one this step fails, and that is the
+    # honest answer rather than a silently skipped race detector.
+    #
+    # The GOOS loop is not decorative: `go tool golangci-lint` cross-*builds*
+    # the linter and then cannot run it, so the linter is built for the host
+    # once and re-run per target. A host-only lint hides every finding in a
+    # build-tagged file.
+    run: |
+      set -e
+      go run mage.go testrace
+      LINT=$(go tool -n golangci-lint)
+      for os in windows darwin linux; do
+        echo "--- golangci-lint GOOS=$os ---"
+        GOOS=$os "$LINT" run ./...
+      done
+
+  - id: gate
+    name: Approve the pull request
+    type: manual
+    instructions: |
+      Read the diff for task #{{.Task.ID}} before it goes out.
+
+      The next step pushes {{.Task.BranchName}} to `origin` and opens a public
+      pull request against {{.Task.BaseBranch}} under your account. It notifies
+      whoever watches the repository, and closing the PR afterwards does not
+      unsend that.
+
+      The worktree is {{.Worktree.Path}}. The agreed plan and the drafted PR
+      body are in `.vincent-enhancement/`. Tests, lint and the cross-platform
+      legs have already passed — what is left is the judgement they cannot
+      make: does this actually solve the issue, and is it the change you want.
+
+      The implementation reported:
+
+      {{(index .Steps "implement").Result}}
+
+      Approve to push and open the PR. Reject if the change is wrong, out of
+      scope, or not worth shipping.
+
+  - id: publish
+    name: Push and open the PR
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost".
+    max_retries: 0
+    # `--head` is passed explicitly rather than letting gh infer it: inference
+    # from the current branch is exactly the kind of thing that behaves
+    # differently inside a linked worktree.
+    run: >
+      git push -u origin {{.Task.BranchName}} &&
+      gh pr create
+      --base {{.Task.BaseBranch}}
+      --head {{.Task.BranchName}}
+      --title "$(cat .vincent-enhancement/pr-title.txt)"
+      --body-file .vincent-enhancement/pr.md
+      > .vincent-enhancement/url.txt
+
+  - id: report
+    name: Report the PR
+    type: command
+    shell: sh
+    timeout: 2m
+    # stdout becomes this step's Result and lands in the transcript — that is
+    # where you read the PR url. Clearing the scratch directory afterwards
+    # leaves the worktree clean, so archiving the task does not warn about a
+    # dirty tree.
+    #
+    # `&&`, not two lines: sh reports the last command's status, so an
+    # unchained `rm` would mask a failed `view` and leave the step green. It
+    # also means the drafts survive for inspection when the report fails —
+    # which is the same reason nothing deletes them if `publish` fails.
+    run: gh pr view "$(cat .vincent-enhancement/url.txt)" && rm -rf .vincent-enhancement
