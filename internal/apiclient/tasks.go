@@ -38,11 +38,27 @@ type Task struct {
 	PauseRequested   bool     `json:"pause_requested"`
 	AvailableActions []string `json:"available_actions"`
 
+	// QueuedReason and AdmitNotBefore describe a queued task waiting on
+	// something other than a free slot (§11) — `usage_limit` today, with the
+	// instant the daemon will try again. Both nil is the ordinary queue.
+	QueuedReason   *string    `json:"queued_reason"`
+	AdmitNotBefore *time.Time `json:"admit_not_before"`
+
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 	ArchivedAt *time.Time `json:"archived_at"`
+}
+
+// Hold reports a queued task that is waiting on something other than a free
+// slot (§11): the reason, and when the daemon will try again. ok is false for
+// the ordinary queue, which is every task that carries no queued_reason.
+func (t Task) Hold() (reason string, until *time.Time, ok bool) {
+	if t.QueuedReason == nil || *t.QueuedReason == "" {
+		return "", nil, false
+	}
+	return *t.QueuedReason, t.AdmitNotBefore, true
 }
 
 // StepDisplay renders the k/n pair. It reports ok=false when the snapshot

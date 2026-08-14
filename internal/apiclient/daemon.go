@@ -69,13 +69,16 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 // has it loaded, durations rendered as Go duration strings. It is read-only
 // here — the file is authoritative and the daemon hot-reloads it (§12.3).
 type Config struct {
-	Listen                  string               `json:"listen"`
-	MaxParallelTasks        int                  `json:"max_parallel_tasks"`
-	Defaults                ConfigDefaults       `json:"defaults"`
-	TranscriptRetentionDays int                  `json:"transcript_retention_days"`
-	TranscriptMaxBytes      int64                `json:"transcript_max_bytes"`
-	LogLevel                string               `json:"log_level"`
-	Agents                  map[string]AgentPath `json:"agents"`
+	Listen                  string         `json:"listen"`
+	MaxParallelTasks        int            `json:"max_parallel_tasks"`
+	Defaults                ConfigDefaults `json:"defaults"`
+	TranscriptRetentionDays int            `json:"transcript_retention_days"`
+	TranscriptMaxBytes      int64          `json:"transcript_max_bytes"`
+	// UsageLimitRecheck is how long a quota-held task waits before the
+	// scheduler tries again, when the agent CLI reported no reset time (§11).
+	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`
+	LogLevel          string               `json:"log_level"`
+	Agents            map[string]AgentPath `json:"agents"`
 }
 
 // ConfigDefaults are the §12.3 default timeouts, as duration strings.
