@@ -459,6 +459,10 @@ func (r *run) Wait() (agent.RunResult, error) {
 				res.ErrorMessage += ": " + tail
 			}
 		}
+		// The adapter's verdict on *why* the run stopped (task 003, §9.1).
+		// It happens here because this is the one place that holds both the
+		// terminal result and the stderr tail; the engine sees neither.
+		res.Failure = classify(res, r.stderr.String())
 		r.waitRes = res
 	})
 	return r.waitRes, r.waitErr

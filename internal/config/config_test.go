@@ -59,6 +59,7 @@ defaults:
   input_timeout: 36h
 transcript_retention_days: 7
 transcript_max_bytes: 32MB
+usage_limit_recheck_interval: 2m
 log_level: warn
 agents:
   claude:
@@ -78,9 +79,10 @@ agents:
 			CommandTimeout: Duration(90 * time.Second),
 			InputTimeout:   Duration(36 * time.Hour),
 		},
-		TranscriptRetentionDays: 7,
-		TranscriptMaxBytes:      32 << 20,
-		LogLevel:                "warn",
+		TranscriptRetentionDays:   7,
+		TranscriptMaxBytes:        32 << 20,
+		UsageLimitRecheckInterval: Duration(2 * time.Minute),
+		LogLevel:                  "warn",
 		// The file omits `environment:`, so the §12.3 default survives an
 		// otherwise fully-overriding config — which is the property that
 		// keeps T4.23 invisible to anyone who does not ask for it.
@@ -97,19 +99,23 @@ agents:
 
 func TestLoadRejectsInvalid(t *testing.T) {
 	cases := map[string]string{
-		"unknown key":            "max_parallel_jobs: 5\n",
-		"unknown nested key":     "defaults:\n  agent_timeut: 60m\n",
-		"bad duration":           "defaults:\n  agent_timeout: sixty minutes\n",
-		"duration missing unit":  "defaults:\n  agent_timeout: 60\n",
-		"negative duration":      "defaults:\n  command_timeout: -5m\n",
-		"zero cap":               "max_parallel_tasks: 0\n",
-		"bad log level":          "log_level: verbose\n",
-		"non-loopback listen":    "listen: 0.0.0.0:8080\n",
-		"listen without port":    "listen: 127.0.0.1\n",
-		"bad port":               "listen: 127.0.0.1:notaport\n",
-		"negative retention":     "transcript_retention_days: -1\n",
-		"not yaml":               "{{{\n",
-		"wrong type for integer": "max_parallel_tasks: many\n",
+		"unknown key":           "max_parallel_jobs: 5\n",
+		"unknown nested key":    "defaults:\n  agent_timeut: 60m\n",
+		"bad duration":          "defaults:\n  agent_timeout: sixty minutes\n",
+		"duration missing unit": "defaults:\n  agent_timeout: 60\n",
+		"negative duration":     "defaults:\n  command_timeout: -5m\n",
+		"zero cap":              "max_parallel_tasks: 0\n",
+		"bad log level":         "log_level: verbose\n",
+		"non-loopback listen":   "listen: 0.0.0.0:8080\n",
+		"listen without port":   "listen: 127.0.0.1\n",
+		"bad port":              "listen: 127.0.0.1:notaport\n",
+		"negative retention":    "transcript_retention_days: -1\n",
+		// Zero would re-admit a quota-held task on the very next tick, which
+		// is the respawn loop the hold exists to stop (task 003).
+		"zero recheck interval":     "usage_limit_recheck_interval: 0s\n",
+		"negative recheck interval": "usage_limit_recheck_interval: -1m\n",
+		"not yaml":                  "{{{\n",
+		"wrong type for integer":    "max_parallel_tasks: many\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

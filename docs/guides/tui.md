@@ -60,13 +60,19 @@ One row per task: id, project, title, state, current step `k/n` with its name,
 elapsed, and cost so far. The header shows daemon status, agent availability,
 running-versus-cap counts, and how many tasks need a human.
 
-Two behaviors matter:
+Three behaviors matter:
 
 - **Tasks waiting on a human are pinned to the top** with a distinct badge —
   `awaiting_input`, `awaiting_gate` and `blocked`. `!` jumps to the next one from
   anywhere.
 - **The terminal bell rings when a task enters `awaiting_input`**, so most
   terminals flash or badge the window even when it is not focused.
+- **A task waiting on a clock says when it resumes.** A task whose agent hit a
+  usage limit is `queued` like any other, but its state cell reads
+  `queued → 14:20` — the time vincent will try it again, on its own. It holds no
+  slot and needs nothing from you; the detail header names the reason in full
+  (`queued · usage limit → 14:20`). See
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it.

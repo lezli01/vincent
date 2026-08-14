@@ -157,7 +157,17 @@ type Config struct {
 	// at the top level beside its retention sibling, not under `defaults:`,
 	// which is timeouts only (PR V decision).
 	TranscriptMaxBytes ByteSize `yaml:"transcript_max_bytes"`
-	LogLevel           string   `yaml:"log_level"`
+	// UsageLimitRecheckInterval is how long a task waits before trying again
+	// after its agent reported a spent usage quota *without* a reset time
+	// (task 003, §11). When the CLI does report one, that timestamp wins and
+	// this is unused.
+	//
+	// 15m bounds a five-hour window at roughly twenty wasted spawns, and a
+	// user who knows their plan can tighten or widen it. There is deliberately
+	// no exponential backoff: that is per-task state the row would have to
+	// carry, and a second retry-ish concept beside §7.2's.
+	UsageLimitRecheckInterval Duration `yaml:"usage_limit_recheck_interval"`
+	LogLevel                  string   `yaml:"log_level"`
 	// Debug records, in every step's transcript, the exact conditions the
 	// step ran under: the resolved agent/model/effort, the permission mode,
 	// the working directory, and the full argv of the process spawned.
@@ -210,9 +220,10 @@ func Default() Config {
 			CommandTimeout: Duration(15 * time.Minute),
 			InputTimeout:   Duration(24 * time.Hour),
 		},
-		TranscriptRetentionDays: 90,
-		TranscriptMaxBytes:      512 << 20, // 512MB (§12.3)
-		LogLevel:                "info",
+		TranscriptRetentionDays:   90,
+		TranscriptMaxBytes:        512 << 20, // 512MB (§12.3)
+		UsageLimitRecheckInterval: Duration(15 * time.Minute),
+		LogLevel:                  "info",
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
 		Environment: Environment{Inherit: InheritAll()},
@@ -265,6 +276,12 @@ func (c Config) validate() error {
 	}
 	if c.TranscriptRetentionDays < 0 {
 		return fmt.Errorf("transcript_retention_days must not be negative, got %d", c.TranscriptRetentionDays)
+	}
+	// Positive, not merely non-negative: zero would re-admit a quota-held task
+	// on the very next tick, which is the tight respawn loop the hold exists
+	// to stop (task 003).
+	if c.UsageLimitRecheckInterval <= 0 {
+		return fmt.Errorf("usage_limit_recheck_interval must be positive, got %s", c.UsageLimitRecheckInterval)
 	}
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":

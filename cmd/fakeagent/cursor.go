@@ -66,32 +66,57 @@ func cursorMain(scenario string) {
 	case "big-usage":
 		emitCursorText("burning tokens")
 		emitCursorResult(prompt, 2_500_000, 1_200_000)
-	default: // success
-		emit(map[string]any{
-			"type": "thinking", "subtype": "delta",
-			"text": "thinking about it", "session_id": "fake-session-1",
-		})
-		emit(map[string]any{"type": "thinking", "subtype": "completed", "session_id": "fake-session-1"})
-		emitCursorText("Working on: " + firstLine(string(prompt)))
-		emit(map[string]any{
-			"type": "tool_call", "subtype": "started", "call_id": "tool_fake_1",
-			"tool_call": map[string]any{"editToolCall": map[string]any{
-				"args": map[string]any{"path": "fake.txt"},
-			}},
-		})
-		emit(map[string]any{
-			"type": "tool_call", "subtype": "completed", "call_id": "tool_fake_1",
-			"tool_call": map[string]any{"editToolCall": map[string]any{
-				"result": map[string]any{"success": map[string]any{}},
-			}},
-		})
-		emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
-		workFor(emitCursorText)
-		if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-			editFile(f)
+	case "usage-limit":
+		// The cursor leg of task 003, and the same point codex's makes: this
+		// adapter classifies nothing, so the scenario pins that a quota stop
+		// still reads exactly as it did before — an error result under §7.2.
+		if usageLimitSpent() {
+			emitCursorText("stopping: the usage limit for this window is spent")
+			emit(map[string]any{
+				"type": "result", "subtype": "error", "is_error": true,
+				"result": usageLimitMessage(),
+			})
+			os.Exit(1)
 		}
-		emitCursorResult(prompt, 100, 42)
+		cursorSuccess(prompt)
+	case "unauthenticated":
+		emit(map[string]any{
+			"type": "result", "subtype": "error", "is_error": true,
+			"result": unauthenticatedMessage,
+		})
+		os.Exit(1)
+	default: // success
+		cursorSuccess(prompt)
 	}
+}
+
+// cursorSuccess is the `success` body, shared with a usage-limit run whose
+// window has reopened.
+func cursorSuccess(prompt []byte) {
+	emit(map[string]any{
+		"type": "thinking", "subtype": "delta",
+		"text": "thinking about it", "session_id": "fake-session-1",
+	})
+	emit(map[string]any{"type": "thinking", "subtype": "completed", "session_id": "fake-session-1"})
+	emitCursorText("Working on: " + firstLine(string(prompt)))
+	emit(map[string]any{
+		"type": "tool_call", "subtype": "started", "call_id": "tool_fake_1",
+		"tool_call": map[string]any{"editToolCall": map[string]any{
+			"args": map[string]any{"path": "fake.txt"},
+		}},
+	})
+	emit(map[string]any{
+		"type": "tool_call", "subtype": "completed", "call_id": "tool_fake_1",
+		"tool_call": map[string]any{"editToolCall": map[string]any{
+			"result": map[string]any{"success": map[string]any{}},
+		}},
+	})
+	emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
+	workFor(emitCursorText)
+	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
+		editFile(f)
+	}
+	emitCursorResult(prompt, 100, 42)
 }
 
 // emitCursorText emits an assistant message — whole, never a delta (§9.7).

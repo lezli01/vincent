@@ -43,6 +43,11 @@ type harness struct {
 	store    *store.Store
 	admitter *stubAdmitter
 	sched    *Scheduler
+	// clock drives the §11 admission hold. Zero means the real clock; tests
+	// that care set it, so "not before T, admitted after T" is asserted
+	// without sleeping. Read only from the test goroutine, which is the one
+	// that calls admit directly.
+	clock time.Time
 }
 
 func newHarness(t *testing.T, maxParallel int) *harness {
@@ -63,8 +68,25 @@ func newHarness(t *testing.T, maxParallel int) *harness {
 		},
 		Admitter: adm,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now: func() time.Time {
+			if h.clock.IsZero() {
+				return time.Now()
+			}
+			return h.clock
+		},
 	})
 	return h
+}
+
+// hold puts a task on an admission hold, the way the engine does when an
+// agent reports a spent usage quota (task 003).
+func (h *harness) hold(t *testing.T, task *store.Task, until time.Time, reason string) {
+	t.Helper()
+	task.AdmitNotBefore = &until
+	task.QueuedReason = reason
+	if err := h.store.UpdateTask(t.Context(), task); err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
 }
 
 func (h *harness) project(t *testing.T, name string, limit *int) int64 {

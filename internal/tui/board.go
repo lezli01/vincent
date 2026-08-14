@@ -600,7 +600,7 @@ func (b *board) rowsFor(tasks []apiclient.Task, set columnSet) []table.Row {
 		if d, ok := t.Elapsed(now); ok {
 			elapsed = formatElapsed(d)
 		}
-		row = append(row, t.Title, renderState(t.State), formatStep(t, set.stepName), elapsed)
+		row = append(row, t.Title, renderBoardState(t), formatStep(t, set.stepName), elapsed)
 		if set.cost {
 			row = append(row, formatCost(t.CostUSD))
 		}

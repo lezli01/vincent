@@ -79,6 +79,7 @@ func (d *daemonView) configLines() []string {
 				"   input "+c.Defaults.InputTimeout),
 		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days")+
 			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
+		field("usage limit recheck", c.UsageLimitRecheck),
 		field("log level", c.LogLevel),
 	)
 	for _, name := range sortedKeys(c.Agents) {

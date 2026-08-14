@@ -47,7 +47,7 @@ Tasks are `queued` immediately on creation. There is no draft state.
 
 | State | Meaning | Holds a slot? |
 |---|---|---|
-| `queued` | Ready to run; waiting for scheduler admission | no |
+| `queued` | Ready to run; waiting for scheduler admission — or, when `queued_reason` is set, for something else (see below) | no |
 | `running` | A step process is executing, or about to | **yes** |
 | `awaiting_gate` | Stopped at a `manual` step, waiting for approval | no |
 | `awaiting_input` | The running agent asked a question; its process is alive and idle on stdin | **yes** |
@@ -57,7 +57,17 @@ Tasks are `queued` immediately on creation. There is no draft state.
 | `aborted` | You cancelled, or rejected terminally. Worktree and branch retained | no |
 | `archived` | Terminal. Worktree removed, branch kept, record kept | no |
 
-Two of these are worth dwelling on.
+Three of these are worth dwelling on.
+
+**`queued` covers two different waits.** Usually it means "waiting for a free
+slot". But a task whose agent hit a usage limit is also `queued` — waiting on a
+clock rather than on the queue — and says so through two fields: `queued_reason`
+(`usage_limit`) and `admit_not_before`, the instant vincent will try again. It
+holds no slot while it waits, keeps its place in the queue, and needs nothing
+from you: when the window reopens, the step re-runs on its own. The board shows
+the resume time on the row (`queued → 14:20`) and the detail header names the
+reason. Cancelling, pausing or otherwise acting on the task drops the wait
+immediately — a human action always means go.
 
 **`awaiting_input` keeps its concurrency slot.** The agent process is alive
 mid-step, idle on its stdin; killing or re-queueing it would lose the very
@@ -129,6 +139,8 @@ same thing wherever it originated.
 | `nonzero_exit` | A command step exited non-zero |
 | `agent_error` | The agent's event stream reported an error |
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
+| `agent_unauthenticated` | The agent CLI is installed but not logged in. Retries as usual, then blocks — log in and retry |
+| `usage_limit` | The agent's usage quota for the window is spent. **Not a failure:** no retry is consumed, and the task waits `queued` until the window reopens |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `input_protocol_error` | A control message the adapter could not parse — it fails, it never hangs |

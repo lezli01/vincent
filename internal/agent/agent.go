@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // PermissionMode selects how much autonomy the agent CLI gets (spec §9.4).
@@ -259,6 +260,49 @@ type RunResult struct {
 	InputTokens  int64  // 0 if unreported
 	OutputTokens int64
 	CostUSD      *float64 // nil if unreported (e.g. codex)
+	// Failure is the adapter's verdict about *why* the run stopped, when it
+	// recognized the reason in its own CLI's output (task 003, §9.1). nil —
+	// "nothing recognized" — is every run that behaves as it did before this
+	// field existed, which is what keeps an unrecognized failure on today's
+	// nonzero_exit/agent_error path.
+	//
+	// It rides here rather than behind a new Adapter method because this is
+	// where the material already is: the terminal result and the stderr tail
+	// live inside the handle, and the engine never sees either.
+	Failure *Failure
+}
+
+// FailureKind names a condition an adapter recognized in its CLI's output
+// (task 003, §9.1).
+//
+// It is deliberately *not* a block_reason. That vocabulary belongs to
+// internal/taskrun and internal/worktree (T1.5/T1.6 decision), and the engine
+// does the kind → reason mapping, so a reason string has exactly one source of
+// truth and internal/agent owns no entry in it.
+type FailureKind string
+
+// Recognized failure kinds (task 003).
+const (
+	// FailureUsageLimit is a run the CLI stopped because the account's usage
+	// quota for the current window is spent. It is not a failure of the work:
+	// the window reopens on its own, so the engine re-queues the task with an
+	// admission hold instead of spending a retry (§7.2, §11).
+	FailureUsageLimit FailureKind = "usage_limit"
+	// FailureUnauthenticated is a run the CLI refused because it is not
+	// logged in. Waiting cannot fix it — re-authenticating is a human action —
+	// so it stays an ordinary failure under the §7.2 budget (§18).
+	FailureUnauthenticated FailureKind = "unauthenticated"
+)
+
+// Failure is an adapter's verdict about a stopped run (task 003, §9.1).
+type Failure struct {
+	Kind FailureKind
+	// RetryAfter is when the CLI said the limit resets — absolute, UTC. nil
+	// means the CLI reported no usable reset time, and is what an unparseable
+	// or implausible one becomes: a guessed timestamp would park a task for a
+	// window nobody promised. The engine falls back to
+	// `usage_limit_recheck_interval` (§12.3) when it is nil.
+	RetryAfter *time.Time
 }
 
 // Options are the selectable models/efforts of an adapter (spec §9.1, §9.6).

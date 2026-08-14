@@ -23,6 +23,11 @@ import (
 
 // tickInterval is the safety net. Wake drives admission in practice — every
 // committed state change fires it — so a tick normally finds nothing to do.
+//
+// It has two exceptions, and the second arrived with task 003: a task held by
+// `admit_not_before` (§11) becomes admissible with no state change to wake
+// anyone, so the tick is what picks it up — within 5 s of the hold expiring,
+// which is why the hold needs no timer of its own.
 const tickInterval = 5 * time.Second
 
 // Admitter runs a task the scheduler has admitted. The task is already in
@@ -42,6 +47,10 @@ type Deps struct {
 	Config   func() config.Config
 	Admitter Admitter
 	Logger   *slog.Logger
+	// Now is the clock the §11 admission hold is measured against; nil means
+	// time.Now. Injected by tests so "not before T, admitted after T" is
+	// assertable without sleeping (task 003).
+	Now func() time.Time
 }
 
 // Scheduler admits queued tasks within the §11 caps.
@@ -126,6 +135,7 @@ func (s *Scheduler) admit(ctx context.Context) {
 	// admitted counts this walk's own admissions per project; the candidate
 	// rows carry the counts as of the query, which predate them.
 	admitted := map[int64]int{}
+	now := s.now()
 	for i := range candidates {
 		if ctx.Err() != nil {
 			return
@@ -140,6 +150,18 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// and a task showing `queued` until a slot frees would be a lie.
 		if c.Task.PauseRequested {
 			s.park(&c.Task, log)
+			continue
+		}
+		// An admission hold (§11, task 003): the task is queued and waiting on
+		// something other than a slot — an agent's usage window, today.
+		//
+		// It is checked here, in the walk, rather than filtered out in
+		// ListAdmissible's SQL, and the pause check above is why: hiding held
+		// tasks from the query would mean a `pause` on one silently did not
+		// take effect until the hold expired, which is exactly the "showing
+		// queued while the human asked for paused" lie the comment above
+		// calls out. Pause first, then the hold, then the caps.
+		if c.Task.AdmitNotBefore != nil && now.Before(*c.Task.AdmitNotBefore) {
 			continue
 		}
 		if global >= limit {
@@ -197,6 +219,14 @@ func (s *Scheduler) park(task *store.Task, log *slog.Logger) {
 		return
 	}
 	log.Info("task paused before admission; pause was requested while it ran")
+}
+
+// now returns the injected clock, defaulting to the real one.
+func (s *Scheduler) now() time.Time {
+	if s.deps.Now != nil {
+		return s.deps.Now()
+	}
+	return time.Now()
 }
 
 func (s *Scheduler) persistCtx() context.Context {
