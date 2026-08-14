@@ -1,0 +1,140 @@
+# github-issue — turn a rough task description into a well-formed GitHub issue.
+#
+# The task carries the draft: its title is the issue's working name, its
+# description the raw material. The first step reads both, decides whether
+# anything is ambiguous, and — when it is — asks you directly through claude's
+# AskUserQuestion tool. The task parks in `awaiting_input` while it waits, you
+# answer from the TUI, and the same session continues with your answer in
+# context (§7.4). Nothing is filed until you approve the final text at the gate.
+#
+# claude-only by construction. `on_input` is ignored by codex and cursor
+# (`supports_input: false`, §9.3/§9.7), so on those adapters the questioning
+# step would silently skip the part that makes this workflow worth running.
+#
+# POSIX-only. Every command step pins `shell: sh` and the draft check uses
+# `test`; on Windows this needs Git Bash's `sh` on PATH, and fails loudly
+# rather than being reinterpreted by pwsh (§8.3 — portability is the author's
+# problem, and this workflow declines it deliberately).
+#
+# Requires `gh`, authenticated, with the worktree's `origin` pointing at the
+# repo the issue should land in.
+#
+# Known wart: this workflow commits nothing, so every run still leaves an
+# empty `vincent/{id}-{slug}` branch and worktree behind — a task always gets
+# one. Archive the task when you're done to clean it up.
+name: github-issue
+description: Clarify a draft issue with the author, then file it on GitHub and report it back.
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+
+steps:
+  - id: draft
+    name: Clarify and draft
+    type: agent
+    # `wait` is the whole point of this step: the agent stops and asks rather
+    # than guessing at an ambiguous requirement.
+    on_input: wait
+    prompt: |
+      You are preparing a GitHub issue for this repository. You are NOT
+      implementing anything, and you are NOT filing the issue.
+
+      Working title: {{.Task.Title}}
+      {{with .Task.Description}}
+      Draft description:
+      {{.}}
+      {{end}}
+
+      Do this in order:
+
+      1. Read `.github/ISSUE_TEMPLATE/bug_report.yml` and
+         `.github/ISSUE_TEMPLATE/feature_request.yml`. Decide which one this
+         draft is. Read enough of the codebase to judge whether the draft
+         describes something that is actually true of this repo.
+
+      2. Evaluate the draft for ambiguity: undefined terms, unstated
+         assumptions, missing reproduction steps, edge cases and use cases it
+         leaves open, behaviour it asserts without saying which component owns
+         it, acceptance criteria you could not write from what is there.
+
+      3. If ANY of that is unclear, use the AskUserQuestion tool to ask the
+         author. Ask real questions with concrete options where you can offer
+         them. Ask in as few rounds as you can — batch related questions into
+         one call rather than trickling them out. Do not guess and do not
+         paper over a gap with a plausible-sounding sentence; an unasked
+         question becomes a wrong issue. If the draft is genuinely
+         unambiguous, ask nothing and move on.
+
+      4. Write exactly three files, creating the `.vincent-issue/` directory
+         at the root of the worktree:
+
+         - `.vincent-issue/title.txt` — one line, no trailing prose. Start
+           from the working title above and sharpen it if what you learned
+           makes it more precise. Keep it if it is already right.
+         - `.vincent-issue/body.md` — the issue body, filling in the sections
+           of whichever template you chose, in markdown. Fold the answers you
+           received into the text; do not leave a transcript of the Q&A.
+           Write what a maintainer needs to act, nothing more.
+         - `.vincent-issue/labels.txt` — one line: `bug` or `enhancement`,
+           whichever the chosen template declares. Those are the only two
+           values allowed here; any other label does not exist in this repo
+           and would fail the filing step.
+
+      Do not run `gh`. Do not create, edit or comment on any issue or pull
+      request. Do not commit, push, or touch any file outside
+      `.vincent-issue/`. A later step files the issue, after a human has
+      approved your text.
+
+      Finish by printing the exact title, labels and body you wrote, so the
+      approver sees them without opening the files.
+    # Proves the artifacts exist before a human is asked to look at them; an
+    # agent that answered in prose without writing the files fails here and
+    # retries with the failure block appended (§8.4).
+    check: test -s .vincent-issue/title.txt && test -s .vincent-issue/body.md && test -s .vincent-issue/labels.txt
+    check_timeout: 1m
+
+  - id: approve
+    name: Approve the issue text
+    type: manual
+    instructions: |
+      Approve the issue about to be filed on GitHub for task #{{.Task.ID}}.
+
+      This is the last checkpoint — the next step calls `gh issue create` and
+      there is no undo. The drafted text lives in `.vincent-issue/` inside
+      {{.Worktree.Path}}; the agent's own summary of it was:
+
+      {{(index .Steps "draft").Result}}
+
+      Approve to file it. Reject if the title, labels or body are wrong.
+
+  - id: create
+    name: File the issue
+    type: command
+    shell: sh
+    # max_retries: 0 is load-bearing. A retried `gh issue create` files a
+    # second issue; there is no way to tell "the call failed" from "the call
+    # succeeded and the response was lost", so this one never retries.
+    max_retries: 0
+    timeout: 2m
+    run: >
+      gh issue create
+      --title "$(cat .vincent-issue/title.txt)"
+      --body-file .vincent-issue/body.md
+      --label "$(cat .vincent-issue/labels.txt)"
+      > .vincent-issue/url.txt
+
+  - id: report
+    name: Report the issue
+    type: command
+    shell: sh
+    timeout: 2m
+    # stdout becomes this step's Result and lands in the transcript, which is
+    # where you read it. Clearing `.vincent-issue/` afterwards leaves the
+    # worktree clean, so archiving the task does not warn about a dirty tree.
+    #
+    # `&&`, not two lines: sh reports the last command's status, so an
+    # unchained `rm` would mask a failed `view` and leave the step green. It
+    # also means the drafts survive for inspection when the report fails.
+    run: gh issue view "$(cat .vincent-issue/url.txt)" && rm -rf .vincent-issue
