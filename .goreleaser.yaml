@@ -52,15 +52,15 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
-# Homebrew tap (macOS only). This reverses the X decision's "GitHub Releases
-# only" line — see tasks.md — and the reversal's cost is exactly what that
+# Homebrew tap (macOS only), docs/tasks/002. This reverses the X decision's
+# "GitHub Releases only" line, and the reversal's cost is exactly what that
 # decision named: a second repo (lezli01/homebrew-tap) and a release-time
 # publish step. It is a *cask*, not a formula, because goreleaser deprecated
 # `brews` in v2.10 and Homebrew now packages pre-built binaries as casks;
 # formulas are for things brew builds from source.
 #
 # Linux and Windows are unchanged — casks do not exist on Linuxbrew, so the
-# README's download-and-unpack path stays the only path there.
+# download-and-unpack path stays the only path there.
 homebrew_casks:
   - name: vincent
     ids: [vincent]

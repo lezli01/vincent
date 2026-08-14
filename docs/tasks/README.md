@@ -16,6 +16,7 @@ description of how the system actually behaves.
 | ID | Work | Status |
 |---|---|---|
 | [001](001-configurable-branch-names.md) | Configurable branch names | ✅ done (11/11) |
+| [002](002-homebrew-tap.md) | Homebrew tap for macOS | ✅ done (6/6) |
 
 ## How to add and update a task document
 

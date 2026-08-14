@@ -14,6 +14,12 @@ Apple silicon and Intel are both released and both exercised in CI.
 ## Install
 
 ```sh
+brew install lezli01/tap/vincent
+```
+
+Or unpack the release archive by hand:
+
+```sh
 tar -xzf vincent_*_darwin_arm64.tar.gz      # or _darwin_amd64 on Intel
 sudo mv vincent /usr/local/bin/
 vincent version
@@ -25,10 +31,13 @@ detail, including signature verification:
 
 ## Gatekeeper
 
-First launch shows *"vincent cannot be opened because it is from an
-unidentified developer"*. Releases carry cosign signatures, SHA-256 checksums
-and GitHub build attestations, but not **Apple notarization**, which is a
-recurring cost this project does not take on.
+**This applies to the archive, not to `brew install`** — the cask clears the
+quarantine attribute during install, which is the main reason to prefer it here.
+
+First launch of a downloaded binary shows *"vincent cannot be opened because it
+is from an unidentified developer"*. Releases carry cosign signatures, SHA-256
+checksums and GitHub build attestations, but not **Apple notarization**, which is
+a recurring cost this project does not take on.
 
 Clear the quarantine attribute once:
 
@@ -37,7 +46,8 @@ xattr -d com.apple.quarantine /usr/local/bin/vincent
 ```
 
 If `xattr` reports the attribute is absent, the file was never quarantined and
-there is nothing to do.
+there is nothing to do. `com.apple.provenance` is unrelated — macOS adds it to
+everything and it does not block execution.
 
 ## Directories
 
