@@ -66,6 +66,13 @@ type taskResponse struct {
 	// alone so the detail view can render k/n without re-parsing the snapshot.
 	StepTotal   int     `json:"step_total"`
 	BlockReason *string `json:"block_reason"`
+	// AdmitNotBefore and QueuedReason describe a queued task waiting on
+	// something other than a free slot (§11, task 003) — an agent usage window
+	// today. Both are null for every other task, so the pair is additive and
+	// changes nothing for a client that ignores it. They are deliberately not
+	// folded into block_reason, which means "set while blocked" (§14).
+	AdmitNotBefore *string `json:"admit_not_before"`
+	QueuedReason   *string `json:"queued_reason"`
 	// Warnings are non-fatal §8.2 catalog findings from creation-time
 	// validation; only the POST /v1/tasks response carries them.
 	Warnings []string `json:"warnings,omitempty"`
@@ -141,6 +148,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		CurrentStep:      t.CurrentStep,
 		StepTotal:        summary.stepTotal,
 		BlockReason:      nilIfEmpty(t.BlockReason),
+		AdmitNotBefore:   timePtr(t.AdmitNotBefore),
+		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
 		PauseRequested:   t.PauseRequested,
 		AvailableActions: availableActions(t.State),
