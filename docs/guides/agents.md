@@ -32,6 +32,7 @@ silently drops.
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **fails on Windows** |
 | Reports whether you are logged in | — | — | ✅ |
+| Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 
 `vincent daemon status`, the TUI's daemon view, and `GET /v1/agents` all report
 what vincent actually resolved on your machine — path, version, and the model
@@ -54,6 +55,15 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   a vincent release.
 - **Reports token usage and cost.** The board's cost column sums every attempt,
   retries included. The other two adapters report no cost at all.
+- **Recognizes a spent usage quota and a logged-out CLI** in the output of a run
+  that failed. A quota stop becomes `usage_limit` — no retry consumed, the task
+  waits and re-runs itself — and a logged-out CLI becomes
+  `agent_unauthenticated`, which blocks with the fix named. Codex and cursor do
+  neither: their wordings have not been captured from a real run (doing so means
+  burning a real quota window), and vincent will not guess at one, because a
+  wrong guess parks a genuinely failed task in a wait it never leaves. On those
+  two, both conditions still read as `agent_error` or `nonzero_exit`. See
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
 
 ### Mid-run questions
 

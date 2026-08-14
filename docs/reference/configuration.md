@@ -50,6 +50,9 @@ transcript_retention_days: 90
 # Per-attempt transcript cap.
 transcript_max_bytes: 512MB
 
+# How long a quota-stopped task waits when the agent CLI named no reset time.
+usage_limit_recheck_interval: 15m
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -203,6 +206,28 @@ ends — a half-written line would turn a size failure into a parse failure for
 every later reader.
 
 `0` disables the cap.
+
+### `usage_limit_recheck_interval`
+
+```yaml
+usage_limit_recheck_interval: 15m
+```
+
+How long a task waits before vincent tries it again after its agent reported
+that the account's usage quota for the current window is spent.
+
+It applies only when the CLI named **no** reset time. When it names one, that
+timestamp is used instead and this value is unused.
+
+While it waits the task is `queued`, not `blocked`, and holds **no** concurrency
+slot — everything else keeps running, and the task recovers on its own when the
+window reopens. Nothing is retried in the meantime: a quota stop consumes none
+of the step's retry budget. See
+[Task lifecycle](task-lifecycle.md#failure-reasons).
+
+Must be positive. There is no exponential backoff; if you know your plan's
+window, set this to match it. Hot-reloaded, so a change applies to the next
+task that hits a limit.
 
 ### `log_level`
 
