@@ -15,7 +15,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
-	pending_input_json,
+	pending_input_json, admit_not_before, queued_reason,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -283,12 +283,14 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?,
 			priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
 			state = ?, current_step = ?, block_reason = ?,
+			admit_not_before = ?, queued_reason = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
 		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath),
 		t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
+		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		formatTime(t.UpdatedAt), formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 		t.ID)
 	if err != nil {
@@ -557,6 +559,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		agentOv, modelOv, effortOv  sql.NullString
 		retryCursor, pendingOv      sql.NullString
 		pendingInput                sql.NullString
+		admitNotBefore, queuedWhy   sql.NullString
 		created, updated            string
 		started, finished, archived sql.NullString
 	)
@@ -565,13 +568,14 @@ func scanTask(r rowScanner) (*Task, error) {
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
-		&pendingInput,
+		&pendingInput, &admitNotBefore, &queuedWhy,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
 	t.WorktreePath = worktree.String
 	t.BlockReason = blockReason.String
 	t.PendingInputJSON = pendingInput.String
+	t.QueuedReason = queuedWhy.String
 	t.AgentOverride = agentOv.String
 	t.ModelOverride = modelOv.String
 	t.EffortOverride = effortOv.String
@@ -590,6 +594,9 @@ func scanTask(r rowScanner) (*Task, error) {
 	}
 	var err error
 	if t.RetryCursorAt, err = parseTimePtr(retryCursor); err != nil {
+		return nil, err
+	}
+	if t.AdmitNotBefore, err = parseTimePtr(admitNotBefore); err != nil {
 		return nil, err
 	}
 	if t.CreatedAt, err = parseTime(created); err != nil {
