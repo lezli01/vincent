@@ -226,6 +226,14 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 // Wait implements agent.RunHandle. It blocks until the stream is fully
 // consumed and the process has exited, then assembles the RunResult per
 // §7.1: the terminal turn event plus the exit code.
+//
+// RunResult.Failure is deliberately left nil (task 003): codex's usage-limit
+// and unauthenticated wordings are not fixture-verified, and this adapter
+// ships no guess in their place. A quota stop here therefore reads exactly as
+// it did before task 003 — nonzero_exit or agent_error — rather than as an
+// invented match. Adding it later is a `classify` beside this call and a
+// `usage-limit` case in cmd/fakeagent's codex dialect, which is already there
+// and already asserted to produce today's behaviour.
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone

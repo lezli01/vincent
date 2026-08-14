@@ -184,7 +184,7 @@ func (d *detail) headerLine() string {
 	t := d.task
 	parts := []string{
 		styleTitle.Render(fmt.Sprintf(" #%d %s", t.ID, t.Title)),
-		renderState(t.State),
+		renderDetailState(t.Task),
 	}
 	if k, n, ok := t.StepDisplay(); ok {
 		parts = append(parts, fmt.Sprintf("%d/%d", k, n))

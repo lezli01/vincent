@@ -4,10 +4,12 @@
 # remote) runs to the gate with an agent question round-tripping
 # awaiting_input → answer → resume (scenario 1), that kill -9 mid-step
 # recovers correctly (scenario 2), and that both concurrency caps hold under
-# load (scenario 3). Runs against the committed fakeagent so CI never calls a
-# real API; run manually with VINCENT_GATE_AGENT=claude to exercise the real
-# CLI (scenario 1 only — killing a paid run and 8× cap spend prove nothing
-# extra). VINCENT_GATE_SCENARIO=1|2|3|4 runs a single scenario for debugging.
+# load (scenario 3), that branch naming and its recovery path hold (scenario
+# 4), and that an agent usage limit re-queues rather than blocks and recovers
+# unattended (scenario 5). Runs against the committed fakeagent so CI never
+# calls a real API; run manually with VINCENT_GATE_AGENT=claude to exercise the
+# real CLI (scenario 1 only — killing a paid run and 8× cap spend prove nothing
+# extra). VINCENT_GATE_SCENARIO=1|2|3|4|5 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -517,6 +519,110 @@ EOF
   echo "=== scenario 4 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 5 — agent usage limits (task 003, spec §7.2/§11/§18).
+#
+# The whole path over curl: an agent that reports a spent quota must not burn
+# its retry budget, must give its slot back, and must recover with nobody
+# pressing anything. The recheck interval is squeezed to two seconds so the
+# unattended half is observable in a gate rather than in five hours.
+#
+# The global cap is 1 and the second task sleeps, so "the slot was released" is
+# a fact the scenario forces rather than infers: the sleeper can only be
+# running because the walled task stopped holding one, and the walled task can
+# only finish afterwards because the scheduler came back to it on its own.
+# ---------------------------------------------------------------------------
+scenario5() {
+  echo "=== scenario 5: usage limit — no retry burned, slot released, unattended recovery"
+  scenario_dirs s5
+
+  export FAKEAGENT_SCENARIO=usage-limit
+  # The marker is the fake CLI's own record that the window has reopened, so
+  # the recovery is the daemon's doing and not the script's.
+  export FAKEAGENT_USAGE_LIMIT_MARKER
+  FAKEAGENT_USAGE_LIMIT_MARKER="$(hostpath "$TMP/s5-window-spent")"
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+max_parallel_tasks: 1
+usage_limit_recheck_interval: 2s
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  # max_retries: 0 — so a quota stop that wrongly counted as a failure would
+  # block the task on the spot, and this scenario would fail loudly.
+  cat > "$CONFIG_DIR/workflows/m2-quota.yaml" <<EOF
+name: m2-quota
+description: M2 gate — one agent step against a quota-exhausted CLI.
+defaults:
+  agent: claude
+  max_retries: 0
+steps:
+  - id: work
+    type: agent
+    prompt: "Do the work for {{.Task.Title}}"
+EOF
+  cat > "$CONFIG_DIR/workflows/m2-sleeper.yaml" <<EOF
+name: m2-sleeper
+description: M2 gate — occupies the only slot while the held task waits.
+steps:
+  - id: nap
+    type: command
+    run: sleep 3
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s5/repo" proj walled sleeper
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  # The walled task is created first, so §11 offers it the only slot first.
+  walled="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota\",\"title\":\"Quota walled\"}" | jq -r .id)"
+  sleeper="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-sleeper\",\"title\":\"Sleeper\"}" | jq -r .id)"
+
+  echo "== wait for the quota stop to park the task on an admission hold"
+  local task=""
+  local ok=0
+  for _ in $(seq 1 90); do
+    task="$(api GET "/tasks/$walled")"
+    if [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]]; then ok=1; break; fi
+    [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { jq . <<<"$task" >&2; fail "task $walled blocked instead of waiting on the quota window"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $walled never picked up queued_reason=usage_limit"; }
+  [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "held task is $(jq -r .state <<<"$task"), want queued"
+  [[ "$(jq -r '.admit_not_before // "null"' <<<"$task")" != "null" ]] \
+    || fail "held task carries no admit_not_before: $task"
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
+    || fail "a quota-held task must not carry a block_reason: $task"
+
+  echo "== assert the attempt is recorded interrupted and spent no retry"
+  local steps
+  steps="$(api GET "/tasks/$walled/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
+  [[ "$(jq -r '.[0].state' <<<"$steps")" == "interrupted" ]] || fail "attempt not interrupted: $steps"
+  [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "usage_limit" ]] \
+    || fail "attempt reason is $(jq -r '.[0].failure_reason' <<<"$steps"), want usage_limit"
+
+  echo "== the released slot lets the next task run"
+  wait_for_state "$sleeper" done 120
+
+  echo "== the held task recovers with no human action"
+  wait_for_state "$walled" done 120
+  steps="$(api GET "/tasks/$walled/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "2" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 2: $steps"
+  [[ "$(jq -r '.[1].state' <<<"$steps")" == "succeeded" ]] || fail "the re-run did not succeed: $steps"
+  [[ "$(api GET "/tasks/$walled" | jq -r '.queued_reason // "null"')" == "null" ]] \
+    || fail "the hold outlived the queued period it belonged to"
+
+  "$VINCENT" daemon stop
+  unset FAKEAGENT_SCENARIO FAKEAGENT_USAGE_LIMIT_MARKER
+  echo "=== scenario 5 PASS (task $walled recovered unattended)"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -527,7 +633,8 @@ case "$WHICH" in
   2) scenario2 ;;
   3) scenario3 ;;
   4) scenario4 ;;
-  all) scenario1; scenario2; scenario3; scenario4 ;;
+  5) scenario5 ;;
+  all) scenario1; scenario2; scenario3; scenario4; scenario5 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

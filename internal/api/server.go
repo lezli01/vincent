@@ -258,6 +258,7 @@ type configResponse struct {
 	Defaults                configDefaults       `json:"defaults"`
 	TranscriptRetentionDays int                  `json:"transcript_retention_days"`
 	TranscriptMaxBytes      int64                `json:"transcript_max_bytes"`
+	UsageLimitRecheck       string               `json:"usage_limit_recheck_interval"`
 	LogLevel                string               `json:"log_level"`
 	Agents                  map[string]agentPath `json:"agents"`
 }
@@ -284,6 +285,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		TranscriptRetentionDays: cfg.TranscriptRetentionDays,
 		TranscriptMaxBytes:      cfg.TranscriptMaxBytes.Bytes(),
+		UsageLimitRecheck:       cfg.UsageLimitRecheckInterval.String(),
 		LogLevel:                cfg.LogLevel,
 		Agents: map[string]agentPath{
 			"claude": {Path: cfg.Agents.Claude.Path},

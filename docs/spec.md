@@ -231,6 +231,21 @@ nullable — not all agents report cost), input wait time (ms spent in `awaiting
   as a fresh attempt and the task is re-queued (§12.4).
 ```
 
+**Amended 2026-08-14 (task 003): `running → queued` has a second producer.** It
+used to mean only "interrupted — a crash or a shutdown cut the step short". It now
+also means "the agent reported that its usage quota for this window is spent"
+(§7.2). Both consume no retry and both release the concurrency slot; they differ
+in that the second re-queues the task with an **admission hold** — `admit_not_before`
+plus a `queued_reason` (§11, §14) — so the scheduler does not walk it straight
+back into the same wall. A re-queued task may therefore be waiting on a clock
+rather than on a slot, which is a distinction clients render (§15).
+
+A hold describes exactly one queued period: **any** transition out of `queued`
+clears it, so admission, parking and cancel all drop it. One consequence, accepted
+rather than fixed: pausing a held task and resuming it re-admits it at once and it
+re-discovers the wall. That costs one process spawn and buys the rule this section
+already applies to every other pending flag — a human action means go.
+
 ### States
 
 | State | Meaning | Consumes a concurrency slot? |
@@ -296,6 +311,21 @@ stdout/stderr are captured to the step transcript.
 - **Interruption** (daemon crash/stop while a step runs) is *not* a failure: the
   attempt is marked `interrupted`, does **not** consume a retry, and the step is
   automatically re-run when the daemon restarts (§12.4).
+- **Usage limits are not failures either.** *Added 2026-08-14 (task 003).* When an
+  agent adapter recognizes that its CLI stopped because the account's usage quota
+  for the current window is spent, the attempt is recorded `interrupted` with
+  reason `usage_limit`, consumes **no** retry, and the task returns to `queued`
+  carrying an admission hold (§11) until the window is plausibly back. The retry
+  budget bounds genuine failure; a quota wall is not one, and with no delay
+  between attempts a walled step would otherwise spend its whole budget in
+  seconds. `usage_limit` is therefore a `queued_reason`, never a `block_reason`.
+  Recovery needs no human: the scheduler re-admits the task when the hold expires.
+- **`agent_unauthenticated` stays under the normal budget.** *Added 2026-08-14
+  (task 003).* A CLI that refuses because it is not logged in fails the attempt
+  like any other, retries as usual, and blocks when the budget is spent. Waiting
+  cannot fix it, and short-circuiting the budget would make it the only reason in
+  vincent that bypasses this section — to save one process spawn at the default
+  `max_retries: 1`. Its value is that the reason names the fix.
 
 ### 7.3 Fresh session per step
 
@@ -601,6 +631,12 @@ type RunResult struct {
     InputTokens  int64    // 0 if unreported
     OutputTokens int64
     CostUSD      *float64 // nil if unreported (e.g. codex)
+    Failure      *Failure // task 003: the adapter's verdict, nil = nothing recognized
+}
+
+type Failure struct {                // task 003, added 2026-08-14
+    Kind       FailureKind // usage_limit | unauthenticated
+    RetryAfter *time.Time  // absolute UTC; nil = the CLI reported no usable reset
 }
 
 type AgentOptions struct {
@@ -645,6 +681,28 @@ recording and discarding:
   **whole blocks**; a dialect that streams token-level deltas coalesces them
   itself and emits when the block closes. See the §9.7 amendment for why that
   constraint is the part of the original decision worth keeping.
+
+**The adapter's failure verdict (task 003, added 2026-08-14).** `RunResult`
+carries an optional `Failure`: the adapter's reading of *why* its CLI stopped,
+when the wording is one it recognizes. It rides on the result rather than behind
+a new interface method because the material — the terminal result and the stderr
+tail — already lives inside the handle, and the engine never sees either.
+
+`FailureKind` is an adapter-side enum (`usage_limit`, `unauthenticated`), **not** a
+`block_reason`: that vocabulary belongs to the engine and to worktree management,
+and the engine does the kind → reason mapping, so a reason string keeps exactly
+one source of truth. A nil `Failure` means "nothing recognized" and is every run
+that behaves as it did before this field existed.
+
+Parsing is **layered and conservative**, in the precedent §9.7's logged-out
+wording sets: recognize the documented shapes, fall through to nil for everything
+else, and never guess a reset time — an unparseable or implausible one leaves
+`RetryAfter` nil and `usage_limit_recheck_interval` (§12.3) decides instead. The
+wordings are **not fixture-verified**: capturing a genuine quota exhaustion means
+burning a real five-hour window. Claude ships patterns on that basis; **codex and
+cursor recognize nothing** and behave exactly as before, which is a deliberate
+asymmetry rather than an oversight — an adapter that guessed would send a
+genuinely failed task into a wait it never recovers from.
 
 Both ride the live stream *and* scrollback. A record that appeared only after
 a step finished would read as output that went missing while it was running,
@@ -1022,6 +1080,21 @@ would invalidate every one of them.
 - A `queued` task whose pause was requested while it was running (§6) is not admitted:
   the scheduler moves it straight to `paused` instead. A pause therefore survives a
   crash, which re-queues the task without clearing the request.
+- **Admission holds** (*added 2026-08-14, task 003*). A queued task may carry
+  `admit_not_before` — an instant before which it is not admissible — and a
+  `queued_reason` naming what it is waiting for. `usage_limit` is the only
+  producer today (§7.2); the pair is generic so the next wait-shaped case costs
+  no second mechanism. The walk applies the three checks **in this order**:
+  1. **pause** — a pending pause parks the task, held or not. This runs first
+     because a human asked for `paused`, and a task showing `queued` until a hold
+     expired would be the same lie the cap check already avoids. It is also why
+     the hold is evaluated in the walk and **not** filtered out in SQL.
+  2. **the hold** — skip and keep walking; a held task must not starve the queue.
+  3. **the caps**, as above.
+
+  No timer is needed: the scheduler's 5 s safety-net tick is what notices an
+  expired hold, since nothing commits a state change when one lapses. That is the
+  tick's second reason to exist — otherwise it normally finds nothing to do.
 
 ## 12. The daemon
 
@@ -1204,6 +1277,7 @@ defaults:
   input_timeout: 24h           # max wait in awaiting_input (§7.4)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
+usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
 log_level: info
 debug: false                 # record each step's resolved settings and full argv in its transcript
 environment:                 # what child processes inherit (T4.23)
@@ -1215,6 +1289,16 @@ agents:
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 ```
+
+**`usage_limit_recheck_interval` (task 003, added 2026-08-14).** How long a task
+waits before being re-admitted after its agent reported a spent usage quota
+*without* a reset time; when the CLI reports one, that timestamp wins and this is
+unused. Must be positive — zero would re-admit on the very next tick, which is the
+respawn loop the hold exists to stop. 15 m bounds a five-hour window at roughly
+twenty wasted spawns, and a user who knows their plan can tighten or widen it.
+There is deliberately **no** exponential backoff: that would be per-task state the
+row has to carry and a second retry-ish concept beside §7.2's. Read per hold, so a
+hot reload reaches the next one.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -1351,7 +1435,12 @@ GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
                                         ?archived= defaults to false: archived tasks are
                                         excluded unless asked for (?archived=true → only
                                         archived, ?archived=all → both). state=archived
-                                        still selects them explicitly
+                                        still selects them explicitly.
+                                        Every task shape (list and detail) additionally
+                                        carries admit_not_before (RFC3339 or null) and
+                                        queued_reason (task 003): a queued task waiting on
+                                        something other than a slot, per §11. Both are null
+                                        for every other task, so the pair is additive
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
                                           model?, effort? }
@@ -1508,6 +1597,8 @@ CREATE TABLE tasks (
   retry_cursor_at     TEXT,                   -- last human `retry`; the retry budget counts failures after it (§7.2)
   pending_override_json TEXT,                 -- edit+retry text awaiting the next attempt's step_run
   pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
+  admit_not_before    TEXT,                   -- §11 admission hold; NULL = admissible now (task 003)
+  queued_reason       TEXT,                   -- why a queued task waits on more than a slot; NULL = the ordinary queue
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
@@ -1561,6 +1652,15 @@ CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
+
+*Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
+`ListAdmissible` already returns the whole queued set in §11 order and the hold is
+evaluated during the walk. Both are cleared by **any** transition out of `queued`,
+in the transition itself rather than by each caller — the same construction that
+makes "`pending_input_json` non-null iff `awaiting_input`" hold. `block_reason` was
+deliberately not overloaded for this: §14 says it is set while `state='blocked'`,
+clients key off it to mean exactly that, and a queued task carrying one would break
+them.
 
 ## 15. TUI
 
@@ -1655,6 +1755,16 @@ full-screen takeovers reached from the command palette.
 The task table keeps the full §15 column set at full width. A narrow left rail
 would have to drop most of it, and cost-so-far and step `k/n` are the two columns
 a human scans to decide where to intervene.
+
+**Two kinds of `queued` (task 003, added 2026-08-14).** A task waiting on an
+agent's usage window and a task waiting for a free slot are both `queued`, and
+conflating them is what the reason exists to prevent. The **board's** state cell
+renders the resume time — `queued → 14:20` — for a task carrying an
+`admit_not_before`; the reason itself does not fit the state column's width, and
+widening it for a rare state would cost every board the columns that get shed
+first. The **detail header**, which has the room, renders the full
+`queued · usage limit → 14:20`. Band ordering is unchanged: a held task stays in
+the queued band, in normal §11 order, because that is where it will run from.
 
 **The focused panel expands; the others collapse** to their title bar plus the
 selected line. The task table never collapses below 5 rows — it is the navigation
@@ -1851,7 +1961,8 @@ currently true to show (§15 view 6).
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
-| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails with the CLI's auth error |
+| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false` |
+| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |

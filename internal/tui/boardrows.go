@@ -183,6 +183,45 @@ func renderState(state string) string {
 	return label
 }
 
+// renderBoardState is the board's state cell. A queued task held by the
+// scheduler (§11) shows when it resumes — `queued → 14:20` — so it reads as
+// waiting on a clock rather than on a slot, which a bare `queued` cannot say.
+//
+// The reason itself is deliberately not in this cell: it does not fit
+// widthState, and widening the column for a rare state would cost every board
+// the columns that get shed first. The detail header, which has the width,
+// names it (renderDetailState).
+func renderBoardState(t apiclient.Task) string {
+	_, until, ok := t.Hold()
+	if !ok || until == nil {
+		return renderState(t.State)
+	}
+	return applyStateStyle(t.State, t.State+" → "+until.Local().Format("15:04"))
+}
+
+// renderDetailState is the header form: the full `queued · usage limit →
+// 14:20`, where there is room for the reason. A hold with no resume time
+// still names the reason — the engine always computes one, so this is the
+// shape a future hold-setter that does not would take.
+func renderDetailState(t apiclient.Task) string {
+	reason, until, ok := t.Hold()
+	if !ok {
+		return renderState(t.State)
+	}
+	label := t.State + " · " + strings.ReplaceAll(reason, "_", " ")
+	if until != nil {
+		label += " → " + until.Local().Format("15:04")
+	}
+	return applyStateStyle(t.State, label)
+}
+
+func applyStateStyle(state, label string) string {
+	if st, ok := stateStyles[state]; ok {
+		return st.Render(label)
+	}
+	return label
+}
+
 // formatElapsed renders a duration compactly enough for a table cell.
 func formatElapsed(d time.Duration) string {
 	switch {

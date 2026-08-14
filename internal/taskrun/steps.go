@@ -297,6 +297,13 @@ loop:
 // the process before the run context is canceled (§6's grace, §12.4's), so
 // an abrupt exit then is an interruption, not a failure to retry. The run
 // context's cancel cause distinguishes the engine's own kills (§7.4).
+//
+// The adapter's own verdict (res.Failure, task 003) is consulted *after* all
+// of those and *before* the generic exit-code and IsError buckets. The order
+// is the point: a cancel or a shutdown that lands on a quota-stopped run is
+// still a cancel, a step that ran past its timeout is still a timeout, and
+// only a run that would otherwise have been flattened into nonzero_exit or
+// agent_error gets the more specific reason.
 func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *agent.RunResult, waitErr error) stepOutcome {
 	switch {
 	case daemonCtx.Err() != nil:
@@ -313,6 +320,17 @@ func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *ag
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+	case res.Failure != nil && res.Failure.Kind == agent.FailureUsageLimit:
+		// Interruption-shaped on purpose: runStepWithRetries returns any
+		// non-StepFailed outcome without touching the budget, which is what
+		// makes "consumes no retry" true with no change there (§7.2).
+		return stepOutcome{
+			state:      store.StepInterrupted,
+			reason:     ReasonUsageLimit,
+			retryAfter: res.Failure.RetryAfter,
+		}
+	case res.Failure != nil && res.Failure.Kind == agent.FailureUnauthenticated:
+		return stepOutcome{state: store.StepFailed, reason: ReasonAgentUnauthenticated}
 	case res.ExitCode != 0:
 		return stepOutcome{state: store.StepFailed, reason: ReasonNonzeroExit}
 	case res.IsError:
