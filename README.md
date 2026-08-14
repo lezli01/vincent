@@ -178,6 +178,21 @@ then `vincent service install` needs no elevation again.
 
 ## Install
 
+### Homebrew (macOS)
+
+```sh
+brew install lezli01/tap/vincent
+```
+
+The cask clears the quarantine attribute for you, so the Gatekeeper prompt
+described below does not apply to this path. Upgrades are `brew upgrade
+vincent`; `brew uninstall --zap vincent` also removes the LaunchAgent and
+`~/Library/Application Support/vincent` (config, database, transcripts).
+
+Homebrew casks are macOS-only — on Linuxbrew, use the archive below.
+
+### Archive (all platforms)
+
 Download the archive for your platform from the
 [latest release](https://github.com/lezli01/vincent/releases/latest), unpack
 it, and put `vincent` somewhere on your `PATH`. There is nothing else to
@@ -207,7 +222,8 @@ Apple notarization are recurring certificate costs this project does not take
 on. So:
 
 - **macOS** shows "cannot be opened because it is from an unidentified
-  developer". Clear the quarantine attribute once:
+  developer" — for a downloaded archive, not for `brew install`. Clear the
+  quarantine attribute once:
   ```sh
   xattr -d com.apple.quarantine /usr/local/bin/vincent
   ```

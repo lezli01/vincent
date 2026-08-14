@@ -59,6 +59,12 @@ jobs:
                 || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushing the cask to lezli01/homebrew-tap is a cross-repo write,
+          # which GITHUB_TOKEN cannot do — it is scoped to this repository.
+          # The fallback keeps a dry run working for a fork or a contributor
+          # who has no such secret: goreleaser only reads it when it actually
+          # publishes, and --snapshot never does.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || 'unset' }}
 
       # Provenance for every archive, so a downloader can prove which workflow
       # and commit produced the file they hold.
