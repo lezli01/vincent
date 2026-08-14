@@ -13,6 +13,43 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Added
 
+- **Agent usage limits are now a wait, not a failure**
+  ([task 003](docs/tasks/003-usage-limit-classification.md)). When a step stops
+  because the agent's usage quota for the window is spent, vincent records the
+  attempt as `usage_limit`, **consumes no retry**, releases the task's
+  concurrency slot, and re-queues it until the window reopens — the step then
+  re-runs with **no human action**. Previously that run was indistinguishable
+  from a genuine failure: it burned the whole retry budget in seconds (there is
+  no delay between attempts) and blocked the task with `agent_error`, which sent
+  you to read a transcript about a task that was fine. With several tasks running
+  on the same agent, the whole board went down at once.
+
+  A held task shows when it resumes — `queued → 14:20` on the board,
+  `queued · usage limit → 14:20` in the detail header — and gives up its slot, so
+  other work carries on. The resume time is the reset the CLI reported; when it
+  reports none, vincent waits
+  [`usage_limit_recheck_interval`](docs/reference/configuration.md#usage_limit_recheck_interval)
+  (new, default 15m) and tries again. Cancelling, pausing or resuming a held task
+  drops the wait immediately.
+
+  Only the **claude** adapter recognizes usage-limit wording today. Capturing a
+  real quota exhaustion means burning a real five-hour window, so codex and
+  cursor deliberately ship no pattern and behave exactly as before — a wrong
+  guess would park a genuinely failed task in a wait it never leaves.
+
+- **`agent_unauthenticated` block reason**
+  ([task 003](docs/tasks/003-usage-limit-classification.md)). A claude step that
+  fails because the CLI is not logged in now says so, instead of surfacing as
+  `nonzero_exit` or `agent_error`. Nothing else changes: the step still runs, the
+  retry budget still applies, and the task still blocks — the reason just names
+  the fix.
+
+- `queued_reason` and `admit_not_before` on every task in the API and on
+  `GET /v1/config`'s `usage_limit_recheck_interval`. Both task fields are `null`
+  for an ordinarily queued task, so the addition is invisible to existing
+  clients, and they are separate from `block_reason`, which still means only
+  "stopped, needs a human".
+
 - **Homebrew install on macOS** ([task 002](docs/tasks/002-homebrew-tap.md)).
   `brew install lezli01/tap/vincent`. The cask clears the quarantine attribute
   during install, so macOS users no longer meet the Gatekeeper "unidentified

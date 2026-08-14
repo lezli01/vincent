@@ -232,6 +232,8 @@ The block reason names what happened:
 | `nonzero_exit` | A command step exited non-zero |
 | `agent_error` | The agent's own event stream reported an error |
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
+| `agent_unauthenticated` | The agent CLI is installed but not logged in (see below) |
+| `usage_limit` | The agent's usage quota for the window is spent — **not** a failure; the task waits and re-runs itself (see below) |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `template_error` | A template failed to render (see above) |
@@ -245,6 +247,41 @@ The block reason names what happened:
 `check_failed` is the common and healthy one: it means a check caught something
 the agent claimed was done. Read the step's transcript, then `E` to edit the
 prompt and retry with better instructions.
+
+### `usage_limit` — do nothing
+
+The agent CLI stopped because your account's usage quota for the current window
+is spent. vincent treats this as a wait, not a failure:
+
+- the attempt is recorded `interrupted` and consumes **no** retry;
+- the task goes back to `queued` and **gives up its concurrency slot**, so other
+  work carries on;
+- the row shows the time it will resume — `queued → 14:20` on the board, and
+  `queued · usage limit → 14:20` in the detail header;
+- when that time comes the step re-runs by itself. There is nothing to press.
+
+The resume time is the reset the CLI reported. When it reported none, vincent
+waits [`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval)
+(default 15 minutes) and tries again, repeating until the window reopens. If you
+know your plan's window, set that knob to match it.
+
+If you would rather not wait, cancel the task, or pause and resume it to try
+again immediately — any human action drops the wait.
+
+Only the claude adapter recognizes usage-limit wording today. On codex and
+cursor a quota stop still surfaces as `agent_error` or `nonzero_exit`, because
+their wordings have not been captured from a real run and vincent will not guess
+at one: a wrong guess would park a genuinely failed task forever.
+
+### `agent_unauthenticated`
+
+The agent CLI is installed and runs, but is not logged in. This one **does**
+block — waiting cannot fix it. Log in with the CLI's own command (`claude`
+interactively, `cursor-agent login`), then `r` to retry the task.
+
+The check the daemon view shows for cursor (`logged_in`) catches most of these
+before a task is ever created; claude and codex have no cheap probe, so the first
+sign is a failed step.
 
 ### `transcript_limit`
 

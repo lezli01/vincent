@@ -154,7 +154,14 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
 
-Three details worth knowing:
+Four details worth knowing:
+
+- **A `queued` task may be waiting on a clock, not a slot.** Every task
+  representation carries `queued_reason` and `admit_not_before` (RFC3339, or
+  `null`). Both are `null` for an ordinarily queued task; `usage_limit` with a
+  timestamp means the agent's usage window is spent and vincent will try again
+  then, unattended. They are separate from `block_reason`, which still means
+  only "stopped, needs a human" — the task is not blocked.
 
 - **List rows carry the board fields** — `project_name`, `step_total`,
   `step_name`, and `cost_usd` / `input_tokens` / `output_tokens` rolled up across
