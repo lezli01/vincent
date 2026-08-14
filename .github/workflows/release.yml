@@ -70,7 +70,7 @@ jobs:
       # and commit produced the file they hold.
       - name: Attest build provenance
         if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "dist/*.tar.gz,dist/*.zip"
 
