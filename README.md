@@ -30,6 +30,15 @@
 
 ---
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/screenshot.png" alt="The vincent TUI: task board, step timeline, and live agent output" width="900">
+</p>
+
+<p align="center">
+  <em>The TUI board — tasks with their state, step and cost; the step timeline of the selected task; and its
+  agent's output streaming live. All of it read from the daemon over its localhost API.</em>
+</p>
+
 ## Why vincent?
 
 Coding agents are easy to start and hard to supervise: kick off a handful of
