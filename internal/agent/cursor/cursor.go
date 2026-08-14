@@ -338,6 +338,14 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 // everyday failure, not a defensive corner: an invalid model id exits 1 with
 // `ActionRequiredError: … Model name is not valid` on stderr and emits no
 // result event at all (spec §9.7).
+//
+// RunResult.Failure is deliberately left nil (task 003), for the reason this
+// adapter already records about `status`: the wordings are not
+// fixture-verified, and probing them means signing the developer out or
+// burning a real quota window. A quota stop or an expired login therefore
+// reads exactly as it did before task 003. Note that the §9.5 `logged_in`
+// probe is unaffected and still flags an unauthenticated CLI *before* a task
+// is created — this is only about classifying a run that already failed.
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
