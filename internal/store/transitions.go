@@ -76,6 +76,14 @@ type TaskChange struct {
 	// job: TransitionTask NULLs the column on any transition out of
 	// awaiting_input, so "non-null iff awaiting_input" holds by construction.
 	PendingInput *string
+	// AdmitNotBefore holds admission of the re-queued task until an instant
+	// (§11, task 003), and QueuedReason says why it is waiting. Both are
+	// written with a transition *into* queued and, by the same construction
+	// PendingInput uses, cleared by TransitionTask on any transition out of
+	// it — so admission, parking and cancel all drop the hold without a
+	// caller remembering to.
+	AdmitNotBefore *time.Time
+	QueuedReason   *string
 	// EventPayload carries extra fields into the state-change event, merged
 	// with from/to. Reserved keys (from, to) are overwritten.
 	EventPayload map[string]any
@@ -123,6 +131,19 @@ func (s *Store) TransitionTask(
 			// awaiting_input always discards the pending request.
 			t.PendingInputJSON = ""
 		}
+		if from == TaskQueued {
+			// The §11 admission-hold invariant, same construction: a hold
+			// describes *this* queued period, so leaving queued always drops
+			// it. Admission, parking and cancel are all covered by the one
+			// rule, and a caller cannot forget it.
+			//
+			// One consequence, recorded rather than fixed (task 003): pausing
+			// a held task and resuming it re-admits at once and re-discovers
+			// the wall. That costs one process spawn, and buys the rule §6
+			// already applies to every other pending flag — a human action
+			// means go.
+			t.AdmitNotBefore, t.QueuedReason = nil, ""
+		}
 		switch to {
 		case TaskRunning:
 			if t.StartedAt == nil {
@@ -147,11 +168,13 @@ func (s *Store) TransitionTask(
 			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
 				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
 				pending_override_json = ?, pending_input_json = ?,
+				admit_not_before = ?, queued_reason = ?,
 				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 			WHERE id = ? AND state = ?`,
 			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
 			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
 			nullString(t.PendingInputJSON),
+			formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 			formatTime(t.UpdatedAt),
 			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 			id, string(from))
@@ -329,6 +352,12 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.PendingInput != nil {
 		t.PendingInputJSON = *ch.PendingInput
+	}
+	if ch.AdmitNotBefore != nil {
+		t.AdmitNotBefore = ch.AdmitNotBefore
+	}
+	if ch.QueuedReason != nil {
+		t.QueuedReason = *ch.QueuedReason
 	}
 }
 

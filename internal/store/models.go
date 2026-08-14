@@ -92,11 +92,24 @@ type Task struct {
 	// awaiting_input (§7.4); "" otherwise. TransitionTask clears it on any
 	// transition out of awaiting_input.
 	PendingInputJSON string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	StartedAt        *time.Time
-	FinishedAt       *time.Time
-	ArchivedAt       *time.Time
+	// AdmitNotBefore holds admission until this instant (§11, task 003); nil
+	// means admissible now. Generic on purpose: the scheduler reads one
+	// timestamp whatever put it there.
+	AdmitNotBefore *time.Time
+	// QueuedReason says why a queued task is waiting for something other than
+	// a slot — `usage_limit` today. "" is the ordinary queue. It is not
+	// BlockReason: that one means "set while blocked" (§14), and a queued task
+	// carrying one would lie to every client that keys off it.
+	//
+	// Both clear on any transition *out of* queued, in TransitionTask rather
+	// than in each caller, so a hold cannot outlive the queued period it
+	// belongs to.
+	QueuedReason string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	StartedAt    *time.Time
+	FinishedAt   *time.Time
+	ArchivedAt   *time.Time
 }
 
 // StepRun is one attempt at executing one step of one task; history is
