@@ -1917,6 +1917,15 @@ acceptance clock in T4.6 absorbs that friction deliberately — it is vincent's
 own cost — while excluding agent-CLI installation and authentication, which is
 a documented prerequisite of the walkthrough.
 
+**Amended 2026-08-14 — macOS no longer meets Gatekeeper on the default path.**
+`brew install lezli01/tap/vincent` is now the macOS install, and the cask's
+`postflight` hook clears `com.apple.quarantine` during install. The descope
+above is unchanged — the binaries are still not notarized, and a **downloaded
+archive** still prompts, so the `xattr` instructions stay. What changed is which
+path most macOS users take. Windows is untouched: no packager erases SmartScreen
+the same way, so Scoop and winget stay rejected. Reasoning in
+`docs/tasks/002-homebrew-tap.md`.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the

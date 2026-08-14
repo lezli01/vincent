@@ -13,6 +13,15 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Added
 
+- **Homebrew install on macOS** ([task 002](docs/tasks/002-homebrew-tap.md)).
+  `brew install lezli01/tap/vincent`. The cask clears the quarantine attribute
+  during install, so macOS users no longer meet the Gatekeeper "unidentified
+  developer" prompt or have to run `xattr -d com.apple.quarantine` by hand — the
+  release binaries are still cosign-signed rather than Apple-notarized, so the
+  archive path is unchanged. `brew uninstall --zap vincent` also unloads the
+  LaunchAgent and removes the config and data directory. Linux and Windows keep
+  the release archives and `go install`.
+
 - **Configurable branch names**
   ([task 001](docs/tasks/001-configurable-branch-names.md)). A task's branch no
   longer has to be `vincent/{id}-{slug}`. Names resolve through a chain, most

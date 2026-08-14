@@ -52,6 +52,72 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
+# Homebrew tap (macOS only), docs/tasks/002. This reverses the X decision's
+# "GitHub Releases only" line, and the reversal's cost is exactly what that
+# decision named: a second repo (lezli01/homebrew-tap) and a release-time
+# publish step. It is a *cask*, not a formula, because goreleaser deprecated
+# `brews` in v2.10 and Homebrew now packages pre-built binaries as casks;
+# formulas are for things brew builds from source.
+#
+# Linux and Windows are unchanged — casks do not exist on Linuxbrew, so the
+# download-and-unpack path stays the only path there.
+homebrew_casks:
+  - name: vincent
+    ids: [vincent]
+    binaries: [vincent]
+    repository:
+      owner: lezli01
+      name: homebrew-tap
+      branch: main
+      # Not GITHUB_TOKEN: that token is scoped to this repo and cannot push to
+      # the tap. release.yml supplies a PAT with contents:write on the tap.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/lezli01/vincent"
+    description: "Vendor-independent control plane for executing native agent tooling"
+    license: MIT
+    # An rc tag must not move the cask users install; goreleaser's `auto`
+    # skips the push whenever the release is a prerelease.
+    skip_upload: auto
+    url:
+      # Lets `brew audit` accept a homepage whose domain differs from the
+      # download host.
+      verified: github.com/lezli01/vincent/
+    commit_author:
+      name: goreleaser
+      email: goreleaser@users.noreply.github.com
+    commit_msg_template: "chore: vincent {{ .Tag }}"
+    # The X decision descoped Apple notarization, so a downloaded binary is
+    # quarantined and Gatekeeper refuses it. brew installs from the same
+    # unsigned archive, so the cask must strip the attribute itself or
+    # `brew install` would produce a binary that will not run.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/vincent"]
+          end
+    # `vincent service install` writes a LaunchAgent (internal/service:
+    # LaunchdName). Without this, `brew uninstall` would delete the binary out
+    # from under a still-loaded launchd job that holds the SQLite file open.
+    uninstall:
+      launchctl: [dev.lezli01.vincent]
+    # Both dirs from internal/config.ResolveDirs on darwin — data lives inside
+    # the config dir there, so the one path covers config.yaml, the database
+    # and the transcripts. zap only runs on `brew uninstall --zap`, which is
+    # what makes it safe to name a directory holding task history.
+    zap:
+      trash:
+        - ~/Library/Application Support/vincent
+        - ~/Library/LaunchAgents/dev.lezli01.vincent.plist
+    caveats: |
+      vincent runs coding agents FULL-AUTO by default: an agent can run
+      arbitrary commands as you. Per-task git worktrees isolate collisions
+      between tasks, not privileges. See the README's security section.
+
+      Start the daemon in the background and keep it across reboots with:
+        vincent service install
+
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
 # without vincent publishing or rotating a key. Authenticode and Apple
 # notarization are recurring certificate costs v1 does not take on — §19's ‡
