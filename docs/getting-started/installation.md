@@ -4,6 +4,7 @@ vincent is one self-contained binary. There is no runtime to install, no CGO,
 and no database server — the store is an embedded SQLite file.
 
 - [What you need](#what-you-need)
+- [Homebrew (macOS)](#homebrew-macos)
 - [Download a release](#download-a-release)
 - [First launch is flagged](#first-launch-is-flagged)
 - [Verify a download](#verify-a-download)
@@ -28,6 +29,28 @@ installed, authenticated as you already authenticated it.
 
 Go is *not* required to run vincent — only to
 [build it from source](#build-from-source).
+
+## Homebrew (macOS)
+
+```sh
+brew install lezli01/tap/vincent
+```
+
+This is the shortest path on macOS, and the only one that does not make you
+clear the quarantine attribute by hand — the cask does it during install, so
+[First launch is flagged](#first-launch-is-flagged) does not apply here.
+
+Homebrew casks are macOS-only. On Linuxbrew, use the archive below.
+
+Upgrade with `brew upgrade vincent`. To remove vincent along with its
+LaunchAgent, its config and its task history:
+
+```sh
+brew uninstall --zap vincent
+```
+
+Plain `brew uninstall vincent` removes the binary and unloads the LaunchAgent
+but leaves `~/Library/Application Support/vincent` intact.
 
 ## Download a release
 
@@ -74,7 +97,9 @@ Platform-specific detail lives in [Windows](../platforms/windows.md),
 Releases carry cosign signatures, SHA-256 checksums and GitHub build
 attestations — but **not OS code signing**. Authenticode certificates and Apple
 notarization are recurring costs this project does not take on, so the first
-launch prompts:
+launch of a **downloaded archive** prompts. (Installing with
+[Homebrew](#homebrew-macos) avoids this — the cask clears the attribute for
+you.)
 
 - **macOS** — *"cannot be opened because it is from an unidentified developer"*.
   Clear the quarantine attribute once:
@@ -187,7 +212,7 @@ Replace the binary and restart the daemon:
 
 ```sh
 vincent daemon stop
-# unpack the new archive over the old binary
+# unpack the new archive over the old binary — or: brew upgrade vincent
 vincent daemon start
 vincent version
 ```
@@ -216,6 +241,10 @@ vincent daemon stop
 Then delete the binary and, if you want the state gone too, the config and data
 directories listed in [Files and directories](../reference/files.md). Deleting
 the data directory removes the database, transcripts and worktrees.
+
+Installed with Homebrew, `brew uninstall --zap vincent` does all of the above in
+one step — it unloads the LaunchAgent, removes the binary, and trashes the
+config and data directory.
 
 **Branches are never deleted by vincent.** Task branches stay in your repositories
 until you remove them. Ask vincent which ones it made — branch names are
