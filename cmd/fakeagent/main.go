@@ -19,8 +19,21 @@
 //	                      flood (emits until killed — the transcript cap) |
 //	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
 //	                      variables as its result — the §12.3 environment
-//	                      policy) | sleep (internal: silent child)
+//	                      policy) | usage-limit | unauthenticated (task 003) |
+//	                      sleep (internal: silent child)
 //	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
+//	FAKEAGENT_USAGE_LIMIT_RESET
+//	                      usage-limit: seconds from now until the window
+//	                      reopens, embedded in the message as the CLI does.
+//	                      Unset or non-positive reports no reset time, which
+//	                      is the leg where the daemon falls back to
+//	                      `usage_limit_recheck_interval` (§12.3)
+//	FAKEAGENT_USAGE_LIMIT_MARKER
+//	                      usage-limit: path to a marker file. The first
+//	                      invocation creates it and reports the limit; every
+//	                      later one finds it and behaves like `success`. The
+//	                      state is the fake CLI's own, so "the task recovers
+//	                      with no human action" is observed rather than staged
 //	FAKEAGENT_SCENARIO_CODEX
 //	                      overrides FAKEAGENT_SCENARIO for codex-shaped argv
 //	                      only — lets one process environment drive two
@@ -222,18 +235,85 @@ func main() {
 		for {
 			emitText(strings.Repeat("flooding the transcript ", 40))
 		}
-	default: // success
-		emitText("Working on: " + firstLine(string(prompt)))
-		emit(map[string]any{"type": "assistant", "message": map[string]any{
-			"content": []any{map[string]any{"type": "tool_use", "name": "Edit", "input": map[string]any{}}},
-		}})
-		emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
-		workFor(emitText)
-		if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
-			editFile(f)
+	case "usage-limit":
+		// A CLI that stops because the account's quota for this window is
+		// spent (task 003). With a marker file it walls once and succeeds
+		// thereafter, which is the unattended-recovery path.
+		if usageLimitSpent() {
+			emitText("stopping: the usage limit for this window is spent")
+			emit(map[string]any{
+				"type": "result", "subtype": "error_during_execution", "is_error": true,
+				"result": usageLimitMessage(),
+				"usage":  map[string]int64{"input_tokens": 12, "output_tokens": 0},
+			})
+			os.Exit(1) // the real CLI exits nonzero here; the reason must still win
 		}
-		emitSuccessResult(prompt, 100, 42)
+		claudeSuccess(prompt)
+	case "unauthenticated":
+		emit(map[string]any{
+			"type": "result", "subtype": "error_during_execution", "is_error": true,
+			"result": unauthenticatedMessage,
+		})
+		os.Exit(1)
+	default: // success
+		claudeSuccess(prompt)
 	}
+}
+
+// claudeSuccess is the `success` scenario's body, shared with the scenarios
+// that end up succeeding — a usage-limit run whose window has reopened.
+func claudeSuccess(prompt []byte) {
+	emitText("Working on: " + firstLine(string(prompt)))
+	emit(map[string]any{"type": "assistant", "message": map[string]any{
+		"content": []any{map[string]any{"type": "tool_use", "name": "Edit", "input": map[string]any{}}},
+	}})
+	emit(map[string]any{"type": "fake_marker", "note": "unknown event type for tolerant-parsing tests"})
+	workFor(emitText)
+	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
+		editFile(f)
+	}
+	emitSuccessResult(prompt, 100, 42)
+}
+
+// unauthenticatedMessage is the wording an adapter's classifier matches for a
+// CLI that is not logged in (task 003). Like the usage-limit wording it is
+// **not fixture-verified** — see internal/agent/claude/failure.go, which is
+// where the matching lives and where that caveat is argued.
+const unauthenticatedMessage = "Invalid API key · Please run /login"
+
+// usageLimitSpent reports whether this invocation should wall.
+//
+// With FAKEAGENT_USAGE_LIMIT_MARKER set it is true exactly once: the first
+// call creates the marker and reports the limit, and every later call finds it
+// and behaves like `success`. The state lives in the fake CLI's own
+// filesystem rather than in the test process, which is what makes "the task
+// recovers with no human action" an observation rather than a staging.
+// Without a marker every invocation walls, which is the steady-state case.
+func usageLimitSpent() bool {
+	marker := os.Getenv("FAKEAGENT_USAGE_LIMIT_MARKER")
+	if marker == "" {
+		return true
+	}
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false // the marker exists: the window has reopened
+	}
+	_ = f.Close()
+	return true
+}
+
+// usageLimitMessage renders the quota wording, with the reset time the real
+// CLI appends as unix seconds when it reports one. FAKEAGENT_USAGE_LIMIT_RESET
+// is seconds from now; unset or non-positive reports no reset time at all,
+// which is the leg that exercises the interval fallback.
+func usageLimitMessage() string {
+	const base = "Claude AI usage limit reached"
+	secs, err := strconv.Atoi(os.Getenv("FAKEAGENT_USAGE_LIMIT_RESET"))
+	if err != nil || secs <= 0 {
+		return base
+	}
+	reset := time.Now().Add(time.Duration(secs) * time.Second).Unix()
+	return base + "|" + strconv.FormatInt(reset, 10)
 }
 
 // tickInterval bounds how long the stream stays silent while delaying.
