@@ -39,6 +39,12 @@ transcript_retention_days: 90
 # transcript_limit rather than filling the disk.
 transcript_max_bytes: 512MB
 
+# How long a task waits before trying again after its agent reported that the
+# usage quota for the window is spent, when the CLI named no reset time. When
+# it does name one, that wins and this is unused. The task keeps its place in
+# the queue and holds no slot while it waits.
+usage_limit_recheck_interval: 15m
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 

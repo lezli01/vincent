@@ -45,7 +45,21 @@ const (
 	// allowed to fill the disk; the partial transcript is kept, because the
 	// lines that got there are exactly what explains the runaway.
 	ReasonTranscriptLimit = "transcript_limit"
-	ReasonInternalError   = "internal_error"
+	// ReasonUsageLimit is an agent run the CLI stopped because the account's
+	// usage quota is spent (task 003, §7.2, §18). It is the one reason in this
+	// vocabulary that is *not* a failure: the attempt is recorded
+	// `interrupted`, consumes no retry, and the task returns to `queued` with
+	// an admission hold until the window is plausibly back. It therefore
+	// appears as a `queued_reason`, never as a `block_reason`.
+	ReasonUsageLimit = "usage_limit"
+	// ReasonAgentUnauthenticated is a run the CLI refused because it is not
+	// logged in (task 003, §18). An ordinary failure under §7.2's budget —
+	// waiting cannot fix it, and short-circuiting the budget would make this
+	// the first reason in vincent to bypass §7.2 to save one process spawn.
+	// The value of the reason is that it names the fix instead of sending the
+	// reader to a transcript.
+	ReasonAgentUnauthenticated = "agent_unauthenticated"
+	ReasonInternalError        = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit
@@ -83,6 +97,10 @@ type stepOutcome struct {
 	output        string // tail of the attempt's output, for the retry block
 	exitCode      *int
 	checkExitCode *int
+	// retryAfter carries a reason=usage_limit outcome's reset time, when the
+	// CLI reported one (task 003). nil means it did not, and the hold falls
+	// back to `usage_limit_recheck_interval`.
+	retryAfter *time.Time
 }
 
 // execute runs one admission of a task: it walks the snapshot's steps from
@@ -139,6 +157,13 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 				env.log.Error("persist step advance", "error", err)
 			}
 		case store.StepInterrupted:
+			// A quota stop is interruption-shaped — no retry consumed, the
+			// slot released — but it must not be re-admitted immediately, or
+			// the task simply walks back into the same wall (task 003).
+			if outcome.reason == ReasonUsageLimit {
+				r.holdForUsageLimit(task, outcome.retryAfter, env.log)
+				return
+			}
 			r.interrupt(task, log)
 			return
 		case store.StepFailed, store.StepRunning, store.StepApproved, store.StepRejected, store.StepSkipped:
@@ -450,6 +475,39 @@ func (r *Runner) fail(task *store.Task, reason string, log *slog.Logger, what st
 func (r *Runner) interrupt(task *store.Task, log *slog.Logger) {
 	if r.transition(task, taskstate.Interrupt, store.TaskChange{}, log) {
 		log.Info("task interrupted; re-queued")
+	}
+}
+
+// holdForUsageLimit re-queues a task whose agent reported a spent usage quota
+// (task 003, §11). It is `interrupt` plus an admission hold: the same
+// running → queued transition, the same "consumes no retry" (the attempt is
+// already recorded `interrupted` by finishStepRun, so the timeline shows it
+// and the budget does not), and the slot is released by leaving `running`.
+//
+// Nothing sleeps here. The actor ends with the admission per the phase 2
+// decision, and the scheduler picks the task up within a tick of the hold
+// expiring — a sleeping actor would hold the slot for a whole quota window,
+// which with max_parallel_tasks slots held that way means nothing runs at all.
+func (r *Runner) holdForUsageLimit(task *store.Task, retryAfter *time.Time, log *slog.Logger) {
+	// The interval is read now rather than cached, so a config hot-reload
+	// (§12.3) reaches the next hold rather than the next daemon restart.
+	until := r.now().Add(r.deps.Config().UsageLimitRecheckInterval.Std()).UTC()
+	if retryAfter != nil {
+		until = retryAfter.UTC()
+	}
+	reason := ReasonUsageLimit
+	ch := store.TaskChange{
+		AdmitNotBefore: &until,
+		QueuedReason:   &reason,
+		EventPayload: map[string]any{
+			"queued_reason":    reason,
+			"admit_not_before": until.Format(time.RFC3339),
+		},
+	}
+	if r.transition(task, taskstate.Interrupt, ch, log) {
+		log.Info("agent usage limit reached; task re-queued until it resets",
+			"admit_not_before", until.Format(time.RFC3339),
+			"reported_by_cli", retryAfter != nil)
 	}
 }
 

@@ -34,6 +34,10 @@ type engineHarness struct {
 	repo      string
 	dataDir   string
 	projectID int64
+	// cfg is the daemon config both the engine and the scheduler read, so a
+	// test that shrinks a cap or an interval shrinks it for the whole
+	// admission path rather than for the engine alone.
+	cfg config.Config
 }
 
 func newEngineHarness(t *testing.T) *engineHarness { return newEngineHarnessWith(t, nil) }
@@ -75,7 +79,10 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 		DataDir: dataDir,
 		Logger:  log,
 	})
-	return &engineHarness{store: st, runner: runner, repo: repo, dataDir: dataDir, projectID: project.ID}
+	return &engineHarness{
+		store: st, runner: runner, repo: repo,
+		dataDir: dataDir, projectID: project.ID, cfg: cfg,
+	}
 }
 
 // start runs the runner and a real scheduler for the test's lifetime, so
@@ -84,7 +91,7 @@ func (h *engineHarness) start(t *testing.T) {
 	t.Helper()
 	sched := scheduler.New(scheduler.Deps{
 		Store:    h.store,
-		Config:   config.Default,
+		Config:   func() config.Config { return h.cfg },
 		Admitter: h.runner,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
