@@ -1,9 +1,11 @@
 # github-enhancement — pick up a GitHub enhancement issue, evaluate it, deliver it.
 #
-# The task's **title is the issue id** and nothing else: `42`, `#42`, or the
-# issue URL. `fetch` normalizes it, so the board row for this task reads `#42`
-# rather than a sentence — the trade the design makes for a title that is
-# machine-readable at every step.
+# The task's **title starts with the issue id**: `42`, `#42`, or the issue
+# URL, optionally followed by a short description — `42 add retry to publish`.
+# `fetch` takes the first whitespace-separated token as the id, which keeps the
+# title machine-readable while letting the rest of it do real work: it is what
+# the board row shows, and what `{{.Slug}}` turns into the branch name. A bare
+# id alone still works; it just produces a branch that says nothing.
 #
 # Shape: fetch (cheap guard) → digest (understand, ask, plan) → verdict (stop
 # on a reject) → implement (code, tests, commits) → verify (the expensive
@@ -32,10 +34,16 @@
 # Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
 # pointing at the repo that owns the issue.
 #
-# Known wart: the branch is `vincent/{id}-{slug}` where the slug comes from the
-# title, so a task titled `42` produces `vincent/7-42` — which is not this
-# repo's `type/short-description` convention. That is a global setting
-# (`branch_template` in config.yaml), not something a workflow can override.
+# On branch names: the built-in name is `vincent/{id}-{slug}` and the slug
+# comes from the title, so the title's description half is the whole reason a
+# branch reads `vincent/7-42-add-retry-to-publish` instead of `vincent/7-42`.
+# Full conformance with this repo's `type/short-description` convention is not
+# reachable from here — the type (feat/fix/docs) is not knowable until someone
+# has read the issue, and the `vincent/` prefix is worth keeping anyway because
+# it marks a branch an agent created. A workflow cannot set a branch name at
+# all; the four levels that can are, most specific first: `task add --branch`
+# (verbatim), the project's template, `branch_template` in config.yaml, then
+# the built-in (task 001, internal/worktree/branch.go).
 name: github-enhancement
 description: Read a GitHub enhancement issue, clarify it with the author, implement it, and open the PR.
 
@@ -62,9 +70,11 @@ steps:
     # like fetching — are what enters the digest's context.
     run: |
       set -e
-      id=$(printf '%s' "$VINCENT_TASK_TITLE" | tr -d '[:space:]' | sed 's/^#//')
+      # First token only: everything after it is the human-readable half of the
+      # title, which exists so the branch slug and the board row say something.
+      id=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}' | sed 's/^#//')
       if [ -z "$id" ]; then
-        echo "task title is empty; it must be the issue id (42, #42, or the issue URL)" >&2
+        echo "task title is empty; it must start with the issue id (42, #42, or the issue URL)" >&2
         exit 1
       fi
 
@@ -72,7 +82,7 @@ steps:
       if ! gh issue view "$id" \
         --json number,title,body,state,url,labels,comments \
         > .vincent-enhancement/issue.json; then
-        echo "no such issue: $id (task title must be the issue id)" >&2
+        echo "no such issue: $id (the task title's first word must be the issue id)" >&2
         exit 1
       fi
 
