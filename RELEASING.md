@@ -15,13 +15,25 @@ One secret is required, and a release fails at the publish step without it.
 
 | Secret | What it is | Why not `GITHUB_TOKEN` |
 |---|---|---|
-| `HOMEBREW_TAP_TOKEN` | Fine-grained PAT with **Contents: read and write** on [`lezli01/homebrew-tap`](https://github.com/lezli01/homebrew-tap) | `GITHUB_TOKEN` is scoped to this repository; pushing the cask is a cross-repo write |
+| `HOMEBREW_TAP_TOKEN` | Fine-grained PAT, **Contents: read and write**, with [`lezli01/homebrew-tap`](https://github.com/lezli01/homebrew-tap) as its *only* selected repository | `GITHUB_TOKEN` is scoped to this repository; pushing the cask is a cross-repo write |
 
 Nothing else needs a secret: cosign signs keylessly with the workflow's own OIDC
 identity, and the release itself is published with `GITHUB_TOKEN`.
 
-**Rotate it before it expires.** A fine-grained PAT has a mandatory expiry, and
-an expired one shows up as a failed release, not as a warning beforehand.
+**The single-repository scope is the point.** This token is handed to a
+third-party action (`goreleaser-action`) on every release, so its blast radius
+is whatever it can reach. Scoped to the tap, the worst case is a bad cask —
+recoverable by force-pushing the tap. A **classic** PAT cannot express that:
+its `repo` scope covers every repository the account owns, including this one,
+which would let a compromised release job rewrite vincent's own source. Use a
+fine-grained token with one repository selected.
+
+The token does not expire, which trades a silent standing credential for never
+failing a release on a surprise expiry. Two consequences worth knowing: nothing
+will prompt a rotation, and revoking it is a manual step if the account is ever
+compromised. Rotate at
+[Settings → Developer settings → Fine-grained tokens](https://github.com/settings/personal-access-tokens);
+`gh secret set HOMEBREW_TAP_TOKEN --repo lezli01/vincent` updates the secret.
 
 ## Version numbers
 
