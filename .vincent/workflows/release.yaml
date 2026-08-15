@@ -1,0 +1,514 @@
+# release — cut a vincent release, following RELEASING.md step for step.
+#
+# The task's **title starts with the version** (`v0.2.0`, or `0.2.0` — the `v`
+# is added if you leave it off), optionally followed by prose:
+# `v0.2.0 first minor after the v0 line`. `preflight` takes the first
+# whitespace-separated token as the version, which keeps the title
+# machine-readable while the rest of it feeds `{{.Slug}}` and the board row.
+# Same shape as the `github-*` workflows, which take an issue id there.
+#
+# Shape: preflight (cheap guards) → vuln → changelog (the only agent step)
+# → pr → merge (human merges, CI runs) → verify-master → gate (human) → tag
+# (**irreversible**) → watch → verify → finish (human) → report.
+#
+# **The tag push is a one-way door.** Go module proxies cache tags, and a moved
+# tag silently invalidates every checksum, cosign signature and attestation a
+# user already verified (RELEASING.md § If a release goes wrong). So the two
+# steps that cannot be undone — `pr`, which opens a pull request, and `tag`,
+# which publishes the tag — both pin `max_retries: 0`, and `tag` sits directly
+# behind a manual gate that prints the exact commit it is about to name.
+#
+# Everything after `tag` is verification, not work: the release itself is built,
+# signed, attested and published by `.github/workflows/release.yml`. Nothing in
+# this workflow ever builds an artifact — that is the property RELEASING.md
+# exists to protect ("no artifact is ever built on a maintainer's machine").
+#
+# What this workflow does NOT decide: the version number. That is a policy
+# judgement (CHANGELOG.md § Versioning and stability — while vincent is 0.x a
+# breaking change is a *minor* bump), so it comes from the task title, from a
+# human who read the policy.
+#
+# This workflow is specific to **this** repository: it knows the `ci` and
+# `gates` check-run names from `.github/workflows/ci.yml`, the `Release`
+# workflow file, `go run mage.go vuln`, and the CHANGELOG.md layout. It is not
+# a generic release workflow and will not work anywhere else unchanged.
+#
+# POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
+# shell at all (§8.2 rejects `shell` on an agent step), so `changelog`'s check
+# runs under the platform default and is written in `sh` regardless. On Windows
+# the whole workflow needs Git Bash's `sh` on PATH. Portability is the author's
+# problem (§8.3) and this workflow declines it deliberately.
+#
+# Requires: `gh` authenticated with push access to this repository, `jq`, `git`,
+# `go`, and `awk`. `cosign` is optional — `verify` reports loudly when it is
+# missing rather than pretending the signature was checked.
+#
+# Known wart: this task's own branch is the changelog PR's branch, so the
+# worktree survives until you archive the task. Archive it after `report`.
+name: release
+description: Cut a tagged release — changelog PR, tag push, and post-release verification.
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # No step here is allowed to stop and ask. The human checkpoints are the
+  # three manual steps; an agent parking the task mid-release just adds a
+  # fourth one nobody is watching for.
+  on_input: deny
+
+steps:
+  - id: preflight
+    name: Guard the release
+    type: command
+    shell: sh
+    timeout: 10m
+    # A bad version, a red master or an existing tag is not transient —
+    # re-running the same checks returns the same answer.
+    max_retries: 0
+    # This step exists so a typo'd version costs ten seconds instead of a merged
+    # changelog PR naming a release that cannot be cut, and so every later step
+    # reads the version from one file rather than re-parsing the title.
+    run: |
+      set -e
+      mkdir -p .vincent-release
+
+      raw=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}')
+      v="v${raw#v}"
+      if ! printf '%s\n' "$v" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+        echo "task title must start with the version to release (vX.Y.Z, or vX.Y.Z-rc1 for a pre-release); got: $raw" >&2
+        exit 1
+      fi
+      # goreleaser keys `prerelease: auto` off the hyphen, and `skip_upload:
+      # auto` skips the Homebrew cask push for one. Later steps need to know.
+      case "$v" in
+        *-*) pre=yes ;;
+        *)   pre=no ;;
+      esac
+
+      gh auth status >/dev/null 2>&1 || { echo "gh is not authenticated" >&2; exit 1; }
+
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      if git ls-remote --exit-code --tags origin "refs/tags/$v" >/dev/null 2>&1; then
+        echo "tag $v already exists on origin — a published tag is never re-pointed (RELEASING.md)" >&2
+        exit 1
+      fi
+
+      # The green-master check is needed twice: here, so a red branch stops the
+      # release before a changelog PR exists, and again in `verify-master` on
+      # the merge commit that actually gets tagged. Written once, to a file, so
+      # the two cannot drift.
+      cat > .vincent-release/require-green.sh <<'GREEN'
+      # Usage: sh require-green.sh <sha>. Fails unless every check run on the
+      # commit completed successfully, and both required matrices are there —
+      # a commit with *no* checks yet is green by the first rule alone, which
+      # is exactly the trap the count catches.
+      set -e
+      sha="$1"
+      runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" \
+        --jq '.check_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv')
+      printf '%s\n' "$runs"
+      # `NF &&` matters: with no check runs at all this filter must stay empty,
+      # so the failure comes from the count below with a message that names the
+      # missing matrix instead of printing a blank line.
+      bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && ($2 != "completed" || ($3 != "success" && $3 != "skipped")) { print $1 " " $3 }')
+      if [ -n "$bad" ]; then
+        echo "not green on $sha:" >&2
+        printf '%s\n' "$bad" >&2
+        exit 1
+      fi
+      for job in ci gates; do
+        n=$(printf '%s\n' "$runs" | awk -F'\t' -v j="$job" 'index($1, j " (") == 1' | wc -l | tr -d ' ')
+        if [ "$n" -ne 3 ]; then
+          echo "expected 3 '$job' checks on $sha (ubuntu, macos, windows), found $n" >&2
+          exit 1
+        fi
+      done
+      GREEN
+      base_sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
+      sh .vincent-release/require-green.sh "$base_sha"
+
+      # An empty [Unreleased] section means there is nothing to name.
+      if ! awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -q '[^[:space:]]'; then
+        echo "CHANGELOG.md has an empty [Unreleased] section — nothing to release" >&2
+        exit 1
+      fi
+
+      # Advisory only: the token running this may not be able to read secrets,
+      # and the cask push is the last thing the release job does. A warning
+      # here reaches the human at the `merge` gate; a hard failure would refuse
+      # to cut a release over a check that may simply be unavailable.
+      if [ "$pre" = no ]; then
+        if gh secret list >/dev/null 2>&1; then
+          if ! gh secret list | awk '{print $1}' | grep -qx HOMEBREW_TAP_TOKEN; then
+            echo "WARNING: HOMEBREW_TAP_TOKEN is not set on this repository — the Homebrew cask push will fail (RELEASING.md § Repository secrets)"
+          fi
+        else
+          echo "NOTE: cannot read repository secrets with this token; HOMEBREW_TAP_TOKEN unverified"
+        fi
+      fi
+
+      # RELEASING.md step 4: dry-run the build when the packaging changed since
+      # the last tag. Detected here, acted on by the human at `merge`.
+      last=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+      packaging=yes
+      if [ -n "$last" ] && [ -z "$(git diff --name-only "$last".."origin/$VINCENT_BASE_BRANCH" -- .goreleaser.yaml .github/workflows/release.yml)" ]; then
+        packaging=no
+      fi
+
+      printf '%s\n' "$v" > .vincent-release/version.txt
+      printf '%s\n' "$pre" > .vincent-release/prerelease.txt
+      printf '%s\n' "$packaging" > .vincent-release/dry-run-needed.txt
+      printf '%s\n' "$last" > .vincent-release/last-tag.txt
+
+      echo
+      echo "version:          $v"
+      echo "pre-release:      $pre (cask push skipped: $pre)"
+      echo "previous tag:     ${last:-none}"
+      echo "base branch:      $VINCENT_BASE_BRANCH @ $base_sha"
+      echo "goreleaser dry-run needed: $packaging"
+
+  - id: vuln
+    name: Vulnerability sweep
+    type: command
+    shell: sh
+    timeout: 15m
+    # RELEASING.md makes this conditional on "the last run predates a dependency
+    # change". Running it unconditionally costs a minute and removes the
+    # judgement call; a release is not the place to save a minute.
+    run: go run mage.go vuln
+
+  - id: changelog
+    name: Write the release changelog
+    type: agent
+    prompt: |
+      You are preparing the changelog commit for a release of this repository.
+      You are NOT tagging, publishing, or pushing anything.
+
+      The version being released is in `.vincent-release/version.txt`. Read it
+      first; call it `vX.Y.Z` below, and `X.Y.Z` where the leading `v` is
+      dropped. The previous tag is in `.vincent-release/last-tag.txt`.
+
+      Do this in order:
+
+      1. Read `CHANGELOG.md` in full, including its header and the
+         "Versioning and stability" section, so you write in its voice. Read
+         `RELEASING.md` step 3 — it specifies exactly this edit.
+
+      2. Read `git log --no-merges <previous tag>..HEAD` and the merge commits
+         alongside it. Compare what landed against what the `[Unreleased]`
+         section claims. Every user-visible change must be described there:
+         behaviour, flags, config keys, API routes, TUI bindings, block
+         reasons, platform differences. Add what is missing, in the file's
+         existing style — entries are prose paragraphs with a bold lead, not
+         one-line bullets, and they say what changed for a *user*, not which
+         function was edited. Do not invent an entry for something you cannot
+         find in the log, and do not describe internal refactors.
+
+      3. Make the release edit:
+
+         - Rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`, using an
+           em dash (—) exactly as the existing `## [0.1.0] — …` heading does,
+           and today's date from `date +%Y-%m-%d`.
+         - Insert a fresh, empty `## [Unreleased]` heading above it.
+         - Fix the two link definitions at the bottom of the file:
+
+           ```
+           [Unreleased]: https://github.com/lezli01/vincent/compare/vX.Y.Z...HEAD
+           [X.Y.Z]: https://github.com/lezli01/vincent/releases/tag/vX.Y.Z
+           ```
+
+           Keep the older versions' link definitions in place.
+
+      4. Commit **only** `CHANGELOG.md`:
+
+         ```
+         git add CHANGELOG.md
+         git commit -m "docs: changelog for vX.Y.Z"
+         ```
+
+      Do not run `git push`, `git tag`, `gh release`, or `gh pr`. Do not touch
+      any file outside `CHANGELOG.md` — in particular, leave `.vincent-release/`
+      alone; a later step reads it. Do not use `git add -A` or `git commit -a`.
+
+      Finish by printing the diff of your commit, so the reviewer sees the exact
+      text without opening the file.
+    # Proves the edit has the shape RELEASING.md step 3 specifies and that it is
+    # committed — an agent that described the change in prose without making it,
+    # or made it and left it in the working tree, fails here and retries with
+    # the failure block appended (§8.4).
+    check: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      n=${v#v}
+      grep -q "^## \[$n\] " CHANGELOG.md
+      grep -q "^## \[Unreleased\]$" CHANGELOG.md
+      grep -q "^\[$n\]: https://github.com/.*/releases/tag/$v$" CHANGELOG.md
+      grep -q "^\[Unreleased\]: https://github.com/.*/compare/$v\.\.\.HEAD$" CHANGELOG.md
+      git diff --quiet -- CHANGELOG.md
+      git diff --cached --quiet -- CHANGELOG.md
+      test -n "$(git log --oneline "origin/$VINCENT_BASE_BRANCH"..HEAD -- CHANGELOG.md)"
+    check_timeout: 2m
+
+  - id: pr
+    name: Open the changelog PR
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost".
+    max_retries: 0
+    # `--head` is passed explicitly rather than letting gh infer it: inference
+    # from the current branch behaves differently inside a linked worktree.
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      git push -u origin {{.Task.BranchName}}
+      gh pr create \
+        --base {{.Task.BaseBranch}} \
+        --head {{.Task.BranchName}} \
+        --title "docs: changelog for $v" \
+        --body "Changelog for \`$v\`, prepared by vincent task #{{.Task.ID}}.
+
+      This is the last commit before the tag — merge it with a **merge commit**
+      (no squash), so the tag points at a changelog that describes the release
+      it names. \`$v\` is pushed only after this lands and CI is green on
+      \`{{.Task.BaseBranch}}\`." \
+        > .vincent-release/pr-url.txt
+      cat .vincent-release/pr-url.txt
+
+  - id: merge
+    name: Merge the changelog PR
+    type: manual
+    instructions: |
+      Review and merge the changelog PR for task #{{.Task.ID}}, then wait for
+      CI to go green on {{.Task.BaseBranch}}.
+
+      PR: {{(index .Steps "pr").Result}}
+
+      1. Read the changelog entry. It is the human summary of the release —
+         the generated commit list on the GitHub release is the exhaustive
+         index, this is not.
+      2. Merge with a **merge commit**, not a squash (CLAUDE.md § Git flow).
+      3. If the preflight below says `goreleaser dry-run needed: yes`, run it
+         now: Actions → **Release** → *Run workflow*, `dry_run` checked. Download
+         the `dist` artifact and look at it (RELEASING.md step 4).
+      4. Wait for all six checks on {{.Task.BaseBranch}}. The next step
+         re-checks them and refuses to continue otherwise, so approving early
+         only fails that step.
+
+      Preflight said:
+
+      {{(index .Steps "preflight").Result}}
+
+      Approve once the PR is merged. Reject if the changelog is wrong — the
+      release has not started yet, and nothing is published until the gate two
+      steps from here.
+
+  - id: verify-master
+    name: Verify the commit to tag
+    type: command
+    shell: sh
+    timeout: 10m
+    # No retry: every failure here means "the world is not ready yet" (PR not
+    # merged, CI still running), and there is no delay between attempts, so a
+    # retry just fails a second time a second later. Re-run the step by hand
+    # once the branch is actually green.
+    max_retries: 0
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      n=${v#v}
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+
+      if ! git merge-base --is-ancestor HEAD "origin/$VINCENT_BASE_BRANCH"; then
+        echo "this task's changelog commit is not on $VINCENT_BASE_BRANCH yet — merge the PR first" >&2
+        exit 1
+      fi
+      if ! git show "origin/$VINCENT_BASE_BRANCH:CHANGELOG.md" | grep -q "^## \[$n\] "; then
+        echo "CHANGELOG.md on $VINCENT_BASE_BRANCH has no '## [$n]' heading" >&2
+        exit 1
+      fi
+      if git ls-remote --exit-code --tags origin "refs/tags/$v" >/dev/null 2>&1; then
+        echo "tag $v appeared on origin while this task was running — stop and work out who pushed it" >&2
+        exit 1
+      fi
+
+      sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
+      sh .vincent-release/require-green.sh "$sha"
+      printf '%s\n' "$sha" > .vincent-release/target-sha.txt
+
+      echo
+      echo "$v will tag:"
+      git log -1 --format='%H %s (%an, %ad)' --date=short "$sha"
+
+  - id: gate
+    name: Approve the tag push
+    type: manual
+    instructions: |
+      Final checkpoint for {{.Task.Title}}. **The next step is irreversible.**
+
+      It pushes the tag, which starts the Release workflow: cross-compilation,
+      cosign signing, build provenance, the published GitHub release, and the
+      Homebrew cask. Go module proxies cache tags aggressively, so a tag pushed
+      by mistake cannot be cleanly withdrawn — the recovery is to ship the next
+      patch, not to re-point the tag (RELEASING.md § If a release goes wrong).
+
+      Verified just now:
+
+      {{(index .Steps "verify-master").Result}}
+
+      Check the version number one more time against
+      CHANGELOG.md § Versioning and stability — while vincent is 0.x, a
+      breaking change is a minor bump, not a major one.
+
+      Approve to publish. Reject to stop; nothing has been released yet, and
+      the changelog commit on {{.Task.BaseBranch}} is harmless on its own.
+
+  - id: tag
+    name: Push the tag
+    type: command
+    shell: sh
+    timeout: 5m
+    # max_retries: 0 is not negotiable — this is the publishing step.
+    max_retries: 0
+    # Re-running by hand after a failed push is safe: an existing local tag is
+    # accepted only when it already points at the commit we verified.
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      sha=$(cat .vincent-release/target-sha.txt)
+      if git rev-parse -q --verify "refs/tags/$v" >/dev/null; then
+        existing=$(git rev-parse "refs/tags/$v^{}")
+        if [ "$existing" != "$sha" ]; then
+          echo "local tag $v points at $existing, not the verified $sha" >&2
+          exit 1
+        fi
+      else
+        git tag -a "$v" "$sha" -m "$v"
+      fi
+      git push origin "refs/tags/$v"
+      echo "pushed $v -> $sha"
+
+  - id: watch
+    name: Watch the release run
+    type: command
+    shell: sh
+    # The run cross-compiles six archives, signs, attests, publishes, and then
+    # smoke-tests the published archive on three OSes.
+    timeout: 90m
+    # Watching is idempotent, so one retry is free; a second watch of a failed
+    # run just fails again immediately.
+    max_retries: 1
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      # A tag push reports the tag as headBranch. The run takes a few seconds
+      # to appear, so poll for up to five minutes before giving up.
+      id=""
+      i=0
+      while [ "$i" -lt 20 ]; do
+        id=$(gh run list --workflow=release.yml --event=push --limit 30 \
+          --json databaseId,headBranch \
+          --jq "[.[] | select(.headBranch == \"$v\")][0].databaseId // empty")
+        if [ -n "$id" ]; then break; fi
+        i=$((i + 1))
+        sleep 15
+      done
+      if [ -z "$id" ]; then
+        echo "no Release run found for $v — check Actions" >&2
+        exit 1
+      fi
+      gh run watch "$id" --exit-status
+
+  - id: verify
+    name: Verify the published artifacts
+    type: command
+    shell: sh
+    timeout: 20m
+    # RELEASING.md step 7, as a user would run it: against the published
+    # archives, not against anything this machine built.
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      rm -rf .vincent-release/dist
+      mkdir -p .vincent-release/dist
+      gh release download "$v" --dir .vincent-release/dist
+      cd .vincent-release/dist
+
+      if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum -c checksums.txt
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 -c checksums.txt
+      else
+        echo "no sha256 tool found (sha256sum or shasum)" >&2
+        exit 1
+      fi
+
+      # cosign is optional on a maintainer's machine, so its absence is
+      # reported rather than failed — but loudly, because a skipped signature
+      # check is not a passed one.
+      if command -v cosign >/dev/null 2>&1; then
+        cosign verify-blob checksums.txt \
+          --certificate checksums.txt.pem \
+          --signature checksums.txt.sig \
+          --certificate-identity-regexp "https://github.com/$repo/.*" \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      else
+        echo "SKIPPED: cosign is not installed — the signature over checksums.txt was NOT verified"
+      fi
+
+      for a in *.tar.gz *.zip; do
+        # An unmatched glob arrives as its own pattern in sh.
+        [ -e "$a" ] || continue
+        gh attestation verify "$a" --repo "$repo"
+      done
+
+  - id: finish
+    name: Check the cask and the notes
+    type: manual
+    instructions: |
+      Last human pass over {{.Task.Title}} (RELEASING.md steps 8 and 9).
+
+      1. **Read the published release notes.** They are generated from the
+         commits since the last tag, with `docs:`, `test:`, `ci:`, `chore:` and
+         merge commits filtered out. A user-visible change that landed under a
+         filtered type is missing from them — fix it by hand in the notes.
+
+      2. **Check the Homebrew cask** — macOS only, and skipped entirely for a
+         pre-release, which does not publish one:
+
+         ```sh
+         git -C "$(brew --repo lezli01/tap)" pull
+         brew info lezli01/tap/vincent               # version must be the tag
+         brew reinstall lezli01/tap/vincent
+         vincent version
+         xattr -l "$(readlink -f "$(brew --prefix)/bin/vincent")"
+         ```
+
+         `com.apple.provenance` is expected; `com.apple.quarantine` is not, and
+         means the cask's `postflight` hook did not run.
+
+      Approve when both are right. Reject if the release is defective — it is
+      published, so treat that as an incident and follow RELEASING.md
+      § If a release goes wrong. Never re-point the tag.
+
+  - id: report
+    name: Report the release
+    type: command
+    shell: sh
+    timeout: 5m
+    # stdout becomes this step's Result and lands in the transcript, which is
+    # where you read it. Clearing `.vincent-release/` afterwards leaves the
+    # worktree clean, so archiving the task does not warn about a dirty tree.
+    run: |
+      set -e
+      v=$(cat .vincent-release/version.txt)
+      gh release view "$v" --json tagName,isPrerelease,url \
+        --jq '"released " + .tagName + " (prerelease: " + (.isPrerelease | tostring) + ")\n" + .url'
+      rm -rf .vincent-release
+      echo
+      echo "worktree status (expect empty):"
+      git status --porcelain
