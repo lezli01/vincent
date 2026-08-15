@@ -339,6 +339,22 @@ func window(lines []string, focus, height int) []string {
 	return lines[start : start+height]
 }
 
+// windowRange returns at most height lines, keeping the whole of the focused
+// [from,to) range on screen — a row that wraps is one thing to read, and half
+// of it is not readable. A range taller than the window is anchored at its
+// first line: what a wrapped option starts with is what identifies it.
+func windowRange(lines []string, from, to, height int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	start := windowStart(len(lines), from, height)
+	if to > start+height {
+		start = min(to-height, from)
+	}
+	start = max(min(start, len(lines)-height), 0)
+	return lines[start : start+height]
+}
+
 // windowStart is where a height-line window over n lines begins so the
 // focused line stays visible.
 func windowStart(n, focus, height int) int {

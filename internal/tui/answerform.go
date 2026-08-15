@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -284,23 +285,21 @@ func (f *answerForm) submit(client *apiclient.Client, taskID int64) tea.Cmd {
 	}
 }
 
-// height is how many lines the form wants, capped by the caller.
-func (f *answerForm) height() int { return len(f.rows) + 2 }
+// height is how many lines the form wants at the width it will be drawn at,
+// capped by the caller. Rows wrap, so this cannot be counted from the number
+// of rows alone.
+func (f *answerForm) height(width int) int {
+	lines, _, _ := f.layout(width)
+	return len(lines) + 2
+}
 
 // render draws the form, windowed around the cursor when it does not fit —
 // a question that scrolls out of reach is worse than one that scrolls.
-func (f *answerForm) render(height int) string {
-	lines := make([]string, 0, len(f.rows)+2)
-	cursorLine := 0
-	for i, row := range f.rows {
-		if i == f.cursor && row.kind != rowHeader {
-			cursorLine = len(lines)
-		}
-		lines = append(lines, f.renderRow(i, row))
-	}
+func (f *answerForm) render(width, height int) string {
+	lines, from, to := f.layout(width)
 	if f.editing {
 		lines = append(lines, "  "+f.input.View())
-		cursorLine = len(lines) - 1
+		from, to = len(lines)-1, len(lines)
 	}
 	switch {
 	case f.err != "":
@@ -311,18 +310,105 @@ func (f *answerForm) render(height int) string {
 		lines = append(lines, styleDim.Render(
 			"  space select · e type an answer · enter submit · esc leave the form"))
 	}
-	return strings.Join(window(lines, cursorLine, height), "\n")
+	return strings.Join(windowRange(lines, from, to, height), "\n")
 }
 
-func (f *answerForm) renderRow(i int, row formRow) string {
+// layout wraps every row to width and reports the line range the focused row
+// occupies, so windowing can keep the whole of it on screen. Rows stay the
+// unit the cursor moves in; only their mapping to lines is many-to-one.
+func (f *answerForm) layout(width int) (lines []string, from, to int) {
+	lines = make([]string, 0, len(f.rows)+2)
+	for i, row := range f.rows {
+		rendered := f.renderRow(i, row, width)
+		if i == f.cursor && row.kind != rowHeader {
+			from, to = len(lines), len(lines)+len(rendered)
+		}
+		lines = append(lines, rendered...)
+	}
+	return lines, from, to
+}
+
+// headerPrefix is the question marker; its width is also the hanging indent
+// a wrapped question continues under.
+const headerPrefix = "  ? "
+
+// renderRow lays one row out across width, wrapping rather than letting the
+// tail run into frame's truncation (§15 wraps the output pane for the same
+// reason). Continuation lines are indented to the row's marker column, so a
+// wrapped option still reads as one option.
+func (f *answerForm) renderRow(i int, row formRow, width int) []string {
 	if row.kind == rowHeader {
-		return styleAsk.Render("  ? " + row.text)
+		out := wrapPlain(row.text, width-cols(headerPrefix))
+		for j := range out {
+			prefix := headerPrefix
+			if j > 0 {
+				prefix = strings.Repeat(" ", cols(headerPrefix))
+			}
+			out[j] = styleAsk.Render(prefix + out[j])
+		}
+		return out
 	}
 	cursor := "  "
 	if i == f.cursor && !f.editing {
 		cursor = styleFocus.Render("› ")
 	}
-	return cursor + "  " + f.marker(row) + " " + row.text
+	prefix := cursor + "  " + f.marker(row) + " "
+	// The prefix is already styled, so its width is measured, not counted.
+	indent := ansi.StringWidth(prefix)
+	out := wrapPlain(row.text, width-indent)
+	for j := range out {
+		if j == 0 {
+			out[j] = prefix + out[j]
+			continue
+		}
+		out[j] = strings.Repeat(" ", indent) + out[j]
+	}
+	return out
+}
+
+// wrapPlain lays plain text out in lines of at most width columns, splitting
+// words the way the §15 output pane does so an over-long one is hard-split
+// rather than left to overflow. The text is plain and the caller styles the
+// lines it gets back: a break can then never land inside an escape sequence.
+func wrapPlain(text string, width int) []string {
+	if width < 8 {
+		// Too narrow to lay anything out; frame's truncation is what is left
+		// at this width, and it is still a better line than one column.
+		width = 8
+	}
+	var out []string
+	var cur strings.Builder
+	col := 0
+	pendingSpace := false
+	for _, tok := range splitWords(text, width) {
+		if tok == " " {
+			// Held rather than written: a separator emitted before a word that
+			// turns out not to fit leaves the line ending in whitespace.
+			pendingSpace = col > 0
+			continue
+		}
+		need := cols(tok)
+		if pendingSpace {
+			need++
+		}
+		if col+need > width && col > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+			col = 0
+			pendingSpace = false
+			need = cols(tok)
+		}
+		if pendingSpace {
+			cur.WriteString(" ")
+			pendingSpace = false
+		}
+		cur.WriteString(tok)
+		col += need
+	}
+	if col > 0 || len(out) == 0 {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // marker shows what is selected: a checkbox for multi-select, a radio for
