@@ -1,0 +1,636 @@
+# prepare-release — make this repository green for the *next* Release run,
+# before any tag exists.
+#
+# The tag push is the release. `.github/workflows/release.yml` runs on it and
+# every failure it can have is discovered *after* the one-way door: a tag that
+# module proxies have already cached, pointing at a commit whose archives never
+# built. This workflow moves every one of those failures in front of the door.
+#
+# What it actually proves, in order of strength:
+#
+#   1. The **dry run**: `Release` is dispatched with `dry_run` checked and
+#      watched to completion. That is `release --snapshot --clean
+#      --skip=publish,sign` plus the whole three-OS `smoke` matrix against the
+#      archives it produced — real cross-compilation, real archives, real
+#      unpack-and-run, published nowhere. It is RELEASING.md step 4, run
+#      unconditionally rather than when someone remembers that packaging
+#      changed.
+#   2. The **audit**: the parts of a release run that a dry run cannot reach —
+#      `go mod download` (goreleaser's `before` hook), all six
+#      GOOS/GOARCH targets, the files `archives.files` promises, the three
+#      assertions `smoke` makes about the binary, and whether every third-party
+#      action `release.yml` pins still resolves.
+#   3. The **secrets and access** it cannot test without publishing:
+#      `HOMEBREW_TAP_TOKEN` and reachability of the tap. Reported, never faked.
+#
+# Shape: preflight → audit (report-only) → vuln → remediate (the only agent
+# step) → pr → merge (human) → verify-base → dry-run → inspect (human) → report.
+#
+# **Nothing here publishes anything.** No tag, no release, no cask — the one
+# outward action is dispatching a `dry_run` of `Release`, which uploads a
+# `dist` artifact and nothing else. Cutting the release is the `release`
+# workflow's job, and this workflow deliberately stops one step short of it:
+# run `release` with the version in the task title once this one reports green.
+#
+# The audit is report-only on its first pass **on purpose**. A step that fails
+# blocks the task, and a blocked task cannot then be fixed by the step after
+# it. So `audit` prints findings and exits 0, `remediate` fixes the blocking
+# ones, and the same script — re-run as that step's `check` — is what decides
+# whether the fixes worked. One script, two callers, no drift.
+#
+# The task title MAY start with the version being prepared (`v0.2.0`, or
+# `0.2.0` — the `v` is added), which buys a tag-collision check and better
+# messages; the rest of the title is prose. A title that does not start with
+# something version-shaped is fine and the workflow runs version-agnostic. A
+# title that starts with something version-*shaped* but malformed is an error,
+# because that is a typo, not a prose title.
+#
+# This workflow is specific to **this** repository: it knows the `ci` and
+# `gates` check-run names from `.github/workflows/ci.yml`, the `Release`
+# workflow file and its `dry_run` input, the six targets and the
+# `archives.files` list in `.goreleaser.yaml`, the `lezli01/homebrew-tap`
+# repository, `go run mage.go vuln`, and the exact assertions release.yml's
+# `smoke` job makes. It is not a generic release-readiness workflow.
+#
+# POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
+# shell (§8.2 rejects `shell` on an agent step), so `remediate`'s check runs
+# under the platform default and is written in `sh` regardless. On Windows the
+# whole workflow needs Git Bash's `sh` on PATH. Portability is the author's
+# problem (§8.3) and this workflow declines it deliberately.
+#
+# Requires: `gh` authenticated with write access to this repository (dispatching
+# a workflow is a write), `git`, `go`, `awk`, `tar`, and a sha256 tool
+# (`sha256sum` or `shasum`).
+#
+# Known wart: this task's own branch carries the remediation commits, so the
+# worktree survives until you archive the task. Archive it after `report`.
+name: prepare-release
+description: Prove the Release workflow will be green — audit, fix, and dry-run it before the tag exists.
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # The human checkpoints are the two manual steps. An agent parking the task
+  # mid-audit adds a third one nobody is watching for.
+  on_input: deny
+
+steps:
+  - id: preflight
+    name: Guard and write the audit
+    type: command
+    shell: sh
+    timeout: 10m
+    # A malformed version or a tag that already exists is not transient.
+    max_retries: 0
+    # This step writes the two scripts every later step reads, so that the
+    # audit run here, the audit re-run as `remediate`'s check, and the audit
+    # re-run in `report` are byte-identical by construction.
+    run: |
+      set -e
+      mkdir -p .vincent-prepare
+
+      # The version is optional here (unlike the `release` workflow, where it
+      # is the whole point): a dry run builds a snapshot and needs no version
+      # at all. When the title carries one, it buys the tag-collision check
+      # below and names the release in every later message.
+      raw=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}')
+      v=""
+      case "$raw" in
+        v[0-9]*|[0-9]*)
+          cand="v${raw#v}"
+          if printf '%s\n' "$cand" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            v="$cand"
+          else
+            echo "task title starts with '$raw', which looks like a version but is not vX.Y.Z (or vX.Y.Z-rc1)" >&2
+            echo "either fix it, or start the title with prose to run version-agnostic" >&2
+            exit 1
+          fi
+          ;;
+      esac
+
+      gh auth status >/dev/null 2>&1 || { echo "gh is not authenticated" >&2; exit 1; }
+      command -v go >/dev/null 2>&1 || { echo "go is not on PATH" >&2; exit 1; }
+
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      if [ -n "$v" ] && git ls-remote --exit-code --tags origin "refs/tags/$v" >/dev/null 2>&1; then
+        echo "tag $v already exists on origin — that release is already cut, and a published tag is never re-pointed (RELEASING.md)" >&2
+        exit 1
+      fi
+
+      # Byte-for-byte the check the `release` workflow's preflight uses, for
+      # the same reason: a commit with *no* checks yet passes the per-run rule
+      # trivially, so the count is what catches it. Called twice from here —
+      # advisory inside the audit, blocking in `verify-base`.
+      cat > .vincent-prepare/require-green.sh <<'GREEN'
+      # Usage: sh require-green.sh <sha>. Exit 0 iff every check run on the
+      # commit completed successfully and both required matrices are present.
+      set -e
+      sha="$1"
+      runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" \
+        --jq '.check_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv')
+      printf '%s\n' "$runs"
+      bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && ($2 != "completed" || ($3 != "success" && $3 != "skipped")) { print $1 " " $3 }')
+      if [ -n "$bad" ]; then
+        echo "not green on $sha:" >&2
+        printf '%s\n' "$bad" >&2
+        exit 1
+      fi
+      for job in ci gates; do
+        n=$(printf '%s\n' "$runs" | awk -F'\t' -v j="$job" 'index($1, j " (") == 1' | wc -l | tr -d ' ')
+        if [ "$n" -ne 3 ]; then
+          echo "expected 3 '$job' checks on $sha (ubuntu, macos, windows), found $n" >&2
+          exit 1
+        fi
+      done
+      GREEN
+
+      # The audit. Deliberately **not** `set -e`: an audit that stops at the
+      # first problem makes the human run it once per problem. Every check
+      # runs, every finding prints, and the exit code is the summary.
+      #
+      #   FAIL — blocks a release and is fixable in this repository. These are
+      #          what `remediate` must clear, and what the exit code counts.
+      #   WARN — real, and not something a commit on this branch can fix
+      #          (a red base branch, a missing secret, an empty changelog).
+      #          Carried to the human at `inspect`.
+      cat > .vincent-prepare/audit.sh <<'AUDIT'
+      # Usage: sh audit.sh. Exit 1 iff there is a FAIL finding.
+      fails=0
+      mark=0
+      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
+      warn() { printf 'WARN %s\n' "$*"; }
+      # A section that finds nothing must still say so: a silent block reads
+      # like a block that did not run.
+      section() { echo "== $1"; mark=$fails; }
+      passed() { [ "$fails" -eq "$mark" ]; }
+
+      work=.vincent-prepare/work
+      rm -rf "$work"
+      mkdir -p "$work"
+
+      section "working tree"
+      # goreleaser builds what is committed at the tag, not what is in the
+      # working tree, so an uncommitted fix is not a fix.
+      git diff --quiet || fail "tree: tracked files have uncommitted changes; commit them or they will not be in the release"
+      git diff --cached --quiet || fail "tree: changes are staged but not committed"
+      passed && echo "ok    no uncommitted changes to tracked files"
+
+      section "archive payload (.goreleaser.yaml archives.files)"
+      for f in README.md LICENSE .goreleaser.yaml cmd/vincent; do
+        [ -e "$f" ] || fail "payload: $f is missing"
+      done
+      # `examples/*.yaml` is an archive glob: an empty match ships an archive
+      # with no examples and nothing fails until a user looks.
+      n=$(ls examples/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+      [ "$n" -gt 0 ] || fail "payload: examples/*.yaml matches nothing, so the archives would ship no examples"
+      # release.yml's smoke job names this file literally; renaming it breaks
+      # every published archive's smoke test and nothing before it.
+      [ -f examples/cursor-review.yaml ] || fail "payload: examples/cursor-review.yaml is missing, and release.yml's smoke job runs 'workflow validate' on exactly that path"
+      passed && echo "ok    README.md, LICENSE and $n example workflow(s)"
+
+      section "module (goreleaser's before hook)"
+      go mod download >"$work/mod.log" 2>&1 || fail "module: 'go mod download' failed: $(head -n 3 "$work/mod.log" | tr '\n' ' ')"
+      go mod verify >>"$work/mod.log" 2>&1 || fail "module: 'go mod verify' failed: $(tail -n 3 "$work/mod.log" | tr '\n' ' ')"
+      passed && echo "ok    go mod download, go mod verify"
+
+      section "cross-compile (the six targets .goreleaser.yaml builds)"
+      for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+        goos=${t%/*}
+        goarch=${t#*/}
+        if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
+             -o "$work/vincent-$goos-$goarch" ./cmd/vincent >"$work/build.log" 2>&1; then
+          echo "ok    $t"
+        else
+          fail "build: $t does not compile: $(head -n 3 "$work/build.log" | tr '\n' ' ')"
+        fi
+      done
+
+      section "smoke contract (what release.yml asserts about the binary)"
+      probe=v0.0.0-audit
+      if go build -trimpath \
+           -ldflags "-s -w -X github.com/lezli01/vincent/internal/version.version=$probe" \
+           -o "$work/vincent" ./cmd/vincent >"$work/probe.log" 2>&1; then
+        # smoke asserts `vincent version` reports the tag rather than "dev".
+        # It can only do that if this ldflags path still names a real symbol —
+        # a moved package or renamed variable leaves the flag silently inert.
+        if ! "$work/vincent" version 2>&1 | grep -q "$probe"; then
+          fail "smoke: the version ldflags path no longer reaches internal/version.version, so a released binary would report 'dev' and release.yml's smoke job would fail on the tag"
+        fi
+        "$work/vincent" workflow validate examples/cursor-review.yaml >"$work/validate.log" 2>&1 \
+          || fail "smoke: 'workflow validate examples/cursor-review.yaml' failed: $(tail -n 3 "$work/validate.log" | tr '\n' ' ')"
+        # smoke requires exit 2 — "no daemon answered" — with no daemon
+        # running. Isolated dirs are what make that true on a maintainer's
+        # machine, where a daemon usually *is* running.
+        VINCENT_CONFIG_DIR="$work/isolated/config" VINCENT_DATA_DIR="$work/isolated/data" \
+          "$work/vincent" task ls >/dev/null 2>&1
+        code=$?
+        [ "$code" -eq 2 ] || fail "smoke: 'task ls' with no daemon exited $code, and release.yml's smoke job requires 2"
+      else
+        fail "smoke: the host build failed: $(head -n 3 "$work/probe.log" | tr '\n' ' ')"
+      fi
+      passed && echo "ok    version reports the injected tag, 'workflow validate' runs, 'task ls' exits 2 with no daemon"
+
+      section "pinned actions in .github/workflows/release.yml"
+      # A pin that no longer resolves fails the release run at step setup,
+      # after the tag is public. `commits/{ref}` accepts a SHA or a tag, so
+      # one call covers both the SHA-pinned third-party actions and the
+      # major-tag `actions/*` ones.
+      grep -Eo 'uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+' .github/workflows/release.yml \
+        | awk '{print $2}' | sort -u > "$work/uses.txt"
+      while IFS= read -r u; do
+        [ -n "$u" ] || continue
+        repo=${u%@*}
+        ref=${u#*@}
+        if gh api "repos/$repo/commits/$ref" --jq .sha >/dev/null 2>&1; then
+          echo "ok    $u"
+        else
+          fail "action: $u does not resolve — the Release run cannot start with a dangling pin"
+        fi
+      done < "$work/uses.txt"
+
+      section "publish-time credentials (cannot be tested without publishing)"
+      if gh secret list >/dev/null 2>&1; then
+        if gh secret list | awk '{print $1}' | grep -qx HOMEBREW_TAP_TOKEN; then
+          echo "ok    HOMEBREW_TAP_TOKEN is set on this repository"
+        else
+          warn "secret: HOMEBREW_TAP_TOKEN is not set on this repository — the Homebrew cask push is the last thing a real release does, and it will fail (RELEASING.md § Repository secrets)"
+        fi
+      else
+        warn "secret: this token cannot read repository secrets; HOMEBREW_TAP_TOKEN unverified"
+      fi
+      if gh api repos/lezli01/homebrew-tap --jq .full_name >/dev/null 2>&1; then
+        echo "ok    lezli01/homebrew-tap is reachable"
+      else
+        warn "tap: lezli01/homebrew-tap is not reachable with this token — the cask push targets it"
+      fi
+
+      section "release inputs owned by other steps"
+      if awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -q '[^[:space:]]'; then
+        echo "ok    CHANGELOG.md has an [Unreleased] section with content"
+      else
+        warn "changelog: the [Unreleased] section is empty — the release workflow refuses to cut a release with nothing to name"
+      fi
+
+      section "base branch"
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH" 2>/dev/null || true
+      base_sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH" 2>/dev/null || echo "")
+      if [ -z "$base_sha" ]; then
+        warn "base: origin/$VINCENT_BASE_BRANCH could not be resolved"
+      elif sh .vincent-prepare/require-green.sh "$base_sha" >"$work/green.log" 2>&1; then
+        echo "ok    $VINCENT_BASE_BRANCH is green at $base_sha"
+      else
+        # Advisory here and blocking in `verify-base`: the base may be red for
+        # exactly the reason this task is about to fix, and a red base at audit
+        # time is a fact to report, not a reason to refuse to look further.
+        #
+        # `NF == 1` keeps require-green's messages and drops its check-run
+        # table, whose columns are tab-separated — the table is the evidence,
+        # not the finding, and a finding has to fit on a line.
+        warn "base: $VINCENT_BASE_BRANCH is not green at $base_sha: $(awk -F'\t' 'NF == 1' "$work/green.log" | tr '\n' ' ')"
+      fi
+
+      echo
+      if [ "$fails" -gt 0 ]; then
+        echo "$fails blocking finding(s) — a Release run on this tree would not be green"
+        exit 1
+      fi
+      echo "no blocking findings"
+      AUDIT
+
+      printf '%s\n' "$v" > .vincent-prepare/version.txt
+      if [ -n "$v" ]; then
+        printf '%s\n' "$v" > .vincent-prepare/label.txt
+      else
+        printf '%s\n' "the next release" > .vincent-prepare/label.txt
+      fi
+
+      echo
+      echo "preparing:   $(cat .vincent-prepare/label.txt)"
+      echo "base branch: $VINCENT_BASE_BRANCH @ $(git rev-parse "origin/$VINCENT_BASE_BRANCH")"
+      echo "nothing in this workflow publishes anything; the tag is the release workflow's job"
+
+  - id: audit
+    name: Audit release readiness
+    type: command
+    shell: sh
+    # Six cross-compilations, a host build and a handful of API calls.
+    timeout: 20m
+    # Re-running the same audit on the same tree returns the same findings.
+    max_retries: 0
+    # Report-only by construction: `|| true` is what lets `remediate` exist.
+    # The strict run of this same script is `remediate`'s check.
+    run: |
+      sh .vincent-prepare/audit.sh 2>&1 | tee .vincent-prepare/audit.txt || true
+      exit 0
+
+  - id: vuln
+    name: Vulnerability sweep
+    type: command
+    shell: sh
+    timeout: 15m
+    # RELEASING.md step 2, unconditional. It sweeps all three GOOS values,
+    # because reachability differs per platform. A minute is not worth the
+    # judgement call about whether the last run predates a dependency change.
+    run: go run mage.go vuln
+
+  - id: remediate
+    name: Fix the blocking findings
+    type: agent
+    timeout: 45m
+    prompt: |
+      You are making this repository green for a future run of
+      `.github/workflows/release.yml`. You are NOT releasing anything: no tag,
+      no `gh release`, no `gh pr`, no `git push`. A later step handles the pull
+      request.
+
+      An audit has already run. Its findings are in `.vincent-prepare/audit.txt`
+      and the script that produced them is `.vincent-prepare/audit.sh`. Read
+      both first — the script is the exact contract you are being judged
+      against, and it will be re-run to check your work.
+
+      Findings are one per line:
+
+      - `FAIL …` — blocks a release and is fixable in this repository. Fix
+        every one of these.
+      - `WARN …` — real, but not fixable by a commit on this branch (a red base
+        branch, a missing repository secret, an empty changelog section).
+        **Leave these alone.** A human reads them at the next checkpoint.
+
+      If there is no `FAIL` line, change nothing, commit nothing, and say so.
+      That is a normal outcome, not a reason to look for work.
+
+      For the findings that do exist:
+
+      1. Read `.goreleaser.yaml`, `.github/workflows/release.yml` and
+         `RELEASING.md` before touching anything, so a fix matches what the
+         release actually does rather than what the finding's one line implies.
+      2. Fix the cause, not the audit. Never edit `.vincent-prepare/` — those
+         files are the check, and a passing audit you rewrote proves nothing.
+      3. A dangling action pin (`FAIL action: …`) is the one finding with a
+         trap in it: **do not invent a SHA.** The `# vX.Y.Z` comment beside
+         each pin names the tag it is supposed to be. Resolve that tag with
+         `gh api repos/OWNER/REPO/commits/vX.Y.Z --jq .sha` and use exactly
+         what the API returns, keeping the comment truthful. If the tag itself
+         is gone, stop and explain — a human decides what to trust, and a
+         blocked step is the correct outcome.
+      4. Keep every fix minimal and inside the repository's conventions
+         (CLAUDE.md). Cross-platform is a hard requirement: a build fix that
+         works on one OS and breaks another is not a fix.
+      5. Commit your work in logical commits with Conventional Commit
+         subjects (`fix:` for something that was broken, `chore:` for
+         packaging plumbing, `ci:` for workflow files). Do not use
+         `git add -A` or `git commit -a`; stage the files you changed.
+         Do not touch `CHANGELOG.md` — the `release` workflow owns it.
+
+      Then re-run `sh .vincent-prepare/audit.sh` yourself and iterate until it
+      prints "no blocking findings". Finish by printing the audit's final
+      output and `git log --oneline` of the commits you added.
+    # The audit, run strictly. An agent that described fixes without making
+    # them, or made them and left them uncommitted, fails here and retries
+    # with the failure block appended (§8.4).
+    check: sh .vincent-prepare/audit.sh
+    check_timeout: 20m
+
+  - id: pr
+    name: Open the fixes PR
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost". Re-running the step by hand is safe: it finds the
+    # pull request it already opened.
+    max_retries: 0
+    # The common case is that nothing needed fixing, so "no commits" is a
+    # normal, successful outcome rather than an error.
+    run: |
+      set -e
+      label=$(cat .vincent-prepare/label.txt)
+      if [ -z "$(git log --oneline "origin/$VINCENT_BASE_BRANCH"..HEAD)" ]; then
+        echo "no fixes were needed — nothing to open a pull request for"
+        printf '%s\n' "none" > .vincent-prepare/pr-url.txt
+        exit 0
+      fi
+      existing=$(gh pr view {{.Task.BranchName}} --json url --jq .url 2>/dev/null || true)
+      if [ -n "$existing" ]; then
+        echo "pull request already open: $existing"
+        printf '%s\n' "$existing" > .vincent-prepare/pr-url.txt
+        exit 0
+      fi
+      git push -u origin {{.Task.BranchName}}
+      gh pr create \
+        --base {{.Task.BaseBranch}} \
+        --head {{.Task.BranchName}} \
+        --title "chore: release readiness for $label" \
+        --body "Release-readiness fixes for \`$label\`, prepared by vincent task #{{.Task.ID}}.
+
+      Every commit here exists because \`.github/workflows/release.yml\` would
+      not have been green without it. The audit that found them is in the
+      task's transcript; the dry run that proves them is dispatched after this
+      lands on \`{{.Task.BaseBranch}}\`." \
+        > .vincent-prepare/pr-url.txt
+      cat .vincent-prepare/pr-url.txt
+
+  - id: merge
+    name: Merge the fixes
+    type: manual
+    instructions: |
+      Checkpoint for task #{{.Task.ID}}. Nothing has been published and nothing
+      is about to be — the step after this one dispatches a **dry run**.
+
+      Pull request: {{(index .Steps "pr").Result}}
+
+      1. If there is a pull request, review it. These are commits that change
+         how the release is built or packaged, which CI exercises less than
+         ordinary code — read them the way you would read a Makefile change.
+      2. Merge it with a **merge commit**, not a squash (CLAUDE.md § Git flow).
+      3. Wait for all six checks on {{.Task.BaseBranch}}. The next step
+         re-checks them and refuses to continue otherwise, so approving early
+         only fails that step.
+      4. If there was no pull request, nothing needed fixing — just confirm
+         {{.Task.BaseBranch}} is green and approve.
+
+      The audit said:
+
+      {{(index .Steps "audit").Result}}
+
+      Approve once {{.Task.BaseBranch}} carries the fixes and is green. Reject
+      if a fix is wrong; nothing downstream has happened yet.
+
+  - id: verify-base
+    name: Verify the commit a tag would name
+    type: command
+    shell: sh
+    timeout: 10m
+    # No retry: every failure here means "the world is not ready yet" (pull
+    # request not merged, CI still running) and there is no delay between
+    # attempts, so a retry just fails a second time a second later. Re-run the
+    # step by hand once the branch is actually green.
+    max_retries: 0
+    run: |
+      set -e
+      v=$(cat .vincent-prepare/version.txt)
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+
+      if ! git merge-base --is-ancestor HEAD "origin/$VINCENT_BASE_BRANCH"; then
+        echo "this task's commits are not on $VINCENT_BASE_BRANCH yet — merge the pull request first" >&2
+        exit 1
+      fi
+      if [ -n "$v" ] && git ls-remote --exit-code --tags origin "refs/tags/$v" >/dev/null 2>&1; then
+        echo "tag $v appeared on origin while this task was running — stop and work out who pushed it" >&2
+        exit 1
+      fi
+
+      sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
+      # Blocking here, unlike the audit's advisory version: a tag on a red
+      # commit produces signed, attested, broken binaries (RELEASING.md step 1).
+      sh .vincent-prepare/require-green.sh "$sha"
+      printf '%s\n' "$sha" > .vincent-prepare/target-sha.txt
+
+      echo
+      echo "a tag would name:"
+      git log -1 --format='%H %s (%an, %ad)' --date=short "$sha"
+
+  - id: dry-run
+    name: Dry-run the Release workflow
+    type: command
+    shell: sh
+    # The run cross-compiles six archives and then smoke-tests them on three
+    # OSes; the poll for the run to appear is inside the same budget.
+    timeout: 60m
+    # Dispatching is an outward action, and a retry would start a second run
+    # while the first is still going. Re-running by hand is fine — it just
+    # dispatches a fresh run.
+    max_retries: 0
+    # RELEASING.md step 4, unconditional and watched. `--snapshot` needs no
+    # tag, `--skip=publish,sign` means nothing leaves the runner, and the
+    # `smoke` matrix still runs because it only needs the `dist` artifact.
+    # Signing, attestation, the GitHub release and the cask push are the parts
+    # this cannot exercise; `inspect` says so rather than implying otherwise.
+    run: |
+      set -e
+      label=$(cat .vincent-prepare/label.txt)
+      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      gh workflow run release.yml --ref "$VINCENT_BASE_BRANCH" -f dry_run=true
+      echo "dispatched a dry run of Release on $VINCENT_BASE_BRANCH for $label"
+
+      # The run takes a few seconds to appear. Match on creation time as well
+      # as branch, so a dry run someone else started an hour ago is not
+      # mistaken for this one.
+      id=""
+      i=0
+      while [ "$i" -lt 20 ]; do
+        id=$(gh run list --workflow=release.yml --event=workflow_dispatch --limit 30 \
+          --json databaseId,createdAt,headBranch \
+          --jq "[.[] | select(.headBranch == \"$VINCENT_BASE_BRANCH\" and .createdAt >= \"$started\")] | sort_by(.createdAt) | .[0].databaseId // empty")
+        if [ -n "$id" ]; then break; fi
+        i=$((i + 1))
+        sleep 15
+      done
+      if [ -z "$id" ]; then
+        echo "the dispatched Release run never appeared — check Actions" >&2
+        exit 1
+      fi
+      url=$(gh run view "$id" --json url --jq .url)
+      printf '%s\n' "$url" > .vincent-prepare/dry-run-url.txt
+      echo "$url"
+      gh run watch "$id" --exit-status
+
+      # The run being green means the archives built and ran. This says what
+      # is *in* them: `archives.files` is a glob list, and a glob that stops
+      # matching ships a smaller archive without failing anything upstream.
+      rm -rf .vincent-prepare/dist
+      mkdir -p .vincent-prepare/dist
+      gh run download "$id" -n dist -D .vincent-prepare/dist
+      cd .vincent-prepare/dist
+
+      n=$(ls ./*.tar.gz ./*.zip 2>/dev/null | wc -l | tr -d ' ')
+      [ "$n" -eq 6 ] || { echo "expected 6 archives (3 OS x 2 arch), found $n" >&2; exit 1; }
+
+      if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum -c checksums.txt
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 -c checksums.txt
+      else
+        echo "no sha256 tool found (sha256sum or shasum)" >&2
+        exit 1
+      fi
+
+      archive=$(ls ./*_linux_amd64.tar.gz)
+      mkdir -p unpacked
+      tar -xzf "$archive" -C unpacked
+      for f in vincent README.md LICENSE examples/cursor-review.yaml; do
+        [ -e "unpacked/$f" ] || { echo "the archive is missing $f — check archives.files in .goreleaser.yaml" >&2; exit 1; }
+      done
+
+      echo
+      echo "dry run green: $(cat ../dry-run-url.txt)"
+      echo "archives:"
+      ls ./*.tar.gz ./*.zip
+
+  - id: inspect
+    name: Look at what the dry run produced
+    type: manual
+    instructions: |
+      Last human pass over {{.Task.Title}}. Still nothing published.
+
+      {{(index .Steps "dry-run").Result}}
+
+      1. **Look at the artifact** (RELEASING.md step 4). The `dist` artifact
+         from the run above is also unpacked in `.vincent-prepare/dist/` inside
+         this task's worktree. Sizes, names and the unpacked layout are what a
+         user downloads.
+      2. **Read the WARN findings** from the audit, above in this task. They
+         are the release failures no commit on a branch can prevent — a missing
+         `HOMEBREW_TAP_TOKEN`, an unreachable tap, an empty `[Unreleased]`
+         section. Deal with them now, not while a tag is propagating.
+      3. **Know what the dry run did not test**: cosign signing, build
+         provenance attestation, publishing the GitHub release, and the
+         Homebrew cask push. `--skip=publish,sign` skips the first and third,
+         and attestation is `if: github.event_name == 'push'`. Those four run
+         for the first time on the real tag.
+
+      Approve when the artifact looks right and the warnings are dealt with.
+      Reject to stop — nothing here needs undoing.
+
+  - id: report
+    name: Report readiness
+    type: command
+    shell: sh
+    timeout: 20m
+    # A final audit against the merged tree, so the receipt is a fact rather
+    # than a memory of one — it is the same script, and it fails this step if
+    # anything regressed while the pull request was in review. stdout becomes
+    # the step Result and lands in the transcript. Clearing `.vincent-prepare/`
+    # afterwards leaves the worktree clean, so archiving the task does not warn
+    # about a dirty tree.
+    run: |
+      set -e
+      label=$(cat .vincent-prepare/label.txt)
+      v=$(cat .vincent-prepare/version.txt)
+      sha=$(cat .vincent-prepare/target-sha.txt)
+      url=$(cat .vincent-prepare/dry-run-url.txt)
+
+      echo "== final audit"
+      sh .vincent-prepare/audit.sh
+
+      echo
+      echo "== ready to release"
+      echo "preparing:   $label"
+      echo "base branch: $VINCENT_BASE_BRANCH @ $sha"
+      echo "dry run:     $url"
+      echo
+      if [ -n "$v" ]; then
+        echo "Next: start a task on the 'release' workflow titled '$v …'. It re-runs its"
+        echo "own preflight, writes the changelog, and pushes the tag behind a manual gate."
+      else
+        echo "Next: choose the version (CHANGELOG.md § Versioning and stability — while"
+        echo "vincent is 0.x a breaking change is a minor bump), then start a task on the"
+        echo "'release' workflow titled with it."
+      fi
+
+      rm -rf .vincent-prepare
+      echo
+      echo "worktree status (expect empty):"
+      git status --porcelain
