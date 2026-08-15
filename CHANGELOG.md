@@ -11,7 +11,61 @@ type — that is the exhaustive index; this is the human summary.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-08-15
+
 ### Added
+
+- **Repository workflows for GitHub issues and releases.** The checked-in
+  project registry now includes `github-issue`, `github-enhancement`,
+  `github-bug`, `prepare-release` and `release`. `github-issue` turns a rough
+  task into a `bug` or `enhancement` issue, parks in `awaiting_input` while
+  Claude asks for missing detail, and puts a manual gate before the
+  non-retrying `gh issue create`; it is POSIX-only and deliberately leaves its
+  empty worktree branch behind.
+
+  `github-enhancement` takes an open enhancement's id as the first token of the
+  task title — `42`, `#42` and a full issue URL still work, and optional prose
+  after that token now produces a useful branch and PR name — then separates
+  clarification from implementation, runs the expensive cross-platform check
+  without an agent retry, and gates the diff before the non-retrying push and PR
+  creation. `github-bug` likewise proves a regression test red before fixing it.
+  Both are Claude-only and POSIX-only; codex and cursor do not support the
+  `on_input` clarification they rely on.
+
+  `prepare-release` audits all six build targets, dependencies, archive
+  contents, smoke assertions and pinned actions, lets an agent clear FAIL
+  findings, and verifies a real `dry_run` artifact without publishing anything;
+  its task-title version is optional. `release` follows `RELEASING.md` through
+  preflight and the changelog PR, then stops at a manual gate before the tag.
+  Its PR and tag steps do not retry, and everything after the tag only verifies
+  the published result. `release` is Claude-only and POSIX-only.
+
+- **Explicit child-process environments.** The new
+  [`environment`](docs/reference/configuration.md#environment) config block
+  applies to agent steps, command steps and checks: `inherit` accepts `all`
+  (the unchanged default), `none` or a list of names; `unset` removes names
+  next; and literal `set` values win last. An empty inherit list means nothing,
+  `$` is not expanded in `set`, and a step's own `env` still wins. This makes
+  hermetic runs possible and, on Windows, lets `unset: [MSYSTEM]` stop Cursor
+  importing Claude Code hooks through the MSYS environment. The daemon logs
+  resolved variable names, never their credential-bearing values or the values
+  in a transcript, and warns rather than rewriting an environment with no
+  `PATH` or Windows `SystemRoot`.
+
+- **Richer output and complete transcripts in the TUI.** Tool calls now show a
+  useful subject rather than only `Bash` or another bare tool name, followed by
+  their success or failure; reasoning is marked with `·`, calls with `▸`, and
+  outcomes are indented beneath them. Claude, codex and cursor all surface tool
+  outcomes. Claude and cursor surface complete reasoning blocks, and codex now
+  does too when its CLI emits the effort-dependent `reasoning` item. Long
+  assistant text wraps with a hanging indent instead of disappearing past the
+  output pane's right edge; tool output bodies remain in the raw transcript.
+
+  Pressing `e` from either detail pane opens the selected attempt's complete raw
+  JSONL transcript in `$EDITOR`, including the beginning omitted by the TUI's
+  256 KB tail. The truncation notice advertises the binding, and a pruned
+  transcript, a gate with no transcript, or an editor failure is reported
+  instead of opening a misleading empty file.
 
 - **Agent usage limits are now a wait, not a failure**
   ([task 003](docs/tasks/003-usage-limit-classification.md)). When a step stops
@@ -99,6 +153,17 @@ type — that is the exhaustive index; this is the human summary.
 
 ### Changed
 
+- **Normalized transcript and live-output clients must read structured tool
+  records.** On
+  `GET /v1/tasks/{id}/steps/{run_id}/transcript?format=normalized` and the
+  per-task SSE stream, `agent.tool_use.tools` changed from `[]string` to
+  `[{name, summary, call_id}]`; `agent.tool_result` adds
+  `results: [{call_id, name, summary, is_error}]`, and `agent.thinking` adds
+  whole-block reasoning text. Clients that rendered each tool as a string must
+  read its `name` field and should tolerate the two new record types.
+  Normalization happens on read, so stored raw transcripts need no migration
+  and gain the richer rendering retroactively.
+
 - A task's branch name is now resolved and written inside the same transaction as
   the task row, so no committed task can carry an empty one. This removes a window
   in which a crash between two writes left the name unset — harmless while names
@@ -118,6 +183,37 @@ type — that is the exhaustive index; this is the human summary.
   job carries a `timeout-minutes`.
 
 ### Fixed
+
+- **Release binaries no longer depend on a stale vulnerable Go patch.** The
+  module and release workflow now pin Go 1.26.6, which clears five reachable
+  standard-library advisories across linux, darwin and windows instead of
+  accepting whichever 1.26 patch happens to be on a runner. A weekly workflow
+  proposes patch-only toolchain bumps within the declared minor series, and
+  admits them only after build, test and the vulnerability sweep pass.
+
+- **Installed daemons now start as the right user with a usable `PATH`.** macOS
+  launchd and Linux systemd units capture the installing shell's `PATH`, so
+  Homebrew, npm, nvm and `~/.local/bin` agent CLIs are visible after login;
+  reinstall the service after changing that path. Windows now uses an
+  unelevated, per-user Scheduled Task at login instead of a LocalSystem service,
+  so the daemon shares the user's data, token, git config and agent credentials.
+  The task pins the new internal `vincent daemon --config-dir` and `--data-dir`
+  flags; only removing a legacy LocalSystem service still needs Administrator.
+
+- **Windows login no longer leaves a daemon console open or a slow agent
+  permanently unavailable.** The scheduled daemon's `--hide-console` path now
+  releases the Windows Terminal console safely and starts agent probes without
+  replacement windows, while a manually entered flag leaves the user's terminal
+  alone. Failed probes expire after one minute instead of being cached for the
+  daemon's lifetime, cold-login probes get 20/25-second bounds, and a timed-out
+  Cursor status probe is no longer reported as definitely unauthenticated.
+  `vincent service status` points users to `Task Scheduler Library\\vincent`, not
+  `services.msc`, and diagnoses elevated task ownership that would prevent a
+  later unelevated reinstall or uninstall.
+
+- **The advertised output-tab keys now work.** `[` and `]` switch between the
+  detail view's output tabs from either pane, as the help, palette and footer
+  already promised; the existing `d` alias continues to make the same toggle.
 
 - **The TUI answer form no longer truncates what it asks you**
   ([#83](https://github.com/lezli01/vincent/issues/83)). A question, an option
@@ -182,5 +278,6 @@ vincent is `0.x`. Until `1.0.0`:
   policy (`internal/store/migrations/`); downgrading a binary across a
   migration is not supported.
 
-[Unreleased]: https://github.com/lezli01/vincent/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lezli01/vincent/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/lezli01/vincent/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lezli01/vincent/releases/tag/v0.1.0
