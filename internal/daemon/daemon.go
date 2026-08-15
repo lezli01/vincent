@@ -241,6 +241,14 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// ticker is what makes retention work on a daemon that survives reboots
 	// (T4.1) rather than only on the restarts it no longer has.
 	go taskrun.NewTranscriptPruner(runnerDeps).Run(ctx)
+	// Orphan reconcile (task 005, §10). It runs after recovery, which
+	// reconciles rows and processes but never directories, and it **reports
+	// only**: silently deleting a directory that may hold an agent's
+	// uncommitted work is what §18's "never auto-deletes" posture rejects.
+	// A human runs `vincent gc`; the count also rides /v1/info so a log line
+	// nobody tails is not the whole report.
+	reclaimer := taskrun.NewReclaimer(runnerDeps)
+	reportOrphans(ctx, reclaimer, logger)
 	sched := scheduler.New(scheduler.Deps{
 		Store:    st,
 		Config:   currentConfig,
@@ -282,6 +290,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
 		Broker:      broker,
+		Reclaimer:   reclaimer,
 		OnProjectsChanged: func() {
 			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -413,6 +422,37 @@ func syncWorkflowProjects(ctx context.Context, st *store.Store, reg *workflow.Re
 	}
 	reg.SetProjects(roots)
 	return nil
+}
+
+// reportOrphans logs the data-root directories no task row claims, one line
+// each plus a summary naming the command that clears them (task 005, §10).
+//
+// It deletes nothing, ever. The asymmetry with `vincent gc` — which deletes
+// by default — is deliberate: the explicit command has a human behind it, a
+// dirty check, a containment rule and a printed byte report, and the
+// unattended path at startup has none of those.
+//
+// A failure here is logged and dropped. Reconciling directories is
+// housekeeping, and a daemon that refuses to serve because it could not read
+// a directory has its priorities backwards.
+func reportOrphans(ctx context.Context, rc *taskrun.Reclaimer, logger *slog.Logger) {
+	rep, err := rc.Scan(ctx)
+	if err != nil {
+		logger.Error("scan for orphaned directories failed", "error", err)
+		return
+	}
+	for _, o := range rep.Orphans {
+		logger.Warn("orphaned directory: no task claims it",
+			"path", o.Path, "kind", o.Kind, "bytes", o.Bytes, "skip_reason", o.Skip)
+	}
+	for _, m := range rep.Mismatches {
+		logger.Warn("task points at a worktree that is gone",
+			"task", m.TaskID, "state", m.State, "path", m.Path)
+	}
+	if len(rep.Orphans) > 0 {
+		logger.Warn("orphaned directories found; reclaim them with `vincent gc`",
+			"orphans", len(rep.Orphans), "bytes", rep.Bytes)
+	}
 }
 
 // primeAgentCatalog fills the §9.6 cache at startup and logs each adapter's

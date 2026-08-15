@@ -11,6 +11,34 @@ type — that is the exhaustive index; this is the human summary.
 
 ## [Unreleased]
 
+### Added
+
+- **`vincent gc` reclaims directories no task claims.** A worktree could outlive
+  every reference to it: deleting a project removes worktrees best-effort and
+  drops the task rows regardless, so a removal that failed — a file locked by
+  another process, a shell sitting in the directory — left a directory nothing
+  could ever name again. A crash between creating a worktree and recording its
+  path did the same, and made the task's next admission fail
+  `worktree_path_occupied` pointing at a directory the user had never been told
+  about.
+
+  `vincent gc` lists those directories with their sizes and removes them.
+  `--dry-run` prints the identical report and removes nothing. A worktree with
+  local changes (untracked files count) is skipped as `worktree_dirty`; one whose
+  repository is gone, so `git status` cannot run at all, is skipped as
+  `dirty_unknown` — the common case for a real orphan — and `--force` removes
+  both. Orphaned transcript directories are reclaimed too, since retention walks
+  task *rows* and a cascade-deleted row's transcripts are reached by no pass.
+  Nothing outside `{data_dir}/worktrees` and `{data_dir}/transcripts` is ever
+  removed, no branch is ever deleted, and no task row is modified.
+
+  New endpoints `GET /v1/maintenance/orphans` and `POST /v1/maintenance/gc`, and
+  `orphans` on `GET /v1/info`.
+
+- **The daemon reports orphans at startup and never deletes them.** One warning
+  per directory in the log, plus the count on `/v1/info` and a line in the TUI
+  daemon view naming `vincent gc`. The unattended path reports; a human deletes.
+
 ## [0.1.1] — 2026-08-15
 
 ### Added

@@ -186,7 +186,20 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// window is gone. Keeping the recompute would have been actively harmful once
 	// names became configurable: it produced the *built-in* name, so a task whose
 	// user chose `feat/OPS-123` would have silently run on `vincent/{id}-{slug}`.
-	path, err := r.deps.Worktrees.Create(ctx, project.Path, task.ID, task.BranchName, task.BaseBranch)
+	// CreateAndClaim rather than Create: the directory exists before the row
+	// names it, and a gc scan slipping into that window would delete a live
+	// task's working tree (task 005). The claim is what closes it.
+	path, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, task.ID,
+		task.BranchName, task.BaseBranch, func(p string) error {
+			// A failed persist is logged and the run continues, as it always
+			// has: the worktree is real and the step can use it. What it
+			// leaves behind is an unclaimed directory, which is precisely the
+			// crash case `vincent gc` reclaims.
+			if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &p); err != nil {
+				log.Error("persist worktree path", "error", err)
+			}
+			return nil
+		})
 	if err != nil {
 		if ctx.Err() != nil {
 			// A shutdown mid-create is an interruption, not a git failure.
@@ -201,9 +214,6 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 		return err
 	}
 	task.WorktreePath = path
-	if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &path); err != nil {
-		log.Error("persist worktree path", "error", err)
-	}
 	return nil
 }
 

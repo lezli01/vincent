@@ -125,6 +125,50 @@ DIFF="$(api GET "/tasks/$TASK_ID/diff")"
 grep -q 'README.md' <<<"$DIFF" || fail "diff does not mention README.md:
 $DIFF"
 
+# The gc leg rides here because this script already has the two things it
+# needs: a registered project and a task with a real worktree that must come
+# through untouched (task 005, §10).
+echo "== plant an orphaned worktree"
+ORPHAN_ID=999999
+ORPHAN="$DATA_DIR/worktrees/$ORPHAN_ID"
+mkdir -p "$ORPHAN"
+printf '0123456789\n' > "$ORPHAN/payload"
+LIVE_WORKTREE="$(api GET "/tasks/$TASK_ID" | jq -r .worktree_path)"
+[[ -d "$LIVE_WORKTREE" ]] || fail "the task's worktree is not on disk: $LIVE_WORKTREE"
+
+echo "== list orphans"
+ORPHANS="$(api GET /maintenance/orphans)"
+jq -e --argjson id "$ORPHAN_ID" \
+  '[.orphans[] | select(.task_id == $id)] | length == 1' <<<"$ORPHANS" >/dev/null \
+  || fail "the planted orphan is not listed:
+$ORPHANS"
+jq -e --argjson id "$ORPHAN_ID" \
+  '.orphans[] | select(.task_id == $id) | .kind == "worktree" and .bytes > 0' <<<"$ORPHANS" >/dev/null \
+  || fail "the orphan is listed without a kind or a size:
+$ORPHANS"
+# The live task's worktree is claimed, so it must never appear.
+jq -e --argjson id "$TASK_ID" \
+  '[.orphans[] | select(.task_id == $id)] | length == 0' <<<"$ORPHANS" >/dev/null \
+  || fail "a live task's worktree was reported as an orphan:
+$ORPHANS"
+api GET /info | jq -e '.orphans >= 1' >/dev/null || fail "/v1/info does not report the orphan"
+
+echo "== dry run removes nothing"
+api POST /maintenance/gc '{"force":true,"dry_run":true}' \
+  | jq -e '.dry_run == true and .reclaimed == 0' >/dev/null || fail "dry run reported a removal"
+[[ -d "$ORPHAN" ]] || fail "the dry run removed the orphan"
+
+# --force: the planted directory has no repository behind it, so git cannot
+# judge it and gc reports dirty_unknown rather than guessing.
+echo "== reclaim"
+GC="$(api POST /maintenance/gc '{"force":true}')"
+jq -e '.reclaimed == 1 and .reclaimed_bytes > 0' <<<"$GC" >/dev/null || fail "gc reclaimed nothing:
+$GC"
+[[ ! -e "$ORPHAN" ]] || fail "the orphan survived gc"
+[[ -d "$LIVE_WORKTREE" ]] || fail "gc removed a live task's worktree: $LIVE_WORKTREE"
+git -C "$REPO" rev-parse --verify "refs/heads/$BRANCH" >/dev/null \
+  || fail "gc deleted branch $BRANCH — branches are never deleted"
+
 echo "== stop daemon"
 "$VINCENT" daemon stop
 

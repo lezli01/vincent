@@ -38,6 +38,10 @@ type Info struct {
 	Listen           string        `json:"listen"`
 	MaxParallelTasks int           `json:"max_parallel_tasks"`
 	Agents           []AgentStatus `json:"agents"`
+	// Orphans counts data-root directories no task row claims (task 005).
+	// It is a pointer to a leak a human clears with `vincent gc`, not
+	// something a client acts on by itself.
+	Orphans int `json:"orphans"`
 }
 
 // Uptime is how long the daemon has been up as of now. It is derived from

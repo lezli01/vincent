@@ -395,6 +395,70 @@ func (s *Store) CountNonArchivedTasks(ctx context.Context, projectID int64) (int
 		projectID, string(TaskArchived))
 }
 
+// WorktreeClaim is one task's claim on a directory under the worktree root
+// (task 005). An empty Path means the row claims nothing — the state a task
+// is in before its first admission, and the state a crash between
+// `git worktree add` and the claim write leaves behind.
+type WorktreeClaim struct {
+	TaskID int64
+	Path   string
+	State  TaskState
+}
+
+// ListWorktreeClaims returns every task's worktree claim, archived rows
+// included. gc classifies a directory by *claim*, not by name, so this is the
+// authoritative set: a directory nothing here names is an orphan, and a claim
+// naming a directory that is gone is the reverse mismatch (§18).
+//
+// Archived rows are in deliberately. Their worktree is normally already gone
+// and their claim already cleared, but an archive interrupted between the two
+// leaves a live claim, and gc must not delete what it names.
+func (s *Store) ListWorktreeClaims(ctx context.Context) ([]WorktreeClaim, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, COALESCE(worktree_path, ''), state FROM tasks ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list worktree claims: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []WorktreeClaim
+	for rows.Next() {
+		var c WorktreeClaim
+		if err := rows.Scan(&c.TaskID, &c.Path, (*string)(&c.State)); err != nil {
+			return nil, fmt.Errorf("scan worktree claim: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate worktree claims: %w", err)
+	}
+	return out, nil
+}
+
+// ListTaskIDs returns every task id, archived rows included — what gc diffs
+// the transcript root against (task 005). A transcript directory belongs to
+// its task for as long as the row exists; §17 retention decides when an
+// *archived* row's transcripts go, and only a row that no longer exists at
+// all is gc's.
+func (s *Store) ListTaskIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM tasks ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list task ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan task id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate task ids: %w", err)
+	}
+	return ids, nil
+}
+
 // ArchivedTaskIDsBefore returns the ids of tasks archived before cutoff —
 // the input to transcript pruning (§17 retention).
 //
