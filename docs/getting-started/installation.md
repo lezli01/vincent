@@ -184,8 +184,10 @@ Then go run something: [Quickstart](quickstart.md).
 
 ## Build from source
 
-Go 1.26 or newer is the only prerequisite. Build targets run through
-[mage](https://magefile.org/) with zero install:
+Go 1.26 or newer is the only prerequisite. `go.mod` also pins an exact patch
+toolchain, which the default `GOTOOLCHAIN=auto` downloads on the first build;
+`GOTOOLCHAIN=local` builds with the Go you already have instead. Build targets
+run through [mage](https://magefile.org/) with zero install:
 
 ```sh
 git clone https://github.com/lezli01/vincent

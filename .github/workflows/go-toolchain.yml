@@ -1,0 +1,129 @@
+name: Go toolchain
+
+# The single most common way the Vulnerabilities workflow goes red is a stdlib
+# advisory that is already fixed in a Go patch release we have not adopted:
+# nothing in vincent changes, only the toolchain underneath it. Since go.mod
+# pins that toolchain exactly (004.1), adopting the patch is a one-line diff —
+# this job writes it, proves it, and opens the pull request.
+#
+# Patch releases only. The candidate is constrained to the minor series named by
+# the `go` directive, which this job never touches: a 1.26 → 1.27 move is a
+# language-version change with its own review, not something a schedule opens.
+on:
+  # Mondays, an hour ahead of the 06:17 vuln sweep, so the bump pull request is
+  # already sitting next to the failure it explains.
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # push the bump branch
+      pull-requests: write # open the pull request
+    steps:
+      - uses: actions/checkout@v7
+        # Unlike every other workflow here, this one pushes, so the token has to
+        # stay in the local git config for `git push` to authenticate.
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # go.dev/dl is the release list itself, not a mirror of it. `include=all`
+      # keeps older minors visible after a new one ships; the `stable` filter
+      # drops release candidates. Versions sort with `sort -V` because 1.26.0
+      # is published as plain "go1.26" and would otherwise outrank "go1.26.10".
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          minor=$(go mod edit -json | jq -r '.Go')
+          current=$(go mod edit -json | jq -r '.Toolchain // empty')
+          latest=go$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' \
+            | jq -r --arg m "go${minor}" \
+                '.[] | select(.stable) | .version | select(. == $m or startswith($m + "."))' \
+            | sed 's/^go//' | sort -V | tail -1)
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$latest" ]; then
+            echo "toolchain $current is the newest $minor patch; nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "toolchain $current -> $latest"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No second setup-go: with the directive rewritten, GOTOOLCHAIN=auto makes
+      # the go command fetch and re-exec the pinned toolchain by itself. That is
+      # exactly what a developer hits locally after pulling the merged PR, so
+      # this job proves the path they will actually take.
+      - if: steps.resolve.outputs.changed == 'true'
+        shell: bash
+        run: go mod edit -toolchain=${{ steps.resolve.outputs.latest }}
+
+      # Gate the PR on build and test. A bump that does not compile or does not
+      # pass is not worth a reviewer's attention.
+      - if: steps.resolve.outputs.changed == 'true'
+        run: go run mage.go build
+
+      - if: steps.resolve.outputs.changed == 'true'
+        run: go run mage.go test
+
+      # govulncheck is reported, not gated: an advisory with no patch released
+      # yet fails here and the bump is still worth landing — it is a decision
+      # for the reviewer, which is why the outcome goes into the PR body.
+      - id: vuln
+        if: steps.resolve.outputs.changed == 'true'
+        continue-on-error: true
+        run: go run mage.go vuln
+
+      - if: steps.resolve.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.resolve.outputs.current }}
+          LATEST: ${{ steps.resolve.outputs.latest }}
+          VULN: ${{ steps.vuln.outcome }}
+        run: |
+          set -euo pipefail
+          branch="chore/go-toolchain-${LATEST#go}"
+          if [ -n "$(gh pr list --head "$branch" --state open --json number -q '.[].number')" ]; then
+            echo "a pull request for $branch is already open"
+            exit 0
+          fi
+          case "$VULN" in
+            success) vuln_line='✅ `go run mage.go vuln` is clean on linux, darwin and windows.' ;;
+            *)       vuln_line="⚠️ \`go run mage.go vuln\` still reports findings on ${LATEST} — read this job's log before merging." ;;
+          esac
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # printf rather than a heredoc: the terminator of an indented heredoc
+          # would have to sit at column 0, which YAML's block scalar forbids.
+          printf '%s\n\n' \
+            "Adopts the newest patch release in the \`go\` directive's minor series." \
+            "\`toolchain ${CURRENT}\` → \`toolchain ${LATEST}\`" \
+            "${vuln_line}" \
+            "\`go run mage.go build\` and \`go run mage.go test\` passed on \`ubuntu-latest\` in [the job that opened this pull request](${run_url})." \
+            "> A pull request opened with \`GITHUB_TOKEN\` does not trigger workflow runs. To get CI and the gates on all three platforms, close and reopen this pull request, or push an empty commit to the branch." \
+            > /tmp/pr-body.md
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "chore: bump go toolchain to ${LATEST}"
+          # The branch belongs to this job alone, so a leftover from a closed PR
+          # is overwritten rather than reconciled.
+          git push -f -u origin "$branch"
+          gh pr create \
+            --title "chore: bump go toolchain to ${LATEST}" \
+            --body-file /tmp/pr-body.md
