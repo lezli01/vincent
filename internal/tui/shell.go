@@ -575,9 +575,12 @@ func (s *shell) overlayPopup(bg string) string {
 	if pw < 20 {
 		pw = s.bodyW
 	}
-	ph := min(form.height()+2, max(s.bodyH-4, 6))
+	// The form lays itself out at the width it will be drawn at, so a long
+	// question wraps inside the popup instead of losing its tail to frame.
+	inner := pw - 2
+	ph := min(form.height(inner)+2, max(s.bodyH-4, 6))
 	title := fmt.Sprintf("Answer — #%d", s.detail.taskID)
-	popup := frame(title, form.render(ph-2), pw, ph, true)
+	popup := frame(title, form.render(inner, ph-2), pw, ph, true)
 	x := max((s.bodyW-pw)/2, 0)
 	y := max((s.bodyH-ph)/3, 1)
 	return overlay(bg, popup, x, y)

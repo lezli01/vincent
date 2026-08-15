@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -79,7 +80,7 @@ func TestFreeTextIsAlwaysAccepted(t *testing.T) {
 	if got := f.answers["Which color?"]; len(got) != 1 || got[0] != "teal" {
 		t.Errorf("answers = %v, want the typed value", got)
 	}
-	if !strings.Contains(f.render(20), "teal") {
+	if !strings.Contains(f.render(74, 20), "teal") {
 		t.Error("the typed answer is not shown back")
 	}
 }
@@ -94,7 +95,7 @@ func TestSubmitBlockedUntilEveryQuestionIsAnswered(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("an incomplete answer was submitted")
 	}
-	if f.err == "" || !strings.Contains(f.render(20), "⚠") {
+	if f.err == "" || !strings.Contains(f.render(74, 20), "⚠") {
 		t.Errorf("no reason shown for the blocked submit (err %q)", f.err)
 	}
 	if f.submitting {
@@ -109,7 +110,7 @@ func TestPermissionRendersADecision(t *testing.T) {
 		Kind:       apiclient.InputKindPermission,
 		Permission: &apiclient.InputPermission{Tool: "Bash", Summary: "rm -rf build"},
 	})
-	view := f.render(10)
+	view := f.render(74, 10)
 	if !strings.Contains(view, "Bash") || !strings.Contains(view, "allow") || !strings.Contains(view, "deny") {
 		t.Fatalf("permission form = %q, want the tool and both decisions", view)
 	}
@@ -135,6 +136,89 @@ func TestEscLeavesTheFormWithoutAnswering(t *testing.T) {
 	if !exit || cmd != nil {
 		t.Errorf("esc: exit = %v, cmd = %v; want a plain exit", exit, cmd != nil)
 	}
+}
+
+// openPopupWith puts req on a task that is waiting on input and opens the
+// answer popup the way a human does, returning the rendered screen with the
+// styling stripped. The popup is sized by the shell (§15), so this is the
+// only place the form meets the width it is actually drawn at.
+func openPopupWith(t *testing.T, req apiclient.InputRequest) string {
+	t.Helper()
+	s, _ := newShellFixture(t, task(3, stateAwaitingInput))
+	s.settle()
+	s.detail.form = newAnswerForm(req)
+	s.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !s.popup {
+		t.Fatal("enter did not open the answer popup")
+	}
+	return ansi.Strip(s.render(120, 37))
+}
+
+// TestFormPopupShowsLongTextInFull is issue #83: the popup is capped at 76
+// columns and every content line is truncated to fit it, so a question, an
+// option label or a permission summary longer than the inner width loses its
+// tail — and there is no wrap, scroll or expand to get it back. §7.4 and §15
+// describe the form as the surface a human answers from; text that cannot be
+// read cannot be answered.
+func TestFormPopupShowsLongTextInFull(t *testing.T) {
+	t.Run("question and option", func(t *testing.T) {
+		const question = "Should the scheduler admit the re-queued step ahead of newly created tasks, or hold it behind them for fairness?"
+		const option = "No — re-queue at the tail so one project's quota stop cannot starve the others (Recommended)"
+
+		view := openPopupWith(t, apiclient.InputRequest{
+			Kind: apiclient.InputKindQuestion,
+			Questions: []apiclient.InputQuestion{{
+				Header:  "Approach",
+				Text:    question,
+				Options: []string{option, "Yes — keep its original queue position"},
+			}},
+		})
+
+		// The tail of the question: the last words are what a 76-column popup
+		// drops first, and they carry the actual choice being asked about.
+		if !strings.Contains(view, "hold it behind them for fairness?") {
+			t.Errorf("the end of the question is not on screen; the popup renders:\n%s", popupOf(view))
+		}
+		// An agent puts "(Recommended)" at the end of a label, which is exactly
+		// what a truncating renderer removes.
+		if !strings.Contains(view, "(Recommended)") {
+			t.Errorf("the end of the option label is not on screen; the popup renders:\n%s", popupOf(view))
+		}
+	})
+
+	t.Run("permission summary", func(t *testing.T) {
+		const summary = "rm -rf ./build && ./scripts/publish.sh --channel=stable --yes"
+
+		view := openPopupWith(t, apiclient.InputRequest{
+			Kind:       apiclient.InputKindPermission,
+			Permission: &apiclient.InputPermission{Tool: "Bash", Summary: summary},
+		})
+
+		// Approving a command whose tail is hidden is approving something else.
+		if !strings.Contains(view, "--channel=stable --yes") {
+			t.Errorf("the end of the permission summary is not on screen; the popup renders:\n%s", popupOf(view))
+		}
+	})
+}
+
+// popupOf pulls the answer popup out of a rendered screen so a failure shows
+// the box the assertion is about rather than the whole terminal.
+func popupOf(view string) string {
+	var out []string
+	in := false
+	for _, line := range strings.Split(view, "\n") {
+		switch {
+		case strings.Contains(line, "Answer — #"):
+			in = true
+			out = append(out, line)
+		case in:
+			out = append(out, line)
+			if strings.Contains(line, "└") {
+				return strings.Join(out, "\n")
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // TestSameRequestSurvivesARefresh: the detail view refetches constantly, and

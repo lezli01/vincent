@@ -117,6 +117,20 @@ type — that is the exhaustive index; this is the human summary.
 - Third-party actions in the release workflow are pinned to commit SHAs; every
   job carries a `timeout-minutes`.
 
+### Fixed
+
+- **The TUI answer form no longer truncates what it asks you**
+  ([#83](https://github.com/lezli01/vincent/issues/83)). A question, an option
+  label or a permission summary longer than the popup's inner width was cut with
+  an `…` and there was no way to see the rest from inside the form — no wrap, no
+  scroll, no expand — and because the popup is capped at 76 columns, a wider
+  terminal did not help. That hid the end of an agent's question, the
+  `(Recommended)` suffix agents put at the *end* of an option label, and, in
+  `restricted` mode, the tail of the command you were being asked to approve.
+  Rows now wrap inside the popup, with continuation lines indented under the
+  marker so a wrapped option still reads as one option; `up`/`down` still move a
+  whole option at a time, and the focused row is kept fully on screen.
+
 ## [0.1.0] — 2026-08-12
 
 First release. All 70 tasks of the
