@@ -383,6 +383,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 ## Build & Test
 
 vincent is a single Go module; Go 1.26 or newer is the only prerequisite.
+`go.mod` pins an exact patch toolchain that the default `GOTOOLCHAIN=auto`
+fetches on the first build ([004](docs/tasks/004-go-toolchain-pin.md)).
 Build targets run via [mage](https://magefile.org/) with zero install — CI
 runs exactly these targets (list them all with `go run mage.go -l`):
 
