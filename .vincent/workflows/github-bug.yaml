@@ -1,0 +1,519 @@
+# github-bug — pick up a GitHub bug issue, reproduce it, fix it, deliver it.
+#
+# Sibling of `github-enhancement.yaml`, and deliberately shaped like it: the
+# task's **title starts with the issue id** (`42`, `#42`, or the issue URL),
+# optionally followed by a short description — `42 daemon leaks the lock file`.
+# `fetch` takes the first whitespace-separated token as the id, which keeps the
+# title machine-readable while letting the rest of it feed `{{.Slug}}` and the
+# board row.
+#
+# Shape: fetch (cheap guard) → diagnose (reproduce, ask, write a failing test)
+# → triage (stop on a non-bug) → confirm-red (prove the test captures the bug)
+# → fix → verify (the expensive cross-platform legs) → gate (a human reads the
+# diff) → publish → report.
+#
+# **What makes this workflow different from its enhancement sibling is
+# `confirm-red`.** An enhancement is judged by whether the new behaviour works;
+# a bug fix is judged by whether the old behaviour is gone, and the only honest
+# evidence of that is a test that failed before the fix and passes after it.
+# So `diagnose` writes the regression test *first*, `confirm-red` runs it
+# against the unfixed code and **fails the task if it passes**, and `fix`'s
+# check re-runs that same frozen command expecting success. A green regression
+# test that was never observed red proves nothing — it may be testing the wrong
+# thing entirely, and it will keep passing after the bug comes back.
+#
+# Not every bug is reachable from a test (a TUI rendering glitch, a wrong
+# sentence in `docs/`, a platform-specific path bug on an OS this machine is
+# not). That escape hatch exists — `red-test.txt` may say `none: <reason>` —
+# but it is loud: it costs the task its automated proof, it is printed by
+# `confirm-red`, and the gate step puts it in front of the human who approves
+# the PR. Prefer a test.
+#
+# Why diagnose and fix are two steps and not one: `diagnose` runs with
+# `on_input: wait`, so it parks the task in `awaiting_input` and asks you
+# through claude's AskUserQuestion tool (§7.4). If the fix shared that step,
+# every retry after a failed check would replay the questioning and ask you the
+# same things again. `defaults.on_input: deny` makes the asymmetry explicit:
+# `diagnose` is the only step allowed to stop and ask.
+#
+# claude-only by construction, like both of its siblings. `on_input` is ignored
+# by codex and cursor (`supports_input: false`, §9.3/§9.7), so on those adapters
+# `diagnose` would silently guess at the repro instead of asking the reporter.
+#
+# POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
+# shell at all (§8.2 rejects `shell` on an agent step), so their `check` runs
+# under the platform default and is written in `sh` regardless. On Windows the
+# whole workflow needs Git Bash's `sh` on PATH. Portability is the author's
+# problem (§8.3) and this workflow declines it deliberately.
+#
+# Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
+# pointing at the repo that owns the issue.
+name: github-bug
+description: Reproduce a GitHub bug issue with a failing test, fix it, and open the PR.
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # Only `diagnose` overrides this. A fix step that stops to ask has skipped
+  # the whole point of the diagnose/fix split.
+  on_input: deny
+
+steps:
+  - id: fetch
+    name: Fetch and guard the issue
+    type: command
+    shell: sh
+    timeout: 2m
+    # A wrong id, a closed issue or a missing label is not a transient error —
+    # re-reading GitHub returns the same answer. Retrying only delays the
+    # failure.
+    max_retries: 0
+    # This step exists so that a bad id costs two seconds instead of a 45-minute
+    # agent run, and so that exactly these fields — not whatever the agent felt
+    # like fetching — are what enters the diagnosis's context.
+    run: |
+      set -e
+      # First token only: everything after it is the human-readable half of the
+      # title, which exists so the branch slug and the board row say something.
+      id=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}' | sed 's/^#//')
+      if [ -z "$id" ]; then
+        echo "task title is empty; it must start with the issue id (42, #42, or the issue URL)" >&2
+        exit 1
+      fi
+
+      mkdir -p .vincent-bug
+      # Comments matter more here than on an enhancement: a bug report's real
+      # reproduction steps, versions and "me too, but on Windows" almost always
+      # arrive in the thread rather than the body.
+      if ! gh issue view "$id" \
+        --json number,title,body,state,url,labels,comments,createdAt \
+        > .vincent-bug/issue.json; then
+        echo "no such issue: $id (the task title's first word must be the issue id)" >&2
+        exit 1
+      fi
+
+      state=$(jq -r .state .vincent-bug/issue.json)
+      if [ "$state" != "OPEN" ]; then
+        echo "issue #$id is $state; this workflow only picks up open issues" >&2
+        exit 1
+      fi
+
+      if ! jq -e '[.labels[].name] | index("bug")' \
+        .vincent-bug/issue.json > /dev/null; then
+        echo "issue #$id is not labeled 'bug'; use github-enhancement.yaml for an enhancement" >&2
+        jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-bug/issue.json >&2
+        exit 1
+      fi
+
+      jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-bug/issue.json
+
+  - id: diagnose
+    name: Reproduce and diagnose
+    type: agent
+    # The whole reason this step is separate: it stops and asks rather than
+    # inventing a reproduction it could not achieve.
+    on_input: wait
+    # Parking overnight while you sleep is fine. Parking forever is not.
+    input_timeout: 12h
+    timeout: 45m
+    prompt: |
+      You are diagnosing a GitHub bug report against this repository. You are
+      NOT fixing it yet: do not change a single line of non-test code.
+
+      The issue is in `.vincent-bug/issue.json` — number, title, body, state,
+      labels, creation date and every comment. Read it first, comments
+      included; reproduction details usually arrive in the thread rather than
+      the body.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      Do this in order:
+
+      1. Establish what the *correct* behaviour is, not just the reported one.
+         This repository is spec-driven: `docs/spec.md` is the only spec and
+         its section numbers are cited from the code. Read the sections that
+         govern the reported area, read `CLAUDE.md`, and read any relevant
+         document under `docs/tasks/`. A report is a claim about a mismatch
+         between the code and the spec — find out which side is wrong before
+         you touch either.
+
+      2. Locate the defect. Read the code, follow the actual path, and name the
+         precise line or decision that produces the wrong behaviour. "Something
+         in the scheduler" is not a diagnosis.
+
+      3. Check whether it is still a bug at HEAD. The report carries a version
+         and a date; `git log` covers what has landed since. An issue that was
+         already fixed is a `reject`, not a fix — say which commit fixed it.
+
+      4. Reproduce it. Reproducing means: a command you can run in this
+         worktree that fails *because of this bug* and would pass if the bug
+         were absent. Then write that reproduction down as a **test in the
+         repository**, in the package that owns the defect, following this
+         repo's testing conventions (hermetic, no network, no real agent CLI,
+         `internal/testrepo` / `agenttest` / `cmd/fakeagent` where they apply —
+         see the testing section of `CLAUDE.md`). The test must fail right now,
+         for the reported reason and not for an unrelated one.
+
+         **You may create or modify test files only** — `*_test.go` and files
+         under a `testdata/` directory. Do not touch production code in this
+         step, and do not commit anything.
+
+      5. Use the AskUserQuestion tool when — and only when — you genuinely
+         cannot proceed without the author. The cases that warrant it:
+
+         - **You cannot reproduce it.** Ask for the missing piece: exact
+           version, OS, config, the full command, the daemon log around the
+           failure. Say what you already tried, so the answer is worth the
+           interruption.
+         - **The spec and the report disagree.** If the code does exactly what
+           `docs/spec.md` says and the reporter expected something else, the
+           bug may be in the spec. Which one changes is the author's call, not
+           yours — and if the answer is "the spec", note that the spec must be
+           amended in this same branch with a dated note.
+         - **The fix contradicts a recorded decision** — a "phase 2 decision",
+           a "T1.5/T1.6 decision", a "PR G decision", or something in
+           `docs/history/v0-tasks.md`. Those are outcomes of design sessions,
+           not incidental notes. Never relitigate one silently.
+
+         Batch related questions into as few calls as you can, with concrete
+         options where you can offer them. If the report is clear and you
+         reproduced it, ask nothing and move on.
+
+      6. Write `.vincent-bug/diagnosis.md`. Its **first line** must be exactly
+         one of:
+
+             verdict: fix
+             verdict: reject
+             verdict: needs-info
+
+         - `fix` — reproduced, understood, and worth fixing here.
+         - `reject` — this should not be fixed: it is working as specified,
+           already fixed at HEAD, a duplicate, or out of scope. You must have
+           asked the author before rejecting a report that describes real
+           surprise.
+         - `needs-info` — you asked, and what came back still is not enough to
+           reproduce it. This is not the same as `reject`: the bug may well be
+           real, and the issue stays open for a later run with better
+           information. Use it rather than guessing at a fix.
+
+         Below that first line write: what the wrong behaviour is, the exact
+         location of the defect, why it happens, which spec sections govern it,
+         which platforms are affected, what the fix should be, and any decision
+         that came out of your questions — as settled decisions in prose, not
+         as a Q&A transcript. On `reject` or `needs-info`, write why instead,
+         and what would change the answer.
+
+      7. Write `.vincent-bug/red-test.txt` — **one line**, the shell command
+         that runs your failing test and nothing else, narrow enough to be
+         fast. For example:
+
+             go test ./internal/taskrun -run TestRecoverKillsVerifiedOrphan
+
+         The next step runs this command and **fails the task if it passes**,
+         because a regression test nobody ever saw fail proves nothing.
+
+         If this bug genuinely cannot be captured by an automated test — a TUI
+         rendering artifact, a wrong sentence in `docs/`, a defect on a
+         platform this machine is not — write instead a single line:
+
+             none: <one sentence saying why no test can capture this>
+
+         Do not reach for that to save effort. It costs the fix its proof and a
+         human is shown the reason before the PR goes out.
+
+         On `reject` or `needs-info`, write `none: <verdict>` here.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-bug/`, `*_test.go`, and `testdata/`.
+    # Asserts the artifacts exist and are machine-readable before later steps
+    # branch on them, that nothing was committed, and that this step really did
+    # keep its hands off production code — the last of those is what makes
+    # `confirm-red`'s verdict meaningful, since a "failing" test proves nothing
+    # if the fix already landed alongside it. A failure here retries with the
+    # reason appended (§8.4).
+    #
+    # The last clause names the offending paths on stderr rather than just
+    # exiting non-zero: a bare `test -z` prints nothing, and §8.4 hands the
+    # retry the check's *output*, so an agent told only "check failed" would
+    # have to guess which file it left behind.
+    #
+    # Written in `sh`: an agent step cannot pin a shell (§8.2).
+    check: >
+      test -s .vincent-bug/diagnosis.md &&
+      head -n 1 .vincent-bug/diagnosis.md | grep -Eq '^verdict: (fix|reject|needs-info)$' &&
+      test -s .vincent-bug/red-test.txt &&
+      git diff --cached --quiet &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -eq 0 &&
+      { offenders=$( { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.vincent-bug/' | grep -vE '(_test\.go$|(^|/)testdata/)' ); test -z "$offenders" || { echo 'diagnose changed files outside .vincent-bug/, *_test.go and testdata/:' >&2; echo "$offenders" >&2; false; }; }
+    check_timeout: 2m
+
+  - id: triage
+    name: Act on the verdict
+    type: command
+    shell: sh
+    timeout: 1m
+    # `reject` and `needs-info` are legitimate outcomes of `diagnose`, so
+    # `diagnose` passes its check either way. This step is what turns one into
+    # a failed task with a legible reason, instead of a pull request nobody
+    # wanted. The two are kept distinct on purpose: `reject` means never,
+    # `needs-info` means re-run this task once the thread has more in it.
+    max_retries: 0
+    run: |
+      set -e
+      verdict=$(head -n 1 .vincent-bug/diagnosis.md)
+      case "$verdict" in
+        'verdict: reject')
+          echo "diagnosis rejected this report; nothing will be fixed." >&2
+          echo "--- diagnosis.md ---" >&2
+          cat .vincent-bug/diagnosis.md >&2
+          exit 1
+          ;;
+        'verdict: needs-info')
+          echo "the report could not be reproduced with the information available." >&2
+          echo "the issue stays open; re-run this task once the thread has more in it." >&2
+          echo "--- diagnosis.md ---" >&2
+          cat .vincent-bug/diagnosis.md >&2
+          exit 1
+          ;;
+      esac
+      cat .vincent-bug/diagnosis.md
+
+  - id: confirm-red
+    name: Confirm the test fails
+    type: command
+    shell: sh
+    timeout: 15m
+    # Deterministic by construction — a second identical run is the same run.
+    max_retries: 0
+    # The load-bearing step of this workflow, and the one its enhancement
+    # sibling has no equivalent of. It proves the regression test observes the
+    # bug, in the one window where that is observable: after the test exists
+    # and before the fix does.
+    #
+    # It also *freezes* the command into `green.sh`, which is what `fix`'s
+    # check re-runs. Reading it back from `red-test.txt` there would let the
+    # fix step move its own goalposts by rewriting the file; the copy taken
+    # here was taken while the bug was still present.
+    run: |
+      set -e
+      cmd=$(head -n 1 .vincent-bug/red-test.txt)
+      if [ -z "$cmd" ]; then
+        echo ".vincent-bug/red-test.txt is empty" >&2
+        exit 1
+      fi
+
+      case "$cmd" in
+        none:*)
+          echo "NO AUTOMATED REPRODUCTION -${cmd#none:}"
+          echo "this fix ships without a regression test; the gate step is the only"
+          echo "thing standing between it and the PR."
+          printf 'exit 0\n' > .vincent-bug/green.sh
+          exit 0
+          ;;
+      esac
+
+      printf '%s\n' "$cmd" > .vincent-bug/green.sh
+      echo "--- red run: $cmd ---"
+      if sh .vincent-bug/green.sh; then
+        echo "the reproduction command passed against the unfixed code:" >&2
+        echo "  $cmd" >&2
+        echo "it does not capture the reported bug. A regression test that was never" >&2
+        echo "observed failing proves nothing about the fix." >&2
+        exit 1
+      fi
+      echo "--- confirmed red: the test fails on the unfixed code ---"
+
+  - id: fix
+    name: Fix the bug
+    type: agent
+    timeout: 45m
+    # Two attempts, not the default one: this step's check is self-healing —
+    # a still-red regression test, a failing suite or a lint finding comes back
+    # in the §8.4 failure block and the second attempt fixes it. The expensive,
+    # non-self-healing checks live in `verify` instead.
+    max_retries: 2
+    prompt: |
+      Fix the bug diagnosed in `.vincent-bug/diagnosis.md`. That diagnosis is
+      the agreed scope — the author has already answered the open questions and
+      those answers are written into it as decisions. Do not re-open them and
+      do not expand the scope. The original report is still in
+      `.vincent-bug/issue.json` for reference.
+
+      The regression test for this bug is already written and already failing;
+      it was run against the unfixed code and observed to fail, which is what
+      makes it worth anything. `.vincent-bug/green.sh` runs exactly that test.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      Rules for the fix itself:
+
+      - **Fix the cause, not the symptom.** The diagnosis names the defect;
+        repair that. A guard added at the call site that leaves the broken
+        function broken is not a fix.
+      - **Make the smallest change that does it.** A bug fix is not the place
+        for the refactor you noticed on the way past. If you find a second,
+        unrelated bug, say so in the PR body rather than fixing it here.
+      - **Do not weaken the test to make it pass.** If the test turns out to
+        assert the wrong thing, say so explicitly in the PR body and explain
+        what you changed about it and why — silently relaxing an assertion is
+        the one failure mode this whole workflow exists to prevent.
+      - **Cross-platform is a hard requirement here** (`CLAUDE.md`): Windows,
+        macOS and Linux all run the full suite. Platform-specific code goes in
+        `_unix.go` / `_windows.go` / `_darwin.go` / `_linux.go`. Never assume a
+        POSIX shell, `/`-separated paths, or signal semantics.
+
+      **Commit the work** — the regression test and the fix, test first if you
+      split them. Commits follow Conventional Commits; a bug fix is `fix:`
+      unless it truly is not. Never add a co-author trailer.
+
+      This repository's pull request template makes four claims. Satisfy the
+      ones that apply and be honest about the ones that do not:
+
+      - Conventional Commits.
+      - Tests added or updated for behaviour changes.
+      - User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md` —
+        a bug a user could hit belongs there.
+      - The affected page under `docs/` updated — the config reference tracks
+        `internal/config`, the CLI page the cobra tree, the API page the route
+        table in `internal/api/server.go`, the TUI key tables
+        `internal/tui/bindings.go`, the block reasons the `Reason*` constants.
+
+      If the diagnosis concluded that `docs/spec.md` is the side that was
+      wrong, amend the spec in this same branch with a dated note — that is a
+      hard rule of this repository, not a nicety.
+
+      Then write two more files:
+
+      - `.vincent-bug/pr-title.txt` — one line, Conventional Commits style, no
+        trailing prose.
+      - `.vincent-bug/pr.md` — the pull request body, following
+        `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
+        `Closes #<the issue number from issue.json>` so merging the PR closes
+        the issue. Say plainly what the root cause was and how the regression
+        test would catch it coming back. Tick a checklist box only if you
+        actually did that thing; leaving a box unticked with a one-line reason
+        is the correct outcome when it does not apply.
+
+      **Never stage or commit `.vincent-bug/`.** It is scratch space for this
+      workflow and must not appear in the diff — do not `git add -A` without
+      excluding it. A later step deletes it.
+    # Cheap assertions first, so an obvious failure does not wait out a full
+    # test run: scratch stayed untracked, something was actually committed (an
+    # empty branch would only fail at `gh pr create`, after you had already
+    # approved it at the gate), the PR artifacts exist. Then the narrow
+    # regression test — the specific thing this task is for, and the fastest
+    # signal that the fix works. Then the real bar.
+    #
+    # `green.sh` was frozen by `confirm-red` while the bug was still present,
+    # so this is the same command that was observed failing.
+    check: >
+      ! git ls-files .vincent-bug | grep -q . &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      test -s .vincent-bug/pr-title.txt &&
+      test -s .vincent-bug/pr.md &&
+      sh .vincent-bug/green.sh &&
+      go run mage.go test &&
+      go run mage.go lint
+    check_timeout: 15m
+
+  - id: verify
+    name: Verify across platforms
+    type: command
+    shell: sh
+    timeout: 20m
+    # `max_retries: 0`: nothing here is flaky in a way a second identical run
+    # fixes, and each attempt is expensive. A failure blocks the task for you
+    # to read rather than silently buying another 45-minute agent attempt.
+    max_retries: 0
+    # These are the legs CLAUDE.md requires before pushing but that are too
+    # slow to put in `fix`'s check. `testrace` needs cgo and a C compiler; on a
+    # machine without one this step fails, and that is the honest answer rather
+    # than a silently skipped race detector — which matters more for a bug fix
+    # than for a feature, since "intermittent" is how half of them are reported.
+    #
+    # The GOOS loop is not decorative: `go tool golangci-lint` cross-*builds*
+    # the linter and then cannot run it, so the linter is built for the host
+    # once and re-run per target. A host-only lint hides every finding in a
+    # build-tagged file — exactly where a platform-specific bug fix lands.
+    run: |
+      set -e
+      go run mage.go testrace
+      LINT=$(go tool -n golangci-lint)
+      for os in windows darwin linux; do
+        echo "--- golangci-lint GOOS=$os ---"
+        GOOS=$os "$LINT" run ./...
+      done
+
+  - id: gate
+    name: Approve the pull request
+    type: manual
+    instructions: |
+      Read the diff for task #{{.Task.ID}} before it goes out.
+
+      The next step pushes {{.Task.BranchName}} to `origin` and opens a public
+      pull request against {{.Task.BaseBranch}} under your account. It notifies
+      whoever watches the repository, and closing the PR afterwards does not
+      unsend that.
+
+      The worktree is {{.Worktree.Path}}. The diagnosis and the drafted PR body
+      are in `.vincent-bug/`. Tests, lint and the cross-platform legs have
+      already passed — what is left is the judgement they cannot make:
+
+      - Does the diff fix the **cause** named in the diagnosis, or guard the
+        symptom somewhere upstream of it?
+      - Is there a regression test in the diff, and does it assert the
+        behaviour that was actually broken? Read the `confirm-red` output
+        below: if it says NO AUTOMATED REPRODUCTION, this fix ships with no
+        proof at all and you are it.
+      - Did the fix stay small, or did a refactor come along for the ride?
+
+      Reproduction check:
+
+      {{(index .Steps "confirm-red").Result}}
+
+      The fix reported:
+
+      {{(index .Steps "fix").Result}}
+
+      Approve to push and open the PR. Reject if the fix is wrong, too broad,
+      or not worth shipping.
+
+  - id: publish
+    name: Push and open the PR
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost".
+    max_retries: 0
+    # `--head` is passed explicitly rather than letting gh infer it: inference
+    # from the current branch is exactly the kind of thing that behaves
+    # differently inside a linked worktree.
+    run: >
+      git push -u origin {{.Task.BranchName}} &&
+      gh pr create
+      --base {{.Task.BaseBranch}}
+      --head {{.Task.BranchName}}
+      --title "$(cat .vincent-bug/pr-title.txt)"
+      --body-file .vincent-bug/pr.md
+      > .vincent-bug/url.txt
+
+  - id: report
+    name: Report the PR
+    type: command
+    shell: sh
+    timeout: 2m
+    # stdout becomes this step's Result and lands in the transcript — that is
+    # where you read the PR url. Clearing the scratch directory afterwards
+    # leaves the worktree clean, so archiving the task does not warn about a
+    # dirty tree.
+    #
+    # `&&`, not two lines: sh reports the last command's status, so an
+    # unchained `rm` would mask a failed `view` and leave the step green. It
+    # also means the drafts survive for inspection when the report fails —
+    # which is the same reason nothing deletes them if `publish` fails.
+    run: gh pr view "$(cat .vincent-bug/url.txt)" && rm -rf .vincent-bug
