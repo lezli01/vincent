@@ -225,6 +225,12 @@ Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
 
+An **orphans** line appears in the identity block when the daemon has found
+directories under its data dir that no task claims, naming the count and
+`vincent gc`. It is a pointer, not a button: for the same reason this view does
+not stop the daemon, it does not delete anything either. Nothing shows when the
+count is zero.
+
 | Key | Does |
 |---|---|
 | `R` | Re-read the daemon info, the config and the log |

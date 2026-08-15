@@ -171,6 +171,14 @@ A related failure is a **ref hierarchy conflict**: `feat/foo` cannot be created
 while `feat/foo/bar` exists, because git stores refs as a path hierarchy. The
 message names the branch that is in the way.
 
+`worktree_path_occupied` has a second cause with a different fix: a crash between
+creating the worktree and recording its path leaves the directory on disk while
+the task claims nothing, so every later admission finds it occupied. Run
+[`vincent gc`](../reference/cli.md#vincent-gc) — it reclaims exactly the
+directories no task claims — then retry the task. `vincent gc --dry-run` shows
+you the path first, and `--force` is needed when git cannot judge the directory
+because the repository behind it is gone.
+
 ### `base_branch_missing` / `project_path_missing`
 
 The base branch was deleted, or the repository moved. Re-point the project

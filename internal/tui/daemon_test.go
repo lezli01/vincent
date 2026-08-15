@@ -335,3 +335,44 @@ func TestDaemonViewNamesAnUnpinnedAdapterPath(t *testing.T) {
 		t.Errorf("an unpinned adapter path is not explained:\n%s", out)
 	}
 }
+
+// TestDaemonViewShowsOrphansAndOffersNoAction: §15 view 6 reports, it does
+// not act. The line names the count and the command, and nothing on this view
+// runs gc — for the same reason nothing here stops the daemon.
+func TestDaemonViewShowsOrphansAndOffersNoAction(t *testing.T) {
+	d := newTestDaemonView(nil, nil)
+	info := testInfo()
+	info.Orphans = 3
+	d.update(daemonInfoMsg{info: info})
+	d.update(daemonConfigMsg{config: testConfig()})
+	out := renderDaemon(d)
+
+	if !strings.Contains(out, "orphans") || !strings.Contains(out, "3 directories") {
+		t.Errorf("the view does not report the orphan count:\n%s", out)
+	}
+	if !strings.Contains(out, "vincent gc") {
+		t.Errorf("the view does not name the command that clears them:\n%s", out)
+	}
+}
+
+// A clean daemon shows no orphan line at all: a permanent "orphans: 0" is
+// noise on every healthy daemon.
+func TestDaemonViewHidesTheOrphanLineWhenThereAreNone(t *testing.T) {
+	d := newTestDaemonView(nil, nil)
+	loadedDaemon(d)
+	if out := renderDaemon(d); strings.Contains(out, "orphans") {
+		t.Errorf("the view shows an orphan line with nothing to report:\n%s", out)
+	}
+}
+
+// The singular case reads as a sentence rather than as a count with a plural
+// bolted on.
+func TestDaemonViewSingularOrphanLine(t *testing.T) {
+	line, ok := orphanLine(1)
+	if !ok || !strings.Contains(line, "1 directory no task claims") {
+		t.Errorf("orphanLine(1) = %q, %v", line, ok)
+	}
+	if _, ok := orphanLine(0); ok {
+		t.Error("orphanLine(0) produced a line")
+	}
+}

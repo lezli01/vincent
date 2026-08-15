@@ -13,6 +13,7 @@ localhost API.
 - [`vincent project`](#vincent-project)
 - [`vincent task`](#vincent-task)
 - [`vincent workflow`](#vincent-workflow)
+- [`vincent gc`](#vincent-gc)
 
 ---
 
@@ -245,6 +246,53 @@ a CI job.
 
 Exit `0` valid, `1` invalid. Warnings (a model in no catalog) print but do not
 fail the command.
+
+## `vincent gc`
+
+```sh
+vincent gc [--dry-run] [--force] [--json]
+```
+
+Reclaims directories under the data dir that **no task claims**. Two things
+produce one: deleting a project whose worktree removal failed (the task rows go
+regardless, so nothing can name the directory again), and a crash between
+creating a worktree and recording its path.
+
+```
+KIND       PATH                                  SIZE     STATUS
+worktree   ~/.local/share/vincent/worktrees/41   12.4MB   removed
+worktree   ~/.local/share/vincent/worktrees/58   3.1MB    skipped: dirty_unknown
+transcript ~/.local/share/vincent/transcripts/41 88.2KB   removed
+reclaimed 2 of 3 orphan(s), 12.5MB freed
+```
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Prints the identical report and removes nothing |
+| `--force` | Also removes worktrees that are dirty or that git cannot judge |
+| `--json` | The raw report, including per-entry `skip_reason` and `error` |
+
+**Skip reasons.** A worktree with local changes — untracked files included, the
+same rule `git worktree remove` uses — is `worktree_dirty`. One whose repository
+has been deleted, or in which `git worktree prune` has run, is `dirty_unknown`:
+`git status` fails there, so nobody can say what is inside. That is the *common*
+case for a real orphan, so expect a plain `vincent gc` to skip most of what it
+lists and to need `--force` once you have looked at the paths. A file sitting
+directly under a data root is `not_a_directory` and is never removed.
+
+**What it never does.** It never deletes a branch, never touches a directory any
+task row claims, never removes anything outside `{data_dir}/worktrees` and
+`{data_dir}/transcripts`, and never modifies a task row. A task pointing at a
+worktree that is gone is *reported* at the end of the output and left alone —
+recover that one with a retry, which recreates the worktree from the branch.
+
+An entry that could not be removed (a file locked by another process, a
+permissions problem) is reported on its own line and the run continues; the
+reclaimed totals count only what actually went.
+
+The daemon reports the same orphans at startup — one warning per directory in
+`daemon.log`, plus a count on `GET /v1/info` and in the TUI daemon view — but it
+never deletes anything by itself.
 
 ---
 
