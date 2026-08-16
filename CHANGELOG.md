@@ -11,6 +11,17 @@ the human context a commit subject cannot carry. The existing `[Unreleased]`
 content predates that automation and should be reconciled in the first Release
 Please pull request.
 
+## [0.2.0](https://github.com/lezli01/vincent/compare/v0.1.1...v0.2.0) (2026-08-16)
+
+
+### Features
+
+* **codex:** report logged_in from `codex login status` ([7c1a506](https://github.com/lezli01/vincent/commit/7c1a506ef826d2508c1164eb484d2d07067e9783))
+* **doctor:** `vincent doctor` — one command that answers "why is nothing running?" ([e298676](https://github.com/lezli01/vincent/commit/e298676533dfab7cab42693dc4ff2be36590cb59))
+* **doctor:** one command that answers "why is nothing running?" ([e0d63c7](https://github.com/lezli01/vincent/commit/e0d63c7f99b8ad04e72c72cb6e64cff49cfac0b5))
+* reclaim orphaned worktrees with `vincent gc` ([e1195e4](https://github.com/lezli01/vincent/commit/e1195e4f6e611e68a6c25d20dae6beb6f940bfbf))
+* reclaim orphaned worktrees with `vincent gc` ([5a9037d](https://github.com/lezli01/vincent/commit/5a9037d8392fb32b9e539f072d5fd75c73429743)), closes [#95](https://github.com/lezli01/vincent/issues/95)
+
 ## [Unreleased]
 
 ### Added
