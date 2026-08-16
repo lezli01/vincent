@@ -200,6 +200,12 @@ answer form.
 | `enter` | Submit; the run resumes in the same session where it stopped |
 | `esc` | Close without answering (what you picked is kept) |
 
+While `e` has a field open, `enter` keeps what you typed and `esc` discards it —
+the submit is the next `enter`, on the form itself. The field opens under the
+question it answers and wraps as you type, so a long answer stays readable
+before you commit it; the committed answer is shown back on its row, wrapped
+the same way.
+
 The form is a popup, and it **never steals focus**: auto-opening under a
 keystroke is how an answer gets lost. It announces itself and waits for you.
 

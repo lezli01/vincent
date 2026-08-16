@@ -579,7 +579,11 @@ func (s *shell) detailPlaceholder() (string, bool) {
 // what says why the agent is asking.
 func (s *shell) overlayPopup(bg string) string {
 	form := s.detail.form
-	pw := min(s.bodyW-6, 76)
+	// Take nearly the whole body: a §7.4 question is prose and its options are
+	// sentences, so every column the popup gives back to the panels behind it
+	// is another wrapped line to read. The cap is a reading measure, not a
+	// layout constraint — past it a line stops being comfortable to scan.
+	pw := min(s.bodyW-6, 120)
 	if pw < 20 {
 		pw = s.bodyW
 	}
