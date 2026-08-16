@@ -110,6 +110,9 @@ func (d *daemonView) configLines() []string {
 			styleDim.Render("   remote "+onOff(c.DeleteRemoteBranchOnArchive)),
 		field("usage limit recheck", c.UsageLimitRecheck),
 		field("log level", c.LogLevel),
+		// What the file says, which is not necessarily what the board is
+		// showing: `g` regroups for the session without writing anything.
+		field("task grouping", groupSummary(c.TUI.Board.GroupBy)),
 	)
 	for _, name := range sortedKeys(c.Agents) {
 		path := c.Agents[name].Path

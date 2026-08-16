@@ -94,6 +94,18 @@ agents:
   # editor launcher (§9.7).
   cursor:
     path: ""
+
+# What clients render, not what the daemon does. The daemon validates these,
+# hot-reloads them and serves them on GET /v1/config; the TUI reads them from
+# there.
+#
+# group_by nests the task table under headers, outermost level first. Accepted
+# levels: project, workflow. Use [] for one flat list of tasks. A grouped
+# level drops its own column — the header already names it — and "g" cycles
+# the grouping for the session without touching this file.
+tui:
+  board:
+    group_by: [project, workflow]
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

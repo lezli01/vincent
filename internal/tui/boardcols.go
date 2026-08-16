@@ -71,8 +71,18 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // The workflow outranks the step name: "survey" is meaningless without
 // knowing it belongs to docs-update, while the workflow alone still tells you
 // what a task is doing.
-func columnsFor(width int) columnSet {
-	set := columnSet{project: true, workflow: true, stepName: true, cost: true}
+// A grouped level costs no column: the header above the rows already names
+// it, and repeating it down every row of the group is fourteen characters
+// spent saying what the reader just read. The width that frees goes to the
+// title, which is where a grouped board needs it — the titles are indented
+// under their headers.
+func columnsFor(width int, g grouping) columnSet {
+	set := columnSet{
+		project:  !g.has(groupProject),
+		workflow: !g.has(groupWorkflow),
+		stepName: true,
+		cost:     true,
+	}
 	for set.titleWidth(width) < minTitle {
 		switch {
 		case set.cost:
@@ -94,8 +104,8 @@ func columnsFor(width int) columnSet {
 
 // boardColumns builds the table columns for a terminal width, giving the
 // title whatever space the fixed columns leave.
-func boardColumns(width int) ([]table.Column, columnSet) {
-	set := columnsFor(width)
+func boardColumns(width int, g grouping) ([]table.Column, columnSet) {
+	set := columnsFor(width, g)
 	title := max(set.titleWidth(width), minTitle)
 	stepWidth := widthStepShort
 	if set.stepName {

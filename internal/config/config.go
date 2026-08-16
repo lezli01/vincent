@@ -201,6 +201,59 @@ type Config struct {
 	// what every version before it did implicitly.
 	Environment Environment `yaml:"environment"`
 	Agents      Agents      `yaml:"agents"`
+	// TUI is view preference, not daemon behaviour: the daemon validates it,
+	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
+	// with it. It lives in this file rather than one of the TUI's own because
+	// the TUI is a pure API client (§15) — it reads no configuration from
+	// disk, and a second file would be a second path, a second reload story
+	// and a second `vincent doctor` line for one setting.
+	TUI TUI `yaml:"tui"`
+}
+
+// TUI holds the settings clients read for themselves (§15).
+type TUI struct {
+	Board BoardView `yaml:"board"`
+}
+
+// BoardView configures the task table — the board's Tasks panel.
+type BoardView struct {
+	// GroupBy nests the rows under group headers, outermost level first.
+	//
+	// The default groups by project and then by workflow: a board is read
+	// project by project, and within one project the workflow is what says
+	// what a task is *doing* — the same reason those are the two columns the
+	// width budget sheds last (boardcols.go). An empty list — `group_by: []`
+	// — is the flat table every version before this one rendered.
+	GroupBy []BoardGroup `yaml:"group_by"`
+}
+
+// BoardGroup is one grouping level of the task table.
+type BoardGroup string
+
+// The grouping vocabulary. Deliberately not `state`: the board's band sort
+// already orders by state and pins the tasks waiting on a human above
+// everything (§15), so a state grouping would fight the one ordering rule
+// the board is not allowed to lose.
+const (
+	BoardGroupProject  BoardGroup = "project"
+	BoardGroupWorkflow BoardGroup = "workflow"
+)
+
+func (b BoardView) validate() error {
+	seen := make(map[BoardGroup]bool, len(b.GroupBy))
+	for _, g := range b.GroupBy {
+		switch g {
+		case BoardGroupProject, BoardGroupWorkflow:
+		default:
+			return fmt.Errorf(
+				"tui.board.group_by: unknown level %q; want project or workflow, or [] for a flat table", g)
+		}
+		if seen[g] {
+			return fmt.Errorf("tui.board.group_by: %q listed twice", g)
+		}
+		seen[g] = true
+	}
+	return nil
 }
 
 // Defaults holds fallback step timeouts, applied when a workflow step does
@@ -249,6 +302,9 @@ func Default() Config {
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
 		Environment: Environment{Inherit: InheritAll()},
+		TUI: TUI{Board: BoardView{
+			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
+		}},
 	}
 }
 
@@ -309,6 +365,9 @@ func (c Config) validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.LogLevel)
+	}
+	if err := c.TUI.Board.validate(); err != nil {
+		return err
 	}
 	return c.Environment.validate()
 }
