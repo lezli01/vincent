@@ -110,6 +110,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			"branch_template", cfg.BranchTemplate, "error", err)
 		return fmt.Errorf("invalid branch_template: %w", err)
 	}
+	// Settings that load and take effect but cannot do what they ask for
+	// (§12.3). They never refuse the file, so the log is the only place they
+	// are ever visible; the reload path re-reports them when they change.
+	prevWarnings := cfg.Warnings()
+	for _, warning := range prevWarnings {
+		logger.Warn("config warning", "warning", warning)
+	}
 	if lvl, err := parseLevel(cfg.LogLevel); err == nil {
 		level.Set(lvl)
 	}
@@ -325,6 +332,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 					"effective", prev.BranchTemplate, "requested", next.BranchTemplate, "error", err)
 				next.BranchTemplate = prev.BranchTemplate
 			}
+		}
+		// Re-warned on every reload that introduces one: a warning is about the
+		// configuration now in force, and startup's copy says nothing about an
+		// edit made an hour later.
+		if warnings := next.Warnings(); !sameNames(prevWarnings, warnings) {
+			for _, warning := range warnings {
+				logger.Warn("config warning", "warning", warning)
+			}
+			prevWarnings = warnings
 		}
 		if lvl, err := parseLevel(next.LogLevel); err == nil {
 			level.Set(lvl)

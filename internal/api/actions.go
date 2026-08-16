@@ -96,15 +96,78 @@ type archiveRequest struct {
 	Force bool `json:"force"`
 }
 
+// archiveResponse is the task as every other action renders it, plus what
+// archive did to the branch (§13.2, task 008). The task fields stay at the top
+// level — an archive response is still a task — and `branch` is omitted
+// entirely when the branch step did not run, so a client that predates the
+// field sees exactly what it saw before.
+//
+// It is reported here rather than as an event: `archived` is terminal, a
+// `block_reason` would be a lie on it, and this is the one path with a human
+// on the other end of the request.
+type archiveResponse struct {
+	taskResponse
+	Branch *branchResponse `json:"branch,omitempty"`
+}
+
+// branchResponse is one branch outcome. `result` is worktree's own snake_case
+// vocabulary: deleted | has_commits | unknown | error.
+type branchResponse struct {
+	Name   string                `json:"name"`
+	Result string                `json:"result"`
+	Error  string                `json:"error,omitempty"`
+	Remote *remoteBranchResponse `json:"remote,omitempty"`
+}
+
+// remoteBranchResponse is the opt-in remote leg: deleted | no_upstream | error.
+type remoteBranchResponse struct {
+	Remote string `json:"remote,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	Result string `json:"result"`
+	Error  string `json:"error,omitempty"`
+}
+
+// handleTaskArchive cannot go through runAction: that path's taskAction returns
+// a task and nothing else, and archive is the one action with a second thing to
+// say. It reuses writeActionError so the §13.1 mapping stays in one place.
 func (s *Server) handleTaskArchive(w http.ResponseWriter, r *http.Request) {
 	var req archiveRequest
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
 	}
 	force := req.Force || hasForce(r)
-	s.runAction(w, r, func(id int64) (*store.Task, error) {
-		return s.deps.Runner.Archive(r.Context(), id, force)
+	if s.deps.Runner == nil {
+		s.internalError(w, "task actions", errors.New("no task runner is configured"))
+		return
+	}
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
+		return
+	}
+	task, branch, err := s.deps.Runner.Archive(r.Context(), id, force)
+	if err != nil {
+		s.writeActionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, archiveResponse{
+		taskResponse: toTaskResponse(task, s.snaps.get(task.ID, task.WorkflowSnapshot)),
+		Branch:       toBranchResponse(branch),
 	})
+}
+
+// toBranchResponse renders a branch outcome, or nil when the step never ran.
+func toBranchResponse(out worktree.BranchOutcome) *branchResponse {
+	if !out.Checked() {
+		return nil
+	}
+	b := &branchResponse{Name: out.Branch, Result: out.Result, Error: out.Error}
+	if out.Remote != nil {
+		b.Remote = &remoteBranchResponse{
+			Remote: out.Remote.Remote, Ref: out.Remote.Ref,
+			Result: out.Remote.Result, Error: out.Remote.Error,
+		}
+	}
+	return b
 }
 
 // answerRequest is the §13.2 body of POST /v1/tasks/{id}/answer (§7.4).

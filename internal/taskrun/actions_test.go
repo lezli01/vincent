@@ -35,6 +35,9 @@ type actionHarness struct {
 	runner    *Runner
 	repo      string
 	projectID int64
+	// cfg is read through Deps.Config on every call, so a test can move a
+	// setting the way a hot reload does.
+	cfg config.Config
 }
 
 func newActionHarness(t *testing.T) *actionHarness {
@@ -51,14 +54,31 @@ func newActionHarness(t *testing.T) *actionHarness {
 	if err := st.CreateProject(t.Context(), project); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	runner := New(Deps{
+	h := &actionHarness{store: st, repo: repo, projectID: project.ID, cfg: config.Default()}
+	h.runner = New(Deps{
 		Store:     st,
-		Config:    config.Default,
+		Config:    func() config.Config { return h.cfg },
 		Worktrees: worktree.NewManager(git, dataDir),
 		DataDir:   dataDir,
 		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	return &actionHarness{store: st, runner: runner, repo: repo, projectID: project.ID}
+	return h
+}
+
+// branchExists asks the repository itself, not the manager under test.
+func (h *actionHarness) branchExists(t *testing.T, branch string) bool {
+	t.Helper()
+	return testrepo.Run(t, h.repo,
+		"for-each-ref", "--format=%(refname:short)", "refs/heads/"+branch) != ""
+}
+
+// commitInWorktree gives the task's branch a commit of its own, which is what
+// makes it worth keeping past archive.
+func (h *actionHarness) commitInWorktree(t *testing.T, path string) {
+	t.Helper()
+	testrepo.WriteFile(t, path, "work.txt", "real work\n")
+	testrepo.Run(t, path, "add", ".")
+	testrepo.Run(t, path, "commit", "-q", "-m", "the work")
 }
 
 func (h *actionHarness) task(t *testing.T, state store.TaskState) *store.Task {
@@ -112,7 +132,8 @@ func (h *actionHarness) invoke(
 	case taskstate.Reject:
 		return h.runner.Reject(ctx, id)
 	case taskstate.Archive:
-		return h.runner.Archive(ctx, id, false)
+		task, _, err := h.runner.Archive(ctx, id, false)
+		return task, err
 	default:
 		t := &InvalidActionError{TaskID: id, Action: action}
 		return nil, t
@@ -463,7 +484,7 @@ func TestArchiveRemovesWorktree(t *testing.T) {
 	task := h.task(t, store.TaskDone)
 	path := h.worktree(t, task)
 
-	got, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
@@ -472,6 +493,14 @@ func TestArchiveRemovesWorktree(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("worktree %s still exists after archiving", path)
+	}
+	// The default is on, and this task's branch never received a commit
+	// (task 008).
+	if branch.Result != worktree.BranchDeleted {
+		t.Errorf("branch outcome = %+v, want %q", branch, worktree.BranchDeleted)
+	}
+	if h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s survived an archive that reported it deleted", task.BranchName)
 	}
 }
 
@@ -483,7 +512,7 @@ func TestArchiveRefusesDirtyWorktreeWithoutForce(t *testing.T) {
 		t.Fatalf("dirty the worktree: %v", err)
 	}
 
-	if _, err := h.runner.Archive(t.Context(), task.ID, false); err == nil {
+	if _, _, err := h.runner.Archive(t.Context(), task.ID, false); err == nil {
 		t.Fatal("archived a dirty worktree without force")
 	} else if worktree.ReasonOf(err) != worktree.ReasonWorktreeDirty {
 		t.Fatalf("err = %v, want a dirty-worktree refusal", err)
@@ -493,12 +522,116 @@ func TestArchiveRefusesDirtyWorktreeWithoutForce(t *testing.T) {
 	if got := h.get(t, task.ID); got.State != store.TaskDone {
 		t.Errorf("state = %s after a refused archive, want done", got.State)
 	}
+	// And the branch step must be unreachable behind that refusal — it runs
+	// after the worktree removal, which did not happen (task 008).
+	if !h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s was deleted by an archive that was refused", task.BranchName)
+	}
 
-	if _, err := h.runner.Archive(t.Context(), task.ID, true); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), task.ID, true); err != nil {
 		t.Fatalf("Archive(force): %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("worktree %s still exists after a forced archive", path)
+	}
+}
+
+// TestArchiveKeepsABranchWithCommits: the rule is about branches that hold
+// nothing, and a task that did work is the case that must never lose it.
+func TestArchiveKeepsABranchWithCommits(t *testing.T) {
+	h := newActionHarness(t)
+	task := h.task(t, store.TaskDone)
+	path := h.worktree(t, task)
+	h.commitInWorktree(t, path)
+
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if got.State != store.TaskArchived {
+		t.Errorf("state = %s, want archived", got.State)
+	}
+	if branch.Result != worktree.BranchHasCommits {
+		t.Errorf("branch outcome = %+v, want %q", branch, worktree.BranchHasCommits)
+	}
+	if !h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s was deleted despite carrying a commit", task.BranchName)
+	}
+}
+
+// TestArchiveWithBranchCleanupOff asserts the pre-008 behaviour directly: with
+// the setting off, no path deletes anything and the outcome says nothing.
+func TestArchiveWithBranchCleanupOff(t *testing.T) {
+	h := newActionHarness(t)
+	h.cfg.DeleteEmptyBranchOnArchive = false
+	task := h.task(t, store.TaskDone)
+	h.worktree(t, task)
+
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if got.State != store.TaskArchived {
+		t.Errorf("state = %s, want archived", got.State)
+	}
+	if branch.Checked() {
+		t.Errorf("branch outcome = %+v, want the zero value", branch)
+	}
+	if !h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s was deleted with delete_empty_branch_on_archive off", task.BranchName)
+	}
+}
+
+// TestArchiveSurvivesABranchFailure: every branch-side failure still lands the
+// task in `archived` and reports what happened. Here the base branch is gone,
+// so git cannot judge the branch at all.
+func TestArchiveSurvivesABranchFailure(t *testing.T) {
+	h := newActionHarness(t)
+	task := h.task(t, store.TaskDone)
+	h.worktree(t, task)
+	// The recorded base no longer resolves: renamed out from under the task.
+	testrepo.Run(t, h.repo, "branch", "-m", "main", "trunk")
+
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v — a branch problem must never fail the archive", err)
+	}
+	if got.State != store.TaskArchived {
+		t.Errorf("state = %s, want archived", got.State)
+	}
+	if branch.Result != worktree.BranchUnknown {
+		t.Errorf("branch outcome = %+v, want %q", branch, worktree.BranchUnknown)
+	}
+	if branch.Error == "" {
+		t.Error("an unknown outcome carries no error text to log")
+	}
+	if !h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s was deleted on a check nobody could make", task.BranchName)
+	}
+}
+
+// TestArchiveWithoutAWorktreeTouchesNoBranch: a task that never got a worktree
+// never got a branch either, and its branch_name may name somebody else's —
+// that is exactly what a `branch_exists` block records (task 001).
+func TestArchiveWithoutAWorktreeTouchesNoBranch(t *testing.T) {
+	h := newActionHarness(t)
+	task := h.task(t, store.TaskAborted)
+	// A branch of that name exists, put there by something other than this
+	// task. Nothing may touch it.
+	testrepo.Run(t, h.repo, "branch", task.BranchName)
+
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if got.State != store.TaskArchived {
+		t.Errorf("state = %s, want archived", got.State)
+	}
+	if branch.Checked() {
+		t.Errorf("branch outcome = %+v, want the zero value", branch)
+	}
+	if !h.branchExists(t, task.BranchName) {
+		t.Errorf("branch %s was deleted although this task never created it", task.BranchName)
 	}
 }
 

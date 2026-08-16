@@ -79,10 +79,14 @@ agents:
 			CommandTimeout: Duration(90 * time.Second),
 			InputTimeout:   Duration(36 * time.Hour),
 		},
-		TranscriptRetentionDays:   7,
-		TranscriptMaxBytes:        32 << 20,
-		UsageLimitRecheckInterval: Duration(2 * time.Minute),
-		LogLevel:                  "warn",
+		// Same property as `environment:` below: the file names neither branch
+		// key, so the §10 defaults survive an otherwise fully-overriding config
+		// — on locally, off for the forge (task 008).
+		DeleteEmptyBranchOnArchive: true,
+		TranscriptRetentionDays:    7,
+		TranscriptMaxBytes:         32 << 20,
+		UsageLimitRecheckInterval:  Duration(2 * time.Minute),
+		LogLevel:                   "warn",
 		// The file omits `environment:`, so the §12.3 default survives an
 		// otherwise fully-overriding config — which is the property that
 		// keeps T4.23 invisible to anyone who does not ask for it.
@@ -94,6 +98,62 @@ agents:
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)
+	}
+}
+
+// TestBranchCleanupDefaults pins the split default the §10 amendment rests on
+// (task 008): the local leg is on, the leg that writes to a forge is not.
+func TestBranchCleanupDefaults(t *testing.T) {
+	d := Default()
+	if !d.DeleteEmptyBranchOnArchive {
+		t.Error("delete_empty_branch_on_archive defaults to false, want true")
+	}
+	if d.DeleteRemoteBranchOnArchive {
+		t.Error("delete_remote_branch_on_archive defaults to true, want false")
+	}
+}
+
+// TestBranchCleanupExplicitFalse: a plain bool is only correct if an explicit
+// `false` in the file survives unmarshalling into Default() — that is the one
+// way back to the pre-008 behaviour.
+func TestBranchCleanupExplicitFalse(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "delete_empty_branch_on_archive: false\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DeleteEmptyBranchOnArchive {
+		t.Error("an explicit false was overwritten by the default true")
+	}
+}
+
+// TestBranchCleanupWarnsOnUnreachableRemoteLeg: the pair still loads — a key
+// that is merely unreachable is not an invalid one, and failing the file over
+// it would revert every unrelated edit in the same save — but it must not be
+// silent.
+func TestBranchCleanupWarnsOnUnreachableRemoteLeg(t *testing.T) {
+	cfg, err := Load(writeConfig(t, strings.TrimSpace(`
+delete_empty_branch_on_archive: false
+delete_remote_branch_on_archive: true
+`)))
+	if err != nil {
+		t.Fatalf("Load: %v — an unreachable key must not refuse the file", err)
+	}
+	warnings := cfg.Warnings()
+	if len(warnings) != 1 {
+		t.Fatalf("Warnings() = %q, want exactly one", warnings)
+	}
+	if !strings.Contains(warnings[0], "delete_remote_branch_on_archive") {
+		t.Errorf("warning %q does not name the key it is about", warnings[0])
+	}
+	// Every workable combination stays quiet, or the log stops meaning anything.
+	for _, c := range []Config{
+		Default(),
+		{DeleteEmptyBranchOnArchive: true, DeleteRemoteBranchOnArchive: true},
+		{},
+	} {
+		if w := c.Warnings(); len(w) != 0 {
+			t.Errorf("Warnings() = %q for %+v, want none", w, c)
+		}
 	}
 }
 

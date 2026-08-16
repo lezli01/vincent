@@ -202,9 +202,12 @@ discard, then archive again.
 ### `branch_exists` / `worktree_path_occupied`
 
 The branch this task would use, or its worktree directory, already exists from an
-earlier run. vincent **never deletes a branch**, so leftovers accumulate if you
-re-create tasks with the same title — or if a branch template has no discriminator
-in it, in which case the *second* task for the same input collides every time.
+earlier run. vincent **never deletes a branch that carries a commit**, so
+leftovers accumulate if you re-create tasks with the same title — or if a branch
+template has no discriminator in it, in which case the *second* task for the same
+input collides every time. (Archiving cleans up only the branches that received
+no commit at all, which is precisely the set that never collides with anything
+you would miss.)
 
 Most collisions are caught at creation with a `400`, but the check at creation is
 racy by nature, so this block is the authority.

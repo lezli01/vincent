@@ -55,7 +55,7 @@ Tasks are `queued` immediately on creation. There is no draft state.
 | `paused` | You asked it to hold; takes effect at the next step boundary | no |
 | `done` | Every step succeeded. Worktree and branch retained for inspection | no |
 | `aborted` | You cancelled, or rejected terminally. Worktree and branch retained | no |
-| `archived` | Terminal. Worktree removed, branch kept, record kept | no |
+| `archived` | Terminal. Worktree removed, record kept. The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
 
 Three of these are worth dwelling on.
 
@@ -92,7 +92,7 @@ its worktree, its branch and its transcripts while it does.
 | `approve` | awaiting_gate | Gate `approved`, advance → `queued` |
 | `reject` | awaiting_gate | Gate `rejected` → `blocked`, from which you can edit-and-retry an earlier step, skip, or abort |
 | `set priority` | queued, paused | Reorders scheduler admission |
-| `archive` | done, aborted | Removes the worktree, keeps the branch → `archived`. Refuses on a dirty worktree unless forced — uncommitted work would be lost |
+| `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `E`, `s`, `p`, `c`,
 `A`); over the API they are `POST /v1/tasks/{id}/{action}`; from the CLI,

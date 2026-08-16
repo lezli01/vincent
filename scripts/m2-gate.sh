@@ -5,11 +5,13 @@
 # awaiting_input → answer → resume (scenario 1), that kill -9 mid-step
 # recovers correctly (scenario 2), and that both concurrency caps hold under
 # load (scenario 3), that branch naming and its recovery path hold (scenario
-# 4), and that an agent usage limit re-queues rather than blocks and recovers
-# unattended (scenario 5). Runs against the committed fakeagent so CI never
-# calls a real API; run manually with VINCENT_GATE_AGENT=claude to exercise the
-# real CLI (scenario 1 only — killing a paid run and 8× cap spend prove nothing
-# extra). VINCENT_GATE_SCENARIO=1|2|3|4|5 runs a single scenario for debugging.
+# 4), that an agent usage limit re-queues rather than blocks and recovers
+# unattended (scenario 5), and that archiving deletes a branch that carries no
+# commits past its base while keeping every branch that does (scenario 6). Runs
+# against the committed fakeagent so CI never calls a real API; run manually
+# with VINCENT_GATE_AGENT=claude to exercise the real CLI (scenario 1 only —
+# killing a paid run and 8× cap spend prove nothing extra).
+# VINCENT_GATE_SCENARIO=1|2|3|4|5|6 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -662,6 +664,125 @@ EOF
   echo "=== scenario 5 PASS (task $walled recovered unattended)"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 6 — archive-time branch cleanup (task 008, spec §10/§13.2).
+#
+# The one exception to "vincent never deletes a branch", proven against a real
+# daemon on all three platforms: a task that never commits anything leaves no
+# ref behind, a task that commits keeps every one of them, and the escape hatch
+# actually reaches the running daemon. The two workflows differ in exactly one
+# thing — whether a commit is made — so a difference in the outcome can only
+# come from the rule under test.
+# ---------------------------------------------------------------------------
+scenario6() {
+  echo "=== scenario 6: archive deletes a branch with no commits past its base"
+  scenario_dirs s6
+
+  export FAKEAGENT_SCENARIO=success
+  export FAKEAGENT_EDIT_FILE=README.md
+
+  # No delete_empty_branch_on_archive line: the default is what ships, and the
+  # default is what this asserts.
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-idle.yaml" <<EOF
+name: m2-idle
+description: M2 gate — a workflow that never writes to the repository.
+steps:
+  - id: nap
+    type: command
+    run: sleep 1
+EOF
+  cat > "$CONFIG_DIR/workflows/m2-commits.yaml" <<EOF
+name: m2-commits
+description: M2 gate — the same shape, but it commits.
+defaults:
+  agent: claude
+  max_retries: 0
+steps:
+  - id: edit
+    type: agent
+    prompt: "Edit README.md for {{.Task.Title}}"
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "m2 gate: real work"'
+EOF
+
+  daemon_up
+
+  echo "== both keys are visible in the config view, with the shipped defaults"
+  local cfg
+  cfg="$(api GET /config)"
+  [[ "$(jq -r .delete_empty_branch_on_archive <<<"$cfg")" == "true" ]] \
+    || fail "delete_empty_branch_on_archive is not true by default: $cfg"
+  [[ "$(jq -r .delete_remote_branch_on_archive <<<"$cfg")" == "false" ]] \
+    || fail "delete_remote_branch_on_archive is not false by default: $cfg"
+
+  local repo="$TMP/s6/repo" proj
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  echo "== a task that commits nothing loses its branch on archive"
+  local idle idle_branch body
+  idle="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-idle\",\"title\":\"Idle\"}" | jq -r .id)"
+  idle_branch="$(api GET "/tasks/$idle" | jq -r .branch_name)"
+  wait_for_state "$idle" done 90
+  git -C "$repo" rev-parse --verify --quiet "refs/heads/$idle_branch" >/dev/null \
+    || fail "the branch was never created, so archiving proves nothing"
+  body="$(api POST "/tasks/$idle/archive")"
+  [[ "$(jq -r .state <<<"$body")" == "archived" ]] || fail "archive did not archive: $body"
+  [[ "$(jq -r '.branch.result' <<<"$body")" == "deleted" ]] \
+    || fail "archive reported $(jq -c .branch <<<"$body"), want result deleted"
+  git -C "$repo" rev-parse --verify --quiet "refs/heads/$idle_branch" >/dev/null \
+    && fail "branch $idle_branch survived an archive that reported it deleted"
+
+  echo "== a task that commits keeps its branch, and the commit with it"
+  local work work_branch tip
+  work="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-commits\",\"title\":\"Work\"}" | jq -r .id)"
+  work_branch="$(api GET "/tasks/$work" | jq -r .branch_name)"
+  wait_for_state "$work" done 180
+  tip="$(git -C "$repo" rev-parse "refs/heads/$work_branch")"
+  body="$(api POST "/tasks/$work/archive")"
+  [[ "$(jq -r '.branch.result' <<<"$body")" == "has_commits" ]] \
+    || fail "archive reported $(jq -c .branch <<<"$body"), want result has_commits"
+  [[ "$(git -C "$repo" rev-parse "refs/heads/$work_branch")" == "$tip" ]] \
+    || fail "branch $work_branch did not survive the archive at the same commit"
+
+  echo "== delete_empty_branch_on_archive: false restores the pre-008 behaviour"
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+delete_empty_branch_on_archive: false
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+  local reloaded=0
+  for _ in $(seq 1 30); do
+    [[ "$(api GET /config | jq -r .delete_empty_branch_on_archive)" == "false" ]] \
+      && { reloaded=1; break; }
+    sleep 1
+  done
+  (( reloaded )) || fail "the daemon never picked up the edited config"
+
+  local kept kept_branch
+  kept="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-idle\",\"title\":\"Kept\"}" | jq -r .id)"
+  kept_branch="$(api GET "/tasks/$kept" | jq -r .branch_name)"
+  wait_for_state "$kept" done 90
+  body="$(api POST "/tasks/$kept/archive")"
+  [[ "$(jq -r '.branch // "null"' <<<"$body")" == "null" ]] \
+    || fail "the branch step ran with the policy off: $(jq -c .branch <<<"$body")"
+  git -C "$repo" rev-parse --verify --quiet "refs/heads/$kept_branch" >/dev/null \
+    || fail "branch $kept_branch was deleted with delete_empty_branch_on_archive off"
+
+  "$VINCENT" daemon stop
+  unset FAKEAGENT_SCENARIO FAKEAGENT_EDIT_FILE
+  echo "=== scenario 6 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -673,7 +794,8 @@ case "$WHICH" in
   3) scenario3 ;;
   4) scenario4 ;;
   5) scenario5 ;;
-  all) scenario1; scenario2; scenario3; scenario4; scenario5 ;;
+  6) scenario6 ;;
+  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

@@ -22,6 +22,7 @@ description of how the system actually behaves.
 | [005](005-orphaned-worktree-gc.md) | Reclaim orphaned worktrees: `vincent gc` and a startup reconcile | ✅ done (8/8) |
 | [006](006-vincent-doctor.md) | `vincent doctor` — one diagnostic report | ✅ done (8/8) |
 | [007](007-release-please.md) | Release Please automation | ✅ done (6/6) |
+| [008](008-archive-branch-cleanup.md) | Archive cleanup: delete a branch with no commits past its base | ✅ done (7/7) |
 
 ## How to add and update a task document
 

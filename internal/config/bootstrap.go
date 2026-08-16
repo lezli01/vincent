@@ -32,6 +32,18 @@ defaults:
   command_timeout: 15m
   input_timeout: 24h
 
+# Delete a task's branch when it is archived and carries no commits past the
+# base it was cut from — the branch a workflow that never writes to the
+# repository leaves behind. A branch holding any commit is always kept, and a
+# check git cannot answer keeps the branch too.
+delete_empty_branch_on_archive: true
+
+# Also delete that branch's upstream counterpart, when it has one. Off by
+# default and honoured only when a human archives the task: a forge is shared
+# with other people and the deletion cannot be undone. Nothing happens here
+# unless delete_empty_branch_on_archive is also on.
+delete_remote_branch_on_archive: false
+
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 

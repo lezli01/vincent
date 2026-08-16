@@ -248,9 +248,11 @@ Installed with Homebrew, `brew uninstall --zap vincent` does all of the above in
 one step — it unloads the LaunchAgent, removes the binary, and trashes the
 config and data directory.
 
-**Branches are never deleted by vincent.** Task branches stay in your repositories
-until you remove them. Ask vincent which ones it made — branch names are
-configurable, so a `vincent/*` glob is not guaranteed to find them all:
+**A branch with commits on it is never deleted by vincent.** Archiving a task
+deletes its branch only when that branch has no commits past its base, so
+everything vincent actually wrote for you stays in your repositories until you
+remove it. Ask vincent which branches it made — branch names are configurable, so
+a `vincent/*` glob is not guaranteed to find them all:
 
 ```sh
 vincent task ls --archived      # read the branch column

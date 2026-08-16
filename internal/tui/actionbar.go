@@ -22,6 +22,11 @@ type actionResultMsg struct {
 	taskID int64
 	action string
 	task   apiclient.Task
+	// branch is what an archive did to the task's branch (§10, task 008); its
+	// zero value means the branch step did not run, and no other action sets
+	// it. It rides the result rather than an event because `archived` is
+	// terminal and this is the one place a human is waiting for the answer.
+	branch apiclient.BranchOutcome
 	err    error
 }
 
@@ -147,8 +152,9 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		var (
-			task apiclient.Task
-			err  error
+			task   apiclient.Task
+			branch apiclient.BranchOutcome
+			err    error
 		)
 		switch action {
 		case apiclient.ActionCancel:
@@ -166,11 +172,11 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 		case apiclient.ActionReject:
 			task, err = client.Reject(ctx, id)
 		case apiclient.ActionArchive:
-			task, err = client.Archive(ctx, id, force)
+			task, branch, err = client.Archive(ctx, id, force)
 		default:
 			err = fmt.Errorf("unknown action %q", action)
 		}
-		return actionResultMsg{taskID: id, action: action, task: task, err: err}
+		return actionResultMsg{taskID: id, action: action, task: task, branch: branch, err: err}
 	}
 }
 
@@ -179,7 +185,14 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 // dirty confirmation (§6) and re-asking is what a human expects to be asked.
 func (a *actionBar) applyResult(msg actionResultMsg) {
 	if msg.err == nil {
-		a.setStatus(msg.action+" · now "+msg.task.State, false)
+		status := msg.action + " · now " + msg.task.State
+		// The branch is the one consequence of an archive that is invisible
+		// afterwards — the task row no longer names a worktree to go look in —
+		// so it is said here or nowhere (§10, task 008).
+		if line := msg.branch.Summary(); line != "" {
+			status += " · " + line
+		}
+		a.setStatus(status, false)
 		return
 	}
 	var apiErr *apiclient.Error

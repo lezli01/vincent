@@ -9,6 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // InvalidActionError reports a human action that §6 does not allow from the
@@ -197,26 +198,41 @@ func (r *Runner) Reject(ctx context.Context, id int64) (*store.Task, error) {
 	return r.transitionFrom(ctx, task, taskstate.Reject, store.TaskChange{BlockReason: &reason})
 }
 
-// Archive removes the task's worktree and marks the record archived (§6,
-// §10). The branch is never deleted. Removal happens first: an archived task
-// still pointing at a live worktree would be a lie, so a dirty worktree
-// without force leaves the task exactly as it was.
-func (r *Runner) Archive(ctx context.Context, id int64, force bool) (*store.Task, error) {
+// Archive removes the task's worktree, marks the record archived, and then —
+// and only then — deletes the branch if it carries no commits past its base
+// (§6, §10, task 008). Removal happens first: an archived task still pointing
+// at a live worktree would be a lie, so a dirty worktree without force leaves
+// the task exactly as it was, and the branch step is unreachable.
+//
+// The returned BranchOutcome is what happened to the branch; its zero value
+// means the branch step did not run. It is never an error: the archive has
+// already committed by then, and a branch problem must not be able to reverse
+// it. Failures are logged here and reported to the caller.
+func (r *Runner) Archive(
+	ctx context.Context, id int64, force bool,
+) (*store.Task, worktree.BranchOutcome, error) {
 	task, err := r.deps.Store.GetTask(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, worktree.BranchOutcome{}, err
 	}
 	if !taskstate.Can(task.State, taskstate.Archive) {
-		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
+		return nil, worktree.BranchOutcome{},
+			&InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
 	}
 	empty := ""
 	if task.WorktreePath == "" {
-		return r.transitionFrom(ctx, task, taskstate.Archive,
+		// No worktree ever existed, so no branch was ever created for this task
+		// either — `git worktree add -b` makes both or neither. That matters
+		// beyond tidiness: a task that blocked with `branch_exists` (§10, task
+		// 001) carries a branch_name naming *somebody else's* branch, and this
+		// is the check that keeps the branch step away from it.
+		out, err := r.transitionFrom(ctx, task, taskstate.Archive,
 			store.TaskChange{WorktreePath: &empty})
+		return out, worktree.BranchOutcome{}, err
 	}
 	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
 	if err != nil {
-		return nil, err
+		return nil, worktree.BranchOutcome{}, err
 	}
 	// Remove-then-clear runs under the manager's claim lock, the mirror of
 	// creation's create-then-claim (task 005). Between the two the row still
@@ -230,9 +246,50 @@ func (r *Runner) Archive(ctx context.Context, id int64, force bool) (*store.Task
 				store.TaskChange{WorktreePath: &empty})
 			return err
 		}); err != nil {
-		return nil, err
+		return nil, worktree.BranchOutcome{}, err
 	}
-	return out, nil
+	// Outside the callback, not inside it: the branch is checked out in the
+	// worktree until the worktree is gone, and the archive transition must not
+	// be reversible by a branch problem.
+	return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
+}
+
+// deleteArchivedBranch applies the §10 empty-branch rule to a task that has
+// just reached `archived`. The flags are read through Deps.Config, so a hot
+// reload reaches the next archive with no extra plumbing.
+func (r *Runner) deleteArchivedBranch(
+	ctx context.Context, task *store.Task, projectPath string,
+) worktree.BranchOutcome {
+	cfg := r.deps.Config()
+	if !cfg.DeleteEmptyBranchOnArchive || task.BranchName == "" {
+		return worktree.BranchOutcome{}
+	}
+	log := r.deps.Logger.With("task", task.ID, "branch", task.BranchName)
+	// The remote leg is attended-only by §10, and this is the attended path:
+	// every caller of Archive is a human asking for this one task.
+	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
+		task.BaseBranch, task.BranchName, cfg.DeleteRemoteBranchOnArchive)
+	if err != nil {
+		log.Warn("archive: branch kept", "result", out.Result, "error", err)
+		return out
+	}
+	switch out.Result {
+	case worktree.BranchDeleted:
+		log.Info("archive: deleted the branch, which had no commits past its base",
+			"base", task.BaseBranch, "remote", remoteResult(out))
+	case worktree.BranchHasCommits:
+		log.Info("archive: kept the branch, which has commits past its base",
+			"base", task.BaseBranch)
+	}
+	return out
+}
+
+// remoteResult names the remote leg for a log line; "" when it did not run.
+func remoteResult(out worktree.BranchOutcome) string {
+	if out.Remote == nil {
+		return ""
+	}
+	return out.Remote.Result
 }
 
 // SetPriority reorders admission without changing state (§6: queued and
