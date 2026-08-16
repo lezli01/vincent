@@ -31,6 +31,15 @@ type Deps struct {
 	StartedAt time.Time
 	// ListenAddr is the effective bound address.
 	ListenAddr string
+	// Dirs are the resolved §12.2 directories, reported by /v1/doctor.
+	Dirs config.Dirs
+	// LogPath is the daemon log file, likewise for /v1/doctor. It is passed
+	// in rather than derived because internal/daemon owns that path and
+	// nothing here may import it (task 005 decision 6).
+	LogPath string
+	// TailLog reads the daemon log's trailing lines for /v1/doctor; nil means
+	// the report carries the log's stat without a tail.
+	TailLog func(path string, n int) ([]string, error)
 	// RequestStop triggers a graceful daemon shutdown; it must not block.
 	RequestStop func()
 	// Logger receives request and panic logs.
@@ -79,9 +88,11 @@ type AgentStatus struct {
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
 	// LoggedIn is null where the adapter has no cheap authentication probe
-	// (claude, codex) and a definite boolean where it has one (cursor). The
-	// distinction carries weight: an installed-but-unauthenticated CLI probes
-	// as available and then fails every run (spec §9.5).
+	// (claude, whose CLI exposes no non-interactive auth surface) and a
+	// definite boolean where it has one (codex's `login status`, cursor's
+	// `status`). The distinction carries weight: an
+	// installed-but-unauthenticated CLI probes as available and then fails
+	// every run (spec §9.5).
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
 }
@@ -139,6 +150,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
+	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
+	rt.handle(http.MethodPost, "/v1/doctor/fix", s.handleDoctorFix)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
 	rt.handle(http.MethodGet, "/v1/maintenance/orphans", s.handleOrphans)
 	rt.handle(http.MethodPost, "/v1/maintenance/gc", s.handleGC)

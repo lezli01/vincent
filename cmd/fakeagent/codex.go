@@ -8,7 +8,7 @@ import (
 )
 
 // codexLoginStatus answers `codex login status`, the §9.5 auth probe the
-// codex adapter gained in task 005. The legs are the four the parse has to
+// codex adapter gained in task 006. The legs are the four the parse has to
 // tell apart, and the environment picks between them so argv stays exactly
 // what the real CLI is asked:
 //

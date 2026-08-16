@@ -459,6 +459,60 @@ func (s *Store) ListTaskIDs(ctx context.Context) ([]int64, error) {
 	return ids, nil
 }
 
+// CountTasksByState returns how many tasks sit in each lifecycle state,
+// archived included — the §17 tally doctor prints so "12 blocked" is visible
+// without opening the board (task 006).
+//
+// States with no rows are absent from the map rather than zero: the caller
+// renders the §6 state list, so the query stays a plain GROUP BY and the
+// vocabulary lives in one place (internal/taskstate).
+func (s *Store) CountTasksByState(ctx context.Context) (map[TaskState]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM tasks GROUP BY state`)
+	if err != nil {
+		return nil, fmt.Errorf("count tasks by state: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	counts := map[TaskState]int{}
+	for rows.Next() {
+		var (
+			state string
+			n     int
+		)
+		if err := rows.Scan(&state, &n); err != nil {
+			return nil, fmt.Errorf("scan task state count: %w", err)
+		}
+		counts[TaskState(state)] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate task state counts: %w", err)
+	}
+	return counts, nil
+}
+
+// LiveTaskIDs returns the ids of every non-archived task — the set that tells
+// a worktree directory apart from an orphan (task 006 decision 3: an orphan
+// is a directory under {data_dir}/worktrees/ whose {task_id} matches no
+// non-archived task).
+func (s *Store) LiveTaskIDs(ctx context.Context) (map[int64]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM tasks WHERE state != ?`, string(TaskArchived))
+	if err != nil {
+		return nil, fmt.Errorf("list live tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	live := map[int64]struct{}{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan live task id: %w", err)
+		}
+		live[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate live tasks: %w", err)
+	}
+	return live, nil
+}
+
 // ArchivedTaskIDsBefore returns the ids of tasks archived before cutoff —
 // the input to transcript pruning (§17 retention).
 //

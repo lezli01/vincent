@@ -74,6 +74,28 @@ func applyMigration(db *sql.DB, name string, version int) error {
 	return nil
 }
 
+// NewestMigration returns the highest migration version this binary embeds.
+//
+// It is the ceiling doctor compares an opened database's SchemaVersion
+// against (task 005). A malformed embedded name is a build-time defect, not a
+// runtime condition — migrate() would refuse to start the daemon on the same
+// input — so it is skipped here rather than turned into an error the report
+// would have to explain.
+func NewestMigration() int {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return 0
+	}
+	newest := 0
+	for _, e := range entries {
+		v, err := migrationVersion(e.Name())
+		if err == nil && v > newest {
+			newest = v
+		}
+	}
+	return newest
+}
+
 // migrationVersion parses the numeric prefix of "NNNN_description.sql".
 func migrationVersion(name string) (int, error) {
 	prefix, _, ok := strings.Cut(name, "_")

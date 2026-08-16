@@ -39,7 +39,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 	root.AddCommand(
-		newDaemonCmd(), newVersionCmd(),
+		newDaemonCmd(), newVersionCmd(), newDoctorCmd(),
 		newProjectCmd(), newTaskCmd(), newWorkflowCmd(), newServiceCmd(),
 		newGCCmd(),
 	)
