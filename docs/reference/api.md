@@ -53,7 +53,7 @@ parse out of prose — an invalid state transition is always `409` with
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
 | `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, and `orphans` |
-| `GET` | `/v1/config` | The effective global config, read-only |
+| `GET` | `/v1/config` | The effective global config, read-only — including the `tui` section the daemon only relays |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
 | `GET` | `/v1/doctor` | The whole diagnostic report. Read-only — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |

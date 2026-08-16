@@ -23,6 +23,7 @@ description of how the system actually behaves.
 | [006](006-vincent-doctor.md) | `vincent doctor` — one diagnostic report | ✅ done (8/8) |
 | [007](007-release-please.md) | Release Please automation | ✅ done (6/6) |
 | [008](008-archive-branch-cleanup.md) | Archive cleanup: delete a branch with no commits past its base | ✅ done (7/7) |
+| [009](009-configurable-tasks-view.md) | A configurable tasks view, grouped by project then workflow | ✅ done (6/6) |
 
 ## How to add and update a task document
 

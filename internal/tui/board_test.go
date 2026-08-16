@@ -15,11 +15,16 @@ import (
 
 var testNow = time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
 
+// testBoard is the flat table: sorting, filtering, columns and selection are
+// the same questions grouped or not, and answering them without group headers
+// in the way keeps the row index equal to the task index. Grouping has its
+// own fixture and its own file (boardgroup_test.go).
 func testBoard() *board {
 	b := newBoard()
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true
+	b.group, b.configGroup = nil, nil
 	return b
 }
 
@@ -177,7 +182,7 @@ func TestColumnsDropByPriority(t *testing.T) {
 		{85, true, false, false, false},  // then the workflow
 		{70, false, false, false, false}, // then the project
 	} {
-		got := columnsFor(tc.width)
+		got := columnsFor(tc.width, nil)
 		if got.project != tc.project || got.workflow != tc.workflow ||
 			got.stepName != tc.stepName || got.cost != tc.cost {
 			t.Errorf("width %d = %+v, want project=%v workflow=%v stepName=%v cost=%v",
@@ -192,7 +197,7 @@ func TestColumnsDropByPriority(t *testing.T) {
 // title to its minimum instead and overflowed by a character at width 80.
 func TestBoardColumnsFitWidth(t *testing.T) {
 	for width := 65; width <= 220; width++ {
-		cols, _ := boardColumns(width)
+		cols, _ := boardColumns(width, nil)
 		total := 0
 		for _, c := range cols {
 			total += c.Width + colPadding
@@ -207,7 +212,7 @@ func TestBoardColumnsFitWidth(t *testing.T) {
 // the columns you steer by survive.
 func TestBoardColumnsAlwaysKeepNavigationColumns(t *testing.T) {
 	for _, width := range []int{20, 40, 65, 120} {
-		cols, _ := boardColumns(width)
+		cols, _ := boardColumns(width, nil)
 		titles := make([]string, 0, len(cols))
 		for _, c := range cols {
 			titles = append(titles, c.Title)

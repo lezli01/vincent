@@ -23,6 +23,10 @@ func newShellFixture(t *testing.T, tasks ...apiclient.Task) (*shell, *int) {
 	s := newShell(testCtx(t))
 	s.board.now = func() time.Time { return testNow }
 	s.board.bell = func() {}
+	// Flat, for the same reason testBoard is: these tests count rendered rows
+	// and click at line offsets, and group headers are lines that are not
+	// tasks. What grouping does to the cursor is tested in boardgroup_test.go.
+	s.board.group, s.board.configGroup = nil, nil
 	subs := new(int)
 	s.detail.openStream = func(context.Context, int64, apiclient.StreamOptions) <-chan apiclient.Note {
 		*subs++

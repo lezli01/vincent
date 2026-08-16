@@ -95,6 +95,9 @@ agents:
 			Claude: Agent{Path: "/opt/bin/claude"},
 			Codex:  Agent{Path: `C:\tools\codex.exe`},
 		},
+		// And the same again for `tui:`: an unnamed section keeps the §15
+		// default grouping rather than flattening the board.
+		TUI: TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -157,6 +160,39 @@ delete_remote_branch_on_archive: true
 	}
 }
 
+// TestBoardGroupingDefault pins §15's default: a board is read project by
+// project, and within a project by what each task is doing.
+func TestBoardGroupingDefault(t *testing.T) {
+	want := []BoardGroup{BoardGroupProject, BoardGroupWorkflow}
+	if got := Default().TUI.Board.GroupBy; !reflect.DeepEqual(got, want) {
+		t.Errorf("default group_by = %v, want %v", got, want)
+	}
+}
+
+// TestBoardGroupingExplicitFlat: an empty list has to survive unmarshalling
+// into Default(), or there is no way back to the flat table.
+func TestBoardGroupingExplicitFlat(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "tui:\n  board:\n    group_by: []\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.TUI.Board.GroupBy) != 0 {
+		t.Errorf("group_by = %v, want the empty list the file asked for", cfg.TUI.Board.GroupBy)
+	}
+}
+
+// TestBoardGroupingOneLevel: a single level is a whole configuration, not a
+// half-written default.
+func TestBoardGroupingOneLevel(t *testing.T) {
+	cfg, err := Load(writeConfig(t, "tui:\n  board:\n    group_by: [workflow]\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := []BoardGroup{BoardGroupWorkflow}; !reflect.DeepEqual(cfg.TUI.Board.GroupBy, want) {
+		t.Errorf("group_by = %v, want %v", cfg.TUI.Board.GroupBy, want)
+	}
+}
+
 func TestLoadRejectsInvalid(t *testing.T) {
 	cases := map[string]string{
 		"unknown key":           "max_parallel_jobs: 5\n",
@@ -176,6 +212,9 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"negative recheck interval": "usage_limit_recheck_interval: -1m\n",
 		"not yaml":                  "{{{\n",
 		"wrong type for integer":    "max_parallel_tasks: many\n",
+		"unknown grouping level":    "tui:\n  board:\n    group_by: [project, agent]\n",
+		"repeated grouping level":   "tui:\n  board:\n    group_by: [project, project]\n",
+		"grouping is not a list":    "tui:\n  board:\n    group_by: project\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

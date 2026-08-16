@@ -77,6 +77,39 @@ Three behaviors matter:
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it.
 
+### Grouping
+
+The rows are **grouped by project, and by workflow within a project**, out of
+the box:
+
+```
+▾ api  4  ! 1
+  ▾ feature-pr  3
+   12  add rate limiting        running        3/5 implement   4m09s  $0.42
+   14  ! fix the flaky test     ! awaiting_gate 2/4 review     1m02s  $0.08
+  ▾ docs-update  1
+   15  document the cache       queued         —               —      —
+▾ web  1
+  ▾ feature-pr  1
+   13  bump the design tokens   done           4/4 pr          6m11s  $0.90
+```
+
+- The header shows the group's task count, and the needs-attention badge when
+  it holds any — a group can never be the reason you missed something waiting.
+- **Grouping does not reorder anything.** The sort is what it always was, and a
+  group sits where its first task does, so the group holding the oldest thing
+  waiting on a human is the top group.
+- A grouped level loses its column — the header already names it — and the
+  width goes to the title.
+- Headers are labels: the cursor steps over them, and nothing collapses.
+
+`g` cycles project›workflow → project → workflow → flat for the session. The
+panel title names the grouping whenever it is not the configured one.
+
+Set the grouping you start with in `config.yaml`
+([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)); `[]`
+gives you one flat list.
+
 Elapsed on the board is **wall clock** from the task's start. That is
 deliberate: a task idle on a human for 35 of its 40 minutes must not read as
 "5m" on the board whose job is to flag it. The per-attempt figures in the
