@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -39,7 +40,7 @@ type answerForm struct {
 	answers map[string][]string
 	allow   *bool
 
-	input   textinput.Model
+	editor  textarea.Model
 	editing bool
 
 	err        string
@@ -47,16 +48,39 @@ type answerForm struct {
 }
 
 func newAnswerForm(req apiclient.InputRequest) *answerForm {
-	in := textinput.New()
-	in.Placeholder = "type an answer"
 	f := &answerForm{
 		req:     req,
 		answers: map[string][]string{},
-		input:   in,
+		editor:  newAnswerEditor(),
 	}
 	f.buildRows()
 	f.cursor = f.nextSelectable(-1, 1)
 	return f
+}
+
+// editorLines is how tall the free-text field may grow before it scrolls. An
+// answer longer than that is rare enough that a scrolling field is the right
+// trade against a popup that eats the tail underneath it.
+const editorLines = 6
+
+// newAnswerEditor is the free-text field: a wrapping field that grows with
+// what is typed, not a single line. A single line can only slide its window
+// along with the cursor, so an answer wider than the popup could never be read
+// back in full before submitting it (§7.4 free-text entry).
+func newAnswerEditor() textarea.Model {
+	ed := textarea.New()
+	ed.Placeholder = "type an answer"
+	// No prompt, no line numbers: this is one answer, not a source file, and
+	// both would eat columns the answer itself needs.
+	ed.Prompt = ""
+	ed.ShowLineNumbers = false
+	ed.DynamicHeight = true
+	ed.MinHeight = 1
+	ed.MaxHeight = editorLines
+	ed.SetHeight(1)
+	// A width until the first render sizes it; keys can arrive before then.
+	ed.SetWidth(40)
+	return ed
 }
 
 func (f *answerForm) buildRows() {
@@ -112,7 +136,7 @@ func (f *answerForm) paste(text string) tea.Cmd {
 		return nil
 	}
 	var cmd tea.Cmd
-	f.input, cmd = f.input.Update(tea.PasteMsg{Content: text})
+	f.editor, cmd = f.editor.Update(tea.PasteMsg{Content: text})
 	return cmd
 }
 
@@ -125,11 +149,11 @@ func (f *answerForm) update(msg tea.KeyPressMsg, client *apiclient.Client, taskI
 			return nil, false
 		case "esc":
 			f.editing = false
-			f.input.Blur()
+			f.editor.Blur()
 			return nil, false
 		}
 		var c tea.Cmd
-		f.input, c = f.input.Update(msg)
+		f.editor, c = f.editor.Update(msg)
 		return c, false
 	}
 
@@ -224,8 +248,8 @@ func (f *answerForm) startFreeText() {
 		return
 	}
 	f.editing = true
-	f.input.SetValue("")
-	f.input.Focus()
+	f.editor.SetValue("")
+	f.editor.Focus()
 	f.cursor = f.freeRowFor(row.question)
 }
 
@@ -242,9 +266,9 @@ func (f *answerForm) freeRowFor(question int) int {
 
 func (f *answerForm) commitFreeText() {
 	f.editing = false
-	f.input.Blur()
-	value := strings.TrimSpace(f.input.Value())
-	f.input.SetValue("")
+	f.editor.Blur()
+	value := strings.TrimSpace(f.editor.Value())
+	f.editor.SetValue("")
 	row, ok := f.currentRow()
 	if !ok || value == "" {
 		return
@@ -286,44 +310,80 @@ func (f *answerForm) submit(client *apiclient.Client, taskID int64) tea.Cmd {
 }
 
 // height is how many lines the form wants at the width it will be drawn at,
-// capped by the caller. Rows wrap, so this cannot be counted from the number
-// of rows alone.
+// capped by the caller. Rows wrap and the free-text field grows with what is
+// typed, so this cannot be counted from the number of rows alone.
 func (f *answerForm) height(width int) int {
-	lines, _, _ := f.layout(width)
-	return len(lines) + 2
+	lines, _, _ := f.lines(width)
+	return len(lines)
 }
 
 // render draws the form, windowed around the cursor when it does not fit —
 // a question that scrolls out of reach is worse than one that scrolls.
 func (f *answerForm) render(width, height int) string {
-	lines, from, to := f.layout(width)
-	if f.editing {
-		lines = append(lines, "  "+f.input.View())
-		from, to = len(lines)-1, len(lines)
-	}
+	lines, from, to := f.lines(width)
+	return strings.Join(windowRange(lines, from, to, height), "\n")
+}
+
+// lines is the whole form at width — the rows, the open free-text field, and
+// the status line — with the range the focused element occupies. height and
+// render share it so the popup is sized at exactly what it then draws.
+func (f *answerForm) lines(width int) (lines []string, from, to int) {
+	lines, from, to = f.layout(width)
 	switch {
 	case f.err != "":
 		lines = append(lines, styleBad.Render("  ⚠ "+f.err))
+	case f.editing:
+		// enter and esc mean something else while the field is open, and a
+		// hint that says "enter submit" over an open field is a lost answer.
+		lines = append(lines, styleDim.Render("  enter keeps this answer · esc discards it"))
 	case f.submitting:
 		lines = append(lines, styleDim.Render("  submitting…"))
 	default:
 		lines = append(lines, styleDim.Render(
 			"  space select · e type an answer · enter submit · esc leave the form"))
 	}
-	return strings.Join(windowRange(lines, from, to, height), "\n")
+	return lines, from, to
 }
+
+// editorView sizes the free-text field to the space the popup actually has
+// and returns its lines, indented clear of the cursor gutter. Sizing it here
+// rather than on resize is what keeps the width the field wraps at and the
+// width the popup is drawn at the same number.
+func (f *answerForm) editorView(width int) []string {
+	f.editor.SetWidth(max(width-editorIndent, 8))
+	out := strings.Split(f.editor.View(), "\n")
+	pad := strings.Repeat(" ", editorIndent)
+	for i := range out {
+		out[i] = pad + out[i]
+	}
+	return out
+}
+
+// editorIndent clears the cursor gutter the rows are drawn in, so the field
+// reads as part of the question above it rather than as a new column.
+const editorIndent = 4
 
 // layout wraps every row to width and reports the line range the focused row
 // occupies, so windowing can keep the whole of it on screen. Rows stay the
 // unit the cursor moves in; only their mapping to lines is many-to-one.
+//
+// An open free-text field is drawn under the row it belongs to, not at the
+// bottom of the form: which question is being answered is the one thing the
+// field itself cannot say.
 func (f *answerForm) layout(width int) (lines []string, from, to int) {
 	lines = make([]string, 0, len(f.rows)+2)
 	for i, row := range f.rows {
-		rendered := f.renderRow(i, row, width)
-		if i == f.cursor && row.kind != rowHeader {
-			from, to = len(lines), len(lines)+len(rendered)
+		focused := i == f.cursor && row.kind != rowHeader
+		if focused {
+			from = len(lines)
 		}
-		lines = append(lines, rendered...)
+		lines = append(lines, f.renderRow(i, row, width)...)
+		if focused && f.editing {
+			lines = append(lines, f.editorView(width)...)
+		}
+		if focused {
+			to = len(lines)
+		}
 	}
 	return lines, from, to
 }
@@ -355,16 +415,33 @@ func (f *answerForm) renderRow(i int, row formRow, width int) []string {
 	prefix := cursor + "  " + f.marker(row) + " "
 	// The prefix is already styled, so its width is measured, not counted.
 	indent := ansi.StringWidth(prefix)
-	out := wrapPlain(row.text, width-indent)
+	text, style := f.rowBody(row)
+	out := wrapPlain(text, width-indent)
 	for j := range out {
 		if j == 0 {
-			out[j] = prefix + out[j]
+			out[j] = prefix + style.Render(out[j])
 			continue
 		}
-		out[j] = strings.Repeat(" ", indent) + out[j]
+		out[j] = strings.Repeat(" ", indent) + style.Render(out[j])
 	}
 	return out
 }
+
+// rowBody is what a row says, and how. A free-text row that holds an answer
+// says the answer: it is text of a length nobody chose, so it belongs in the
+// part of the row that wraps rather than in the fixed-width marker, where it
+// would push the label off the popup and lose its own tail to truncation.
+func (f *answerForm) rowBody(row formRow) (string, lipgloss.Style) {
+	if row.kind == rowFree {
+		if typed := f.typedAnswers(f.req.Questions[row.question]); typed != "" {
+			return typed, styleOK
+		}
+	}
+	return row.text, stylePlain
+}
+
+// stylePlain leaves a line exactly as it was wrapped.
+var stylePlain = lipgloss.NewStyle()
 
 // wrapPlain lays plain text out in lines of at most width columns, splitting
 // words the way the §15 output pane does so an over-long one is hard-split
@@ -428,10 +505,13 @@ func (f *answerForm) marker(row formRow) string {
 		return radio(on)
 	case rowFree:
 		q := f.req.Questions[row.question]
-		if typed := f.typedAnswers(q); typed != "" {
-			return styleOK.Render("✎ " + typed)
+		if f.typedAnswers(q) != "" {
+			// The answer itself is the row's body (see rowBody), so the marker
+			// stays as wide as a radio however long the answer is — which is
+			// also what keeps the labels of one question in a single column.
+			return styleOK.Render(" ✎ ")
 		}
-		return styleDim.Render("✎")
+		return styleDim.Render(" ✎ ")
 	case rowHeader:
 	}
 	return " "
