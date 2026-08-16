@@ -48,6 +48,15 @@ type boardLiveHarness struct {
 
 func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 	t.Helper()
+	return newBoardLiveHarnessConfig(t, config.Default)
+}
+
+// newBoardLiveHarnessConfig is the same harness against a chosen
+// configuration — the daemon serves `tui:` on /v1/config, so this is how a
+// configured board is exercised over the real handler rather than by poking
+// the model.
+func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiveHarness {
+	t.Helper()
 	const token = "board-token"
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -60,7 +69,7 @@ func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 
 	s := api.New(api.Deps{
 		Token:       token,
-		Config:      config.Default,
+		Config:      cfg,
 		StartedAt:   time.Now(),
 		ListenAddr:  "127.0.0.1:0",
 		RequestStop: func() {},
@@ -246,4 +255,60 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 	h.p.until(10*time.Second, "the detail header to render", func() bool {
 		return strings.Contains(content(h.m), want)
 	})
+}
+
+// TestBoardGroupsFromTheDaemonConfig walks the whole path the grouping takes:
+// config.yaml → GET /v1/config → apiclient → the task table. It is a live
+// test for the reason the others are — the board renders what the daemon
+// serves, and a wire type that drifted would show up here and nowhere else.
+func TestBoardGroupsFromTheDaemonConfig(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	h.createTask(t, "grouped task")
+
+	h.p.until(20*time.Second, "the task to appear", func() bool {
+		return strings.Contains(content(h.m), "grouped task")
+	})
+	// The project header, then the workflow header under it — the default
+	// grouping, fetched rather than assumed.
+	h.p.until(10*time.Second, "the group headers to render", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "▾ board") && strings.Contains(got, "▾ three")
+	})
+	b := h.m.views[viewHome].(*shell).board
+	if !b.group.equal(defaultGrouping()) {
+		t.Errorf("board grouping = %s, want the configured %s",
+			b.group.label(), defaultGrouping().label())
+	}
+	// A grouped level costs no column: the header names it.
+	if strings.Contains(content(h.m), "WORKFLOW") {
+		t.Error("the WORKFLOW column is still on a board grouped by workflow")
+	}
+}
+
+// TestBoardHonoursAConfiguredFlatTable is the other end of the setting: a
+// config that asks for no grouping gets the table every version before this
+// one rendered, columns included.
+func TestBoardHonoursAConfiguredFlatTable(t *testing.T) {
+	flat := func() config.Config {
+		cfg := config.Default()
+		cfg.TUI.Board.GroupBy = nil
+		return cfg
+	}
+	h := newBoardLiveHarnessConfig(t, flat)
+	h.createTask(t, "flat task")
+
+	h.p.until(20*time.Second, "the task to appear", func() bool {
+		return strings.Contains(content(h.m), "flat task")
+	})
+	h.p.until(10*time.Second, "the configured flat table to apply", func() bool {
+		b := h.m.views[viewHome].(*shell).board
+		return len(b.group) == 0
+	})
+	got := content(h.m)
+	if strings.Contains(got, groupGlyph) {
+		t.Errorf("a flat board rendered a group header:\n%s", got)
+	}
+	if !strings.Contains(got, "WORKFLOW") {
+		t.Errorf("a flat board dropped the WORKFLOW column:\n%s", got)
+	}
 }

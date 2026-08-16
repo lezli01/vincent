@@ -316,7 +316,7 @@ func (s *shell) openSelected() tea.Cmd {
 // task yet; selectedID makes the next refresh put the cursor on it.
 func (s *shell) openNow(id int64) tea.Cmd {
 	s.board.selectedID = id
-	s.board.restoreSelection(s.board.visible())
+	s.board.restoreSelection(s.board.rows())
 	s.lastSel = id
 	s.focus = panelTimeline
 	return s.detail.open(id, s.stateOf(id))
@@ -524,10 +524,18 @@ func (s *shell) panelTitle(id panelID) string {
 		// A committed filter is view state, applied and named here (§15) —
 		// losing track of why rows are missing trains people to distrust
 		// the table.
-		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
-			return "Tasks — /" + v
+		title := "Tasks"
+		// `g` regroups for the session, and the title names any grouping but
+		// the configured one — the rule the output pane's `v` already follows
+		// (§15). The group headers show what the grouping *is*; this says it
+		// is not the one the config asked for.
+		if !s.board.group.equal(s.board.configGroup) {
+			title += " — " + s.board.group.label()
 		}
-		return "Tasks"
+		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
+			title += " — /" + v
+		}
+		return title
 	case panelTimeline:
 		if s.detail.taskID != 0 {
 			return fmt.Sprintf("Timeline — #%d", s.detail.taskID)

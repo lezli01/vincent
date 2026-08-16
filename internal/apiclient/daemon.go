@@ -89,6 +89,22 @@ type Config struct {
 	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`
 	LogLevel          string               `json:"log_level"`
 	Agents            map[string]AgentPath `json:"agents"`
+	// TUI is the view preference the daemon only relays (§15). It is served
+	// here rather than read from disk because the TUI is a pure API client;
+	// a client that cannot reach the daemon renders its own defaults.
+	TUI ConfigTUI `json:"tui"`
+}
+
+// ConfigTUI is the `tui` section of config.yaml as served.
+type ConfigTUI struct {
+	Board ConfigBoard `json:"board"`
+}
+
+// ConfigBoard configures the task table. GroupBy names the grouping levels,
+// outermost first; an empty list is a flat table. Unknown levels are the
+// caller's to ignore — a newer daemon may serve one this client predates.
+type ConfigBoard struct {
+	GroupBy []string `json:"group_by"`
 }
 
 // ConfigDefaults are the §12.3 default timeouts, as duration strings.

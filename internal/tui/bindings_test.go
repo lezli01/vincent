@@ -104,6 +104,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the task filter")
 			}
 		},
+		"g": func(t *testing.T) {
+			s, _ := newShellFixture(t, task(1, stateRunning))
+			s.focus = panelTasks
+			s.board.group = defaultGrouping()
+			s.update(registryKey(t, "g"))
+			if s.board.group.equal(defaultGrouping()) {
+				t.Fatalf("g did not change the grouping (still %s)", s.board.group.label())
+			}
+		},
 	},
 
 	ctxTimeline: {

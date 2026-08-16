@@ -305,6 +305,20 @@ type configResponse struct {
 	UsageLimitRecheck           string               `json:"usage_limit_recheck_interval"`
 	LogLevel                    string               `json:"log_level"`
 	Agents                      map[string]agentPath `json:"agents"`
+	// TUI is view preference the daemon only relays (§15): it is in the file
+	// the daemon owns and hot-reloads, so this endpoint is how the TUI — which
+	// reads no configuration of its own — gets it.
+	TUI configTUI `json:"tui"`
+}
+
+type configTUI struct {
+	Board configBoard `json:"board"`
+}
+
+type configBoard struct {
+	// GroupBy is always present, empty list included: `null` would make a
+	// flat table indistinguishable from a client's own default.
+	GroupBy []string `json:"group_by"`
 }
 
 type configDefaults struct {
@@ -338,7 +352,18 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 			"codex":  {Path: cfg.Agents.Codex.Path},
 			"cursor": {Path: cfg.Agents.Cursor.Path},
 		},
+		TUI: configTUI{Board: configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)}},
 	})
+}
+
+// boardGroupBy renders the grouping levels as strings, never as JSON null: a
+// flat table is a configured choice and has to read as `[]`.
+func boardGroupBy(levels []config.BoardGroup) []string {
+	out := make([]string, 0, len(levels))
+	for _, l := range levels {
+		out = append(out, string(l))
+	}
+	return out
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, _ *http.Request) {
