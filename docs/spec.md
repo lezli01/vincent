@@ -1990,6 +1990,10 @@ stream for the live tail.
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
    *Grouping* below.
+   **Several tasks can be selected at once (task 011, added 2026-08-16):**
+   `space` marks the row under the cursor, `V` marks everything the filter is
+   showing, and while anything is marked the task-action keys act on the whole
+   selection. See *Bulk selection* below.
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
    transcripts of past steps. Timeline and output are **side by side, both always
@@ -2103,6 +2107,39 @@ get to bend:
 - **The panel title names the grouping only when it is not the configured one**,
   the same rule the output pane's `v` follows.
 
+**Bulk selection (task 011, added 2026-08-16).** Triage arrives in batches — a
+sweep of finished tasks to archive, a run of queued ones to cancel after a bad
+workflow edit — and one row at a time that is the same keypress N times with a
+confirmation between each, which is where a human either stops tidying up or
+stops reading the confirmations. `space` marks the row under the cursor, `V`
+marks (and unmarks) everything the filter is showing, `esc` clears the
+selection, and while anything is marked the §6 action keys act on the marked
+tasks instead of the cursor row. The rules:
+
+- **The selection is a set of tasks, not of rows.** It survives a filter, a `g`
+  regroup and a refresh, because all three are ways of *looking* at the board;
+  narrowing it to what is visible would mean typing a filter silently changes
+  what a confirmed archive destroys. The panel title carries the count
+  (`Tasks — 5 selected`), which is what keeps a marked task the filter is hiding
+  honest, and a marker column — one cell, present only while something is marked
+  — carries the per-row glyph.
+- **An action is offered when *some* marked task offers it, and the key carries
+  the count**: `A archive (7)` on nine marked rows. Requiring all of them would
+  make `archive` vanish from a sweep of finished work because one task in it is
+  still running, with nothing on screen to explain the absence. Tasks that do not
+  offer the action are left alone; the invariant is "an action that cannot happen
+  is not on screen", and one that can happen to seven of nine can happen.
+- **One confirmation for the batch, one call per task.** There is no bulk
+  endpoint: §6 lives in the API and the TUI is one of three clients, so the
+  daemon still sees an ordinary action per task, sent sequentially in board
+  order. `force` stays the dirty confirmation — a bulk archive archives the clean
+  worktrees and re-asks about exactly the refusals ("2 of 5 selected tasks have
+  uncommitted changes") — and the batch reports one line: `archive · 5 of 7`,
+  the branch cleanup, and the first refusal named.
+- **The keys work from any panel**, since the footer counts the selection
+  wherever the focus is, and **what the daemon accepted leaves the selection**
+  while refusals stay marked, so a retry needs no re-selection.
+
 **The focused panel expands; the others collapse** to their title bar plus the
 selected line. The task table never collapses below 5 rows — it is the navigation
 spine, and a spine you cannot see is a modal round-trip wearing a border.
@@ -2176,8 +2213,9 @@ Global: `:` palette · `?` help · `n` new task · `q` quit (the daemon keeps ru
 a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
 focus between panels · `M` toggle mouse.
 
-Task actions act on the selected task and are offered only when the daemon reports
-them in `available_actions`: `p` pause/resume · `a` approve · `x` reject · `r`
+Task actions act on the selected task — or on the whole bulk selection when there
+is one (task 011) — and are offered only when the daemon reports them in
+`available_actions`: `p` pause/resume · `a` approve · `x` reject · `r`
 retry · `s` skip · `E` edit+retry in `$EDITOR` · `c` cancel · `A` archive. `x`
 rejects because `r` is taken; `r` doubles as *retry connecting* while disconnected,
 where no task is reachable anyway. Destructive actions confirm inline: `c` kills a
@@ -2187,7 +2225,10 @@ live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 Panel-local: `/` filters **whichever list has focus** — tasks, projects, workflows
 — so one key means one thing everywhere. `g` cycles the task table's grouping
 (task 009), taking the key from the table widget's undocumented go-to-top alias,
-which `home` still is. `enter` opens or expands. `[`/`]` switch
+which `home` still is. `space` marks the row for a bulk action and `V` marks
+every row the filter is showing (task 011); neither moves the cursor, because
+marking a run of rows is the human's own `down` and auto-advancing would put an
+unmarking mis-press on the wrong row. `enter` opens or expands. `[`/`]` switch
 the output pane's tabs (`d` kept as an alias). `f`/`G` re-arm follow on a live
 tail or the daemon log. `v` cycles how much of the output pane's records show —
 compact → normal → verbose (T4.16): reasoning is hidden, truncated to its first
@@ -2202,7 +2243,8 @@ human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
 
 **`esc` cancels one layer per press**, by a fixed stack: popup (palette,
-confirmation, answer form) → takeover screen → active filter → nothing. It is a
+confirmation, answer form) → takeover screen → bulk selection → active filter →
+nothing. It is a
 no-op at the bottom and it **never quits** — `esc`-to-exit surprises anyone who
 pressed it meaning "back". "Back to the board" is not among its meanings any more,
 because the board is always on screen.

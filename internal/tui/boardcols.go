@@ -7,7 +7,11 @@ import (
 // Column widths. The table adds one space of padding either side of every
 // cell, so a column occupies its width plus two.
 const (
-	colPadding     = 2
+	colPadding = 2
+	// widthMark holds the bulk-selection glyph (task 011). It is one cell and
+	// it only exists while something is marked, so an unmarked board is the
+	// board every earlier version rendered, to the column.
+	widthMark      = 1
 	widthID        = 5
 	widthProject   = 14
 	widthWorkflow  = 14
@@ -19,8 +23,17 @@ const (
 	minTitle       = 16
 )
 
+// maxBoardColumns is every column the widest board can carry — the size a row
+// is built at, so rowsFor and groupHeaderRow never grow their slice mid-loop.
+const maxBoardColumns = 9
+
 // columnSet records which optional columns survived the current width.
 type columnSet struct {
+	// mark is the bulk-selection marker (task 011). Unlike the others it is
+	// not a width decision and is never shed: it is on exactly while something
+	// is marked, because a selection you cannot see is worse than a narrow
+	// title.
+	mark    bool
 	project bool
 	// workflow answers "what is this task actually running", which the step
 	// name alone cannot: "survey" means nothing without knowing it belongs to
@@ -34,6 +47,10 @@ type columnSet struct {
 func (s columnSet) fixedWidth() int {
 	total := widthID + widthState + widthElapsed
 	count := 4 // id, title, state, elapsed
+	if s.mark {
+		total += widthMark
+		count++
+	}
 	if s.project {
 		total += widthProject
 		count++
@@ -76,8 +93,12 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // spent saying what the reader just read. The width that frees goes to the
 // title, which is where a grouped board needs it — the titles are indented
 // under their headers.
-func columnsFor(width int, g grouping) columnSet {
+// The marker column is outside the shedding order entirely: it is three cells
+// wide with its padding, it exists only while a selection does, and it is the
+// one column whose absence would make the keys lie about what they act on.
+func columnsFor(width int, g grouping, marking bool) columnSet {
 	set := columnSet{
+		mark:     marking,
 		project:  !g.has(groupProject),
 		workflow: !g.has(groupWorkflow),
 		stepName: true,
@@ -104,15 +125,20 @@ func columnsFor(width int, g grouping) columnSet {
 
 // boardColumns builds the table columns for a terminal width, giving the
 // title whatever space the fixed columns leave.
-func boardColumns(width int, g grouping) ([]table.Column, columnSet) {
-	set := columnsFor(width, g)
+func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSet) {
+	set := columnsFor(width, g, marking)
 	title := max(set.titleWidth(width), minTitle)
 	stepWidth := widthStepShort
 	if set.stepName {
 		stepWidth = widthStepLong
 	}
 
-	cols := make([]table.Column, 0, 8)
+	cols := make([]table.Column, 0, maxBoardColumns)
+	if set.mark {
+		// No heading: a one-cell column has no room for one, and "✓" over a
+		// column of blanks reads as a state the rows are failing.
+		cols = append(cols, table.Column{Title: "", Width: widthMark})
+	}
 	cols = append(cols, table.Column{Title: "ID", Width: widthID})
 	if set.project {
 		cols = append(cols, table.Column{Title: "PROJECT", Width: widthProject})

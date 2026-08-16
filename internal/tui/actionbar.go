@@ -70,15 +70,59 @@ type taskActions struct {
 	id      int64
 	state   string
 	actions []string
+	// marked is the board's bulk selection (task 011). When it is non-empty
+	// the bar acts on every marked task that offers the action, and `id` names
+	// only the row under the cursor — so a key can never act on a task the
+	// count beside it did not include.
+	marked []markedTask
 }
 
+// markedTask is one member of a bulk selection: which task, and what the
+// daemon says can be done to it.
+type markedTask struct {
+	id      int64
+	actions []string
+}
+
+// has reports the action is on offer. Under a bulk selection that means *some*
+// marked task offers it (task 011 decision): requiring all of them would make
+// `archive` vanish from a sweep of finished work because one task in it is
+// still running, with nothing on screen to explain the absence. The count
+// beside the key is what keeps that honest — `A archive (7)` on nine marked
+// rows says both that the key works and that two rows will not move.
 func (t taskActions) has(action string) bool {
+	if t.bulk() {
+		return len(t.targets(action)) > 0
+	}
 	for _, a := range t.actions {
 		if a == action {
 			return true
 		}
 	}
 	return false
+}
+
+// bulk reports that a selection, rather than the cursor row, is what the bar
+// acts on.
+func (t taskActions) bulk() bool { return len(t.marked) > 0 }
+
+// targets is the ids one action would be sent to: the marked tasks offering
+// it, or nil when nothing is marked — the single-task path uses t.id, and a
+// nil here is what distinguishes the two.
+func (t taskActions) targets(action string) []int64 {
+	out := make([]int64, 0, len(t.marked))
+	for _, m := range t.marked {
+		for _, a := range m.actions {
+			if a == action {
+				out = append(out, m.id)
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // actionBar turns key presses into daemon calls and reports what happened.
@@ -89,6 +133,13 @@ type actionBar struct {
 	// one that carries `force` after a dirty worktree refused the first.
 	pending string
 	force   bool
+	// pendingIDs pins the tasks a confirmation is for, when they are not
+	// simply "the row under the cursor": a bulk selection, and — on the force
+	// re-ask — the subset of it whose worktrees were dirty. nil means the
+	// single-task path. bulkTotal is how many the question started out about,
+	// so the re-ask can say "2 of 5".
+	pendingIDs []int64
+	bulkTotal  int
 
 	status    string
 	statusBad bool
@@ -105,11 +156,14 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if a.pending != "" {
 		switch key {
 		case "y":
-			action, force := a.pending, a.force
-			a.pending, a.force = "", false
+			action, force, ids := a.pending, a.force, a.pendingIDs
+			a.pending, a.force, a.pendingIDs = "", false, nil
+			if len(ids) > 0 {
+				return a.dispatchBulk(client, ids, action, force), true
+			}
 			return a.dispatch(client, t.id, action, force), true
 		case "n", "esc":
-			a.pending, a.force = "", false
+			a.pending, a.force, a.pendingIDs = "", false, nil
 			a.setStatus("cancelled", false)
 			return nil, true
 		}
@@ -121,9 +175,16 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if !ok {
 		return nil, false
 	}
+	// A selection retargets the key at every marked task offering the action;
+	// with nothing marked, targets is nil and this is the path it always was.
+	ids := t.targets(action)
 	if needsConfirm(action) {
 		a.pending, a.force = action, false
+		a.pendingIDs, a.bulkTotal = ids, len(ids)
 		return nil, true
+	}
+	if len(ids) > 0 {
+		return a.dispatchBulk(client, ids, action, false), true
 	}
 	return a.dispatch(client, t.id, action, false), true
 }
@@ -149,34 +210,41 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 	}
 	a.setStatus(action+"…", false)
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-		defer cancel()
-		var (
-			task   apiclient.Task
-			branch apiclient.BranchOutcome
-			err    error
-		)
-		switch action {
-		case apiclient.ActionCancel:
-			task, err = client.Cancel(ctx, id)
-		case apiclient.ActionPause:
-			task, err = client.Pause(ctx, id)
-		case apiclient.ActionResume:
-			task, err = client.Resume(ctx, id)
-		case apiclient.ActionRetry:
-			task, err = client.Retry(ctx, id, apiclient.Override{})
-		case apiclient.ActionSkip:
-			task, err = client.Skip(ctx, id)
-		case apiclient.ActionApprove:
-			task, err = client.Approve(ctx, id)
-		case apiclient.ActionReject:
-			task, err = client.Reject(ctx, id)
-		case apiclient.ActionArchive:
-			task, branch, err = client.Archive(ctx, id, force)
-		default:
-			err = fmt.Errorf("unknown action %q", action)
-		}
+		task, branch, err := callActionWithTimeout(client, id, action, force)
 		return actionResultMsg{taskID: id, action: action, task: task, branch: branch, err: err}
+	}
+}
+
+// callAction is the one place a §6 action becomes an HTTP call, shared by the
+// single-task path and the bulk one so the two cannot drift into meaning
+// different things by the same key.
+func callAction(ctx context.Context, client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, error) {
+	switch action {
+	case apiclient.ActionCancel:
+		task, err := client.Cancel(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionPause:
+		task, err := client.Pause(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionResume:
+		task, err := client.Resume(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionRetry:
+		task, err := client.Retry(ctx, id, apiclient.Override{})
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionSkip:
+		task, err := client.Skip(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionApprove:
+		task, err := client.Approve(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionReject:
+		task, err := client.Reject(ctx, id)
+		return task, apiclient.BranchOutcome{}, err
+	case apiclient.ActionArchive:
+		return client.Archive(ctx, id, force)
+	default:
+		return apiclient.Task{}, apiclient.BranchOutcome{}, fmt.Errorf("unknown action %q", action)
 	}
 }
 
@@ -195,13 +263,14 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		a.setStatus(status, false)
 		return
 	}
+	if isDirtyWorktree(msg.action, msg.err) {
+		a.pending, a.force = apiclient.ActionArchive, true
+		a.pendingIDs, a.bulkTotal = nil, 0
+		a.status = ""
+		return
+	}
 	var apiErr *apiclient.Error
 	if errors.As(msg.err, &apiErr) {
-		if msg.action == apiclient.ActionArchive && apiErr.Details["reason"] == "worktree_dirty" {
-			a.pending, a.force = apiclient.ActionArchive, true
-			a.status = ""
-			return
-		}
 		if apiErr.Status == http.StatusConflict {
 			if state := apiErr.Details["state"]; state != "" {
 				a.setStatus(fmt.Sprintf("%s: the task is %s", msg.action, state), true)
@@ -219,7 +288,17 @@ func (a *actionBar) setStatus(text string, bad bool) {
 }
 
 // clear drops transient state when the bar moves to another task.
+//
+// A pending *bulk* question survives it, because it is a question about the
+// selection rather than about the row under the cursor — and the cursor moves
+// on its own exactly when one is on screen: a bulk archive that met a dirty
+// worktree has already archived the clean tasks, the refetch drops their rows,
+// and the cursor lands somewhere else. Clearing there would take the force
+// re-ask away between the two halves of one action (task 011).
 func (a *actionBar) clear() {
+	if len(a.pendingIDs) > 0 {
+		return
+	}
 	a.pending, a.force = "", false
 	a.status, a.statusBad = "", false
 }
@@ -227,6 +306,9 @@ func (a *actionBar) clear() {
 // confirmPrompt is the question a pending confirmation asks. It names the
 // consequence, not the action: "archive?" is not what a human needs to know.
 func (a *actionBar) confirmPrompt(t taskActions) string {
+	if n := len(a.pendingIDs); n > 0 {
+		return a.bulkPrompt(n)
+	}
 	switch {
 	case a.pending == apiclient.ActionArchive && a.force:
 		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", t.id)
@@ -239,8 +321,40 @@ func (a *actionBar) confirmPrompt(t taskActions) string {
 	}
 }
 
+// bulkPrompt is the same question asked of a selection. The force re-ask names
+// the subset it is about — "2 of 5 selected tasks" — because by then the other
+// three are already archived and re-asking about all five would be a lie.
+func (a *actionBar) bulkPrompt(n int) string {
+	switch {
+	case a.pending == apiclient.ActionArchive && a.force:
+		subject := selectedNoun(n)
+		if a.bulkTotal > n {
+			subject = fmt.Sprintf("%d of %s", n, selectedNoun(a.bulkTotal))
+		}
+		return fmt.Sprintf("%s have uncommitted changes — archive anyway and lose them? (y/n)", subject)
+	case a.pending == apiclient.ActionArchive:
+		return fmt.Sprintf("archive %s? their worktrees are removed (y/n)", selectedNoun(n))
+	case a.pending == apiclient.ActionCancel:
+		return fmt.Sprintf("cancel %s? their running steps are killed (y/n)", selectedNoun(n))
+	default:
+		return fmt.Sprintf("%s %s? (y/n)", a.pending, selectedNoun(n))
+	}
+}
+
+// actionLabel names an action beside its key. Under a bulk selection it
+// carries how many of the marked tasks the key would actually move: an action
+// on offer for seven of nine says so, rather than leaving the reader to guess
+// whether the other two come along (task 011).
+func actionLabel(t taskActions, action string) string {
+	if !t.bulk() {
+		return action
+	}
+	return fmt.Sprintf("%s (%d)", action, len(t.targets(action)))
+}
+
 // render draws the bar: the pending question if there is one, otherwise the
-// keys this task actually accepts plus whatever the last action reported.
+// keys this task accepts — or, under a selection, the keys the marked tasks
+// accept — plus whatever the last action reported.
 func (a *actionBar) render(t taskActions, extra ...string) string {
 	if a.pending != "" {
 		return styleWarn.Render(" " + a.confirmPrompt(t))
@@ -248,7 +362,7 @@ func (a *actionBar) render(t taskActions, extra ...string) string {
 	parts := make([]string, 0, len(actionOrder)+2)
 	for _, o := range actionOrder {
 		if t.has(o.action) {
-			parts = append(parts, styleKey.Render(o.key)+" "+o.action)
+			parts = append(parts, styleKey.Render(o.key)+" "+actionLabel(t, o.action))
 		}
 	}
 	// `answer` has no key: it is the form, and where the form lives differs

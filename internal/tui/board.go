@@ -83,6 +83,10 @@ type board struct {
 	tbl        table.Model
 	selectedID int64
 
+	// marks is the bulk selection (boardmark.go, task 011): the tasks the §6
+	// action keys act on instead of the row under the cursor.
+	marks markSet
+
 	filter    textinput.Model
 	filtering bool
 
@@ -280,24 +284,35 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		// the row was stale, and leaving it stale invites the same keypress.
 		b.refreshPending = false
 		return b, b.loadCmd()
+	case bulkResultMsg:
+		b.actions.applyBulkResult(msg)
+		// What the daemon accepted leaves the selection; what it refused stays
+		// marked, so a force re-ask or a retry needs no re-selection (task 011).
+		b.marks = b.marks.drop(msg.done...)
+		b.refreshPending = false
+		return b, b.loadCmd()
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	}
 	return b, nil
 }
 
-// target is the row under the cursor as the action bar sees it.
+// target is what the action bar acts on: the row under the cursor, carrying
+// the bulk selection when there is one (task 011). The cursor row travels even
+// then — it is what the confirmation for a single task would name, and what the
+// palette titles its action section with.
 func (b *board) target() taskActions {
+	marked := b.markedTargets()
 	id, ok := b.selected()
 	if !ok {
-		return taskActions{}
+		return taskActions{marked: marked}
 	}
 	for _, t := range b.visible() {
 		if t.ID == id {
-			return taskActions{id: t.ID, state: t.State, actions: t.AvailableActions}
+			return taskActions{id: t.ID, state: t.State, actions: t.AvailableActions, marked: marked}
 		}
 	}
-	return taskActions{id: id}
+	return taskActions{id: id, marked: marked}
 }
 
 func (b *board) updateLoaded(msg boardLoadedMsg) {
@@ -316,6 +331,11 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	b.lastLoad = b.now()
 	b.tasks = msg.tasks
 	b.appliedSeq = msg.seq
+	// A mark for a task the daemon no longer lists — archived away, or whose
+	// project was removed — would be counted in the panel title and dispatched
+	// to a 404. Only a *successful* load prunes: a failed refresh is not news
+	// about which tasks exist.
+	b.marks = b.marks.keep(msg.tasks)
 }
 
 // updateNote reacts to the event stream. Every task event schedules a
@@ -412,6 +432,16 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if b.filter.Value() != "" {
 			b.filter.SetValue("")
 		}
+		return b, nil
+	case "space":
+		// Mark the row for a bulk action (§15, task 011). The cursor does not
+		// move: `space` is a statement about this row, and a human marking a
+		// run of rows presses down themselves — auto-advancing would make
+		// unmarking a mis-press land on the wrong row.
+		b.toggleMark()
+		return b, nil
+	case "V":
+		b.markVisible()
 		return b, nil
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config
@@ -674,7 +704,7 @@ func (b *board) render(width, height int) string {
 		return sb.String()
 	}
 
-	cols, set := boardColumns(b.width, b.group)
+	cols, set := boardColumns(b.width, b.group, b.hasMarks())
 	// SetColumns re-renders the rows it already holds: when a resize crosses
 	// a column breakpoint, yesterday's wider rows meet today's narrower
 	// column set and the table indexes out of range. Clear the rows first —
@@ -752,7 +782,11 @@ func (b *board) rowsFor(rows []boardRow, set columnSet) []table.Row {
 			continue
 		}
 		t := r.task
-		row := table.Row{strconv.FormatInt(t.ID, 10)}
+		row := make(table.Row, 0, maxBoardColumns)
+		if set.mark {
+			row = append(row, b.markCell(t.ID))
+		}
+		row = append(row, strconv.FormatInt(t.ID, 10))
 		if set.project {
 			row = append(row, t.ProjectName)
 		}
@@ -777,7 +811,13 @@ func (b *board) rowsFor(rows []boardRow, set columnSet) []table.Row {
 // every other cell blank, so the header reads as a break in the list rather
 // than as a task with missing figures.
 func groupHeaderRow(r boardRow, set columnSet) table.Row {
-	row := table.Row{""}
+	row := make(table.Row, 0, maxBoardColumns)
+	if set.mark {
+		// A group is not something a bulk action can name: the marker column is
+		// blank on a header, like every other column but the label.
+		row = append(row, "")
+	}
+	row = append(row, "")
 	if set.project {
 		row = append(row, "")
 	}

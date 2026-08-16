@@ -73,7 +73,7 @@ var bindings = []binding{
 	// running it from the palette would paste into a field the palette just
 	// closed.
 	{key: "ctrl+v", label: "paste into the focused field (Cmd+V and the terminal's own paste work too)", scope: scopeGlobal, noPalette: true},
-	{key: "esc", label: "close one layer: popup → screen → filter — never quits", scope: scopeGlobal, noPalette: true},
+	{key: "esc", label: "close one layer: popup → screen → selection → filter — never quits", scope: scopeGlobal, noPalette: true},
 	{key: "q", label: "quit the TUI (the daemon keeps running)", scope: scopeGlobal},
 	{key: "ctrl+c", label: "quit the TUI", scope: scopeGlobal, noPalette: true},
 
@@ -103,6 +103,8 @@ var bindings = []binding{
 	{key: "enter", label: "open the selected task — or its answer form when it is asking", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1},
 	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2},
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
+	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
+	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
 
 	// Timeline.
 	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 1},
