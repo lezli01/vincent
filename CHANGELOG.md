@@ -48,6 +48,52 @@ type — that is the exhaustive index; this is the human summary.
   a daemon still running the previous binary. `--uninstall` removes the binary
   and leaves config, database and transcripts alone.
 
+- **`vincent doctor` — one command that answers "why is nothing running?".**
+  It used to take five surfaces and a hand-extracted bearer token: `daemon
+  status`, reading `daemon.json` yourself, the TUI's daemon view for a log tail,
+  `curl /v1/agents`, and finding the config file. Doctor prints all of it in one
+  pass — the config and data directories and whether `config.yaml` parses; the
+  daemon's status, pid, port, uptime and version; the log's size and last lines;
+  the database's size, schema version and `PRAGMA integrity_check`; every agent
+  CLI with its path, version and `logged_in`; free disk, worktree count and
+  bytes, and orphaned worktrees; and task counts by state. `--json` emits the
+  whole report for scripting and for pasting into a bug report.
+
+  It exits `0` healthy, `1` on problems found, `2` when no daemon answered — and
+  **it still prints a full report with no daemon running**, since that is one of
+  the answers. In that mode the database and task rows read *unknown — daemon
+  not running* rather than opening SQLite behind the daemon's back. A missing or
+  logged-out agent CLI is reported plainly and deliberately does not set the exit
+  code.
+
+- **`vincent doctor --fix` reclaims orphaned directories and compacts the
+  database.** Doctor reports the same orphans `vincent gc` does and `--fix` runs
+  the same reclaim — one definition, one removal path, so the two commands
+  cannot disagree about what is safe to delete. What doctor adds is the report
+  beside the disk figures, and the database, which grew forever with no surface
+  naming its size. Both writes are performed by the daemon. Two refusals are by
+  design and are reported rather than hidden: an orphan with local changes is
+  skipped until `--force`, and the `VACUUM` is skipped while any task is in
+  flight instead of stalling it mid-step. With no daemon answering, orphans read
+  *unknown* — the claim set lives in a database only the daemon opens.
+
+- **`GET /v1/doctor` and `POST /v1/doctor/fix`** serve the report and the
+  repair. Agent availability on `/v1/doctor` is re-probed unconditionally,
+  unlike `GET /v1/agents`: authentication is not a function of the binary, so a
+  cached `logged_in: false` would survive you logging in.
+
+### Changed
+
+- **codex now reports `logged_in`.** `Detect` probes `codex login status`, so
+  "the CLI is installed but your session expired" is visible on the board, in
+  the new-task form, in `GET /v1/agents` and in doctor — instead of first
+  appearing as a task that burned its whole retry budget. The parse never
+  guesses: a non-zero exit is `false`, an explicit negative is `false`, an
+  explicit positive is `true`, and anything else — including a probe that times
+  out or cannot be spawned — stays `null`. **claude** keeps `logged_in: null`,
+  because its CLI exposes no non-interactive auth surface at all and the only
+  definite answer would be a billed prompt round-trip.
+
 ## [0.1.1] — 2026-08-15
 
 ### Added

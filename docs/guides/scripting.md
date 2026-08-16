@@ -44,6 +44,27 @@ background process would be a surprise in a CI job.
 `vincent daemon status` is the exception worth memorizing separately: `0`
 healthy, `1` not running, `2` running but unresponsive.
 
+`vincent doctor` overloads them the same way — `0` healthy, `1` problems found,
+`2` no daemon answered — and is the one subcommand that still prints its whole
+report on exit `2`, because "no daemon" is one of the answers it exists to give:
+
+```sh
+vincent doctor --json > doctor.json   # written whether or not a daemon answered
+case $? in
+  0) ;;
+  1) jq -r '.problems[] | "\(.group)\t\(.message)"' doctor.json >&2; exit 1 ;;
+  2) vincent daemon start ;;
+esac
+```
+
+What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
+the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
+database is at a schema version this binary does not understand, or orphaned
+worktrees are present. A missing or logged-out agent CLI is reported and does
+*not* set the exit code — most machines have one of three adapters installed, so
+a doctor that exited `1` almost everywhere would be no use here. Neither do task
+counts: twelve blocked tasks is information, not a defect.
+
 ## JSON output
 
 `--json` works on every subcommand that prints anything:

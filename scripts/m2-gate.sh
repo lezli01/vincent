@@ -242,6 +242,45 @@ EOF
       || fail "published commit does not carry the agent's README.md edit"
   fi
 
+  echo "== assert the doctor report (task 006, §17)"
+  # Over curl, with no TUI and no hand-extracted token beyond the one this
+  # gate already holds — which is the point of the endpoint existing.
+  local doctor
+  doctor="$(api GET /doctor)"
+  jq -e '.daemon.status == "running" and (.daemon.pid > 0) and (.daemon.port > 0)' <<<"$doctor" >/dev/null \
+    || fail "doctor daemon group is wrong: $(jq -c .daemon <<<"$doctor")"
+  jq -e '.database.known and .database.integrity_check == "ok"
+         and .database.schema_version == .database.newest_migration' <<<"$doctor" >/dev/null \
+    || fail "doctor database group is wrong: $(jq -c .database <<<"$doctor")"
+  jq -e '.tasks.known and .tasks.counts.done == 1' <<<"$doctor" >/dev/null \
+    || fail "doctor task counts are wrong: $(jq -c .tasks <<<"$doctor")"
+  jq -e '.storage.orphans_known and (.storage.orphans | length) == 0' <<<"$doctor" >/dev/null \
+    || fail "a live task's worktree was called an orphan: $(jq -c .storage <<<"$doctor")"
+  jq -e '.paths.config_parses and (.log.exists) and (.agents | length) > 0' <<<"$doctor" >/dev/null \
+    || fail "doctor paths/log/agents groups are incomplete: $doctor"
+  jq -e '(.problems | length) == 0' <<<"$doctor" >/dev/null \
+    || fail "a healthy installation reported problems: $(jq -c .problems <<<"$doctor")"
+
+  echo "== assert --fix reclaims an orphaned worktree"
+  # Id 9999 owns no task row, which is exactly what a forced project delete
+  # leaves behind (§10, task 005).
+  mkdir -p "$DATA_DIR/worktrees/9999"
+  printf 'residue\n' > "$DATA_DIR/worktrees/9999/leftover.txt"
+  doctor="$(api GET /doctor)"
+  jq -e '[.storage.orphans[] | select(.task_id == 9999)] | length == 1' <<<"$doctor" >/dev/null \
+    || fail "doctor missed the orphaned worktree: $(jq -c .storage <<<"$doctor")"
+  jq -e '(.problems | length) > 0' <<<"$doctor" >/dev/null \
+    || fail "orphans present but the report is healthy"
+  local fixed
+  fixed="$(api POST /doctor/fix '{"force":true}')"
+  jq -e '[.actions[] | select(.action == "remove_worktree" and .status == "done")] | length == 1' <<<"$fixed" >/dev/null \
+    || fail "--fix did not remove the orphan: $(jq -c .actions <<<"$fixed")"
+  [[ ! -d "$DATA_DIR/worktrees/9999" ]] || fail "the orphan directory survived --fix"
+  jq -e '[.actions[] | select(.action == "compact_database" and .status == "done")] | length == 1' <<<"$fixed" >/dev/null \
+    || fail "--fix did not compact an idle database: $(jq -c .actions <<<"$fixed")"
+  jq -e '(.report.storage.orphans | length) == 0 and (.report.problems | length) == 0' <<<"$fixed" >/dev/null \
+    || fail "the report taken after the fix still shows the orphan: $(jq -c .report.storage <<<"$fixed")"
+
   echo "== assert durable events over SSE replay (Last-Event-ID: 1)"
   # Cursor 1, not 0: ids start at 1 and a 0/absent cursor means live-only by
   # design (PR D — genesis catch-up is REST snapshot, then follow). Resuming

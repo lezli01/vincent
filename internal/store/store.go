@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -27,6 +28,9 @@ const timeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 // and SQLITE_BUSY cannot occur within the daemon.
 type Store struct {
 	db *sql.DB
+	// path is the database file, kept so diagnostics can stat it without the
+	// caller re-deriving a path the store already resolved (task 005, §17).
+	path string
 	// eventHook fires after an event's transaction commits; see SetEventHook.
 	eventHook atomic.Pointer[func(*Event)]
 }
@@ -51,7 +55,60 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
+}
+
+// Path returns the database file this store was opened on (§17: doctor
+// reports its size, and the daemon is the only process that may say so).
+func (s *Store) Path() string { return s.path }
+
+// SchemaVersion returns the applied-migration high-water mark recorded in
+// schema_migrations. It is the number doctor compares against the newest
+// migration this binary embeds: a database ahead of the binary was written by
+// a newer vincent, and running the older one against it is the one database
+// state §18 calls out as needing a human (task 005).
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
+	var v int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&v); err != nil {
+		return 0, fmt.Errorf("read schema version: %w", err)
+	}
+	return v, nil
+}
+
+// IntegrityCheck runs `PRAGMA integrity_check` and returns its verdict —
+// "ok" on a healthy file, otherwise SQLite's own description of the damage,
+// joined one finding per line. The strings are passed through untouched:
+// §18's rule for a corrupt database is to point at it and never act on it.
+func (s *Store) IntegrityCheck(ctx context.Context) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA integrity_check`)
+	if err != nil {
+		return "", fmt.Errorf("integrity check: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var findings []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return "", fmt.Errorf("scan integrity check: %w", err)
+		}
+		findings = append(findings, line)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate integrity check: %w", err)
+	}
+	return strings.Join(findings, "\n"), nil
+}
+
+// Vacuum rewrites the database file, reclaiming the pages that transcript
+// pruning and task deletion freed. It takes an exclusive lock for the whole
+// rewrite, so the caller is responsible for choosing a moment when no step is
+// mid-write (task 005 decision 4).
+func (s *Store) Vacuum(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	return nil
 }
 
 // Close closes the underlying database.
