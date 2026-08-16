@@ -67,8 +67,11 @@ named `vincent_{version}_{os}_{arch}.{tar.gz|zip}`:
 | Windows, x86-64 | `vincent_*_windows_amd64.zip` |
 | Windows, ARM64 | `vincent_*_windows_arm64.zip` |
 
-Each archive contains the binary, `LICENSE`, `README.md`, and the
-[example workflows](../../examples).
+Each archive contains the binary, `LICENSE`, `COMMERCIAL-LICENSE.md`,
+`README.md`, and the [example workflows](../../examples). vincent is
+source-available and dual-licensed: free for personal and non-commercial use
+under the PolyForm Noncommercial License 1.0.0, with a separate commercial
+license required for business use.
 
 **macOS / Linux**
 

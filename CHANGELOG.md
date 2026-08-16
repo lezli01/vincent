@@ -24,6 +24,23 @@ Please pull request.
 
 ## [Unreleased]
 
+### Changed
+
+- **vincent is now source-available and dual-licensed, not MIT.** Personal and
+  non-commercial use is free under the
+  [PolyForm Noncommercial License 1.0.0](LICENSE); commercial or business use —
+  including running vincent inside a for-profit company's own development
+  workflow, without selling it — requires a separate commercial license, see
+  [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). This is deliberately *not* an
+  OSI-approved open-source license: restricting commercial use is incompatible
+  with the Open Source Definition, so "source-available" is the accurate word.
+
+  **The change is not retroactive.** `v0.2.0` and every release before it were
+  published under the MIT License and stay usable under it forever, on the terms
+  they shipped with; no tag or published artifact is modified. The first release
+  published after this change is the first release under the new licensing, and
+  every release after it follows.
+
 ### Added
 
 - **`vincent gc` reclaims directories no task claims.** A worktree could outlive

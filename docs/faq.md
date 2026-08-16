@@ -141,7 +141,11 @@ endpoints.
 
 ### Does it cost anything? Does it show me what a run cost?
 
-vincent is MIT-licensed and free. Your agent CLI's usage is billed by its vendor.
+vincent is source-available and dual-licensed: free for personal and
+non-commercial use under the [PolyForm Noncommercial License 1.0.0](../LICENSE),
+and a [separate commercial license](../COMMERCIAL-LICENSE.md) for business use —
+which includes running it inside a for-profit company's development workflow.
+Your agent CLI's usage is billed by its vendor.
 Claude Code reports cost, so the board's cost column sums every attempt for it;
 codex and cursor report none, and vincent shows nothing rather than guessing.
 
