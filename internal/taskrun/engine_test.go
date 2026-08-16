@@ -460,6 +460,31 @@ func TestEngineCommandTimeoutKills(t *testing.T) {
 	}
 }
 
+// TestEnginePlatformRestrictedSnapshotBlocks covers the §8.1 restriction on
+// the run path (task 010). The API refuses to create such a task here, so the
+// only way to hold one is to have moved the data directory to another OS —
+// which the fixture reproduces by inserting the snapshot directly.
+func TestEnginePlatformRestrictedSnapshotBlocks(t *testing.T) {
+	foreign := workflow.PlatformWindows
+	if runtime.GOOS == workflow.PlatformWindows {
+		foreign = workflow.PlatformLinux
+	}
+	h := newEngineHarness(t)
+	snapshot := "name: elsewhere\nplatforms: [" + foreign + "]\nsteps:\n" +
+		commandStep("noop", script("true", "Write-Output ok"))
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked || blocked.BlockReason != ReasonPlatformUnsupported {
+		t.Fatalf("task = %s/%q, want blocked/%s",
+			blocked.State, blocked.BlockReason, ReasonPlatformUnsupported)
+	}
+	if runs := h.stepRuns(t, task.ID); len(runs) != 0 {
+		t.Errorf("step runs = %d, want none — the restriction is judged before any step", len(runs))
+	}
+}
+
 // TestEngineStepResultsFlowIntoTemplates covers §8.4's `.Steps`: a later
 // step reads an earlier step's result.
 func TestEngineStepResultsFlowIntoTemplates(t *testing.T) {

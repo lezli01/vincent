@@ -392,6 +392,12 @@ func (n *newTask) workflowOptions() []pickerOption {
 		if !e.Valid() {
 			opt.disabled = true
 			opt.note = "invalid: " + e.FirstError()
+		} else if !e.RunsHere() {
+			// Offered but not selectable: the workflow exists and the human
+			// may well be looking for it, so the row says why it is out of
+			// reach rather than vanishing (§8.1.1, task 010).
+			opt.disabled = true
+			opt.note = "not on this platform · " + e.PlatformNote()
 		} else if bad := n.unavailableSteps(e); len(bad) > 0 {
 			opt.note = fmt.Sprintf("%s · ⚠ %d step(s) need an unavailable agent", e.Scope, len(bad))
 		}

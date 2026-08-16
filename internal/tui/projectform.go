@@ -314,6 +314,12 @@ func (f *projectForm) workflowOptions() []pickerOption {
 		if !e.Valid() {
 			opt.disabled = true
 			opt.note = "invalid: " + e.FirstError()
+		} else if !e.RunsHere() {
+			// Selectable, unlike in the new-task picker: a project's default
+			// is repository configuration that may well be shared with hosts
+			// where the workflow does run. It is only a task created *here*
+			// that the restriction refuses (task 010).
+			opt.note = e.Scope + " · ⚠ not on this platform, " + e.PlatformNote()
 		}
 		out = append(out, opt)
 	}

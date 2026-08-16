@@ -7,11 +7,12 @@
 # load (scenario 3), that branch naming and its recovery path hold (scenario
 # 4), that an agent usage limit re-queues rather than blocks and recovers
 # unattended (scenario 5), and that archiving deletes a branch that carries no
-# commits past its base while keeping every branch that does (scenario 6). Runs
-# against the committed fakeagent so CI never calls a real API; run manually
-# with VINCENT_GATE_AGENT=claude to exercise the real CLI (scenario 1 only —
-# killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1|2|3|4|5|6 runs a single scenario for debugging.
+# commits past its base while keeping every branch that does (scenario 6), and
+# that a workflow restricted to other platforms is listed but never offered here
+# (scenario 7). Runs against the committed fakeagent so CI never calls a real
+# API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
+# (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
+# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -783,6 +784,81 @@ EOF
   echo "=== scenario 6 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 7 — a workflow restricted to other platforms (§8.1.1, task 010) is
+# listed with the daemon's verdict, refused at task creation, and does not
+# stop the same registry serving a workflow that does run here. The "foreign"
+# platform is chosen from the host, so this asserts the same thing on all
+# three CI legs instead of passing vacuously on two of them.
+# ---------------------------------------------------------------------------
+scenario7() {
+  echo "=== scenario 7: platform-restricted workflows are listed, not offered"
+  scenario_dirs s7
+
+  local here foreign
+  if [[ "${OS:-}" == "Windows_NT" ]]; then here=windows; foreign=posix; else here=posix; foreign=windows; fi
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-elsewhere.yaml" <<EOF
+name: m2-elsewhere
+description: M2 gate — restricted to a platform this host is not.
+platforms: [$foreign]
+steps:
+  - id: gate
+    type: manual
+    instructions: never reached
+EOF
+  cat > "$CONFIG_DIR/workflows/m2-here.yaml" <<EOF
+name: m2-here
+description: M2 gate — restricted to this very host.
+platforms: [$here]
+steps:
+  - id: nap
+    type: command
+    run: sleep 1
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s7/repo" proj list
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  echo "== the registry lists both, with the daemon's own verdict on each"
+  list="$(api GET "/workflows?project_id=$proj")"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-elsewhere") | .platform_supported' <<<"$list")" == "false" ]] \
+    || fail "the foreign-platform workflow is not marked unsupported: $list"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-elsewhere") | .platforms[0]' <<<"$list")" == "$foreign" ]] \
+    || fail "the entry does not carry its platforms: $list"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-elsewhere") | .error' <<<"$list")" == "null" ]] \
+    || fail "a platform restriction was reported as a validation error: $list"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-here") | .platform_supported' <<<"$list")" == "true" ]] \
+    || fail "a workflow naming this host is not supported on it: $list"
+
+  echo "== creating a task on it is refused with 400"
+  local status
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"project_id\":$proj,\"workflow\":\"m2-elsewhere\",\"title\":\"Nope\"}" \
+    "$BASE/tasks")"
+  [[ "$status" == "400" ]] \
+    || fail "a workflow this host cannot run should be 400 at creation, got $status"
+
+  echo "== the workflow restricted to this host runs to completion"
+  local ok
+  ok="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-here\",\"title\":\"Yes\"}" | jq -r .id)"
+  wait_for_state "$ok" done 90
+
+  "$VINCENT" daemon stop
+  echo "=== scenario 7 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -795,7 +871,8 @@ case "$WHICH" in
   4) scenario4 ;;
   5) scenario5 ;;
   6) scenario6 ;;
-  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6 ;;
+  7) scenario7 ;;
+  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

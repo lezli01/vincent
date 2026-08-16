@@ -45,10 +45,13 @@ const (
 
 // Workflow is a parsed workflow definition (spec §8.1).
 type Workflow struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Defaults    Defaults `yaml:"defaults"`
-	Steps       []Step   `yaml:"steps"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	// Platforms restricts where the workflow may run (§8.1.1, task 010).
+	// Empty means every platform; see platform.go for the token set.
+	Platforms []string `yaml:"platforms,omitempty"`
+	Defaults  Defaults `yaml:"defaults"`
+	Steps     []Step   `yaml:"steps"`
 }
 
 // Defaults are the workflow-level fallbacks for step fields. Pointer fields
@@ -210,6 +213,7 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 	} else if strings.ContainsAny(wf.Name, " \t/\\") {
 		add("name", "name %q must not contain whitespace or path separators", wf.Name)
 	}
+	validatePlatforms(wf, add)
 	validateDefaults(wf, opts, add)
 
 	if len(wf.Steps) == 0 {

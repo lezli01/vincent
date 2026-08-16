@@ -410,6 +410,7 @@ permission mode.
 
 name: feature-pr                      # required; unique per scope; project shadows global
 description: Implement, test, review, then push and open a PR.
+platforms: [posix]                    # optional; where this workflow may run (§8.1.1)
 
 defaults:                             # optional; per-step values override
   agent: claude                       # claude | codex
@@ -461,6 +462,42 @@ steps:
     max_retries: 0
 ```
 
+#### 8.1.1 Platform restriction (`platforms:`)
+
+*Added 2026-08-16 (task 010).* A workflow may declare the platforms it is
+written for. §8.3 leaves cross-OS portability of command steps to the author;
+this is how an author says they did not attempt it, instead of shipping a
+workflow that pipes `cat` into `wc` and fails wherever it is offered on
+Windows.
+
+```yaml
+platforms: [posix]           # or: [linux, darwin] · [windows] · [posix, windows]
+```
+
+- Tokens are GOOS values — `linux`, `darwin`, `windows` — plus one group
+  token, `posix`, which matches **every non-Windows host**. Matching is exact:
+  `macos` or `Linux` is a typo that fails validation, the way every other enum
+  in the schema does.
+- Omitted or empty means every platform. Nothing changes for a workflow that
+  does not declare it, which is the majority.
+- The restriction is judged against the **daemon's** host, because the daemon
+  is what runs the steps. Clients do not re-derive it: `GET /v1/workflows`
+  serves `platforms[]` and the daemon's own verdict as `platform_supported`
+  (§13.2).
+- A restricted workflow that does not match stays in the registry and is still
+  listed, with its reason — the same rule that keeps an invalid file visible
+  (§5.2). It is *offering* that stops: the TUI's new-task picker refuses it,
+  and `POST /v1/tasks` rejects it with a 400 naming the restriction and the
+  host.
+- A task already holding such a snapshot — a data directory carried to another
+  OS, or a workflow narrowed after the task was queued — is blocked at
+  admission with `platform_unsupported` (§18), before any step runs. That is
+  distinct from `invalid_snapshot`: the snapshot is valid, just not here.
+
+The restriction is **whole-workflow**. A per-step `platforms:` was considered
+and deferred: it needs an answer to "what does a skipped step do to `.Steps`
+and to the task's success", which is a lifecycle question, not a schema one.
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
@@ -477,6 +514,10 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
   parse as Go durations; `on_input` is `wait` or `deny`; unknown keys are errors
   (strict decoding) to catch typos.
+- `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
+  list is checked for *shape*, never against the validating host: a POSIX-only
+  workflow validates on a Windows CI runner exactly as it does on Linux, or
+  `vincent workflow validate` could not be a portable pre-commit check.
 - `agent` values must name a known adapter. Each step's resolved
   (agent, model, effort) triple (§8.6) is checked against that adapter's option
   catalog (§9.6). The rule is cross-catalog: a value present in the resolved
@@ -499,6 +540,8 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 A step may pin `shell: sh | pwsh | cmd` explicitly. Cross-OS portability of command
 steps is the workflow author's responsibility; the spec makes no attempt to translate.
+*Amended 2026-08-16 (task 010):* an author who did not attempt it says so with
+`platforms:` (§8.1.1), which is enforced rather than translated.
 
 ### 8.4 Template context
 
@@ -1655,7 +1698,10 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
-                                        { name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }
+                                        { name, scope, project_id, file, description, steps[],
+                                          platforms[]?, platform_supported, errors[]?, warnings[]?, error? }
+                                        platform_supported is this daemon's own verdict on the
+                                        entry's §8.1.1 restriction (task 010, added 2026-08-16)
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
@@ -2277,6 +2323,7 @@ currently true to show (§15 view 6).
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
+| Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
 | Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
 | Base branch doesn't exist | Task creation fails fast |

@@ -299,6 +299,11 @@ validation status. **Add `--project` to include that repository's
 `.vincent/workflows/`**, with shadowing applied; without it you see global scope
 only.
 
+The `PLATFORMS` column is the workflow's
+[platform restriction](workflow-schema.md#platforms); status `unsupported`
+means this host is not in it, so the workflow is listed but cannot back a task
+here.
+
 Needs a daemon: only the daemon knows which projects exist.
 
 ### `vincent workflow validate`

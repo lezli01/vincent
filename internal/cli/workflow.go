@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -54,16 +55,20 @@ func newWorkflowLsCmd() *cobra.Command {
 					switch {
 					case len(e.Errors) > 0 || e.Error != nil:
 						status = "invalid"
+					case !e.RunsHere():
+						// Ranked above warnings: a workflow this host cannot
+						// run is the more actionable fact about it (task 010).
+						status = "unsupported"
 					case len(e.Warnings) > 0:
 						status = "warnings"
 					}
 					rows = append(rows, []string{
-						e.Name, e.Scope, status,
-						strconv.Itoa(len(e.Steps)), dash(e.Description),
+						e.Name, e.Scope, status, strconv.Itoa(len(e.Steps)),
+						dash(strings.Join(e.Platforms, ",")), dash(e.Description),
 					})
 				}
 				return table(cmd.OutOrStdout(),
-					[]string{"NAME", "SCOPE", "STATUS", "STEPS", "DESCRIPTION"}, rows)
+					[]string{"NAME", "SCOPE", "STATUS", "STEPS", "PLATFORMS", "DESCRIPTION"}, rows)
 			})
 		},
 	}
@@ -77,12 +82,16 @@ func newWorkflowLsCmd() *cobra.Command {
 // API, and borrowing a server type would tie a local command to a remote
 // contract it never speaks.
 type validateResult struct {
-	File     string    `json:"file"`
-	Valid    bool      `json:"valid"`
-	Name     string    `json:"name,omitempty"`
-	Steps    int       `json:"steps"`
-	Errors   []finding `json:"errors"`
-	Warnings []finding `json:"warnings"`
+	File  string `json:"file"`
+	Valid bool   `json:"valid"`
+	Name  string `json:"name,omitempty"`
+	Steps int    `json:"steps"`
+	// Platforms is the §8.1.1 restriction the file declares. It is reported,
+	// never judged: validation is host-independent by design, so a POSIX-only
+	// workflow validates on a Windows CI runner exactly as it does on Linux.
+	Platforms []string  `json:"platforms,omitempty"`
+	Errors    []finding `json:"errors"`
+	Warnings  []finding `json:"warnings"`
 }
 
 type finding struct {
@@ -113,7 +122,7 @@ func newWorkflowValidateCmd() *cobra.Command {
 				Warnings: []finding{},
 			}
 			if wf != nil {
-				res.Name, res.Steps = wf.Name, len(wf.Steps)
+				res.Name, res.Steps, res.Platforms = wf.Name, len(wf.Steps), wf.Platforms
 			}
 			var errs workflow.Errors
 			if parseErr != nil {
@@ -161,8 +170,12 @@ func printValidation(cmd *cobra.Command, res validateResult) error {
 		_, err := fmt.Fprintf(out, "%s: invalid (%d error(s))\n", res.File, len(res.Errors))
 		return err
 	}
-	_, err := fmt.Fprintf(out, "%s: ok — %s, %d step(s), %d warning(s)\n",
-		res.File, res.Name, res.Steps, len(res.Warnings))
+	platforms := ""
+	if len(res.Platforms) > 0 {
+		platforms = fmt.Sprintf(", platforms: %s", strings.Join(res.Platforms, ", "))
+	}
+	_, err := fmt.Fprintf(out, "%s: ok — %s, %d step(s), %d warning(s)%s\n",
+		res.File, res.Name, res.Steps, len(res.Warnings), platforms)
 	return err
 }
 

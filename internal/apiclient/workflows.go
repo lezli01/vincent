@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // WorkflowEntry is one row of GET /v1/workflows (§13.2): the merged registry
@@ -17,6 +18,13 @@ type WorkflowEntry struct {
 	File        string              `json:"file,omitempty"`
 	Description string              `json:"description"`
 	Steps       []WorkflowEntryStep `json:"steps"`
+
+	// Platforms is the workflow's §8.1.1 platform restriction, empty when it
+	// runs anywhere. PlatformSupported is the daemon's verdict for its own
+	// host; nil means the daemon predates the field, which is
+	// indistinguishable from "unrestricted" and treated as such.
+	Platforms         []string `json:"platforms,omitempty"`
+	PlatformSupported *bool    `json:"platform_supported,omitempty"`
 
 	Errors []WorkflowFinding `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
@@ -45,6 +53,23 @@ type WorkflowFinding struct {
 // Valid reports whether this entry can back a task. An invalid entry is
 // listed for display only: POST /v1/tasks rejects it.
 func (e WorkflowEntry) Valid() bool { return len(e.Errors) == 0 }
+
+// RunsHere reports whether the daemon's host satisfies this workflow's
+// platform restriction (§8.1.1). A workflow that does not run here is listed
+// but cannot back a task: POST /v1/tasks rejects it the way it rejects an
+// invalid one.
+func (e WorkflowEntry) RunsHere() bool {
+	return e.PlatformSupported == nil || *e.PlatformSupported
+}
+
+// PlatformNote describes the restriction for one picker row: "needs linux,
+// darwin". It is empty when the workflow declares none.
+func (e WorkflowEntry) PlatformNote() string {
+	if len(e.Platforms) == 0 {
+		return ""
+	}
+	return "needs " + strings.Join(e.Platforms, ", ")
+}
 
 // FirstError returns the leading validation failure, which is what a picker
 // row has room for. It is empty for a valid entry.

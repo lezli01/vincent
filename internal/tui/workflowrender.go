@@ -78,6 +78,11 @@ func (w *workflowsView) renderLine(i int, line wfLine) string {
 	switch {
 	case !e.Valid():
 		parts = append(parts, styleBad.Render("invalid: "+e.FirstError()))
+	case !e.RunsHere():
+		// A platform-restricted workflow stays listed where the registry is
+		// browsed — "where did it go?" is a worse answer than "not here, and
+		// here is what it needs" (task 010).
+		parts = append(parts, styleWarn.Render("not on this platform · "+e.PlatformNote()))
 	case e.File == "":
 		parts = append(parts, styleDim.Render("built-in"))
 	case len(e.Warnings) > 0:
@@ -115,6 +120,14 @@ func (w *workflowsView) renderSteps(line wfLine) []string {
 	}
 	if e.File != "" {
 		out = append(out, styleDim.Render("      "+e.File))
+	}
+	if note := e.PlatformNote(); note != "" {
+		row := "      platforms: " + strings.TrimPrefix(note, "needs ")
+		if e.RunsHere() {
+			out = append(out, styleDim.Render(row))
+		} else {
+			out = append(out, styleWarn.Render(row+" — not this one"))
+		}
 	}
 	for _, f := range e.Errors {
 		out = append(out, styleBad.Render("      ⚠ "+findingText(f)))

@@ -151,6 +151,7 @@ same thing wherever it originated.
 | `rejected` | You rejected a manual gate |
 | `canceled` | You cancelled the task |
 | `invalid_snapshot` | The task's stored workflow snapshot is unusable |
+| `platform_unsupported` | The workflow is restricted to platforms this host is not (`platforms:`). Only reachable for a task created on another OS |
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 
