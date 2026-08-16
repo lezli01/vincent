@@ -51,6 +51,12 @@ type Entry struct {
 // Valid reports whether the entry parsed and validated.
 func (e Entry) Valid() bool { return e.Workflow != nil }
 
+// RunsHere reports whether the entry's `platforms:` restriction (§8.1.1) admits
+// this host. An entry that failed to parse answers true: its errors are
+// already the reason it cannot back a task, and a second one would only make
+// the message wrong.
+func (e Entry) RunsHere() bool { return e.Workflow == nil || e.Workflow.SupportsHost() }
+
 // Registry holds the parsed workflows of every scope and reloads them when
 // their files change (§5.2).
 type Registry struct {

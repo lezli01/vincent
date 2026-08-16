@@ -323,6 +323,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("workflow %q is invalid: %s", workflowName, entry.Errors.Error()))
 		return
 	}
+	// Platform restriction (§8.1.1, task 010). Rejected at creation rather than
+	// at admission: a task that can never run should not reach the board, and
+	// the human asking for it is right here to be told why.
+	if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("workflow %q cannot run here: %s", workflowName, mismatch))
+		return
+	}
 	baseBranch := project.DefaultBranch
 	if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
 		baseBranch = strings.TrimSpace(*req.BaseBranch)

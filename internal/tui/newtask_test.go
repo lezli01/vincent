@@ -356,6 +356,55 @@ func TestNewTaskRefusesToSelectAnInvalidWorkflow(t *testing.T) {
 	}
 }
 
+// A workflow restricted to other platforms (§8.1, task 010) is listed with
+// the reason and refused, the way an invalid one is: the daemon would 400 it,
+// and "it vanished" is a worse answer than "it needs linux".
+func TestNewTaskRefusesAWorkflowThatDoesNotRunHere(t *testing.T) {
+	n := newNewTask()
+	no := false
+	n.update(ntLoadedMsg{
+		projects: []apiclient.Project{{ID: 1, Name: "vincent", DefaultBranch: "main"}},
+		workflows: []apiclient.WorkflowEntry{
+			{Name: "adhoc", Scope: "builtin"},
+			{
+				Name: "posix-tools", Scope: "global",
+				Platforms: []string{"linux", "darwin"}, PlatformSupported: &no,
+			},
+		},
+	})
+	// The default lands on a workflow that can actually run.
+	if n.workflow != "adhoc" {
+		t.Errorf("default workflow = %q, want the one that runs here", n.workflow)
+	}
+
+	var restricted pickerOption
+	for _, o := range n.workflowOptions() {
+		if o.value == "posix-tools" {
+			restricted = o
+		}
+	}
+	if restricted.value == "" {
+		t.Fatal("the restricted workflow is not listed at all")
+	}
+	if !restricted.disabled {
+		t.Error("the restricted workflow is selectable; create would 400")
+	}
+	if !strings.Contains(restricted.note, "linux, darwin") {
+		t.Errorf("note = %q, want the platforms it needs", restricted.note)
+	}
+
+	// Reaching it another way (a project default, say) still fails locally
+	// rather than travelling to the daemon.
+	n.workflow = "posix-tools"
+	n.titleIn.SetValue("something")
+	if cmd := n.submit(); cmd != nil {
+		t.Error("submit posted a task the daemon would refuse")
+	}
+	if got := n.rowErr[ntWorkflow]; !strings.Contains(got, "platform") {
+		t.Errorf("row error = %q, want it to name the platform restriction", got)
+	}
+}
+
 func TestNewTaskAgentSwitchResetsModelAndEffort(t *testing.T) {
 	n := loadedForm(t)
 	n.applyPick(ntAgent, "claude")

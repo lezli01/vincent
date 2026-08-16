@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,7 +100,9 @@ type workflowEntryBody struct {
 		Type  string `json:"type"`
 		Agent string `json:"agent"`
 	} `json:"steps"`
-	Error *string `json:"error"`
+	Platforms         []string `json:"platforms"`
+	PlatformSupported bool     `json:"platform_supported"`
+	Error             *string  `json:"error"`
 }
 
 type workflowListBody struct {
@@ -181,6 +185,94 @@ func TestWorkflowListShowsBrokenEntry(t *testing.T) {
 	if broken.Error == nil {
 		t.Fatal("broken workflow has no error field")
 	}
+}
+
+// foreignPlatform names a platform this test process is not running on, so
+// the "restricted elsewhere" cases mean the same thing on all three CI legs.
+func foreignPlatform() string {
+	if runtime.GOOS == workflow.PlatformWindows {
+		return workflow.PlatformLinux
+	}
+	return workflow.PlatformWindows
+}
+
+// TestWorkflowListPlatformRestriction covers the §8.1 restriction as the
+// registry reports it: a workflow this host cannot run stays listed (it is
+// not broken, just not here) and says so, and one that names this host is
+// indistinguishable from an unrestricted entry (task 010).
+func TestWorkflowListPlatformRestriction(t *testing.T) {
+	h := newWorkflowHarness(t)
+	writeWorkflowFile(t, h.globalDir, "elsewhere",
+		"name: elsewhere\nplatforms: ["+foreignPlatform()+"]\n"+
+			"steps:\n  - {id: gate, type: manual, instructions: hi}\n")
+	writeWorkflowFile(t, h.globalDir, "here",
+		"name: here\nplatforms: ["+runtime.GOOS+"]\n"+
+			"steps:\n  - {id: gate, type: manual, instructions: hi}\n")
+	h.reg.ReloadGlobal()
+
+	list := decodeWorkflowList(t, mustGet(t, h, "/v1/workflows"))
+
+	elsewhere := findWorkflow(t, list, "elsewhere")
+	if elsewhere.Error != nil {
+		t.Errorf("a platform-restricted workflow is not invalid: %v", *elsewhere.Error)
+	}
+	if elsewhere.PlatformSupported {
+		t.Errorf("entry restricted to %q claims to run on %q", foreignPlatform(), runtime.GOOS)
+	}
+	if len(elsewhere.Platforms) != 1 || elsewhere.Platforms[0] != foreignPlatform() {
+		t.Errorf("platforms = %v, want [%s]", elsewhere.Platforms, foreignPlatform())
+	}
+
+	here := findWorkflow(t, list, "here")
+	if !here.PlatformSupported {
+		t.Errorf("entry restricted to %q does not run on it", runtime.GOOS)
+	}
+
+	adhoc := findWorkflow(t, list, "adhoc")
+	if !adhoc.PlatformSupported || len(adhoc.Platforms) != 0 {
+		t.Errorf("unrestricted built-in = %+v, want no platforms and supported", adhoc)
+	}
+}
+
+// TestTaskCreateRejectsForeignPlatform is the enforcement half: the entry is
+// listed, but a task naming it is refused here (§8.1, task 010).
+func TestTaskCreateRejectsForeignPlatform(t *testing.T) {
+	h := newWorkflowHarness(t)
+	repo := testrepo.Init(t, "main")
+	writeWorkflowFile(t, h.globalDir, "elsewhere",
+		"name: elsewhere\nplatforms: ["+foreignPlatform()+"]\n"+
+			"steps:\n  - {id: gate, type: manual, instructions: hi}\n")
+	h.reg.ReloadGlobal()
+	p := h.mustCreate(t, map[string]any{"path": repo})
+	id := int64(p["id"].(float64))
+
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
+		"project_id": id, "title": "no", "workflow": "elsewhere",
+	})
+	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	for _, want := range []string{"cannot run here", foreignPlatform(), runtime.GOOS} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("message %s missing %q", body, want)
+		}
+	}
+
+	// The unrestricted built-in still creates, so the check refuses the one
+	// workflow and not the endpoint.
+	resp, body = h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
+		"project_id": id, "title": "yes", "workflow": workflow.AdhocName,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("adhoc task: %d %s", resp.StatusCode, body)
+	}
+}
+
+func mustGet(t *testing.T, h *workflowHarness, path string) []byte {
+	t.Helper()
+	resp, body := h.doJSON(t, http.MethodGet, path, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: %d %s", path, resp.StatusCode, body)
+	}
+	return body
 }
 
 func TestWorkflowListBadProjectID(t *testing.T) {

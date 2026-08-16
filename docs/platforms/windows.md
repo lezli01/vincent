@@ -74,6 +74,13 @@ workflow is meant to run on Windows and on POSIX, write commands that work in
 both — `&&` chaining is fine everywhere, `test -f` is not — or pin the shell and
 accept that the workflow is platform-specific.
 
+A workflow that is platform-specific should say so with
+[`platforms:`](../reference/workflow-schema.md#platforms). A file declaring
+`platforms: [posix]` is listed here with status `unsupported` and is never
+offered by the new-task picker, instead of being offered and then failing at
+its first `cat`. The reverse works too: `platforms: [windows]` for a workflow
+built around PowerShell.
+
 Paths in templates come from the daemon and are Windows paths; a command step
 that hard-codes `/` separators will not do what you expect.
 
