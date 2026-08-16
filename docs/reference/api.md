@@ -188,7 +188,12 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
-**Branches are never deleted.**
+Before the rows go, every branch that has no commits past its base is deleted —
+archived rows included, because the cascade erases the branch names for good.
+**A branch carrying a commit is never deleted**, and no remote is ever touched
+here; failures are logged and the delete proceeds. Set
+[`delete_empty_branch_on_archive: false`](configuration.md#delete_empty_branch_on_archive)
+to disable the sweep.
 
 ## Workflows
 
@@ -253,6 +258,31 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
+
+`/archive` is the one action whose response is not just the task. When it looks
+at the branch, it adds a `branch` object beside the task fields:
+
+```json
+{
+  "id": 7, "state": "archived", "…": "…",
+  "branch": {
+    "name": "vincent/7-file-an-issue",
+    "result": "deleted",
+    "remote": { "remote": "origin", "ref": "refs/heads/vincent/7-file-an-issue", "result": "deleted" }
+  }
+}
+```
+
+`result` is `deleted` (no commits past its base), `has_commits` (kept), `unknown`
+(git could not judge it — base branch renamed away, repository gone) or `error`
+(the delete itself failed), with git's message in `error` for the last two. The
+`remote` object appears only when
+[`delete_remote_branch_on_archive`](configuration.md#delete_remote_branch_on_archive)
+is on and the local delete succeeded; its `result` is `deleted`, `no_upstream` or
+`error`. The whole `branch` object is **absent** when nothing was checked — the
+cleanup is off, or the task never had a branch of its own.
+
+None of it affects the status code: a branch problem never fails an archive.
 
 Four details worth knowing:
 

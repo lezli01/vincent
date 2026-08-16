@@ -44,6 +44,18 @@ defaults:
   command_timeout: 15m
   input_timeout: 24h
 
+# Delete a task's branch when it is archived and carries no commits past the
+# base it was cut from — the branch a workflow that never writes to the
+# repository leaves behind. A branch holding any commit is always kept, and a
+# check git cannot answer keeps the branch too.
+delete_empty_branch_on_archive: true
+
+# Also delete that branch's upstream counterpart, when it has one. Off by
+# default and honoured only when a human archives the task: a forge is shared
+# with other people and the deletion cannot be undone. Nothing happens here
+# unless delete_empty_branch_on_archive is also on.
+delete_remote_branch_on_archive: false
+
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 
@@ -136,9 +148,11 @@ Available in a template:
 
 Two things to get right, because git will not catch them for you:
 
-**Put a discriminator in it.** vincent never deletes branches, so a template like
-`feat/{{.Fields.ticket}}` collides on the *second* task for the same ticket. Include
-`{{.ID}}`, or expect to name repeats by hand.
+**Put a discriminator in it.** vincent never deletes a branch that carries a
+commit, so a template like `feat/{{.Fields.ticket}}` collides on the *second* task
+for the same ticket. Include `{{.ID}}`, or expect to name repeats by hand.
+([`delete_empty_branch_on_archive`](#delete_empty_branch_on_archive) reclaims only
+branches that received no commit, which is not the case this is about.)
 
 **Prefer `{{.Fields.x}}` over `{{ index .Fields "x" }}`.** The first fails loudly when
 the field is missing; the second renders *nothing*, giving you `feat/-fix-login` — a
@@ -176,6 +190,68 @@ normal retry policy. The step clock **pauses** while a task is
 `awaiting_input`: it measures agent work, not human latency.
 
 Workflow `defaults:` and per-step fields override these.
+
+### `delete_empty_branch_on_archive`
+
+```yaml
+delete_empty_branch_on_archive: true
+```
+
+When a task is archived, delete its branch if that branch has **no commits past
+the base it was cut from**. That is the branch a workflow which never writes to
+the repository leaves behind — filing an issue, posting a summary, reviewing
+read-only — one empty ref per run, with no reliable glob to find them again since
+branch names are configurable.
+
+The test is `git rev-list -n 1 {base}..{branch}` producing nothing: the branch tip
+is an ancestor of the base. It stays correct when the base moves on after the task
+started, and it is exact — **a branch carrying any commit is never deleted**.
+
+Three refusals are deliberate, and all of them keep the branch:
+
+| Situation | What happens |
+|---|---|
+| The branch has commits | Kept, reported `has_commits` |
+| git cannot judge it — base branch renamed or deleted, repository gone | Kept, reported `unknown`, logged |
+| The delete itself fails — the branch is checked out in another worktree | Kept, reported `error`, logged. The delete is `git branch -d`, never `-D` |
+
+A branch problem never fails an archive: the task reaches `archived` either way,
+and the branch simply survives, which is what always used to happen.
+`POST /v1/tasks/{id}/archive` reports the outcome in its response and the TUI
+prints it in one line; every other path logs to `daemon.log`.
+
+The same rule runs for every task row `DELETE /v1/projects/{id}?force` is about to
+delete, archived ones included — that cascade erases the branch names for good, so
+it is the last moment they exist. `vincent gc` and `vincent doctor --fix` delete no
+branch at all: an orphaned directory has no task row, so there is no base branch to
+judge it against.
+
+Set it to `false` to keep every branch on every path, which is what vincent did
+before this key existed. Read per archive, so a hot reload applies to the next one.
+
+### `delete_remote_branch_on_archive`
+
+```yaml
+delete_remote_branch_on_archive: false
+```
+
+Also delete the upstream counterpart of a branch that qualified above. **Off by
+default**, and unlike its local sibling it is honoured only when *you* archive a
+task (`POST /v1/tasks/{id}/archive`) — deleting a branch on a forge you share with
+other people cannot be undone, so no unattended path does it. `DELETE
+/v1/projects/{id}?force` never touches a remote.
+
+It runs only after the local delete succeeded, and only when the branch has a
+configured upstream (`branch.{name}.remote` and `branch.{name}.merge`). No
+upstream means nothing was pushed as far as vincent knows, so nothing is
+attempted — and the remote name is never guessed from the local one. The push is
+`git push --delete {remote} {ref}` under a 60-second timeout; a rejection, an
+unreachable host or a timeout is logged, reported in the archive response, and
+never fails the archive.
+
+It does nothing while `delete_empty_branch_on_archive` is `false`. That
+combination still loads — a key that cannot do anything is not an invalid one —
+but the daemon logs a warning at startup and on any reload that introduces it.
 
 ### `transcript_retention_days`
 

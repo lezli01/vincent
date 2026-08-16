@@ -198,8 +198,10 @@ gh pr create --head vincent/1-add-a-version-flag-to-the-cli
 ```
 
 When you are done with the task, archive it (`A` in the TUI). That removes the
-**worktree** and keeps the record and the branch — vincent never deletes a
-branch.
+**worktree** and keeps the record. The branch you just made a PR from carries
+commits, so it is kept as well; a branch that never received a commit is deleted
+instead of accumulating as an empty ref, and the TUI says which happened. See
+[`delete_empty_branch_on_archive`](../reference/configuration.md#delete_empty_branch_on_archive).
 
 ---
 

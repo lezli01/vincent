@@ -83,9 +83,14 @@ Two rules worth internalizing:
 
 - **The worktree is disposable.** Archiving a task removes it. If it has
   uncommitted changes, archiving refuses unless forced — that work would be lost.
-- **The branch is not.** vincent never deletes a branch. Task branches accumulate
-  in your repository until you remove them. The daemon is the reliable list, since
-  a configured name need not start with `vincent/`:
+- **The branch is not — as long as it holds a commit.** vincent never deletes a
+  branch that has commits past the base it was cut from, so everything an agent
+  actually wrote accumulates in your repository until you remove it. The one
+  branch archiving does delete is one that received *no* commit at all, which is
+  what a workflow that never writes to the repository leaves behind
+  ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)).
+  The daemon is the reliable list, since a configured name need not start with
+  `vincent/`:
 
   ```sh
   vincent task ls --archived      # the branch column
@@ -165,8 +170,11 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 | `{config_dir}/` | Your config and global workflows; defaults are rewritten at next start |
 
 To remove vincent entirely: `vincent service uninstall`, `vincent daemon stop`,
-delete the binary, delete both directories, then clean up `vincent/*` branches in
-any repository you used.
+delete the binary, delete both directories, then clean up any branches left in
+the repositories you used — the ones that carry commits, since the empty ones
+went when their tasks were archived. Take the list from `vincent task ls
+--archived` **before** deleting the database: a configured branch name need not
+start with `vincent/`.
 
 ---
 

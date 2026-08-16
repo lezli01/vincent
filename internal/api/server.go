@@ -292,14 +292,19 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 // configResponse mirrors config.yaml as snake_case JSON; durations render as
 // Go duration strings (phase 1 decision).
 type configResponse struct {
-	Listen                  string               `json:"listen"`
-	MaxParallelTasks        int                  `json:"max_parallel_tasks"`
-	Defaults                configDefaults       `json:"defaults"`
-	TranscriptRetentionDays int                  `json:"transcript_retention_days"`
-	TranscriptMaxBytes      int64                `json:"transcript_max_bytes"`
-	UsageLimitRecheck       string               `json:"usage_limit_recheck_interval"`
-	LogLevel                string               `json:"log_level"`
-	Agents                  map[string]agentPath `json:"agents"`
+	Listen           string         `json:"listen"`
+	MaxParallelTasks int            `json:"max_parallel_tasks"`
+	Defaults         configDefaults `json:"defaults"`
+	// The §10 branch-cleanup pair (task 008). Both are reported because the
+	// remote one is inert without the local one, and a client showing only the
+	// key that is on would describe a policy that cannot run.
+	DeleteEmptyBranchOnArchive  bool                 `json:"delete_empty_branch_on_archive"`
+	DeleteRemoteBranchOnArchive bool                 `json:"delete_remote_branch_on_archive"`
+	TranscriptRetentionDays     int                  `json:"transcript_retention_days"`
+	TranscriptMaxBytes          int64                `json:"transcript_max_bytes"`
+	UsageLimitRecheck           string               `json:"usage_limit_recheck_interval"`
+	LogLevel                    string               `json:"log_level"`
+	Agents                      map[string]agentPath `json:"agents"`
 }
 
 type configDefaults struct {
@@ -322,10 +327,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 			CommandTimeout: cfg.Defaults.CommandTimeout.String(),
 			InputTimeout:   cfg.Defaults.InputTimeout.String(),
 		},
-		TranscriptRetentionDays: cfg.TranscriptRetentionDays,
-		TranscriptMaxBytes:      cfg.TranscriptMaxBytes.Bytes(),
-		UsageLimitRecheck:       cfg.UsageLimitRecheckInterval.String(),
-		LogLevel:                cfg.LogLevel,
+		DeleteEmptyBranchOnArchive:  cfg.DeleteEmptyBranchOnArchive,
+		DeleteRemoteBranchOnArchive: cfg.DeleteRemoteBranchOnArchive,
+		TranscriptRetentionDays:     cfg.TranscriptRetentionDays,
+		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
+		UsageLimitRecheck:           cfg.UsageLimitRecheckInterval.String(),
+		LogLevel:                    cfg.LogLevel,
 		Agents: map[string]agentPath{
 			"claude": {Path: cfg.Agents.Claude.Path},
 			"codex":  {Path: cfg.Agents.Codex.Path},

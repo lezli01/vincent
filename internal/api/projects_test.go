@@ -33,6 +33,13 @@ type projectHarness struct {
 
 func newProjectHarness(t *testing.T) *projectHarness {
 	t.Helper()
+	return newProjectHarnessWithConfig(t, config.Default)
+}
+
+// newProjectHarnessWithConfig is the same server with the daemon configuration
+// a test wants — the §10 branch sweep is the first thing here to read one.
+func newProjectHarnessWithConfig(t *testing.T, cfg func() config.Config) *projectHarness {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -42,7 +49,7 @@ func newProjectHarness(t *testing.T) *projectHarness {
 	wt := worktree.NewManager(git, t.TempDir())
 	s := New(Deps{
 		Token:       testToken,
-		Config:      config.Default,
+		Config:      cfg,
 		StartedAt:   time.Now(),
 		ListenAddr:  "127.0.0.1:0",
 		RequestStop: func() {},
@@ -448,9 +455,103 @@ func TestProjectDelete(t *testing.T) {
 		if _, err := h.store.GetTask(ctx, taskID); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("task row survived: %v", err)
 		}
-		// The branch is never deleted (spec §10).
+		// This row's recorded branch name is not the one the worktree was cut
+		// on, so the §10 sweep cannot judge it and leaves it exactly where it
+		// is — which is also what every forced delete did before task 008.
 		testrepo.Run(t, repo, "rev-parse", "--verify", "refs/heads/vincent/"+itoa(taskID)+"-x")
 	})
+
+	// The cascade hard-deletes the rows, so this is the last moment the branch
+	// names exist: the sweep covers archived rows too, or their branches become
+	// unreachable from anywhere (task 008).
+	t.Run("force deletes branches with no commits past their base", func(t *testing.T) {
+		repo := testrepo.Init(t, "main")
+		p := h.mustCreate(t, map[string]any{"path": repo, "name": "sweep"})
+		id := int64(p["id"].(float64))
+
+		empty := branchedTask(t, h, id, store.TaskArchived, "vincent/empty", "main", false)
+		withWork := branchedTask(t, h, id, store.TaskQueued, "vincent/has-work", "main", true)
+		// A row whose base no longer resolves: unjudgeable, therefore kept, and
+		// the cascade must still finish around it.
+		unjudgeable := branchedTask(t, h, id, store.TaskArchived, "vincent/lost-base", "gone", false)
+
+		resp, out := h.doJSON(t, http.MethodDelete, "/v1/projects/"+itoa(id)+"?force=true", nil)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("forced delete = %d %s — a branch problem must not fail the cascade",
+				resp.StatusCode, out)
+		}
+		if branchExists(t, repo, empty) {
+			t.Errorf("%s survived: it carried no commits past main", empty)
+		}
+		if !branchExists(t, repo, withWork) {
+			t.Errorf("%s was deleted despite carrying a commit", withWork)
+		}
+		if !branchExists(t, repo, unjudgeable) {
+			t.Errorf("%s was deleted on a check nobody could make", unjudgeable)
+		}
+	})
+
+	t.Run("force deletes no branch when the policy is off", func(t *testing.T) {
+		repo := testrepo.Init(t, "main")
+		h := newProjectHarnessWithConfig(t, func() config.Config {
+			c := config.Default()
+			c.DeleteEmptyBranchOnArchive = false
+			return c
+		})
+		p := h.mustCreate(t, map[string]any{"path": repo, "name": "sweep-off"})
+		id := int64(p["id"].(float64))
+		empty := branchedTask(t, h, id, store.TaskArchived, "vincent/empty", "main", false)
+
+		resp, out := h.doJSON(t, http.MethodDelete, "/v1/projects/"+itoa(id)+"?force=true", nil)
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("forced delete = %d %s", resp.StatusCode, out)
+		}
+		if !branchExists(t, repo, empty) {
+			t.Errorf("%s was deleted with delete_empty_branch_on_archive off", empty)
+		}
+	})
+}
+
+// branchedTask inserts a task row naming a branch that really exists in repo,
+// optionally carrying a commit of its own. It returns the branch name.
+func branchedTask(
+	t *testing.T, h *projectHarness, projectID int64,
+	state store.TaskState, branch, base string, withCommit bool,
+) string {
+	t.Helper()
+	repo := projectPath(t, h, projectID)
+	testrepo.Run(t, repo, "branch", branch)
+	if withCommit {
+		testrepo.Run(t, repo, "switch", "-q", branch)
+		testrepo.WriteFile(t, repo, "work.txt", "real work\n")
+		testrepo.Run(t, repo, "add", ".")
+		testrepo.Run(t, repo, "commit", "-q", "-m", "the work")
+		testrepo.Run(t, repo, "switch", "-q", "main")
+	}
+	tk := &store.Task{
+		ProjectID: projectID, Title: "t", WorkflowName: "adhoc",
+		WorkflowSnapshot: "x", BaseBranch: base, BranchName: branch, State: state,
+	}
+	if err := h.store.CreateTask(context.Background(), tk, nil); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	return branch
+}
+
+func projectPath(t *testing.T, h *projectHarness, id int64) string {
+	t.Helper()
+	p, err := h.store.GetProject(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	return p.Path
+}
+
+// branchExists asks the repository itself, not the code under test.
+func branchExists(t *testing.T, repo, branch string) bool {
+	t.Helper()
+	return testrepo.Run(t, repo, "for-each-ref", "--format=%(refname:short)",
+		"refs/heads/"+branch) != ""
 }
 
 func insertTask(t *testing.T, st *store.Store, projectID int64, state store.TaskState) int64 {
