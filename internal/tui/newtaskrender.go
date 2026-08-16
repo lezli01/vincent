@@ -141,6 +141,9 @@ func (n *newTask) workflowSummary() string {
 	if !e.Valid() {
 		return out + "  " + styleBad.Render("✗ invalid")
 	}
+	if !e.RunsHere() {
+		return out + "  " + styleBad.Render("✗ "+e.PlatformNote())
+	}
 	if bad := n.unavailableSteps(*e); len(bad) > 0 {
 		out += "  " + styleWarn.Render(fmt.Sprintf("⚠ %d unavailable", len(bad)))
 	}

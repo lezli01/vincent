@@ -3,6 +3,7 @@ package taskrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -59,7 +60,14 @@ const (
 	// The value of the reason is that it names the fix instead of sending the
 	// reader to a transcript.
 	ReasonAgentUnauthenticated = "agent_unauthenticated"
-	ReasonInternalError        = "internal_error"
+	// ReasonPlatformUnsupported is a snapshot whose `platforms:` list does not
+	// admit this host (§8.1.1, task 010). Task creation rejects that outright,
+	// so reaching it here means the task and its daemon parted company — a
+	// data directory carried to another OS, or a workflow edited to exclude
+	// this one after the task was queued. Distinct from invalid_snapshot: the
+	// snapshot is perfectly valid, just not here.
+	ReasonPlatformUnsupported = "platform_unsupported"
+	ReasonInternalError       = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit
@@ -120,6 +128,14 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		// The snapshot validated at creation, so this is corruption or a
 		// vincent downgrade — either way the task cannot run.
 		r.fail(task, ReasonInvalidSnapshot, log, "parse workflow snapshot", err)
+		return
+	}
+	if mismatch := wf.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
+		// Creation refuses this (§8.1.1), so the task outlived the host it was
+		// created on. Blocking names the reason; the human moves it back or
+		// widens the workflow.
+		r.fail(task, ReasonPlatformUnsupported, log, "workflow platform restriction",
+			errors.New(mismatch))
 		return
 	}
 	if err := r.ensureWorktree(ctx, task, project, log); err != nil {

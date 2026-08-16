@@ -19,7 +19,13 @@ type workflowResponse struct {
 	File        string                 `json:"file,omitempty"`
 	Description string                 `json:"description"`
 	Steps       []workflowStepResponse `json:"steps"`
-	Errors      []workflow.Error       `json:"errors,omitempty"`
+	// Platforms is the §8.1.1 restriction as the file declares it; empty
+	// means the workflow runs anywhere. PlatformSupported is the daemon's verdict
+	// on its own host — the client never re-derives it, because the daemon is
+	// the process that would run the steps (task 010).
+	Platforms         []string         `json:"platforms,omitempty"`
+	PlatformSupported bool             `json:"platform_supported"`
+	Errors            []workflow.Error `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []workflow.Error `json:"warnings,omitempty"`
 	Error    *string          `json:"error"`
@@ -34,10 +40,11 @@ type workflowStepResponse struct {
 
 func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	out := workflowResponse{
-		Name:  e.Name,
-		Scope: string(e.Scope),
-		File:  e.File,
-		Steps: []workflowStepResponse{},
+		Name:              e.Name,
+		Scope:             string(e.Scope),
+		File:              e.File,
+		Steps:             []workflowStepResponse{},
+		PlatformSupported: e.RunsHere(),
 	}
 	if e.ProjectID != 0 {
 		id := e.ProjectID
@@ -45,6 +52,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	}
 	if e.Workflow != nil {
 		out.Description = e.Workflow.Description
+		out.Platforms = e.Workflow.Platforms
 		for _, st := range e.Workflow.Steps {
 			out.Steps = append(out.Steps, workflowStepResponse{
 				ID:    st.ID,

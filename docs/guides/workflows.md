@@ -267,6 +267,21 @@ Pin one explicitly with `shell: sh | pwsh | cmd` when a step is only ever meant
 to run one way. vincent makes no attempt to translate between them: cross-OS
 portability of command steps is the author's job.
 
+**Or say you did not do that job.** A workflow written against `cat`, `grep`
+and pipes is a POSIX workflow, and pretending otherwise only moves the failure
+to run time. Declare it once at the top of the file:
+
+```yaml
+name: posix-tools
+platforms: [posix]        # every non-Windows host; or [linux, darwin], [windows]
+```
+
+On a host the list does not admit, the workflow is still listed with the
+platforms it needs, but nothing will offer it: the new-task picker refuses it
+and the API rejects a task naming it. Omitting the key means "runs anywhere",
+which is the right answer for most files — see the
+[schema reference](../reference/workflow-schema.md#platforms).
+
 Every command and check step runs with cwd set to the worktree, inherits the
 daemon's environment, and additionally gets:
 

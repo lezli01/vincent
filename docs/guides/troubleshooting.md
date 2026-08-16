@@ -153,6 +153,27 @@ The step fails rather than running unrestricted, which is deliberate — a
 restricted mode that quietly isn't restricted is worse than none. Use claude or
 codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
 
+### A workflow is listed but cannot be selected — `platform_unsupported`
+
+The workflow declares a `platforms:` list this host is not in
+([schema](../reference/workflow-schema.md#platforms)). `vincent workflow ls`
+shows it with status `unsupported` and the platforms it needs, the TUI's
+workflow view says "not on this platform", and the new-task picker refuses it —
+creating the task would only produce a run that fails at the first `cat` or
+`Get-ChildItem`.
+
+Three honest fixes, in order of preference:
+
+1. run the task on a host the workflow names;
+2. widen the list, if the workflow really is portable — `[posix, windows]` is
+   the same as removing the key;
+3. write a host-specific copy under the project scope, which shadows the
+   global one by name.
+
+The block reason `platform_unsupported` on an existing task means the task was
+created elsewhere and its data directory has since moved between machines. The
+snapshot is fine; it is the host that changed.
+
 ### Every cursor tool call is blocked on Windows
 
 If cursor steps run, produce no edits, and report blocked tool calls, check
@@ -305,6 +326,7 @@ The block reason names what happened:
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `template_error` | A template failed to render (see above) |
 | `restricted_unsupported` | The adapter cannot restrict on this platform |
+| `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
 | `rejected` | You rejected a manual gate |
 | `shell_unavailable` | The requested shell is not installed |

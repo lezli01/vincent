@@ -204,7 +204,14 @@ to disable the sweep.
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, steps[], errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, errors[]?, warnings[]?, error? }`.
+
+`platforms[]` is the entry's [platform restriction](workflow-schema.md#platforms)
+as the file declares it, and `platform_supported` is **the daemon's own verdict**
+on it — the daemon is the process that would run the steps, so clients report
+that flag rather than comparing the list to their own OS. An entry with
+`platform_supported: false` is listed like any other, but `POST /v1/tasks`
+rejects a task naming it with a `400`.
 
 `POST /v1/resolve` applies the [resolution order](workflow-schema.md#resolution-order)
 to every step under a candidate task-level override, returning `{ value, source }`
