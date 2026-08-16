@@ -139,10 +139,10 @@ func TestEscLeavesTheFormWithoutAnswering(t *testing.T) {
 }
 
 // openPopupWith puts req on a task that is waiting on input and opens the
-// answer popup the way a human does, returning the rendered screen with the
-// styling stripped. The popup is sized by the shell (§15), so this is the
-// only place the form meets the width it is actually drawn at.
-func openPopupWith(t *testing.T, req apiclient.InputRequest) string {
+// answer popup the way a human does, returning the shell it is open on. The
+// popup is sized by the shell (§15), so this is the only place the form meets
+// the width it is actually drawn at.
+func openPopupWith(t *testing.T, req apiclient.InputRequest) *shell {
 	t.Helper()
 	s, _ := newShellFixture(t, task(3, stateAwaitingInput))
 	s.settle()
@@ -151,8 +151,11 @@ func openPopupWith(t *testing.T, req apiclient.InputRequest) string {
 	if !s.popup {
 		t.Fatal("enter did not open the answer popup")
 	}
-	return ansi.Strip(s.render(120, 37))
+	return s
 }
+
+// popupView is the screen the popup is drawn on, with the styling stripped.
+func popupView(s *shell) string { return ansi.Strip(s.render(120, 37)) }
 
 // TestFormPopupShowsLongTextInFull is issue #83: the popup is capped at 76
 // columns and every content line is truncated to fit it, so a question, an
@@ -165,40 +168,95 @@ func TestFormPopupShowsLongTextInFull(t *testing.T) {
 		const question = "Should the scheduler admit the re-queued step ahead of newly created tasks, or hold it behind them for fairness?"
 		const option = "No — re-queue at the tail so one project's quota stop cannot starve the others (Recommended)"
 
-		view := openPopupWith(t, apiclient.InputRequest{
+		view := popupView(openPopupWith(t, apiclient.InputRequest{
 			Kind: apiclient.InputKindQuestion,
 			Questions: []apiclient.InputQuestion{{
 				Header:  "Approach",
 				Text:    question,
 				Options: []string{option, "Yes — keep its original queue position"},
 			}},
-		})
+		}))
 
-		// The tail of the question: the last words are what a 76-column popup
-		// drops first, and they carry the actual choice being asked about.
-		if !strings.Contains(view, "hold it behind them for fairness?") {
-			t.Errorf("the end of the question is not on screen; the popup renders:\n%s", popupOf(view))
-		}
-		// An agent puts "(Recommended)" at the end of a label, which is exactly
-		// what a truncating renderer removes.
-		if !strings.Contains(view, "(Recommended)") {
-			t.Errorf("the end of the option label is not on screen; the popup renders:\n%s", popupOf(view))
+		// The question and the label in full, wrap or no wrap: the tail is what
+		// a truncating renderer drops, and it carries the actual choice —
+		// including the "(Recommended)" an agent puts at the end of a label.
+		if flat := popupText(view); !strings.Contains(flat, question) || !strings.Contains(flat, option) {
+			t.Errorf("the question or the option is not on screen in full; the popup renders:\n%s", popupOf(view))
 		}
 	})
 
 	t.Run("permission summary", func(t *testing.T) {
 		const summary = "rm -rf ./build && ./scripts/publish.sh --channel=stable --yes"
 
-		view := openPopupWith(t, apiclient.InputRequest{
+		view := popupView(openPopupWith(t, apiclient.InputRequest{
 			Kind:       apiclient.InputKindPermission,
 			Permission: &apiclient.InputPermission{Tool: "Bash", Summary: summary},
-		})
+		}))
 
 		// Approving a command whose tail is hidden is approving something else.
-		if !strings.Contains(view, "--channel=stable --yes") {
+		if !strings.Contains(popupText(view), summary) {
 			t.Errorf("the end of the permission summary is not on screen; the popup renders:\n%s", popupOf(view))
 		}
 	})
+}
+
+// TestFormPopupIsWideEnoughToReadAQuestion: the popup used to be capped at 76
+// columns on any terminal, which wrapped an ordinary §7.4 question into three
+// or four lines and pushed the options it asks about off the bottom. On a
+// terminal with room, a question of a length agents actually ask gets one line.
+func TestFormPopupIsWideEnoughToReadAQuestion(t *testing.T) {
+	const question = "Should the retry keep the original prompt, or use the one you just edited in $EDITOR?"
+
+	s := openPopupWith(t, apiclient.InputRequest{
+		Kind:      apiclient.InputKindQuestion,
+		Questions: []apiclient.InputQuestion{{Text: question, Options: []string{"Edited", "Original"}}},
+	})
+	view := popupView(s)
+	for _, line := range strings.Split(popupOf(view), "\n") {
+		if strings.Contains(line, question) {
+			return
+		}
+	}
+	t.Errorf("the question wrapped at a 120-column terminal; the popup renders:\n%s", popupOf(view))
+}
+
+// TestFormPopupShowsALongTypedAnswerInFull is the other half of a readable
+// popup: the answer a human types is text of a length nobody chose. It has to
+// stay readable while it is being typed and after it is committed, because an
+// answer whose tail is hidden is an answer nobody can check before submitting.
+func TestFormPopupShowsALongTypedAnswerInFull(t *testing.T) {
+	const answer = "Use the edited prompt, but keep the original as a comment at the top of the step so the diff " +
+		"between what was asked and what was run stays visible in the transcript afterwards."
+
+	s := openPopupWith(t, questionRequest())
+	form := s.detail.form
+	s.update(keyPress("e"))
+	if !form.capturing() {
+		t.Fatal("e did not open the text field")
+	}
+	form.paste(answer)
+
+	if flat := popupText(popupView(s)); !strings.Contains(flat, answer) {
+		t.Errorf("the answer being typed is not on screen in full; the popup renders:\n%s",
+			popupOf(popupView(s)))
+	}
+
+	s.update(tea.KeyPressMsg{Code: tea.KeyEnter}) // commit the free text
+	if form.capturing() {
+		t.Fatal("enter did not close the text field")
+	}
+	if flat := popupText(popupView(s)); !strings.Contains(flat, answer) {
+		t.Errorf("the committed answer is not shown back in full; the popup renders:\n%s",
+			popupOf(popupView(s)))
+	}
+}
+
+// popupText flattens the popup into one whitespace-normalised line. Every
+// content line wraps and is indented, so an assertion about text being on
+// screen must not depend on where the wrap fell.
+func popupText(view string) string {
+	flat := strings.ReplaceAll(popupOf(view), "│", " ")
+	return strings.Join(strings.Fields(flat), " ")
 }
 
 // popupOf pulls the answer popup out of a rendered screen so a failure shows
