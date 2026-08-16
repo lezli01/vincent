@@ -19,6 +19,7 @@ description of how the system actually behaves.
 | [002](002-homebrew-tap.md) | Homebrew tap for macOS | ✅ done (6/6) |
 | [003](003-usage-limit-classification.md) | Classify agent usage limits and auth expiry | ✅ done (7/7) |
 | [004](004-go-toolchain-pin.md) | Pin the Go toolchain and automate its patch bumps | ✅ done (3/3) |
+| [005](005-orphaned-worktree-gc.md) | Reclaim orphaned worktrees: `vincent gc` and a startup reconcile | ✅ done (8/8) |
 
 ## How to add and update a task document
 

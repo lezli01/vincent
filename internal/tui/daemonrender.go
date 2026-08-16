@@ -58,10 +58,34 @@ func (d *daemonView) identityLines() []string {
 		field("data dir", d.dataDirOrUnknown()),
 		field("log", d.logPathOrUnknown()),
 	)
+	if line, ok := orphanLine(i.Orphans); ok {
+		out = append(out, line)
+	}
 	if line, ok := d.staleLine(d.infoErr, d.infoAt); ok {
 		out = append(out, line)
 	}
 	return out
+}
+
+// orphanLine reports directories under the data dir that no task claims
+// (task 005, §10) and names the command that clears them.
+//
+// It reports and offers no action, like the rest of this view (§15 view 6):
+// running gc from here would be the daemon-stop button this view already
+// refuses to have. A zero count prints nothing at all — a permanent "orphans:
+// 0" is noise on every healthy daemon, and the line only earns its space when
+// there is something to do about it.
+func orphanLine(n int) (string, bool) {
+	if n <= 0 {
+		return "", false
+	}
+	noun := "directories"
+	if n == 1 {
+		noun = "directory"
+	}
+	return field("orphans", styleWarn.Render(
+		fmt.Sprintf("%d %s no task claims", n, noun))+
+		styleDim.Render("   reclaim with `vincent gc`")), true
 }
 
 // configLines is the configuration the daemon actually has loaded, which is

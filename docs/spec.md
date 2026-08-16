@@ -1056,6 +1056,46 @@ would invalidate every one of them.
 - **Cleanup:** only on `archive`: `git worktree remove` (+ `--force` after an explicit
   dirty-worktree confirmation), then `git -C {project.path} worktree prune`. The
   branch is **never** deleted by vincent.
+
+  *Amended 2026-08-15 (task 005).* "Only on archive" was true of a **task's** worktree
+  and remains so. It left a second reclaim path missing entirely, because two things
+  produce a directory under a data root that no task will ever name again:
+  - `DELETE /v1/projects/{id}` removes worktrees best-effort by the T1.5 decision and
+    `DeleteProjectCascade` drops the rows regardless. A removal that fails — a file
+    locked by another process on Windows, a permissions problem, a shell sitting in the
+    directory — leaves the directory behind with every reference to it gone.
+  - A crash between `git worktree add` and the write that records `worktree_path`
+    leaves the directory present while the row survives claiming nothing. The task's
+    next admission then fails `worktree_path_occupied` (§18).
+
+  So **an orphan is an entry directly under a data root that no task row claims**, and
+  `vincent gc` (§12.1) reclaims them. Claim is by `worktree_path`, not by directory
+  name: the name-based reading misses the second producer, whose directory *is* named
+  after a live row. The rules:
+  - **Archive stays the only path that removes a task's worktree.** gc removes only
+    what no task claims. Making project delete's removal authoritative was rejected in
+    the same discussion: it strands the user with an undeletable project over a locked
+    file and does nothing about the crash case.
+  - **Deletion is confined to the data roots.** `{data_dir}/worktrees` and
+    `{data_dir}/transcripts` — the same containment check a forced archive uses, so a
+    `worktree_path` naming anything outside is refused whatever the database says.
+  - **A dirty worktree is skipped without `--force`,** by `Manager.IsDirty`'s rule
+    (`git status --porcelain`, untracked included). Dirtiness git cannot *determine*
+    is `dirty_unknown` (§18) and is likewise skipped: an orphan's `.git` file points
+    into a repository that is often deleted or pruned, which makes this the common
+    answer rather than the rare one, and it is reported distinctly because "you have
+    uncommitted work" and "nobody can tell" are different facts.
+  - **Non-directory entries are reported, never removed.** vincent only ever creates
+    directories under these roots.
+  - **Branches are never deleted here either.** §10's standing rule has no gc
+    exception.
+  - **The reverse mismatch is reported, not repaired:** a task row whose
+    `worktree_path` names a directory that is gone (§18's `worktree_missing` shape).
+    There is nothing to delete and no row is modified.
+  - **The unattended path never deletes.** Daemon start scans and logs (§12.4, §17);
+    the count rides `GET /v1/info`. `vincent gc` deletes by default, and the dirty
+    check, the containment rule and the printed byte report are what make that
+    acceptable when a human is behind it.
 - **Repo deletion / path moves:** if the project path disappears, affected tasks go
   `blocked` with a descriptive reason; project records can be re-pointed via
   `PATCH /v1/projects/{id}`.
@@ -1111,7 +1151,13 @@ One Go binary, `vincent`:
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
+| `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent version` | Build info |
+
+*Amended 2026-08-15 (task 005).* `gc` breaks this table's noun-verb pattern
+(`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
+scope spans two directory trees — worktrees and transcripts — so a `worktree` noun
+would have been wrong on the day it shipped.
 
 Single-instance enforcement: a lock file in the data dir; a second daemon exits with a
 pointer to the running instance.
@@ -1363,6 +1409,11 @@ edited via `PATCH /v1/projects/{id}`.
 - Because agent steps are fresh sessions operating on a worktree whose committed state
   survives, re-running an interrupted step is safe by construction; workflow authors
   are advised to have agents commit incrementally.
+- *Added 2026-08-15 (task 005).* Recovery reconciles **rows and processes, not
+  directories**. The directory tree is reconciled by a separate startup pass that only
+  reports (§10): it logs one warning per orphan and raises the `orphans` count on
+  `GET /v1/info`, and it deletes nothing — `vincent gc` does that, with a human behind
+  it.
 
 ## 13. HTTP API
 
@@ -1387,12 +1438,38 @@ edited via `PATCH /v1/projects/{id}`.
 
 ```
 GET    /v1/health                       liveness (also unauthenticated) → { status, version }
-GET    /v1/info                         daemon version, uptime, agent availability, caps in effect
+GET    /v1/info                         daemon version, uptime, agent availability, caps in effect,
+                                        and `orphans`: how many data-root directories no task
+                                        claims right now (§10, task 005). Computed per request
+                                        from a readdir plus the id queries — no size walk, no git —
+                                        so it is cheap and never stale after a gc run. It is here
+                                        and not on /v1/health deliberately: health is
+                                        {status, version} and is the one unauthenticated endpoint
+                                        (§13.1); the shape of a user's disk does not belong on it
 GET    /v1/config                       effective global config (read-only)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
                                         ?refresh=true forces a re-probe
 POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
                                         `vincent daemon stop` calls this and waits for exit
+
+GET    /v1/maintenance/orphans          what gc would consider, with sizes; removes nothing
+                                        (§10, task 005) → { orphans[], mismatches[], bytes,
+                                        reclaimed, reclaimed_bytes, dry_run, force }.
+                                        Each orphan: { path, kind (worktree|transcript),
+                                        task_id (null when the name is not an id), bytes,
+                                        skip_reason?, error?, removed }. skip_reason is why gc
+                                        declined (`worktree_dirty`, `dirty_unknown`,
+                                        `not_a_directory`); error is a removal that was
+                                        attempted and failed. mismatches[] are the reverse
+                                        case — rows whose worktree_path is gone (§18) —
+                                        report-only, no row modified
+POST   /v1/maintenance/gc               { force?, dry_run? } → the same body, with `removed`
+                                        set and the reclaimed totals filled in. force also
+                                        removes a worktree git calls dirty, or cannot judge;
+                                        dry_run returns the identical report and removes
+                                        nothing. The totals count only what actually went, so
+                                        a locked file is reported per path and the rest of the
+                                        run continues
 
 GET    /v1/projects                     list
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
@@ -1725,7 +1802,10 @@ stream for the live tail.
    v1 — new files are written in the editor and appear on the next reload. §19's M3
    acceptance loop says "author workflow"; it means this edit path.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
-   log. The view reports, it does not act: stopping the daemon from the TUI is out
+   log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
+   beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
+   run gc, for exactly the reason it offers no way to stop the daemon.
+   The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
    at launch has no business killing it. The log tail is read straight from
    `{data_dir}/logs/daemon.log`, the one place the TUI is not a pure API client:
@@ -1951,6 +2031,13 @@ currently true to show (§15 view 6).
   `transcript_retention_days` (default 90); DB rows kept indefinitely (rows are small,
   history is valuable).
 
+  *Amended 2026-08-15 (task 005).* Retention is about **archived rows**: the pruner
+  walks `archived_at`, so a transcript directory whose row was cascade-deleted with its
+  project is reached by no retention pass, ever. That directory is `vincent gc`'s
+  (§10), under the same claim rule as a worktree and with no dirty check — a transcript
+  is vincent's own output, not a working tree. While the row exists, its transcripts
+  stay the pruner's, archived or not.
+
 ## 18. Edge cases and errors
 
 | Case | Behavior |
@@ -1971,7 +2058,9 @@ currently true to show (§15 view 6).
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |
-| Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives |
+| Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives. *Amended 2026-08-15 (task 005):* the same mismatch found by a scan rather than by a step is **reported** — at daemon start and in `vincent gc`'s output — and no row is modified |
+| Orphaned directory under a data root | *Added 2026-08-15 (task 005).* An entry under `{data_dir}/worktrees` or `{data_dir}/transcripts` that no task row claims — left by a project delete whose worktree removal failed (the cascade drops the rows regardless, §10) or by a crash between `git worktree add` and the claim write. Daemon start logs one warning per orphan and raises `orphans` on `GET /v1/info`; it **never** deletes, for the same reason DB corruption never auto-deletes. `vincent gc` reclaims them, and only them — archive remains the only path that removes a *task's* worktree |
+| Dirtiness of an orphan cannot be determined | *Added 2026-08-15 (task 005).* An orphan's `.git` file points at `{repo}/.git/worktrees/{n}`, so a deleted or pruned repository makes `git status --porcelain` fail outright. Reported as `dirty_unknown` — distinct from `worktree_dirty`, because "git says you have local changes" and "nobody can tell what is in here" are different facts — and skipped until `vincent gc --force`. This is the *common* case where the projects really are gone, so a default run there reclaims little; that is the deliberate trade for never deleting work nobody can vouch for |
 | Project path missing | New/step-starting tasks in that project → blocked with `project_path_missing` |
 | Daemon port taken | Ephemeral port by default makes this nearly impossible; pinned-port conflict fails startup with a clear message |
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes |

@@ -95,6 +95,12 @@ Two rules worth internalizing:
 Your own checkout is never touched: vincent reads the repository to create
 worktrees and never modifies your working tree, current branch or stash.
 
+**What reclaims a worktree.** Archiving the task, normally. A worktree whose task
+row is gone — a deleted project whose removal failed, a crash before the path was
+recorded — is nobody's, and nothing archives it; that is what
+[`vincent gc`](cli.md#vincent-gc) is for. The daemon reports those at startup and
+counts them on the daemon view, but it never deletes one on its own.
+
 ## Transcripts
 
 ```
@@ -115,6 +121,11 @@ Two consequences of storing the raw stream rather than a parsed one:
 Transcripts are bounded by `transcript_max_bytes` per attempt and pruned for
 **archived** tasks past `transcript_retention_days` — see
 [Configuration](configuration.md).
+
+**What reclaims a transcript.** Retention, for as long as the task row exists.
+Deleting a project deletes its task rows, and retention walks rows — so those
+directories are reached by no retention pass, ever, and are reclaimed by
+[`vincent gc`](cli.md#vincent-gc) instead.
 
 They contain the rendered prompt and everything the agent did. **Read one before
 pasting it into an issue.**
@@ -147,7 +158,7 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 |---|---|
 | `logs/daemon.log` | Nothing; it is recreated |
 | `transcripts/{task_id}/` | That task's output history is gone; the task record and its metrics stay |
-| `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly |
+| `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |
 | `token` | Recreated at next start, and every existing client must re-read it |
 | `vincent.db` | **Everything is gone** — projects, tasks, history. Branches in your repositories survive |
