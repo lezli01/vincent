@@ -177,7 +177,7 @@ steps:
       passed && echo "ok    no uncommitted changes to tracked files"
 
       section "archive payload (.goreleaser.yaml archives.files)"
-      for f in README.md LICENSE .goreleaser.yaml cmd/vincent; do
+      for f in README.md LICENSE COMMERCIAL-LICENSE.md .goreleaser.yaml cmd/vincent; do
         [ -e "$f" ] || fail "payload: $f is missing"
       done
       # `examples/*.yaml` is an archive glob: an empty match ships an archive
@@ -187,7 +187,7 @@ steps:
       # release.yml's smoke job names this file literally; renaming it breaks
       # every published archive's smoke test and nothing before it.
       [ -f examples/cursor-review.yaml ] || fail "payload: examples/cursor-review.yaml is missing, and release.yml's smoke job runs 'workflow validate' on exactly that path"
-      passed && echo "ok    README.md, LICENSE and $n example workflow(s)"
+      passed && echo "ok    README.md, LICENSE, COMMERCIAL-LICENSE.md and $n example workflow(s)"
 
       section "module (goreleaser's before hook)"
       go mod download >"$work/mod.log" 2>&1 || fail "module: 'go mod download' failed: $(head -n 3 "$work/mod.log" | tr '\n' ' ')"
@@ -564,7 +564,7 @@ steps:
       archive=$(ls ./*_linux_amd64.tar.gz)
       mkdir -p unpacked
       tar -xzf "$archive" -C unpacked
-      for f in vincent README.md LICENSE examples/cursor-review.yaml; do
+      for f in vincent README.md LICENSE COMMERCIAL-LICENSE.md examples/cursor-review.yaml; do
         [ -e "unpacked/$f" ] || { echo "the archive is missing $f — check archives.files in .goreleaser.yaml" >&2; exit 1; }
       done
 
