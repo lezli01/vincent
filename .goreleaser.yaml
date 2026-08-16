@@ -168,6 +168,11 @@ changelog:
 release:
   draft: false
   prerelease: auto
+  # Release Please creates the GitHub release before this tag-triggered build
+  # starts. Preserve its notes while attaching the archives, signatures, and
+  # checksums. Reruns replace only colliding assets.
+  mode: keep-existing
+  replace_existing_artifacts: true
   footer: |
     ## Verifying a download
 

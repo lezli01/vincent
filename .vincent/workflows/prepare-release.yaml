@@ -231,12 +231,13 @@ steps:
       fi
       passed && echo "ok    version reports the injected tag, 'workflow validate' runs, 'task ls' exits 2 with no daemon"
 
-      section "pinned actions in .github/workflows/release.yml"
+      section "pinned actions in release workflows"
       # A pin that no longer resolves fails the release run at step setup,
       # after the tag is public. `commits/{ref}` accepts a SHA or a tag, so
       # one call covers both the SHA-pinned third-party actions and the
       # major-tag `actions/*` ones.
-      grep -Eo 'uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+' .github/workflows/release.yml \
+      grep -Eho 'uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+' \
+        .github/workflows/release.yml .github/workflows/release-please.yml \
         | awk '{print $2}' | sort -u > "$work/uses.txt"
       while IFS= read -r u; do
         [ -n "$u" ] || continue
@@ -251,13 +252,15 @@ steps:
 
       section "publish-time credentials (cannot be tested without publishing)"
       if gh secret list >/dev/null 2>&1; then
-        if gh secret list | awk '{print $1}' | grep -qx HOMEBREW_TAP_TOKEN; then
-          echo "ok    HOMEBREW_TAP_TOKEN is set on this repository"
-        else
-          warn "secret: HOMEBREW_TAP_TOKEN is not set on this repository — the Homebrew cask push is the last thing a real release does, and it will fail (RELEASING.md § Repository secrets)"
-        fi
+        for secret in RELEASE_PLEASE_TOKEN HOMEBREW_TAP_TOKEN; do
+          if gh secret list | awk '{print $1}' | grep -qx "$secret"; then
+            echo "ok    $secret is set on this repository"
+          else
+            warn "secret: $secret is not set on this repository — the release chain will fail (RELEASING.md § Repository secrets)"
+          fi
+        done
       else
-        warn "secret: this token cannot read repository secrets; HOMEBREW_TAP_TOKEN unverified"
+        warn "secret: this token cannot read repository secrets; release credentials unverified"
       fi
       if gh api repos/lezli01/homebrew-tap --jq .full_name >/dev/null 2>&1; then
         echo "ok    lezli01/homebrew-tap is reachable"
@@ -265,11 +268,12 @@ steps:
         warn "tap: lezli01/homebrew-tap is not reachable with this token — the cask push targets it"
       fi
 
-      section "release inputs owned by other steps"
-      if awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -q '[^[:space:]]'; then
-        echo "ok    CHANGELOG.md has an [Unreleased] section with content"
+      section "Release Please inputs"
+      if jq -e '."." | type == "string"' .release-please-manifest.json >/dev/null 2>&1 \
+        && jq -e '.packages."." and ."release-type" == "go"' release-please-config.json >/dev/null 2>&1; then
+        echo "ok    Release Please manifest and root Go package are configured"
       else
-        warn "changelog: the [Unreleased] section is empty — the release workflow refuses to cut a release with nothing to name"
+        fail "release-please: manifest or root Go package configuration is invalid"
       fi
 
       section "base branch"
@@ -308,7 +312,7 @@ steps:
       echo
       echo "preparing:   $(cat .vincent-prepare/label.txt)"
       echo "base branch: $VINCENT_BASE_BRANCH @ $(git rev-parse "origin/$VINCENT_BASE_BRANCH")"
-      echo "nothing in this workflow publishes anything; the tag is the release workflow's job"
+      echo "nothing in this workflow publishes anything; merging the Release Please PR does"
 
   - id: audit
     name: Audit release readiness
@@ -381,7 +385,7 @@ steps:
          subjects (`fix:` for something that was broken, `chore:` for
          packaging plumbing, `ci:` for workflow files). Do not use
          `git add -A` or `git commit -a`; stage the files you changed.
-         Do not touch `CHANGELOG.md` — the `release` workflow owns it.
+         Do not touch `CHANGELOG.md` — Release Please owns it.
 
       Then re-run `sh .vincent-prepare/audit.sh` yourself and iterate until it
       prints "no blocking findings". Finish by printing the audit's final
@@ -582,14 +586,14 @@ steps:
          this task's worktree. Sizes, names and the unpacked layout are what a
          user downloads.
       2. **Read the WARN findings** from the audit, above in this task. They
-         are the release failures no commit on a branch can prevent — a missing
-         `HOMEBREW_TAP_TOKEN`, an unreachable tap, an empty `[Unreleased]`
-         section. Deal with them now, not while a tag is propagating.
+         are the release failures no commit on a branch can prevent — missing
+         release credentials or an unreachable tap. Deal with them before
+         merging the Release Please PR.
       3. **Know what the dry run did not test**: cosign signing, build
          provenance attestation, publishing the GitHub release, and the
          Homebrew cask push. `--skip=publish,sign` skips the first and third,
-         and attestation is `if: github.event_name == 'push'`. Those four run
-         for the first time on the real tag.
+         and attestation runs only for a tag push. Those four run for the first
+         time after the Release Please PR is merged.
 
       Approve when the artifact looks right and the warnings are dealt with.
       Reject to stop — nothing here needs undoing.
@@ -621,14 +625,9 @@ steps:
       echo "base branch: $VINCENT_BASE_BRANCH @ $sha"
       echo "dry run:     $url"
       echo
-      if [ -n "$v" ]; then
-        echo "Next: start a task on the 'release' workflow titled '$v …'. It re-runs its"
-        echo "own preflight, writes the changelog, and pushes the tag behind a manual gate."
-      else
-        echo "Next: choose the version (CHANGELOG.md § Versioning and stability — while"
-        echo "vincent is 0.x a breaking change is a minor bump), then start a task on the"
-        echo "'release' workflow titled with it."
-      fi
+      echo "Next: review the Release Please PR, confirm its proposed version and notes,"
+      echo "then merge it. Release Please creates the tag and GitHub release; that tag"
+      echo "starts GoReleaser and the Homebrew cask update."
 
       rm -rf .vincent-prepare
       echo

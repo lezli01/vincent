@@ -5,9 +5,11 @@ All notable changes to vincent are recorded here. The format follows
 [Semantic Versioning](https://semver.org/) with the pre-1.0 caveat spelled out
 in [Versioning and stability](#versioning-and-stability) below.
 
-This file is curated by hand. Each GitHub release additionally carries a
-generated list of the commits between two tags, grouped by Conventional Commit
-type — that is the exhaustive index; this is the human summary.
+Release Please maintains release entries from Conventional Commit history. The
+release pull request is the review point for improving generated entries with
+the human context a commit subject cannot carry. The existing `[Unreleased]`
+content predates that automation and should be reconciled in the first Release
+Please pull request.
 
 ## [Unreleased]
 
@@ -83,6 +85,11 @@ type — that is the exhaustive index; this is the human summary.
   cached `logged_in: false` would survive you logging in.
 
 ### Changed
+
+- **Releases are managed by Release Please.** Conventional Commits maintain a
+  release pull request; merging it creates the version tag and GitHub release,
+  then the existing GoReleaser workflow publishes signed artifacts and updates
+  the stable Homebrew cask. Prerelease tags continue to skip the tap.
 
 - **codex now reports `logged_in`.** `Detect` probes `codex login status`, so
   "the CLI is installed but your session expired" is visible on the board, in
