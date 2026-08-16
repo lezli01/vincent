@@ -46,6 +46,7 @@ archives:
     files:
       - README.md
       - LICENSE
+      - COMMERCIAL-LICENSE.md
       - examples/*.yaml
 
 checksum:
@@ -75,7 +76,12 @@ homebrew_casks:
     directory: Casks
     homepage: "https://github.com/lezli01/vincent"
     description: "Vendor-independent control plane for executing native agent tooling"
-    license: MIT
+    # The field takes a single SPDX identifier, and the dual model has none:
+    # `PolyForm-Noncommercial-1.0.0` is the license this artifact is offered
+    # under to everyone who downloads it, and the commercial license is a
+    # separate agreement (COMMERCIAL-LICENSE.md) rather than a public grant, so
+    # it is not expressible here. Do not invent a compound identifier for it.
+    license: PolyForm-Noncommercial-1.0.0
     # An rc tag must not move the cask users install; goreleaser's `auto`
     # skips the push whenever the release is a prerelease.
     skip_upload: auto
