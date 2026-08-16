@@ -128,6 +128,27 @@ func TestWorkflowsRenderABrokenEntryInPlace(t *testing.T) {
 	}
 }
 
+// A workflow this host cannot run (§8.1, task 010) is listed like any other,
+// with the platforms it needs — the registry view is where a human goes to
+// find out why a workflow is missing from the new-task picker.
+func TestWorkflowsRenderAPlatformRestrictedEntry(t *testing.T) {
+	e := globalEntry("posix-tools")
+	no := false
+	e.Platforms, e.PlatformSupported = []string{"linux", "darwin"}, &no
+	w := newWorkflowsView()
+	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{e}})
+	out := w.render(120, 24)
+	if !strings.Contains(out, "posix-tools") {
+		t.Fatalf("render = %q, want the restricted entry listed", out)
+	}
+	if !strings.Contains(out, "not on this platform") {
+		t.Errorf("render = %q, want the restriction stated", out)
+	}
+	if !strings.Contains(out, "linux, darwin") {
+		t.Errorf("render = %q, want the platforms it needs", out)
+	}
+}
+
 // One unreadable project degrades its own block and nothing else.
 func TestWorkflowsIsolateAFailedProjectFetch(t *testing.T) {
 	w := newWorkflowsView()

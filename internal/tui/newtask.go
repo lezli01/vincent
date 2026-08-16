@@ -508,7 +508,7 @@ func (n *newTask) selectDefaultWorkflow() {
 		return
 	}
 	for _, e := range n.workflows {
-		if e.Valid() {
+		if e.Valid() && e.RunsHere() {
 			n.workflow = e.Name
 			return
 		}
@@ -736,8 +736,13 @@ func (n *newTask) submit() tea.Cmd {
 	if n.titleText() == "" {
 		n.rowErr[ntTitle] = "a title is required"
 	}
-	if e := n.workflowEntry(n.workflow); n.workflow != "" && e != nil && !e.Valid() {
-		n.rowErr[ntWorkflow] = "this workflow does not validate: " + e.FirstError()
+	if e := n.workflowEntry(n.workflow); n.workflow != "" && e != nil {
+		switch {
+		case !e.Valid():
+			n.rowErr[ntWorkflow] = "this workflow does not validate: " + e.FirstError()
+		case !e.RunsHere():
+			n.rowErr[ntWorkflow] = "this workflow does not run on this platform — it " + e.PlatformNote()
+		}
 	}
 	if len(n.rowErr) > 0 {
 		return nil

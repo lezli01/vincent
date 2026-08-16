@@ -9,6 +9,7 @@ becoming a setting that silently never applied.
 
 - [File structure](#file-structure)
 - [Top level](#top-level)
+- [`platforms`](#platforms)
 - [`defaults`](#defaults)
 - [Step fields](#step-fields)
 - [Template context](#template-context)
@@ -47,8 +48,47 @@ built-in workflow, `adhoc`, is always present: a single agent step.
 |---|---|---|---|
 | `name` | string | ✅ | How tasks refer to it. Unique per scope |
 | `description` | string | | Shown in the TUI's workflow picker |
+| `platforms` | list | | Where this workflow may run. Empty means anywhere — see [`platforms`](#platforms) |
 | `defaults` | map | | Inherited by every step |
 | `steps` | list | ✅ | Runs in order, top to bottom. Must be non-empty |
+
+## `platforms`
+
+vincent never translates a command step between shells, so a workflow that
+pipes `cat` into `wc` is a POSIX workflow. Declaring that keeps it from being
+offered on a host it cannot run on:
+
+```yaml
+name: posix-tools
+platforms: [posix]
+```
+
+| Token | Matches |
+|---|---|
+| `linux` | Linux |
+| `darwin` | macOS |
+| `windows` | Windows |
+| `posix` | Every non-Windows host — the shorthand for "needs a POSIX shell" |
+
+Any combination is allowed: `[linux, darwin]` is `[posix]` spelled out,
+`[posix, windows]` is the same as omitting the key. Tokens are matched exactly
+— `macos` and `Linux` are validation errors, not silent non-matches.
+
+On a host the list does not admit:
+
+- the workflow is still **listed** — by `vincent workflow ls` (status
+  `unsupported`) and in the TUI's workflow view, with the platforms it needs;
+- it cannot be **selected**: the new-task picker refuses it and
+  `POST /v1/tasks` rejects it with a 400;
+- a task that somehow already carries it — a data directory moved between
+  machines — blocks at admission with `platform_unsupported`, before any step
+  runs.
+
+`vincent workflow validate` checks the tokens but never the host, so a
+POSIX-only workflow validates the same on a Windows CI runner as it does on
+Linux.
+
+The restriction covers the whole workflow; there is no per-step `platforms`.
 
 ## `defaults`
 
@@ -254,6 +294,8 @@ network, no agent CLI installed.
 
 - `steps` non-empty; step `id`s unique; `type` known.
 - Every template parses.
+- `platforms` entries are known tokens, with no duplicates. The list is checked
+  for shape, never against the validating host.
 - Durations parse as Go durations; `on_input` is `wait` or `deny`.
 - Unknown keys are errors.
 - `agent` names a known adapter.
