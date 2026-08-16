@@ -1,9 +1,38 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"time"
 )
+
+// codexLoginStatus answers `codex login status`, the §9.5 auth probe the
+// codex adapter gained in task 006. The legs are the four the parse has to
+// tell apart, and the environment picks between them so argv stays exactly
+// what the real CLI is asked:
+//
+//	FAKEAGENT_CODEX_LOGGED_OUT=1        explicit negative, exit 1
+//	FAKEAGENT_CODEX_LOGIN_UNKNOWN=1     output the parse must refuse to read
+//	FAKEAGENT_CODEX_LOGIN_HANG=1        never answers — the T4.22 timeout leg
+//
+// The default is the positive answer.
+func codexLoginStatus() {
+	switch {
+	case os.Getenv("FAKEAGENT_CODEX_LOGIN_HANG") == "1":
+		// Deliberately longer than any probe bound; the caller's deadline is
+		// what ends this process, which is the situation being pinned.
+		time.Sleep(10 * time.Minute)
+	case os.Getenv("FAKEAGENT_CODEX_LOGGED_OUT") == "1":
+		fmt.Println("Not logged in")
+		os.Exit(1)
+	case os.Getenv("FAKEAGENT_CODEX_LOGIN_UNKNOWN") == "1":
+		// Exits 0 and says nothing the parse recognizes: unknown, never a guess.
+		fmt.Println("codex-cli 0.142.5 (fake)")
+	default:
+		fmt.Println("Logged in using ChatGPT (fake@example.com)")
+	}
+}
 
 // codexMain is the codex dialect (T2.9): argv shaped like
 // `codex exec --json …`, prompt from stdin, `codex exec --json` JSONL on

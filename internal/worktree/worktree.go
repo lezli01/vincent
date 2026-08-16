@@ -360,13 +360,18 @@ func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, 
 }
 
 // Reclaim deletes a directory under the manager's root without consulting
-// git at all — gc's removal path (task 005). An orphan has, by definition, no
-// task row and often no reachable repo, so `git worktree remove` has nothing
-// to work from; the containment check is what keeps that safe.
+// git at all — gc's removal path (task 005), and doctor's (task 006). An
+// orphan has, by definition, no task row and often no reachable repo, so
+// `git worktree remove` has nothing to work from; the containment check is
+// what keeps that safe.
 //
 // It is removeDirect exported unchanged: one containment rule, one
 // implementation, so a path outside {data_dir}/worktrees is refused here for
 // the same reason it is refused during a forced archive.
+//
+// What that costs is a stale registration left in whichever repo the worktree
+// came from — `git worktree prune` there clears it, and doctor says so rather
+// than reaching into a repository it was not asked to touch.
 func (m *Manager) Reclaim(path string) error { return m.removeDirect(path) }
 
 // removeDirect deletes a worktree directory without git, but only inside the

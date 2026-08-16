@@ -98,10 +98,82 @@ func TestDetect(t *testing.T) {
 	if av.SupportsInput {
 		t.Error("SupportsInput = true; codex exec is permanently non-interactive (§9.3)")
 	}
-	if av.LoggedIn != nil {
-		t.Error("LoggedIn must stay nil (unknown) in v1")
+	// task 005: codex gained `login status`, so the §9.5 field is a definite
+	// boolean here now. It rides Detect rather than doctor, which is what
+	// makes it reach /v1/agents, /v1/info and the new-task form too.
+	if av.LoggedIn == nil || !*av.LoggedIn {
+		t.Errorf("LoggedIn = %v, want a definite true — codex can answer this (§9.5)", av.LoggedIn)
 	}
 }
+
+// TestDetectLoggedOut pins the negative leg: an installed CLI whose session
+// has expired must be distinguishable from a healthy one, because otherwise
+// it is invisible until a task has burned its retry budget (§18).
+func TestDetectLoggedOut(t *testing.T) {
+	t.Setenv("FAKEAGENT_DIALECT", "codex")
+	t.Setenv("FAKEAGENT_CODEX_LOGGED_OUT", "1")
+	av, err := fakeAdapter(t).Detect(t.Context())
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if !av.Found {
+		t.Fatalf("Found = false (%s); logged out is still installed", av.Error)
+	}
+	if av.LoggedIn == nil || *av.LoggedIn {
+		t.Errorf("LoggedIn = %v, want a definite false", av.LoggedIn)
+	}
+}
+
+// TestLoggedInParseLayers walks every leg of the §9.5 probe. The layering is
+// the contract — non-zero exit is false, an explicit negative is false, an
+// explicit positive is true, anything else is unknown — and the timeout leg
+// is the T4.22 regression, not an edge case: on Windows a probe killed by its
+// deadline exits 1, so an exit-status reading would accuse a logged-in
+// account on the one morning the machine was slow.
+func TestLoggedInParseLayers(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		timeout time.Duration
+		want    *bool
+	}{
+		{name: "explicit positive", want: boolPtr(true)},
+		{name: "explicit negative and non-zero exit", env: map[string]string{"FAKEAGENT_CODEX_LOGGED_OUT": "1"}, want: boolPtr(false)},
+		{name: "unrecognized output stays unknown", env: map[string]string{"FAKEAGENT_CODEX_LOGIN_UNKNOWN": "1"}, want: nil},
+		{
+			name:    "timeout is never a verdict",
+			env:     map[string]string{"FAKEAGENT_CODEX_LOGIN_HANG": "1"},
+			timeout: 200 * time.Millisecond,
+			want:    nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			path := agenttest.BuildFakeAgent(t)
+			a := New(func() string { return path })
+			ctx := t.Context()
+			if tc.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.timeout)
+				defer cancel()
+			}
+			got := a.loggedIn(ctx, path)
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("loggedIn = %v, want nil (unknown)", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("loggedIn = nil, want %v", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("loggedIn = %v, want %v", *got, *tc.want)
+			}
+		})
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
 
 func TestDetectMissingBinary(t *testing.T) {
 	a := New(func() string { return "/nonexistent/codex-not-here" })
@@ -114,6 +186,9 @@ func TestDetectMissingBinary(t *testing.T) {
 	}
 	if av.Error == "" {
 		t.Error("Error is empty; want the resolution failure")
+	}
+	if av.LoggedIn != nil {
+		t.Error("LoggedIn is set for an unresolvable binary; want nil (unknown)")
 	}
 }
 
