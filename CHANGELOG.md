@@ -39,6 +39,15 @@ type — that is the exhaustive index; this is the human summary.
   per directory in the log, plus the count on `/v1/info` and a line in the TUI
   daemon view naming `vincent gc`. The unattended path reports; a human deletes.
 
+- **`scripts/install-local.sh`** installs the checked-out tree as a regular
+  local install: one binary on PATH, built with the release flags from
+  `.goreleaser.yaml` and the same three version symbols, so `vincent version`
+  names your commit. Defaults to `/usr/local/bin` (`--user` for `~/.local/bin`,
+  `--bin-dir` for anywhere else), and reports the two things that make a fresh
+  build look like it did not take: another `vincent` shadowing it on PATH, and
+  a daemon still running the previous binary. `--uninstall` removes the binary
+  and leaves config, database and transcripts alone.
+
 ## [0.1.1] — 2026-08-15
 
 ### Added
