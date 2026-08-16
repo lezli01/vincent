@@ -50,6 +50,13 @@ type (
 		info apiclient.Info
 		err  error
 	}
+	// boardConfigMsg carries the view preferences the daemon relays (§15,
+	// task 009). The TUI reads no configuration from disk, so this is where
+	// the task table's grouping comes from.
+	boardConfigMsg struct {
+		board apiclient.ConfigBoard
+		err   error
+	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg time.Time
 	// selectTaskMsg asks the home shell to select a task in the table and
@@ -78,6 +85,15 @@ type board struct {
 
 	filter    textinput.Model
 	filtering bool
+
+	// group is the grouping the table is rendering (boardgroup.go);
+	// configGroup is what the daemon's config asked for. They differ once `g`
+	// has been pressed, and groupPinned is what keeps a reconnect's refetch
+	// from undoing that press — the config is the starting point, not a
+	// setting the daemon re-imposes while someone is looking at the board.
+	group       grouping
+	configGroup grouping
+	groupPinned bool
 
 	// actions drives §15's action keys against the row under the cursor.
 	// The shell shares one instance between board and detail — a pending
@@ -111,11 +127,13 @@ func newBoard() *board {
 	fi.Placeholder = "filter by id, title, project or state"
 	fi.Prompt = "/"
 	b := &board{
-		now:     time.Now,
-		filter:  fi,
-		bell:    ringBell,
-		actions: &actionBar{},
-		tbl:     table.New(table.WithFocused(true)),
+		now:         time.Now,
+		filter:      fi,
+		bell:        ringBell,
+		actions:     &actionBar{},
+		tbl:         table.New(table.WithFocused(true)),
+		group:       defaultGrouping(),
+		configGroup: defaultGrouping(),
 	}
 	b.applyStyles()
 	return b
@@ -152,7 +170,7 @@ func (b *board) title() string { return "Board" }
 // load. Called again on reconnect, which is why the tick is guarded.
 func (b *board) setClient(c *apiclient.Client) tea.Cmd {
 	b.client = c
-	cmds := []tea.Cmd{b.loadCmd(), b.infoCmd()}
+	cmds := []tea.Cmd{b.loadCmd(), b.infoCmd(), b.configCmd()}
 	if !b.ticking {
 		b.ticking = true
 		cmds = append(cmds, tickCmd())
@@ -192,6 +210,36 @@ func (b *board) infoCmd() tea.Cmd {
 	}
 }
 
+// configCmd fetches the view preferences (§12.3 `tui:`). It rides the connect
+// and every reconnect, which is also how a config the human edited while the
+// TUI was up reaches the board: the daemon hot-reloads the file but publishes
+// no event for it (§13.3), so there is nothing to subscribe to.
+func (b *board) configCmd() tea.Cmd {
+	client := b.client
+	if client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cfg, err := client.Config(ctx)
+		return boardConfigMsg{board: cfg.TUI.Board, err: err}
+	}
+}
+
+// applyConfig installs the configured grouping. A failed fetch changes
+// nothing: the default grouping is a working board, and a config request that
+// timed out is not a statement that the human wants a flat table.
+func (b *board) applyConfig(msg boardConfigMsg) {
+	if msg.err != nil {
+		return
+	}
+	b.configGroup = parseGrouping(msg.board.GroupBy)
+	if !b.groupPinned {
+		b.group = b.configGroup
+	}
+}
+
 // scheduleRefresh opens a debounce window, or does nothing if one is open.
 func (b *board) scheduleRefresh() tea.Cmd {
 	if b.refreshPending {
@@ -213,6 +261,9 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.err == nil {
 			b.info, b.infoOK = msg.info, true
 		}
+		return b, nil
+	case boardConfigMsg:
+		b.applyConfig(msg)
 		return b, nil
 	case boardRefreshMsg:
 		b.refreshPending = false
@@ -362,6 +413,19 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			b.filter.SetValue("")
 		}
 		return b, nil
+	case "g":
+		// Cycles the grouping for the session (§15, task 009); the config
+		// file stays the starting point and is never written from here. This
+		// takes `g` from the table's own undocumented go-to-top alias — `home`
+		// still does that, and the registry is what the help promises.
+		//
+		// The cursor is not touched: selectedID already names the task under
+		// it, and the next render puts the cursor back on that task wherever
+		// the new layout moved it. Re-reading the cursor here would read an
+		// index from the old layout against the new one.
+		b.group = b.group.next()
+		b.groupPinned = true
+		return b, nil
 	}
 
 	// §15's action keys act on the row under the cursor. A key the daemon
@@ -371,10 +435,51 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return b, cmd
 	}
 
+	before := b.tbl.Cursor()
 	var cmd tea.Cmd
 	b.tbl, cmd = b.tbl.Update(msg)
+	b.skipHeaders(travelDir(before, b.tbl.Cursor()))
 	b.rememberSelection()
 	return b, cmd
+}
+
+// travelDir is the direction a cursor move was going in, which is the
+// direction a group header has to be stepped over in. A move that went
+// nowhere (already at an end) reads as downward, so the first press on the
+// top row still lands on a task.
+func travelDir(before, after int) int {
+	if after < before {
+		return -1
+	}
+	return 1
+}
+
+// skipHeaders steps the cursor off a group header, carrying on in the
+// direction of travel and turning around at either end. Headers are labels:
+// resting on one would empty the detail panels and offer no actions, so j/k
+// pass over them as if they were not rows at all.
+//
+// It moves with MoveUp/MoveDown rather than SetCursor for the reason
+// clickRow does: the table's scroll offset is private and only those two keep
+// its bookkeeping consistent.
+func (b *board) skipHeaders(dir int) {
+	rows := b.rows()
+	// Bounded by the row count: a turn-around at either end must not become a
+	// loop between two headers.
+	for range rows {
+		i := b.tbl.Cursor()
+		if i < 0 || i >= len(rows) || !rows[i].header {
+			return
+		}
+		if dir > 0 {
+			b.tbl.MoveDown(1)
+		} else {
+			b.tbl.MoveUp(1)
+		}
+		if b.tbl.Cursor() == i {
+			dir = -dir // clamped at an end: the tasks are the other way
+		}
+	}
 }
 
 // clickRow selects the table row rendered at the given body line (0 = the
@@ -409,7 +514,15 @@ func (b *board) clickRow(line int) {
 	if cursorLine < 0 {
 		return
 	}
-	switch delta := line - cursorLine; {
+	delta := line - cursorLine
+	// A group header is a label, not a row: clicking one leaves the selection
+	// alone rather than jumping to a task the click did not name. The clicked
+	// row is the cursor's plus the delta — a body line cannot be indexed into
+	// the row slice directly, because the table may be scrolled.
+	if b.rowAt(b.tbl.Cursor() + delta).header {
+		return
+	}
+	switch {
 	case delta > 0:
 		b.tbl.MoveDown(delta)
 	case delta < 0:
@@ -437,26 +550,64 @@ func (b *board) wheelMove(delta int) {
 	} else {
 		b.tbl.MoveUp(-delta)
 	}
+	b.skipHeaders(delta)
 	b.rememberSelection()
 }
 
-// visible is the filtered, sorted task list currently on screen.
-func (b *board) visible() []apiclient.Task {
+// rows is the table as it is rendered: filtered, sorted, and — under a
+// grouping — interleaved with group headers (boardgroup.go). Every index into
+// the table means an index into this slice.
+func (b *board) rows() []boardRow {
 	tasks := filterTasks(b.tasks, b.filter.Value())
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
 	sortTasks(sorted)
-	return sorted
+	return groupRows(sorted, b.group)
+}
+
+// rowAt is the row at a table index, or a zero row off either end.
+func (b *board) rowAt(i int) boardRow {
+	rows := b.rows()
+	if i < 0 || i >= len(rows) {
+		return boardRow{}
+	}
+	return rows[i]
+}
+
+// visible is the tasks on screen in render order, headers dropped: the list
+// for anything that walks tasks rather than lines — the attention jump, the
+// action bar's target.
+func (b *board) visible() []apiclient.Task {
+	rows := b.rows()
+	out := make([]apiclient.Task, 0, len(rows))
+	for _, r := range rows {
+		if !r.header {
+			out = append(out, r.task)
+		}
+	}
+	return out
 }
 
 // selected reports the task id under the cursor.
+//
+// A cursor sitting on a group header resolves to the first task under it,
+// rather than to nothing. Key navigation steps over headers (skipHeaders), so
+// this is the frame between a load and the render that places the cursor —
+// and answering "no task" there would leave a freshly loaded board with its
+// detail panels empty until something moved. A header always has rows beneath
+// it, so the scan always lands.
 func (b *board) selected() (int64, bool) {
-	rows := b.visible()
+	rows := b.rows()
 	i := b.tbl.Cursor()
-	if i < 0 || i >= len(rows) {
+	if i < 0 {
 		return 0, false
 	}
-	return rows[i].ID, true
+	for ; i < len(rows); i++ {
+		if !rows[i].header {
+			return rows[i].task.ID, true
+		}
+	}
+	return 0, false
 }
 
 // hintedProject is the project of the row under the cursor, which is the
@@ -484,20 +635,22 @@ func (b *board) rememberSelection() {
 	}
 }
 
-// restoreSelection moves the cursor back onto the remembered task.
-func (b *board) restoreSelection(rows []apiclient.Task) {
-	if b.selectedID == 0 {
-		return
-	}
-	for i := range rows {
-		if rows[i].ID == b.selectedID {
-			b.tbl.SetCursor(i)
-			return
+// restoreSelection moves the cursor back onto the remembered task — after a
+// refresh that reordered the rows, and after `g` regrouped them.
+func (b *board) restoreSelection(rows []boardRow) {
+	if b.selectedID != 0 {
+		for i := range rows {
+			if !rows[i].header && rows[i].task.ID == b.selectedID {
+				b.tbl.SetCursor(i)
+				return
+			}
 		}
 	}
-	// The task is gone (archived, or filtered out): fall back to the top
-	// rather than leaving the cursor pointing at an unrelated row.
-	b.tbl.SetCursor(0)
+	// The task is gone (archived, or filtered out), or nothing has been
+	// selected yet: the first task rather than the first *row*, which under a
+	// grouping is a header — a cursor parked on one shows empty panels and no
+	// actions.
+	b.tbl.SetCursor(firstTaskRow(rows))
 }
 
 func (b *board) render(width, height int) string {
@@ -515,13 +668,13 @@ func (b *board) render(width, height int) string {
 		sb.WriteString("\n")
 	}
 
-	rows := b.visible()
+	rows := b.rows()
 	if body, ok := b.emptyBody(rows); ok {
 		sb.WriteString(body)
 		return sb.String()
 	}
 
-	cols, set := boardColumns(b.width)
+	cols, set := boardColumns(b.width, b.group)
 	// SetColumns re-renders the rows it already holds: when a resize crosses
 	// a column breakpoint, yesterday's wider rows meet today's narrower
 	// column set and the table indexes out of range. Clear the rows first —
@@ -539,7 +692,7 @@ func (b *board) render(width, height int) string {
 	// board that emptied and refilled) parks the cursor at -1; with rows on
 	// screen the cursor belongs on one.
 	if b.tbl.Cursor() < 0 && len(rows) > 0 {
-		b.tbl.SetCursor(0)
+		b.tbl.SetCursor(firstTaskRow(rows))
 	}
 	sb.WriteString(b.tbl.View())
 	sb.WriteString("\n")
@@ -585,10 +738,20 @@ func (b *board) firstRowLine() int {
 	return n
 }
 
-func (b *board) rowsFor(tasks []apiclient.Task, set columnSet) []table.Row {
+// rowsFor renders the table's cells. It and boardColumns share one shape —
+// the same optional columns in the same order — and move together; a row that
+// disagrees with the column set indexes the table out of range.
+func (b *board) rowsFor(rows []boardRow, set columnSet) []table.Row {
 	now := b.now()
-	out := make([]table.Row, 0, len(tasks))
-	for _, t := range tasks {
+	// Task titles sit under their headers, one indent per grouping level.
+	indent := strings.Repeat(groupIndent, len(b.group))
+	out := make([]table.Row, 0, len(rows))
+	for _, r := range rows {
+		if r.header {
+			out = append(out, groupHeaderRow(r, set))
+			continue
+		}
+		t := r.task
 		row := table.Row{strconv.FormatInt(t.ID, 10)}
 		if set.project {
 			row = append(row, t.ProjectName)
@@ -600,13 +763,32 @@ func (b *board) rowsFor(tasks []apiclient.Task, set columnSet) []table.Row {
 		if d, ok := t.Elapsed(now); ok {
 			elapsed = formatElapsed(d)
 		}
-		row = append(row, t.Title, renderBoardState(t), formatStep(t, set.stepName), elapsed)
+		row = append(row, indent+t.Title, renderBoardState(t), formatStep(t, set.stepName), elapsed)
 		if set.cost {
 			row = append(row, formatCost(t.CostUSD))
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+// groupHeaderRow renders a group header as a table row: the label in the
+// title column — the widest, and the only one that survives every width — and
+// every other cell blank, so the header reads as a break in the list rather
+// than as a task with missing figures.
+func groupHeaderRow(r boardRow, set columnSet) table.Row {
+	row := table.Row{""}
+	if set.project {
+		row = append(row, "")
+	}
+	if set.workflow {
+		row = append(row, "")
+	}
+	row = append(row, r.headerCell(), "", "", "")
+	if set.cost {
+		row = append(row, "")
+	}
+	return row
 }
 
 // headerLine reports what the daemon is doing overall (§15): how much work
@@ -703,7 +885,7 @@ func (b *board) staleNote() string {
 // emptyBody distinguishes "nothing exists yet" from "your filter matches
 // nothing": different problems with different ways out, and the first-run
 // case is the one moment a new user most needs pointing at what to do next.
-func (b *board) emptyBody(rows []apiclient.Task) (string, bool) {
+func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	if len(rows) > 0 {
 		return "", false
 	}

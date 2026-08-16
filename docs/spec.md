@@ -1456,6 +1456,9 @@ agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
+tui:                           # view preference; the daemon validates and relays it (§15)
+  board:
+    group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
 
 **`usage_limit_recheck_interval` (task 003, added 2026-08-14).** How long a task
@@ -1481,6 +1484,19 @@ succeeded — and that combination is a startup/reload **warning**, not a load f
 a key that is merely unreachable is not an invalid one, and refusing the file over it
 would revert every unrelated edit in the same save. Both are read per archive, so a
 hot reload reaches the next one.
+
+**`tui` (task 009, added 2026-08-16).** The one section the daemon does not act
+on. It validates it, hot-reloads it with the rest of the file and serves it on
+`GET /v1/config`; the TUI reads it from there. It lives in this file rather than
+one of the TUI's own because the TUI is a pure API client (§15) — it reads no
+configuration from disk, and a second file would be a second path, a second
+reload story and a second `vincent doctor` line for one setting. `board.group_by`
+is the task table's grouping, outermost level first; the accepted levels are
+`project` and `workflow`, an unknown or repeated one fails the load, and `[]` is
+the flat table every version before this one rendered. `state` is deliberately
+not a level: the band sort already orders by state and pins what is waiting on a
+human above everything, and a state grouping would fight the one ordering rule
+the board is not allowed to lose.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -1924,6 +1940,10 @@ stream for the live tail.
    with a distinct badge, and the TUI rings the terminal bell when a task enters
    `awaiting_input` — most terminals flash/badge the window even unfocused
    (§7.4). OS desktop notifications remain out of v1 (§20).
+   **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
+   headers — projects, and the workflows of a project inside it — configured by
+   `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
+   *Grouping* below.
 2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
    transcripts of past steps. Timeline and output are **side by side, both always
@@ -2010,6 +2030,33 @@ first. The **detail header**, which has the room, renders the full
 `queued · usage limit → 14:20`. Band ordering is unchanged: a held task stays in
 the queued band, in normal §11 order, because that is where it will run from.
 
+**Grouping (task 009, added 2026-08-16).** The task table nests its rows under
+group headers, `[project, workflow]` by default: a board with more than one
+repository on it is read project by project, and within one project the workflow
+is what says what a task is *doing*. It is configuration — `tui.board.group_by`,
+served on `GET /v1/config` — because the shape that suits three projects and one
+workflow is not the shape that suits one project and six; `[]` is the flat table
+of every earlier version, and `g` cycles project›workflow → project → workflow →
+flat for the session without writing to the file. The rules the grouping does not
+get to bend:
+
+- **Ordering is untouched.** The tasks are sorted by band exactly as before and
+  the groups take the order of their first task, so a group holding work that
+  needs a human is the first group, and §15's pinning rule survives grouping.
+  A header carries its task count and, when it has any, the attention badge and
+  count — a header must never be the reason someone missed a task that is
+  waiting.
+- **A grouped level costs no column.** The header names it, so `PROJECT` and
+  `WORKFLOW` drop out of the column set (the §15 shedding order is otherwise
+  unchanged) and the width goes to the title, which is where a grouped board
+  needs it — the titles are indented under their headers.
+- **A header is a label, not a row.** The cursor steps over headers in the
+  direction it was travelling, clicking one selects nothing, and nothing folds
+  away: a board whose whole job is showing you every task has no business
+  hiding rows behind a collapse.
+- **The panel title names the grouping only when it is not the configured one**,
+  the same rule the output pane's `v` follows.
+
 **The focused panel expands; the others collapse** to their title bar plus the
 selected line. The task table never collapses below 5 rows — it is the navigation
 spine, and a spine you cannot see is a modal round-trip wearing a border.
@@ -2092,7 +2139,9 @@ live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 `set priority` (§6) has no key — priority is chosen in the new-task flow.
 
 Panel-local: `/` filters **whichever list has focus** — tasks, projects, workflows
-— so one key means one thing everywhere. `enter` opens or expands. `[`/`]` switch
+— so one key means one thing everywhere. `g` cycles the task table's grouping
+(task 009), taking the key from the table widget's undocumented go-to-top alias,
+which `home` still is. `enter` opens or expands. `[`/`]` switch
 the output pane's tabs (`d` kept as an alias). `f`/`G` re-arm follow on a live
 tail or the daemon log. `v` cycles how much of the output pane's records show —
 compact → normal → verbose (T4.16): reasoning is hidden, truncated to its first

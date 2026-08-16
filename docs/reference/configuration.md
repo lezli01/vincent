@@ -79,6 +79,11 @@ agents:
     path: ""
   cursor:
     path: ""
+
+# What clients render, not what the daemon does.
+tui:
+  board:
+    group_by: [project, workflow]
 ```
 
 ## Keys
@@ -420,6 +425,49 @@ the standing fix for a CLI the daemon cannot see.
 
 `cursor` resolves the **`cursor-agent`** binary, never `cursor` — that one is the
 editor launcher and would open a GUI.
+
+### `tui`
+
+```yaml
+tui:
+  board:
+    group_by: [project, workflow]
+```
+
+The one section the daemon does not act on. It validates it, hot-reloads it with
+everything else and serves it on `GET /v1/config`; the TUI reads it from there.
+It lives here rather than in a file of the TUI's own because the TUI is a pure
+API client — it reads no configuration from disk, and a second file would be a
+second path, a second reload story and a second `vincent doctor` line for one
+setting.
+
+#### `tui.board.group_by`
+
+How the task table is grouped, outermost level first.
+
+| Value | Board |
+|---|---|
+| `[project, workflow]` (default) | Projects, and the workflows of a project nested inside it |
+| `[project]` | One group per project |
+| `[workflow]` | One group per workflow, across every project |
+| `[]` | One flat list — the table every version before this one rendered |
+
+Accepted levels are `project` and `workflow`. An unknown level, a repeated one,
+or anything that is not a list fails the load and names the key. There is no
+`state` level on purpose: the board already orders by state and pins everything
+waiting on a human to the top, and grouping by it would fight that.
+
+Grouping never reorders tasks. They are sorted exactly as before and each group
+takes the position of its first task, so the group holding the oldest thing
+waiting on a human is the first group. Group headers carry the task count and,
+when the group holds any, the needs-attention badge and count.
+
+A grouped level costs no column — the header names it, so `PROJECT` and
+`WORKFLOW` drop out and the width goes to the title.
+
+**`g` cycles the grouping for the session** — project›workflow → project →
+workflow → flat — and never writes to this file. The Tasks panel title names the
+grouping whenever it is not the one configured here.
 
 ## Per-project settings
 
