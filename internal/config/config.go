@@ -149,9 +149,27 @@ type Config struct {
 	// as a hard failure, and on hot-reload by keeping the previous value with a
 	// warning, because a daemon that quietly ignored the configured convention
 	// would create every branch under the wrong name.
-	BranchTemplate          string   `yaml:"branch_template"`
-	Defaults                Defaults `yaml:"defaults"`
-	TranscriptRetentionDays int      `yaml:"transcript_retention_days"`
+	BranchTemplate string   `yaml:"branch_template"`
+	Defaults       Defaults `yaml:"defaults"`
+	// DeleteEmptyBranchOnArchive deletes a task's branch at archive time when
+	// it carries no commits past its recorded base (§10, task 008). Default
+	// true: a workflow that never writes to the repository leaves a ref behind
+	// on every run, and a branch whose tip is an ancestor of its base holds
+	// nothing to lose. Anything carrying a commit object is never touched.
+	//
+	// A plain bool is right here, unlike the pointer a tri-state would need:
+	// Load unmarshals into Default(), so an absent key keeps true and an
+	// explicit `false` restores the pre-008 behaviour exactly.
+	DeleteEmptyBranchOnArchive bool `yaml:"delete_empty_branch_on_archive"`
+	// DeleteRemoteBranchOnArchive additionally deletes the upstream
+	// counterpart of a branch that qualified. Default **false**, and honoured
+	// only by POST /v1/tasks/{id}/archive — a forge is shared with other
+	// people and the deletion is unrecoverable, so it happens only when a
+	// human asked for this archive and only when they opted in. It has no
+	// effect while DeleteEmptyBranchOnArchive is false: the remote leg runs
+	// after a local delete that succeeded.
+	DeleteRemoteBranchOnArchive bool `yaml:"delete_remote_branch_on_archive"`
+	TranscriptRetentionDays     int  `yaml:"transcript_retention_days"`
 	// TranscriptMaxBytes caps one attempt's transcript (§12.3, §18). Past it
 	// the step fails `transcript_limit` rather than filling the disk. It sits
 	// at the top level beside its retention sibling, not under `defaults:`,
@@ -220,10 +238,14 @@ func Default() Config {
 			CommandTimeout: Duration(15 * time.Minute),
 			InputTimeout:   Duration(24 * time.Hour),
 		},
-		TranscriptRetentionDays:   90,
-		TranscriptMaxBytes:        512 << 20, // 512MB (§12.3)
-		UsageLimitRecheckInterval: Duration(15 * time.Minute),
-		LogLevel:                  "info",
+		DeleteEmptyBranchOnArchive: true,
+		// Deliberately not defaulted true beside its local sibling: this one
+		// writes to a forge (§10, task 008).
+		DeleteRemoteBranchOnArchive: false,
+		TranscriptRetentionDays:     90,
+		TranscriptMaxBytes:          512 << 20, // 512MB (§12.3)
+		UsageLimitRecheckInterval:   Duration(15 * time.Minute),
+		LogLevel:                    "info",
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
 		Environment: Environment{Inherit: InheritAll()},
@@ -289,6 +311,26 @@ func (c Config) validate() error {
 		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.LogLevel)
 	}
 	return c.Environment.validate()
+}
+
+// Warnings are settings that parse, load and take effect, but do not do what
+// they look like they ask for. The daemon logs them at startup and on any
+// reload that changes them.
+//
+// They are separate from validate() on purpose: none of these refuses the file.
+// A key that is merely unreachable is not an invalid one, and failing the load
+// over it would revert every unrelated edit in the same save (§12.3).
+func (c Config) Warnings() []string {
+	var out []string
+	// A silent no-op key is worse than a line in the log: the remote leg runs
+	// only after a local delete that succeeded (§10, task 008), so this pair
+	// asks for something that cannot happen.
+	if c.DeleteRemoteBranchOnArchive && !c.DeleteEmptyBranchOnArchive {
+		out = append(out, "delete_remote_branch_on_archive is true while "+
+			"delete_empty_branch_on_archive is false: the remote counterpart is only "+
+			"deleted after the local branch, so no remote branch will ever be deleted")
+	}
+	return out
 }
 
 func isLoopbackHost(host string) bool {

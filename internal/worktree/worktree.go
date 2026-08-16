@@ -307,8 +307,13 @@ func (m *Manager) IsDirty(ctx context.Context, worktreePath string) (bool, error
 // worktree directory that is already gone prunes and succeeds. Without force
 // a dirty worktree (untracked included) is refused with ReasonWorktreeDirty.
 // With force, when git itself cannot remove (project path gone, locked
-// worktree), a directory under the manager's root is removed directly. The
-// branch is never deleted (spec §10).
+// worktree), a directory under the manager's root is removed directly.
+//
+// Remove never touches the branch. That is a statement about this function,
+// not the standing rule it used to restate: since task 008 archive may delete a
+// branch that carries no commits past its base, through DeleteEmptyBranch,
+// after this returns (spec §10). Ordering matters — the branch is checked out
+// in the worktree until the worktree is gone.
 func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, force bool) error {
 	projectMissing := false
 	if _, err := os.Stat(projectPath); err != nil {

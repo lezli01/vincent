@@ -77,15 +77,91 @@ func (c *Client) Reject(ctx context.Context, id int64) (Task, error) {
 	return c.action(ctx, id, ActionReject, nil)
 }
 
-// Archive removes the worktree and archives the task. A dirty worktree is a
-// 409 carrying details.reason "worktree_dirty" unless force is set — force is
-// the confirmation, so a caller re-issues with it after asking (§6, §13.2).
-func (c *Client) Archive(ctx context.Context, id int64, force bool) (Task, error) {
-	return c.action(ctx, id, ActionArchive, archiveBody{Force: force})
+// Archive removes the worktree, archives the task, and — when
+// `delete_empty_branch_on_archive` is on — deletes the branch if it carries no
+// commits past its base (§10, task 008). The second return is what happened to
+// that branch; its zero value means the branch step did not run.
+//
+// A dirty worktree is a 409 carrying details.reason "worktree_dirty" unless
+// force is set — force is the confirmation, so a caller re-issues with it after
+// asking (§6, §13.2).
+func (c *Client) Archive(ctx context.Context, id int64, force bool) (Task, BranchOutcome, error) {
+	var out archiveResponse
+	path := fmt.Sprintf("/v1/tasks/%d/%s", id, ActionArchive)
+	if err := c.post(ctx, path, archiveBody{Force: force}, &out); err != nil {
+		return Task{}, BranchOutcome{}, err
+	}
+	if out.Branch == nil {
+		return out.Task, BranchOutcome{}, nil
+	}
+	return out.Task, *out.Branch, nil
 }
 
 type archiveBody struct {
 	Force bool `json:"force"`
+}
+
+// archiveResponse decodes the archive body, whose task fields sit at the top
+// level beside `branch` — so the task is decoded from the same object rather
+// than from a nested one.
+type archiveResponse struct {
+	Task
+	Branch *BranchOutcome `json:"branch"`
+}
+
+// Branch outcomes as the daemon names them (§10, task 008). A client renders
+// the string the daemon sends; these exist to key rendering onto.
+const (
+	BranchDeleted      = "deleted"
+	BranchHasCommits   = "has_commits"
+	BranchUnknown      = "unknown"
+	BranchDeleteFailed = "error"
+
+	RemoteBranchDeleted    = "deleted"
+	RemoteBranchNoUpstream = "no_upstream"
+	RemoteBranchFailed     = "error"
+)
+
+// BranchOutcome is what an archive did to the task's branch. A zero value means
+// the branch step never ran: the setting is off, or the task had no branch of
+// its own — which is what every archive did before task 008.
+type BranchOutcome struct {
+	Name   string               `json:"name"`
+	Result string               `json:"result"`
+	Error  string               `json:"error,omitempty"`
+	Remote *RemoteBranchOutcome `json:"remote,omitempty"`
+}
+
+// RemoteBranchOutcome is the opt-in remote leg's outcome.
+type RemoteBranchOutcome struct {
+	Remote string `json:"remote,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	Result string `json:"result"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Summary is the one line a human gets for a branch outcome, or "" when
+// nothing happened to the branch and there is nothing to say.
+func (o BranchOutcome) Summary() string {
+	switch o.Result {
+	case BranchDeleted:
+		s := "branch " + o.Name + " deleted (no commits)"
+		if o.Remote != nil {
+			switch o.Remote.Result {
+			case RemoteBranchDeleted:
+				s += ", remote too"
+			case RemoteBranchFailed:
+				s += ", remote kept: " + o.Remote.Error
+			}
+		}
+		return s
+	case BranchHasCommits:
+		return "branch " + o.Name + " kept (it has commits)"
+	case BranchUnknown, BranchDeleteFailed:
+		return "branch " + o.Name + " kept: " + o.Error
+	default:
+		return ""
+	}
 }
 
 // Answer delivers the answer to a pending input request; the run resumes in

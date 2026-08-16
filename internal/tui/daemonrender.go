@@ -103,6 +103,11 @@ func (d *daemonView) configLines() []string {
 				"   input "+c.Defaults.InputTimeout),
 		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days")+
 			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
+		// Both halves of the §10 pair on one line: the remote one is inert
+		// while the local one is off, so showing either alone would describe a
+		// policy that cannot run.
+		field("delete empty branch", onOff(c.DeleteEmptyBranchOnArchive))+
+			styleDim.Render("   remote "+onOff(c.DeleteRemoteBranchOnArchive)),
 		field("usage limit recheck", c.UsageLimitRecheck),
 		field("log level", c.LogLevel),
 	)
@@ -166,6 +171,15 @@ func (d *daemonView) adapterLines() []string {
 		out = append(out, row)
 	}
 	return out
+}
+
+// onOff renders a boolean setting. "on"/"off" rather than "true"/"false":
+// the view reports a policy in effect, not the YAML literal behind it.
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
 }
 
 // humanBytes renders a byte count the way the config file spells it, so the

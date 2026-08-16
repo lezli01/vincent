@@ -110,8 +110,12 @@ What it **does not** buy you: privilege isolation. A full-auto agent runs as
 you, with your credentials and your network. See the
 [Security model](../security-model.md).
 
-Archiving a task removes its worktree and keeps the branch and the record.
-vincent never deletes a branch.
+Archiving a task removes its worktree and keeps the record. It keeps the branch
+too, unless that branch has no commits past the base it was cut from — a
+workflow that never writes to the repository leaves nothing on its branch, and
+archiving deletes it rather than leaving an empty ref behind. **A branch
+carrying any commit is never deleted.** Turn the cleanup off with
+[`delete_empty_branch_on_archive: false`](../reference/configuration.md#delete_empty_branch_on_archive).
 
 ---
 

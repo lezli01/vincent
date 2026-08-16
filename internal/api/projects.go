@@ -329,6 +329,7 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 				"task", t.ID, "worktree", t.WorktreePath, "error", err)
 		}
 	}
+	s.deleteEmptyBranches(ctx, p, tasks)
 	if err := s.deps.Store.DeleteProjectCascade(ctx, p.ID); err != nil {
 		s.internalError(w, "delete project", err)
 		return
@@ -341,6 +342,41 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.projectsChanged()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteEmptyBranches applies the §10 empty-branch rule to every task row the
+// cascade is about to drop (task 008).
+//
+// It covers the whole slice, archived rows included, because after the cascade
+// the branch names are gone forever — this is the last moment they exist. An
+// archived row whose branch survived (the setting was off when it was archived)
+// is reachable from nowhere else.
+//
+// Local only: `delete_remote_branch_on_archive` is honoured by
+// POST /v1/tasks/{id}/archive alone, since §10's rule is that the unattended
+// path never deletes and a forge is further-reaching than a local directory.
+// Best-effort, exactly like the worktree removal above it: a failure is logged
+// and the cascade proceeds.
+func (s *Server) deleteEmptyBranches(ctx context.Context, p *store.Project, tasks []store.Task) {
+	if s.deps.Worktrees == nil || s.deps.Config == nil || !s.deps.Config().DeleteEmptyBranchOnArchive {
+		return
+	}
+	for i := range tasks {
+		t := &tasks[i]
+		if t.BranchName == "" {
+			continue
+		}
+		out, err := s.deps.Worktrees.DeleteEmptyBranch(ctx, p.Path, t.BaseBranch, t.BranchName, false)
+		if err != nil {
+			s.deps.Logger.Warn("project delete: branch kept",
+				"task", t.ID, "branch", t.BranchName, "result", out.Result, "error", err)
+			continue
+		}
+		if out.Result == worktree.BranchDeleted {
+			s.deps.Logger.Info("project delete: deleted a branch with no commits past its base",
+				"task", t.ID, "branch", t.BranchName, "base", t.BaseBranch)
+		}
+	}
 }
 
 // projectFromPath resolves the {id} path segment to a project, writing the

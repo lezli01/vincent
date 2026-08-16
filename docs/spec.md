@@ -258,7 +258,7 @@ already applies to every other pending flag — a human action means go.
 | `paused` | Engineer-requested soft pause (takes effect at the next step boundary) | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
 | `aborted` | Engineer aborted, or rejected terminally; worktree/branch retained | no |
-| `archived` | Terminal. Worktree removed (branch retained); record kept for history | no |
+| `archived` | Terminal. Worktree removed; record kept for history. The branch is retained unless it carries no commits past its base, in which case `delete_empty_branch_on_archive` deletes it (§10, *amended 2026-08-16, task 008*) | no |
 
 ### Human actions
 
@@ -1076,7 +1076,11 @@ would invalidate every one of them.
   rest of this bullet exists. Names are configurable —
   `built-in < config.yaml < project < per-task literal` — and because vincent **never
   deletes branches**, a template without a discriminator collides on the *second* task
-  for the same input. So collision is a routine outcome, not a defensive check:
+  for the same input. (*Amended 2026-08-16, task 008:* still true of every branch that
+  carries a commit, which is the case a discriminator-less template is about — the one
+  branch archive may now delete is one that received nothing. The collision checks
+  below are unchanged, and task 001's decisions are not reopened.) So collision is a
+  routine outcome, not a defensive check:
   - **Legality** is delegated to `git check-ref-format --branch`, never a
     reimplementation of git's grammar, and a rejected name is `branch_name_invalid`
     (§18) rather than silently sanitized.
@@ -1097,8 +1101,47 @@ would invalidate every one of them.
   process-level resources (global caches, package stores, ports, docker). True
   sandboxing is out of scope for v1.
 - **Cleanup:** on `archive`: `git worktree remove` (+ `--force` after an explicit
-  dirty-worktree confirmation), then `git -C {project.path} worktree prune`. The
-  branch is **never** deleted by vincent.
+  dirty-worktree confirmation), then `git -C {project.path} worktree prune`. A branch
+  that carries **any commit past its base** is never deleted by vincent.
+
+  *Amended 2026-08-16 (task 008).* This bullet used to read "the branch is **never**
+  deleted by vincent". It has exactly one exception now: a branch with **no commits
+  past the base recorded on its task** is deleted at archive time. A workflow that
+  files an issue, posts a summary or reviews read-only writes nothing, so every run
+  used to leave a ref that holds nothing to lose, and branch names are configurable —
+  there is no `vincent/*` glob that reliably finds them again. The rules:
+  - **The test is `git rev-list -n 1 {base_branch}..{branch_name}` producing no
+    output** — the tip is an ancestor of the base. Both fields are on the task row.
+    It stays correct when the base moves forward after the task started, costs one
+    cheap git call, and **any** git failure (base renamed or deleted, repository gone)
+    reads as *cannot judge* and keeps the branch, reported as `unknown` and distinct
+    from `has_commits` the way `dirty_unknown` is from `worktree_dirty`. Deleting when
+    the *net diff* is empty was rejected: it destroys real commit objects.
+  - **`git branch -d`, never `-D`.** Its own merged check is a second belt behind the
+    rev-list, and its refusal is what covers a branch checked out in another worktree.
+  - **Ordering is worktree removal → transition → branch.** The branch is checked out
+    in the worktree until the worktree is gone, and an archive that has committed must
+    not be reversible by a branch problem. A dirty worktree refused without `force`
+    therefore never reaches the branch step at all.
+  - **`delete_empty_branch_on_archive` (§12.3), default true,** is the standing policy;
+    a per-archive flag beside `force` was rejected, since the project-delete path has
+    no human to ask. Setting it false restores this bullet's pre-008 behaviour exactly.
+  - **The remote counterpart is a separate key, `delete_remote_branch_on_archive`,
+    default false, honoured only by `POST /v1/tasks/{id}/archive`.** Deleting a branch
+    on a forge other people share is unrecoverable and outward-facing, which is further
+    than "the unattended path never deletes" (task 005) was ever written about. It runs
+    only after a local delete that succeeded, only when the branch has a configured
+    upstream (`branch.{name}.remote` + `.merge`; no upstream ⇒ nothing was pushed as
+    far as vincent knows, so nothing is attempted), and its failures — rejection,
+    unreachable host, timeout — are logged and never fail the archive.
+  - **`DELETE /v1/projects/{id}?force` sweeps every row it is about to drop,** archived
+    ones included: the cascade erases the branch names, so that is the last moment they
+    exist. Local leg only, best-effort, exactly like the worktree removal beside it.
+  - **`vincent gc` and `vincent doctor --fix` gain nothing** — see the task 005
+    amendment below.
+  - **The outcome is reported on the archive response (§13.2), not as an event.**
+    `archived` is terminal and a `block_reason` would be a lie on it; every other path
+    logs to `daemon.log`. No new event type and no migration.
 
   *Amended 2026-08-15 (task 005).* "Only on archive" was true of a **task's** worktree
   and remains so. It left a second reclaim path missing entirely, because two things
@@ -1131,7 +1174,12 @@ would invalidate every one of them.
   - **Non-directory entries are reported, never removed.** vincent only ever creates
     directories under these roots.
   - **Branches are never deleted here either.** §10's standing rule has no gc
-    exception.
+    exception. (*Confirmed 2026-08-16, task 008*, which gave archive one: no orphan has
+    a branch that is both **known** and **safe to delete**. A row-less orphan has no
+    `base_branch` and no `branch_name` to test, and usually no reachable repository to
+    test them in; the crash-window orphan is named after a **live** task row whose
+    branch must survive. A deletion path here would have no input, and a report line
+    would read the same on every row.)
   - **The reverse mismatch is reported, not repaired:** a task row whose
     `worktree_path` names a directory that is gone (§18's `worktree_missing` shape).
     There is nothing to delete and no row is modified.
@@ -1393,6 +1441,8 @@ defaults:
   agent_timeout: 60m
   command_timeout: 15m
   input_timeout: 24h           # max wait in awaiting_input (§7.4)
+delete_empty_branch_on_archive: true   # archive deletes a branch with no commits past its base (§10)
+delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
@@ -1416,6 +1466,20 @@ respawn loop the hold exists to stop. 15 m bounds a five-hour window at roughly
 twenty wasted spawns, and a user who knows their plan can tighten or widen it.
 There is deliberately **no** exponential backoff: that would be per-task state the
 row has to carry and a second retry-ish concept beside §7.2's. Read per hold, so a
+hot reload reaches the next one.
+
+**`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
+added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
+policy: on archive, a branch with no commits past its recorded base is deleted, and
+`false` restores the pre-008 behaviour exactly — no branch is deleted on any path.
+The remote key is deliberately **not** its default-true sibling. Everything it does
+happens on a forge shared with other people and cannot be undone, so it defaults to
+`false` and is honoured only by `POST /v1/tasks/{id}/archive`, where a human asked for
+this one task; `DELETE /v1/projects/{id}?force` never touches a remote. It is inert
+while the local key is off — the remote leg runs only after a local delete that
+succeeded — and that combination is a startup/reload **warning**, not a load failure:
+a key that is merely unreachable is not an invalid one, and refusing the file over it
+would revert every unrelated edit in the same save. Both are read per archive, so a
 hot reload reaches the next one.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
@@ -1568,7 +1632,10 @@ PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointin
 DELETE /v1/projects/{id}                hard-deletes the project and its task history (rows);
                                         only when no non-archived tasks; ?force first archives
                                         them (worktrees force-removed; refused while any task
-                                        is running). Branches are never deleted (§10)
+                                        is running). Before the cascade, every row it drops —
+                                        archived ones too — loses its branch if that branch has
+                                        no commits past its base (§10, task 008); best-effort,
+                                        local only, never a remote
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
@@ -1644,7 +1711,14 @@ POST   /v1/tasks/{id}/answer           { answers?, allow? }        (awaiting_inp
 POST   /v1/tasks/{id}/archive          { force? } or ?force        (done/aborted only);
                                         the worktree is removed before the transition, so a
                                         dirty worktree without force is a 409 and the task
-                                        stays done/aborted
+                                        stays done/aborted. The response is the task plus
+                                        `branch: { name, result, error?, remote? }` — result is
+                                        deleted | has_commits | unknown | error, remote is
+                                        { remote, ref, result: deleted|no_upstream|error,
+                                        error? } and rides only an opted-in remote leg. The
+                                        whole object is **absent** when the branch step did not
+                                        run, and never affects the status code: an archive is
+                                        never failed by a branch problem (§10, task 008)
 
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
 GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
@@ -2160,6 +2234,7 @@ currently true to show (§15 view 6).
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |
+| Archive-time branch delete fails | *Added 2026-08-16 (task 008).* Checked out in another worktree (`git branch -d` refuses), the base branch renamed away so the emptiness test cannot run, a remote that rejects the push or never answers inside `RemoteTimeout` — none of it fails the archive. The worktree is already gone and the task must still reach `archived`. It is logged, reported on the response as `error`/`unknown`, and the branch survives, which is the pre-008 behaviour. The remote leg cannot even be reached without a local delete that succeeded first |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives. *Amended 2026-08-15 (task 005):* the same mismatch found by a scan rather than by a step is **reported** — at daemon start and in `vincent gc`'s output — and no row is modified |
 | Orphaned directory under a data root | *Added 2026-08-15 (task 005).* An entry under `{data_dir}/worktrees` or `{data_dir}/transcripts` that no task row claims — left by a project delete whose worktree removal failed (the cascade drops the rows regardless, §10) or by a crash between `git worktree add` and the claim write. Daemon start logs one warning per orphan and raises `orphans` on `GET /v1/info`; it **never** deletes, for the same reason DB corruption never auto-deletes. `vincent gc` reclaims them, and only them — archive remains the only path that removes a *task's* worktree |
 | Dirtiness of an orphan cannot be determined | *Added 2026-08-15 (task 005).* An orphan's `.git` file points at `{repo}/.git/worktrees/{n}`, so a deleted or pruned repository makes `git status --porcelain` fail outright. Reported as `dirty_unknown` — distinct from `worktree_dirty`, because "git says you have local changes" and "nobody can tell what is in here" are different facts — and skipped until `vincent gc --force`. This is the *common* case where the projects really are gone, so a default run there reclaims little; that is the deliberate trade for never deleting work nobody can vouch for |
