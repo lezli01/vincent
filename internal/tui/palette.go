@@ -45,8 +45,14 @@ func newPalette(entries []paletteEntry) *palette {
 // on a task the daemon cannot see.
 func paletteEntries(ctx bindingContext, target taskActions, editable, connected bool) []paletteEntry {
 	out := make([]paletteEntry, 0, len(bindings))
-	if connected && target.id != 0 {
+	if connected && (target.id != 0 || target.bulk()) {
+		// A selection is what the keys act on, so it is what the section is
+		// titled after (task 011) — running `archive` from here with nine rows
+		// marked must not read as archiving the one row named above the list.
 		group := fmt.Sprintf("actions on #%d", target.id)
+		if target.bulk() {
+			group = "actions on " + selectedNoun(len(target.marked))
+		}
 		for _, b := range bindings {
 			if b.scope != scopeTaskAction || !target.has(b.action) {
 				continue

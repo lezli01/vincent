@@ -11,6 +11,7 @@ vincent          # opens the TUI
 - [The first run](#the-first-run)
 - [Layout](#layout)
 - [The board](#the-board)
+- [Acting on several tasks at once](#acting-on-several-tasks-at-once)
 - [Task detail](#task-detail)
 - [Answering a question](#answering-a-question)
 - [The takeover screens](#the-takeover-screens)
@@ -51,8 +52,8 @@ timeline and the output pane with it. `tab` moves focus between panels;
 `shift+tab` goes back.
 
 The other four views — new task, projects, workflows, daemon — are full-screen
-takeovers. `esc` closes one layer at a time (popup → screen → filter) and
-**never quits**.
+takeovers. `esc` closes one layer at a time (popup → screen → selection →
+filter) and **never quits**.
 
 ## The board
 
@@ -76,6 +77,12 @@ Three behaviors matter:
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it.
+
+Elapsed on the board is **wall clock** from the task's start. That is
+deliberate: a task idle on a human for 35 of its 40 minutes must not read as
+"5m" on the board whose job is to flag it. The per-attempt figures in the
+timeline are the other measure — active time, with the excluded wait shown
+beside it rather than silently subtracted.
 
 ### Grouping
 
@@ -110,11 +117,46 @@ Set the grouping you start with in `config.yaml`
 ([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)); `[]`
 gives you one flat list.
 
-Elapsed on the board is **wall clock** from the task's start. That is
-deliberate: a task idle on a human for 35 of its 40 minutes must not read as
-"5m" on the board whose job is to flag it. The per-attempt figures in the
-timeline are the other measure — active time, with the excluded wait shown
-beside it rather than silently subtracted.
+### Acting on several tasks at once
+
+Archiving yesterday's finished work one row at a time is the same keypress ten
+times with a confirmation between each. Select the tasks instead:
+
+| Key | Does |
+|---|---|
+| `space` | Select the task under the cursor (again deselects) |
+| `V` | Select every task the filter is showing — or clear that selection |
+| `esc` | Clear the selection |
+
+While anything is selected, a `✓` appears beside those rows, the panel title
+counts them (`Tasks — 5 selected`), and the **action keys act on the whole
+selection**:
+
+```
+ A archive (5) · c cancel (2)          archive · 5 of 5 · 3 branches deleted
+```
+
+The count beside each key is how many of the selected tasks that action can
+actually move — an action shows up when *some* selected task accepts it, and the
+ones that do not are left alone. So a selection holding four finished tasks and
+one still running offers `A archive (4)`, and the running one stays where it is.
+
+The rest of the behavior follows from what a selection is:
+
+- **It is a set of tasks, not of rows.** Filtering, regrouping and refreshing do
+  not change it — that is why the count is in the title, so a selected task the
+  filter is hiding still says it is coming along.
+- **One confirmation for the batch.** `A` asks once, about all of them. Behind
+  the scenes vincent sends one ordinary action per task, so the daemon sees
+  nothing special; you get one line back: how many moved, and the first refusal
+  named if any refused.
+- **Uncommitted changes still re-prompt.** A bulk archive archives the clean
+  worktrees and asks again about only the dirty ones —
+  `2 of 5 selected tasks have uncommitted changes`.
+- **What succeeded leaves the selection; what failed stays in it**, so a retry
+  needs no re-selecting.
+- **The keys work from any panel.** Whatever has focus, the footer is counting
+  the selection, so that is what `A` acts on.
 
 ## Task detail
 
@@ -168,7 +210,9 @@ activate the tab and on an explicit refresh, never on every output chunk.
 ### The action bar
 
 Below the panes, the action bar shows **exactly the actions valid in the
-current state** — the daemon computes that list, the TUI renders it.
+current state** — the daemon computes that list, the TUI renders it. With tasks
+selected on the board it acts on all of them; see
+[Acting on several tasks at once](#acting-on-several-tasks-at-once).
 
 | Key | Action | Valid from |
 |---|---|---|
@@ -307,7 +351,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `!` | Jump to the next task needing a human |
 | `n` | New task |
 | `M` | Toggle the mouse |
-| `esc` | Close one layer: popup → screen → filter — never quits |
+| `esc` | Close one layer: popup → screen → selection → filter — never quits |
 | `q` | Quit the TUI (the daemon keeps running) |
 | `ctrl+c` | Quit |
 

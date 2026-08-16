@@ -209,15 +209,15 @@ func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 // TestGroupedColumnsAreDropped: a level named by every header above the rows
 // does not also need a column repeating it on every row.
 func TestGroupedColumnsAreDropped(t *testing.T) {
-	full := columnsFor(160, nil)
+	full := columnsFor(160, nil, false)
 	if !full.project || !full.workflow {
 		t.Fatalf("flat at 160 = %+v, want both columns", full)
 	}
-	both := columnsFor(160, grouping{groupProject, groupWorkflow})
+	both := columnsFor(160, grouping{groupProject, groupWorkflow}, false)
 	if both.project || both.workflow {
 		t.Errorf("grouped by project and workflow = %+v, want neither column", both)
 	}
-	one := columnsFor(160, grouping{groupProject})
+	one := columnsFor(160, grouping{groupProject}, false)
 	if one.project {
 		t.Error("grouping by project kept the PROJECT column")
 	}
@@ -240,14 +240,21 @@ func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 	for _, width := range []int{40, 70, 90, 120, 200} {
 		for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
 			b.group = g
-			cols, set := boardColumns(width, g)
-			for _, row := range b.rowsFor(b.rows(), set) {
-				if len(row) != len(cols) {
-					t.Fatalf("width %d, %s: row has %d cells, %d columns",
-						width, g.label(), len(row), len(cols))
+			// With and without the bulk-selection marker column (task 011):
+			// both the task rows and the group headers have to grow the extra
+			// cell, and a header that forgot it is the same panic.
+			for _, marks := range []markSet{nil, {1}} {
+				b.marks = marks
+				cols, set := boardColumns(width, g, b.hasMarks())
+				for _, row := range b.rowsFor(b.rows(), set) {
+					if len(row) != len(cols) {
+						t.Fatalf("width %d, %s, marks=%v: row has %d cells, %d columns",
+							width, g.label(), marks, len(row), len(cols))
+					}
 				}
 			}
 		}
+		b.marks = nil
 	}
 }
 
