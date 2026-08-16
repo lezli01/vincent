@@ -67,10 +67,10 @@ func (a *Adapter) resolvePath() (string, error) {
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-// Detect implements agent.Adapter: path resolution plus a --version probe
-// (`codex-cli 0.142.5`). logged_in stays unknown — codex has no cheap
-// documented probe either. SupportsInput is permanently false: `codex exec`
-// is strictly non-interactive once started (spec §9.3).
+// Detect implements agent.Adapter: path resolution, a --version probe
+// (`codex-cli 0.142.5`), and a `login status` probe for logged_in (task 005).
+// SupportsInput is permanently false: `codex exec` is strictly
+// non-interactive once started (spec §9.3).
 func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	path, err := a.resolvePath()
 	if err != nil {
@@ -88,7 +88,54 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	if version == "" {
 		version = raw
 	}
-	return agent.Availability{Found: true, Path: path, Version: version}, nil
+	return agent.Availability{
+		Found:    true,
+		Path:     path,
+		Version:  version,
+		LoggedIn: a.loggedIn(ctx, path),
+	}, nil
+}
+
+// loggedIn probes `codex login status`. nil means "could not tell" — the §9.5
+// contract — and is what a failure to *run* the probe reports, so a transient
+// error never masquerades as a definite "not authenticated".
+//
+// Built deliberately as a copy of cursor's probe rather than a shared helper:
+// the two CLIs answer with different words, and the only thing they have in
+// common is the layering, which is a rule rather than code. Non-zero exit is
+// false, an explicit negative is false, an explicit positive is true, and
+// anything else is unknown rather than guessed. The logged-out wording is not
+// fixture-verified — probing it means signing the developer out — so the
+// unknown leg is load-bearing, not defensive.
+//
+// The timeout leg is not optional (T4.22): a probe killed on Windows exits 1,
+// because the deadline is a TerminateProcess(pid, 1), and the exit-status
+// branch below would then read a cold machine as a definite "not
+// authenticated" — a false accusation against a logged-in account, on the one
+// morning the user is least able to argue with it.
+func (a *Adapter) loggedIn(ctx context.Context, path string) *bool {
+	out, errOut, err := agent.Probe(ctx, versionTimeout, path, "login", "status")
+	no, yes := false, true
+	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return &no // ran and refused: a definite answer
+		}
+		return nil // could not run it at all
+	}
+	// Both streams, for the same reason cursor reads both: which one carries
+	// the sentence is not something to assume about an unverified wording.
+	text := strings.ToLower(string(out) + string(errOut))
+	switch {
+	case strings.Contains(text, "not logged in"), strings.Contains(text, "not authenticated"):
+		return &no
+	case strings.Contains(text, "logged in"), strings.Contains(text, "authenticated"):
+		return &yes
+	}
+	return nil
 }
 
 // buildArgs assembles the pinned CLI invocation (spec §9.3, verified against
