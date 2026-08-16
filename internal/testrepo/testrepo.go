@@ -48,6 +48,22 @@ func InitEmpty(t *testing.T, branch string) string {
 	return dir
 }
 
+// InitBare creates a temp bare repository — something a test can push to and
+// then inspect with `rev-parse`, which is the only way to prove the remote leg
+// of archive's branch cleanup (§10, task 008) without a network.
+func InitBare(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := filepath.Join(t.TempDir(), "remote.git")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	Run(t, dir, "init", "-q", "--bare", "-b", "main")
+	return dir
+}
+
 // WriteFile writes content under dir, creating parents.
 func WriteFile(t *testing.T, dir, name, content string) {
 	t.Helper()

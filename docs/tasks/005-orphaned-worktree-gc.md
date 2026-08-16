@@ -156,7 +156,10 @@ byte figure that walked into a symlinked cache would over-report the reclaim.
   window; gc deletes on a human's word, and a timer that deleted worktrees unattended
   would be decision 6 in reverse.
 - **Deleting branches.** §10's standing rule, restated: vincent never deletes a branch,
-  gc included.
+  gc included. (*Note 2026-08-16, [task 008](008-archive-branch-cleanup.md):* archive
+  now has one exception, for a branch carrying no commits past its base. gc still has
+  none, and for a reason specific to orphans — no orphan has a branch that is both
+  known and safe to delete.)
 
 ## Verification
 

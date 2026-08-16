@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
 // actionHarness is the task harness with no runner: tasks stay queued, so a
@@ -283,6 +284,135 @@ func TestArchiveDirtyWorktree(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("worktree %s survived the archive", path)
+	}
+}
+
+// decodeArchive reads an archive response: a task with a branch object beside
+// it (§13.2, task 008).
+func decodeArchive(t *testing.T, body []byte) archiveResponse {
+	t.Helper()
+	var out archiveResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode archive: %v (%s)", err, body)
+	}
+	return out
+}
+
+// archivableTask leaves a done task holding a real worktree cut from main.
+func archivableTask(t *testing.T, h *taskHarness) *store.Task {
+	t.Helper()
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskDone)
+	stored, err := h.store.GetTask(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch)
+	if err != nil {
+		t.Fatalf("create worktree: %v", err)
+	}
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path); err != nil {
+		t.Fatalf("record worktree: %v", err)
+	}
+	stored.WorktreePath = path
+	return stored
+}
+
+// TestArchiveReportsTheBranchOutcome walks the three answers the endpoint can
+// give (§13.2, task 008). The branch is the one consequence of an archive that
+// is invisible afterwards — the row stops naming a worktree to go look in — so
+// the response is where it has to be said.
+func TestArchiveReportsTheBranchOutcome(t *testing.T) {
+	cases := []struct {
+		name string
+		// setup runs after the worktree exists and before the archive.
+		setup      func(t *testing.T, h *taskHarness, task *store.Task)
+		wantResult string
+		wantErrMsg bool
+		wantBranch bool // does the branch still exist afterwards?
+	}{
+		{
+			name:       "deleted",
+			setup:      func(*testing.T, *taskHarness, *store.Task) {},
+			wantResult: "deleted",
+		},
+		{
+			name: "kept because it has commits",
+			setup: func(t *testing.T, _ *taskHarness, task *store.Task) {
+				testrepo.WriteFile(t, task.WorktreePath, "work.txt", "real work\n")
+				testrepo.Run(t, task.WorktreePath, "add", ".")
+				testrepo.Run(t, task.WorktreePath, "commit", "-q", "-m", "the work")
+			},
+			wantResult: "has_commits",
+			wantBranch: true,
+		},
+		{
+			name: "kept because git cannot judge it",
+			setup: func(t *testing.T, h *taskHarness, _ *store.Task) {
+				testrepo.Run(t, h.repo, "branch", "-m", "main", "trunk")
+			},
+			wantResult: "unknown",
+			wantErrMsg: true,
+			wantBranch: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newActionHarness(t)
+			task := archivableTask(t, h)
+			c.setup(t, h, task)
+
+			resp, body := h.doJSON(t, http.MethodPost,
+				fmt.Sprintf("/v1/tasks/%d/archive", task.ID), nil)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("archive: %d %s — a branch problem must never fail it", resp.StatusCode, body)
+			}
+			got := decodeArchive(t, body)
+			if got.State != string(store.TaskArchived) {
+				t.Errorf("state = %s, want archived", got.State)
+			}
+			if got.Branch == nil {
+				t.Fatalf("no branch object in %s", body)
+			}
+			if got.Branch.Result != c.wantResult {
+				t.Errorf("branch.result = %q, want %q", got.Branch.Result, c.wantResult)
+			}
+			if got.Branch.Name != task.BranchName {
+				t.Errorf("branch.name = %q, want %q", got.Branch.Name, task.BranchName)
+			}
+			if (got.Branch.Error != "") != c.wantErrMsg {
+				t.Errorf("branch.error = %q, want present = %v", got.Branch.Error, c.wantErrMsg)
+			}
+			// The remote leg is off by default and must not have run.
+			if got.Branch.Remote != nil {
+				t.Errorf("remote leg ran unasked: %+v", got.Branch.Remote)
+			}
+			exists := testrepo.Run(t, h.repo, "for-each-ref", "--format=%(refname:short)",
+				"refs/heads/"+task.BranchName) != ""
+			if exists != c.wantBranch {
+				t.Errorf("branch %s exists = %v, want %v", task.BranchName, exists, c.wantBranch)
+			}
+		})
+	}
+}
+
+// TestArchiveOmitsTheBranchWhenTheStepDidNotRun: a client that predates the
+// field must see exactly what it saw before, so `branch` is absent rather than
+// null-with-empty-strings when there was nothing to check.
+func TestArchiveOmitsTheBranchWhenTheStepDidNotRun(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	setState(t, h, task.ID, store.TaskDone) // no worktree, so no branch of its own
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/archive", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive: %d %s", resp.StatusCode, body)
+	}
+	if got := decodeArchive(t, body); got.Branch != nil {
+		t.Errorf("branch = %+v, want absent", got.Branch)
+	}
+	if strings.Contains(string(body), `"branch"`) {
+		t.Errorf("body carries a branch key with nothing to say: %s", body)
 	}
 }
 

@@ -102,6 +102,37 @@ Please pull request.
   then the existing GoReleaser workflow publishes signed artifacts and updates
   the stable Homebrew cask. Prerelease tags continue to skip the tap.
 
+- **Archiving a task now deletes its branch when that branch has no commits past
+  its base.** A workflow that files an issue, posts a summary or reviews
+  read-only writes nothing to the repository, but it still got a branch, and
+  archiving it left that branch behind forever — one empty `vincent/*` ref per
+  run, with no reliable glob to clean up with, since branch names are
+  configurable. The only remedy was to list the archived tasks and delete them by
+  hand.
+
+  The test is exact: `git rev-list -n 1 {base}..{branch}` must produce nothing,
+  meaning the tip is an ancestor of the base the task was cut from. **A branch
+  carrying any commit is never touched**, the delete is `git branch -d` rather
+  than `-D`, and anything git cannot answer — the base branch renamed away, the
+  repository gone — keeps the branch and is logged. A branch problem never fails
+  an archive: the task still reaches `archived`, and the branch simply survives,
+  which is what always used to happen.
+
+  Set `delete_empty_branch_on_archive: false` in `config.yaml` for the previous
+  behaviour on every path. `POST /v1/tasks/{id}/archive` reports what it did in a
+  new `branch` object beside the task, and the TUI says it in one line;
+  `DELETE /v1/projects/{id}?force` applies the same rule to every row it is about
+  to drop, because the cascade erases the branch names for good. `vincent gc` and
+  `vincent doctor --fix` still delete no branch at all — an orphaned directory has
+  no task row, so there is no base branch to judge it against.
+
+- **`delete_remote_branch_on_archive` deletes the upstream counterpart too — off
+  by default.** It runs only when you archive a task yourself, only after the
+  local branch was deleted, and only when the branch has a configured upstream;
+  a project delete never touches a remote. A rejected push, an unreachable host
+  or a timeout is logged and the archive still succeeds. It is off by default
+  because a forge is shared with other people and the deletion cannot be undone.
+
 - **codex now reports `logged_in`.** `Detect` probes `codex login status`, so
   "the CLI is installed but your session expired" is visible on the board, in
   the new-task form, in `GET /v1/agents` and in doctor — instead of first

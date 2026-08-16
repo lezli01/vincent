@@ -15,11 +15,19 @@ import (
 	"time"
 )
 
-// Timeouts for the two shapes of git work vincent does (T1.5/T1.6 decision):
+// Timeouts for the shapes of git work vincent does (T1.5/T1.6 decision):
 // queries are near-instant; worktree checkouts scale with repo size.
 const (
 	QueryTimeout    = 30 * time.Second
 	WorktreeTimeout = 5 * time.Minute
+	// RemoteTimeout bounds a git call that talks to a network remote — today
+	// only `push --delete` on archive (§10, task 008). It is its own constant
+	// because neither of the others fits: a query timeout is sized for a local
+	// object-database read and would fail every push over a slow link, while a
+	// worktree timeout would park the archive's caller behind an unreachable
+	// host for five minutes. A remote that does not answer inside this is
+	// logged and the branch survives, which is the pre-008 behaviour.
+	RemoteTimeout = 60 * time.Second
 )
 
 // MinMajor and MinMinor are the git version below which the daemon warns at

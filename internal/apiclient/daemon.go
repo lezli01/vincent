@@ -73,11 +73,17 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 // has it loaded, durations rendered as Go duration strings. It is read-only
 // here — the file is authoritative and the daemon hot-reloads it (§12.3).
 type Config struct {
-	Listen                  string         `json:"listen"`
-	MaxParallelTasks        int            `json:"max_parallel_tasks"`
-	Defaults                ConfigDefaults `json:"defaults"`
-	TranscriptRetentionDays int            `json:"transcript_retention_days"`
-	TranscriptMaxBytes      int64          `json:"transcript_max_bytes"`
+	Listen           string         `json:"listen"`
+	MaxParallelTasks int            `json:"max_parallel_tasks"`
+	Defaults         ConfigDefaults `json:"defaults"`
+	// DeleteEmptyBranchOnArchive deletes a task's branch at archive time when
+	// it has no commits past its base (§10). DeleteRemoteBranchOnArchive does
+	// the same to its upstream counterpart, and is honoured only on an
+	// attended archive — it is inert while the local one is off.
+	DeleteEmptyBranchOnArchive  bool  `json:"delete_empty_branch_on_archive"`
+	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
+	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
+	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
 	// UsageLimitRecheck is how long a quota-held task waits before the
 	// scheduler tries again, when the agent CLI reported no reset time (§11).
 	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`

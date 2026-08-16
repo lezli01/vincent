@@ -158,6 +158,20 @@ func TestConfigView(t *testing.T) {
 	if _, ok := cfg.Agents["claude"]; !ok {
 		t.Error("agents.claude missing")
 	}
+	// Both halves of the §10 branch-cleanup pair, and both by name: a client
+	// showing only the key that is on would describe a policy that cannot run
+	// (task 008).
+	if cfg.DeleteEmptyBranchOnArchive != want.DeleteEmptyBranchOnArchive ||
+		cfg.DeleteRemoteBranchOnArchive != want.DeleteRemoteBranchOnArchive {
+		t.Errorf("branch cleanup = %v/%v, want %v/%v",
+			cfg.DeleteEmptyBranchOnArchive, cfg.DeleteRemoteBranchOnArchive,
+			want.DeleteEmptyBranchOnArchive, want.DeleteRemoteBranchOnArchive)
+	}
+	for _, key := range []string{"delete_empty_branch_on_archive", "delete_remote_branch_on_archive"} {
+		if !strings.Contains(string(body), key) {
+			t.Errorf("%s missing from the config view", key)
+		}
+	}
 	if !strings.Contains(string(body), "max_parallel_tasks") {
 		t.Error("response keys are not snake_case")
 	}
