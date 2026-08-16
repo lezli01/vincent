@@ -64,6 +64,10 @@ type Deps struct {
 	// Broker feeds the SSE endpoints (§13.3). Nil is tolerated (tests
 	// without streaming); the endpoints then answer 500.
 	Broker *events.Broker
+	// Reclaimer serves /v1/maintenance and the /v1/info orphan count
+	// (task 005, §10). Nil is tolerated (tests without a data dir) — the
+	// maintenance endpoints then answer 500 and /v1/info reports no orphans.
+	Reclaimer *taskrun.Reclaimer
 }
 
 // AgentStatus is one adapter's availability as reported by /v1/info
@@ -136,6 +140,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
+	rt.handle(http.MethodGet, "/v1/maintenance/orphans", s.handleOrphans)
+	rt.handle(http.MethodPost, "/v1/maintenance/gc", s.handleGC)
 	rt.handle(http.MethodGet, "/v1/projects", s.handleProjectList)
 	rt.handle(http.MethodPost, "/v1/projects", s.handleProjectCreate)
 	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
@@ -212,6 +218,13 @@ type infoResponse struct {
 	Listen           string        `json:"listen"`
 	MaxParallelTasks int           `json:"max_parallel_tasks"`
 	Agents           []AgentStatus `json:"agents"`
+	// Orphans is how many data-root directories no task row claims right now
+	// (task 005, §10). It rides /v1/info rather than /v1/health because
+	// health is deliberately {status, version} and is the one unauthenticated
+	// endpoint (§13.1) — the shape of a user's disk does not belong on it.
+	// Computed per request from a readdir and the id queries, with no size
+	// walk, so it is never stale after a gc run.
+	Orphans int `json:"orphans"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +250,18 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	// A failed count degrades to zero with a log line: /v1/info is what every
+	// client polls for daemon identity, and a readdir problem must not take
+	// the whole payload down with it.
+	orphans := 0
+	if s.deps.Reclaimer != nil {
+		n, err := s.deps.Reclaimer.Count(r.Context())
+		if err != nil {
+			s.deps.Logger.Warn("count orphans", "error", err)
+		} else {
+			orphans = n
+		}
+	}
 	writeJSON(w, http.StatusOK, infoResponse{
 		Version:          version.Version(),
 		Commit:           version.Commit(),
@@ -247,6 +272,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Listen:           s.deps.ListenAddr,
 		MaxParallelTasks: cfg.MaxParallelTasks,
 		Agents:           agents,
+		Orphans:          orphans,
 	})
 }
 

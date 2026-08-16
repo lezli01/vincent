@@ -51,10 +51,12 @@ parse out of prose — an invalid state transition is always `409` with
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
-| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect |
+| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, and `orphans` |
 | `GET` | `/v1/config` | The effective global config, read-only |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
+| `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
+| `POST` | `/v1/maintenance/gc` | `{ force?, dry_run? }` — reclaims them. Same body shape as the list |
 
 `GET /v1/agents` is the option catalog the TUI's pickers render:
 
@@ -75,6 +77,35 @@ construction. `logged_in` is `null` where the adapter has no cheap
 authentication probe (claude, codex) and a definite boolean where it does
 (cursor) — because an installed-but-unauthenticated CLI probes as healthy and
 then fails every run.
+
+`orphans` on `GET /v1/info` counts directories under `{data_dir}/worktrees` and
+`{data_dir}/transcripts` that no task row claims. It is computed per request from
+a readdir and one id query — no size walk, no git — so it is cheap and drops the
+moment `gc` runs. It is deliberately **not** on `/v1/health`, which stays
+`{ status, version }` and is the one unauthenticated endpoint.
+
+The two maintenance endpoints share one body, so a dry run and a real run are
+compared field by field:
+
+```json
+{ "orphans": [ { "path": "/home/u/.local/share/vincent/worktrees/41",
+                 "kind": "worktree", "task_id": 41, "bytes": 13010000,
+                 "skip_reason": "dirty_unknown", "removed": false } ],
+  "mismatches": [ { "task_id": 58, "path": "…/worktrees/58", "state": "blocked" } ],
+  "bytes": 13010000, "reclaimed": 0, "reclaimed_bytes": 0,
+  "dry_run": false, "force": false }
+```
+
+`kind` is `worktree` or `transcript`. `task_id` is `null` when the directory's
+name is not an id — the claim decides, not the name. `skip_reason` is why gc
+declined (`worktree_dirty`, `dirty_unknown`, `not_a_directory`); `error` is a
+removal that was attempted and failed, and the run continues past it, so
+`reclaimed` and `reclaimed_bytes` count only what actually went. `mismatches[]`
+is the reverse case — rows whose `worktree_path` points at a directory that is
+gone — reported only; gc modifies no row and deletes nothing outside the two data
+roots.
+
+See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 
 ## Projects
 

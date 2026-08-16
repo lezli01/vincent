@@ -209,18 +209,30 @@ func (r *Runner) Archive(ctx context.Context, id int64, force bool) (*store.Task
 	if !taskstate.Can(task.State, taskstate.Archive) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
 	}
-	if task.WorktreePath != "" {
-		project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		if err := r.deps.Worktrees.Remove(ctx, project.Path, task.WorktreePath, force); err != nil {
-			return nil, err
-		}
-	}
 	empty := ""
-	return r.transitionFrom(ctx, task, taskstate.Archive,
-		store.TaskChange{WorktreePath: &empty})
+	if task.WorktreePath == "" {
+		return r.transitionFrom(ctx, task, taskstate.Archive,
+			store.TaskChange{WorktreePath: &empty})
+	}
+	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	// Remove-then-clear runs under the manager's claim lock, the mirror of
+	// creation's create-then-claim (task 005). Between the two the row still
+	// names a directory that is already gone, and a gc scan landing there
+	// would report the task as a reverse mismatch it never was.
+	var out *store.Task
+	if err := r.deps.Worktrees.RemoveAndRelease(ctx, project.Path, task.WorktreePath, force,
+		func() error {
+			var err error
+			out, err = r.transitionFrom(ctx, task, taskstate.Archive,
+				store.TaskChange{WorktreePath: &empty})
+			return err
+		}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SetPriority reorders admission without changing state (§6: queued and

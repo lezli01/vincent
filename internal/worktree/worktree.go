@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/lezli01/vincent/internal/gitx"
 )
@@ -27,6 +28,18 @@ const (
 	ReasonWorktreePathOccupied = "worktree_path_occupied"
 	ReasonGitError             = "git_error"
 )
+
+// ReasonDirtyUnknown is gc's answer when git cannot say whether a directory
+// holds uncommitted work (task 005) — the *common* case for an orphan, whose
+// `.git` file points into a repo that has been deleted or pruned, so
+// `git status --porcelain` fails outright.
+//
+// It is deliberately distinct from ReasonWorktreeDirty: "git says you have
+// local changes" and "nobody can tell what is in here" are different facts,
+// and only the second one is about a missing repo. It is also the one reason
+// in this file that never becomes a task `block_reason` — it is a gc *skip*
+// reason, which is why it carries no `worktree_` prefix.
+const ReasonDirtyUnknown = "dirty_unknown"
 
 // Error is a typed worktree-management failure.
 type Error struct {
@@ -94,12 +107,24 @@ func BranchName(taskID int64, title string) string {
 type Manager struct {
 	git  *gitx.Git
 	root string
+
+	// claims guards the window in which a directory exists on disk but no
+	// task row claims it yet (task 005). gc defines an orphan by claim, not
+	// by name, so that window is exactly when a live task's worktree would
+	// look reclaimable. Creation and archival take it shared; the reclaim
+	// scan takes it exclusively. An mtime/age heuristic was rejected: a
+	// timing guess has no place in the package whose subject is ownership.
+	claims sync.RWMutex
 }
 
 // NewManager returns a Manager storing worktrees under dataDir.
 func NewManager(git *gitx.Git, dataDir string) *Manager {
 	return &Manager{git: git, root: filepath.Join(dataDir, "worktrees")}
 }
+
+// Root is the directory every worktree lives under, and the only directory
+// Reclaim will delete inside (spec §10).
+func (m *Manager) Root() string { return m.root }
 
 // Path returns the worktree location for a task.
 func (m *Manager) Path(taskID int64) string {
@@ -109,7 +134,66 @@ func (m *Manager) Path(taskID int64) string {
 // Create adds branch (from base) and a worktree for it, returning the
 // worktree path. It prunes stale worktree registrations first and never
 // deletes an existing directory (prune-then-fail decision).
+//
+// Callers that persist the path afterwards must use CreateAndClaim instead,
+// so the create-then-claim window is closed against a concurrent gc scan.
 func (m *Manager) Create(ctx context.Context, projectPath string, taskID int64, branch, base string) (string, error) {
+	m.claims.RLock()
+	defer m.claims.RUnlock()
+	return m.create(ctx, projectPath, taskID, branch, base)
+}
+
+// CreateAndClaim creates the worktree and, still holding the claim lock,
+// hands the path to claim — which is where the caller records it against the
+// task row (task 005). A gc scan cannot run between the two, so a worktree is
+// never unclaimed and reclaimable at the same instant.
+//
+// A claim that fails is reported, not undone: the directory is real and the
+// engine's own error path decides what happens to the task. The next scan
+// will see it as an orphan, which is precisely the crash case gc exists for.
+func (m *Manager) CreateAndClaim(
+	ctx context.Context, projectPath string, taskID int64, branch, base string,
+	claim func(path string) error,
+) (string, error) {
+	m.claims.RLock()
+	defer m.claims.RUnlock()
+	path, err := m.create(ctx, projectPath, taskID, branch, base)
+	if err != nil {
+		return "", err
+	}
+	if claim != nil {
+		if err := claim(path); err != nil {
+			return path, err
+		}
+	}
+	return path, nil
+}
+
+// RemoveAndRelease removes the worktree and then clears the claim, both under
+// the claim lock — the mirror of CreateAndClaim. Archive is the caller: a
+// scan slipping between the removal and the cleared `worktree_path` would
+// report the row as a reverse mismatch it never was (task 005).
+func (m *Manager) RemoveAndRelease(
+	ctx context.Context, projectPath, worktreePath string, force bool, release func() error,
+) error {
+	m.claims.RLock()
+	defer m.claims.RUnlock()
+	if err := m.Remove(ctx, projectPath, worktreePath, force); err != nil {
+		return err
+	}
+	return release()
+}
+
+// WithReclaimLock runs fn with no create-or-claim in flight anywhere in the
+// daemon. gc holds it across scan **and** removal, so the claim set it
+// classifies against cannot move underneath it (task 005).
+func (m *Manager) WithReclaimLock(fn func() error) error {
+	m.claims.Lock()
+	defer m.claims.Unlock()
+	return fn()
+}
+
+func (m *Manager) create(ctx context.Context, projectPath string, taskID int64, branch, base string) (string, error) {
 	if _, err := os.Stat(projectPath); err != nil {
 		return "", &Error{
 			Reason:  ReasonProjectPathMissing,
@@ -274,6 +358,16 @@ func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, 
 	}
 	return m.prune(ctx, projectPath)
 }
+
+// Reclaim deletes a directory under the manager's root without consulting
+// git at all — gc's removal path (task 005). An orphan has, by definition, no
+// task row and often no reachable repo, so `git worktree remove` has nothing
+// to work from; the containment check is what keeps that safe.
+//
+// It is removeDirect exported unchanged: one containment rule, one
+// implementation, so a path outside {data_dir}/worktrees is refused here for
+// the same reason it is refused during a forced archive.
+func (m *Manager) Reclaim(path string) error { return m.removeDirect(path) }
 
 // removeDirect deletes a worktree directory without git, but only inside the
 // manager's own root — nothing outside vincent's namespace is ever removed.
