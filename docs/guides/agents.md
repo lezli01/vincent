@@ -209,9 +209,22 @@ set, and free-text entry is unaffected.
 
 An installed but unauthenticated CLI probes as healthy and then fails every
 single run. Where a CLI can answer cheaply, vincent asks: `cursor-agent status`
-populates `logged_in`, so cursor reports a definite true/false. claude and codex
-have no cheap probe, so `logged_in` is `null` for them — which the TUI renders as
-unknown rather than as fine.
+and `codex login status` populate `logged_in`, so both report a definite
+true/false. **claude** exposes no non-interactive auth surface at all — no
+`login`, `auth` or `status` command — and the only definite answer is a real
+prompt round-trip, which would bill you for a health check. So `logged_in` is
+`null` for claude, which the TUI renders as unknown rather than as fine.
+
+Neither probe ever guesses. A non-zero exit is `false`, an explicit negative is
+`false`, an explicit positive is `true`, and **anything else — including a probe
+that times out or cannot be spawned — is `null`**. That last rule is why a slow
+machine never gets told it is logged out: on Windows a killed probe exits `1`,
+and reading that as "not authenticated" would be a false accusation.
+
+[`vincent doctor`](../reference/cli.md#vincent-doctor) prints this row for every
+adapter and **re-probes each time**, so logging in and running it again shows the
+change immediately — unlike `GET /v1/agents`, which serves the binary-identity
+cache.
 
 If a service-installed daemon reports agents as missing while the same daemon
 started by hand finds them, that is a `PATH` capture problem — see

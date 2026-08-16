@@ -43,6 +43,16 @@
 //	FAKEAGENT_CURSOR_LOGGED_OUT
 //	                      "1" makes `status` report logged out and exit 1,
 //	                      driving the §9.5 logged_in probe's negative leg
+//	FAKEAGENT_CODEX_LOGGED_OUT
+//	                      the same for codex's `login status` (task 005)
+//	FAKEAGENT_CODEX_LOGIN_UNKNOWN
+//	                      "1" makes `login status` exit 0 saying nothing the
+//	                      parse recognizes — the leg that must stay `null`
+//	FAKEAGENT_CODEX_LOGIN_HANG
+//	                      "1" makes `login status` never answer, so the
+//	                      caller's deadline kills it: the T4.22 leg where a
+//	                      Windows timeout exits 1 and must not read as
+//	                      "not authenticated"
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
 //	                      "cursor" the calver+sha style (run dialect is
 //	                      argv-driven; this only affects the version probe,
@@ -139,9 +149,11 @@ func main() {
 		block() // silent child for tree-kill tests; killed by the test
 	}
 
-	// Cursor's subcommand probes answer before any dialect dispatch: they are
-	// argv[1] with no run flags at all, so neither the codex nor the cursor
-	// run-shape test would reach them.
+	// The adapters' subcommand probes answer before any dialect dispatch: they
+	// are argv[1] with no run flags at all, so neither the codex nor the
+	// cursor run-shape test would reach them. `login status` is codex's
+	// (task 005) and is matched on both words, because `exec` is the only
+	// argv[1] the codex run dialect uses.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "models":
@@ -154,6 +166,11 @@ func main() {
 			}
 			fmt.Println("Logged in as fake@example.com")
 			return
+		case "login":
+			if len(os.Args) > 2 && os.Args[2] == "status" {
+				codexLoginStatus()
+				return
+			}
 		}
 	}
 
