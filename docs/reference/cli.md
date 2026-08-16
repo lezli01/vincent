@@ -8,6 +8,7 @@ localhost API.
 - [Global behavior](#global-behavior)
 - [`vincent`](#vincent)
 - [`vincent version`](#vincent-version)
+- [`vincent doctor`](#vincent-doctor)
 - [`vincent daemon`](#vincent-daemon)
 - [`vincent service`](#vincent-service)
 - [`vincent project`](#vincent-project)
@@ -26,7 +27,8 @@ localhost API.
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
-`2` running but unresponsive.
+`2` running but unresponsive. `vincent doctor` follows the same shape: `0`
+healthy, `1` problems found, `2` no daemon answered.
 
 ## Global behavior
 
@@ -34,7 +36,9 @@ localhost API.
   results render as `[]`, never `null`. Advisory warnings go to stderr so stdout
   stays pipeable.
 - **No subcommand auto-starts a daemon.** Only the TUI does. A subcommand that
-  cannot reach one exits `2` with a pointer to `vincent daemon start`.
+  cannot reach one exits `2` with a pointer to `vincent daemon start` —
+  except `vincent doctor`, which prints its whole report first, because the
+  daemon being down is one of the things it is there to tell you.
 - Clients discover the daemon by reading `{data_dir}/daemon.json` and then
   health-probing it, so a stale file from an unclean shutdown produces the same
   "no daemon" answer rather than a transport error later.
@@ -59,6 +63,69 @@ vincent version
 Prints one line: version, commit and build date. A binary built with the plain
 `go build` toolchain falls back to `debug.ReadBuildInfo`, so the fields are never
 empty.
+
+## `vincent doctor`
+
+```sh
+vincent doctor [--json] [--fix [--force]]
+```
+
+One report answering "why is nothing running?". Seven groups:
+
+| Group | Rows |
+|---|---|
+| Paths | config dir, data dir, config file, and whether it parses |
+| Daemon | running / not running / unresponsive, pid, port, version, uptime |
+| Log | daemon log path, size, mtime, and the last 20 lines |
+| Database | path, size, applied schema version, `PRAGMA integrity_check` |
+| Agents | per adapter: found, path, version, and `logged_in` |
+| Storage | disk free under the data dir, worktree count and bytes, orphans |
+| Tasks | counts by state, so "12 blocked" is visible without opening the board |
+
+Exit `0` when everything checked is healthy, `1` when problems were found (they
+are listed under `PROBLEMS`), `2` when no daemon answered.
+
+**Unhealthy is a closed set**: `config.yaml` exists and does not parse, the
+daemon is alive but not answering, `integrity_check` is not `ok`, the database
+is at a schema version newer than this binary understands, or orphaned worktrees
+are present. A missing or logged-out agent CLI is reported and deliberately does
+*not* set the exit code — most machines have one of three adapters installed,
+and a doctor that exits `1` almost everywhere is no use in a script. Neither do
+task counts: twelve blocked tasks is information, not a defect.
+
+**Without a daemon** the report is still printed in full — paths, whether the
+config parses, adapter detection, the log tail, disk free and the worktree
+count — and the database and task rows read `unknown — daemon not running`.
+They are not read from a second process: only the daemon opens the database.
+
+`--json` emits the whole report for scripting and for pasting into a bug report.
+
+### `vincent doctor --fix`
+
+Reclaims orphaned directories and compacts the database. Both are writes, so the
+daemon performs them: `--fix` without a running daemon is refused, and the
+report is printed anyway.
+
+- **An orphan** is an entry under a data root that no task row claims — the
+  residue of a forced project delete or of a removal that failed partway. This
+  is the same scan and the same removal [`vincent gc`](#vincent-gc) runs, so the
+  two commands cannot disagree; `gc` is the one to reach for when reclaiming is
+  the whole point. A non-directory there is reported and never removed.
+- A worktree with **local changes** (untracked files included) is skipped unless
+  you add `--force`. An orphan whose dirty check cannot run at all — the project
+  repo is gone, so the directory is just files — counts as dirty for this
+  purpose: nothing is deleted on the strength of a check that did not happen.
+- vincent does **not** run `git worktree prune` in your repositories. A stale
+  registration can therefore survive there; the report says so and names the
+  command.
+- Compaction is a real `VACUUM`, and it is **skipped while any task is running
+  or awaiting input** — the rewrite takes an exclusive lock, and stalling a step
+  mid-write is worse than declining. The skip is reported with its reason.
+
+```sh
+vincent doctor --json | jq '.problems[]'
+vincent doctor --fix --force
+```
 
 ## `vincent daemon`
 

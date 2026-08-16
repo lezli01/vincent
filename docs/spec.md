@@ -805,6 +805,12 @@ every consumer that assumed two adapters.
 - `codex exec` is strictly non-interactive once started — no mid-run input
   channel exists. `supports_input: false`; codex steps never enter
   `awaiting_input`, and `on_input` has no effect on them (§7.4).
+- **`logged_in` is answerable** (*added 2026-08-15, task 005*): `Detect` probes
+  `codex login status` alongside `--version`, with cursor's layering exactly
+  (§9.5) — non-zero exit `false`, explicit negative `false`, explicit positive
+  `true`, timeout or spawn failure `null`. The logged-out wording is not
+  fixture-verified, which is why the unknown leg is load-bearing rather than
+  defensive.
 
 ### 9.4 Permission modes
 
@@ -830,8 +836,8 @@ Set at workflow `defaults` or per step; there is no daemon-global hardcoded poli
 
 `GET /v1/info` reports, per adapter: found/not-found, path, version,
 `supports_input` (§7.4), and `logged_in` — `null` when the adapter has no
-cheap authentication probe (claude, codex), a definite boolean when it does
-(cursor, §9.7). The distinction is load-bearing: an installed-but-unauthenticated
+cheap authentication probe (**claude**), a definite boolean when it does
+(codex, cursor). The distinction is load-bearing: an installed-but-unauthenticated
 CLI probes as healthy and then fails every single run, so a client that can
 only say "found" misleads. Availability is served from the §9.6 binary-identity
 cache (primed asynchronously at startup, stat-checked per request), so
@@ -839,6 +845,29 @@ installing or upgrading a CLI becomes visible on the next request without a
 daemon restart. The TUI surfaces
 missing agents at task-creation time (a workflow whose steps need an unavailable agent
 is flagged).
+
+*Amended 2026-08-15 (task 005).* The `null` set was "claude, codex"; codex now
+probes `codex login status` in `Detect`, so only claude reports `null` — and
+the reason is recorded rather than left bare, because "cannot cheaply tell" is
+a claim about a CLI, not a gap in an adapter:
+
+- **claude** exposes no non-interactive auth surface at all. The captured
+  `--help` (`internal/agent/claude/testdata/help_2.1.224.txt`) carries no
+  `login`, `auth` or `status` command, and the only definite answer available
+  is a real prompt round-trip — which costs API tokens and seconds on a cold
+  cache, contradicting §9.6's "always dynamic, never slow". So claude keeps
+  `null`, which also keeps the v0 T1.7 decision (no state-file parsing) intact.
+- **codex** has `login status`, and **cursor** has `status`. Both parses are
+  layered identically, and the layering is the contract: a non-zero exit is
+  `false`, an explicit negative is `false`, an explicit positive is `true`, and
+  **anything else — including a timeout or a failure to spawn — is `null`,
+  never a guess.** The timeout rule is not optional: on Windows a deadline is a
+  `TerminateProcess(pid, 1)`, so a probe killed by its own bound exits 1, and
+  reading that as a definite "not authenticated" is a false accusation against
+  a logged-in account (T4.22).
+
+There is still **no pre-flight refusal** on `logged_in: false` (§18, task 003
+decision 4). This makes the state visible, not blocking.
 
 ### 9.6 Option discovery (`GET /v1/agents`)
 
@@ -892,6 +921,18 @@ defaults:
   will not notice until the binary changes or `?refresh=true` is passed. The
   probe is bounded by a timeout and degrades to the curated catalog with
   `probe_error` set, exactly like a failed help parse.
+- **`logged_in` is the other value binary identity is only a floor for**
+  (*added 2026-08-15, task 005*). Auth state is not a function of the binary at
+  all: a cached `false` survives the user logging in until the CLI is upgraded
+  or `?refresh=true` arrives. `GET /v1/doctor` therefore asks the cache with
+  **refresh forced, unconditionally** — otherwise doctor would break in the
+  exact loop it exists for (run doctor, log in, run doctor again, still told
+  you are logged out). The cost is one probe per adapter per invocation of a
+  command the user ran deliberately, bounded by the adapters' own probe
+  timeouts. Giving `logged_in` its own short TTL inside the cache would fix
+  every surface rather than one and is the better follow-up if the board's
+  staleness becomes a complaint of its own; it was beaten here because it
+  splits a cache line that is currently one clean rule.
 
 ### 9.7 Cursor adapter (M5)
 
@@ -1016,7 +1057,9 @@ would invalidate every one of them.
   authentication cheaply, making cursor the first adapter that can populate
   the §9.5 field. This matters because "installed, version-probes fine, fails
   every run at the API" is otherwise indistinguishable from a healthy adapter
-  (§9.5).
+  (§9.5). *Note (2026-08-15, task 005):* codex has since gained the same
+  ability through `codex login status`, built as a copy of this probe's
+  layering. "First" is history, not an exclusive.
 
 ## 10. Worktree management
 
@@ -1053,7 +1096,7 @@ would invalidate every one of them.
   tree and index, but share the object store and refs — and **do not** isolate
   process-level resources (global caches, package stores, ports, docker). True
   sandboxing is out of scope for v1.
-- **Cleanup:** only on `archive`: `git worktree remove` (+ `--force` after an explicit
+- **Cleanup:** on `archive`: `git worktree remove` (+ `--force` after an explicit
   dirty-worktree confirmation), then `git -C {project.path} worktree prune`. The
   branch is **never** deleted by vincent.
 
@@ -1096,6 +1139,24 @@ would invalidate every one of them.
     the count rides `GET /v1/info`. `vincent gc` deletes by default, and the dirty
     check, the containment rule and the printed byte report are what make that
     acceptable when a human is behind it.
+  - Removal is a direct delete inside the data roots, not `git worktree remove`:
+    there is no task row left, so there is no project path to run it from.
+    **`git worktree prune` is not run in the user's repos**, so a stale
+    registration can survive there after the directory goes; the report names
+    that and points at the command, rather than reaching into a repository it
+    was not asked to touch.
+
+  *Amended 2026-08-16 (task 006).* `vincent doctor` reports this same set and
+  `vincent doctor --fix` reclaims it by calling the same code — one classifier,
+  one removal path, one definition of "orphan". Doctor adds no rule of its own:
+  a second, name-based reading was written first and withdrawn here, because the
+  crash-window orphan is named after a live task and a name-based scan would
+  leave it in place forever while the task's next admission kept failing
+  `worktree_path_occupied`. What doctor contributes is the *report* — the count
+  and bytes beside the disk figures, in the one command that answers "why is
+  nothing running?" — plus, with no daemon answering, an explicit "orphans
+  unknown" rather than a guess, since the claim set lives in a database only the
+  daemon opens (§4).
 - **Repo deletion / path moves:** if the project path disappears, affected tasks go
   `blocked` with a descriptive reason; project records can be re-pointed via
   `PATCH /v1/projects/{id}`.
@@ -1152,12 +1213,23 @@ One Go binary, `vincent`:
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
+| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered |
 | `vincent version` | Build info |
 
 *Amended 2026-08-15 (task 005).* `gc` breaks this table's noun-verb pattern
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
 scope spans two directory trees — worktrees and transcripts — so a `worktree` noun
 would have been wrong on the day it shipped.
+
+*Added 2026-08-15 (task 006).* `vincent doctor` is the one data subcommand that
+still produces a **full report when no daemon answers**, the way
+`workflow validate` deliberately works offline: the daemon being down is one of
+the answers, and a diagnostic that refuses to speak until the thing it
+diagnoses is healthy would be useless. In that mode the database and task rows
+read *unknown — daemon not running* rather than being read from a second
+process ("only the daemon opens SQLite" is an ownership invariant, §4), and
+`--fix` is refused — every repair is a write, and the daemon performs every
+write.
 
 Single-instance enforcement: a lock file in the data dir; a second daemon exits with a
 pointer to the running instance.
@@ -1449,6 +1521,24 @@ GET    /v1/info                         daemon version, uptime, agent availabili
 GET    /v1/config                       effective global config (read-only)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
                                         ?refresh=true forces a re-probe
+GET    /v1/doctor                       the whole §17 diagnostic in one body: paths, daemon,
+                                        log (stat + tail), database (size, schema version,
+                                        integrity_check), agents, storage (disk free, worktree
+                                        count/bytes, orphans), tasks (counts by state), plus
+                                        `problems[]` — the closed set that makes
+                                        `vincent doctor` exit 1. Read-only. Agent availability
+                                        is re-probed unconditionally (§9.6): auth state is not
+                                        a function of the binary
+POST   /v1/doctor/fix                   { force? } or ?force — runs gc's reclaim (§10) and
+                                        compacts the database, then answers
+                                        { actions[], report } with a report taken afterwards.
+                                        A dirty orphan needs force; a non-directory is
+                                        reported and never removed. VACUUM is **skipped**
+                                        while any task holds a slot (§11) and says so, rather
+                                        than stalling a step mid-write.
+                                        A separate method from the GET on purpose: a call that
+                                        deletes directories is a different promise from a
+                                        report (task 005)
 POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
                                         `vincent daemon stop` calls this and waits for exit
 
@@ -2030,6 +2120,18 @@ currently true to show (§15 view 6).
 - **Retention:** transcripts of archived tasks pruned after
   `transcript_retention_days` (default 90); DB rows kept indefinitely (rows are small,
   history is valuable).
+- **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
+  `GET /v1/doctor`. Everything above answers "what happened to this task"; the
+  question that had no surface at all was "why is nothing running?", which took
+  five — `daemon status`, reading `daemon.json` by hand, the TUI's daemon view
+  for a log tail, `curl /v1/agents` with a hand-extracted token, and finding the
+  config file yourself — and produced nothing pasteable into a bug report.
+  Doctor answers it in one pass and adds the three rows nothing reported before:
+  the **database's size, applied schema version and `PRAGMA integrity_check`**,
+  the **disk free** under the data dir, and the **worktree count, total bytes
+  and orphan count** (§10). Retention above prunes transcripts and never rows,
+  so unbounded growth is a real outcome; `--fix` is what reclaims it, and both
+  its writes are the daemon's.
 
   *Amended 2026-08-15 (task 005).* Retention is about **archived rows**: the pruner
   walks `archived_at`, so a transcript directory whose row was cascade-deleted with its
@@ -2048,7 +2150,7 @@ currently true to show (§15 view 6).
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
-| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false` |
+| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |

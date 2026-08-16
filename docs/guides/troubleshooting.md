@@ -2,6 +2,7 @@
 
 The failures people actually hit, what each one means, and what to do.
 
+- [Start here: `vincent doctor`](#start-here-vincent-doctor)
 - [The daemon](#the-daemon)
 - [Agent CLIs](#agent-clis)
 - [Projects and worktrees](#projects-and-worktrees)
@@ -12,6 +13,53 @@ The failures people actually hit, what each one means, and what to do.
 - [Reporting a bug](#reporting-a-bug)
 
 ---
+
+## Start here: `vincent doctor`
+
+When the symptom is "nothing is happening" and you do not yet know which section
+below you are in, run one command:
+
+```sh
+vincent doctor          # 0 healthy · 1 problems found · 2 no daemon answered
+```
+
+It prints, in one pass: the config and data directories and whether
+`config.yaml` parses; the daemon's status, pid, port, uptime and version; the
+daemon log's size and last lines; the database's size, schema version and
+`PRAGMA integrity_check`; every agent CLI with its path, version and
+[`logged_in`](agents.md#found-is-not-usable); free disk, worktree count and
+bytes, and any orphaned worktrees; and task counts by state — so "12 blocked" is
+visible without opening the board.
+
+**It works with no daemon**, which is the point: the daemon being down is one of
+the answers. In that mode it exits `2`, still prints everything it can read from
+disk, and reports the database and task rows as *unknown — daemon not running*
+rather than opening SQLite behind the daemon's back.
+
+The bottom of the report is a `PROBLEMS` table — the closed set that makes it
+exit `1`: a `config.yaml` that does not parse, a daemon alive but unresponsive,
+a failed `integrity_check`, a database written by a newer vincent, or orphaned
+worktrees. A missing or logged-out agent CLI is printed plainly and deliberately
+does **not** set the exit code, so doctor stays usable in a script on a machine
+that only ever installs one of the three adapters.
+
+```sh
+vincent doctor --json > doctor.json   # the whole report, for a bug report
+vincent doctor --fix                  # reclaim orphaned worktrees, compact the DB
+vincent doctor --fix --force          # also remove orphans that have local changes
+```
+
+`--fix` needs a running daemon — every repair is a write, and only the daemon
+writes. It reclaims orphaned directories (an entry under a data root that no
+task row claims — the same set [`vincent gc`](../reference/cli.md#vincent-gc)
+reclaims, run by the same code) and runs a real `VACUUM`. Two refusals are by
+design and are reported rather than hidden: an orphan with local changes is
+skipped until you pass `--force`, and the `VACUUM` is skipped while any task is
+in flight, because it would stall that task mid-step.
+
+vincent does not run `git worktree prune` in your repositories. After doctor
+removes an orphan, the repo it came from may still carry a stale registration;
+`git -C <repo> worktree prune` clears it.
 
 ## The daemon
 
@@ -82,10 +130,18 @@ or `GET /v1/agents?refresh=true`.
 ### The adapter is found but every run fails
 
 Suspect authentication. An installed-but-unauthenticated CLI probes as perfectly
-healthy and then fails at the first API call. Run the CLI by hand once and log
-in. Cursor is the one adapter that can answer this cheaply — it reports
-`logged_in` — so for claude and codex vincent shows *unknown* rather than
-claiming fine.
+healthy and then fails at the first API call. `vincent doctor` prints the answer
+per adapter under `AGENTS`, re-probing each time:
+
+```
+AGENTS
+codex   found  0.147.0  auth NOT LOGGED IN  /opt/homebrew/bin/codex
+```
+
+Run the CLI by hand once and log in (`codex login`, `cursor-agent login`,
+`claude` interactively), then run doctor again. Cursor and codex answer this
+cheaply, so vincent asks them; claude has no non-interactive auth surface, so it
+shows *unknown* rather than claiming fine.
 
 ### `restricted_unsupported`
 
@@ -287,9 +343,9 @@ The agent CLI is installed and runs, but is not logged in. This one **does**
 block — waiting cannot fix it. Log in with the CLI's own command (`claude`
 interactively, `cursor-agent login`), then `r` to retry the task.
 
-The check the daemon view shows for cursor (`logged_in`) catches most of these
-before a task is ever created; claude and codex have no cheap probe, so the first
-sign is a failed step.
+`vincent doctor` catches most of these before a task is ever created: it reports
+`logged_in` for codex and cursor, both re-probed on every run. claude has no
+cheap probe, so there the first sign is still a failed step.
 
 ### `transcript_limit`
 
@@ -359,7 +415,10 @@ can carry a prompt and transcripts get pasted into issues.
 
 Include:
 
-- `vincent version` output
+- `vincent doctor --json` — one paste covering paths, daemon, log tail,
+  database, agents, storage and task counts. **Read it first:** it carries your
+  directory paths and the tail of the daemon log
+- `vincent version` output, for the build details doctor does not carry
 - your OS and terminal
 - the relevant slice of `{data_dir}/logs/daemon.log`
 - the workflow YAML, if a step misbehaved

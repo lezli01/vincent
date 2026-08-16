@@ -8,6 +8,11 @@ const (
 	OrphanTranscript = "transcript"
 )
 
+// SkipNotADirectory is the one skip reason a client renders differently: it is
+// the only one `--force` never clears, because vincent creates nothing but
+// directories under a data root and will not delete what it did not create.
+const SkipNotADirectory = "not_a_directory"
+
 // Orphan is one directory under a vincent data root that no task row claims.
 //
 // SkipReason and Error are different answers: the first is gc declining to

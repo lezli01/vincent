@@ -6,6 +6,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - [Transport and auth](#transport-and-auth)
 - [Errors](#errors)
 - [Daemon](#daemon)
+- [Doctor](#doctor)
 - [Projects](#projects)
 - [Workflows](#workflows)
 - [Tasks](#tasks)
@@ -54,6 +55,8 @@ parse out of prose — an invalid state transition is always `409` with
 | `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, and `orphans` |
 | `GET` | `/v1/config` | The effective global config, read-only |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
+| `GET` | `/v1/doctor` | The whole diagnostic report. Read-only — see [Doctor](#doctor) |
+| `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
 | `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
 | `POST` | `/v1/maintenance/gc` | `{ force?, dry_run? }` — reclaims them. Same body shape as the list |
@@ -74,9 +77,75 @@ parse out of prose — an invalid state transition is always `409` with
 `curated` comes from vincent's own floor. Results are cached by **binary
 identity** (path + mtime + version), so upgrading a CLI invalidates the cache by
 construction. `logged_in` is `null` where the adapter has no cheap
-authentication probe (claude, codex) and a definite boolean where it does
-(cursor) — because an installed-but-unauthenticated CLI probes as healthy and
-then fails every run.
+authentication probe (**claude**, whose CLI exposes no non-interactive auth
+surface) and a definite boolean where it does (**codex** via `login status`,
+**cursor** via `status`) — because an installed-but-unauthenticated CLI probes
+as healthy and then fails every run. It is never guessed: a probe that times out
+or cannot be spawned reports `null`, not `false`.
+
+## Doctor
+
+`GET /v1/doctor` is one read-only body carrying every group
+[`vincent doctor`](cli.md#vincent-doctor) renders:
+
+```json
+{
+  "generated_at": "2026-08-15T10:00:00Z",
+  "paths":    { "config_dir": "…", "data_dir": "…", "config_file": "…",
+                "config_file_exists": true, "config_parses": true },
+  "daemon":   { "status": "running", "pid": 4021, "port": 51234,
+                "started_at": "2026-08-15T09:00:00Z", "uptime_seconds": 3600,
+                "version": "0.1.1" },
+  "log":      { "path": "…", "exists": true, "size_bytes": 18244,
+                "mod_time": "…", "tail": ["…"] },
+  "database": { "path": "…", "known": true, "size_bytes": 262144,
+                "schema_version": 6, "newest_migration": 6,
+                "integrity_check": "ok" },
+  "agents":   [ { "name": "codex", "available": true, "path": "…",
+                  "version": "0.147.0", "logged_in": true } ],
+  "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
+                "disk_total_bytes": 494384795648,
+                "worktree_count": 3, "worktree_bytes": 8412736,
+                "orphans_known": true, "orphans": [] },
+  "tasks":    { "known": true, "total": 14,
+                "counts": { "queued": 1, "running": 1, "blocked": 12, "…": 0 } },
+  "problems": []
+}
+```
+
+- **`problems[]` is the daemon's verdict**, not something a client re-derives:
+  it is the closed set that makes the CLI exit `1` (config that does not parse,
+  an unresponsive daemon, a failed `integrity_check`, a schema newer than the
+  binary, or orphaned worktrees). A missing or logged-out agent CLI and any
+  number of blocked tasks are reported and never appear here.
+- **Agent availability is re-probed unconditionally**, unlike `GET /v1/agents`.
+  Authentication is not a function of the binary, so a cached `logged_in: false`
+  would survive the user logging in — which would break the endpoint in the loop
+  it exists for.
+- `known: false` on `database` or `tasks` means the report was composed without
+  a daemon (the CLI's degraded path); over this endpoint they are always `true`.
+- An **orphan** is an entry under a data root that no task row claims — the same
+  set `GET /v1/maintenance/orphans` returns, from the same scan. Each carries
+  `kind` (`worktree` or `transcript`), `task_id`, `size_bytes`, and `skip` when
+  gc would leave it alone (`worktree_dirty`, `dirty_unknown`, `not_a_directory`).
+  `orphans_known` is `false` only when the daemon has no reclaimer wired.
+
+`POST /v1/doctor/fix` takes `{ "force": true }` or `?force` and answers with
+what it did plus a report taken afterwards:
+
+```json
+{ "actions": [
+    { "action": "remove_worktree", "target": "…/worktrees/41",
+      "status": "done", "freed_bytes": 2113536,
+      "detail": "run `git worktree prune` in the project repo to clear its stale registration" },
+    { "action": "compact_database", "target": "…/vincent.db",
+      "status": "skipped", "detail": "2 task(s) in flight; a VACUUM would stall them mid-step" } ],
+  "report": { "…": "…" } }
+```
+
+`status` is `done`, `skipped` or `failed`, and a skip always carries its reason.
+It is a separate method from the `GET` on purpose: a call that deletes
+directories is a different promise from a report.
 
 `orphans` on `GET /v1/info` counts directories under `{data_dir}/worktrees` and
 `{data_dir}/transcripts` that no task row claims. It is computed per request from
