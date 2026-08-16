@@ -1,9 +1,11 @@
 name: Release
 
-# Tag-driven (T4.5). The build runs once on ubuntu — the binaries are pure Go,
-# so a build matrix would produce identical artifacts three times — and the
-# per-OS jobs afterwards exist to smoke-test what it produced, which is the
-# part a single runner genuinely cannot do.
+# Tag-driven packaging (T4.5). Normally Release Please creates the tag and the
+# GitHub release; this workflow then uploads the signed artifacts to that
+# release and publishes the stable Homebrew cask. The build runs once on ubuntu
+# — the binaries are pure Go, so a build matrix would produce identical
+# artifacts three times — and the per-OS jobs afterwards smoke-test what it
+# produced, which is the part a single runner genuinely cannot do.
 on:
   push:
     tags: ["v*"]
