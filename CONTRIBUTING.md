@@ -62,6 +62,20 @@ go run mage.go lint      # golangci-lint (pinned via go.mod tool directive)
 go run mage.go vuln      # govulncheck across linux, darwin and windows
 ```
 
+To use the tree you are working on as your everyday `vincent` — the binary on
+PATH, with the same release build flags and version symbols, so `vincent
+version` names your checkout:
+
+```sh
+./scripts/install-local.sh              # /usr/local/bin, sudo if needed
+./scripts/install-local.sh --user       # ~/.local/bin
+./scripts/install-local.sh --dry-run    # build and report, install nothing
+./scripts/install-local.sh --uninstall  # remove the binary; config and data stay
+```
+
+It warns when another `vincent` earlier on PATH shadows the install, and when a
+daemon is still running the previous build (`vincent daemon stop` hands over).
+
 Cross-platform support is a hard requirement — Windows, macOS and Linux all run
 the full suite plus three acceptance gates in CI. If you touch build-tagged
 code, lint the *other* platforms too, since a host-only lint cannot see them:
