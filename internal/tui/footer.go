@@ -142,11 +142,11 @@ func pinnedHits(x int, segs []footerSeg) []footerHit {
 // bar's last status.
 func footerLeftSegs(panelRows []binding, bar *actionBar, target taskActions, attention int, retry bool) []footerSeg {
 	segs := footerHintSegs(panelRows)
-	if bar != nil && target.id != 0 {
+	if bar != nil && (target.id != 0 || target.bulk()) {
 		for _, o := range actionOrder {
 			if target.has(o.action) {
 				segs = append(segs, footerSeg{
-					text: styleKey.Render(o.key) + " " + o.action, key: o.key,
+					text: styleKey.Render(o.key) + " " + actionLabel(target, o.action), key: o.key,
 				})
 			}
 		}

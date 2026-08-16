@@ -206,6 +206,9 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return s, cmd
 	}
+	if cmd, handled := s.bulkKey(msg); handled {
+		return s, cmd
+	}
 	if s.focusedCaptures() {
 		// While the filter field is being typed into, tab commits it and
 		// moves focus (§15): the filter is view state, not a mode, and
@@ -232,10 +235,15 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		s.cycleFocus(-1)
 		return s, nil
 	case "esc":
-		// The shell's layer of the §15 esc stack: clear the active filter,
-		// from any panel focus. Below that is nothing — esc never quits,
-		// and "back to the board" is not a meaning any more because the
-		// board is always on screen; tab is the focus key.
+		// The shell's layers of the §15 esc stack, innermost first: the bulk
+		// selection, then the active filter, from any panel focus. Below that
+		// is nothing — esc never quits, and "back to the board" is not a
+		// meaning any more because the board is always on screen; tab is the
+		// focus key.
+		if s.board.hasMarks() {
+			s.board.clearMarks()
+			return s, nil
+		}
 		if s.board.filterActive() {
 			s.board.clearFilter()
 			return s, s.checkSelection()
@@ -255,6 +263,32 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return s, s.detail.update(msg)
 	}
 	return s, tea.Batch(s.routeKey(msg), s.checkSelection())
+}
+
+// bulkKey aims the §6 action keys at the board's selection, from whichever
+// panel has focus (task 011).
+//
+// It has to run before the panels see the key, for one reason: the footer
+// counts the marked tasks wherever the eye is, so `A` over the output pane must
+// archive the seven the footer promised rather than the one task the detail
+// panels happen to be showing. The same goes for the y/n underneath it — a
+// pending *bulk* confirmation is answered here, while a single-task one is left
+// to the panel that raised it.
+//
+// A key that is not an action the selection offers comes back unhandled, so
+// j/k, space and tab keep working with rows marked.
+func (s *shell) bulkKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if s.board.filtering {
+		return nil, false // the filter field owns every key it is given
+	}
+	switch {
+	case len(s.bar.pendingIDs) > 0: // a bulk confirmation is on screen
+	case s.bar.capturing(): // a single-task confirmation: not ours
+		return nil, false
+	case !s.board.hasMarks():
+		return nil, false
+	}
+	return s.bar.handleKey(msg.String(), s.board.client, s.board.target())
 }
 
 // routeKey hands a key to the focused panel's sub-model.
@@ -534,6 +568,12 @@ func (s *shell) panelTitle(id panelID) string {
 		}
 		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
 			title += " — /" + v
+		}
+		// The selection is a set of tasks, not of rows (task 011): a marked
+		// task the filter is hiding is still going to be archived, and this
+		// count is what says so.
+		if n := len(s.board.marks); n > 0 {
+			title += fmt.Sprintf(" — %d selected", n)
 		}
 		return title
 	case panelTimeline:
