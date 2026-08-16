@@ -182,7 +182,7 @@ func TestColumnsDropByPriority(t *testing.T) {
 		{85, true, false, false, false},  // then the workflow
 		{70, false, false, false, false}, // then the project
 	} {
-		got := columnsFor(tc.width, nil)
+		got := columnsFor(tc.width, nil, false)
 		if got.project != tc.project || got.workflow != tc.workflow ||
 			got.stepName != tc.stepName || got.cost != tc.cost {
 			t.Errorf("width %d = %+v, want project=%v workflow=%v stepName=%v cost=%v",
@@ -196,14 +196,25 @@ func TestColumnsDropByPriority(t *testing.T) {
 // column has to actually buy back the space — an earlier version clamped the
 // title to its minimum instead and overflowed by a character at width 80.
 func TestBoardColumnsFitWidth(t *testing.T) {
+	// 65 is the narrowest board that still fits: below it every optional column
+	// is already shed and the title is clamped at its minimum, which the
+	// columns deliberately overflow rather than hide the id or the state. A
+	// bulk selection raises that floor by exactly the marker column's three
+	// cells (task 011) — nothing is left for them to come out of.
 	for width := 65; width <= 220; width++ {
-		cols, _ := boardColumns(width, nil)
-		total := 0
-		for _, c := range cols {
-			total += c.Width + colPadding
-		}
-		if total > width {
-			t.Fatalf("width %d: columns total %d, which overflows", width, total)
+		for _, marking := range []bool{false, true} {
+			if marking && width < 68 {
+				continue
+			}
+			cols, _ := boardColumns(width, nil, marking)
+			total := 0
+			for _, c := range cols {
+				total += c.Width + colPadding
+			}
+			if total > width {
+				t.Fatalf("width %d (marking=%v): columns total %d, which overflows",
+					width, marking, total)
+			}
 		}
 	}
 }
@@ -212,7 +223,7 @@ func TestBoardColumnsFitWidth(t *testing.T) {
 // the columns you steer by survive.
 func TestBoardColumnsAlwaysKeepNavigationColumns(t *testing.T) {
 	for _, width := range []int{20, 40, 65, 120} {
-		cols, _ := boardColumns(width, nil)
+		cols, _ := boardColumns(width, nil, false)
 		titles := make([]string, 0, len(cols))
 		for _, c := range cols {
 			titles = append(titles, c.Title)

@@ -113,6 +113,30 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("g did not change the grouping (still %s)", s.board.group.label())
 			}
 		},
+		"space": func(t *testing.T) {
+			s, _ := newShellFixture(t, task(7, stateDone))
+			s.focus = panelTasks
+			s.update(registryKey(t, "space"))
+			if !s.board.marks.has(7) {
+				t.Fatalf("space did not select the task under the cursor (marks %v)", s.board.marks)
+			}
+			s.update(registryKey(t, "space"))
+			if s.board.hasMarks() {
+				t.Fatalf("space did not deselect it again (marks %v)", s.board.marks)
+			}
+		},
+		"V": func(t *testing.T) {
+			s, _ := newShellFixture(t, task(1, stateDone), task(2, stateDone))
+			s.focus = panelTasks
+			s.update(registryKey(t, "V"))
+			if len(s.board.marks) != 2 {
+				t.Fatalf("V selected %v, want both visible tasks", s.board.marks)
+			}
+			s.update(registryKey(t, "V"))
+			if s.board.hasMarks() {
+				t.Fatalf("V did not clear the selection (marks %v)", s.board.marks)
+			}
+		},
 	},
 
 	ctxTimeline: {
