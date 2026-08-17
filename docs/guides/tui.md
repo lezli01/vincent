@@ -173,7 +173,7 @@ the two panels are side by side and both always visible.
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
-| `↑`/`↓` | Scroll; scrolling up pauses follow |
+| `↑`/`↓` | Scroll the output; scrolling up pauses follow (on the Diff tab they move between files — see [The Diff tab](#the-diff-tab)) |
 
 ### Reading the whole transcript
 
@@ -203,9 +203,47 @@ one, and a step advance moves your selection only if the cursor was already on
 the live attempt — so reading an old step is never interrupted by a new one
 starting.
 
+### The Diff tab
+
 The **Diff** tab is `git diff` against the merge-base with the base branch,
 including uncommitted changes, syntax-highlighted. It is fetched when you
 activate the tab and on an explicit refresh, never on every output chunk.
+
+It is **grouped by file**, and every file starts **collapsed** — so the first
+thing you see is what the task touched, not the first eighty lines of whichever
+file git wrote first:
+
+```
+  6 files  +128 -33
+▸ internal/tui/diffpane.go     +64 -18
+▾ internal/tui/bindings.go     +11 -1
+@@ -113,6 +113,11 @@
+   {key: "]", label: "switch the tab …
++  {key: "O", label: "expand every file", …
+▸ docs/guides/tui.md           +23 -4
+▸ assets/logo.png              binary
+```
+
+| Key | Does |
+|---|---|
+| `↑`/`↓` | Move between files (the pane scrolls to keep the cursor in view) |
+| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` too) |
+| `O` | Expand every file |
+| `C` | Collapse every file — which is how the tab opens |
+| `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
+| `]` | Back to the Output tab (`[`, `]` and `d` all work) |
+
+Clicking a file's row folds it; clicking a line of code selects its file and
+leaves it open. The mouse wheel scrolls whichever tab is on screen.
+
+The counts beside each path are the added and removed lines inside that file's
+hunks, and the line above the list totals them. A **binary** file says so
+instead of showing `+0 -0`, and a rename reads `old → new`.
+
+Folds are remembered **per file path**, so leaving and re-entering the tab — a
+refresh — keeps what you had open, even if the agent has since touched other
+files. Moving to another task starts collapsed again, and nothing is written to
+disk: a fold is how you are reading one diff, not a setting.
 
 ### The action bar
 
