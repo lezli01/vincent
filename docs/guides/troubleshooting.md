@@ -174,6 +174,31 @@ The block reason `platform_unsupported` on an existing task means the task was
 created elsewhere and its data directory has since moved between machines. The
 snapshot is fine; it is the host that changed.
 
+### An agent cannot be picked for a workflow — `input_unsupported`
+
+The workflow has a step declaring
+[`on_input: require`](../reference/workflow-schema.md#type-agent): it needs an
+agent that can stop mid-run and ask you something. Codex and cursor never can —
+neither CLI has a control channel — and claude can only inside the CLI version
+family vincent has verified the protocol against.
+
+Where you meet it:
+
+- **The new-task picker greys the agent out**, and `POST /v1/tasks` answers
+  `400` naming the step. Pick an agent whose `input_verdict` in
+  `vincent agents` (or `GET /v1/agents`) is `supported`.
+- **The workflow fails to validate** when a step pins `agent: codex` or
+  `agent: cursor` outright. Change the pin, or drop `require` back to `wait` if
+  the questions are optional after all.
+- **A task blocks with `input_unsupported`** when the answer changed after the
+  task was created — almost always a claude upgrade past the verified family.
+  Check `vincent agents`; the fix is on the machine, not in the workflow, and
+  `retry` refuses until it is done rather than reproducing the block.
+
+An agent that is **not installed** never triggers any of this: an unknown
+verdict is not a refusal, and you get `agent_unavailable` at run time instead if
+it is still missing.
+
 ### Every cursor tool call is blocked on Windows
 
 If cursor steps run, produce no edits, and report blocked tool calls, check
@@ -327,6 +352,7 @@ The block reason names what happened:
 | `template_error` | A template failed to render (see above) |
 | `restricted_unsupported` | The adapter cannot restrict on this platform |
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
+| `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
 | `rejected` | You rejected a manual gate |
 | `shell_unavailable` | The requested shell is not installed |

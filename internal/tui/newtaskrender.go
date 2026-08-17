@@ -147,6 +147,11 @@ func (n *newTask) workflowSummary() string {
 	if bad := n.unavailableSteps(*e); len(bad) > 0 {
 		out += "  " + styleWarn.Render(fmt.Sprintf("⚠ %d unavailable", len(bad)))
 	}
+	if e.RequiresInput {
+		// Said on the workflow row because it is a fact about the workflow;
+		// the agent row is where it becomes an error (§7.4, task 013).
+		out += "  " + styleDim.Render("· needs an interactive agent")
+	}
 	return out
 }
 

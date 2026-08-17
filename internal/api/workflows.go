@@ -23,9 +23,15 @@ type workflowResponse struct {
 	// means the workflow runs anywhere. PlatformSupported is the daemon's verdict
 	// on its own host — the client never re-derives it, because the daemon is
 	// the process that would run the steps (task 010).
-	Platforms         []string         `json:"platforms,omitempty"`
-	PlatformSupported bool             `json:"platform_supported"`
-	Errors            []workflow.Error `json:"errors,omitempty"`
+	Platforms         []string `json:"platforms,omitempty"`
+	PlatformSupported bool     `json:"platform_supported"`
+	// RequiresInput reports that some step declares `on_input: require` and
+	// leaves its agent to the task, so the agent picked for a task must be one
+	// that can stop and ask (§7.4, task 013). Derived by the daemon for the
+	// same reason platform_supported is: the process that would run the steps
+	// is the one that says what they need.
+	RequiresInput bool             `json:"requires_input"`
+	Errors        []workflow.Error `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []workflow.Error `json:"warnings,omitempty"`
 	Error    *string          `json:"error"`
@@ -45,6 +51,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 		File:              e.File,
 		Steps:             []workflowStepResponse{},
 		PlatformSupported: e.RunsHere(),
+		RequiresInput:     e.NeedsInputAgent(),
 	}
 	if e.ProjectID != 0 {
 		id := e.ProjectID

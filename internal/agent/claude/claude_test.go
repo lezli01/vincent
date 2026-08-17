@@ -288,3 +288,11 @@ func TestRespondNoPending(t *testing.T) {
 	drain(t, h)
 	_, _ = h.Wait()
 }
+
+// claude's support is a version question Detect answers, so the catalog says
+// only that the answer is worth asking — §8.2 must not judge it (task 013).
+func TestCuratedInputSupportIsDetected(t *testing.T) {
+	if got := New(nil).Curated().InputSupport; got != agent.InputDetected {
+		t.Errorf("InputSupport = %q, want %q", got, agent.InputDetected)
+	}
+}

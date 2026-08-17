@@ -30,10 +30,12 @@ const (
 	PermissionRestricted = "restricted"
 )
 
-// Input policies (spec §7.4).
+// Input policies (spec §7.4). `require` is `wait` plus a precondition: the
+// step will only run on an adapter that can stop and ask (task 013).
 const (
-	InputWait = "wait"
-	InputDeny = "deny"
+	InputWait    = "wait"
+	InputDeny    = "deny"
+	InputRequire = "require"
 )
 
 // Shells a command step may pin (spec §8.3).
@@ -261,6 +263,17 @@ func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string,
 			agent.Level{},
 			agent.Level{Agent: wf.Defaults.Agent, Model: wf.Defaults.Model, Effort: wf.Defaults.Effort},
 		)
+		// The §8.2 capability check (task 013): a step that requires mid-run
+		// input on an adapter that can never provide it is broken on every
+		// host, forever, and is decidable here — InputSupport is curated, so
+		// no probe is involved. claude's version gate is *not* judged: only a
+		// probe can answer it, and this path must not spawn.
+		if wf.StepRequiresInput(step) && !catalogs.InputEverPossible(sel.Agent) {
+			if path, dup := findingPath(step, "agent", i, seen); !dup {
+				add(path, "agent %q can never take mid-run input, which step %q requires (on_input: %s)",
+					sel.Agent, step.DisplayName(), InputRequire)
+			}
+		}
 		cerrs, cwarns := catalogs.Check(sel)
 		for _, f := range cerrs {
 			path, dup := findingPath(step, f.Field, i, seen)
@@ -284,9 +297,14 @@ func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string,
 // set the value, else the defaults field — reported once however many steps
 // inherit it.
 func findingPath(step Step, field string, index int, seen map[string]bool) (string, bool) {
-	stepValue := step.Model
-	if field == "effort" {
+	var stepValue string
+	switch field {
+	case "effort":
 		stepValue = step.Effort
+	case "agent":
+		stepValue = step.Agent
+	default:
+		stepValue = step.Model
 	}
 	if stepValue != "" {
 		return fmt.Sprintf("steps[%d].%s", index, field), false
@@ -309,7 +327,8 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 			PermissionFullAuto, PermissionRestricted, d.PermissionMode)
 	}
 	if d.OnInput != "" && !isInputPolicy(d.OnInput) {
-		add("defaults.on_input", "on_input must be %q or %q, got %q", InputWait, InputDeny, d.OnInput)
+		add("defaults.on_input", "on_input must be %q, %q or %q, got %q",
+			InputWait, InputDeny, InputRequire, d.OnInput)
 	}
 	if d.MaxRetries != nil && *d.MaxRetries < 0 {
 		add("defaults.max_retries", "max_retries must not be negative, got %d", *d.MaxRetries)
@@ -340,7 +359,8 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 				PermissionFullAuto, PermissionRestricted, step.PermissionMode)
 		}
 		if step.OnInput != "" && !isInputPolicy(step.OnInput) {
-			add(base+".on_input", "on_input must be %q or %q, got %q", InputWait, InputDeny, step.OnInput)
+			add(base+".on_input", "on_input must be %q, %q or %q, got %q",
+				InputWait, InputDeny, InputRequire, step.OnInput)
 		}
 		rejectFields(step, base, add, "run", "shell", "env", "instructions")
 	case StepCommand:
@@ -422,7 +442,9 @@ func knownAgent(name string, known []string) bool {
 
 func isPermissionMode(s string) bool { return s == PermissionFullAuto || s == PermissionRestricted }
 
-func isInputPolicy(s string) bool { return s == InputWait || s == InputDeny }
+func isInputPolicy(s string) bool {
+	return s == InputWait || s == InputDeny || s == InputRequire
+}
 
 func isShell(s string) bool { return s == ShellSh || s == ShellPwsh || s == ShellCmd }
 

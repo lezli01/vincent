@@ -66,7 +66,7 @@ parse out of prose — an invalid state transition is always `409` with
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
-    "supports_input": true, "logged_in": null,
+    "supports_input": true, "input_verdict": "supported", "logged_in": null,
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
     "default_model": "", "default_effort": "",
@@ -204,7 +204,7 @@ to disable the sweep.
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, requires_input, errors[]?, warnings[]?, error? }`.
 
 `platforms[]` is the entry's [platform restriction](workflow-schema.md#platforms)
 as the file declares it, and `platform_supported` is **the daemon's own verdict**
@@ -212,6 +212,14 @@ on it — the daemon is the process that would run the steps, so clients report
 that flag rather than comparing the list to their own OS. An entry with
 `platform_supported: false` is listed like any other, but `POST /v1/tasks`
 rejects a task naming it with a `400`.
+
+`requires_input` marks an entry with a step declaring
+[`on_input: require`](workflow-schema.md#type-agent) that leaves its agent to
+the task — the agent chosen for a task on it must be one that can stop and ask
+mid-run, or `POST /v1/tasks` rejects it with a `400` naming the step. Each
+adapter's `input_verdict` in `GET /v1/agents` (`supported`, `unsupported`,
+`unknown`) is the verdict that gate uses; only `unsupported` refuses anything,
+so an agent that is not installed never blocks a task.
 
 `POST /v1/resolve` applies the [resolution order](workflow-schema.md#resolution-order)
 to every step under a candidate task-level override, returning `{ value, source }`

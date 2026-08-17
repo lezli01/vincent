@@ -1,6 +1,6 @@
 # 013 — Gating workflows that require mid-run interaction
 
-**Status:** 📋 planned (0/8) · **Opened:** 2026-08-17
+**Status:** ✅ done (8/8) · **Opened:** 2026-08-17
 
 An agent step may now declare that it *needs* a human mid-run:
 
@@ -197,36 +197,67 @@ flipping them would make three shipped workflows unusable on two of three
 adapters as a side effect of adding a feature. Adopting `require` there is a
 per-file decision, not part of this work.
 
+### 11. The daemon publishes the verdict; no client re-derives it
+
+*2026-08-17, during implementation.* `GET /v1/agents` gained
+`input_verdict`: `supported` | `unsupported` | `unknown`.
+
+Decision 3 established that the static capability need not reach the wire, and
+that remains true — what reaches it is the *verdict*, which is a different
+thing. It had to, because the refusal rule is asymmetric (decision 5) and
+`supports_input` alone cannot express it: `false` there means "no" for an
+installed binary and "nobody can say" for an absent one, and only the first
+refuses anything. A client re-deriving that from `available` + `supports_input`
+would get the codex-not-installed case wrong and grey out nothing where the
+daemon greys out an agent. Publishing the verdict keeps 010.3's rule intact —
+the process that would run the thing is the one that says whether it can.
+
+### 12. `edit + retry` cannot change an agent, so the gate lives on `retry`
+
+*2026-08-17, correcting the premise of 013.4.* The plan assumed the repair for
+an `input_unsupported` block was to edit the step's `agent:` in the task's
+snapshot. It is not: `POST /v1/tasks/{id}/retry` overrides `prompt` and `run`
+only (`store.Override`), and no endpoint changes `agent_override` after
+creation. There was no agent edit to re-validate.
+
+The real repair is environmental — install the agent, or bring claude back
+inside the verified family — so the check moved onto the retry action itself,
+against the task's own snapshot: a retry that would only reproduce the block is
+refused with the reason, and once the environment is fixed the same retry
+passes. That makes the check *more* useful than the planned one, not less; it
+is also the only place the asymmetry pays off twice, since an agent uninstalled
+between the block and the retry reads as unknown and is let through.
+
 ## Tasks
 
-- [ ] **013.1 — Schema and static capability.** `on_input: require` accepted on
+- [x] **013.1 — Schema and static capability.** ✓ 2026-08-17 `on_input: require` accepted on
   agent steps and in `defaults:`; `agent.Options.InputSupport` (`never` |
   `detected`) set by all three adapters' curated catalogs; §8.2 errors on a
   requiring step resolving to a `never` adapter, attributed per decision 4.
-- [ ] **013.2 — Registry and API.** A computed `requires_input` on the
+- [x] **013.2 — Registry and API.** ✓ 2026-08-17 A computed `requires_input` on the
   `GET /v1/workflows` entry, derived by the decision-6 rule (daemon decides,
   clients report — 010.2's precedent, including the `*bool`-style tolerance for
   an older daemon).
-- [ ] **013.3 — `POST /v1/tasks` refuses a known-incapable selection.**
+- [x] **013.3 — `POST /v1/tasks` refuses a known-incapable selection.** ✓ 2026-08-17
   Depends: 013.1, 013.2. 400 naming the step, the agent, and why; unknown and
   absent probes pass through (decision 5).
-- [ ] **013.4 — `edit + retry` re-validates.** Depends: 013.3. The snapshot edit
+- [x] **013.4 — `retry` re-validates.** ✓ 2026-08-17 Depends: 013.3. The snapshot edit
   re-runs the creation-time check, so the repair path cannot land a task back
   into the same block.
-- [ ] **013.5 — Engine pre-flight.** Depends: 013.1. `*agent.CatalogCache` in
+- [x] **013.5 — Engine pre-flight.** ✓ 2026-08-17 Depends: 013.1. `*agent.CatalogCache` in
   `taskrun.Deps`, the check before `Start`, `ReasonInputUnsupported =
   "input_unsupported"` in the §18 vocabulary.
-- [ ] **013.6 — Clients.** Depends: 013.2, 013.3. TUI: the agent picker
+- [x] **013.6 — Clients.** ✓ 2026-08-17 Depends: 013.2, 013.3. TUI: the agent picker
   annotates an incapable adapter with the reason and refuses it on select
   (010.5's `opt.note` + row-error pattern); the new-task summary says why. CLI
   relays the API's 400 with no client-side rule of its own.
-- [ ] **013.7 — Docs.** Depends: all. Spec §7.4 (the third value), §8.2 (the
+- [x] **013.7 — Docs.** ✓ 2026-08-17 Depends: all. Spec §7.4 (the third value), §8.2 (the
   new rule), §9.5/§9.6 (the static capability), §13.2 (the entry field) and §18
   (the reason), amended in place with dated notes; user-facing
   `reference/workflow-schema.md`, `guides/workflows.md`, `guides/agents.md`,
   `reference/api.md` and the block-reason table; comments in the three shipped
   workflows (decision 10).
-- [ ] **013.8 — Gate leg.** Depends: 013.3. One `m2-gate.sh` scenario asserting
+- [x] **013.8 — Gate leg.** ✓ 2026-08-17 Depends: 013.3. One `m2-gate.sh` scenario asserting
   the creation-time 400 against a fake agent presenting as a `never` adapter.
   The run-time block stays in `engine_test.go`, where 010 put its equivalent:
   reaching it requires manufacturing a snapshot/daemon mismatch, which a curl
@@ -234,17 +265,26 @@ per-file decision, not part of this work.
 
 ## Verification
 
-Planned, not yet run:
+*2026-08-17, all run:*
 
-- `go test ./...` and `go test -race ./...` green, including: the schema table
-  (`require` accepted on agent steps and defaults, rejected on command and
-  manual steps), the §8.2 error and its attribution to both `steps[N].agent` and
-  `defaults.agent`, the decision-6 picker rule across pinned/unpinned steps, the
-  creation-time 400 and the three "unknown" paths that must *not* 400, the
-  `edit + retry` re-validation, the engine's `input_unsupported` step failure,
-  and the TUI picker's note and refusal.
-- `go run mage.go lint` for `linux`, `darwin` and `windows` from a host-built
-  linter, per CLAUDE.md — the engine change touches `taskrun.Deps` wiring, which
-  every platform compiles.
-- `./scripts/m2-gate.sh` on all three CI legs, with the new scenario committed
-  executable.
+- `go run mage.go test` and `go run mage.go testrace` green, including the new
+  cases: `require` accepted on agent steps and in `defaults:` and rejected on
+  command steps, the unknown-value error naming all three, the §8.2 capability
+  error and its attribution to both `steps[N].agent` and a collapsed
+  `defaults.agent`, claude deliberately *not* judged at load, the decision-6
+  derivation across pinned/unpinned steps, `InputMismatch` resolving through
+  §8.6 overrides, the seven-case `InputVerdict` table (including both
+  not-installed cases, which must answer unknown), the three adapters' curated
+  `InputSupport`, the creation-time 400 plus the uninstalled-agent case that
+  must *not* 400, the retry refusal, the engine's `input_unsupported` block
+  with no pid recorded, the capable-agent run that still succeeds, and the two
+  TUI paths (picker note and disablement, agent-row error on submit).
+- `go tool golangci-lint run ./...` clean for `GOOS=linux`, `darwin` and
+  `windows` from a host-built linter, per CLAUDE.md.
+- `./scripts/m2-gate.sh` green, scenario 8 included: the impossible workflow
+  listed with its error pointing at `steps[0].agent`, `requires_input` true on
+  the runnable one and false on `adhoc`, `input_verdict` published per adapter,
+  the 400 on a codex task, and the same workflow running to `done` on claude.
+
+The gate script's new scenario is committed executable, and its dispatcher
+accepts `VINCENT_GATE_SCENARIO=8`.
