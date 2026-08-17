@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (0/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (1/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -571,7 +571,7 @@ for workflow content.
 
 ### Phase 1 — `type: parallel`
 
-- [ ] **014.1 — Schema and validation.** `type: parallel` with inline `steps:` and
+- [x] **014.1 — Schema and validation.** ✓ 2026-08-17 `type: parallel` with inline `steps:` and
   `max_parallel:`; sub-steps validated by the existing `validateStep`, with
   `manual` rejected inside a group — a gate ends the actor goroutine and
   releases the slot (§6), and there is no state meaning "one sub-step of one

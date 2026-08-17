@@ -201,6 +201,12 @@ type Config struct {
 	// what every version before it did implicitly.
 	Environment Environment `yaml:"environment"`
 	Agents      Agents      `yaml:"agents"`
+	// Parallel bounds a `type: parallel` step group (task 014). It sits in its
+	// own block rather than under `defaults:`, which holds timeouts a step may
+	// override per-step; this one is not step-overridable in the same sense —
+	// a group's `max_parallel:` replaces it outright rather than inheriting
+	// from it (task 014 decision 30).
+	Parallel Parallel `yaml:"parallel"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -266,6 +272,17 @@ type Defaults struct {
 	InputTimeout Duration `yaml:"input_timeout"`
 }
 
+// Parallel configures `type: parallel` step groups (spec §7, §11 — task 014).
+//
+// MaxParallel is a genuine second concurrency dimension: a group runs its
+// sub-steps inside **one** task's slot, and the §11 caps count tasks in
+// slot-holding states, so they never see it. One task can therefore keep
+// MaxParallel processes busy while the board reads a single running task —
+// which is why this has a default at all rather than being unbounded.
+type Parallel struct {
+	MaxParallel int `yaml:"max_parallel"`
+}
+
 // Agents configures how agent CLIs are located.
 type Agents struct {
 	Claude Agent `yaml:"claude"`
@@ -302,6 +319,10 @@ func Default() Config {
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
 		Environment: Environment{Inherit: InheritAll()},
+		// Four independent verifications is the shape this feature was
+		// designed around (test, lint, typecheck, build); past that a group
+		// is competing with the task caps for the same cores.
+		Parallel: Parallel{MaxParallel: 4},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},
@@ -351,6 +372,9 @@ func (c Config) validate() error {
 	}
 	if c.Defaults.InputTimeout <= 0 {
 		return fmt.Errorf("defaults.input_timeout must be positive, got %s", c.Defaults.InputTimeout)
+	}
+	if c.Parallel.MaxParallel < 1 {
+		return fmt.Errorf("parallel.max_parallel must be at least 1, got %d", c.Parallel.MaxParallel)
 	}
 	if c.TranscriptRetentionDays < 0 {
 		return fmt.Errorf("transcript_retention_days must not be negative, got %d", c.TranscriptRetentionDays)

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,82 @@ func TestParseValidation(t *testing.T) {
 			wantSub:  `unknown agent "gemini"`,
 			wantPath: "defaults.agent",
 		},
+		// task 014 — `type: parallel`.
+		{
+			name:     "parallel group with no sub-steps",
+			src:      "name: x\nsteps:\n  - {id: g, type: parallel, steps: []}\n",
+			wantSub:  "parallel steps require at least one sub-step",
+			wantPath: "steps[0].steps",
+		},
+		{
+			name: "parallel group with max_parallel below one",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    max_parallel: 0\n" +
+				"    steps:\n      - {id: t, type: command, run: go test ./...}\n",
+			wantSub:  "max_parallel must be at least 1",
+			wantPath: "steps[0].max_parallel",
+		},
+		{
+			name: "manual sub-step",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: m, type: manual, instructions: hi}\n",
+			wantSub:  "manual steps are not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name: "nested parallel group",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - id: h\n        type: parallel\n" +
+				"        steps:\n          - {id: t, type: command, run: ls}\n",
+			wantSub:  "parallel groups do not nest",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name: "sub-step requiring mid-run input",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - {id: a, type: agent, prompt: hi, on_input: require}\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].on_input",
+		},
+		{
+			// Resolved, not literal: the sub-step names no policy at all, and
+			// the requirement reaches it from `defaults:` — which is where the
+			// error must point, since that is the line to change.
+			name: "sub-step inheriting require from defaults",
+			src: "name: x\ndefaults:\n  on_input: require\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: a, type: agent, prompt: hi}\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "defaults.on_input",
+		},
+		{
+			// Sub-steps are validated like any other step of their type.
+			name: "sub-step failing its own type's rules",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: c, type: command}\n",
+			wantSub:  "command steps require a run command",
+			wantPath: "steps[0].steps[0].run",
+		},
+		{
+			// Ids are unique workflow-wide, not merely within a group: a
+			// sub-step shares its group's step_index and is told apart by id.
+			name: "sub-step id colliding with a top-level step",
+			src: "name: x\nsteps:\n  - {id: a, type: command, run: ls}\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: a, type: command, run: ls}\n",
+			wantSub:  "duplicate step id",
+			wantPath: "steps[1].steps[0].id",
+		},
+		{
+			name: "group carrying a field of another type",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    prompt: hi\n" +
+				"    steps:\n      - {id: t, type: command, run: ls}\n",
+			wantSub:  "prompt is not valid on a parallel step",
+			wantPath: "steps[0].prompt",
+		},
+		{
+			name:     "sub-steps on a step that is not a group",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: ls, steps: [{id: b, type: command, run: ls}]}\n",
+			wantSub:  "steps is not valid on a command step",
+			wantPath: "steps[0].steps",
+		},
 	}
 
 	opts := Options{KnownAgents: []string{"claude", "codex"}}
@@ -243,6 +320,98 @@ func hasPath(errs Errors, path string) bool {
 
 // TestParseReportsLines pins the file/line reporting T2.1 promises: both a
 // strict-decoding failure and a semantic failure point at the offending line.
+// TestParseParallelGroup covers the shape task 014 exists to allow, and the
+// two properties the engine leans on: sub-steps decode in declaration order,
+// and a group's own `steps:` survives a Marshal round-trip — `edit + retry`
+// rewrites a snapshot through Marshal, and a group that lost its members
+// there would come back as an empty group.
+func TestParseParallelGroup(t *testing.T) {
+	src := strings.TrimSpace(`
+name: verify
+steps:
+  - id: build
+    type: command
+    run: go build ./...
+  - id: verify
+    type: parallel
+    max_parallel: 2
+    timeout: 30m
+    steps:
+      - {id: test, type: command, run: go test ./...}
+      - {id: lint, type: command, run: golangci-lint run}
+      - {id: review, type: agent, prompt: "Review {{.Task.Title}}.", check: go vet ./...}
+`) + "\n"
+	wf, _, err := Parse([]byte(src), Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	group := wf.Steps[1]
+	if group.Type != StepParallel {
+		t.Fatalf("steps[1].type = %q, want %q", group.Type, StepParallel)
+	}
+	if group.MaxParallel == nil || *group.MaxParallel != 2 {
+		t.Errorf("max_parallel = %v, want 2", group.MaxParallel)
+	}
+	if group.Timeout == nil || group.Timeout.Std() != 30*time.Minute {
+		t.Errorf("group timeout = %v, want 30m", group.Timeout)
+	}
+	gotIDs := make([]string, 0, len(group.Steps))
+	for _, sub := range group.Steps {
+		gotIDs = append(gotIDs, sub.ID)
+	}
+	if want := []string{"test", "lint", "review"}; !reflect.DeepEqual(gotIDs, want) {
+		t.Errorf("sub-step ids = %v, want %v in declaration order", gotIDs, want)
+	}
+	if group.Steps[2].Check != "go vet ./..." {
+		t.Errorf("sub-step check = %q, want it preserved", group.Steps[2].Check)
+	}
+
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, _, err := Parse(out, Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("re-parse marshalled workflow: %v", err)
+	}
+	// Not a whole-struct DeepEqual: Marshal is canonical rather than
+	// faithful, so an unset `env:` comes back as an empty map rather than a
+	// nil one. What matters here is that the group kept its members.
+	rt := back.Steps[1]
+	rtIDs := make([]string, 0, len(rt.Steps))
+	for _, sub := range rt.Steps {
+		rtIDs = append(rtIDs, sub.ID)
+	}
+	if want := []string{"test", "lint", "review"}; !reflect.DeepEqual(rtIDs, want) {
+		t.Errorf("round-tripped sub-step ids = %v, want %v", rtIDs, want)
+	}
+	if rt.MaxParallel == nil || *rt.MaxParallel != 2 {
+		t.Errorf("round-tripped max_parallel = %v, want 2", rt.MaxParallel)
+	}
+	if rt.Steps[2].Prompt != group.Steps[2].Prompt {
+		t.Errorf("round-tripped sub-step prompt = %q, want %q", rt.Steps[2].Prompt, group.Steps[2].Prompt)
+	}
+}
+
+// TestMarshalOmitsEmptyGroupFields: `steps:` and `max_parallel:` are omitempty
+// so a marshalled snapshot does not give every agent and command step an empty
+// group — which would then have to be ignored by everything reading it.
+func TestMarshalOmitsEmptyGroupFields(t *testing.T) {
+	wf, _, err := Parse([]byte("name: x\nsteps:\n  - {id: a, type: command, run: ls}\n"), Options{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, key := range []string{"steps:\n    -", "max_parallel"} {
+		if strings.Contains(string(out), key) {
+			t.Errorf("marshalled a command step with %q:\n%s", key, out)
+		}
+	}
+}
+
 func TestParseReportsLines(t *testing.T) {
 	semantic := "name: x\nsteps:\n  - id: a\n    type: agent\n    timeout: 0s\n    prompt: hi\n"
 	_, _, err := Parse([]byte(semantic), Options{})
