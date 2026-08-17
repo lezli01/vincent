@@ -26,6 +26,7 @@ description of how the system actually behaves.
 | [009](009-configurable-tasks-view.md) | A configurable tasks view, grouped by project then workflow | ✅ done (6/6) |
 | [010](010-workflow-platform-restrictions.md) | Restricting a workflow to platforms (`platforms:`) | ✅ done (6/6) |
 | [011](011-bulk-task-selection.md) | Selecting several tasks for one action | ✅ done (5/5) |
+| [012](012-diff-view-file-grouping.md) | A diff tab grouped by file, folded shut | ✅ done (5/5) |
 
 ## How to add and update a task document
 

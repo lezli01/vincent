@@ -65,10 +65,10 @@ func helpText(ctx bindingContext) string {
 	}
 	// The answer form's keys ride along with the panels it pops up over —
 	// it has no focus of its own to be the context.
-	if ctx == ctxTasks || ctx == ctxTimeline || ctx == ctxOutput {
+	if isHomeContext(ctx) {
 		writeSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
 	}
-	if ctx == ctxTasks || ctx == ctxTimeline || ctx == ctxOutput {
+	if isHomeContext(ctx) {
 		writeSection("task actions (on the selected task, offered only when valid)", actions)
 	}
 	writeSection("global keys", global)

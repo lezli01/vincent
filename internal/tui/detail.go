@@ -272,7 +272,7 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.tab = tabOutput
 	d.actions.clear()
 	d.form = nil
-	d.diff.open(id)
+	d.diff.openTask(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
 
@@ -644,7 +644,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	if d.tab == tabDiff && d.focus == focusOutput {
-		return d.diff.update(msg)
+		return d.diff.updateKey(msg)
 	}
 
 	if d.focus == focusTimeline {
@@ -779,6 +779,6 @@ func (d *detail) toggleTab() tea.Cmd {
 		return nil
 	}
 	d.tab = tabDiff
-	d.diff.open(d.taskID)
+	d.diff.openTask(d.taskID)
 	return d.diff.fetch(d.client, true)
 }

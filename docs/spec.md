@@ -2006,7 +2006,8 @@ stream for the live tail.
    the board's is an alarm. Follow mode is a property of the *live* attempt: it is
    unavailable on a finished one, and a step advance moves the selection only when
    the cursor was already on the live attempt. **Diff tab** (`GET …/diff`,
-   syntax-highlighted); action
+   syntax-highlighted, grouped by file and folded shut — see *Diff tab* below);
+   action
    bar for exactly the actions valid in the current state (§6), including gate
    approve/reject with the rendered gate instructions, and edit+retry which opens
    `$EDITOR` on the failing step's prompt/command. When the task is
@@ -2139,6 +2140,47 @@ tasks instead of the cursor row. The rules:
 - **The keys work from any panel**, since the footer counts the selection
   wherever the focus is, and **what the daemon accepted leaves the selection**
   while refusals stay marked, so a retry needs no re-selection.
+
+**Diff tab, grouped by file (task 012, added 2026-08-17).** The tab used to
+render `git diff` as it arrives — one stream of lines, the first file's hunks
+filling the pane — which answers "what is in this file" before it answers the
+question the tab is opened with: *what did this task touch, and which file do I
+read first?* So the diff is parsed into per-file sections and rendered as a
+**list of foldable file rows**, each carrying its path and its added/removed
+counts, with a summary line above it (`6 files  +128 -33`) pinned outside the
+scroll. **Every file starts collapsed**, `enter`/`space` (and `→`/`←`) folds the
+one under the cursor, `↑`/`↓` move between files, and `O`/`C` expand and
+collapse the lot. The rules:
+
+- **↑/↓ belong to the file list, not to the lines.** On this tab they move the
+  cursor between files; line-level scrolling is the pager keys (`pgup`/`pgdn`,
+  `f`/`b`, `u`) and the wheel. With everything folded there is nothing to
+  scroll, and a tab whose ↑/↓ did nothing until you opened a file would be a
+  dead key on the screen it opens with.
+- **The diff tab is its own footer surface.** The two tabs of one pane answer to
+  different keys — follow and verbosity against folds and file navigation — so
+  `bindings.go` gives the diff its own context, and the footer, `?` and the
+  palette follow the live tab. `]` is repeated in it, because the way back must
+  stay on screen.
+- **Folds are keyed by path and survive a refresh.** Re-entering the tab
+  re-fetches (the endpoint runs git per call), and a file folding shut under the
+  reader because the agent touched a different one is the failure this avoids.
+  They are *not* carried to another task: another task's files are not these
+  files. Fold state is never persisted — it is a way of looking at one diff, not
+  configuration, which is what separates it from `tui.board.group_by`.
+- **A file's header replaces the four lines that repeated it.** `diff --git`,
+  `index`, `---` and `+++` are dropped from the body — the row above says the
+  file — while a mode change, a rename or `Binary files … differ` stays, because
+  the body is the last place those can be read. Nothing else is reinterpreted:
+  what a file expands to is git's own lines.
+- **A binary file says `binary` where the counts go.** Its ± counts are both
+  zero, and `+0 -0` reads as "unchanged" rather than "not a text diff". The same
+  reason keeps the summary line's counts off a change made only of renames and
+  mode bits.
+- **The line cap is unchanged** (5000 lines, §18): it bounds the terminal, not
+  the truth. It now cuts the *parse* as well, so a truncated diff's last file
+  shows the counts of the part that arrived and the notice still says the whole
+  change is on the branch.
 
 **The focused panel expands; the others collapse** to their title bar plus the
 selected line. The task table never collapses below 5 rows — it is the navigation
