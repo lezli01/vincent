@@ -286,6 +286,86 @@ func TestParseValidation(t *testing.T) {
 			wantSub:  "steps is not valid on a command step",
 			wantPath: "steps[0].steps",
 		},
+		// task 014 — `type: fan_out`.
+		{
+			name:     "fan_out with no lanes",
+			src:      "name: x\nsteps:\n  - {id: f, type: fan_out, lanes: []}\n",
+			wantSub:  "fan_out steps require at least one lane",
+			wantPath: "steps[0].lanes",
+		},
+		{
+			name: "lane with neither a workflow nor steps",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    lanes:\n      - {id: api}\n",
+			wantSub:  "either a workflow name or inline steps",
+			wantPath: "steps[0].lanes[0]",
+		},
+		{
+			name: "lane with both a workflow and steps",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - id: api\n        workflow: build\n" +
+				"        steps: [{id: s, type: command, run: ls}]\n",
+			wantSub:  "not both",
+			wantPath: "steps[0].lanes[0]",
+		},
+		{
+			name: "duplicate lane id",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - {id: api, workflow: build}\n      - {id: api, workflow: docs}\n",
+			wantSub:  "duplicate lane id",
+			wantPath: "steps[0].lanes[1].id",
+		},
+		{
+			name: "inline lane step failing its own rules",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - id: api\n        steps: [{id: s, type: agent}]\n",
+			wantSub:  "agent steps require a prompt",
+			wantPath: "steps[0].lanes[0].steps[0].prompt",
+		},
+		{
+			name: "on_conflict: agent without a resolver",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    merge: {on_conflict: agent}\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "requires merge.agent",
+			wantPath: "steps[0].merge.agent",
+		},
+		{
+			name: "a resolver the policy never runs",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    merge:\n      agent:\n" +
+				"        id: resolve\n        prompt: fix it\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "only used by on_conflict",
+			wantPath: "steps[0].merge.agent",
+		},
+		{
+			name: "unknown conflict policy",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    merge: {on_conflict: yolo}\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "on_conflict must be",
+			wantPath: "steps[0].merge.on_conflict",
+		},
+		{
+			// The resolver is a full agent step, so it is judged by the
+			// ordinary agent rules rather than a private subset.
+			name: "resolver failing the ordinary agent rules",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    merge:\n      on_conflict: agent\n" +
+				"      agent: {id: resolve, prompt: fix it, agent: gemini}\n" +
+				"    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  `unknown agent "gemini"`,
+			wantPath: "steps[0].merge.agent.agent",
+		},
+		{
+			name: "fan_out inside a parallel group",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - id: f\n        type: fan_out\n        lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name:     "lanes on a step that is not a fan_out",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: ls, lanes: [{id: l, workflow: w}]}\n",
+			wantSub:  "lanes is not valid on a command step",
+			wantPath: "steps[0].lanes",
+		},
 	}
 
 	opts := Options{KnownAgents: []string{"claude", "codex"}}
@@ -390,6 +470,106 @@ steps:
 	}
 	if rt.Steps[2].Prompt != group.Steps[2].Prompt {
 		t.Errorf("round-tripped sub-step prompt = %q, want %q", rt.Steps[2].Prompt, group.Steps[2].Prompt)
+	}
+}
+
+// TestParseFanOutStep covers the shape phase 2 exists to allow, including the
+// two things the engine leans on: lane order is declaration order (it is the
+// merge order, decision 7), and lanes survive Marshal — the snapshot a child
+// is cut from goes through it.
+//
+// It also pins decision 5: a lane's inline steps may themselves fan out, to
+// any depth. The bound on that is a creation-time check against
+// `fan_out.max_depth`, not a parse-time ban.
+func TestParseFanOutStep(t *testing.T) {
+	src := strings.TrimSpace(`
+name: build-all
+steps:
+  - id: build
+    type: fan_out
+    merge:
+      on_conflict: agent
+      agent:
+        id: resolve
+        prompt: "Resolve the conflict in {{.Task.Title}}."
+        check: go build ./...
+    lanes:
+      - id: api
+        workflow: implement-module
+        fields: { module: api }
+        model: opus
+        priority: 5
+      - id: docs
+        steps:
+          - id: write
+            type: agent
+            prompt: Document the API.
+          - id: deep
+            type: fan_out
+            lanes:
+              - { id: inner, workflow: proofread }
+`) + "\n"
+	wf, _, err := Parse([]byte(src), Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	step := wf.Steps[0]
+	if step.Type != StepFanOut {
+		t.Fatalf("type = %q, want %q", step.Type, StepFanOut)
+	}
+	if got := []string{step.Lanes[0].ID, step.Lanes[1].ID}; got[0] != "api" || got[1] != "docs" {
+		t.Errorf("lane order = %v, want [api docs] as declared", got)
+	}
+	if step.Lanes[0].Fields["module"] != "api" {
+		t.Errorf("lane fields = %v, want module=api", step.Lanes[0].Fields)
+	}
+	if step.Lanes[0].Model != "opus" || step.Lanes[0].Priority == nil || *step.Lanes[0].Priority != 5 {
+		t.Errorf("lane overrides not decoded: model=%q priority=%v",
+			step.Lanes[0].Model, step.Lanes[0].Priority)
+	}
+	if step.ConflictPolicy() != ConflictAgent || step.Merge.Agent == nil {
+		t.Fatalf("conflict policy = %q, resolver = %v", step.ConflictPolicy(), step.Merge.Agent)
+	}
+	if step.Merge.Agent.Check != "go build ./..." {
+		t.Errorf("resolver check = %q, want it preserved", step.Merge.Agent.Check)
+	}
+	// Depth 2: a lane's inline steps fan out again.
+	if inner := step.Lanes[1].Steps[1]; inner.Type != StepFanOut || inner.Lanes[0].ID != "inner" {
+		t.Errorf("nested fan_out not parsed: %+v", inner)
+	}
+
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, _, err := Parse(out, Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("re-parse marshalled workflow: %v", err)
+	}
+	rt := back.Steps[0]
+	if len(rt.Lanes) != 2 || rt.Lanes[0].ID != "api" || rt.Lanes[1].ID != "docs" {
+		t.Errorf("round-tripped lanes = %+v, want both in order", rt.Lanes)
+	}
+	if rt.Lanes[1].Steps[1].Lanes[0].ID != "inner" {
+		t.Error("the depth-2 lane did not survive the round trip")
+	}
+	if rt.ConflictPolicy() != ConflictAgent || rt.Merge.Agent == nil ||
+		rt.Merge.Agent.Prompt != step.Merge.Agent.Prompt {
+		t.Errorf("round-tripped merge = %+v, want the resolver preserved", rt.Merge)
+	}
+}
+
+// TestDefaultConflictPolicyIsBlock: a fan_out that says nothing about
+// conflicts blocks on one. An agent resolving a semantic conflict silently is
+// the outcome decision 8 refuses to make the default.
+func TestDefaultConflictPolicyIsBlock(t *testing.T) {
+	src := "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes: [{id: api, workflow: build}]\n"
+	wf, _, err := Parse([]byte(src), Options{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := wf.Steps[0].ConflictPolicy(); got != ConflictBlock {
+		t.Errorf("default conflict policy = %q, want %q", got, ConflictBlock)
 	}
 }
 

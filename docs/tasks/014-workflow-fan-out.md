@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (5/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (6/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -573,6 +573,28 @@ next group and the next task and never resizes something already running. That
 also keeps daemon configuration out of the workflow snapshot, which §5.3 reserves
 for workflow content.
 
+### 31. `merge:` carries the policy and the resolver as two fields
+
+*2026-08-17, during implementation.* This document spells the conflict
+setting two ways: the opening example writes `merge: { on_conflict: block }`,
+and decision 8 writes `on_conflict: {agent: …}`. They cannot both be the
+schema. The reconciliation keeps the opening example's shape:
+
+```yaml
+merge:
+  on_conflict: agent      # block (default) | agent
+  agent: { id: resolve, prompt: …, check: … }
+```
+
+**Beat:** a YAML union — `on_conflict` being either the string `block` or a
+mapping carrying an agent. It needs a custom unmarshaller, it reports type
+errors as decode failures rather than as the located §8.2 errors every other
+field gets, and it buys one line of brevity in the case nobody writes.
+
+Splitting the setting means the two halves can disagree, so validation makes
+that an error in both directions: `on_conflict: agent` with no `agent:`, and
+an `agent:` the policy will never run.
+
 ## Tasks
 
 ### Phase 1 — `type: parallel`
@@ -608,7 +630,7 @@ for workflow content.
   `parent_step_index`, `lane_id`, `lane_order`, `idx_tasks_parent`. Typed CRUD
   for the parent link, the recursive-CTE subtree query, and the list filters
   from decision 13.
-- [ ] **014.5 — Lane schema.** Depends: 014.1. `type: fan_out` with `lanes:`,
+- [x] **014.5 — Lane schema.** ✓ 2026-08-17 Depends: 014.1. `type: fan_out` with `lanes:`,
   `merge:`, `on_conflict:`; the `Lane` type (`ID`, `Workflow`, `Steps`,
   `Fields`) with `workflow` and `steps` mutually exclusive and exactly one
   required; recursive validation; `Marshal` round-trip.
