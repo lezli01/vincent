@@ -99,6 +99,7 @@ agents:
 		// keeps its default rather than collapsing to a zero value — a
 		// max_parallel of 0 would refuse to run any sub-step at all.
 		Parallel: Parallel{MaxParallel: 4},
+		FanOut:   FanOut{MaxDepth: 3, MaxTasks: 64},
 		TUI:      TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
