@@ -44,6 +44,10 @@ func mergeOptions(cliModels, cliEfforts []string) agent.Options {
 	return agent.Options{
 		Models:  mergeValues(cliModels, curatedModels),
 		Efforts: mergeValues(cliEfforts, curatedEfforts),
+		// Whether *this* claude can take mid-run input is a version question
+		// Detect answers (§9.3); the catalog only says the answer is worth
+		// asking, so §8.2 leaves a requiring step alone (task 013).
+		InputSupport: agent.InputDetected,
 	}
 }
 

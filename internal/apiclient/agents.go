@@ -28,6 +28,11 @@ type Agent struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// InputVerdict is the daemon's verdict on backing an `on_input: require`
+	// step (§7.4, task 013): "supported", "unsupported" or "unknown". Empty
+	// means the daemon predates the field, which is treated as unknown —
+	// nothing is refused on the strength of a field that was never sent.
+	InputVerdict string `json:"input_verdict,omitempty"`
 	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5); false
 	// means installed but unauthenticated, which fails every run.
 	LoggedIn *bool `json:"logged_in"`
@@ -71,6 +76,19 @@ func (a Agent) NotAuthenticated() bool {
 // present but unauthenticated. The two are one question for a caller deciding
 // whether to warn, and two different sentences when it explains why.
 func (a Agent) Unusable() bool { return !a.Available || a.NotAuthenticated() }
+
+// InputVerdict values as GET /v1/agents reports them (§7.4, task 013).
+const (
+	InputVerdictSupported   = "supported"
+	InputVerdictUnsupported = "unsupported"
+	InputVerdictUnknown     = "unknown"
+)
+
+// CannotTakeInput reports an adapter the daemon would refuse for a step
+// declaring `on_input: require`. Only a positive verdict counts: unknown, and
+// a daemon too old to send one, both answer false, exactly as the daemon's own
+// gate does.
+func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUnsupported }
 
 // Unavailable reports whether name is a known adapter that is not usable
 // right now. An unknown name is not "unavailable" — the catalog simply has

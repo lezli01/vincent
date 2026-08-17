@@ -35,6 +35,11 @@ func resolvePermission(step workflow.Step, defaults workflow.Defaults) agent.Per
 
 // resolveInputPolicy resolves the step's reaction to an input request
 // (§7.4): step field, then workflow defaults, then wait.
+//
+// `require` resolves to wait. It differs from wait only in what must be true
+// before the step starts (task 013), and the pre-flight that enforces that has
+// already run by the time this value reaches an adapter — so InputPolicy stays
+// two-valued and no adapter learns a third.
 func resolveInputPolicy(step workflow.Step, defaults workflow.Defaults) agent.InputPolicy {
 	switch firstNonEmpty(step.OnInput, defaults.OnInput) {
 	case workflow.InputDeny:

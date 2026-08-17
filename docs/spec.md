@@ -388,6 +388,38 @@ vincent immediately auto-responds through the adapter's `Respond()` — question
 get a canned "no user is available; decide with your best judgment" answer,
 permission requests are denied — and the task never leaves `running`.
 
+`on_input: require` (workflow `defaults` or per step, added 2026-08-17, task
+013) is `wait` plus a **precondition**: the step will only run on an adapter
+that can stop and take a human answer. It is for a workflow whose point is the
+conversation — an agent that cannot ask does not degrade there, it guesses.
+
+The requirement is enforced at three layers, and only ever on a *positive*
+"this adapter cannot":
+
+- **Load (§8.2).** A requiring step resolving to an adapter that can never take
+  input — codex, cursor: no control channel exists in any version — is a
+  validation error, attributed to the `agent` field that supplied the value.
+  claude is not judged here: its support is a version question (§9.3) that only
+  a probe answers, and validation never spawns a process.
+- **Task creation (§13.2).** `POST /v1/tasks` resolves every requiring step
+  against the task's agent override (§8.6) and refuses a selection the daemon
+  knows cannot ask. An absent binary or a probe that did not answer is
+  *unknown*, and unknown never refuses — §9.6's degrade-never-block rule
+  outranks this gate. `GET /v1/workflows` reports `requires_input` for a
+  workflow whose requiring steps leave their agent to the task, and
+  `GET /v1/agents` reports each adapter's `input_verdict`
+  (`supported` | `unsupported` | `unknown`), so a client marks its picker
+  without re-deriving the asymmetry.
+- **Run (§7.2).** The engine re-checks before spawning, and fails the attempt
+  with `input_unsupported` when the answer is now no — the task and its daemon
+  having parted company is the only way to get here.
+
+A step's own `on_input` wins over `defaults:` as every other field does, so
+`defaults: {on_input: require}` with one step's `on_input: deny` leaves that
+step deliberately unattended. `require` changes nothing else: `input_timeout`
+keeps its meaning and its three levels, and once the step is running `require`
+and `wait` are the same thing.
+
 Adapters without mid-run input support (`supports_input: false`, §9.5 — codex in
 v1) never produce input requests; their steps behave exactly as today. Requests
 and answers are appended to the step transcript as namespaced `vincent.*` lines;
@@ -417,7 +449,7 @@ defaults:                             # optional; per-step values override
   model: ""                           # adapter-native id/alias (e.g. sonnet); options via GET /v1/agents (§9.6)
   effort: ""                          # adapter-native effort (claude: low…max; codex: minimal…high) (§8.6)
   permission_mode: full-auto          # full-auto | restricted   (§9.4)
-  on_input: wait                      # wait | deny — agent input requests (§7.4)
+  on_input: wait                      # wait | deny | require — agent input requests (§7.4)
   input_timeout: 24h                  # max wait in awaiting_input (§7.4)
   max_retries: 1
   timeout: 60m
@@ -512,7 +544,7 @@ Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
 Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
-  parse as Go durations; `on_input` is `wait` or `deny`; unknown keys are errors
+  parse as Go durations; `on_input` is `wait`, `deny` or `require`; unknown keys are errors
   (strict decoding) to catch typos.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
@@ -530,6 +562,14 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   can soften but never harden). Warnings surface structurally: `warnings[]`
   beside `errors[]` on registry entries and the validate response (§13.2),
   `warnings[]` on the task-creation response, and the daemon log.
+- A step declaring `on_input: require` (§7.4, added 2026-08-17, task 013) must
+  resolve to an adapter that can take mid-run input. Only the *static* half is
+  judged here — an adapter with no control channel in any version (codex,
+  cursor) is an error; claude, whose support is version-gated (§9.3), is left
+  to the creation-time and run-time checks, since deciding it would mean
+  probing. The finding is attributed to the `agent` field that supplied the
+  value: the step's own when it pins one, `defaults.agent` otherwise, reported
+  once however many steps inherit it.
 
 ### 8.3 Command steps and shells
 
@@ -921,12 +961,20 @@ defaults:
 ```json
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
-    "supports_input": true, "logged_in": null,
+    "supports_input": true, "input_verdict": "supported", "logged_in": null,
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
     "default_model": "", "default_effort": "",
     "probed_at": "2026-08-07T10:00:00Z", "probe_error": null } ] }
 ```
+
+- **`input_verdict`** (added 2026-08-17, task 013) is the daemon's answer to
+  whether this adapter may back an `on_input: require` step (§7.4):
+  `supported`, `unsupported`, or `unknown`. It is not derivable from
+  `supports_input` alone — `false` there means "no" for an installed binary and
+  "nobody can say" for an absent one, and only the first refuses anything — so
+  the daemon publishes the verdict its own gate uses rather than leaving each
+  client to re-derive the asymmetry.
 
 - **Always dynamic, never slow:** probes run on demand and results are cached
   keyed by *binary identity* (resolved path + mtime + version). Help output is
@@ -1699,9 +1747,13 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
                                         { name, scope, project_id, file, description, steps[],
-                                          platforms[]?, platform_supported, errors[]?, warnings[]?, error? }
+                                          platforms[]?, platform_supported, requires_input,
+                                          errors[]?, warnings[]?, error? }
                                         platform_supported is this daemon's own verdict on the
-                                        entry's §8.1.1 restriction (task 010, added 2026-08-16)
+                                        entry's §8.1.1 restriction (task 010, added 2026-08-16);
+                                        requires_input marks an entry whose §7.4 `require` steps
+                                        leave their agent to the task, so the agent picked for a
+                                        task must be one that can ask (task 013, added 2026-08-17)
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
@@ -2407,6 +2459,7 @@ currently true to show (§15 view 6).
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
+| Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
 | Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |

@@ -84,6 +84,11 @@ against real captured runs. Outside that range the adapter reports
 `supports_input: false` and runs exactly as it otherwise would — no input flags,
 plain-text prompt. Nothing degrades silently.
 
+A workflow that *needs* the conversation says `on_input: require`, and then a
+claude outside the verified family is refused for that step rather than run
+unattended — `GET /v1/agents` reports `input_verdict: "unsupported"` for it, and
+a step that reaches the engine anyway fails with `input_unsupported`.
+
 ## Codex
 
 **Binary:** `codex`. **Workflow value:** `agent: codex`.
@@ -99,7 +104,9 @@ plain-text prompt. Nothing degrades silently.
   another — so pickers offer free text and the CLI's own default. A model you
   type is passed through with a warning, not rejected.
 - **No cost reporting**, and `supports_input: false`: a codex step never enters
-  `awaiting_input`, and `on_input` has no effect on it.
+  `awaiting_input`, and `on_input: wait|deny` has no effect on it. `on_input:
+  require` is the one that does: a step declaring it cannot use codex at all,
+  and a workflow pinning `agent: codex` on such a step fails validation.
 - **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
   shows at the `normal` and `verbose` output levels (`v` cycles them) and the
   transcript records as `agent.thinking`. Whether any are emitted depends on
@@ -125,7 +132,9 @@ and would open a GUI. **Workflow value:** `agent: cursor`.
   question.
 - vincent's own worktree flags are never passed to it. Cursor has a worktree
   feature; worktrees belong to vincent, and two owners of one concept is a defect.
-- Reports token usage but **no cost**, and `supports_input: false`.
+- Reports token usage but **no cost**, and `supports_input: false` — so, like
+  codex, cursor cannot back a step declaring `on_input: require`, and pinning it
+  on one is a validation error.
 - Errors do not arrive in the stream — an invalid model id exits 1 with a message
   on stderr and no result line — so the adapter reports "stream ended without a
   result event" plus the stderr tail, which is what makes an everyday typo

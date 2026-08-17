@@ -40,6 +40,21 @@ func (r *Runner) runAgentStep(
 	inputTimeout := resolveInputTimeout(env.step, env.wf.Defaults, r.deps.Config())
 	onInput := resolveInputPolicy(env.step, env.wf.Defaults)
 
+	// The §7.4 `require` pre-flight (task 013). It runs before Start rather
+	// than as an adapter error because `require` is a precondition, not a
+	// behaviour: once the process is up, `require` and `wait` are the same
+	// thing, so the adapter has no reason to know which it was given. Only a
+	// positive "cannot" fails the step — an absent binary is
+	// agent_unavailable's business, and an unprobed one is nobody's.
+	if env.wf.StepRequiresInput(env.step) &&
+		r.deps.Catalog.InputVerdict(ctx, sel.Agent) == agent.InputUnsupported {
+		tr.Note("error", map[string]any{
+			"error": "agent " + sel.Agent + " cannot take mid-run input, which this step requires",
+		})
+		env.log.Error("step requires mid-run input", "agent", sel.Agent)
+		return stepOutcome{state: store.StepFailed, reason: ReasonInputUnsupported}
+	}
+
 	// The step clock is actor-managed (input.go) so it can pause while the
 	// task waits in awaiting_input (§7.4); a plain context deadline can't.
 	// Cancel causes tell classifyAgent why the tree was killed.

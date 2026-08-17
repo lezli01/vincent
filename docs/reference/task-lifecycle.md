@@ -152,6 +152,7 @@ same thing wherever it originated.
 | `canceled` | You cancelled the task |
 | `invalid_snapshot` | The task's stored workflow snapshot is unusable |
 | `platform_unsupported` | The workflow is restricted to platforms this host is not (`platforms:`). Only reachable for a task created on another OS |
+| `input_unsupported` | The step declares `on_input: require` and its agent cannot take mid-run input. Refused at task creation, so only reachable when the agent changed underneath the task |
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 

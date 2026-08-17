@@ -11,11 +11,18 @@ import (
 // agentResponse is one adapter in GET /v1/agents (spec §9.6): the §9.5
 // availability plus the provenance-tagged option catalog.
 type agentResponse struct {
-	Name          string         `json:"name"`
-	Available     bool           `json:"available"`
-	Path          string         `json:"path,omitempty"`
-	Version       string         `json:"version,omitempty"`
-	SupportsInput bool           `json:"supports_input"`
+	Name          string `json:"name"`
+	Available     bool   `json:"available"`
+	Path          string `json:"path,omitempty"`
+	Version       string `json:"version,omitempty"`
+	SupportsInput bool   `json:"supports_input"`
+	// InputVerdict is the daemon's answer to whether this adapter may back a
+	// step declaring `on_input: require` (§7.4, task 013): supported,
+	// unsupported, or unknown. It is not derivable from supports_input alone —
+	// a false there is "no" for an installed binary and "nobody can say" for
+	// an absent one — so the daemon publishes the verdict its own gate uses
+	// rather than leaving each client to re-derive the asymmetry.
+	InputVerdict  string         `json:"input_verdict"`
 	LoggedIn      *bool          `json:"logged_in"` // null = the adapter cannot tell (§9.5)
 	Error         string         `json:"error,omitempty"`
 	Models        []agent.Option `json:"models"`
@@ -49,6 +56,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			Path:          e.Availability.Path,
 			Version:       e.Availability.Version,
 			SupportsInput: e.Availability.SupportsInput,
+			InputVerdict:  string(e.InputVerdict()),
 			LoggedIn:      e.Availability.LoggedIn,
 			Error:         e.Availability.Error,
 			Models:        e.Options.Models,

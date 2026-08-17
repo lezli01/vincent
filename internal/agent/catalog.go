@@ -56,6 +56,17 @@ func (c Catalogs) Check(sel Selection) (errs, warns []Finding) {
 	return errs, warns
 }
 
+// InputEverPossible reports whether the named adapter could ever take mid-run
+// input (task 013). An adapter missing from the catalogs answers true: unknown
+// agents are someone else's check, the same rule Check applies.
+func (c Catalogs) InputEverPossible(name string) bool {
+	opts, known := c[name]
+	if !known {
+		return true
+	}
+	return opts.InputEverPossible()
+}
+
 // ownerOf names an adapter other than exclude whose catalog contains value.
 func (c Catalogs) ownerOf(list func(Options) []Option, value, exclude string) string {
 	for name, opts := range c {
@@ -75,6 +86,42 @@ func containsOption(opts []Option, value string) bool {
 	return false
 }
 
+// InputVerdict is what the daemon knows *right now* about an adapter's
+// ability to stop a run and take a human answer (task 013). It is the one
+// answer the creation-time gate and the engine's pre-flight both consult, so
+// "can this agent be asked a question" has a single source.
+type InputVerdict string
+
+// Input verdicts (task 013).
+const (
+	// InputUnknown is "nobody can say": the binary is not installed, the
+	// probe did not answer, or the adapter is not registered. Callers must
+	// let the work through — §9.6's degrade-never-block rule outranks a gate
+	// built on a probe that failed.
+	InputUnknown InputVerdict = "unknown"
+	// InputSupported is an installed binary that reported input support.
+	InputSupported InputVerdict = "supported"
+	// InputUnsupported is a positive no: an adapter that can never support
+	// input, or an installed one whose version falls outside the verified
+	// family. Only this verdict refuses anything.
+	InputUnsupported InputVerdict = "unsupported"
+)
+
+// InputVerdict reports whether the named adapter can take mid-run input,
+// combining the static catalog capability with what the last probe saw
+// (task 013). The static "never" is decisive without an installed binary;
+// everything else needs one, and an absent or unprobed binary is unknown.
+func (c *CatalogCache) InputVerdict(ctx context.Context, name string) InputVerdict {
+	if c == nil {
+		return InputUnknown
+	}
+	e, ok := c.Entry(ctx, name, false)
+	if !ok {
+		return InputUnknown
+	}
+	return e.InputVerdict()
+}
+
 // CatalogEntry is one adapter's cached probe result (spec §9.6): the §9.5
 // availability plus the merged option catalog.
 type CatalogEntry struct {
@@ -82,6 +129,24 @@ type CatalogEntry struct {
 	Options      Options
 	ProbedAt     time.Time
 	ProbeError   string // "" = clean probe
+}
+
+// InputVerdict is this entry's answer to "can this adapter be asked a
+// question" (task 013). The static catalog level is decisive without an
+// installed binary — an adapter with no control channel has none whether or
+// not it is on this machine — and everything else needs one: an absent or
+// unprobed binary is unknown, never a refusal.
+func (e CatalogEntry) InputVerdict() InputVerdict {
+	switch {
+	case !e.Options.InputEverPossible():
+		return InputUnsupported
+	case !e.Availability.Found:
+		return InputUnknown
+	case e.Availability.SupportsInput:
+		return InputSupported
+	default:
+		return InputUnsupported
+	}
 }
 
 // catalogKey is the binary identity a cache entry is keyed by: resolved path

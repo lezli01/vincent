@@ -78,6 +78,15 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The `on_input: require` gate again (§7.4, task 013), against the task's
+	// own snapshot. Retry is the one action that re-admits a task, and the
+	// repair for an `input_unsupported` block is environmental — install the
+	// agent, or upgrade it back inside the verified family — so the verdict
+	// is re-taken here rather than assumed from creation time. A retry that
+	// would block again identically is refused with the reason instead.
+	if !s.checkRetryInput(w, r) {
+		return
+	}
 	s.runAction(w, r, func(id int64) (*store.Task, error) {
 		t, err := s.deps.Runner.Retry(r.Context(), id,
 			store.Override{Prompt: req.PromptOverride, Run: req.RunOverride})
