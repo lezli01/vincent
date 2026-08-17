@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (13/14) · **Opened:** 2026-08-17
+**Status:** ✅ done (14/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -669,7 +669,7 @@ an `agent:` the policy will never run.
   `awaiting_children (2 blocked)`; drilling from a parent into its lanes and
   back; the new state in the board's colour and action-bar tables
   (`internal/tui/bindings.go` key table updated with it).
-- [ ] **014.13 — Docs.** Depends: all. Spec §5.3, §6, §10, §11, §12.4, §13.2,
+- [x] **014.13 — Docs.** ✓ 2026-08-17 Depends: all. Spec §5.3, §6, §10, §11, §12.4, §13.2,
   §13.3, §14 and §18 amended in place with dated notes — §12.4 and §14 because
   recovery aborting a merge and the new `tasks` columns are exactly what those
   sections describe; §20 amended to promote parallel steps and fan-out out of
@@ -696,4 +696,30 @@ an `agent:` the policy will never run.
 
 ## Verification
 
-Not started.
+*2026-08-17.* All 14 subtasks delivered.
+
+- `go run mage.go build test testrace lint`, plus `golangci-lint` cross-built
+  for `windows`, `darwin` and `linux` — a host-only lint hides findings in
+  build-tagged files.
+- Gates: `m1`, `m2` and `m5` re-run to prove no regression; the new `m6` passes
+  all nine scenarios, and is wired into CI on all three platforms.
+
+Three bugs the work surfaced, each recorded where it was found:
+
+1. **A resolved lane could not carry both `workflow:` and `steps:`.** They are
+   mutually exclusive in an authored file, so the resolved snapshot no longer
+   parsed. The name moved to `resolved_from:` (014.6).
+2. **A child's snapshot could not be named `{parent}/{step}/{lane}`.** The
+   engine re-parses the snapshot on every admission and validation rejects `/`
+   in a workflow name, so every child blocked with `invalid_snapshot` on its
+   first admission. The synthetic name belongs to the `workflow_name` *column*
+   — where its `/` is exactly what makes it collision-proof — and the snapshot
+   is named after where its steps came from (014.8).
+3. **Decision 9's re-entry rule read the wrong thing.** Whether a join was
+   resuming from a hand resolution or from a crash was read from the task's
+   state, which cannot answer it: the scheduler moves a retried task out of
+   `blocked` before the engine sees it. It is read from the previous attempt's
+   outcome instead — and must be read *before* the new attempt's row exists,
+   or that row is the latest one and hides the evidence. The symptom was the
+   worst case the decision exists to prevent: `git merge --abort` over a
+   resolution somebody had just finished. Caught by the `m6` gate (014.14).

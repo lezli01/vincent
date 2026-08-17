@@ -69,6 +69,11 @@ usage_limit_recheck_interval: 15m
 parallel:
   max_parallel: 4
 
+# Bounds on a `type: fan_out` tree, checked at task creation.
+fan_out:
+  max_depth: 3
+  max_tasks: 64
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -333,6 +338,27 @@ for the hardware, not for the board.
 Read when a group starts, so a reload governs the next group rather than
 resizing one already running. See
 [Workflow schema](workflow-schema.md#type-parallel).
+
+### `fan_out`
+
+```yaml
+fan_out:
+  max_depth: 3
+  max_tasks: 64
+```
+
+Bounds on a `type: fan_out` tree, both checked when a task is created and both
+reported as a `400` naming the bound crossed. `max_tasks` counts the child
+tasks one creation would produce, **not** counting the root.
+
+They are enforced at creation because the whole tree's shape is known there —
+lane lists live in the task's snapshot — which is what turns a depth-3
+explosion into an error in front of the person typing rather than two hundred
+worktrees discovered six hours later.
+
+Depth is unlimited by design and bounded by a default: a deeper tree is a
+config edit, not a code change. See
+[Workflow schema](workflow-schema.md#type-fan_out).
 
 ### `log_level`
 

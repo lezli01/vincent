@@ -11,6 +11,12 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
+// fanOutBudget is how long a fan-out test waits. It is larger than the
+// default because a fan-out is a chain of admissions — parent, then each lane,
+// then the parent again — with a git worktree per lane and a merge at the
+// end, paced by the scheduler's 5s safety tick.
+const fanOutBudget = 150 * time.Second
+
 // laneStepIndent shifts a commandStep block (written at the top level's two
 // spaces) under a lane's `steps:`, which sits four levels in.
 const laneStepIndent = "        "
@@ -45,7 +51,7 @@ func fanOutSnapshot(merge string, lanes ...[2]string) string {
 // waitForChildren polls until the parent has the expected number of lanes.
 func (h *engineHarness) waitForChildren(t *testing.T, parentID int64, want int) []store.Task {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(fanOutBudget)
 	for time.Now().Before(deadline) {
 		kids, err := h.store.ListChildren(t.Context(), parentID)
 		if err != nil {
@@ -88,7 +94,7 @@ func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 		}
 	}
 
-	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	done := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {
 		t.Fatalf("parent state = %s (block_reason %q), want done", done.State, done.BlockReason)
 	}
@@ -120,7 +126,7 @@ func TestFanOutParentHoldsNoSlotWhileWaiting(t *testing.T) {
 
 	// Under a cap of 1 this can only finish if the parked parent stopped
 	// counting against it.
-	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	done := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {
 		t.Fatalf("parent state = %s (%q); a parked parent still held its slot",
 			done.State, done.BlockReason)
@@ -136,7 +142,7 @@ func TestFanOutBlocksOnMergeConflict(t *testing.T) {
 	task := h.createTask(t, fanOutSnapshot("",
 		[2]string{"api", "shared.txt"}, [2]string{"docs", "shared.txt"}))
 
-	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	blocked := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskBlocked, store.TaskDone)
 	if blocked.State != store.TaskBlocked {
 		t.Fatalf("parent state = %s, want blocked on the conflict", blocked.State)
 	}
@@ -177,7 +183,7 @@ func TestFanOutBlocksWhenALaneDidNotFinish(t *testing.T) {
 		}
 	}
 
-	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	blocked := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskBlocked, store.TaskDone)
 	if blocked.State != store.TaskBlocked {
 		t.Fatalf("parent state = %s, want blocked", blocked.State)
 	}
