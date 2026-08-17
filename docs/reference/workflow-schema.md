@@ -100,7 +100,7 @@ Every key here is also settable per step, where it wins.
 | `model` | string | adapter default | agent steps |
 | `effort` | string | adapter default | agent steps (**ignored by cursor**) |
 | `permission_mode` | `full-auto` \| `restricted` | `full-auto` | agent steps |
-| `on_input` | `wait` \| `deny` | `wait` | agent steps on input-capable adapters |
+| `on_input` | `wait` \| `deny` \| `require` | `wait` | agent steps; `require` also gates which agents may run the step |
 | `input_timeout` | duration | `24h` (config) | agent steps |
 | `max_retries` | int | `1` | all steps |
 | `timeout` | duration | `60m` agent / `15m` command (config) | all steps |
@@ -133,7 +133,7 @@ Runs an agent CLI headlessly in the worktree.
 | `model` | string | | Adapter-native id or alias |
 | `effort` | string | | Adapter-native. Cursor has none — it lives in the model id |
 | `permission_mode` | string | | `full-auto` (default) or `restricted` |
-| `on_input` | string | | `wait` (default) or `deny`. No effect on codex or cursor |
+| `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex or cursor; `require` refuses them |
 | `input_timeout` | duration | | Bounds each wait in `awaiting_input`, per request |
 | `check` | string | | Shell command that must exit 0 for the attempt to succeed |
 | `check_timeout` | duration | | Defaults to the command timeout |
@@ -296,9 +296,12 @@ network, no agent CLI installed.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.
-- Durations parse as Go durations; `on_input` is `wait` or `deny`.
+- Durations parse as Go durations; `on_input` is `wait`, `deny` or `require`.
 - Unknown keys are errors.
 - `agent` names a known adapter.
+- A step with `on_input: require` does not resolve to an adapter that can
+  never take mid-run input (codex, cursor). The error points at the `agent`
+  field that supplied the value — the step's own, or `defaults.agent`.
 - The resolved `(agent, model, effort)` triple is checked **cross-catalog**:
   - a value in the resolved adapter's own catalog → valid;
   - a value found only in **another** adapter's catalog → **error** (claude's

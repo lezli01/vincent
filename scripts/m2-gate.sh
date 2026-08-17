@@ -9,10 +9,11 @@
 # unattended (scenario 5), and that archiving deletes a branch that carries no
 # commits past its base while keeping every branch that does (scenario 6), and
 # that a workflow restricted to other platforms is listed but never offered here
-# (scenario 7). Runs against the committed fakeagent so CI never calls a real
+# (scenario 7), and that a step requiring mid-run interaction refuses an agent
+# that cannot provide it (scenario 8). Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7|8 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -859,6 +860,100 @@ EOF
   echo "=== scenario 7 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 8 (task 013): a step declaring `on_input: require` only runs on an
+# agent that can stop and ask. Three layers, one daemon: the workflow pinning
+# codex fails §8.2 validation outright, the unpinned one advertises
+# requires_input, and a task naming codex on it is refused with 400 while the
+# same workflow on claude runs to completion.
+# ---------------------------------------------------------------------------
+scenario8() {
+  echo "=== scenario 8: workflows that require mid-run interaction gate their agent"
+  scenario_dirs s8
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+  codex:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  # The requiring step leaves its agent to the task, which is what makes the
+  # task's choice the thing being gated.
+  cat > "$CONFIG_DIR/workflows/m2-interactive.yaml" <<'EOF'
+name: m2-interactive
+description: M2 gate — a step that needs a human mid-run.
+steps:
+  - id: ask
+    type: agent
+    on_input: require
+    max_retries: 0
+    prompt: Decide what to build.
+EOF
+  # Pinned to an adapter with no control channel: broken on every host, and
+  # decidable at load without probing anything.
+  cat > "$CONFIG_DIR/workflows/m2-impossible.yaml" <<'EOF'
+name: m2-impossible
+description: M2 gate — requires input from an agent that can never give it.
+steps:
+  - id: ask
+    type: agent
+    agent: codex
+    on_input: require
+    prompt: Decide what to build.
+EOF
+
+  export FAKEAGENT_SCENARIO=success
+  daemon_up
+
+  local repo="$TMP/s8/repo" proj list
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  echo "== the impossible workflow is listed with a validation error naming the agent"
+  list="$(api GET "/workflows?project_id=$proj")"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-impossible") | .error' <<<"$list")" != "null" ]] \
+    || fail "require on codex validated clean: $list"
+  jq -e '.workflows[] | select(.name=="m2-impossible") | .errors[0].path == "steps[0].agent"' \
+    <<<"$list" >/dev/null \
+    || fail "the finding does not point at the agent field: $list"
+
+  echo "== the runnable one advertises that it needs an interactive agent"
+  [[ "$(jq -r '.workflows[] | select(.name=="m2-interactive") | .requires_input' <<<"$list")" == "true" ]] \
+    || fail "a workflow with an unpinned requiring step does not report requires_input: $list"
+  [[ "$(jq -r '.workflows[] | select(.name=="adhoc") | .requires_input' <<<"$list")" == "false" ]] \
+    || fail "the built-in adhoc workflow reports requires_input: $list"
+
+  echo "== /v1/agents publishes the verdict the gate uses"
+  local agents
+  agents="$(api GET /agents)"
+  [[ "$(jq -r '.agents[] | select(.name=="codex") | .input_verdict' <<<"$agents")" == "unsupported" ]] \
+    || fail "codex does not report an unsupported input verdict: $agents"
+  [[ "$(jq -r '.agents[] | select(.name=="claude") | .input_verdict' <<<"$agents")" == "supported" ]] \
+    || fail "the fake claude does not report a supported input verdict: $agents"
+
+  echo "== a task picking codex for it is refused with 400"
+  local status
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"project_id\":$proj,\"workflow\":\"m2-interactive\",\"title\":\"Nope\",\"agent\":\"codex\"}" \
+    "$BASE/tasks")"
+  [[ "$status" == "400" ]] \
+    || fail "an agent that cannot answer questions should be 400 at creation, got $status"
+
+  echo "== the same workflow on an agent that can ask runs to completion"
+  local ok
+  ok="$(api POST /tasks \
+    "{\"project_id\":$proj,\"workflow\":\"m2-interactive\",\"title\":\"Yes\",\"agent\":\"claude\"}" | jq -r .id)"
+  wait_for_state "$ok" done 90
+
+  unset FAKEAGENT_SCENARIO
+  "$VINCENT" daemon stop
+  echo "=== scenario 8 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -872,7 +967,8 @@ case "$WHICH" in
   5) scenario5 ;;
   6) scenario6 ;;
   7) scenario7 ;;
-  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7 ;;
+  8) scenario8 ;;
+  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

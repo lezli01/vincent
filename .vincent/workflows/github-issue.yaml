@@ -11,6 +11,11 @@
 # (`supports_input: false`, §9.3/§9.7), so on those adapters the questioning
 # step would silently skip the part that makes this workflow worth running.
 #
+# Left on `wait` rather than `on_input: require` (task 013): `require` would
+# refuse those adapters outright, and degrading is what these files have
+# always documented as intended. Add it per file if you would rather the
+# workflow refuse than guess.
+#
 # POSIX-only. Every command step pins `shell: sh` and the draft check uses
 # `test`; on Windows this needs Git Bash's `sh` on PATH, and fails loudly
 # rather than being reinterpreted by pwsh (§8.3 — portability is the author's

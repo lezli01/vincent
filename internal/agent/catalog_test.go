@@ -277,3 +277,64 @@ func TestCatalogsPrimedOrCurated(t *testing.T) {
 		t.Errorf("primed catalog has %d models, want the probed 2", got)
 	}
 }
+
+// TestInputVerdict covers the asymmetry the whole gate rests on: only a
+// positive "cannot" refuses anything, so an absent or unprobed binary is
+// unknown rather than a refusal (task 013).
+func TestInputVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		entry CatalogEntry
+		want  InputVerdict
+	}{
+		{"never adapter, installed", CatalogEntry{
+			Options:      Options{InputSupport: InputNever},
+			Availability: Availability{Found: true},
+		}, InputUnsupported},
+		{"never adapter, not installed — still never", CatalogEntry{
+			Options: Options{InputSupport: InputNever},
+		}, InputUnsupported},
+		{"detected adapter, installed and supporting", CatalogEntry{
+			Options:      Options{InputSupport: InputDetected},
+			Availability: Availability{Found: true, SupportsInput: true},
+		}, InputSupported},
+		{"detected adapter, installed but out of the version family", CatalogEntry{
+			Options:      Options{InputSupport: InputDetected},
+			Availability: Availability{Found: true},
+		}, InputUnsupported},
+		{"detected adapter, not installed", CatalogEntry{
+			Options:      Options{InputSupport: InputDetected},
+			Availability: Availability{Error: "not found"},
+		}, InputUnknown},
+		{"catalog that says nothing is unjudged", CatalogEntry{
+			Availability: Availability{Found: true, SupportsInput: true},
+		}, InputSupported},
+		{"catalog that says nothing, absent binary", CatalogEntry{}, InputUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.entry.InputVerdict(); got != tc.want {
+				t.Errorf("InputVerdict() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A nil cache must answer unknown rather than panic: taskrun tolerates one.
+func TestNilCatalogCacheInputVerdict(t *testing.T) {
+	var c *CatalogCache
+	if got := c.InputVerdict(context.Background(), "claude"); got != InputUnknown {
+		t.Errorf("nil cache verdict = %q, want %q", got, InputUnknown)
+	}
+}
+
+// An adapter nobody registered is someone else's check, the same rule
+// Catalogs.Check applies to models and efforts.
+func TestCatalogsInputEverPossibleUnknownAgent(t *testing.T) {
+	c := Catalogs{"codex": {InputSupport: InputNever}}
+	if c.InputEverPossible("codex") {
+		t.Error("codex reported as input-capable")
+	}
+	if !c.InputEverPossible("nobody") {
+		t.Error("unknown agent judged; unknown agents are not this check's business")
+	}
+}

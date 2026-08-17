@@ -361,3 +361,11 @@ func TestRespondUnsupported(t *testing.T) {
 	drain(t, h)
 	_, _ = h.Wait()
 }
+
+// cursor-agent has no control channel in any version (§9.7), which is what
+// lets §8.2 refuse a requiring step without probing (task 013).
+func TestCuratedInputSupportIsNever(t *testing.T) {
+	if got := New(nil).Curated().InputSupport; got != agent.InputNever {
+		t.Errorf("InputSupport = %q, want %q", got, agent.InputNever)
+	}
+}

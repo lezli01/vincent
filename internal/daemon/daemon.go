@@ -238,6 +238,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Config:    currentConfig,
 		Worktrees: worktrees,
 		Agents:    agents,
+		Catalog:   catalog,
 		Shells:    shells,
 		DataDir:   dirs.Data,
 		Logger:    logger,

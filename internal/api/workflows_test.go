@@ -102,6 +102,7 @@ type workflowEntryBody struct {
 	} `json:"steps"`
 	Platforms         []string `json:"platforms"`
 	PlatformSupported bool     `json:"platform_supported"`
+	RequiresInput     bool     `json:"requires_input"`
 	Error             *string  `json:"error"`
 }
 

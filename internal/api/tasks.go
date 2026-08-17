@@ -384,6 +384,13 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
 		return
 	}
+	// The `on_input: require` gate (§7.4, task 013), after the catalog check
+	// so a task with two problems reports the model one first — that is the
+	// field the human just typed.
+	if mismatch := s.inputMismatch(ctx, entry.Workflow, &t); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
+		return
+	}
 	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
 	// Resolve before the insert so a bad name is a 400 rather than a task that
 	// blocks later, and so the git-side checks run with no transaction open.
@@ -463,6 +470,61 @@ func (s *Server) checkTaskCatalog(wf *workflow.Workflow, t *store.Task) (warning
 		}
 	}
 	return warnings, ""
+}
+
+// inputMismatch applies the `on_input: require` gate to a task about to be
+// created or edited (§7.4, task 013): every step that requires mid-run input
+// must resolve to an agent that can provide it.
+//
+// The verdict is the probed one, so claude's version gate counts — but only a
+// *positive* "does not support input" refuses anything. A missing binary or a
+// probe that did not answer lets the task through, because §9.6's
+// degrade-never-block rule outranks this gate: one cold-logon probe timeout
+// must not start refusing task creation against a healthy CLI (T4.22). The
+// engine's pre-flight is the backstop for what a probe could not say here.
+func (s *Server) inputMismatch(ctx context.Context, wf *workflow.Workflow, t *store.Task) string {
+	if s.deps.Catalog == nil || wf == nil {
+		return ""
+	}
+	override := agent.Level{Agent: t.AgentOverride, Model: t.ModelOverride, Effort: t.EffortOverride}
+	return wf.InputMismatch(override, func(name string) bool {
+		return s.deps.Catalog.InputVerdict(ctx, name) == agent.InputUnsupported
+	})
+}
+
+// checkRetryInput re-applies the task-013 gate before a retry re-admits a
+// task, reading the agent selection out of the task's own snapshot (§5.3).
+// It writes the error and returns false when the retry would only reproduce
+// an `input_unsupported` block; a task whose snapshot no longer parses is
+// left alone, because the engine reports that as `invalid_snapshot` and two
+// errors for one cause is one too many.
+func (s *Server) checkRetryInput(w http.ResponseWriter, r *http.Request) bool {
+	if s.deps.Catalog == nil {
+		return true
+	}
+	ctx := r.Context()
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
+		return false
+	}
+	task, err := s.deps.Store.GetTask(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNotFound, fmt.Sprintf("task %d not found", id))
+		return false
+	}
+	if err != nil {
+		s.internalError(w, "get task", err)
+		return false
+	}
+	wf, _, perr := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	if perr != nil {
+		return true
+	}
+	if mismatch := s.inputMismatch(ctx, wf, task); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {

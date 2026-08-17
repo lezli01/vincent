@@ -67,7 +67,16 @@ const (
 	// this one after the task was queued. Distinct from invalid_snapshot: the
 	// snapshot is perfectly valid, just not here.
 	ReasonPlatformUnsupported = "platform_unsupported"
-	ReasonInternalError       = "internal_error"
+	// ReasonInputUnsupported is a step declaring `on_input: require` whose
+	// resolved adapter cannot stop and ask (§7.4, task 013). Task creation
+	// refuses these, so reaching it here means the task and its daemon parted
+	// company: claude upgraded past the §9.3 version ceiling, a data directory
+	// carried to a machine where that agent is a different build, or a
+	// workflow edited after the task was queued. Distinct from
+	// agent_unavailable on the same grounds restricted_unsupported is — the
+	// CLI is installed and healthy, just not able to hold a conversation.
+	ReasonInputUnsupported = "input_unsupported"
+	ReasonInternalError    = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit

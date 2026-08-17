@@ -31,5 +31,12 @@ func (a *Adapter) Curated() agent.Options {
 	for _, v := range curatedEfforts {
 		efforts = append(efforts, agent.Option{Value: v, Source: agent.SourceCurated})
 	}
-	return agent.Options{Models: []agent.Option{}, Efforts: efforts}
+	return agent.Options{
+		Models:  []agent.Option{},
+		Efforts: efforts,
+		// `codex exec` is strictly non-interactive (§9.3): no version of it
+		// can stop to ask, so a workflow step requiring input is refused
+		// against this adapter at load time (task 013).
+		InputSupport: agent.InputNever,
+	}
 }

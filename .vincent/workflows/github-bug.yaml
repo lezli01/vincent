@@ -40,6 +40,11 @@
 # by codex and cursor (`supports_input: false`, §9.3/§9.7), so on those adapters
 # `diagnose` would silently guess at the repro instead of asking the reporter.
 #
+# Left on `wait` rather than `on_input: require` (task 013): `require` would
+# refuse those adapters outright, and degrading is what these files have
+# always documented as intended. Add it per file if you would rather the
+# workflow refuse than guess.
+#
 # POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
 # shell at all (§8.2 rejects `shell` on an agent step), so their `check` runs
 # under the platform default and is written in `sh` regardless. On Windows the

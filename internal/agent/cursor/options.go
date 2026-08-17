@@ -72,6 +72,9 @@ func mergeOptions(cliModels []string) agent.Options {
 		Models:       models,
 		Efforts:      []agent.Option{},
 		DefaultModel: defaultModel,
+		// cursor-agent has no input-format flag and no control channel
+		// (§9.7); no version of it can stop to ask (task 013).
+		InputSupport: agent.InputNever,
 	}
 }
 

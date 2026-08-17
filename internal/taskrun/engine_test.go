@@ -67,15 +67,20 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 	if mutate != nil {
 		mutate(&cfg)
 	}
+	agents := agent.NewRegistry(
+		claude.New(func() string { return fake }),
+		codex.New(func() string { return fake }),
+		cursor.New(func() string { return fake }),
+	)
 	runner := New(Deps{
 		Store:     st,
 		Config:    func() config.Config { return cfg },
 		Worktrees: worktree.NewManager(git, dataDir),
-		Agents: agent.NewRegistry(
-			claude.New(func() string { return fake }),
-			codex.New(func() string { return fake }),
-			cursor.New(func() string { return fake }),
-		),
+		Agents:    agents,
+		// Wired as the daemon wires it, so the §7.4 `require` pre-flight is
+		// live. It costs nothing for a step that does not require input: the
+		// policy is checked before the catalog is consulted.
+		Catalog: agent.NewCatalogCache(agents),
 		DataDir: dataDir,
 		Logger:  log,
 	})
@@ -482,6 +487,51 @@ func TestEnginePlatformRestrictedSnapshotBlocks(t *testing.T) {
 	}
 	if runs := h.stepRuns(t, task.ID); len(runs) != 0 {
 		t.Errorf("step runs = %d, want none — the restriction is judged before any step", len(runs))
+	}
+}
+
+// TestEngineRequireOnIncapableAgentBlocks covers the §7.4 `require`
+// pre-flight (task 013). Creation refuses such a task, so the only way to
+// hold one is for the task and its daemon to have parted company — which the
+// fixture reproduces by inserting the snapshot directly, the way the platform
+// restriction's test does.
+func TestEngineRequireOnIncapableAgentBlocks(t *testing.T) {
+	h := newEngineHarness(t)
+	snapshot := "name: interactive\nsteps:\n" +
+		"  - id: ask\n    type: agent\n    agent: codex\n    on_input: require\n" +
+		"    max_retries: 0\n    prompt: what should I build?\n"
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked || blocked.BlockReason != ReasonInputUnsupported {
+		t.Fatalf("task = %s/%q, want blocked/%s",
+			blocked.State, blocked.BlockReason, ReasonInputUnsupported)
+	}
+	// The attempt is recorded — this is a step failure under §7.2, not a
+	// pre-admission refusal — but no process ran.
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 {
+		t.Fatalf("step runs = %d, want the one failed attempt", len(runs))
+	}
+	if runs[0].PID != nil {
+		t.Errorf("pid = %d, want none: the check precedes Start", *runs[0].PID)
+	}
+}
+
+// The same step on an adapter that *can* ask runs normally, so the pre-flight
+// gates on the capability rather than on the policy.
+func TestEngineRequireOnCapableAgentRuns(t *testing.T) {
+	h := newEngineHarness(t)
+	snapshot := "name: interactive\nsteps:\n" +
+		"  - id: ask\n    type: agent\n    agent: claude\n    on_input: require\n" +
+		"    max_retries: 0\n    prompt: what should I build?\n"
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
 	}
 }
 
