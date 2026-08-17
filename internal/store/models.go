@@ -21,11 +21,14 @@ const (
 	TaskRunning       = taskstate.Running
 	TaskAwaitingGate  = taskstate.AwaitingGate
 	TaskAwaitingInput = taskstate.AwaitingInput
-	TaskBlocked       = taskstate.Blocked
-	TaskPaused        = taskstate.Paused
-	TaskDone          = taskstate.Done
-	TaskAborted       = taskstate.Aborted
-	TaskArchived      = taskstate.Archived
+	// TaskAwaitingChildren is a fan-out parent waiting on its lanes (§7.6,
+	// task 014). It holds no slot.
+	TaskAwaitingChildren = taskstate.AwaitingChildren
+	TaskBlocked          = taskstate.Blocked
+	TaskPaused           = taskstate.Paused
+	TaskDone             = taskstate.Done
+	TaskAborted          = taskstate.Aborted
+	TaskArchived         = taskstate.Archived
 )
 
 // StepRunState enumerates step-run attempt states (spec §5.4).
@@ -105,11 +108,25 @@ type Task struct {
 	// than in each caller, so a hold cannot outlive the queued period it
 	// belongs to.
 	QueuedReason string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	StartedAt    *time.Time
-	FinishedAt   *time.Time
-	ArchivedAt   *time.Time
+	// ParentTaskID links a lane to the task whose `fan_out` step spawned it
+	// (task 014, §7.6); nil for a root task. ParentStepIndex, LaneID and
+	// LaneOrder are set with it and nil/empty without it: the step it came
+	// from, the lane's id in that step, and the lane's **declared** position,
+	// which is the order the join merges in — completion order would make a
+	// re-run conflict differently and break recovery's idempotence
+	// (decisions 7, 9).
+	//
+	// A lane is otherwise an ordinary task in every respect. These four
+	// columns are the whole difference (decision 1).
+	ParentTaskID    *int64
+	ParentStepIndex *int
+	LaneID          string
+	LaneOrder       int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+	ArchivedAt      *time.Time
 }
 
 // StepRun is one attempt at executing one step of one task; history is
