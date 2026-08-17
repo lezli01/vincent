@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (2/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (3/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -595,7 +595,7 @@ for workflow content.
   does not cancel siblings (decision 18); the group succeeds iff every sub-step
   does. The actor remains the sole writer — it forks, collects, and writes the
   rows itself.
-- [ ] **014.3 — Clients and docs for phase 1.** Depends: 014.2. TUI step list
+- [x] **014.3 — Clients and docs for phase 1.** ✓ 2026-08-17 Depends: 014.2. TUI step list
   renders a group and its sub-steps with independent live output (`run_id` on
   every chunk already disambiguates, §13.3 unchanged); spec §7, §8.2 and §11
   amended in place, including the explicit note that `max_parallel` is a second

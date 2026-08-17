@@ -65,6 +65,10 @@ transcript_max_bytes: 512MB
 # How long a quota-stopped task waits when the agent CLI named no reset time.
 usage_limit_recheck_interval: 15m
 
+# Sub-steps of one `parallel` step group running at once.
+parallel:
+  max_parallel: 4
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -309,6 +313,26 @@ of the step's retry budget. See
 Must be positive. There is no exponential backoff; if you know your plan's
 window, set this to match it. Hot-reloaded, so a change applies to the next
 task that hits a limit.
+
+### `parallel`
+
+```yaml
+parallel:
+  max_parallel: 4
+```
+
+How many sub-steps of a `type: parallel` step group run at once, when the group
+does not set its own `max_parallel:`. Must be at least 1.
+
+**This is a second concurrency dimension, and your task caps do not cover it.**
+`max_parallel_tasks` counts *tasks* in a slot-holding state; a group runs
+inside one such task, so one running task can keep four processes busy. A board
+reading "1 running" is not a promise about the load on the machine — size this
+for the hardware, not for the board.
+
+Read when a group starts, so a reload governs the next group rather than
+resizing one already running. See
+[Workflow schema](workflow-schema.md#type-parallel).
 
 ### `log_level`
 
