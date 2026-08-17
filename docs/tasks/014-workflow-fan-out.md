@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (12/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (13/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -682,7 +682,7 @@ an `agent:` the policy will never run.
   landing next to the schema that causes them — including, stated plainly, that
   a fan-out fills the caps rather than exceeding them, and that N lanes leave N
   worktrees until archived.
-- [ ] **014.14 — Gate.** Depends: 014.2, 014.9, 014.10. New `scripts/m6-gate.sh`
+- [x] **014.14 — Gate.** ✓ 2026-08-17 Depends: 014.2, 014.9, 014.10. New `scripts/m6-gate.sh`
   covering **both** phases, committed executable via `git update-index --chmod=+x`
   — a non-executable gate passes on Windows and exits 126 on both POSIX legs —
   and wired into CI on all three platforms, merge behaviour on Windows being

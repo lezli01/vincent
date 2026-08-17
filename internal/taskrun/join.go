@@ -162,6 +162,30 @@ func (r *Runner) resumeMerge(ctx context.Context, env *stepEnv) (stepOutcome, bo
 	return stepOutcome{}, false
 }
 
+// resumedFromConflict reports whether this admission follows a human
+// resolving a merge conflict by hand, as opposed to a crash mid-join.
+//
+// It is read from the step's own history rather than from the task's state,
+// which cannot answer it: the scheduler moves a retried task out of `blocked`
+// before the engine ever sees it, so by here every re-entry looks alike. The
+// last attempt does distinguish them — a conflict block leaves a `failed` row
+// with reason merge_conflict, and a crash leaves an `interrupted` one.
+//
+// The caller must ask **before** creating this attempt's row, which would
+// otherwise be the latest one and hide the evidence.
+//
+// Getting this wrong in the safe direction costs a re-merge; getting it wrong
+// in the other direction runs `git merge --abort` over an hour of somebody's
+// hand resolution, which is the failure decision 9 exists to prevent.
+func (r *Runner) resumedFromConflict(ctx context.Context, env *stepEnv) bool {
+	last, err := r.deps.Store.LatestStepRun(ctx, env.task.ID, env.index, env.step.ID)
+	if err != nil {
+		env.log.Error("read the join's last attempt", "error", err)
+		return false
+	}
+	return last != nil && last.State == store.StepFailed && last.FailureReason == ReasonMergeConflict
+}
+
 // handleConflict applies the step's `on_conflict:` policy to a conflicted
 // merge. The default blocks; `agent` tries a resolver first and falls back to
 // the block when it or its check fails.
