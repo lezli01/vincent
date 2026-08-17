@@ -54,6 +54,8 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		// retry can fix. An automatic second merge would abort the first,
 		// hit the same conflict, and block anyway.
 		joinEnv := *env
+		// Asked before the attempt row exists: see resumedFromConflict.
+		joinEnv.resumedFromConflict = r.resumedFromConflict(ctx, env)
 		if joinEnv.step.MaxRetries == nil {
 			zero := 0
 			joinEnv.step.MaxRetries = &zero

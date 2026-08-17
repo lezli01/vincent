@@ -199,6 +199,29 @@ func (s *Store) LatestStepStates(ctx context.Context, taskID int64, stepIndex in
 	return out, nil
 }
 
+// LatestStepRun returns the newest attempt of one step, or nil when it has
+// none.
+//
+// It exists for the fan-out join's re-entry rule (task 014 decision 9): a
+// merge in progress means a crash or a human's resolution, and the two are
+// told apart by how the last attempt ended. The task's live state cannot
+// answer it — by the time the engine runs, the scheduler has already moved a
+// retried task out of `blocked`.
+func (s *Store) LatestStepRun(ctx context.Context, taskID int64, stepIndex int, stepID string) (*StepRun, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+		WHERE task_id = ? AND step_index = ? AND step_id = ?
+		ORDER BY attempt DESC, id DESC LIMIT 1`,
+		taskID, stepIndex, stepID)
+	r, err := scanStepRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("latest step run: %w", err)
+	}
+	return r, nil
+}
+
 // ListStepRuns returns every attempt of every step of the task, ordered by
 // step index, then attempt.
 func (s *Store) ListStepRuns(ctx context.Context, taskID int64) ([]StepRun, error) {

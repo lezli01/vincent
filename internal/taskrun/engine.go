@@ -117,6 +117,10 @@ type stepEnv struct {
 	// merge_conflict block, as opposed to after a crash. Only the crash may
 	// run `git merge --abort` — aborting over a conflict somebody spent an
 	// hour resolving is the failure decision 9 exists to prevent.
+	//
+	// It is set by runFanOut *before* the attempt row is created, because the
+	// evidence is the previous attempt's outcome and creating this attempt's
+	// row hides it.
 	resumedFromConflict bool
 	log                 *slog.Logger
 }
@@ -182,12 +186,6 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		env := &stepEnv{
 			task: task, project: project, wf: wf,
 			step: wf.Steps[index], index: index,
-			// A human retry off a merge_conflict block is the one re-entry
-			// that must not abort the merge in progress (decision 9). It is
-			// read from the state this admission started in, before anything
-			// below overwrites it.
-			resumedFromConflict: task.State == store.TaskBlocked &&
-				task.BlockReason == ReasonMergeConflict,
 			log: log.With("step", wf.Steps[index].ID, "step_index", index),
 		}
 		if env.step.Type == workflow.StepManual {
