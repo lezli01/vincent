@@ -120,6 +120,9 @@ func (s *Scheduler) admit(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	// Fan-out parents whose subtrees have finished come back to the queue
+	// first, so this same walk can admit them (§7.6, task 014 decision 25).
+	s.resumeSettledParents(ctx)
 	limit := s.deps.Config().MaxParallelTasks
 	global, err := s.deps.Store.CountSlotHolders(ctx)
 	if err != nil {
@@ -234,6 +237,46 @@ func (s *Scheduler) persistCtx() context.Context {
 		return context.Background()
 	}
 	return s.persist
+}
+
+// resumeSettledParents returns every parent parked in `awaiting_children` to
+// the queue once each of its descendants has settled (task 014).
+//
+// This is the scheduler's job rather than the last child's actor for the
+// reason admission itself is: two children settling concurrently would both
+// believe they were last, or neither would, and an actor writing another
+// task's state breaks the sole-writer invariant outright. Here it is one
+// goroutine making one decision, which is the property the whole package
+// exists to provide.
+func (s *Scheduler) resumeSettledParents(ctx context.Context) {
+	parents, err := s.deps.Store.ListTasks(ctx, store.TaskFilter{
+		State: store.TaskAwaitingChildren, Children: store.ChildrenInclude,
+	})
+	if err != nil {
+		s.deps.Logger.Error("admission: list parked parents", "error", err)
+		return
+	}
+	for _, parent := range parents {
+		rollup, err := s.deps.Store.ChildrenOf(ctx, parent.ID)
+		if err != nil {
+			s.deps.Logger.Error("admission: roll up children", "task", parent.ID, "error", err)
+			continue
+		}
+		if !rollup.Done() {
+			continue
+		}
+		if _, _, err := s.deps.Store.TransitionTask(ctx, parent.ID,
+			store.TaskAwaitingChildren, store.TaskQueued, store.TaskChange{}); err != nil {
+			if _, conflict := store.AsStateConflict(err); conflict {
+				// A human cancelled it between the list and the write.
+				continue
+			}
+			s.deps.Logger.Error("admission: resume parent", "task", parent.ID, "error", err)
+			continue
+		}
+		s.deps.Logger.Info("fan-out children settled; parent re-queued",
+			"task", parent.ID, "children", rollup.Total)
+	}
 }
 
 // WakeOn reports whether an event should trigger re-evaluation. Only two

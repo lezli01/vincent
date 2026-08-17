@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (7/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (11/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -642,24 +642,24 @@ an `agent:` the policy will never run.
 - [x] **014.7 — FSM.** ✓ 2026-08-17 `awaiting_children` in `taskstate`, its three table rows,
   `HoldsSlot` false, the new `Settled()` predicate with `Terminal()` left alone
   (decision 20), and the §6 human-action table (cancel only).
-- [ ] **014.8 — Spawn and resume.** Depends: 014.4, 014.6, 014.7. The `fan_out`
+- [x] **014.8 — Spawn and resume.** ✓ 2026-08-17 Depends: 014.4, 014.6, 014.7. The `fan_out`
   step creates its children (base branch = parent's branch, title
   `{parent} — {lane}` and the ordinary branch template per decision 23, fields
   merged with the parent's per decision 29, overrides and priority per
   decision 10), parks the parent, and the scheduler — not the last child's actor
   (decision 25) — re-queues it via `ChildrenSettled` once every descendant is
   `Settled()`.
-- [ ] **014.9 — The join.** Depends: 014.8. Sequential `--no-ff` merges in
+- [x] **014.9 — The join.** ✓ 2026-08-17 Depends: 014.8. Sequential `--no-ff` merges in
   `lane_order`; `ReasonMergeConflict = "merge_conflict"` and
   `ReasonLaneFailed = "lane_failed"` in the §18 vocabulary; `on_conflict: {agent: …}`
   as a full agent `Step` (decision 24); the decision-9 re-entry rules for both
   `interrupted` and `blocked`, plus decision 22's re-check on a `lane_failed`
   retry, wired into `taskrun/recover.go`.
-- [ ] **014.10 — Lifecycle.** Depends: 014.8. Cascading cancel; archive refusing
+- [x] **014.10 — Lifecycle.** ✓ 2026-08-17 Depends: 014.8. Cascading cancel; archive refusing
   a non-terminal descendant then cascading with per-child dirty confirmation;
   `gc` and `doctor` seeing lane worktrees as the ordinary task worktrees they
   are.
-- [ ] **014.11 — API and events.** Depends: 014.4, 014.8. List filters
+- [x] **014.11 — API and events.** ✓ 2026-08-17 Depends: 014.4, 014.8. List filters
   (`?parent_id=`, `?include_children=`), the `children` rollup on
   `GET /v1/tasks/{id}` whenever the task has children rather than only in
   `awaiting_children` (decision 27), and `task.children_changed` emitted

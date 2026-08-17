@@ -76,6 +76,15 @@ type taskResponse struct {
 	// Warnings are non-fatal §8.2 catalog findings from creation-time
 	// validation; only the POST /v1/tasks response carries them.
 	Warnings []string `json:"warnings,omitempty"`
+	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
+	// 014). All null for a root task, which is every task that is not a lane.
+	ParentTaskID *int64  `json:"parent_task_id"`
+	LaneID       *string `json:"lane_id"`
+	LaneOrder    *int    `json:"lane_order"`
+	// Children is the §13.2 subtree rollup, present on the detail endpoint
+	// whenever the task has lanes. Derived per request from one recursive
+	// CTE, never stored: a counter would be a second truth that drifts.
+	Children *childrenResponse `json:"children,omitempty"`
 	// PendingInput is the normalized §7.4 input request while the task is
 	// awaiting_input — embedded verbatim as the engine persisted it.
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
@@ -130,7 +139,16 @@ func workflowSteps(summary snapshotSummary) []snapshotStepResponse {
 }
 
 func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
+	var laneID *string
+	var laneOrder *int
+	if t.ParentTaskID != nil {
+		id, order := t.LaneID, t.LaneOrder
+		laneID, laneOrder = &id, &order
+	}
 	return taskResponse{
+		ParentTaskID:     t.ParentTaskID,
+		LaneID:           laneID,
+		LaneOrder:        laneOrder,
 		ID:               t.ID,
 		ProjectID:        t.ProjectID,
 		Title:            t.Title,
@@ -565,6 +583,40 @@ func (s *Server) checkRetryInput(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// childrenResponse is the fan-out subtree rollup (§13.2, task 014
+// decision 13). Ids rather than objects for the blocked and gated lanes,
+// which is how §13.3 hands out everything else: the client re-fetches what it
+// decides it needs.
+type childrenResponse struct {
+	Total   int            `json:"total"`
+	Settled int            `json:"settled"`
+	ByState map[string]int `json:"by_state"`
+	// Blocked and AwaitingGate are the lanes holding the join open on a
+	// human — the cost paid for hiding lanes from the task list.
+	Blocked      []int64 `json:"blocked"`
+	AwaitingGate []int64 `json:"awaiting_gate"`
+}
+
+func toChildrenResponse(r store.ChildrenRollup) *childrenResponse {
+	out := &childrenResponse{
+		Total:        r.Total,
+		Settled:      r.Settled,
+		ByState:      make(map[string]int, len(r.ByState)),
+		Blocked:      r.Blocked,
+		AwaitingGate: r.AwaitingGate,
+	}
+	for state, n := range r.ByState {
+		out.ByState[string(state)] = n
+	}
+	if out.Blocked == nil {
+		out.Blocked = []int64{}
+	}
+	if out.AwaitingGate == nil {
+		out.AwaitingGate = []int64{}
+	}
+	return out
+}
+
 func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := store.TaskFilter{State: store.TaskState(q.Get("state"))}
@@ -586,6 +638,27 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		filter.ProjectID = id
+	}
+	// Fan-out lanes are excluded by default (§13.2, task 014 decision 13): a
+	// list is the work someone asked for, and a 64-task tree would bury it.
+	// `parent_id` drills into one parent's lanes; `include_children` is the
+	// flat everything.
+	if v := q.Get("parent_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, "parent_id must be an integer")
+			return
+		}
+		filter.ParentID = id
+	}
+	switch v := q.Get("include_children"); v {
+	case "", "false":
+	case "true":
+		filter.Children = store.ChildrenInclude
+	default:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"include_children must be true or false")
+		return
 	}
 	switch v := q.Get("archived"); v {
 	case "", "false":
@@ -675,6 +748,16 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	// than making each client join it back (T4.4 walkthrough finding).
 	if p, err := s.deps.Store.GetProject(r.Context(), t.ProjectID); err == nil {
 		resp.ProjectName = p.Name
+	}
+	// The children rollup (§13.2, task 014 decisions 13, 27). Present
+	// whenever the task has lanes, in any state — a parent mid-join, or one
+	// already done, still wants its lane ids reachable from one GET, and
+	// gating the field on a state would force a client to know the state to
+	// know whether to look.
+	if rollup, err := s.deps.Store.ChildrenOf(r.Context(), t.ID); err != nil {
+		s.deps.Logger.Error("children rollup", "task", t.ID, "error", err)
+	} else if rollup.Total > 0 {
+		resp.Children = toChildrenResponse(rollup)
 	}
 	resp.Steps = make([]stepRunResponse, 0, len(runs))
 	for i := range runs {

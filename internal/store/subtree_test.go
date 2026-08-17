@@ -195,3 +195,49 @@ func TestNonTerminalDescendantsDeepestFirst(t *testing.T) {
 		t.Errorf("descendants = %v, want %v (deepest first, settled excluded)", got, want)
 	}
 }
+
+// TestEmitChildrenChangedReachesEveryAncestor is decision 14: the per-task
+// SSE stream filters on task_id alone, so a root's stream would never see a
+// depth-2 transition unless the event is emitted on the root too.
+func TestEmitChildrenChangedReachesEveryAncestor(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskAwaitingChildren)
+	if err := s.CreateTask(ctx, root, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	mid := lane(t, s, p.ID, root.ID, "mid", 0, TaskAwaitingChildren)
+	deep := lane(t, s, p.ID, mid.ID, "deep", 0, TaskRunning)
+
+	if err := s.EmitChildrenChanged(ctx, deep.ID, TaskDone); err != nil {
+		t.Fatalf("EmitChildrenChanged: %v", err)
+	}
+	events, err := s.ListEvents(ctx, EventFilter{Types: []string{EventTaskChildrenChanged}})
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	got := map[int64]bool{}
+	for _, e := range events {
+		if e.TaskID != nil {
+			got[*e.TaskID] = true
+		}
+	}
+	if !got[mid.ID] || !got[root.ID] {
+		t.Errorf("children_changed reached %v, want both %d and %d", got, mid.ID, root.ID)
+	}
+	if len(events) != 2 {
+		t.Errorf("emitted %d events, want one per ancestor", len(events))
+	}
+
+	// A task with no ancestors writes nothing: every ordinary task takes
+	// this path, and it must cost one indexed lookup and no rows.
+	before := len(events)
+	if err := s.EmitChildrenChanged(ctx, root.ID, TaskDone); err != nil {
+		t.Fatalf("EmitChildrenChanged(root): %v", err)
+	}
+	after, _ := s.ListEvents(ctx, EventFilter{Types: []string{EventTaskChildrenChanged}})
+	if len(after) != before {
+		t.Errorf("a root emitted %d children_changed events, want none", len(after)-before)
+	}
+}

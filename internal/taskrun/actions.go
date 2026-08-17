@@ -46,6 +46,10 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 		return nil, err
 	}
 	log := r.deps.Logger.With("task", id)
+	// A fan-out's lanes are cancelled with it (decision 11): nothing should
+	// keep burning agent time for a join that will never happen. Their
+	// branches and worktrees survive — they are stopped, not erased.
+	r.cascadeCancel(ctx, id)
 	if lr, ok := r.lookupRun(id); ok {
 		// Tearing the process tree down takes up to the §6 grace period, and
 		// the caller has already got its answer: the task is durably aborted.
@@ -218,6 +222,16 @@ func (r *Runner) Archive(
 	if !taskstate.Can(task.State, taskstate.Archive) {
 		return nil, worktree.BranchOutcome{},
 			&InvalidActionError{TaskID: id, Action: taskstate.Archive, State: task.State}
+	}
+	// Archiving a fan-out parent archives its whole subtree, so it refuses
+	// while any lane is still working — pulling a worktree out from under a
+	// running lane is not something `force` should be able to ask for
+	// (decision 11).
+	if err := r.refuseUnfinishedDescendants(ctx, id); err != nil {
+		return nil, worktree.BranchOutcome{}, err
+	}
+	if err := r.cascadeArchive(ctx, id, force); err != nil {
+		return nil, worktree.BranchOutcome{}, err
 	}
 	empty := ""
 	if task.WorktreePath == "" {
