@@ -27,6 +27,7 @@ const (
 	ctxTasks     bindingContext = "task table"
 	ctxTimeline  bindingContext = "timeline"
 	ctxOutput    bindingContext = "output"
+	ctxDiff      bindingContext = "diff"
 	ctxNewTask   bindingContext = "new task"
 	ctxProjects  bindingContext = "projects"
 	ctxWorkflows bindingContext = "workflows"
@@ -116,6 +117,16 @@ var bindings = []binding{
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
 
+	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
+	// list of files and the output is a stream of lines, so ↑/↓ mean different
+	// things on the two tabs and a single row could only describe one of them.
+	// `]` is repeated here because the way back must stay on screen.
+	{key: "]", label: "switch the tab between output and diff ([/], d kept as an alias)", scope: scopePanel, context: ctxDiff, hint: "[/] tabs", priority: 1},
+	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
+	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
+	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
+	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5},
+
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
 	{key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask, hint: "e $EDITOR", priority: 3},
@@ -146,6 +157,18 @@ var bindings = []binding{
 	{key: "e", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "enter", label: "submit the answer; the run resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "esc", label: "close the popup without answering (what you picked is kept)", scope: scopePanel, context: ctxForm, noPalette: true},
+}
+
+// isHomeContext reports whether a context is one of the home shell's panels —
+// the surfaces a task's actions and the answer form belong to, as opposed to a
+// takeover screen.
+func isHomeContext(ctx bindingContext) bool {
+	switch ctx {
+	case ctxTasks, ctxTimeline, ctxOutput, ctxDiff:
+		return true
+	default:
+		return false
+	}
 }
 
 // bindingsFor returns the panel rows owned by one context, in registry order.
