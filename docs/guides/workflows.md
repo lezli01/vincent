@@ -108,8 +108,49 @@ validation time instead of a setting that silently never applied.
       Read the diff for #{{.Task.ID}} before it ships.
 ```
 
-There is no fourth type. `check` is a **field** on agent and command steps,
-not a step of its own — see below.
+**`parallel`** runs several sub-steps at once, in the same worktree. Needs
+`steps`.
+
+```yaml
+  - id: verify
+    type: parallel
+    max_parallel: 4
+    steps:
+      - { id: test,      type: command, run: go test ./... }
+      - { id: lint,      type: command, run: golangci-lint run }
+      - { id: typecheck, type: command, run: go vet ./... }
+```
+
+`check` is a **field** on agent and command steps, not a step of its own — see
+below.
+
+## Verification is where parallel pays
+
+Tests, a linter and a type check do not interact: they read the worktree and
+report an exit code. Run in sequence they cost the sum of three waits; in a
+`parallel` group they cost the longest one.
+
+The group is still **one step**. One index in the timeline, one concurrency
+slot, one thing to retry. It succeeds when every sub-step succeeds, and when
+one fails the others still run to completion — you get all three verdicts, not
+just the first bad one. Retrying re-runs only what failed, so a passing test
+suite is not re-run because the linter was unhappy.
+
+Three things a sub-step cannot be, all for the same underlying reason — the
+group lives inside a single task, which has a single state:
+
+- `manual`, because a gate releases the task's slot and waits for a human;
+- another `parallel`, because groups do not nest;
+- `on_input: require`, because the task holds one pending question at a time.
+
+> **Sizing it.** `max_parallel` (default 4) is *not* covered by your
+> `max_parallel_tasks` caps — those count tasks, and the whole group is inside
+> one. A board showing "1 running" can be a machine running four compilers.
+> Set it for the hardware.
+
+Sub-steps share one working tree, so two of them writing the same file is a
+bug in the workflow. Worktrees isolate tasks from each other, not the
+processes inside one task.
 
 ## Checks are how you stop an agent grading its own homework
 

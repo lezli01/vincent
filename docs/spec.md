@@ -53,7 +53,9 @@ steps.
 - Multi-user / remote access / multi-host orchestration.
 - OS desktop notifications.
 - LLM-as-judge step verification.
-- Workflow branching, conditionals, or parallel steps within one task.
+- Workflow branching or conditionals within one task. *Amended 2026-08-17
+  (task 014): parallel steps and step fan-out are no longer deferred —
+  see §7.5 and §20.*
 - Sandboxing agents beyond worktree isolation (a worktree is not a security boundary).
 - Secret management (daemon inherits the user's environment).
 
@@ -284,6 +286,12 @@ Steps execute strictly in order. Executing step *i* means: render templates → 
 step body → evaluate success → on success advance to step *i+1* (or `done` if last) →
 persist → repeat.
 
+*Amended 2026-08-17 (task 014).* Order is still strict **between** steps; a
+`parallel` step is one step whose body runs several sub-steps at once. It
+occupies one index, holds one scheduler slot, and the cursor advances past it
+only when it succeeds, so nothing above changes. What the sub-steps do inside
+it is described in §7.5.
+
 ### 7.1 Success criteria
 
 A step **succeeds** iff:
@@ -432,6 +440,52 @@ Full-auto note: in `full-auto`, permission prompts are bypassed at the CLI level
 so `permission` requests should not occur; `question` requests can occur in any
 permission mode.
 
+### 7.5 Parallel step groups
+
+*Added 2026-08-17 (task 014).* A `parallel` step runs its sub-steps
+concurrently in the task's **one** worktree. It creates no branch, no child
+task and nothing to merge — that is `fan_out` (§7.6), a different mechanism
+that happens to share the word.
+
+```yaml
+- id: verify
+  type: parallel
+  max_parallel: 4
+  steps:
+    - { id: test,  type: command, run: go test ./... }
+    - { id: lint,  type: command, run: golangci-lint run }
+```
+
+- **Sub-steps are ordinary steps.** `agent` and `command` only, each with its
+  own `check`, `timeout`, `max_retries` and agent selection, resolved exactly
+  as they would be at the top level. `manual` is rejected: a gate ends the
+  actor goroutine and releases the slot (§6), and no state means "one sub-step
+  is gated". `on_input: require` is rejected for the same reason —
+  `awaiting_input` holds one pending request for the whole task (§7.4).
+  Groups do not nest.
+- **Rows.** One `step_runs` row per sub-step, all sharing the group's
+  `step_index` and told apart by `step_id`. The group has no row of its own;
+  its outcome is derived. Attempt numbers and retry budgets are per sub-step,
+  and a sub-step's transcript is
+  `{step_index}-{step_id}-{attempt}.jsonl` (§12.2).
+- **Success** is every sub-step succeeding. A failure does **not** cancel its
+  siblings: the group waits for everything it started, then blocks with the
+  first failure in declaration order, so the same failures always produce the
+  same `block_reason`. A group-level `timeout:` bounds the whole group and
+  fails it with `timeout`.
+- **Retry** re-runs only what did not succeed, within an admission and across
+  one: a re-admitted group skips sub-steps whose latest attempt succeeded,
+  derived from the rows rather than from a stored cursor.
+- **Concurrency.** `max_parallel` (default `parallel.max_parallel`, 4) bounds
+  how many run at once. It is a **second concurrency dimension**: the §11 caps
+  count tasks in slot-holding states, and a group runs inside one such task,
+  so one task can keep `max_parallel` processes busy while the board reads a
+  single running task. See §11.
+- **Concurrent writes are undefined.** The sub-steps share one working tree.
+  §10 isolates working trees between tasks, not processes within one; a group
+  whose sub-steps write the same files is a workflow bug, not something the
+  daemon arbitrates.
+
 ## 8. Workflow definition (YAML)
 
 ### 8.1 File format
@@ -540,12 +594,21 @@ Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
 | `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `on_input`, `input_timeout`, `check`, `check_timeout` |
 | `command` | `run` | `shell`, `env` (map), `check`, `check_timeout` |
 | `manual` | `instructions` | — |
+| `parallel` | `steps` | `max_parallel` |
+
+*`parallel` added 2026-08-17 (task 014); see §7.5 for what it does.*
 
 Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
   parse as Go durations; `on_input` is `wait`, `deny` or `require`; unknown keys are errors
   (strict decoding) to catch typos.
+- *Amended 2026-08-17 (task 014).* Step ids are unique across the **whole**
+  workflow, sub-steps included: a `parallel` group's sub-steps share the
+  group's `step_index` and are told apart by id alone (§7.5). A group needs at
+  least one sub-step and a `max_parallel` of at least 1; its sub-steps may not
+  be `manual`, may not be `parallel`, and may not resolve to
+  `on_input: require`.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
   workflow validates on a Windows CI runner exactly as it does on Linux, or
@@ -1309,7 +1372,13 @@ would invalidate every one of them.
   - **per-project** `max_parallel_tasks` (project setting, default unlimited).
 - A `queued` task is admitted when both caps have headroom. Admission order:
   `priority` DESC, then `created_at` ASC (FIFO within a priority).
-- One task runs at most one step process at a time.
+- One task runs at most one step process at a time. *Amended 2026-08-17
+  (task 014):* a `parallel` step (§7.5) runs up to `max_parallel` processes
+  inside that one task's single slot. This is a **second concurrency
+  dimension the caps above do not govern** — they count tasks, not
+  processes — so a board reading "1 running" may be a machine running four
+  compilers. `parallel.max_parallel` (config, default 4) is what bounds it,
+  and a group's own `max_parallel:` overrides that per group.
 - `awaiting_gate`, `blocked`, and `paused` tasks hold **no** slot — a gate can wait
   hours without starving the queue. After approve/retry/skip/resume, the task
   re-enters `queued` and competes under the normal ordering (its original
@@ -1520,6 +1589,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   tui.json                   # TUI-local state (the §16 first-run acknowledgment)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
+  transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   logs/daemon.log            # rotated, size-capped
 ```
 
@@ -1537,6 +1607,8 @@ delete_remote_branch_on_archive: false # …and its upstream counterpart; attend
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
+parallel:
+  max_parallel: 4            # sub-steps of one `parallel` group at once (§7.5); the §11 caps do not see these
 log_level: info
 debug: false                 # record each step's resolved settings and full argv in its transcript
 environment:                 # what child processes inherit (T4.23)

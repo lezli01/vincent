@@ -116,11 +116,11 @@ Common to every step:
 
 | Key | Type | Required | Notes |
 |---|---|---|---|
-| `id` | slug | ✅ | Unique within the file. How `.Steps` addresses it |
+| `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` | ✅ | There is no fourth type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
-| `timeout` | duration | | Per attempt; overrides `defaults` |
+| `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group, bounds the whole group |
 
 ### `type: agent`
 
@@ -199,6 +199,51 @@ Stops and waits for a person.
 
 The task enters `awaiting_gate` and **releases its concurrency slot**. Approving
 advances; rejecting moves the task to `blocked`.
+
+### `type: parallel`
+
+Runs its sub-steps at the same time, in the task's one worktree.
+
+| Key | Type | Required |
+|---|---|---|
+| `steps` | list of steps | ✅ |
+| `max_parallel` | int | — (default `parallel.max_parallel`, 4) |
+
+```yaml
+  - id: verify
+    type: parallel
+    max_parallel: 4
+    timeout: 30m          # bounds the whole group
+    steps:
+      - { id: test,      type: command, run: go test ./... }
+      - { id: lint,      type: command, run: golangci-lint run }
+      - { id: typecheck, type: command, run: go vet ./... }
+```
+
+Sub-steps are ordinary `agent` and `command` steps: each has its own `check`,
+`timeout`, `max_retries` and agent selection, resolved exactly as at the top
+level. What they may **not** be:
+
+- `manual` — a gate releases the task's slot, and there is no such thing as
+  half a task waiting at a gate;
+- another `parallel` — groups do not nest;
+- `on_input: require` — the task has one pending question at a time, so a
+  group of agents that each want to ask has nowhere to put the answers.
+
+The group is one step: one index, one slot, one entry in the timeline. It
+succeeds when every sub-step succeeds. A failure does **not** cancel the
+others — the group waits for everything it started, then blocks with the first
+failure in declaration order. A retry re-runs only what failed, including
+after a human retry: sub-steps that already succeeded are not run again.
+
+> **`max_parallel` is not governed by your concurrency caps.** Those count
+> *tasks* (`max_parallel_tasks`, §11); a group runs inside one of them. One
+> task at `max_parallel: 8` will happily start eight compilers while the board
+> shows a single running task. Size it for the machine, not for the board.
+
+Sub-steps share a working tree. Two of them writing the same file is a bug in
+your workflow — vincent isolates worktrees between *tasks*, not processes
+inside one.
 
 ### `check` is a field, not a step type
 
@@ -292,7 +337,11 @@ re-derives it.
 `vincent workflow validate <file>` checks all of this locally — no daemon, no
 network, no agent CLI installed.
 
-- `steps` non-empty; step `id`s unique; `type` known.
+- `steps` non-empty; step `id`s unique **across the whole file**, sub-steps
+  of a `parallel` group included; `type` known.
+- A `parallel` group has at least one sub-step and a `max_parallel` of at
+  least 1; its sub-steps are not `manual`, not `parallel`, and do not
+  resolve to `on_input: require`.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.
