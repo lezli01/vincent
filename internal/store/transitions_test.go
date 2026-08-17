@@ -211,7 +211,7 @@ func TestCountStepAttemptsCursorBoundsOnlyFailures(t *testing.T) {
 	}
 
 	cursor := base.Add(2*time.Minute + 30*time.Second) // after attempt 2, before 3
-	got, err := s.CountStepAttempts(ctx, task.ID, 0, cursor)
+	got, err := s.CountStepAttempts(ctx, task.ID, 0, "step", cursor)
 	if err != nil {
 		t.Fatalf("CountStepAttempts: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestCountStepAttemptsCursorBoundsOnlyFailures(t *testing.T) {
 		t.Errorf("Failed = %d, want 1 — only failures after the cursor count", got.Failed)
 	}
 
-	all, err := s.CountStepAttempts(ctx, task.ID, 0, time.Time{})
+	all, err := s.CountStepAttempts(ctx, task.ID, 0, "step", time.Time{})
 	if err != nil {
 		t.Fatalf("CountStepAttempts (zero cursor): %v", err)
 	}

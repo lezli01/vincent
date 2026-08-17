@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (1/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (2/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -378,9 +378,15 @@ existing store, FSM and validation code was read.
 `step_index` and keyed by `step_id`" collides with three mechanisms that key on
 `(task_id, step_index)` alone: `store.CountStepAttempts` (attempt numbering),
 `store.LastFailedStepRun` (which seeds `.LastFailure` for the §8.4 failure
-block), and transcript filenames `{step_index}-{attempt}.jsonl`. All three widen
-to take an optional step id; transcripts become
-`{step_index}-{step_id}-{attempt}.jsonl`.
+block), and transcript filenames `{step_index}-{attempt}.jsonl`. The two
+queries take a step id; transcripts take one **only for a sub-step**, which
+becomes `{step_index}-{step_id}-{attempt}.jsonl`.
+
+*Amended during implementation, 2026-08-17:* the transcript rename was written
+here as unconditional. Applying it only where it is needed leaves §12.2 true
+for every workflow that does not use a group, and confines a path change to
+the case that actually collides. Step ids are slugs, so nothing in a name can
+escape the transcript directory.
 
 **Beat (a):** giving each sub-step its own `step_index`. `tasks.current_step` is
 one `INTEGER` and the group must stay addressable as one step — this is
@@ -580,7 +586,7 @@ for workflow content.
   group-level `timeout`; `rejectFields` for everything that is not
   `steps`/`max_parallel`/`timeout`; the `parallel.max_parallel` daemon default in
   `internal/config` (decision 30).
-- [ ] **014.2 — Engine.** Depends: 014.1. Concurrent execution inside the task's
+- [x] **014.2 — Engine.** ✓ 2026-08-17 Depends: 014.1. Concurrent execution inside the task's
   actor goroutine, bounded by `max_parallel`; one `step_runs` row per sub-step
   sharing the group's `step_index` and keyed by `step_id`, with no row for the
   group itself (decision 17); `CountStepAttempts`, `LastFailedStepRun` and

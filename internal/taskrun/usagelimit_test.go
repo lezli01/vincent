@@ -84,7 +84,7 @@ func TestUsageLimitReQueuesAndConsumesNoRetry(t *testing.T) {
 
 	// The budget itself, as the engine counts it: interrupted attempts are
 	// excluded, so the step still has its full max_retries for a real failure.
-	attempts, err := h.store.CountStepAttempts(t.Context(), task.ID, 0, time.Time{})
+	attempts, err := h.store.CountStepAttempts(t.Context(), task.ID, 0, "implement", time.Time{})
 	if err != nil {
 		t.Fatalf("CountStepAttempts: %v", err)
 	}

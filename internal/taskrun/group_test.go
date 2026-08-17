@@ -1,0 +1,268 @@
+package taskrun
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/lezli01/vincent/internal/store"
+)
+
+// groupSnapshot builds a workflow whose only step is a parallel group holding
+// the given sub-steps, already indented one level deeper than commandStep
+// writes them.
+func groupSnapshot(groupFields string, subSteps ...string) string {
+	var sb strings.Builder
+	sb.WriteString("name: verify\nsteps:\n  - id: group\n    type: parallel\n")
+	if groupFields != "" {
+		for _, line := range strings.Split(groupFields, "\n") {
+			fmt.Fprintf(&sb, "    %s\n", line)
+		}
+	}
+	sb.WriteString("    steps:\n")
+	for _, sub := range subSteps {
+		for _, line := range strings.Split(strings.TrimRight(sub, "\n"), "\n") {
+			fmt.Fprintf(&sb, "  %s\n", line)
+		}
+	}
+	return sb.String()
+}
+
+// sleepCmd is a portable "take about a second".
+func sleepCmd(seconds int) string {
+	return script(
+		fmt.Sprintf("sleep %d", seconds),
+		fmt.Sprintf("Start-Sleep -Seconds %d", seconds),
+	)
+}
+
+// subRuns indexes a task's step runs by sub-step id.
+func subRuns(runs []store.StepRun) map[string][]store.StepRun {
+	out := map[string][]store.StepRun{}
+	for _, r := range runs {
+		out[r.StepID] = append(out[r.StepID], r)
+	}
+	return out
+}
+
+// TestParallelGroupRunsConcurrently is the point of the feature: three
+// one-second sub-steps finish in about a second, not three. It also pins the
+// row shape — one row per sub-step, all sharing the group's step_index, told
+// apart by step_id (task 014 decision 16) — and that the group itself writes
+// no row of its own (decision 17).
+func TestParallelGroupRunsConcurrently(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	snapshot := groupSnapshot("max_parallel: 3",
+		commandStep("one", sleepCmd(1)),
+		commandStep("two", sleepCmd(1)),
+		commandStep("three", sleepCmd(1)),
+	)
+	task := h.createTask(t, snapshot)
+
+	started := time.Now()
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	elapsed := time.Since(started)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	// Serial execution takes at least three seconds. The margin is wide
+	// because CI is shared, but it cannot reach three without the sub-steps
+	// having queued behind each other.
+	if elapsed > 2500*time.Millisecond {
+		t.Errorf("group took %s for 3x1s sub-steps, want well under the 3s a serial run costs", elapsed)
+	}
+
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 3 {
+		t.Fatalf("step runs = %d, want 3 — one per sub-step and none for the group", len(runs))
+	}
+	for _, r := range runs {
+		if r.StepIndex != 0 {
+			t.Errorf("sub-step %q step_index = %d, want the group's 0", r.StepID, r.StepIndex)
+		}
+		if r.State != store.StepSucceeded {
+			t.Errorf("sub-step %q state = %s, want succeeded", r.StepID, r.State)
+		}
+		if r.StepID == "group" {
+			t.Error("the group wrote a step_runs row of its own; its outcome is derived")
+		}
+	}
+	if got := len(subRuns(runs)); got != 3 {
+		t.Errorf("distinct sub-step ids = %d, want 3", got)
+	}
+}
+
+// TestParallelGroupMaxParallelBounds: the same three sub-steps under
+// max_parallel 1 must queue, which is what makes the knob real rather than
+// advisory.
+func TestParallelGroupMaxParallelBounds(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	snapshot := groupSnapshot("max_parallel: 1",
+		commandStep("one", sleepCmd(1)),
+		commandStep("two", sleepCmd(1)),
+	)
+	task := h.createTask(t, snapshot)
+
+	started := time.Now()
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	elapsed := time.Since(started)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	if elapsed < 2*time.Second {
+		t.Errorf("group took %s for 2x1s sub-steps at max_parallel 1, want at least 2s", elapsed)
+	}
+}
+
+// TestParallelGroupFailureDoesNotCancelSiblings covers decision 18: the group
+// fails, but only after every sub-step it started has finished on its own.
+func TestParallelGroupFailureDoesNotCancelSiblings(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	snapshot := groupSnapshot("max_parallel: 3",
+		commandStep("fails", script("exit 3", "exit 3"), "max_retries: 0"),
+		commandStep("slow", sleepCmd(1), "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on the failing sub-step", blocked.State)
+	}
+	if blocked.BlockReason != ReasonNonzeroExit {
+		t.Errorf("block_reason = %q, want %q", blocked.BlockReason, ReasonNonzeroExit)
+	}
+	by := subRuns(h.stepRuns(t, task.ID))
+	if len(by["slow"]) != 1 || by["slow"][0].State != store.StepSucceeded {
+		t.Errorf("sibling runs = %+v, want one succeeded row — a failure must not cancel it", by["slow"])
+	}
+	if len(by["fails"]) != 1 || by["fails"][0].State != store.StepFailed {
+		t.Errorf("failing runs = %+v, want one failed row", by["fails"])
+	}
+}
+
+// TestParallelGroupRetriesOnlyTheFailedSubStep covers the per-sub-step retry
+// budget: the flaky sub-step burns its own retry while its siblings run once.
+func TestParallelGroupRetriesOnlyTheFailedSubStep(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	// Succeeds on the second attempt: the first creates the marker and fails,
+	// the second finds it.
+	flaky := script(
+		"if [ -f marker ]; then exit 0; fi; touch marker; exit 1",
+		"if (Test-Path marker) { exit 0 }; New-Item -ItemType File marker | Out-Null; exit 1",
+	)
+	snapshot := groupSnapshot("max_parallel: 2",
+		commandStep("flaky", flaky, "max_retries: 1"),
+		commandStep("steady", script("true", "Write-Output ok"), "max_retries: 1"),
+	)
+	task := h.createTask(t, snapshot)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state = %s (block_reason %q), want done after the retry", done.State, done.BlockReason)
+	}
+	by := subRuns(h.stepRuns(t, task.ID))
+	if len(by["flaky"]) != 2 {
+		t.Errorf("flaky attempts = %d, want 2", len(by["flaky"]))
+	}
+	if len(by["steady"]) != 1 {
+		t.Errorf("steady attempts = %d, want 1 — a sibling's retry is not its own", len(by["steady"]))
+	}
+	// Attempt numbers are per sub-step, not per index: both start at 1.
+	for id, runs := range by {
+		if runs[0].Attempt != 1 {
+			t.Errorf("sub-step %q first attempt = %d, want 1", id, runs[0].Attempt)
+		}
+	}
+}
+
+// TestParallelGroupRetryDoesNotRerunSucceededSubSteps is the re-admission
+// half of "a retry re-runs only the failed sub-step": a human retry after a
+// block must not redo work that already succeeded, which the engine derives
+// from the rows rather than from a stored cursor.
+func TestParallelGroupRetryDoesNotRerunSucceededSubSteps(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	// Fails on the first attempt only, so the human retry can succeed.
+	oncePerTask := script(
+		"if [ -f marker ]; then exit 0; fi; touch marker; exit 1",
+		"if (Test-Path marker) { exit 0 }; New-Item -ItemType File marker | Out-Null; exit 1",
+	)
+	snapshot := groupSnapshot("max_parallel: 2",
+		commandStep("fails", oncePerTask, "max_retries: 0"),
+		commandStep("succeeds", script("true", "Write-Output ok"), "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	if blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone); blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked before the retry", blocked.State)
+	}
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+
+	by := subRuns(h.stepRuns(t, task.ID))
+	if len(by["succeeds"]) != 1 {
+		t.Errorf("already-succeeded sub-step ran %d times, want 1 — a retry re-runs only what failed",
+			len(by["succeeds"]))
+	}
+	if len(by["fails"]) != 2 {
+		t.Errorf("failed sub-step attempts = %d, want 2 (the failure and the retry)", len(by["fails"]))
+	}
+}
+
+// TestParallelGroupTimeoutFails: a group-level timeout bounds the whole
+// group, and its expiry is a failure rather than an interruption — an
+// interruption would re-queue the task and run straight back into it.
+func TestParallelGroupTimeoutFails(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	snapshot := groupSnapshot("max_parallel: 2\ntimeout: 1s",
+		commandStep("slow", sleepCmd(30), "max_retries: 0"),
+		commandStep("quick", script("true", "Write-Output ok"), "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on the group timeout", blocked.State)
+	}
+	if blocked.BlockReason != ReasonTimeout {
+		t.Errorf("block_reason = %q, want %q", blocked.BlockReason, ReasonTimeout)
+	}
+}
+
+// TestParallelSubStepTranscriptsDoNotCollide: sub-steps share a step_index,
+// so their transcript names must not be built from the index alone.
+func TestParallelSubStepTranscriptsDoNotCollide(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	snapshot := groupSnapshot("max_parallel: 2",
+		commandStep("alpha", script("echo alpha", "Write-Output alpha")),
+		commandStep("beta", script("echo beta", "Write-Output beta")),
+	)
+	task := h.createTask(t, snapshot)
+	if done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked); done.State != store.TaskDone {
+		t.Fatalf("task state = %s, want done", done.State)
+	}
+
+	seen := map[string]string{}
+	for _, r := range h.stepRuns(t, task.ID) {
+		if r.TranscriptPath == "" {
+			t.Errorf("sub-step %q recorded no transcript path", r.StepID)
+			continue
+		}
+		if other, dup := seen[r.TranscriptPath]; dup {
+			t.Errorf("sub-steps %q and %q share transcript %s", other, r.StepID, r.TranscriptPath)
+		}
+		seen[r.TranscriptPath] = r.StepID
+	}
+}

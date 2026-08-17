@@ -97,12 +97,18 @@ const resultSummaryLimit = 4096
 const outputTailLines = 200
 
 // stepEnv is everything one step needs to run.
+//
+// A member of a `parallel` group gets its own stepEnv carrying the group's
+// index and its own step, with inGroup set — the flag decides transcript
+// naming and nothing else, because in every other respect a sub-step runs
+// exactly like the step it would have been on its own (task 014).
 type stepEnv struct {
 	task    *store.Task
 	project *store.Project
 	wf      *workflow.Workflow
 	step    workflow.Step
 	index   int
+	inGroup bool
 	log     *slog.Logger
 }
 
@@ -173,7 +179,15 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			r.enterGate(ctx, env)
 			return
 		}
-		outcome := r.runStepWithRetries(ctx, env)
+		// A group has no attempt of its own to retry: each sub-step carries its
+		// own budget, so the group's outcome is the collected one rather than
+		// anything runStepWithRetries could produce (task 014 decisions 17, 18).
+		outcome := stepOutcome{}
+		if env.step.Type == workflow.StepParallel {
+			outcome = r.runGroup(ctx, env)
+		} else {
+			outcome = r.runStepWithRetries(ctx, env)
+		}
 		switch outcome.state {
 		case store.StepSucceeded:
 			task.CurrentStep = index + 1
@@ -252,7 +266,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 	if env.task.RetryCursorAt != nil {
 		since = *env.task.RetryCursorAt
 	}
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, since)
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, env.step.ID, since)
 	if err != nil {
 		env.log.Error("count step attempts", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -293,7 +307,7 @@ func (r *Runner) previousFailure(ctx context.Context, env *stepEnv, lastAttempt 
 	if lastAttempt == 0 {
 		return stepOutcome{}
 	}
-	prev, err := r.deps.Store.LastFailedStepRun(ctx, env.task.ID, env.index)
+	prev, err := r.deps.Store.LastFailedStepRun(ctx, env.task.ID, env.index, env.step.ID)
 	if err != nil {
 		env.log.Warn("previous failure unavailable for retry context", "error", err)
 		return stepOutcome{}
@@ -328,7 +342,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		run.Agent, run.Model, run.Effort = sel.Agent, sel.Model, sel.Effort
 	}
 
-	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, attempt)
+	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, attempt, subStepIDOf(env))
 	if err != nil {
 		env.log.Error("open transcript", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -437,7 +451,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 // entry so the gate's wait is visible in the timeline, and the task gives up
 // its concurrency slot until a human approves or rejects (§6, §11).
 func (r *Runner) enterGate(ctx context.Context, env *stepEnv) {
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, time.Time{})
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, env.step.ID, time.Time{})
 	if err != nil {
 		env.log.Error("count gate attempts", "error", err)
 		r.fail(env.task, ReasonInternalError, env.log, "count gate attempts", err)

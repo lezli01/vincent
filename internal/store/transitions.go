@@ -300,7 +300,12 @@ type StepAttempts struct {
 // never bounded: attempt numbers must stay monotonic over the step's whole
 // history, or `{step_index}-{attempt}.jsonl` transcript names would collide
 // and truncate earlier attempts (phase 2 decision).
-func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex int, since time.Time) (StepAttempts, error) {
+//
+// stepID narrows the count to one member of a `parallel` group, whose
+// sub-steps all share the group's stepIndex and are told apart by id alone
+// (task 014 decision 16). For an ordinary step it is that step's own id and
+// the filter changes nothing — one step owns the index.
+func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex int, stepID string, since time.Time) (StepAttempts, error) {
 	var (
 		out    StepAttempts
 		last   sql.NullInt64
@@ -314,8 +319,8 @@ func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex i
 	}
 	q := `SELECT MAX(attempt),
 			SUM(CASE WHEN state = ? AND started_at > ? THEN 1 ELSE 0 END)
-		FROM step_runs WHERE task_id = ? AND step_index = ?`
-	args := []any{string(StepFailed), sinceArg, taskID, stepIndex}
+		FROM step_runs WHERE task_id = ? AND step_index = ? AND step_id = ?`
+	args := []any{string(StepFailed), sinceArg, taskID, stepIndex, stepID}
 	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&last, &failed); err != nil {
 		return out, fmt.Errorf("count step attempts: %w", err)
 	}
