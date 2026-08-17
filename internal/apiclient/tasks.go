@@ -3,6 +3,7 @@ package apiclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
 	"time"
@@ -33,6 +34,16 @@ type Task struct {
 	CostUSD      *float64 `json:"cost_usd"`
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
+
+	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
+	// 014); all nil for a root task.
+	ParentTaskID *int64  `json:"parent_task_id"`
+	LaneID       *string `json:"lane_id"`
+	LaneOrder    *int    `json:"lane_order"`
+	// Children is the subtree rollup, served on the detail endpoint whenever
+	// the task has lanes. Lanes are hidden from the task list by design, and
+	// this is what pays for that: it is where a blocked lane becomes visible.
+	Children *ChildrenRollup `json:"children,omitempty"`
 
 	BlockReason      *string  `json:"block_reason"`
 	PauseRequested   bool     `json:"pause_requested"`
@@ -117,6 +128,12 @@ type ListTasksOptions struct {
 	Archived  ArchivedScope
 	Limit     int
 	Offset    int
+	// ParentID lists one fan-out parent's lanes, in merge order (§7.6, task
+	// 014). Lanes are excluded from every other listing by default, so this
+	// is how a client drills into a subtree.
+	ParentID int64
+	// IncludeChildren asks for the flat everything, lanes included.
+	IncludeChildren bool
 }
 
 func (o ListTasksOptions) query() string {
@@ -129,6 +146,12 @@ func (o ListTasksOptions) query() string {
 	}
 	if o.Archived != ArchivedExclude {
 		q.Set("archived", string(o.Archived))
+	}
+	if o.ParentID != 0 {
+		q.Set("parent_id", strconv.FormatInt(o.ParentID, 10))
+	}
+	if o.IncludeChildren {
+		q.Set("include_children", "true")
 	}
 	if o.Limit > 0 {
 		q.Set("limit", strconv.Itoa(o.Limit))
@@ -199,6 +222,34 @@ func (s StepRun) Duration(now time.Time) (time.Duration, bool) {
 // Live reports whether this attempt is still producing output, which is what
 // makes follow mode meaningful (a finished attempt will never gain a line).
 func (s StepRun) Live() bool { return s.FinishedAt == nil && s.State == "running" }
+
+// ChildrenRollup summarizes a fan-out subtree (§13.2, task 014). Blocked and
+// AwaitingGate are ids: the client re-fetches whichever it decides to show,
+// the way §13.3 hands out everything else.
+type ChildrenRollup struct {
+	Total        int            `json:"total"`
+	Settled      int            `json:"settled"`
+	ByState      map[string]int `json:"by_state"`
+	Blocked      []int64        `json:"blocked"`
+	AwaitingGate []int64        `json:"awaiting_gate"`
+}
+
+// Summary is the short form a board row shows beside `awaiting_children` —
+// "2 blocked", "3/5 done". It names what a human has to act on first, since
+// that is the whole reason the rollup exists.
+func (r *ChildrenRollup) Summary() string {
+	if r == nil || r.Total == 0 {
+		return ""
+	}
+	switch {
+	case len(r.Blocked) > 0:
+		return fmt.Sprintf("%d blocked", len(r.Blocked))
+	case len(r.AwaitingGate) > 0:
+		return fmt.Sprintf("%d at a gate", len(r.AwaitingGate))
+	default:
+		return fmt.Sprintf("%d/%d done", r.Settled, r.Total)
+	}
+}
 
 // TaskDetail is GET /v1/tasks/{id}: the task plus every attempt of every
 // step it has run.
