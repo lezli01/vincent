@@ -68,6 +68,20 @@ func offlineClient() *apiclient.Client {
 	return apiclient.New("http://127.0.0.1:1", "probe-token")
 }
 
+// diffTabDetail is a detail view sitting on the diff tab with a diff loaded,
+// which is the only state the ctxDiff rows exist in.
+func diffTabDetail(t *testing.T) *detail {
+	t.Helper()
+	d := newTestDetail(t)
+	d.taskID = 4
+	loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+	d.focus = focusOutput
+	d.tab = tabDiff
+	d.diff.openTask(d.taskID)
+	d.diff.apply(diffLoadedMsg{taskID: d.taskID, text: twoFileDiff})
+	return d
+}
+
 // panelKeyProbes proves one panel-scoped binding each. A probe drives the
 // real view with the key the registry publishes and asserts the effect the
 // label promises — not that the key was merely swallowed, which is what `[`
@@ -217,6 +231,52 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if len(opened) != 1 || opened[0] != path {
 				t.Fatalf("e opened %v, want the attempt's transcript at %s", opened, path)
+			}
+		},
+	},
+
+	ctxDiff: {
+		// The way back off the tab has to stay on screen, so `]` is a row here
+		// too — and a row is only a promise until something presses it.
+		"]": func(t *testing.T) {
+			d := diffTabDetail(t)
+			d.updateKey(registryKey(t, "]"))
+			if d.tab != tabOutput {
+				t.Fatal("] did not switch the diff tab back to the output")
+			}
+		},
+		"down": func(t *testing.T) {
+			d := diffTabDetail(t)
+			before := d.diff.cursorPath
+			d.updateKey(registryKey(t, "down"))
+			if d.diff.cursorPath == before {
+				t.Fatalf("down did not move the file cursor (still %q)", before)
+			}
+		},
+		"enter": func(t *testing.T) {
+			d := diffTabDetail(t)
+			d.updateKey(registryKey(t, "enter"))
+			if len(d.diff.open) != 1 {
+				t.Fatalf("enter did not fold the file under the cursor (folds %v)", d.diff.open)
+			}
+			d.updateKey(registryKey(t, "enter"))
+			if len(d.diff.open) != 0 {
+				t.Fatalf("enter did not fold it shut again (folds %v)", d.diff.open)
+			}
+		},
+		"O": func(t *testing.T) {
+			d := diffTabDetail(t)
+			d.updateKey(registryKey(t, "O"))
+			if len(d.diff.open) != 2 {
+				t.Fatalf("O expanded %d files, want both", len(d.diff.open))
+			}
+		},
+		"C": func(t *testing.T) {
+			d := diffTabDetail(t)
+			d.updateKey(registryKey(t, "O"))
+			d.updateKey(registryKey(t, "C"))
+			if len(d.diff.open) != 0 {
+				t.Fatalf("C left %d files expanded", len(d.diff.open))
 			}
 		},
 	},

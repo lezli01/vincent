@@ -69,6 +69,21 @@ func (d *detail) clickTimeline(line int) tea.Cmd {
 	return d.syncOutput()
 }
 
+// clickOutput is a click anywhere on the output panel: the title row switches
+// the tab, and a row of the diff tab folds the file it names (task 012). x,y
+// are box-relative, so the panel's border is row 0 and the content starts at
+// row 1. The output tab's body has nothing to click — an attempt is selected
+// in the timeline, not in its own scrollback.
+func (d *detail) clickOutput(x, y int, focused bool) tea.Cmd {
+	if y == 0 {
+		return d.clickOutputTitle(x, y, focused)
+	}
+	if d.tab == tabDiff {
+		d.diff.clickRow(y - 1)
+	}
+	return nil
+}
+
 // clickOutputTitle switches the output|diff tab when the click lands on its
 // span in the panel title (§15: click a tab). x,y are box-relative; the
 // focus glyph shifts the spans by two cells.

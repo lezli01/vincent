@@ -422,7 +422,7 @@ func (s *shell) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		return s.detail.clickTimeline(y - b.y - 1)
 	default:
 		s.syncDetailFocus()
-		return s.detail.clickOutputTitle(msg.X-b.x, y-b.y, wasFocusedOutput)
+		return s.detail.clickOutput(msg.X-b.x, y-b.y, wasFocusedOutput)
 	}
 }
 
@@ -440,6 +440,12 @@ func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		s.syncDetailFocus()
 		return s.detail.moveSelection(delta)
 	default:
+		// Whichever tab the pane is showing is the one that scrolls: wheeling
+		// over a diff used to move the output tail nobody could see.
+		if s.detail.tab == tabDiff {
+			s.detail.diff.scroll(delta)
+			return nil
+		}
 		if delta > 0 {
 			s.detail.vp.ScrollDown(1)
 		} else {
@@ -474,12 +480,18 @@ func (s *shell) jumpAttention() tea.Cmd {
 	return s.openNow(next)
 }
 
-// focusedContext names the focused panel for the binding registry.
+// focusedContext names the focused panel for the binding registry. The output
+// pane answers with the tab that is live: the two tabs have different keys —
+// follow and verbosity against folds and file navigation — and a footer
+// offering the other tab's would be a footer that lies.
 func (s *shell) focusedContext() bindingContext {
 	switch s.focus {
 	case panelTimeline:
 		return ctxTimeline
 	case panelOutput:
+		if s.detail.tab == tabDiff {
+			return ctxDiff
+		}
 		return ctxOutput
 	default:
 		return ctxTasks
