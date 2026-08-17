@@ -188,6 +188,7 @@ func (r *Registry) ReloadGlobal() {
 	r.mu.Lock()
 	r.global = entries
 	r.mu.Unlock()
+	r.warnFanOutCycles(0)
 	r.notify()
 }
 
@@ -210,7 +211,37 @@ func (r *Registry) ReloadProject(id int64) {
 		ps.entries = entries
 	}
 	r.mu.Unlock()
+	r.warnFanOutCycles(id)
 	r.notify()
+}
+
+// warnFanOutCycles logs the §8.2 fan-out cycle warning for one project's
+// resolved view (task 014 decision 5).
+//
+// It runs after the load rather than inside it, because a cycle is a property
+// of *resolved* names: which files a lane's `workflow:` reaches is decided by
+// builtin < global < project shadowing, which loadDir cannot see while it is
+// still building a scope.
+//
+// A warning, not an error. A cycle between two files is real only once a task
+// picks a root, and a project workflow may shadow the very name that closed
+// the loop. Task creation is where it becomes a 400.
+func (r *Registry) warnFanOutCycles(projectID int64) {
+	lookup := func(name string) (*Workflow, bool) {
+		e, ok := r.Lookup(projectID, name)
+		if !ok || !e.Valid() {
+			return nil, false
+		}
+		return e.Workflow, true
+	}
+	for _, e := range r.List(projectID) {
+		if !e.Valid() || !HasFanOut(e.Workflow) {
+			continue
+		}
+		for _, w := range LaneCycleWarnings(e.Workflow, lookup) {
+			r.log.Warn("workflow fan-out cycle", "file", e.File, "name", e.Name, "warning", w)
+		}
+	}
 }
 
 func (r *Registry) notify() {

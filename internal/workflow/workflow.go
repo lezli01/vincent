@@ -148,6 +148,15 @@ type Lane struct {
 	Workflow string `yaml:"workflow,omitempty"`
 	// Steps is an inline workflow body, used when Workflow is empty.
 	Steps []Step `yaml:"steps,omitempty"`
+	// ResolvedFrom records the registry workflow a named lane was resolved
+	// from, and is written by ResolveTree at task creation — never by hand.
+	//
+	// Resolution moves the name here and fills Steps, rather than leaving
+	// Workflow set beside them: `workflow` and `steps` are mutually exclusive
+	// in an authored file, and a resolved snapshot that carried both would no
+	// longer parse. The name is still needed, as the child task's
+	// workflow_name (decision 4).
+	ResolvedFrom string `yaml:"resolved_from,omitempty"`
 	// Fields are merged over the parent task's, this lane winning
 	// (decision 29).
 	Fields map[string]string `yaml:"fields,omitempty"`
@@ -634,6 +643,11 @@ func validateLanes(wf *Workflow, step Step, base string, opts Options, add func(
 			add(lanePath, "a lane needs either a workflow name or inline steps")
 		case lane.Workflow != "" && len(lane.Steps) > 0:
 			add(lanePath, "a lane has either a workflow name or inline steps, not both")
+		}
+		if lane.ResolvedFrom != "" && lane.Workflow != "" {
+			// resolved_from is machine-written; a hand-written file carrying
+			// both is describing two different sources for one lane.
+			add(lanePath+".resolved_from", "resolved_from is set by task creation, not by hand")
 		}
 		if lane.Workflow != "" && strings.ContainsAny(lane.Workflow, " \t/\\") {
 			add(lanePath+".workflow",

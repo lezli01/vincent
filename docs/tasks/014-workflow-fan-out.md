@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (6/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (7/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -634,7 +634,7 @@ an `agent:` the policy will never run.
   `merge:`, `on_conflict:`; the `Lane` type (`ID`, `Workflow`, `Steps`,
   `Fields`) with `workflow` and `steps` mutually exclusive and exactly one
   required; recursive validation; `Marshal` round-trip.
-- [ ] **014.6 — Creation-time tree resolution.** Depends: 014.5. Resolve every
+- [x] **014.6 — Creation-time tree resolution.** ✓ 2026-08-17 Depends: 014.5. Resolve every
   named lane workflow through registry shadowing into the parent's snapshot;
   synthetic `workflow_name` for inline lanes; cycle detection with the path in
   the `400`; `fan_out.max_depth` and `fan_out.max_tasks` computed and enforced

@@ -357,11 +357,34 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fan-out tree resolution (§7.6, task 014 decisions 4, 5). Every lane
+	// naming a registry workflow is resolved into the snapshot **now**, so
+	// the tree's shape is fixed at creation and later edits to those files
+	// cannot mutate this task. The bounds are checked here for the same
+	// reason: a depth-3 explosion should be a 400 in front of the person
+	// typing, not two hundred worktrees discovered six hours later.
+	snapshot := entry.Source
+	if workflow.HasFanOut(entry.Workflow) {
+		cfg := s.deps.Config()
+		resolved, _, terr := workflow.ResolveTree(entry.Workflow, s.laneLookup(project.ID),
+			workflow.Limits{MaxDepth: cfg.FanOut.MaxDepth, MaxTasks: cfg.FanOut.MaxTasks})
+		if terr != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, terr.Error())
+			return
+		}
+		out, merr := workflow.Marshal(resolved)
+		if merr != nil {
+			s.internalError(w, "re-encode resolved fan-out snapshot", merr)
+			return
+		}
+		snapshot = string(out)
+	}
+
 	t := store.Task{
 		ProjectID:        project.ID,
 		Title:            title,
 		WorkflowName:     entry.Name,
-		WorkflowSnapshot: entry.Source,
+		WorkflowSnapshot: snapshot,
 		BaseBranch:       baseBranch,
 		Fields:           req.Fields,
 		AgentOverride:    agentOverride,
@@ -482,6 +505,21 @@ func (s *Server) checkTaskCatalog(wf *workflow.Workflow, t *store.Task) (warning
 // degrade-never-block rule outranks this gate: one cold-logon probe timeout
 // must not start refusing task creation against a healthy CLI (T4.22). The
 // engine's pre-flight is the backstop for what a probe could not say here.
+// laneLookup resolves a lane's workflow name through the registry, applying
+// the same builtin < global < project shadowing every other lookup does
+// (§5.2). An invalid workflow is reported as not found: a lane cannot be cut
+// from a file that does not parse, and the registry's own errors are already
+// visible on GET /v1/workflows.
+func (s *Server) laneLookup(projectID int64) workflow.LookupFunc {
+	return func(name string) (*workflow.Workflow, bool) {
+		entry, ok := s.deps.Workflows.Lookup(projectID, name)
+		if !ok || !entry.Valid() {
+			return nil, false
+		}
+		return entry.Workflow, true
+	}
+}
+
 func (s *Server) inputMismatch(ctx context.Context, wf *workflow.Workflow, t *store.Task) string {
 	if s.deps.Catalog == nil || wf == nil {
 		return ""
