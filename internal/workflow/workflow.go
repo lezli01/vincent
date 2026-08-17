@@ -25,6 +25,24 @@ const (
 	StepCommand  = "command"
 	StepManual   = "manual"
 	StepParallel = "parallel"
+	// StepFanOut spawns each lane as a real child task and merges their
+	// branches back into this task's own (§7.6, task 014). Where `parallel`
+	// runs processes, this creates tasks — they share concepts and nothing
+	// else, which is why they are two types (decision 2).
+	StepFanOut = "fan_out"
+)
+
+// Conflict policies for a fan_out step's join (§7.6, task 014 decision 8).
+const (
+	// ConflictBlock stops the task with `merge_conflict` and leaves the
+	// worktree conflicted for a human. The default, deliberately: an agent
+	// silently resolving a semantic conflict and the merge commit landing
+	// unread is the one outcome that turns a time-saving feature into a
+	// correctness liability.
+	ConflictBlock = "block"
+	// ConflictAgent attempts an agent resolution first, gated by that step's
+	// own `check`, and falls back to the block when it fails.
+	ConflictAgent = "agent"
 )
 
 // Permission modes (spec §9.4).
@@ -110,6 +128,61 @@ type Step struct {
 	// this struct writes its zero values out deliberately (see Marshal).
 	Steps       []Step `yaml:"steps,omitempty"`
 	MaxParallel *int   `yaml:"max_parallel,omitempty"`
+
+	// fan_out steps (task 014)
+	Lanes []Lane `yaml:"lanes,omitempty"`
+	Merge *Merge `yaml:"merge,omitempty"`
+}
+
+// Lane is one branch of a `fan_out` step: a named registry workflow or inline
+// steps, which become a real child task's own flat snapshot (§7.6,
+// decision 4).
+//
+// Exactly one of Workflow and Steps is set. Nesting lives here and only here
+// — a lane's workflow may itself fan out, to any depth, bounded by
+// `fan_out.max_depth` at creation (decision 5).
+type Lane struct {
+	ID string `yaml:"id"`
+	// Workflow names a registry workflow, resolved through the usual
+	// builtin < global < project shadowing at **task-creation** time.
+	Workflow string `yaml:"workflow,omitempty"`
+	// Steps is an inline workflow body, used when Workflow is empty.
+	Steps []Step `yaml:"steps,omitempty"`
+	// Fields are merged over the parent task's, this lane winning
+	// (decision 29).
+	Fields map[string]string `yaml:"fields,omitempty"`
+	// Agent, Model, Effort and Priority override the root's inherited values
+	// for this lane's whole subtree (decision 10). Empty inherits.
+	Agent    string `yaml:"agent,omitempty"`
+	Model    string `yaml:"model,omitempty"`
+	Effort   string `yaml:"effort,omitempty"`
+	Priority *int   `yaml:"priority,omitempty"`
+}
+
+// Merge is how a `fan_out` step joins its lanes back (§7.6, decisions 7, 8).
+// Lanes are merged `--no-ff` one at a time in declared order, stopping at the
+// first conflict.
+//
+// The two fields are one setting split in two because YAML unions are worse
+// than the split: `on_conflict` is the policy, and `agent` carries the step
+// that policy runs. Validation keeps them consistent, so neither can be set
+// without the other making sense.
+type Merge struct {
+	// OnConflict is `block` (the default) or `agent`.
+	OnConflict string `yaml:"on_conflict,omitempty"`
+	// Agent is a full agent Step — same fields, same validation, same
+	// executor — run in the parent's worktree over the conflicted files
+	// (decision 24). Required by, and only by, `on_conflict: agent`.
+	Agent *Step `yaml:"agent,omitempty"`
+}
+
+// ConflictPolicy resolves a fan_out step's conflict policy, defaulting to
+// `block` for a step that declares no `merge:` at all.
+func (s Step) ConflictPolicy() string {
+	if s.Merge == nil || s.Merge.OnConflict == "" {
+		return ConflictBlock
+	}
+	return s.Merge.OnConflict
 }
 
 // placedStep is a step together with the YAML path it was found at, so a
@@ -277,13 +350,15 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 		base := fmt.Sprintf("steps[%d]", i)
 		checkID(step, base)
 		validateStep(step, base, opts, add)
-		if step.Type != StepParallel {
-			continue
-		}
-		for j, sub := range step.Steps {
-			subBase := fmt.Sprintf("%s.steps[%d]", base, j)
-			checkID(sub, subBase)
-			validateSubStep(wf, sub, subBase, opts, add)
+		switch step.Type {
+		case StepParallel:
+			for j, sub := range step.Steps {
+				subBase := fmt.Sprintf("%s.steps[%d]", base, j)
+				checkID(sub, subBase)
+				validateSubStep(wf, sub, subBase, opts, add)
+			}
+		case StepFanOut:
+			validateLanes(wf, step, base, opts, add)
 		}
 	}
 	warns = validateCatalogs(wf, opts, loc, add)
@@ -399,8 +474,8 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 func validateStep(step Step, base string, opts Options, add func(string, string, ...any)) {
 	switch step.Type {
 	case "":
-		add(base+".type", "type is required (one of %s, %s, %s, %s)",
-			StepAgent, StepCommand, StepManual, StepParallel)
+		add(base+".type", "type is required (one of %s, %s, %s, %s, %s)",
+			StepAgent, StepCommand, StepManual, StepParallel, StepFanOut)
 	case StepAgent:
 		if step.Prompt == "" {
 			add(base+".prompt", "agent steps require a prompt")
@@ -417,7 +492,7 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 				InputWait, InputDeny, InputRequire, step.OnInput)
 		}
 		rejectFields(step, base, add, "run", "shell", "env", "instructions",
-			"steps", "max_parallel")
+			"steps", "max_parallel", "lanes", "merge")
 	case StepCommand:
 		if step.Run == "" {
 			add(base+".run", "command steps require a run command")
@@ -428,14 +503,14 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		}
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "instructions",
-			"steps", "max_parallel")
+			"steps", "max_parallel", "lanes", "merge")
 	case StepManual:
 		if step.Instructions == "" {
 			add(base+".instructions", "manual steps require instructions")
 		}
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env", "steps", "max_parallel")
+			"run", "shell", "env", "steps", "max_parallel", "lanes", "merge")
 	case StepParallel:
 		if len(step.Steps) == 0 {
 			add(base+".steps", "parallel steps require at least one sub-step")
@@ -447,10 +522,18 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		// `max_retries`, checked below for every type, bound the group itself.
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env", "instructions")
+			"run", "shell", "env", "instructions", "lanes", "merge")
+	case StepFanOut:
+		if len(step.Lanes) == 0 {
+			add(base+".lanes", "fan_out steps require at least one lane")
+		}
+		validateMerge(step, base, opts, add)
+		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+			"run", "shell", "env", "instructions", "steps", "max_parallel")
 	default:
-		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s)",
-			step.Type, StepAgent, StepCommand, StepManual, StepParallel)
+		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s, %s)",
+			step.Type, StepAgent, StepCommand, StepManual, StepParallel, StepFanOut)
 	}
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
@@ -477,6 +560,129 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 	}
 }
 
+// validateMerge checks a fan_out step's join settings: the policy is known,
+// and the agent step is present exactly when the policy calls for it.
+func validateMerge(step Step, base string, opts Options, add func(string, string, ...any)) {
+	m := step.Merge
+	if m == nil {
+		return // `block`, the default (§7.6)
+	}
+	switch m.OnConflict {
+	case "", ConflictBlock:
+		if m.Agent != nil {
+			add(base+".merge.agent",
+				"merge.agent is only used by on_conflict: %s; this step blocks on a conflict", ConflictAgent)
+		}
+	case ConflictAgent:
+		if m.Agent == nil {
+			add(base+".merge.agent", "on_conflict: %s requires merge.agent", ConflictAgent)
+			return
+		}
+	default:
+		add(base+".merge.on_conflict", "on_conflict must be %q or %q, got %q",
+			ConflictBlock, ConflictAgent, m.OnConflict)
+	}
+	if m.Agent == nil {
+		return
+	}
+	// A full agent step, judged by the ordinary rules (decision 24) — its
+	// prompt, check, timeout and agent selection all mean what they mean
+	// everywhere else. `type:` is implied rather than written out.
+	resolver := *m.Agent
+	if resolver.Type == "" {
+		resolver.Type = StepAgent
+	}
+	if resolver.Type != StepAgent {
+		add(base+".merge.agent.type", "merge.agent must be an %s step, got %q", StepAgent, resolver.Type)
+		return
+	}
+	if resolver.ID == "" {
+		// Ids matter here for the same reason they do anywhere: this step
+		// gets step_runs rows of its own.
+		add(base+".merge.agent.id", "merge.agent requires an id")
+	}
+	if m.Agent.OnInput == InputRequire {
+		// The resolver runs while the task holds its slot mid-join; a
+		// mid-run question is answerable, but the conflict it is resolving
+		// is a worktree state no human can inspect through the request.
+		add(base+".merge.agent.on_input", "on_input: %s is not valid on a merge resolver", InputRequire)
+	}
+	validateStep(resolver, base+".merge.agent", opts, add)
+}
+
+// validateLanes checks a fan_out step's lanes. Lane step ids live in their
+// own namespace — each lane becomes a **separate child task** with its own
+// flat snapshot (decision 4) — so they are checked against a fresh set rather
+// than the parent workflow's.
+func validateLanes(wf *Workflow, step Step, base string, opts Options, add func(string, string, ...any)) {
+	seen := make(map[string]string, len(step.Lanes))
+	for i, lane := range step.Lanes {
+		lanePath := fmt.Sprintf("%s.lanes[%d]", base, i)
+		switch {
+		case lane.ID == "":
+			add(lanePath+".id", "id is required")
+		case !isSlug(lane.ID):
+			add(lanePath+".id", "lane id %q must be a slug (lowercase letters, digits, '-', '_', '.')", lane.ID)
+		default:
+			if prev, dup := seen[lane.ID]; dup {
+				add(lanePath+".id", "duplicate lane id %q (first used by %s)", lane.ID, prev)
+			}
+			seen[lane.ID] = lanePath
+		}
+		switch {
+		case lane.Workflow == "" && len(lane.Steps) == 0:
+			add(lanePath, "a lane needs either a workflow name or inline steps")
+		case lane.Workflow != "" && len(lane.Steps) > 0:
+			add(lanePath, "a lane has either a workflow name or inline steps, not both")
+		}
+		if lane.Workflow != "" && strings.ContainsAny(lane.Workflow, " \t/\\") {
+			add(lanePath+".workflow",
+				"workflow %q must not contain whitespace or path separators", lane.Workflow)
+		}
+		if lane.Agent != "" && !knownAgent(lane.Agent, opts.KnownAgents) {
+			add(lanePath+".agent", "unknown agent %q (known: %s)",
+				lane.Agent, strings.Join(opts.KnownAgents, ", "))
+		}
+		// Inline steps are a workflow body in their own right, so they are
+		// validated like one: their own id namespace, and their own right to
+		// contain a fan_out (decision 5). What they may not contain is a
+		// gate-free assumption anyone else's steps do not also carry.
+		validateLaneSteps(wf, lane, lanePath, opts, add)
+	}
+}
+
+// validateLaneSteps validates one lane's inline steps as the workflow body
+// they will become.
+func validateLaneSteps(wf *Workflow, lane Lane, base string, opts Options, add func(string, string, ...any)) {
+	if len(lane.Steps) == 0 {
+		return
+	}
+	seen := make(map[string]string, len(lane.Steps))
+	for i, step := range lane.Steps {
+		stepPath := fmt.Sprintf("%s.steps[%d]", base, i)
+		switch {
+		case step.ID == "":
+			add(stepPath+".id", "id is required")
+		case !isSlug(step.ID):
+			add(stepPath+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
+		default:
+			if prev, dup := seen[step.ID]; dup {
+				add(stepPath+".id", "duplicate step id %q (first used by %s)", step.ID, prev)
+			}
+			seen[step.ID] = stepPath
+		}
+		validateStep(step, stepPath, opts, add)
+		switch step.Type {
+		case StepParallel:
+			for j, sub := range step.Steps {
+				validateSubStep(wf, sub, fmt.Sprintf("%s.steps[%d]", stepPath, j), opts, add)
+			}
+		case StepFanOut:
+			validateLanes(wf, step, stepPath, opts, add)
+		}
+	}
+}
+
 // validateSubStep checks one member of a `parallel` group. Beyond everything
 // validateStep already checks, two step types cannot appear inside a group and
 // one field cannot be set on a member of one — all three for the same reason:
@@ -491,6 +697,12 @@ func validateSubStep(wf *Workflow, sub Step, base string, opts Options, add func
 	case StepParallel:
 		add(base+".type", "parallel groups do not nest; a group's sub-steps are %s or %s steps",
 			StepAgent, StepCommand)
+	case StepFanOut:
+		// A fan_out parks its task in awaiting_children and releases the
+		// slot, which is the same thing a gate does and the same reason
+		// `manual` is refused here.
+		add(base+".type", "fan_out steps are not valid inside a parallel group: "+
+			"the task parks while its lanes run, and a group cannot park half a task")
 	}
 	// Resolved, not literal: `defaults.on_input: require` reaches a sub-step
 	// that says nothing, and it is just as unrunnable there (§7.4).
@@ -517,6 +729,7 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"run": step.Run != "", "shell": step.Shell != "", "env": len(step.Env) > 0,
 		"instructions": step.Instructions != "",
 		"steps":        len(step.Steps) > 0, "max_parallel": step.MaxParallel != nil,
+		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
 	}
 	for _, f := range fields {
 		if set[f] {
