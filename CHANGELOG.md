@@ -24,6 +24,41 @@ Please pull request.
 
 ## [Unreleased]
 
+### Added
+
+- **`type: parallel` — sub-steps that run at once.** A group runs its
+  sub-steps concurrently in the task's one worktree: one step, one index, one
+  concurrency slot, no branch and no merge. It succeeds when every sub-step
+  does, a failure does not cancel its siblings, and a retry re-runs only what
+  failed. `parallel.max_parallel` (default 4) bounds it, and is a **second
+  concurrency dimension your task caps do not govern** — a board reading "1
+  running" can be a machine running four compilers. `manual`, nested groups
+  and `on_input: require` are refused inside a group.
+- **`type: fan_out` — lanes as real child tasks.** Each lane becomes an
+  ordinary task with its own worktree, branch, retries, gates and blocks, and
+  their branches are merged back (`--no-ff`, in declared order) into the
+  branch the task already owns, so one branch is still delivered. A lane is a
+  named workflow or inline steps, resolved into the task's snapshot at
+  creation; lanes may nest to any depth, bounded by `fan_out.max_depth` (3)
+  and `fan_out.max_tasks` (64), both checked at creation with a `400` naming
+  what is wrong.
+
+  A merge conflict blocks the task with `merge_conflict` and leaves the
+  worktree conflicted so you resolve it in place, stage, and retry;
+  `merge: {on_conflict: agent}` opts into an agent attempt first. A lane that
+  is cancelled or ends without finishing blocks with `lane_failed` and merges
+  **nothing**.
+
+  Two things worth knowing before you use it: a fan-out **fills** your
+  concurrency caps rather than exceeding them, and N lanes leave N worktrees
+  on disk until the tree is archived.
+
+  New `awaiting_children` task state (holds no slot), `?parent_id=` and
+  `?include_children=` on `GET /v1/tasks`, a `children` rollup on the task
+  detail, the `task.children_changed` event, `vincent task ls
+  --include-children/--parent`, and `L` in the TUI to drill into a fan-out's
+  lanes.
+
 ### Changed
 
 - **vincent is now source-available and dual-licensed, not MIT.** Personal and
