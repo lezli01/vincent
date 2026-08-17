@@ -22,6 +22,10 @@ type RenderContext struct {
 	Steps       map[string]StepResult
 	Worktree    WorktreeContext
 	LastFailure Failure
+	// Conflicts are the files a fan_out join is asking an `on_conflict:
+	// agent` resolver to fix (§7.6, task 014 decision 24). Empty for every
+	// other step, so a prompt that reads it defensively works anywhere.
+	Conflicts []string
 }
 
 // TaskContext is `.Task`.

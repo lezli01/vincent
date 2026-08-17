@@ -294,8 +294,10 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	// ArchivedAll is explicit: this handler classifies archived vs not
 	// itself, and must not silently inherit the list default (which excludes
 	// archives for the board's benefit, §13.2).
+	// ChildrenInclude for the same reason: deleting a project must account
+	// for every task in it, lanes included (task 014).
 	tasks, err := s.deps.Store.ListTasks(ctx,
-		store.TaskFilter{ProjectID: p.ID, Archived: store.ArchivedAll})
+		store.TaskFilter{ProjectID: p.ID, Archived: store.ArchivedAll, Children: store.ChildrenInclude})
 	if err != nil {
 		s.internalError(w, "list tasks", err)
 		return

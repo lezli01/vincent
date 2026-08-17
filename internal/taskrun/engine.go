@@ -109,7 +109,16 @@ type stepEnv struct {
 	step    workflow.Step
 	index   int
 	inGroup bool
-	log     *slog.Logger
+	// conflicts are the files a fan_out join is asking an `on_conflict:
+	// agent` resolver to fix (§7.6, task 014 decision 24). Empty everywhere
+	// else.
+	conflicts []string
+	// resumedFromConflict marks a join re-entered by a human retry after a
+	// merge_conflict block, as opposed to after a crash. Only the crash may
+	// run `git merge --abort` — aborting over a conflict somebody spent an
+	// hour resolving is the failure decision 9 exists to prevent.
+	resumedFromConflict bool
+	log                 *slog.Logger
 }
 
 // stepOutcome is the result of one attempt.
@@ -173,6 +182,12 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		env := &stepEnv{
 			task: task, project: project, wf: wf,
 			step: wf.Steps[index], index: index,
+			// A human retry off a merge_conflict block is the one re-entry
+			// that must not abort the merge in progress (decision 9). It is
+			// read from the state this admission started in, before anything
+			// below overwrites it.
+			resumedFromConflict: task.State == store.TaskBlocked &&
+				task.BlockReason == ReasonMergeConflict,
 			log: log.With("step", wf.Steps[index].ID, "step_index", index),
 		}
 		if env.step.Type == workflow.StepManual {
@@ -183,9 +198,19 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		// own budget, so the group's outcome is the collected one rather than
 		// anything runStepWithRetries could produce (task 014 decisions 17, 18).
 		outcome := stepOutcome{}
-		if env.step.Type == workflow.StepParallel {
+		switch env.step.Type {
+		case workflow.StepParallel:
 			outcome = r.runGroup(ctx, env)
-		} else {
+		case workflow.StepFanOut:
+			// Spawning parks the task and ends this goroutine; joining
+			// returns an ordinary outcome the switch below acts on
+			// (§7.6, decision 3).
+			var stop bool
+			outcome, stop = r.runFanOut(ctx, env)
+			if stop {
+				return
+			}
+		default:
 			outcome = r.runStepWithRetries(ctx, env)
 		}
 		switch outcome.state {
@@ -384,6 +409,12 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		outcome = r.runAgentStep(ctx, env, sel, rc, run, tr)
 	case workflow.StepCommand:
 		outcome = r.runCommandStep(ctx, env, rc, run, tr)
+	case workflow.StepFanOut:
+		// The join, reached only on a re-admission: the spawn parked the task
+		// before this path could run (§7.6, decision 3). Going through
+		// runAttempt gives it the row, transcript and events every other step
+		// has, rather than a merge that happens invisibly.
+		outcome = r.runJoinStep(ctx, env, tr)
 	default:
 		outcome = stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}
@@ -444,6 +475,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		Steps:       steps,
 		Worktree:    workflow.WorktreeContext{Path: env.task.WorktreePath},
 		LastFailure: workflow.Failure{Reason: previous.reason, Output: previous.output},
+		Conflicts:   env.conflicts,
 	}, nil
 }
 

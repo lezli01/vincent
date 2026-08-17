@@ -12,6 +12,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -161,4 +162,45 @@ func (s *Store) NonTerminalDescendants(ctx context.Context, taskID int64) ([]int
 		return nil, fmt.Errorf("descendants of task %d: %w", taskID, err)
 	}
 	return out, nil
+}
+
+// EventTaskChildrenChanged tells a fan-out ancestor that something in its
+// subtree moved (§13.3, task 014 decision 14). Payload is
+// {task_id, child_id, to_state}; a client re-fetches the rollup rather than
+// reading state out of the event, which is how §13.3 hands out everything
+// else.
+const EventTaskChildrenChanged = "task.children_changed"
+
+// EmitChildrenChanged appends one children_changed event per fan-out ancestor
+// of childID.
+//
+// Emitting is what the per-task SSE stream needs: it filters on `task_id = ?`,
+// so a root's stream never sees a depth-2 transition and its rollup could not
+// update live. Widening that filter to a subtree-membership test was the
+// alternative, and it fails because the subtree is not fixed at subscribe
+// time — children appear as fan-outs fire — so the subscription would have to
+// grow itself by watching task.created from inside the fan-out. The cost here
+// is bounded and explicit: at most max_depth extra rows per transition.
+//
+// A task with no ancestors — every ordinary task — writes nothing.
+func (s *Store) EmitChildrenChanged(ctx context.Context, childID int64, toState TaskState) error {
+	ancestors, err := s.FanOutAncestors(ctx, childID)
+	if err != nil {
+		return err
+	}
+	for _, ancestorID := range ancestors {
+		payload, err := json.Marshal(map[string]any{
+			"task_id": ancestorID, "child_id": childID, "to_state": string(toState),
+		})
+		if err != nil {
+			return fmt.Errorf("marshal children_changed: %w", err)
+		}
+		id := ancestorID
+		if err := s.AppendEvent(ctx, &Event{
+			Type: EventTaskChildrenChanged, TaskID: &id, Payload: payload,
+		}); err != nil {
+			return fmt.Errorf("append children_changed for %d: %w", ancestorID, err)
+		}
+	}
+	return nil
 }
