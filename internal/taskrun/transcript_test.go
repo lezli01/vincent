@@ -10,7 +10,7 @@ import (
 
 func openTestTranscript(t *testing.T, limit int64) *transcript {
 	t.Helper()
-	tr, err := openTranscript(t.TempDir(), 1, 0, 1)
+	tr, err := openTranscript(t.TempDir(), 1, 0, 1, "")
 	if err != nil {
 		t.Fatalf("openTranscript: %v", err)
 	}

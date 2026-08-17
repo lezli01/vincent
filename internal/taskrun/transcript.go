@@ -12,7 +12,9 @@ import (
 )
 
 // transcript is one attempt's transcript file (spec §12.2:
-// {data_dir}/transcripts/{task_id}/{step_index}-{attempt}.jsonl). Agent
+// {data_dir}/transcripts/{task_id}/{step_index}-{attempt}.jsonl, with a
+// sub-step of a `parallel` group taking {step_index}-{step_id}-{attempt}).
+// Agent
 // stream lines are written verbatim so the file stays replayable; vincent's
 // own annotations are namespaced `vincent.*` (phase 1 decision).
 type transcript struct {
@@ -31,12 +33,22 @@ type transcript struct {
 }
 
 // openTranscript creates the transcript file for one attempt.
-func openTranscript(dataDir string, taskID int64, stepIndex, attempt int) (*transcript, error) {
+//
+// subStepID is empty for an ordinary step, whose index owns its name. A
+// member of a `parallel` group shares its group's index with its siblings, so
+// its id joins the name — `{step_index}-{step_id}-{attempt}.jsonl` — or three
+// concurrent sub-steps would open, and truncate, one file (task 014 decision
+// 16). Ids are slugs, so nothing here can escape the directory.
+func openTranscript(dataDir string, taskID int64, stepIndex, attempt int, subStepID string) (*transcript, error) {
 	dir := filepath.Join(dataDir, "transcripts", strconv.FormatInt(taskID, 10))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create transcript dir: %w", err)
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%d-%d.jsonl", stepIndex, attempt))
+	name := fmt.Sprintf("%d-%d.jsonl", stepIndex, attempt)
+	if subStepID != "" {
+		name = fmt.Sprintf("%d-%s-%d.jsonl", stepIndex, subStepID, attempt)
+	}
+	path := filepath.Join(dir, name)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create transcript: %w", err)

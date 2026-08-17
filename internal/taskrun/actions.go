@@ -368,11 +368,11 @@ func (r *Runner) recordStepDecision(
 		// here would record a decision that is about to lose its CAS.
 		return nil
 	}
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, task.ID, task.CurrentStep, time.Time{})
+	stepID, stepType := describeStep(task, task.CurrentStep)
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, task.ID, task.CurrentStep, stepID, time.Time{})
 	if err != nil {
 		return err
 	}
-	stepID, stepType := describeStep(task, task.CurrentStep)
 	now := time.Now()
 	run := &store.StepRun{
 		TaskID: task.ID, StepIndex: task.CurrentStep, StepID: stepID, StepType: stepType,

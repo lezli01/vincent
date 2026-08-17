@@ -144,11 +144,15 @@ func (s *Store) GetStepRun(ctx context.Context, id int64) (*StepRun, error) {
 // nil when the step has none. It seeds `.LastFailure` when an admission
 // starts on a step whose earlier attempts failed under a previous actor —
 // the human-retry path, where the §8.4 failure block matters most.
-func (s *Store) LastFailedStepRun(ctx context.Context, taskID int64, stepIndex int) (*StepRun, error) {
+//
+// stepID narrows it to one member of a `parallel` group, for the reason
+// CountStepAttempts gives (task 014 decision 16): the failure block a
+// sub-step retries under must be its own, not a sibling's.
+func (s *Store) LastFailedStepRun(ctx context.Context, taskID int64, stepIndex int, stepID string) (*StepRun, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
-		WHERE task_id = ? AND step_index = ? AND state = ?
+		WHERE task_id = ? AND step_index = ? AND step_id = ? AND state = ?
 		ORDER BY attempt DESC, id DESC LIMIT 1`,
-		taskID, stepIndex, string(StepFailed))
+		taskID, stepIndex, stepID, string(StepFailed))
 	r, err := scanStepRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -157,6 +161,42 @@ func (s *Store) LastFailedStepRun(ctx context.Context, taskID int64, stepIndex i
 		return nil, fmt.Errorf("last failed step run: %w", err)
 	}
 	return r, nil
+}
+
+// LatestStepStates returns, for one step index, the state of the most recent
+// attempt of each distinct step id. It exists for `parallel` groups (task
+// 014): a group re-admitted after a block must re-run only the sub-steps that
+// did not already succeed, and that fact is derived from these rows rather
+// than stored on the group — which has no row of its own (decision 17).
+//
+// The map is keyed by step id. An index with no rows yields an empty map, not
+// an error: a group running for the first time has no history.
+func (s *Store) LatestStepStates(ctx context.Context, taskID int64, stepIndex int) (map[string]StepRunState, error) {
+	// The join picks the highest attempt per step id — MAX(attempt) alone
+	// would pair a maximum with an arbitrary row's state.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.step_id, r.state FROM step_runs r
+		JOIN (SELECT step_id, MAX(attempt) AS attempt FROM step_runs
+			WHERE task_id = ? AND step_index = ? GROUP BY step_id) m
+		ON r.step_id = m.step_id AND r.attempt = m.attempt
+		WHERE r.task_id = ? AND r.step_index = ?`,
+		taskID, stepIndex, taskID, stepIndex)
+	if err != nil {
+		return nil, fmt.Errorf("latest step states: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]StepRunState)
+	for rows.Next() {
+		var id, state string
+		if err := rows.Scan(&id, &state); err != nil {
+			return nil, fmt.Errorf("scan latest step state: %w", err)
+		}
+		out[id] = StepRunState(state)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("latest step states: %w", err)
+	}
+	return out, nil
 }
 
 // ListStepRuns returns every attempt of every step of the task, ordered by
