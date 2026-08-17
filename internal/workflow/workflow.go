@@ -17,11 +17,14 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 )
 
-// Step types (spec §8.2).
+// Step types (spec §8.2). `parallel` is a group of sub-steps run concurrently
+// in the task's one worktree (§7, task 014) — it produces no branch, no child
+// task and no merge, which is what separates it from `fan_out`.
 const (
-	StepAgent   = "agent"
-	StepCommand = "command"
-	StepManual  = "manual"
+	StepAgent    = "agent"
+	StepCommand  = "command"
+	StepManual   = "manual"
+	StepParallel = "parallel"
 )
 
 // Permission modes (spec §9.4).
@@ -99,6 +102,37 @@ type Step struct {
 
 	// manual steps
 	Instructions string `yaml:"instructions"`
+
+	// parallel steps (task 014). Steps carries the sub-steps; MaxParallel
+	// bounds how many run at once, falling back to the daemon's
+	// `parallel.max_parallel`. Both are omitempty so a marshalled snapshot
+	// does not sprout an empty group on every other step type — the rest of
+	// this struct writes its zero values out deliberately (see Marshal).
+	Steps       []Step `yaml:"steps,omitempty"`
+	MaxParallel *int   `yaml:"max_parallel,omitempty"`
+}
+
+// placedStep is a step together with the YAML path it was found at, so a
+// finding about a sub-step reports `steps[2].steps[0].model` rather than the
+// group's own path (task 014).
+type placedStep struct {
+	Path string
+	Step Step
+}
+
+// allSteps flattens a workflow into every step it contains, groups first and
+// then their sub-steps, in declaration order. Nesting is one level deep by
+// construction: validateSubStep rejects a `parallel` inside a `parallel`.
+func allSteps(wf *Workflow) []placedStep {
+	out := make([]placedStep, 0, len(wf.Steps))
+	for i, step := range wf.Steps {
+		base := fmt.Sprintf("steps[%d]", i)
+		out = append(out, placedStep{Path: base, Step: step})
+		for j, sub := range step.Steps {
+			out = append(out, placedStep{Path: fmt.Sprintf("%s.steps[%d]", base, j), Step: sub})
+		}
+	}
+	return out
 }
 
 // DisplayName is the step's display name, falling back to its id (§8.2).
@@ -221,9 +255,12 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 	if len(wf.Steps) == 0 {
 		add("steps", "steps must not be empty")
 	}
-	seen := make(map[string]int, len(wf.Steps))
-	for i, step := range wf.Steps {
-		base := fmt.Sprintf("steps[%d]", i)
+	// Ids are unique across the whole workflow, sub-steps included: a
+	// sub-step shares its group's step_index and is told apart from its
+	// siblings by step_id alone (task 014 decision 16), which is also what
+	// names its transcript file.
+	seen := make(map[string]string, len(wf.Steps))
+	checkID := func(step Step, base string) {
 		switch {
 		case step.ID == "":
 			add(base+".id", "id is required")
@@ -231,11 +268,23 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 			add(base+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
 		default:
 			if prev, dup := seen[step.ID]; dup {
-				add(base+".id", "duplicate step id %q (first used by steps[%d])", step.ID, prev)
+				add(base+".id", "duplicate step id %q (first used by %s)", step.ID, prev)
 			}
-			seen[step.ID] = i
+			seen[step.ID] = base
 		}
+	}
+	for i, step := range wf.Steps {
+		base := fmt.Sprintf("steps[%d]", i)
+		checkID(step, base)
 		validateStep(step, base, opts, add)
+		if step.Type != StepParallel {
+			continue
+		}
+		for j, sub := range step.Steps {
+			subBase := fmt.Sprintf("%s.steps[%d]", base, j)
+			checkID(sub, subBase)
+			validateSubStep(wf, sub, subBase, opts, add)
+		}
 	}
 	warns = validateCatalogs(wf, opts, loc, add)
 	sort.SliceStable(errs, func(i, j int) bool { return errs[i].Line < errs[j].Line })
@@ -254,7 +303,11 @@ func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string,
 	catalogs := opts.Catalogs()
 	var warns Errors
 	seen := map[string]bool{}
-	for i, step := range wf.Steps {
+	// Sub-steps of a `parallel` group are ordinary agent steps and get the
+	// same cross-catalog check; skipping them would let a group hide a model
+	// name that fails everywhere else in the file (task 014).
+	for _, placed := range allSteps(wf) {
+		base, step := placed.Path, placed.Step
 		if step.Type != StepAgent {
 			continue
 		}
@@ -269,21 +322,21 @@ func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string,
 		// no probe is involved. claude's version gate is *not* judged: only a
 		// probe can answer it, and this path must not spawn.
 		if wf.StepRequiresInput(step) && !catalogs.InputEverPossible(sel.Agent) {
-			if path, dup := findingPath(step, "agent", i, seen); !dup {
+			if path, dup := findingPath(step, "agent", base, seen); !dup {
 				add(path, "agent %q can never take mid-run input, which step %q requires (on_input: %s)",
 					sel.Agent, step.DisplayName(), InputRequire)
 			}
 		}
 		cerrs, cwarns := catalogs.Check(sel)
 		for _, f := range cerrs {
-			path, dup := findingPath(step, f.Field, i, seen)
+			path, dup := findingPath(step, f.Field, base, seen)
 			if dup {
 				continue
 			}
 			add(path, "%s", f.Message)
 		}
 		for _, f := range cwarns {
-			path, dup := findingPath(step, f.Field, i, seen)
+			path, dup := findingPath(step, f.Field, base, seen)
 			if dup {
 				continue
 			}
@@ -296,7 +349,7 @@ func validateCatalogs(wf *Workflow, opts Options, loc *locator, add func(string,
 // findingPath locates a catalog finding: the step's own field when the step
 // set the value, else the defaults field — reported once however many steps
 // inherit it.
-func findingPath(step Step, field string, index int, seen map[string]bool) (string, bool) {
+func findingPath(step Step, field string, base string, seen map[string]bool) (string, bool) {
 	var stepValue string
 	switch field {
 	case "effort":
@@ -307,7 +360,7 @@ func findingPath(step Step, field string, index int, seen map[string]bool) (stri
 		stepValue = step.Model
 	}
 	if stepValue != "" {
-		return fmt.Sprintf("steps[%d].%s", index, field), false
+		return base + "." + field, false
 	}
 	path := "defaults." + field
 	if seen[path] {
@@ -346,7 +399,8 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 func validateStep(step Step, base string, opts Options, add func(string, string, ...any)) {
 	switch step.Type {
 	case "":
-		add(base+".type", "type is required (one of %s, %s, %s)", StepAgent, StepCommand, StepManual)
+		add(base+".type", "type is required (one of %s, %s, %s, %s)",
+			StepAgent, StepCommand, StepManual, StepParallel)
 	case StepAgent:
 		if step.Prompt == "" {
 			add(base+".prompt", "agent steps require a prompt")
@@ -362,7 +416,8 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			add(base+".on_input", "on_input must be %q, %q or %q, got %q",
 				InputWait, InputDeny, InputRequire, step.OnInput)
 		}
-		rejectFields(step, base, add, "run", "shell", "env", "instructions")
+		rejectFields(step, base, add, "run", "shell", "env", "instructions",
+			"steps", "max_parallel")
 	case StepCommand:
 		if step.Run == "" {
 			add(base+".run", "command steps require a run command")
@@ -372,17 +427,30 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 				ShellSh, ShellPwsh, ShellCmd, step.Shell)
 		}
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
-			"permission_mode", "on_input", "input_timeout", "instructions")
+			"permission_mode", "on_input", "input_timeout", "instructions",
+			"steps", "max_parallel")
 	case StepManual:
 		if step.Instructions == "" {
 			add(base+".instructions", "manual steps require instructions")
 		}
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env")
+			"run", "shell", "env", "steps", "max_parallel")
+	case StepParallel:
+		if len(step.Steps) == 0 {
+			add(base+".steps", "parallel steps require at least one sub-step")
+		}
+		if step.MaxParallel != nil && *step.MaxParallel < 1 {
+			add(base+".max_parallel", "max_parallel must be at least 1, got %d", *step.MaxParallel)
+		}
+		// A group carries no work of its own: only `timeout` and
+		// `max_retries`, checked below for every type, bound the group itself.
+		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+			"run", "shell", "env", "instructions")
 	default:
-		add(base+".type", "unknown step type %q (one of %s, %s, %s)",
-			step.Type, StepAgent, StepCommand, StepManual)
+		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s)",
+			step.Type, StepAgent, StepCommand, StepManual, StepParallel)
 	}
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
@@ -409,6 +477,34 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 	}
 }
 
+// validateSubStep checks one member of a `parallel` group. Beyond everything
+// validateStep already checks, two step types cannot appear inside a group and
+// one field cannot be set on a member of one — all three for the same reason:
+// a group runs inside a single admission of a single task, and each of them
+// would need a task state that says "one sub-step of one group is waiting",
+// which §6 has no room for (task 014 decisions 18, 19).
+func validateSubStep(wf *Workflow, sub Step, base string, opts Options, add func(string, string, ...any)) {
+	switch sub.Type {
+	case StepManual:
+		add(base+".type", "manual steps are not valid inside a parallel group: "+
+			"a gate ends the actor goroutine and releases the slot")
+	case StepParallel:
+		add(base+".type", "parallel groups do not nest; a group's sub-steps are %s or %s steps",
+			StepAgent, StepCommand)
+	}
+	// Resolved, not literal: `defaults.on_input: require` reaches a sub-step
+	// that says nothing, and it is just as unrunnable there (§7.4).
+	if wf.StepRequiresInput(sub) {
+		field := base + ".on_input"
+		if sub.OnInput == "" {
+			field = "defaults.on_input"
+		}
+		add(field, "on_input: %s is not valid inside a parallel group: "+
+			"%s holds one pending request for the whole task", InputRequire, "awaiting_input")
+	}
+	validateStep(sub, base, opts, add)
+}
+
 // rejectFields reports the named fields as not allowed for this step's type.
 // Strict decoding catches unknown keys; this catches keys that are known but
 // belong to a different step type (§8.2).
@@ -420,6 +516,7 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"check": step.Check != "", "check_timeout": step.CheckTimeout != nil,
 		"run": step.Run != "", "shell": step.Shell != "", "env": len(step.Env) > 0,
 		"instructions": step.Instructions != "",
+		"steps":        len(step.Steps) > 0, "max_parallel": step.MaxParallel != nil,
 	}
 	for _, f := range fields {
 		if set[f] {
