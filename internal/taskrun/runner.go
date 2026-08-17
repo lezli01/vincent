@@ -49,9 +49,14 @@ type Deps struct {
 	Config    func() config.Config
 	Worktrees *worktree.Manager
 	Agents    *agent.Registry
-	Shells    *Shells
-	DataDir   string
-	Logger    *slog.Logger
+	// Catalog answers the §7.4 `require` pre-flight: can this adapter stop
+	// and ask (task 013). It is the same binary-identity cache /v1/agents and
+	// task creation read, so one probe result serves all three. Nil is
+	// tolerated — an unknown verdict never blocks a step.
+	Catalog *agent.CatalogCache
+	Shells  *Shells
+	DataDir string
+	Logger  *slog.Logger
 	// Events receives live output chunks for the per-task SSE stream
 	// (§13.3). Nil is tolerated (tests without streaming); the transcript
 	// stays the durable copy either way.

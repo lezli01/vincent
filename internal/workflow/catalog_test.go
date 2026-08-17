@@ -18,8 +18,14 @@ func testCatalogs() agent.Catalogs {
 		return out
 	}
 	return agent.Catalogs{
-		"claude": {Models: opt("sonnet", "opus", "haiku"), Efforts: opt("low", "medium", "high", "xhigh", "max")},
-		"codex":  {Efforts: opt("minimal", "low", "medium", "high", "xhigh")},
+		"claude": {
+			Models: opt("sonnet", "opus", "haiku"), Efforts: opt("low", "medium", "high", "xhigh", "max"),
+			InputSupport: agent.InputDetected,
+		},
+		"codex": {
+			Efforts:      opt("minimal", "low", "medium", "high", "xhigh"),
+			InputSupport: agent.InputNever,
+		},
 	}
 }
 

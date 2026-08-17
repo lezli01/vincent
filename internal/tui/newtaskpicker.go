@@ -415,9 +415,17 @@ func (n *newTask) agentOptions() []pickerOption {
 		label: "(workflow default)",
 		note:  strings.TrimPrefix(n.resolvedAgents(), " → "),
 	}}
+	needsInput := n.workflowNeedsInputAgent()
 	for _, a := range n.agents {
 		opt := pickerOption{value: a.Name, label: a.Name}
 		switch {
+		case needsInput && a.CannotTakeInput():
+			// Offered but not selectable, the way a foreign-platform workflow
+			// is (task 010): the adapter exists and the human may be reaching
+			// for it, so the row says why it is out of reach for *this*
+			// workflow rather than vanishing (§7.4, task 013).
+			opt.disabled = true
+			opt.note = "cannot answer questions · this workflow requires it"
 		case !a.Available:
 			opt.note = "⚠ unavailable: " + firstNonEmpty(a.Error, "not found")
 		case a.NotAuthenticated():

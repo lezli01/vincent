@@ -751,3 +751,72 @@ func TestNewTaskWarningsReachTheDetailView(t *testing.T) {
 		t.Error("the warning renders as an error; the task exists and will run")
 	}
 }
+
+// An agent that cannot stop and ask is listed but not selectable while the
+// chosen workflow requires one (§7.4, task 013) — the same posture as a
+// foreign-platform workflow, and for the same reason: the daemon would 400 it,
+// and "codex vanished" is a worse answer than "codex cannot answer questions".
+func TestNewTaskRefusesAnAgentThatCannotTakeInput(t *testing.T) {
+	n := newNewTask()
+	n.update(ntLoadedMsg{
+		projects: []apiclient.Project{{ID: 1, Name: "vincent", DefaultBranch: "main"}},
+		workflows: []apiclient.WorkflowEntry{
+			{Name: "interactive", Scope: "global", RequiresInput: true},
+		},
+		agents: apiclient.Agents{
+			{Name: "claude", Available: true, InputVerdict: apiclient.InputVerdictSupported},
+			{Name: "codex", Available: true, InputVerdict: apiclient.InputVerdictUnsupported},
+			{Name: "cursor", InputVerdict: apiclient.InputVerdictUnknown},
+		},
+	})
+	n.workflow = "interactive"
+
+	opts := map[string]pickerOption{}
+	for _, o := range n.agentOptions() {
+		opts[o.value] = o
+	}
+	if opts["codex"].value == "" {
+		t.Fatal("the incapable agent is not listed at all")
+	}
+	if !opts["codex"].disabled {
+		t.Error("the incapable agent is selectable; create would 400")
+	}
+	if !strings.Contains(opts["codex"].note, "questions") {
+		t.Errorf("note = %q, want the capability it lacks", opts["codex"].note)
+	}
+	if opts["claude"].disabled {
+		t.Error("the capable agent is disabled")
+	}
+	// Decision 5's asymmetry reaches the picker too: an unknown verdict is not
+	// evidence, so an uninstalled adapter stays selectable.
+	if opts["cursor"].disabled {
+		t.Error("an unknown verdict disabled an agent; only a positive no refuses")
+	}
+
+	// Submitting with the incapable agent reports on the agent row rather than
+	// waiting for the daemon's 400.
+	n.agent = "codex"
+	n.titleIn.SetValue("t")
+	n.projectID = 1
+	n.submit()
+	if !strings.Contains(n.rowErr[ntAgent], "codex") {
+		t.Errorf("agent row error = %q, want one naming codex", n.rowErr[ntAgent])
+	}
+}
+
+// With a workflow that requires nothing, the same agent list is unconstrained.
+func TestNewTaskAgentPickerUnconstrainedWithoutRequire(t *testing.T) {
+	n := newNewTask()
+	n.update(ntLoadedMsg{
+		projects:  []apiclient.Project{{ID: 1, Name: "vincent", DefaultBranch: "main"}},
+		workflows: []apiclient.WorkflowEntry{{Name: "adhoc", Scope: "builtin"}},
+		agents: apiclient.Agents{
+			{Name: "codex", Available: true, InputVerdict: apiclient.InputVerdictUnsupported},
+		},
+	})
+	for _, o := range n.agentOptions() {
+		if o.value == "codex" && o.disabled {
+			t.Error("codex disabled for a workflow that never asks a question")
+		}
+	}
+}

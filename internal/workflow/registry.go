@@ -57,6 +57,12 @@ func (e Entry) Valid() bool { return e.Workflow != nil }
 // the message wrong.
 func (e Entry) RunsHere() bool { return e.Workflow == nil || e.Workflow.SupportsHost() }
 
+// NeedsInputAgent reports whether picking an agent for a task built on this
+// entry is constrained by `on_input: require` (task 013). A broken entry
+// answers false for the same reason RunsHere answers true: its errors are
+// already why it cannot back a task.
+func (e Entry) NeedsInputAgent() bool { return e.Workflow != nil && e.Workflow.RequiresInput() }
+
 // Registry holds the parsed workflows of every scope and reloads them when
 // their files change (§5.2).
 type Registry struct {

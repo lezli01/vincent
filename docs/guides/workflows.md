@@ -251,8 +251,50 @@ defaults:
 window. On expiry the process is killed and the attempt fails under the normal
 retry policy.
 
+- **`require`** — `wait`, plus a promise that a human is part of the run. The
+  step will only run on an agent that can stop and ask; one that cannot is
+  refused rather than left to guess.
+
 Adapters that report `supports_input: false` (codex, cursor) never produce input
-requests, and `on_input` has no effect on their steps.
+requests, and `wait` and `deny` have no effect on their steps.
+
+### When the conversation *is* the workflow
+
+`wait` and `deny` both degrade quietly on an agent with no control channel: the
+step runs, nothing is ever asked, and the agent decides alone. That is usually
+what you want — but not for a workflow built around asking you which of three
+designs to take. There, an agent that cannot ask does not degrade, it guesses,
+and nothing in the run says so.
+
+`on_input: require` makes that explicit:
+
+```yaml
+steps:
+  - id: clarify
+    type: agent
+    on_input: require
+    prompt: Ask me whatever you need before you start, then implement it.
+```
+
+What it changes, and where you notice:
+
+- **In the file.** Pinning `agent: codex` (or `cursor`) on a requiring step is
+  a validation error — those CLIs have no control channel in any version, so
+  the file could never work. `vincent workflow validate` catches it.
+- **When creating a task.** The new-task agent picker greys out an agent that
+  cannot answer questions, and `POST /v1/tasks` refuses one with a 400 naming
+  the step. A workflow whose requiring steps leave their agent to the task is
+  marked `needs an interactive agent` in the picker.
+- **Never on a guess.** An agent that is not installed, or whose probe did not
+  answer, is *unknown* — and unknown never refuses anything. You are only ever
+  blocked by a definite "this one cannot".
+- **At run time.** If the answer changes under you — claude upgraded past the
+  version family vincent has verified the protocol against — the step fails
+  with `input_unsupported` instead of running an unattended conversation.
+
+A step's own `on_input` still wins over `defaults:`, so a mostly-interactive
+workflow can mark one long cleanup step `on_input: deny` and leave it to run
+unattended.
 
 ## Writing portable command steps
 

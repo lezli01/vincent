@@ -302,3 +302,11 @@ func TestRespondUnsupported(t *testing.T) {
 	drain(t, h)
 	_, _ = h.Wait()
 }
+
+// The curated catalog carries the static capability the §8.2 gate reads: no
+// version of `codex exec` can stop to ask (task 013).
+func TestCuratedInputSupportIsNever(t *testing.T) {
+	if got := New(nil).Curated().InputSupport; got != agent.InputNever {
+		t.Errorf("InputSupport = %q, want %q", got, agent.InputNever)
+	}
+}

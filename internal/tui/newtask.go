@@ -525,6 +525,14 @@ func (n *newTask) project() (apiclient.Project, bool) {
 	return apiclient.Project{}, false
 }
 
+// workflowNeedsInputAgent reports whether the selected workflow constrains the
+// agent choice: some step declares `on_input: require` and leaves its agent to
+// the task (§7.4, task 013). The daemon derives it; this only reads the flag.
+func (n *newTask) workflowNeedsInputAgent() bool {
+	e := n.workflowEntry(n.workflow)
+	return e != nil && e.Valid() && e.RequiresInput
+}
+
 func (n *newTask) workflowEntry(name string) *apiclient.WorkflowEntry {
 	for i := range n.workflows {
 		if n.workflows[i].Name == name {
@@ -742,6 +750,15 @@ func (n *newTask) submit() tea.Cmd {
 			n.rowErr[ntWorkflow] = "this workflow does not validate: " + e.FirstError()
 		case !e.RunsHere():
 			n.rowErr[ntWorkflow] = "this workflow does not run on this platform — it " + e.PlatformNote()
+		}
+	}
+	// The §7.4 `require` gate, checked locally so the message lands on the
+	// agent row rather than arriving as a create error with nowhere to point
+	// (task 013). The daemon re-checks it: this is a courtesy, not the gate.
+	if n.workflowNeedsInputAgent() && n.agent != "" {
+		if a, ok := n.agents.Find(n.agent); ok && a.CannotTakeInput() {
+			n.rowErr[ntAgent] = "this workflow needs an agent that can answer questions mid-run; " +
+				n.agent + " cannot"
 		}
 	}
 	if len(n.rowErr) > 0 {

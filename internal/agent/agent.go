@@ -32,6 +32,28 @@ const (
 	SourceCurated = "curated" // catalog shipped with vincent
 )
 
+// InputSupport is what an adapter can *ever* do about mid-run input, known
+// without probing (spec §9.5, task 013). It is the static half of
+// Availability.SupportsInput, which is the same question answered about the
+// binary actually installed.
+//
+// It exists so §8.2 validation — which never spawns a process — can reject a
+// workflow that requires interaction on an adapter where interaction is
+// impossible, at the moment its author is looking at the file.
+type InputSupport string
+
+// Input support levels (task 013). There are two: no adapter supports input
+// regardless of version, so an "always" would be a value nothing sets.
+const (
+	// InputNever is an adapter with no control channel at all — codex and
+	// cursor. No version of the CLI can ask a question mid-run.
+	InputNever InputSupport = "never"
+	// InputDetected is an adapter whose support depends on the installed
+	// binary — claude, gated to the fixture-verified version family (§9.3).
+	// Only a probe can answer, so §8.2 does not judge it.
+	InputDetected InputSupport = "detected"
+)
+
 // ErrRestrictedUnsupported is returned by Start when the adapter cannot
 // honor PermissionMode Restricted on this platform (spec §9.4). It lives here
 // rather than in an adapter package so the engine can recognize the condition
@@ -311,7 +333,19 @@ type Options struct {
 	Efforts       []Option // adapter-native effort levels
 	DefaultModel  string   // "" = the CLI decides
 	DefaultEffort string   // "" = the CLI decides
+	// InputSupport is the adapter's static mid-run input capability (task
+	// 013). It rides in the catalog rather than behind a new Adapter method
+	// because §8.2 validation already reads Curated() and must not probe.
+	// The zero value is deliberately not a level: an adapter that says
+	// nothing is treated as InputDetected — unjudged — so a catalog built by
+	// a test or a future adapter never gates a workflow by accident.
+	InputSupport InputSupport
 }
+
+// InputEverPossible reports whether an adapter with these options could ever
+// take mid-run input. Only InputNever answers false; an unset level is
+// unjudged, which is what keeps validation from gating on silence.
+func (o Options) InputEverPossible() bool { return o.InputSupport != InputNever }
 
 // Option is one selectable value with provenance (spec §9.6).
 type Option struct {
