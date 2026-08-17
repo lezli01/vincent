@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 📋 planned (0/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (0/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -365,6 +365,208 @@ transition.
   resources — faking a sandbox here would be the same dishonesty as faking an
   adapter capability.
 
+---
+
+Decisions 16 onwards come from the delivery-planning session held the same day,
+which walked the design against the code rather than against itself. They are
+the questions decisions 1–15 left open — several of them only visible once the
+existing store, FSM and validation code was read.
+
+### 16. Sub-steps share the group's `step_index`, and three keyed mechanisms widen to take a `step_id`
+
+*2026-08-17.* 014.2's "one `step_runs` row per sub-step sharing the group's
+`step_index` and keyed by `step_id`" collides with three mechanisms that key on
+`(task_id, step_index)` alone: `store.CountStepAttempts` (attempt numbering),
+`store.LastFailedStepRun` (which seeds `.LastFailure` for the §8.4 failure
+block), and transcript filenames `{step_index}-{attempt}.jsonl`. All three widen
+to take an optional step id; transcripts become
+`{step_index}-{step_id}-{attempt}.jsonl`.
+
+**Beat (a):** giving each sub-step its own `step_index`. `tasks.current_step` is
+one `INTEGER` and the group must stay addressable as one step — this is
+decision 1's trap in miniature, re-cutting an invariant to avoid widening two
+queries.
+
+**Beat (b):** a `sub_step_id` column keyed as a triple. It stores what the
+existing `step_id` column already holds.
+
+This extends rather than overturns the phase 2 decision recorded at
+`store/transitions.go:301`: attempt numbers stay monotonic over a step's whole
+history, now per sub-step, so transcript files still never collide or truncate.
+
+### 17. A `parallel` group has no `step_runs` row of its own
+
+*2026-08-17.* Only sub-steps get rows. The group's state is derived: it
+succeeded iff every sub-step succeeded, it is running while any sub-step is.
+
+**Beat:** a group row carrying its own state and timestamps. It is a second copy
+of a fact the sub-step rows already hold — the same reason decisions 9 and 13
+derive rather than store. The TUI folds sub-steps under their group on
+`step_index`, which it already has.
+
+### 18. A failing sub-step does not cancel its siblings; the retry budget is per sub-step
+
+*2026-08-17.* Siblings run to completion, then the group fails. `max_retries` on
+a sub-step governs that sub-step, falling back to the group's, and a retry
+re-runs only the failed sub-step (014.2).
+
+**Beat:** cancelling siblings at the first failure. It discards work that was
+about to succeed, and it does so in the most expensive way available: a killed
+sub-step records an `interrupted` attempt, which consumes no retry (§7.2), so
+the retry re-runs it from scratch. A failed linter should not throw away a test
+run whose output is the thing the human wants to read.
+
+### 19. `on_input: require` is rejected inside a `parallel` group
+
+*2026-08-17.* Validation rejects it alongside `manual` (014.1). `check`,
+`timeout` and `max_retries` are legal per sub-step, and the group itself may
+carry a `timeout` bounding the whole group.
+
+The reasoning 014.1 gives for `manual` applies unchanged: `awaiting_input` is
+one task state carrying one pending request (§7.4), and there is no state
+meaning "one sub-step of one group is waiting on a human" any more than there is
+one meaning "one sub-step is gated". Task 013 made this reachable, so it needs
+saying.
+
+**Beat:** serializing input requests from N concurrent agents. It defines an
+answering order nobody asked for and leaves the other agents idle holding the
+one slot.
+
+### 20. `Settled()` is a new predicate; `Terminal()` is left alone
+
+*2026-08-17.* Decision 6 says the parent re-queues when the last descendant
+reaches "a terminal state". Read against the code that is wrong:
+`taskstate.Terminal()` is `archived` **only**, which no child reaches on its
+own. The join waits on a new `Settled()` = `done | aborted`.
+
+A `blocked`, `awaiting_gate` or `paused` child therefore holds the join open —
+which is what decision 13's rollup exists to surface, and the two decisions
+should be read together.
+
+**Beat (a):** widening `Terminal()`. It means "no further transition is
+possible", and for a `done` task archival is still possible, so the widening
+would be a lie told to every other caller.
+
+**Beat (b):** treating any slot-free state as settled. It wakes the parent over
+a blocked lane and merges a branch missing that lane's work, with nothing in the
+result saying so.
+
+### 21. A lane that settles as `aborted` blocks the join with `lane_failed`
+
+*2026-08-17.* New block reason `lane_failed` in the shared `Reason*` vocabulary.
+The parent blocks and merges **nothing** — not even the lanes that succeeded.
+
+This is decision 8's posture applied to the other way a fan-out fails to
+converge. Merging the successful subset delivers an incomplete deliverable on a
+branch that looks finished, which is the same correctness liability decision 8
+refuses for conflicts.
+
+**Beat:** merging what succeeded and reporting the rest. A partial merge is
+indistinguishable, downstream, from a complete one.
+
+### 22. `retry` on a `lane_failed` parent re-checks; `skip` keeps its existing meaning
+
+*2026-08-17.* Retry re-evaluates every lane's state. If any lane is not `done`,
+it blocks again with `lane_failed`. The remedy is to fix the **child** — an
+ordinary task, with the ordinary retry — and then retry the parent.
+
+`skip` on the parent is unchanged and skips the whole join: no lanes are merged.
+It is deliberately **not** a "proceed without that lane" button, and there is no
+such button. Anything else would need a merge subset to be expressible, which
+decision 21 just refused.
+
+**Beat:** retry re-spawning aborted lanes as fresh children. It creates a second
+spawn path and a "which child is the current attempt at lane X" question that
+`lane_id` cannot answer without becoming versioned.
+
+### 23. A child's title is `{parent title} — {lane id}`, and its branch is named the ordinary way
+
+*2026-08-17.* Nothing about child branch naming is special-cased: a child is an
+ordinary task, so `ResolveBranchName` runs with the child's own id, slug,
+project and fields, through whatever template the project or global config sets
+(task 001). The title is the only new input, and `Slug` derives from it.
+
+**Beat:** a `title:` field on the lane spec. 014.5 enumerates `Lane` as `ID`,
+`Workflow`, `Steps`, `Fields`; a fifth field earns its place only once someone
+wants a title that the parent's own title does not imply.
+
+### 24. `on_conflict.agent` is a full agent `Step`
+
+*2026-08-17.* The value is a `workflow.Step` of type `agent`, validated by the
+existing `validateStep` and executed by the existing agent executor in the
+parent's worktree, with the conflicted file list available to the prompt
+template. `prompt`, `check`, `check_timeout`, `timeout`, `max_retries` and the
+`agent`/`model`/`effort` triple all behave exactly as they do anywhere else.
+`max_retries` defaults to 0: one attempt, then the block.
+
+This makes decision 8's "gated by a `check` the way any agent step is" literally
+true rather than approximately true.
+
+**Beat:** a bespoke struct with a hand-picked subset of those fields. It is a
+second agent-step vocabulary that will drift from the first one field at a time.
+
+### 25. The scheduler performs `ChildrenSettled`
+
+*2026-08-17.* The scheduler transitions a parked parent, woken by
+`task.children_changed` (decision 14) rather than by new polling.
+
+**Beat:** the last child's `taskrun` actor doing it. Two children settling
+concurrently both believe they are last, or neither does; and an actor writing
+another task's state breaks the sole-writer invariant outright. The scheduler is
+already the single serialized decision point that exists so admission is
+unraced, and this is the same kind of decision wearing a different name.
+
+### 26. `task.children_changed` fires on child creation too
+
+*2026-08-17.* Emitted on every fan-out ancestor when a descendant is created as
+well as when one transitions. Creation changes the rollup's counts exactly as a
+transition does, and a root whose depth-2 subtree is still being spawned is
+precisely when a live count is worth having. Step-level activity stays out: that
+is the per-task stream's job, unchanged.
+
+### 27. The `children` rollup is present whenever a task has children
+
+*2026-08-17.* Not only in `awaiting_children`. A parent mid-join, or one already
+`done`, still wants its lane ids reachable from one `GET`.
+
+**Beat:** gating the field on the state, as decision 13 words it. That forces a
+client to know the state in order to know whether to look, and the rollup's
+whole purpose is to answer "what is going on down there" in one request. The
+cost of the general form is one indexed existence check on tasks with no
+children.
+
+### 28. `fan_out.max_tasks` counts descendants only
+
+*2026-08-17.* Across the whole resolved tree, excluding the root. The bound
+exists to cap what a fan-out *creates*; counting the root makes the configured
+number off by one against the sentence that explains it.
+
+### 29. A lane's `fields:` merge with the parent's, lane wins
+
+*2026-08-17.* Decision 4 gives a lane `fields:` and decision 10 inherits
+overrides and priority, but fields were left unstated. They inherit the same
+way: the subtree gets the root's context and overrides what it needs.
+
+**Beat:** replacement. A lane that had to restate every field the parent set
+would make `fields: { module: api }` unwritable in any workflow that uses fields
+for anything else.
+
+### 30. Two config blocks, read at the point of use
+
+*2026-08-17.* `config.yaml` gains `parallel: { max_parallel: 4 }` and
+`fan_out: { max_depth: 3, max_tasks: 64 }` — a block per step type, named the
+way this document names them.
+
+**Beat:** folding all three into `defaults:`. What lives there today is timeouts
+a step may override per-step; these three are not step-overridable, so they
+would be misfiled next to things that look like them and behave differently.
+
+All three are read **when they are used** — `max_parallel` when a group starts,
+the two bounds in the task-creation path — so a hot reload (§12) governs the
+next group and the next task and never resizes something already running. That
+also keeps daemon configuration out of the workflow snapshot, which §5.3 reserves
+for workflow content.
+
 ## Tasks
 
 ### Phase 1 — `type: parallel`
@@ -373,21 +575,26 @@ transition.
   `max_parallel:`; sub-steps validated by the existing `validateStep`, with
   `manual` rejected inside a group — a gate ends the actor goroutine and
   releases the slot (§6), and there is no state meaning "one sub-step of one
-  group is gated"; `rejectFields` for everything that is not
-  `steps`/`max_parallel`; the `parallel.max_parallel` daemon default in
-  `internal/config`.
+  group is gated" — and `on_input: require` rejected for the same reason
+  (decision 19); `check`, `timeout` and `max_retries` legal per sub-step, plus a
+  group-level `timeout`; `rejectFields` for everything that is not
+  `steps`/`max_parallel`/`timeout`; the `parallel.max_parallel` daemon default in
+  `internal/config` (decision 30).
 - [ ] **014.2 — Engine.** Depends: 014.1. Concurrent execution inside the task's
   actor goroutine, bounded by `max_parallel`; one `step_runs` row per sub-step
-  sharing the group's `step_index` and keyed by `step_id`; per-sub-step attempt
-  numbering; a retry re-runs only the failed sub-step; the group succeeds iff
-  every sub-step does. The actor remains the sole writer — it forks, collects,
-  and writes the rows itself.
+  sharing the group's `step_index` and keyed by `step_id`, with no row for the
+  group itself (decision 17); `CountStepAttempts`, `LastFailedStepRun` and
+  transcript naming widened to take a step id (decision 16); per-sub-step attempt
+  numbering and retry budget; a retry re-runs only the failed sub-step; a failure
+  does not cancel siblings (decision 18); the group succeeds iff every sub-step
+  does. The actor remains the sole writer — it forks, collects, and writes the
+  rows itself.
 - [ ] **014.3 — Clients and docs for phase 1.** Depends: 014.2. TUI step list
   renders a group and its sub-steps with independent live output (`run_id` on
   every chunk already disambiguates, §13.3 unchanged); spec §7, §8.2 and §11
   amended in place, including the explicit note that `max_parallel` is a second
   concurrency dimension the caps do not govern; `reference/workflow-schema.md`,
-  `guides/workflows.md`, `reference/config.md`.
+  `guides/workflows.md`, `reference/configuration.md`.
 
 ### Phase 2 — `type: fan_out`
 
@@ -405,42 +612,59 @@ transition.
   the `400`; `fan_out.max_depth` and `fan_out.max_tasks` computed and enforced
   in the insert path; the registry-load §8.2 cycle **warning**.
 - [ ] **014.7 — FSM.** `awaiting_children` in `taskstate`, its three table rows,
-  `HoldsSlot` false, and the §6 human-action table (cancel only).
+  `HoldsSlot` false, the new `Settled()` predicate with `Terminal()` left alone
+  (decision 20), and the §6 human-action table (cancel only).
 - [ ] **014.8 — Spawn and resume.** Depends: 014.4, 014.6, 014.7. The `fan_out`
-  step creates its children (base branch = parent's branch, fields from the lane
-  spec, overrides and priority per decision 10), parks the parent, and the
-  scheduler re-queues it via `ChildrenSettled` when the last descendant reaches
-  a terminal state.
+  step creates its children (base branch = parent's branch, title
+  `{parent} — {lane}` and the ordinary branch template per decision 23, fields
+  merged with the parent's per decision 29, overrides and priority per
+  decision 10), parks the parent, and the scheduler — not the last child's actor
+  (decision 25) — re-queues it via `ChildrenSettled` once every descendant is
+  `Settled()`.
 - [ ] **014.9 — The join.** Depends: 014.8. Sequential `--no-ff` merges in
-  `lane_order`; `ReasonMergeConflict = "merge_conflict"` in the §18 vocabulary;
-  `on_conflict: {agent: …}` with its `check`; the decision-9 re-entry rules for
-  both `interrupted` and `blocked`, wired into `taskrun/recover.go`.
+  `lane_order`; `ReasonMergeConflict = "merge_conflict"` and
+  `ReasonLaneFailed = "lane_failed"` in the §18 vocabulary; `on_conflict: {agent: …}`
+  as a full agent `Step` (decision 24); the decision-9 re-entry rules for both
+  `interrupted` and `blocked`, plus decision 22's re-check on a `lane_failed`
+  retry, wired into `taskrun/recover.go`.
 - [ ] **014.10 — Lifecycle.** Depends: 014.8. Cascading cancel; archive refusing
   a non-terminal descendant then cascading with per-child dirty confirmation;
   `gc` and `doctor` seeing lane worktrees as the ordinary task worktrees they
   are.
 - [ ] **014.11 — API and events.** Depends: 014.4, 014.8. List filters
   (`?parent_id=`, `?include_children=`), the `children` rollup on
-  `GET /v1/tasks/{id}`, and `task.children_changed` emitted post-commit on every
-  fan-out ancestor.
+  `GET /v1/tasks/{id}` whenever the task has children rather than only in
+  `awaiting_children` (decision 27), and `task.children_changed` emitted
+  post-commit on every fan-out ancestor, on child creation as well as on every
+  descendant state change (decision 26).
 - [ ] **014.12 — TUI.** Depends: 014.11. A parent row reading
   `awaiting_children (2 blocked)`; drilling from a parent into its lanes and
   back; the new state in the board's colour and action-bar tables
   (`internal/tui/bindings.go` key table updated with it).
-- [ ] **014.13 — Docs.** Depends: all. Spec §5.3, §6, §10, §11, §13.2, §13.3 and
-  §18 amended in place with dated notes; §20 amended to promote fan-out out of
-  future work the way cursor was; decision-record row 23; user-facing
-  `reference/workflow-schema.md`, `reference/api.md`, `reference/config.md`,
-  `guides/workflows.md` and the block-reason table — including, stated plainly,
-  that a fan-out fills the caps rather than exceeding them, and that N lanes
-  leave N worktrees until archived.
-- [ ] **014.14 — Gate.** Depends: 014.9, 014.10. New `scripts/m6-gate.sh`,
-  committed executable via `git update-index --chmod=+x` — a non-executable gate
-  passes on Windows and exits 126 on both POSIX legs. Scenarios: happy-path
-  two-lane merge; an induced conflict reaching `merge_conflict`, resolved by
-  hand, retried, remaining lanes merged; a crash mid-merge recovering by
-  `--abort` and idempotent re-merge; one depth-2 tree; and both creation-time
-  `400`s (cycle, `max_tasks`).
+- [ ] **014.13 — Docs.** Depends: all. Spec §5.3, §6, §10, §11, §12.4, §13.2,
+  §13.3, §14 and §18 amended in place with dated notes — §12.4 and §14 because
+  recovery aborting a merge and the new `tasks` columns are exactly what those
+  sections describe; §20 amended to promote parallel steps and fan-out out of
+  future work the way cursor was, leaving branching/conditionals there;
+  decision-record rows **23 and 24**, one per step type, because decision 2
+  separated the two mechanisms and one row would re-merge them; user-facing
+  `reference/workflow-schema.md`, `reference/api.md`,
+  `reference/configuration.md`, `reference/task-lifecycle.md`,
+  `guides/workflows.md` and the block-reason table — no new page, the caveats
+  landing next to the schema that causes them — including, stated plainly, that
+  a fan-out fills the caps rather than exceeding them, and that N lanes leave N
+  worktrees until archived.
+- [ ] **014.14 — Gate.** Depends: 014.2, 014.9, 014.10. New `scripts/m6-gate.sh`
+  covering **both** phases, committed executable via `git update-index --chmod=+x`
+  — a non-executable gate passes on Windows and exits 126 on both POSIX legs —
+  and wired into CI on all three platforms, merge behaviour on Windows being
+  the thing a gate should prove rather than assume. Scenarios: a `parallel`
+  happy path; a failing sub-step; a retry re-running only the failed sub-step;
+  happy-path two-lane merge; an induced conflict reaching `merge_conflict`,
+  resolved by hand, retried, remaining lanes merged; a crash mid-merge
+  recovering by `--abort` and idempotent re-merge; one depth-2 tree; a lane
+  aborted reaching `lane_failed`; and both creation-time `400`s (cycle,
+  `max_tasks`).
 
 ## Verification
 
