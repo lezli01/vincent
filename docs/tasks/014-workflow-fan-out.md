@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (11/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (12/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -665,7 +665,7 @@ an `agent:` the policy will never run.
   `awaiting_children` (decision 27), and `task.children_changed` emitted
   post-commit on every fan-out ancestor, on child creation as well as on every
   descendant state change (decision 26).
-- [ ] **014.12 — TUI.** Depends: 014.11. A parent row reading
+- [x] **014.12 — TUI.** ✓ 2026-08-17 Depends: 014.11. A parent row reading
   `awaiting_children (2 blocked)`; drilling from a parent into its lanes and
   back; the new state in the board's colour and action-bar tables
   (`internal/tui/bindings.go` key table updated with it).
