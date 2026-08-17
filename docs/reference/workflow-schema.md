@@ -118,7 +118,7 @@ Common to every step:
 |---|---|---|---|
 | `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` \| `parallel` | ✅ | `check` is a *field*, not a type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
 | `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group, bounds the whole group |
 
@@ -245,6 +245,85 @@ Sub-steps share a working tree. Two of them writing the same file is a bug in
 your workflow — vincent isolates worktrees between *tasks*, not processes
 inside one.
 
+### `type: fan_out`
+
+Turns each lane into a **real child task** with its own worktree and branch,
+then merges those branches back into this task's own.
+
+| Key | Type | Required |
+|---|---|---|
+| `lanes` | list of lanes | ✅ |
+| `merge` | map | — |
+
+```yaml
+  - id: build
+    type: fan_out
+    merge:
+      on_conflict: block          # block (default) | agent
+    lanes:
+      - id: api
+        workflow: implement-module   # a registry workflow
+        fields: { module: api }
+      - id: docs
+        steps:                        # …or inline steps
+          - { id: write, type: agent, prompt: "Document the API." }
+```
+
+A **lane** carries `id` and exactly one of `workflow` or `steps`, plus:
+
+| Key | Type | Notes |
+|---|---|---|
+| `fields` | map | Merged over the parent task's fields; the lane wins |
+| `agent` / `model` / `effort` | string | Override the inherited selection for this lane's whole subtree |
+| `priority` | int | Same, for scheduler priority |
+
+A lane's workflow may itself contain a `fan_out`, to any depth. The bounds are
+`fan_out.max_depth` (3) and `fan_out.max_tasks` (64), both checked when the
+task is created — a cycle or an oversized tree is a `400` naming what is
+wrong, not something you discover as two hundred worktrees.
+
+**What a lane inherits.** Its base branch is the parent's branch, which is how
+the work lands where it belongs. Priority and the agent overrides propagate
+too — a fan-out inside an urgent task would otherwise queue behind unrelated
+work and make the urgent task *slower* than not fanning out.
+
+**One branch is still delivered.** The step does not finish until every lane is
+merged, `--no-ff`, in the order the lanes are declared.
+
+#### `merge` and conflicts
+
+| Key | Type | Notes |
+|---|---|---|
+| `on_conflict` | `block` \| `agent` | Default `block` |
+| `agent` | agent step | Required by, and only valid with, `on_conflict: agent` |
+
+`block` stops the task with `merge_conflict` and leaves the worktree
+conflicted, so you resolve it in place, stage the files, and retry — the join
+commits your resolution and merges what is left.
+
+`agent` tries an agent first. It is an ordinary agent step, `check` and all,
+and the conflicted files are in its template context as `{{.Conflicts}}`. If
+it fails, or its check fails, or conflict markers survive it, you get the same
+block.
+
+```yaml
+    merge:
+      on_conflict: agent
+      agent:
+        id: resolve
+        prompt: |
+          Resolve the merge conflict in: {{ range .Conflicts }}{{.}} {{ end }}
+        check: go build ./... && go test ./...
+```
+
+> **A fan-out fills your caps, it does not exceed them.** Each lane is a task
+> and competes for `max_parallel_tasks` like any other. What it buys is
+> parallelism you would otherwise have to start by hand.
+
+> **N lanes leave N worktrees** on disk until someone archives the tree. That
+> is what `vincent gc` and `vincent doctor` are for, and you will meet it
+> before you meet anything else in this feature.
+
 ### `check` is a field, not a step type
 
 It runs after the step body, in the worktree, with the same environment as a
@@ -342,6 +421,10 @@ network, no agent CLI installed.
 - A `parallel` group has at least one sub-step and a `max_parallel` of at
   least 1; its sub-steps are not `manual`, not `parallel`, and do not
   resolve to `on_input: require`.
+- A `fan_out` step has at least one lane; lane ids are unique within the step;
+  each lane has exactly one of `workflow` and `steps`. `merge.agent` is
+  required by, and only valid with, `on_conflict: agent`. A lane's inline
+  steps have their own id namespace, because each lane becomes its own task.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.

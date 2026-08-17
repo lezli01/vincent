@@ -251,7 +251,7 @@ rather than inventing a model name.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=` | List |
+| `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort? }` — `branch_name` is used verbatim and wins over any template |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
@@ -312,6 +312,24 @@ Four details worth knowing:
   `step_name`, and `cost_usd` / `input_tokens` / `output_tokens` rolled up across
   every attempt — so a board renders without an N+1. Those are list-only;
   `GET /v1/tasks/{id}` serves the same numbers per attempt in `steps[]`.
+
+Every task shape carries `parent_task_id`, `lane_id` and `lane_order`, all null
+for a root task. `GET /v1/tasks/{id}` additionally carries `children` whenever
+the task has lanes:
+
+```json
+"children": {
+  "total": 4, "settled": 2,
+  "by_state": {"done": 2, "blocked": 1, "running": 1},
+  "blocked": [17], "awaiting_gate": []
+}
+```
+
+It covers the **whole subtree**, not just direct lanes, and is computed per
+request from one recursive CTE rather than stored — a counter would be a second
+truth that drifts from the rows it counts. `blocked` and `awaiting_gate` are
+ids: fetch the ones you decide to show. This is what pays for hiding lanes from
+the list, since a blocked lane would otherwise be invisible.
 - **`?archived=` defaults to false.** `true` selects only archived tasks, `all`
   returns both.
 - **Every task representation carries `available_actions`** (the actions valid
@@ -366,8 +384,8 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 
 ```
 task.created            task.state_changed      task.priority_changed
-task.step_advanced      project.*               workflow.registry_changed
-daemon.shutting_down
+task.step_advanced      task.children_changed   project.*
+workflow.registry_changed                       daemon.shutting_down
 ```
 
 Payloads carry ids and the new state, not full objects — clients re-fetch what
@@ -383,6 +401,11 @@ they need.
 - `task.step_advanced` carries `{ current_step }` when the engine moves the
   cursor without a state change, so a board's `k/n` tracks a run instead of
   freezing.
+- `task.children_changed` carries `{ task_id, child_id, to_state }` and is
+  emitted on **every** fan-out ancestor when a descendant is created or
+  transitions — re-fetch the `children` rollup when you see one. It exists
+  because the per-task stream filters on `task_id` alone, so a root's stream
+  would otherwise never see a depth-2 transition.
 
 ### Live output — ephemeral
 

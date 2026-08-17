@@ -10,7 +10,9 @@ Four ready-to-copy workflows live in [`examples/`](../../examples). Start there.
 
 - [Where files live](#where-files-live)
 - [The shape of a file](#the-shape-of-a-file)
-- [Three step types](#three-step-types)
+- [Five step types](#five-step-types)
+- [Parallel verification](#verification-is-where-parallel-pays)
+- [Fan-out](#fan-out-is-for-deliverables-that-are-several-disjoint-pieces)
 - [Checks](#checks-are-how-you-stop-an-agent-grading-its-own-homework)
 - [Templates](#templates)
 - [Retries and timeouts](#retries-and-timeouts)
@@ -73,7 +75,7 @@ steps:                           # required; runs in order, top to bottom
 Unknown keys are rejected rather than ignored, so a typo is an error at
 validation time instead of a setting that silently never applied.
 
-## Three step types
+## Five step types
 
 **`agent`** runs an agent CLI headlessly in the worktree. Needs `prompt`.
 
@@ -121,6 +123,17 @@ validation time instead of a setting that silently never applied.
       - { id: typecheck, type: command, run: go vet ./... }
 ```
 
+**`fan_out`** turns each lane into a real child task and merges their branches
+back into this task's own. Needs `lanes`.
+
+```yaml
+  - id: build
+    type: fan_out
+    lanes:
+      - { id: api,  workflow: implement-module, fields: { module: api } }
+      - { id: docs, steps: [ { id: write, type: agent, prompt: "Document the API." } ] }
+```
+
 `check` is a **field** on agent and command steps, not a step of its own — see
 below.
 
@@ -151,6 +164,55 @@ group lives inside a single task, which has a single state:
 Sub-steps share one working tree, so two of them writing the same file is a
 bug in the workflow. Worktrees isolate tasks from each other, not the
 processes inside one task.
+
+## Fan-out is for deliverables that are several disjoint pieces
+
+Some work is one deliverable whose parts have no reason to wait for each
+other — two modules that do not touch, or code in one place and docs in
+another. A single task cannot do that: it has one worktree, one branch and one
+cursor. `fan_out` gives each lane its own task, and merges the branches back
+at the end of the same step, so you still get **one branch** to review.
+
+A lane is either a named workflow or inline steps. Naming one is the point —
+it is how a workflow becomes reusable as a piece of a bigger one:
+
+```yaml
+  - id: build
+    type: fan_out
+    lanes:
+      - { id: api,  workflow: implement-module, fields: { module: api } }
+      - { id: web,  workflow: implement-module, fields: { module: web } }
+```
+
+Each lane becomes an ordinary task: its own worktree, branch, retries, gates
+and blocks, visible with `vincent task ls --include-children` or by pressing
+`L` on the parent in the TUI. The parent shows `awaiting_children (2 blocked)`
+while they run — lanes are hidden from the board by default, and that summary
+is how you find out one of them needs you.
+
+### Three things to know before you use it
+
+**It fills your caps, it does not exceed them.** Every lane is a task
+competing for `max_parallel_tasks`. Fan-out buys you parallelism you would
+otherwise start by hand; it does not buy you more of the machine.
+
+**N lanes leave N worktrees** until someone archives the tree. `vincent gc`
+and `vincent doctor` exist for this, and if you fan out routinely you will
+meet it early.
+
+**Conflicts stop, they do not get guessed.** Two lanes touching the same file
+end with the task blocked on `merge_conflict` and the worktree left conflicted
+for you to fix, stage, and retry. You can opt into an agent attempt first with
+`merge: {on_conflict: agent, agent: {...}}` — gated by that step's own
+`check` — but the default is deliberately to stop, because a semantic conflict
+resolved silently and merged unread is the one outcome that turns this feature
+into a liability.
+
+If a lane is cancelled or ends without finishing, the join blocks with
+`lane_failed` and merges **nothing**. Fix the lane — it is an ordinary task,
+so retry it — then retry the parent. There is deliberately no "merge the rest
+anyway" button: a partial merge looks exactly like a complete one to
+everything downstream.
 
 ## Checks are how you stop an agent grading its own homework
 
