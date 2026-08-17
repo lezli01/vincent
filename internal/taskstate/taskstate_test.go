@@ -9,6 +9,7 @@ import (
 var allActions = []Action{
 	Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive,
 	Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
+	FanOut, ChildrenSettled,
 }
 
 // wantTransitions is the §6 transition table restated independently of the
@@ -25,6 +26,7 @@ var wantTransitions = map[State]map[Action]State{
 		Pause:        Running, // deferred to the step boundary
 		Gate:         AwaitingGate,
 		RequestInput: AwaitingInput,
+		FanOut:       AwaitingChildren,
 		Complete:     Done,
 		Fail:         Blocked,
 		Interrupt:    Queued,
@@ -42,6 +44,15 @@ var wantTransitions = map[State]map[Action]State{
 		Fail:        Blocked,
 		Interrupt:   Queued,
 		InputClosed: Running, // unanswered wait, retries remaining (§7.4)
+	},
+	// A parked fan-out parent: cancel is the only human action, and the
+	// scheduler's ChildrenSettled is the only other way out (task 014).
+	// Notably absent is Pause — a parent owning nothing running has nothing
+	// to pause — and the approve/reject/skip trio, which is why this is not
+	// awaiting_gate.
+	AwaitingChildren: {
+		Cancel:          Aborted,
+		ChildrenSettled: Queued,
 	},
 	Blocked: {
 		Cancel: Aborted,
@@ -168,7 +179,8 @@ func TestHumanActionsFrom(t *testing.T) {
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
 	human := []Action{Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive}
-	engine := []Action{Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park}
+	engine := []Action{Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
+		FanOut, ChildrenSettled}
 	for _, a := range human {
 		if !Human(a) {
 			t.Errorf("Human(%s) = false", a)
@@ -182,6 +194,46 @@ func TestHumanClassification(t *testing.T) {
 	if len(human)+len(engine) != len(allActions) {
 		t.Errorf("action classification covers %d actions, allActions has %d",
 			len(human)+len(engine), len(allActions))
+	}
+}
+
+// TestSettledIsNotTerminal pins task 014 decision 20: the join's wait
+// condition is its own predicate, and widening Terminal to mean it would lie
+// to every other caller — a done task can still be archived.
+func TestSettledIsNotTerminal(t *testing.T) {
+	for _, s := range []State{Done, Aborted, Archived} {
+		if !Settled(s) {
+			t.Errorf("Settled(%s) = false, want true", s)
+		}
+	}
+	// The three that hold no slot but still need a human: a join must wait
+	// for them rather than merge around them.
+	for _, s := range []State{Blocked, AwaitingGate, Paused, Queued, Running, AwaitingChildren, AwaitingInput} {
+		if Settled(s) {
+			t.Errorf("Settled(%s) = true; a join would merge over unfinished work", s)
+		}
+	}
+	if Terminal(Done) || Terminal(Aborted) {
+		t.Error("Terminal widened to mean Settled; it must stay 'no further transition possible'")
+	}
+}
+
+// TestAwaitingChildrenHoldsNoSlot is what makes fan-out deadlock-free at any
+// depth: a parent releases its slot *before* its children need one, so there
+// is no hold-and-wait anywhere in the chain, under any cap.
+func TestAwaitingChildrenHoldsNoSlot(t *testing.T) {
+	if HoldsSlot(AwaitingChildren) {
+		t.Error("awaiting_children holds a slot; a deep fan-out would deadlock under the caps")
+	}
+}
+
+// TestAwaitingChildrenOffersOnlyCancel is the reason it is not a reuse of
+// awaiting_gate: approve, reject and skip would be actions the API accepts
+// and the TUI renders while they mean nothing.
+func TestAwaitingChildrenOffersOnlyCancel(t *testing.T) {
+	got := HumanActionsFrom(AwaitingChildren)
+	if len(got) != 1 || got[0] != Cancel {
+		t.Errorf("HumanActionsFrom(awaiting_children) = %v, want [cancel]", got)
 	}
 }
 

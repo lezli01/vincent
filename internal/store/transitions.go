@@ -153,7 +153,7 @@ func (s *Store) TransitionTask(
 			t.FinishedAt = &now
 		case TaskArchived:
 			t.ArchivedAt = &now
-		case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskBlocked, TaskPaused:
+		case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskAwaitingChildren, TaskBlocked, TaskPaused:
 			// No timestamp of their own; updated_at covers them.
 		}
 		if to != TaskBlocked {

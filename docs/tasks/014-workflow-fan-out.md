@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (3/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (4/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -617,7 +617,7 @@ for workflow content.
   synthetic `workflow_name` for inline lanes; cycle detection with the path in
   the `400`; `fan_out.max_depth` and `fan_out.max_tasks` computed and enforced
   in the insert path; the registry-load §8.2 cycle **warning**.
-- [ ] **014.7 — FSM.** `awaiting_children` in `taskstate`, its three table rows,
+- [x] **014.7 — FSM.** ✓ 2026-08-17 `awaiting_children` in `taskstate`, its three table rows,
   `HoldsSlot` false, the new `Settled()` predicate with `Terminal()` left alone
   (decision 20), and the §6 human-action table (cancel only).
 - [ ] **014.8 — Spawn and resume.** Depends: 014.4, 014.6, 014.7. The `fan_out`
