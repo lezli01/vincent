@@ -1,6 +1,6 @@
 # 014 — Parallel steps and workflow fan-out
 
-**Status:** 🚧 in progress (4/14) · **Opened:** 2026-08-17
+**Status:** 🚧 in progress (5/14) · **Opened:** 2026-08-17
 
 Two features that let one task do several things at once, shipped in that order.
 
@@ -604,7 +604,7 @@ for workflow content.
 
 ### Phase 2 — `type: fan_out`
 
-- [ ] **014.4 — Migration and store.** `0007_fan_out.sql`: `parent_task_id`,
+- [x] **014.4 — Migration and store.** ✓ 2026-08-17 `0007_fan_out.sql`: `parent_task_id`,
   `parent_step_index`, `lane_id`, `lane_order`, `idx_tasks_parent`. Typed CRUD
   for the parent link, the recursive-CTE subtree query, and the list filters
   from decision 13.

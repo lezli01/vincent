@@ -179,8 +179,10 @@ func TestHumanActionsFrom(t *testing.T) {
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
 	human := []Action{Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive}
-	engine := []Action{Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
-		FanOut, ChildrenSettled}
+	engine := []Action{
+		Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
+		FanOut, ChildrenSettled,
+	}
 	for _, a := range human {
 		if !Human(a) {
 			t.Errorf("Human(%s) = false", a)
