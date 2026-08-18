@@ -53,7 +53,9 @@ steps.
 - Multi-user / remote access / multi-host orchestration.
 - OS desktop notifications.
 - LLM-as-judge step verification.
-- Workflow branching, conditionals, or parallel steps within one task.
+- Workflow branching or conditionals within one task. *Amended 2026-08-17
+  (task 014): parallel steps and step fan-out are no longer deferred —
+  see §7.5 and §20.*
 - Sandboxing agents beyond worktree isolation (a worktree is not a security boundary).
 - Secret management (daemon inherits the user's environment).
 
@@ -85,6 +87,9 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 20 | v1 scope | Everything above, both agent adapters |
 | 21 | Agent/model/effort selection | Adapter-native values; per-step resolution `step > task override > workflow defaults > adapter default` with agent-scoped inheritance; options probed ad hoc from the installed CLIs, merged with a curated catalog, free text always allowed (§8.6, §9.6) |
 | 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15) |
+
+| 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
+| 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
 
 ## 4. Architecture
 
@@ -186,6 +191,14 @@ A unit of work delivered by running a workflow against a project.
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 
+
+*Amended 2026-08-17 (task 014).* A snapshot may carry a whole fan-out tree: a
+`fan_out` step's lanes are resolved through the registry at creation and
+written in, so later edits to a lane's workflow file never reach a task that
+already exists. Nesting lives only at authoring time — each lane's steps become
+a **child task's own flat snapshot** when it is spawned, so `edit + retry`,
+`Marshal` and the locator never meet a nested workflow.
+
 ### 5.4 StepRun
 
 One attempt at executing one step of one task. Every attempt (including retries and
@@ -254,6 +267,7 @@ already applies to every other pending flag — a human action means go.
 | `running` | A step process is executing (or about to) | **yes** |
 | `awaiting_gate` | Paused at a `manual` step, waiting for approval | no |
 | `awaiting_input` | The running agent emitted a structured input request (§7.4); its live process is idle, waiting for the answer | **yes** |
+| `awaiting_children` | A `fan_out` step's lanes are running as child tasks (§7.6, *added 2026-08-17, task 014*); the parent owns no process. Cancel is the only human action — approve/reject/skip would be meaningless, which is why this is not a reuse of `awaiting_gate` | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human decision | no |
 | `paused` | Engineer-requested soft pause (takes effect at the next step boundary) | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
@@ -264,7 +278,7 @@ already applies to every other pending flag — a human action means go.
 
 | Action | Valid from | Effect |
 |---|---|---|
-| `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted` |
+| `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted`. *Amended 2026-08-17 (task 014): from `awaiting_children` it cascades to every unsettled descendant, whose branches and worktrees survive.* |
 | `pause` | queued, running | `running`: finishes the current step, then holds; → `paused`. The request is persisted, so it survives a daemon crash; every other human action clears it |
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step (fresh attempt, retry counter reset); → `queued` |
@@ -283,6 +297,12 @@ Tasks are `queued` immediately upon creation (no draft state in v1).
 Steps execute strictly in order. Executing step *i* means: render templates → run the
 step body → evaluate success → on success advance to step *i+1* (or `done` if last) →
 persist → repeat.
+
+*Amended 2026-08-17 (task 014).* Order is still strict **between** steps; a
+`parallel` step is one step whose body runs several sub-steps at once. It
+occupies one index, holds one scheduler slot, and the cursor advances past it
+only when it succeeds, so nothing above changes. What the sub-steps do inside
+it is described in §7.5.
 
 ### 7.1 Success criteria
 
@@ -432,6 +452,123 @@ Full-auto note: in `full-auto`, permission prompts are bypassed at the CLI level
 so `permission` requests should not occur; `question` requests can occur in any
 permission mode.
 
+### 7.5 Parallel step groups
+
+*Added 2026-08-17 (task 014).* A `parallel` step runs its sub-steps
+concurrently in the task's **one** worktree. It creates no branch, no child
+task and nothing to merge — that is `fan_out` (§7.6), a different mechanism
+that happens to share the word.
+
+```yaml
+- id: verify
+  type: parallel
+  max_parallel: 4
+  steps:
+    - { id: test,  type: command, run: go test ./... }
+    - { id: lint,  type: command, run: golangci-lint run }
+```
+
+- **Sub-steps are ordinary steps.** `agent` and `command` only, each with its
+  own `check`, `timeout`, `max_retries` and agent selection, resolved exactly
+  as they would be at the top level. `manual` is rejected: a gate ends the
+  actor goroutine and releases the slot (§6), and no state means "one sub-step
+  is gated". `on_input: require` is rejected for the same reason —
+  `awaiting_input` holds one pending request for the whole task (§7.4).
+  Groups do not nest.
+- **Rows.** One `step_runs` row per sub-step, all sharing the group's
+  `step_index` and told apart by `step_id`. The group has no row of its own;
+  its outcome is derived. Attempt numbers and retry budgets are per sub-step,
+  and a sub-step's transcript is
+  `{step_index}-{step_id}-{attempt}.jsonl` (§12.2).
+- **Success** is every sub-step succeeding. A failure does **not** cancel its
+  siblings: the group waits for everything it started, then blocks with the
+  first failure in declaration order, so the same failures always produce the
+  same `block_reason`. A group-level `timeout:` bounds the whole group and
+  fails it with `timeout`.
+- **Retry** re-runs only what did not succeed, within an admission and across
+  one: a re-admitted group skips sub-steps whose latest attempt succeeded,
+  derived from the rows rather than from a stored cursor.
+- **Concurrency.** `max_parallel` (default `parallel.max_parallel`, 4) bounds
+  how many run at once. It is a **second concurrency dimension**: the §11 caps
+  count tasks in slot-holding states, and a group runs inside one such task,
+  so one task can keep `max_parallel` processes busy while the board reads a
+  single running task. See §11.
+- **Concurrent writes are undefined.** The sub-steps share one working tree.
+  §10 isolates working trees between tasks, not processes within one; a group
+  whose sub-steps write the same files is a workflow bug, not something the
+  daemon arbitrates.
+
+### 7.6 Fan-out steps
+
+*Added 2026-08-17 (task 014).* A `fan_out` step turns each of its lanes into
+a **real child task** — its own row, worktree, branch, scheduler slot, gates,
+blocks, transcripts and recovery — and merges their branches back into the
+branch this task already owns. One branch is still delivered, because the step
+does not finish until every lane is merged.
+
+```yaml
+- id: build
+  type: fan_out
+  merge:
+    on_conflict: block        # block (default) | agent
+  lanes:
+    - { id: api,  workflow: implement-module, fields: { module: api } }
+    - { id: docs, steps: [ { id: write, type: agent, prompt: "Document the API." } ] }
+```
+
+- **A lane is a named workflow or inline steps**, exactly one. A named lane is
+  resolved through the usual builtin < global < project shadowing at **task
+  creation** and written into the task's snapshot — never read from the
+  registry again (§5.3). A lane's workflow may itself fan out, to any depth.
+- **Creation-time checks**, possible because the whole tree's shape is static
+  once lane lists are in the snapshot: a cycle is a `400` naming the path, and
+  so is a tree past `fan_out.max_depth` (3) or `fan_out.max_tasks` (64,
+  counting descendants). A depth explosion is refused in front of the person
+  typing rather than discovered as two hundred worktrees six hours later.
+- **Inheritance.** A child's base branch is the parent's branch; its
+  `agent`/`model`/`effort` overrides and its priority propagate, and its
+  fields merge with the parent's, the lane winning. A lane spec overrides any
+  of them for its own subtree. Priority inheritance is load-bearing: admission
+  is `priority DESC, created_at ASC` and descendants are created late, so
+  priority-0 children of a priority-5 root would queue behind unrelated work.
+- **Parking.** After spawning, the parent moves to `awaiting_children`, which
+  holds **no** slot (§6, §11). That is what makes fan-out deadlock-free at any
+  depth: a parent releases its slot *before* its children need one, so there
+  is no hold-and-wait anywhere in the chain under any cap. A fan-out is not a
+  way to exceed the caps — it is a way to fill them.
+- **Resuming.** The scheduler returns the parent to the queue once every
+  descendant has *settled* (`done` or `aborted`). A `blocked`, `awaiting_gate`
+  or `paused` lane holds the join open until a human resolves it; the §13.2
+  `children` rollup is what makes that visible.
+- **The join** merges each lane branch with `git merge --no-ff` in **declared**
+  lane order, message `Merge lane '{lane_id}' of task {child_id}`, stopping at
+  the first conflict. Declared rather than completion order is what makes a
+  re-run conflict identically. Git identity is the user's own: vincent runs as
+  the invoking user (§16) and invents no author.
+- **A conflict blocks** with `merge_conflict`, leaving the worktree conflicted
+  so a human resolves in place. `on_conflict: agent` opts into an agent
+  attempt first — a full agent step, gated by its own `check` — falling back
+  to the block. Blocking by default is §7.2's posture: a human decides what a
+  machine could not.
+- **A lane that settles without finishing** blocks the join with
+  `lane_failed`, and **nothing** is merged. A partial merge is
+  indistinguishable downstream from a complete one. `retry` re-checks the
+  lanes; the remedy is to fix the child, which is an ordinary task. `skip`
+  keeps its meaning — it skips the whole join — and is deliberately not a
+  "proceed without that lane" button.
+- **Re-entry** into a half-merged join is disambiguated by the previous
+  attempt's outcome, with no merge cursor persisted: which lanes are already
+  merged is a fact git holds, and an already-merged lane re-merges as a no-op.
+  A crash aborts the in-progress merge and re-merges from the top; a human
+  retry after `merge_conflict` commits their resolution and continues. Only
+  the crash may abort — see §12.4.
+- **Cancel cascades** to every unsettled descendant, keeping their branches
+  and worktrees: the work is stopped, not destroyed. **Archive refuses** while
+  any descendant is unfinished, then cascades, each child under §10's ordinary
+  dirty-worktree rules.
+- **Cost.** N lanes leave N worktrees on disk until someone archives them.
+  That is what `vincent gc` and `vincent doctor` are for, and it will be felt.
+
 ## 8. Workflow definition (YAML)
 
 ### 8.1 File format
@@ -540,12 +677,31 @@ Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
 | `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `on_input`, `input_timeout`, `check`, `check_timeout` |
 | `command` | `run` | `shell`, `env` (map), `check`, `check_timeout` |
 | `manual` | `instructions` | — |
+| `parallel` | `steps` | `max_parallel` |
+| `fan_out` | `lanes` | `merge` |
+
+*`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.*
+
+A lane carries `id` plus exactly one of `workflow` (a registry name) or
+`steps` (inline), and optionally `fields`, `agent`, `model`, `effort` and
+`priority`, which override the inherited values for that lane's subtree.
+`merge` carries `on_conflict` (`block` | `agent`) and, for the latter, an
+`agent` step.
 
 Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 - `steps` non-empty; step ids unique; templates must parse; `type` known; durations
   parse as Go durations; `on_input` is `wait`, `deny` or `require`; unknown keys are errors
   (strict decoding) to catch typos.
+- *Amended 2026-08-17 (task 014).* Step ids are unique across the **whole**
+  workflow, sub-steps included: a `parallel` group's sub-steps share the
+  group's `step_index` and are told apart by id alone (§7.5). A group needs at
+  least one sub-step and a `max_parallel` of at least 1; its sub-steps may not
+  be `manual`, may not be `parallel`, may not be `fan_out`, and may not
+  resolve to `on_input: require`. A `fan_out` step needs at least one lane;
+  lane ids are unique within the step, and a lane's inline steps have their
+  own id namespace because each lane becomes a separate task. `merge.agent`
+  is required by, and only valid with, `on_conflict: agent`.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
   workflow validates on a Windows CI runner exactly as it does on Linux, or
@@ -1191,6 +1347,15 @@ would invalidate every one of them.
   tree and index, but share the object store and refs — and **do not** isolate
   process-level resources (global caches, package stores, ports, docker). True
   sandboxing is out of scope for v1.
+
+  *Amended 2026-08-17 (task 014).* This now cuts two ways. A `parallel` group
+  runs several processes inside **one** worktree (§7.5), so its sub-steps are
+  not isolated from each other at all — concurrent writes to the same file are
+  undefined, and that is a workflow bug rather than something the daemon
+  arbitrates. A `fan_out` lane, being a real task, gets the ordinary isolation
+  (§7.6) — and leaves its own worktree behind until someone archives it, so an
+  N-lane fan-out costs N worktrees on disk. `vincent gc` and `vincent doctor`
+  are what that pressure is for.
 - **Cleanup:** on `archive`: `git worktree remove` (+ `--force` after an explicit
   dirty-worktree confirmation), then `git -C {project.path} worktree prune`. A branch
   that carries **any commit past its base** is never deleted by vincent.
@@ -1309,7 +1474,13 @@ would invalidate every one of them.
   - **per-project** `max_parallel_tasks` (project setting, default unlimited).
 - A `queued` task is admitted when both caps have headroom. Admission order:
   `priority` DESC, then `created_at` ASC (FIFO within a priority).
-- One task runs at most one step process at a time.
+- One task runs at most one step process at a time. *Amended 2026-08-17
+  (task 014):* a `parallel` step (§7.5) runs up to `max_parallel` processes
+  inside that one task's single slot. This is a **second concurrency
+  dimension the caps above do not govern** — they count tasks, not
+  processes — so a board reading "1 running" may be a machine running four
+  compilers. `parallel.max_parallel` (config, default 4) is what bounds it,
+  and a group's own `max_parallel:` overrides that per group.
 - `awaiting_gate`, `blocked`, and `paused` tasks hold **no** slot — a gate can wait
   hours without starving the queue. After approve/retry/skip/resume, the task
   re-enters `queued` and competes under the normal ordering (its original
@@ -1520,6 +1691,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   tui.json                   # TUI-local state (the §16 first-run acknowledgment)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
+  transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
   logs/daemon.log            # rotated, size-capped
 ```
 
@@ -1537,6 +1709,8 @@ delete_remote_branch_on_archive: false # …and its upstream counterpart; attend
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
+parallel:
+  max_parallel: 4            # sub-steps of one `parallel` group at once (§7.5); the §11 caps do not see these
 log_level: info
 debug: false                 # record each step's resolved settings and full argv in its transcript
 environment:                 # what child processes inherit (T4.23)
@@ -1658,6 +1832,15 @@ edited via `PATCH /v1/projects/{id}`.
   `GET /v1/info`, and it deletes nothing — `vincent gc` does that, with a human behind
   it.
 
+*Amended 2026-08-17 (task 014).* A `fan_out` join interrupted mid-merge is
+recovered the same way any step is — the attempt is `interrupted` and re-runs
+— with one extra move: if a merge is still in progress in the worktree, it is
+aborted before the lanes are re-merged from the top, which is a no-op for the
+ones already in. Recovery is the **only** path allowed to abort. A human retry
+after a `merge_conflict` block finds the same in-progress merge and must
+commit their resolution instead; the two are told apart by how the previous
+attempt ended, read before the new attempt's row exists.
+
 ## 13. HTTP API
 
 ### 13.1 Transport and auth
@@ -1773,7 +1956,7 @@ POST   /v1/resolve                      { workflow, project_id?, agent?, model?,
                                         Resolution is server-side only: clients report it,
                                         never re-derive it (§8.6).
 
-GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
+GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=
                                         list rows additionally carry the §15 board fields:
                                         project_name, step_total, step_name, and cost_usd /
                                         input_tokens / output_tokens rolled up across every
@@ -1789,6 +1972,19 @@ GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=
                                         queued_reason (task 003): a queued task waiting on
                                         something other than a slot, per §11. Both are null
                                         for every other task, so the pair is additive
+                                        Amended 2026-08-17 (task 014): fan-out lanes are
+                                        excluded by default — the list is the work someone
+                                        asked for, and a 64-task tree would bury it.
+                                        ?parent_id= lists one parent's lanes in merge order;
+                                        ?include_children=true is the flat everything. Every
+                                        task shape carries parent_task_id / lane_id /
+                                        lane_order (null for a root), and GET /v1/tasks/{id}
+                                        carries a `children` rollup — subtree counts by
+                                        state plus the ids of blocked and awaiting-gate
+                                        descendants — whenever the task has lanes at all.
+                                        Derived per request from one recursive CTE, never
+                                        stored: a counter would be a second truth that
+                                        drifts from the rows it counts.
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
                                           model?, effort? }
@@ -1879,7 +2075,16 @@ Two kinds of streams:
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
-   `project.*`, `workflow.registry_changed`, `daemon.shutting_down`.
+   `task.children_changed`, `project.*`, `workflow.registry_changed`,
+   `daemon.shutting_down`.
+   (`task.children_changed` — *added 2026-08-17, task 014* — carries
+   `{task_id, child_id, to_state}` and is emitted on **every** fan-out ancestor
+   when a descendant is created or transitions, so a client re-fetches the
+   §13.2 rollup. It exists because the per-task stream filters on `task_id`
+   alone: a root's stream would otherwise never see a depth-2 transition. The
+   alternative — widening that filter to a subtree test — fails because the
+   subtree is not fixed at subscribe time, since children appear as fan-outs
+   fire. The cost is bounded: at most `max_depth` extra rows per transition.)
    (`step.started`, `step.finished`, `step.retrying` and `gate.waiting` were listed
    here through M2 but were never emitted — PR D completed the vocabulary without
    them, since a step's lifecycle is reconstructable from `GET /v1/tasks/{id}/steps`
@@ -1954,6 +2159,13 @@ CREATE TABLE tasks (
   pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
   admit_not_before    TEXT,                   -- §11 admission hold; NULL = admissible now (task 003)
   queued_reason       TEXT,                   -- why a queued task waits on more than a slot; NULL = the ordinary queue
+  -- Fan-out lane link (§7.6, task 014, migration 0007). All NULL for a root
+  -- task; set together for a lane. lane_order is the *declared* order, which
+  -- is the order the join merges in — spawn order coincides only by luck.
+  parent_task_id      INTEGER REFERENCES tasks(id),
+  parent_step_index   INTEGER,                -- the fan_out step's index in the parent
+  lane_id             TEXT,                   -- the lane's id in that step
+  lane_order          INTEGER,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
@@ -1961,6 +2173,7 @@ CREATE TABLE tasks (
   archived_at         TEXT
 );
 CREATE INDEX idx_tasks_sched ON tasks(state, priority DESC, created_at);
+CREATE INDEX idx_tasks_parent ON tasks(parent_task_id, lane_order);  -- §7.6 subtree walks (task 014)
 
 CREATE TABLE step_runs (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2452,6 +2665,10 @@ currently true to show (§15 view 6).
 | Workflow file edited mid-task | Irrelevant — execution uses the task's snapshot |
 | Workflow deleted before task creation | Creation fails: `workflow_not_found` |
 | Agent CLI missing at step start | Step fails (retry policy applies) with a `agent_unavailable` reason; typically → blocked |
+| A fan-out lane's merge conflicts | The join stops at that lane and the task blocks `merge_conflict`, with the worktree left conflicted so a human resolves in place (*added 2026-08-17, task 014*). `on_conflict: agent` tries a resolver first, gated by its `check`, and falls back to the same block. Archive gets no special case: a conflicted worktree is dirty by construction and §10 already refuses a dirty worktree without confirmation |
+| A fan-out lane ends without finishing | The join blocks `lane_failed` and merges **nothing** — a partial merge is indistinguishable downstream from a complete one. `retry` re-checks the lanes; the remedy is to fix the child, which is an ordinary task (*added 2026-08-17, task 014*) |
+| A fan-out tree is cyclic or too large | Refused at task creation with a `400` naming the cycle path or the bound crossed (`fan_out.max_depth`, `fan_out.max_tasks`). Possible because the whole tree's shape is static once lane lists are in the snapshot (*added 2026-08-17, task 014*) |
+| Two sub-steps of a `parallel` group write the same file | Undefined: the group shares one worktree, and §10 isolates working trees between *tasks*, not processes within one. A workflow bug, documented as such rather than arbitrated (*added 2026-08-17, task 014*) |
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
@@ -2548,7 +2765,9 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 - OS desktop notifications (blocked / gate / awaiting input / done) — natural M4+1.
 - ~~More adapters~~ — **Cursor promoted out of future work to M5, 2026-08-11**
   (§9.7). Gemini CLI, opencode, and adapter capability flags remain here.
-- Workflow branching/conditionals, parallel steps, and step fan-out.
+- ~~parallel steps and step fan-out~~ — **promoted out of future work,
+  2026-08-17** (§7.5, §7.6, task 014). Workflow branching/conditionals remains
+  here.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.
 - Task templates & recurring tasks; issue-tracker ingestion (Jira → task).

@@ -82,6 +82,12 @@ type board struct {
 
 	tbl        table.Model
 	selectedID int64
+	// laneParent drills the board into one fan-out parent's lanes (§7.6,
+	// task 014). Zero is the ordinary board, which hides lanes entirely
+	// (decision 13); non-zero shows exactly that parent's lanes, in merge
+	// order. It is a lens on the same table rather than a second view: the
+	// rows are ordinary tasks and every action key means what it always does.
+	laneParent int64
 
 	// marks is the bulk selection (boardmark.go, task 011): the tasks the §6
 	// action keys act on instead of the row under the cursor.
@@ -193,10 +199,11 @@ func (b *board) loadCmd() tea.Cmd {
 	}
 	b.loadSeq++
 	seq := b.loadSeq
+	parent := b.laneParent
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{})
+		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: parent})
 		return boardLoadedMsg{seq: seq, tasks: tasks, err: err}
 	}
 }
@@ -442,6 +449,25 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return b, nil
 	case "V":
 		b.markVisible()
+		return b, nil
+	case "L":
+		// Drill into the selected fan-out parent's lanes, or back out.
+		// Lanes are hidden from the board by design; this is the way in.
+		if b.laneParent != 0 {
+			parent := b.laneParent
+			b.laneParent = 0
+			b.selectedID = parent
+			return b, b.loadCmd()
+		}
+		if id, ok := b.selected(); ok {
+			for _, t := range b.tasks {
+				if t.ID == id && t.State == stateAwaitingChildren {
+					b.laneParent = id
+					b.selectedID = 0
+					return b, b.loadCmd()
+				}
+			}
+		}
 		return b, nil
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config

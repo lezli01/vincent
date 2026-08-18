@@ -151,6 +151,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("V did not clear the selection (marks %v)", s.board.marks)
 			}
 		},
+		"L": func(t *testing.T) {
+			s, _ := newShellFixture(t, task(4, stateAwaitingChildren))
+			s.focus = panelTasks
+			s.update(registryKey(t, "L"))
+			if s.board.laneParent != 4 {
+				t.Fatalf("L did not drill into the fan-out (laneParent %d, want 4)", s.board.laneParent)
+			}
+			s.update(registryKey(t, "L"))
+			if s.board.laneParent != 0 {
+				t.Fatalf("L did not back out (laneParent %d, want 0)", s.board.laneParent)
+			}
+			// A task that is not a fan-out has no lanes to drill into.
+			s2, _ := newShellFixture(t, task(5, stateRunning))
+			s2.focus = panelTasks
+			s2.update(registryKey(t, "L"))
+			if s2.board.laneParent != 0 {
+				t.Fatalf("L drilled into a task with no lanes (laneParent %d)", s2.board.laneParent)
+			}
+		},
 	},
 
 	ctxTimeline: {

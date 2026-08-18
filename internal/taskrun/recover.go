@@ -55,7 +55,11 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 		if !ok {
 			continue // the FSM defines Interrupt from both; belt and braces
 		}
-		tasks, err := st.ListTasks(ctx, store.TaskFilter{State: state})
+		// ChildrenInclude explicitly: recovery is about every task the daemon
+		// left running, and a fan-out lane is one of those (task 014). The
+		// list default hides lanes for the board's benefit, which is exactly
+		// the wrong behaviour here.
+		tasks, err := st.ListTasks(ctx, store.TaskFilter{State: state, Children: store.ChildrenInclude})
 		if err != nil {
 			return requeued, err
 		}

@@ -126,6 +126,7 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
+| `L` | Drill into the selected fan-out's lanes, or back out. Lanes are hidden from the board otherwise |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title

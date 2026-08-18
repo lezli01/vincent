@@ -1,0 +1,168 @@
+package taskrun
+
+// Parallel step groups (spec §7, task 014 — phase 1). A `type: parallel` step
+// runs its sub-steps concurrently in the task's one worktree: no branch, no
+// child task, no merge. Everything that makes a step a step — retries,
+// timeouts, checks, transcripts, live output — is the ordinary machinery,
+// reached once per sub-step instead of once per step.
+//
+// Two properties are worth stating because the rest of the file assumes them:
+//
+//   - The group holds **one** scheduler slot however many sub-steps it runs,
+//     so `max_parallel` is a second concurrency dimension the §11 caps do not
+//     see (decision 30). That is why it has a configured default.
+//   - The group itself owns no `step_runs` row (decision 17). Its outcome is
+//     collected from its sub-steps' rows, and a re-admission derives what is
+//     left to do from those same rows rather than from a stored cursor.
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
+)
+
+// runGroup executes one `parallel` step and returns the outcome the engine's
+// step loop acts on, exactly as if the group had been a single step.
+//
+// Sub-steps run in goroutines forked from the actor's own, bounded by
+// `max_parallel`. Each owns its `step_runs` rows exclusively — no row has two
+// writers, and nothing here touches the *task* row, which stays the actor's
+// alone (the invariant in CLAUDE.md).
+func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
+	subs, skipped, err := r.pendingSubSteps(ctx, env)
+	if err != nil {
+		env.log.Error("read group history", "error", err)
+		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+	}
+	if len(subs) == 0 {
+		// Every sub-step already succeeded under an earlier admission. The
+		// group is done, and re-running it would discard work a human may
+		// have waited an hour for.
+		env.log.Info("parallel group already complete", "sub_steps", skipped)
+		return stepOutcome{state: store.StepSucceeded}
+	}
+
+	// A group-level `timeout:` bounds the whole group; each sub-step still
+	// has its own. Expiry cancels the sub-steps, which end as interruptions —
+	// the group turns that back into a failure below, because the work ran
+	// out of the time the workflow gave it rather than stopping for the
+	// daemon's sake (§7.2).
+	groupCtx, cancel := context.WithCancel(ctx)
+	if env.step.Timeout != nil {
+		groupCtx, cancel = context.WithTimeout(ctx, env.step.Timeout.Std())
+	}
+	defer cancel()
+
+	limit := r.groupLimit(env.step)
+	env.log.Info("parallel group started",
+		"sub_steps", len(subs), "already_succeeded", skipped, "max_parallel", limit)
+
+	outcomes := make([]stepOutcome, len(subs))
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i, sub := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// A sibling's failure does not cancel this one (decision 18): the
+			// group waits for everything it started, so a nearly-finished test
+			// run is not thrown away by a linter that failed first.
+			subEnv := &stepEnv{
+				task: env.task, project: env.project, wf: env.wf,
+				step: sub, index: env.index, inGroup: true,
+				log: env.log.With("sub_step", sub.ID),
+			}
+			outcomes[i] = r.runStepWithRetries(groupCtx, subEnv)
+		}()
+	}
+	wg.Wait()
+
+	// The group's own deadline, not the daemon's: a shutdown cancels the
+	// parent context too, and that one must stay an interruption so the task
+	// is re-admitted rather than blocked.
+	if errors.Is(groupCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		env.log.Warn("parallel group timed out", "timeout", env.step.Timeout)
+		return stepOutcome{state: store.StepFailed, reason: ReasonTimeout}
+	}
+	return collectGroup(outcomes)
+}
+
+// pendingSubSteps is the sub-steps this admission must actually run, in
+// declaration order, plus how many were skipped as already done.
+//
+// A human retry re-admits the task at the group's index, and a sub-step whose
+// latest attempt succeeded must not run again — 014.2's "a retry re-runs only
+// the failed sub-step". The fact is derived from the rows rather than stored,
+// for the reason decisions 9 and 13 give: a second copy can disagree.
+func (r *Runner) pendingSubSteps(ctx context.Context, env *stepEnv) (subs []workflow.Step, skipped int, err error) {
+	latest, err := r.deps.Store.LatestStepStates(ctx, env.task.ID, env.index)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, sub := range env.step.Steps {
+		if latest[sub.ID] == store.StepSucceeded {
+			skipped++
+			continue
+		}
+		subs = append(subs, sub)
+	}
+	return subs, skipped, nil
+}
+
+// subStepIDOf names the transcript of an attempt: empty for an ordinary step,
+// whose index already identifies it, and the step id for a member of a group,
+// whose siblings share that index (decision 16).
+func subStepIDOf(env *stepEnv) string {
+	if env.inGroup {
+		return env.step.ID
+	}
+	return ""
+}
+
+// groupLimit resolves how many sub-steps run at once: the group's own
+// `max_parallel:`, else the daemon default. Read here rather than cached, so
+// a hot reload governs the next group (decision 30).
+func (r *Runner) groupLimit(step workflow.Step) int {
+	if step.MaxParallel != nil && *step.MaxParallel > 0 {
+		return *step.MaxParallel
+	}
+	if n := r.deps.Config().Parallel.MaxParallel; n > 0 {
+		return n
+	}
+	return 1
+}
+
+// collectGroup reduces the sub-step outcomes to the group's own, in
+// declaration order so the same set of failures always reports the same
+// reason.
+//
+// Precedence is interruption, then failure, then success. An interruption
+// means the daemon is stopping or a quota is spent: that attempt consumed no
+// retry and the task will be re-admitted, so reporting a sibling's failure
+// instead would block a task that is only paused.
+func collectGroup(outcomes []stepOutcome) stepOutcome {
+	var failure *stepOutcome
+	for i := range outcomes {
+		switch outcomes[i].state {
+		case store.StepInterrupted:
+			return outcomes[i]
+		case store.StepFailed:
+			if failure == nil {
+				failure = &outcomes[i]
+			}
+		case store.StepSucceeded, store.StepRunning, store.StepApproved,
+			store.StepRejected, store.StepSkipped:
+		}
+	}
+	if failure != nil {
+		return *failure
+	}
+	// Every sub-step succeeded, so the group did: that is the whole of its
+	// success condition (014.2).
+	return stepOutcome{state: store.StepSucceeded}
+}

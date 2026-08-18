@@ -27,8 +27,8 @@ description of how the system actually behaves.
 | [010](010-workflow-platform-restrictions.md) | Restricting a workflow to platforms (`platforms:`) | ✅ done (6/6) |
 | [011](011-bulk-task-selection.md) | Selecting several tasks for one action | ✅ done (5/5) |
 | [012](012-diff-view-file-grouping.md) | A diff tab grouped by file, folded shut | ✅ done (5/5) |
-| [013](013-interactive-workflow-agent-gating.md) | Gating workflows that require mid-run interaction | 📋 planned (0/8) |
-| [014](014-workflow-fan-out.md) | Parallel steps and workflow fan-out | 📋 planned (0/14) |
+| [013](013-interactive-workflow-agent-gating.md) | Gating workflows that require mid-run interaction | ✅ done (8/8) |
+| [014](014-workflow-fan-out.md) | Parallel steps and workflow fan-out | ✅ done (14/14) |
 
 ## How to add and update a task document
 

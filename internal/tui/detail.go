@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -722,18 +723,41 @@ func (d *detail) moveSelection(delta int) tea.Cmd {
 	return d.syncOutput()
 }
 
-// attempts returns every attempt in timeline order: by step, then by attempt
-// within the step.
+// attempts returns every attempt in timeline order: by step, then — inside a
+// `parallel` group, whose sub-steps share one step index (task 014) — by
+// sub-step, then by attempt. Without the middle tier a group's attempts
+// interleave by number and no sub-step reads as a unit.
+//
+// The order within a group is the server's: ListStepRuns returns rows by
+// index, attempt and id, so the first row of each sub-step appears in the
+// order the sub-steps started. A stable sort keeps that, which is as close to
+// declaration order as the rows can honestly report.
 func (d *detail) attempts() []apiclient.StepRun {
 	runs := make([]apiclient.StepRun, len(d.task.Steps))
 	copy(runs, d.task.Steps)
+	order := map[string]int{}
+	for _, r := range runs {
+		key := stepRunKey(r)
+		if _, seen := order[key]; !seen {
+			order[key] = len(order)
+		}
+	}
 	sort.SliceStable(runs, func(i, j int) bool {
 		if runs[i].StepIndex != runs[j].StepIndex {
 			return runs[i].StepIndex < runs[j].StepIndex
 		}
+		if runs[i].StepID != runs[j].StepID {
+			return order[stepRunKey(runs[i])] < order[stepRunKey(runs[j])]
+		}
 		return runs[i].Attempt < runs[j].Attempt
 	})
 	return runs
+}
+
+// stepRunKey identifies one step's run history within a task: the index alone
+// is not enough once a group's sub-steps share it.
+func stepRunKey(r apiclient.StepRun) string {
+	return strconv.Itoa(r.StepIndex) + "/" + r.StepID
 }
 
 func (d *detail) runIndex(id int64) int {

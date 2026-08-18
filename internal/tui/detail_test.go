@@ -83,6 +83,66 @@ func TestDetailTimelineRendersAttempts(t *testing.T) {
 	}
 }
 
+// TestDetailTimelineRendersParallelGroup: a group's sub-steps share one step
+// index (task 014), so the timeline needs a tier the old renderer had no room
+// for — one header naming the group, then each sub-step with its own
+// attempts. Without it the attempts of three sub-steps interleave under one
+// sub-step's name.
+func TestDetailTimelineRendersParallelGroup(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 9
+
+	// Two sub-steps at index 1, the lint one having taken a second attempt.
+	test1 := attempt(1, 1, 1, "test", "succeeded", false)
+	lint1 := attempt(2, 1, 1, "lint", "failed", false)
+	lint1.FailureReason = ptr("nonzero_exit")
+	lint2 := attempt(3, 1, 2, "lint", "succeeded", false)
+	build := attempt(4, 0, 1, "build", "succeeded", false)
+
+	d.applyLoaded(detailLoadedMsg{
+		id: d.taskID,
+		task: apiclient.TaskDetail{
+			Task:  apiclient.Task{ID: d.taskID, Title: "grouped", State: stateRunning, StepTotal: 2},
+			Steps: []apiclient.StepRun{build, test1, lint1, lint2},
+			WorkflowSteps: []apiclient.WorkflowStep{
+				{Index: 0, ID: "build", Type: "command"},
+				{Index: 1, ID: "verify", Type: "parallel"},
+			},
+		},
+	})
+
+	got := d.timelinePanel(30)
+	for _, want := range []string{
+		"1 build",             // the ordinary step is unchanged
+		"2 verify (parallel)", // the group is named from the snapshot, not from a row
+		"· test",              // each sub-step gets its own tier
+		"· lint",
+		"nonzero_exit", // and its own failure
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("timeline missing %q:\n%s", want, got)
+		}
+	}
+
+	// Attempts must sit under their own sub-step rather than interleaving by
+	// number: lint's two attempts are adjacent, after test's one.
+	var order []string
+	for _, line := range strings.Split(got, "\n") {
+		switch {
+		case strings.Contains(line, "· test"):
+			order = append(order, "test")
+		case strings.Contains(line, "· lint"):
+			order = append(order, "lint")
+		case strings.Contains(line, "a1 "), strings.Contains(line, "a2 "):
+			order = append(order, "attempt")
+		}
+	}
+	const want = "attempt test attempt lint attempt attempt"
+	if got := strings.Join(order, " "); got != want {
+		t.Errorf("timeline order = %q, want %q — a sub-step's attempts belong under it", got, want)
+	}
+}
+
 // TestDetailSelectionFollowsOnlyTheLiveAttempt is the rollover rule: live
 // movement never overrides a user who is browsing history.
 func TestDetailSelectionFollowsOnlyTheLiveAttempt(t *testing.T) {

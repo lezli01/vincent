@@ -20,11 +20,16 @@ const (
 	stateRunning       = "running"
 	stateAwaitingGate  = "awaiting_gate"
 	stateAwaitingInput = "awaiting_input"
-	stateBlocked       = "blocked"
-	statePaused        = "paused"
-	stateDone          = "done"
-	stateAborted       = "aborted"
-	stateArchived      = "archived"
+	// stateAwaitingChildren is a fan-out parent waiting on its lanes (§7.6,
+	// task 014). It is *not* an attention state: nobody is being asked for
+	// anything by the parent itself — though a blocked lane inside it is,
+	// which is what the rollup in its row says.
+	stateAwaitingChildren = "awaiting_children"
+	stateBlocked          = "blocked"
+	statePaused           = "paused"
+	stateDone             = "done"
+	stateAborted          = "aborted"
+	stateArchived         = "archived"
 )
 
 // needsAttention reports whether a task is waiting on a human (§15). These
@@ -53,7 +58,10 @@ func band(state string) int {
 	switch {
 	case needsAttention(state):
 		return bandAttention
-	case state == stateRunning:
+	case state == stateRunning, state == stateAwaitingChildren:
+		// A parked parent bands with running work: its subtree is running,
+		// and sorting it down among terminal tasks would hide an active
+		// fan-out at the bottom of the board.
 		return bandRunning
 	case state == stateQueued:
 		return bandQueued
@@ -161,11 +169,13 @@ var stateStyles = map[string]lipgloss.Style{
 	stateQueued:        lipgloss.NewStyle().Faint(true),
 	stateAwaitingInput: lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
 	stateAwaitingGate:  lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-	stateBlocked:       lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
-	statePaused:        lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
-	stateDone:          lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-	stateAborted:       lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-	stateArchived:      lipgloss.NewStyle().Faint(true),
+	// Cyan like running: the subtree is working, just not on this row.
+	stateAwaitingChildren: lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+	stateBlocked:          lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+	statePaused:           lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+	stateDone:             lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+	stateAborted:          lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+	stateArchived:         lipgloss.NewStyle().Faint(true),
 }
 
 // attentionBadge marks a row waiting on a human. It is a glyph rather than
@@ -192,6 +202,15 @@ func renderState(state string) string {
 // the columns that get shed first. The detail header, which has the width,
 // names it (renderDetailState).
 func renderBoardState(t apiclient.Task) string {
+	// A fan-out parent says what its subtree is doing, because its own state
+	// says nothing a reader can act on (task 014). A blocked lane is
+	// invisible in the task list by design (decision 13), and this is what
+	// pays for that.
+	if t.State == stateAwaitingChildren && t.Children != nil {
+		if label := t.Children.Summary(); label != "" {
+			return applyStateStyle(t.State, t.State+" ("+label+")")
+		}
+	}
 	_, until, ok := t.Hold()
 	if !ok || until == nil {
 		return renderState(t.State)

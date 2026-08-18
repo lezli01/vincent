@@ -139,7 +139,19 @@ func (h *engineHarness) createTask(t *testing.T, snapshot string) *store.Task {
 // waitForState polls until the task reaches one of want, or the test fails.
 func (h *engineHarness) waitForState(t *testing.T, id int64, want ...store.TaskState) *store.Task {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
+	return h.waitForStateWithin(t, id, 60*time.Second, want...)
+}
+
+// waitForStateWithin is waitForState with an explicit budget, for the tests
+// that legitimately need more wall clock than a single task's run: a fan-out
+// costs a parent admission, N child admissions, N git worktrees and a merge,
+// and the scheduler's safety-net tick is 5s. Under `-race` with the whole
+// package running, 60s has proved to be not quite enough for that chain.
+func (h *engineHarness) waitForStateWithin(
+	t *testing.T, id int64, budget time.Duration, want ...store.TaskState,
+) *store.Task {
+	t.Helper()
+	deadline := time.Now().Add(budget)
 	var last *store.Task
 	for time.Now().Before(deadline) {
 		task, err := h.store.GetTask(t.Context(), id)
