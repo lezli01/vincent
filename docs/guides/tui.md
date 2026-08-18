@@ -168,6 +168,16 @@ the right shows the live tail of the running step.
 Selecting an attempt in the timeline *is* how you read scrollback — that is why
 the two panels are side by side and both always visible.
 
+A structure step gets a tier of its own. A `parallel` group's sub-steps share
+the group's index, so the group is one header and each sub-step sits beneath
+it. A `loop` (§7.8) goes one further: its body's rows are grouped **by
+iteration**, folded shut with the latest one open, and a `for_each` iteration's
+header names the item it ran on. Ten passes of a four-step body is forty rows,
+and the one you arrived to read is almost always the pass it stopped on.
+
+The board's and the header's step column say the same thing more briefly: a
+task inside a loop reads `3/7 green · loop 4/10`.
+
 | Key | Does |
 |---|---|
 | `]` | Switch the output pane tab: Output ⇄ Diff (`[`, `]` and `d` all work) |

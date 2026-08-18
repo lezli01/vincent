@@ -74,6 +74,10 @@ fan_out:
   max_depth: 3
   max_tasks: 64
 
+# Ceiling on a `type: loop` step's iterations.
+loop:
+  max_iterations: 10
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -359,6 +363,33 @@ worktrees discovered six hours later.
 Depth is unlimited by design and bounded by a default: a deeper tree is a
 config edit, not a code change. See
 [Workflow schema](workflow-schema.md#type-fan_out).
+
+### `loop`
+
+```yaml
+loop:
+  max_iterations: 10
+```
+
+The ceiling on a `type: loop` step's iterations, used when the step declares no
+`max_iterations:` of its own. Must be at least 1.
+
+It is a ceiling in two places. At **load** it is what `count:` is checked
+against, so `count: 5000` is a validation error in front of the person typing
+rather than a discovery on iteration 300. At **run time** it is what a
+`for_each:` list is measured against: a list longer than the ceiling blocks the
+task with `loop_limit` before the first iteration, naming the count. A loop
+that hits the ceiling does not truncate and does not advance — running out of
+tries is not a decision the workflow made.
+
+The default is deliberately low. An agent step is minutes and dollars, and ten
+iterations of a three-step body is already thirty agent runs. Raise it in
+config for a whole machine, or per step with `max_iterations:` for the one loop
+that needs more.
+
+Read when a loop starts, so a reload governs the next loop — including one
+already running, which will block with `loop_limit` if the lowered ceiling is
+already behind it. See [Workflow schema](workflow-schema.md#type-loop).
 
 ### `log_level`
 

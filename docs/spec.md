@@ -720,6 +720,97 @@ succeed is the human's, after they fix the workflow.
 deferred, with no new schema. The whole-workflow `platforms:` stays as it is —
 it gates *offering* a workflow, which a run-time guard cannot do.
 
+### 7.8 Loops
+
+*Added 2026-08-18 (task 016).* A `loop` step runs its body repeatedly in the
+task's **one** worktree. It creates no branch, no child task and nothing to
+merge — that is `fan_out` (§7.6). Where a `parallel` group (§7.5) is a set run
+once, a loop is a **sequence** run more than once.
+
+```yaml
+- id: green
+  type: loop
+  count: 5
+  steps:
+    - { id: suite,  type: command, run: go test ./..., allow_failure: true, max_retries: 0 }
+    - { id: passed, type: break,   if: '{{ eq (index .Steps "suite").ExitCode 0 }}' }
+    - { id: repair, type: agent,   prompt: "The suite is red: {{ (index .Steps \"suite\").Result }}" }
+```
+
+- **Exactly one driver.** `count:` (a positive integer, at most
+  `loop.max_iterations`) or `for_each:` (a YAML sequence of templates, or a
+  scalar template). Every `for_each` entry is rendered, trimmed and split on
+  newlines with empty lines dropped, so a hand-written list and a command's
+  multi-line output are one mechanism. There is no `while:`; the converge loop
+  is `count:` plus `break`, which puts the condition in the body where it can
+  see the body.
+
+  A list drawn from `.Steps[…].Result` is bounded by that field's **200-line
+  tail** (§8.4): a producer printing more paths than that loses the earliest
+  ones silently. In practice `max_iterations` bites an order of magnitude
+  sooner and blocks loudly, but a producer meant to feed a loop should filter
+  at the source rather than rely on either.
+- **The body is `agent`, `command`, `condition` and `break`.** `manual`,
+  `on_input: require`, `parallel`, `fan_out` and a nested `loop` are rejected
+  at load, each for the reason §7.5 rejects it: anything that ends the actor
+  goroutine mid-body is state a derived loop position cannot express.
+- **Rows.** One `step_runs` row per body step per iteration, all sharing the
+  loop's `step_index`, told apart by `step_id` and a 1-based `iteration`; a
+  `for_each` row also carries its `loop_item`. The loop has no row of its own;
+  its outcome is derived. A body step's transcript is
+  `{step_index}-i{iteration}-{step_id}-{attempt}.jsonl` (§12.2).
+- **`.Loop`** (§8.4) is `Index`, `Item`, `IsFirst`, `IsLast`, with `Index: 0`
+  outside any loop.
+- **Ending.** The driver being exhausted, or a `break` whose guard is true,
+  ends the loop **successfully** and the cursor advances. A `condition` whose
+  guard is false inside a body ends **that iteration**; the loop continues. A
+  loop that cannot run within `max_iterations` **blocks** with `loop_limit` —
+  running out of tries is not a decision, and `condition` (§7.7) is what a
+  workflow uses to stop and succeed. A `for_each` list longer than
+  `max_iterations` blocks before the first iteration, naming the count. An
+  empty list, or a whole loop guarded off by its `if:`, succeeds having run
+  nothing.
+- **Failure.** A body step that exhausts its retry budget fails the iteration
+  and blocks the task with that step's own reason. `allow_failure:` (§7.2) is
+  how a probe's red result becomes data a `break` can read. Retries are for a
+  step that failed; iterations are for a body that succeeded and must run
+  again — each body step spends its own `max_retries` **within** an iteration.
+- **Resuming.** Position is derived from the rows, never persisted: a
+  re-admitted loop skips body steps whose latest attempt succeeded and
+  continues mid-iteration. Iterations that already have rows take their item
+  from those rows; only new iterations draw from a re-derived `for_each` list.
+- **Human actions** (§6). `skip` skips the **whole loop step** and advances
+  past it; there is no "skip this iteration". `retry` resumes at the failed
+  body step of the current iteration with a fresh budget. `edit + retry`
+  rewrites that body step in the task's snapshot and therefore applies to
+  **every remaining iteration**, which is the useful behaviour: fix the
+  prompt, let it keep going.
+- **Concurrency.** A loop is one step, one slot, one worktree, and its
+  iterations are strictly sequential. §11's caps see one running task, exactly
+  as they always did. `max_parallel` has no meaning on a loop.
+
+**`type: break` ends the loop.** It carries `id`, `name` and a required `if:`,
+and nothing else — the same fields, for the same reason, as `condition`
+(§7.7): it starts no process, so it cannot time out, be interrupted, be
+retried or write a transcript. A true guard ends the loop and the cursor
+advances past it; the loop **succeeds**. It is rejected outside a loop body,
+symmetric with `condition` being rejected inside a `parallel` group.
+
+There is no `continue` type. A `condition` inside a loop body keeps the
+meaning §7.7 gave it — "end the sequence" — and the enclosing structure
+supplies the consequence; a loop body *is* a sequence, so ending it ends that
+iteration. One word, one meaning, whose consequence follows from what it is
+attached to.
+
+**`.Steps` visibility is positional.** A failed row is visible to a template
+only once the run has passed it, and "passed it" is compared on
+`(step_index, iteration, body position)`. Outside a loop that is the step
+index alone, as it always was. Inside one it is what lets a `break` read the
+`allow_failure` probe two lines above it in its own body. A `parallel`
+sub-step has no body position and therefore never precedes a sibling, so
+§7.5's set-invisibility is unchanged. A step's own failed attempt still stays
+out of `.Steps["itself"]` mid-retry, because `.LastFailure` is that channel.
+
 ## 8. Workflow definition (YAML)
 
 ### 8.1 File format
@@ -840,9 +931,15 @@ step is the exception: it takes `id`, `name` and `if` only.
 | `parallel` | `steps` | `max_parallel` |
 | `fan_out` | `lanes` | `merge` |
 | `condition` | `if` | — |
+| `loop` | `steps`, and exactly one of `count` / `for_each` | `max_iterations` |
+| `break` | `if` | — |
 
 *`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.
-`condition`, `if` and `allow_failure` added 2026-08-18 (task 015); see §7.7.*
+`condition`, `if` and `allow_failure` added 2026-08-18 (task 015); see §7.7.
+`loop` and `break` added 2026-08-18 (task 016); see §7.8. A `loop` also takes
+the common `if` and `timeout`, and rejects `max_retries` and `allow_failure`:
+it has no attempt of its own. A `break` is the exception a `condition` is —
+`id`, `name` and `if` only.*
 
 A lane carries `id` plus exactly one of `workflow` (a registry name) or
 `steps` (inline), and optionally `if` (*added 2026-08-18, task 015*), `fields`,
@@ -873,6 +970,16 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   A `condition` step in **last** position is a **warning**, not an error: the
   task is `done` whether it continues or stops, so the step cannot do anything
   a missing step would not.
+- *Added 2026-08-18 (task 016).* A `loop` step needs at least one body step
+  and **exactly one** driver: `count` (at least 1, and at most the effective
+  ceiling — the step's own `max_iterations` when it declares one, else
+  `loop.max_iterations` from config) or `for_each`. `max_iterations` is at
+  least 1. Body step ids join the workflow-wide namespace, for the reason a
+  group's sub-steps do: they share the loop's `step_index`. A body may not
+  contain `manual`, `fan_out`, `parallel` or a nested `loop`, and may not
+  resolve to `on_input: require`. A `break` requires `if`, rejects every other
+  field, and is valid **only** inside a loop body. `count`, `for_each` and
+  `max_iterations` are rejected on every other step type.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
   workflow validates on a Windows CI runner exactly as it does on Linux, or
@@ -924,7 +1031,8 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Project` | `Name`, `Path` (original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
-| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last 100 lines of stdout (command steps). *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome |
+| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration |
+| `.Loop` | *Added 2026-08-18 (task 016).* `Index` (1-based iteration, and **0** outside any loop, so a shared template can tell), `Item` (the `for_each` item this iteration runs on — a string; empty for a `count:` loop), `IsFirst`, `IsLast`. See §7.8 |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
@@ -1864,6 +1972,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
+  transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
   logs/daemon.log            # rotated, size-capped
 ```
 
@@ -2355,8 +2464,16 @@ CREATE TABLE step_runs (
   task_id             INTEGER NOT NULL REFERENCES tasks(id),
   step_index          INTEGER NOT NULL,
   step_id             TEXT NOT NULL,
-  step_type           TEXT NOT NULL,          -- agent | command | manual
-  attempt             INTEGER NOT NULL,       -- 1-based
+  step_type           TEXT NOT NULL,          -- agent | command | manual | condition | break | fan_out
+  attempt             INTEGER NOT NULL,       -- 1-based, within the position below
+  -- Where inside a `loop` step this row sits (§7.8, task 016, migration 0009).
+  -- A loop's body steps share the loop's step_index and repeat, so step_id
+  -- alone stops telling two rows apart; iteration is what does. 0 for every
+  -- row outside a loop, which keeps pre-0009 rows correct without a backfill.
+  -- The loop itself writes no row: its position and its outcome are derived
+  -- from these.
+  iteration           INTEGER NOT NULL DEFAULT 0, -- 1-based inside a loop; 0 outside one
+  loop_item           TEXT,                   -- the `for_each` item this iteration ran on; NULL otherwise
   state               TEXT NOT NULL,          -- running | succeeded | failed | interrupted
                                               -- | approved | rejected | skipped | stopped
   agent               TEXT,                   -- adapter name, agent steps only
@@ -2871,7 +2988,11 @@ currently true to show (§15 view 6).
 | Template references missing field | Step fails at render time (before any process starts) with the template error |
 | A step's `if:` does not render, or renders something that is not `true`/`false` | *Added 2026-08-18 (task 015).* The step blocks with `condition_error` and records one `failed` row naming it. The only reason in this table that does **not** run the §7.2 retry budget: a guard is evaluated before the step becomes an attempt, so there is no attempt to retry, and re-rendering an unchanged template cannot answer differently (§7.7). A human `retry` re-evaluates it |
 | A guard skips a step | *Added 2026-08-18 (task 015).* A `skipped` row with `skip_reason: condition`, visible in `.Steps`; the workflow carries on. The same guard on a fan-out lane or a group sub-step subsets the set instead — the others still run |
-| A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered |
+| A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered. *Amended 2026-08-18 (task 016):* inside a `loop` body the same step ends **that iteration** and the loop carries on — the sequence it ends is the body's (§7.8) |
+| A `loop` cannot run within `max_iterations` | *Added 2026-08-18 (task 016).* The task blocks with `loop_limit`: a `for_each` list longer than the ceiling blocks before iteration 1 naming the count, and a `count:` the ceiling moved under (config lowered while the task was queued) blocks too. It does not truncate and does not advance — running out of tries is not a decision, and advancing would hand every downstream guard a `.Steps` that says the work is finished (§7.8) |
+| A `break` step's guard is true | *Added 2026-08-18 (task 016).* The loop ends there and **succeeds**: one `stopped` row, the cursor advances past the loop step. A false guard records `succeeded` and the body carries on |
+| A loop body step exhausts its retry budget | *Added 2026-08-18 (task 016).* The iteration fails and the task blocks with **that step's own** reason, not `loop_limit`. `allow_failure:` (§7.2) is how a probe's red result becomes data a `break` can read instead |
+| The daemon dies mid-iteration | *Added 2026-08-18 (task 016).* §12.4 finalizes the running row as `interrupted`, and the re-admitted loop derives its position from the rows: body steps whose latest attempt succeeded are skipped, and it continues **mid-iteration**. Iterations that already have rows keep the `for_each` item those rows recorded; only new iterations draw from a re-derived list (§7.8) |
 | Every lane of a `fan_out` is guarded off | *Added 2026-08-18 (task 015).* A no-op success: the step records a row saying no lane was selected and advances. It must not park — a parent in `awaiting_children` with no children would be re-queued, spawn nothing and park again (§7.6) |
 | `answer` posted when task isn't `awaiting_input` | `409` with the current state (standard invalid-transition handling) |
 | Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
@@ -2950,11 +3071,35 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 - ~~workflow branching/conditionals~~ — **promoted out of future work,
   2026-08-18** (§7.7, task 015): `if:` guards on steps, lanes and group
   sub-steps, `type: condition` for early finish, and `allow_failure:` so a
-  guard has a run's own findings to read. What remains here is *nested*
-  control flow — `branch`/`switch` step types with `then:`/`else:` bodies,
-  which would make the step list a tree and the §7 cursor something other than
-  an integer. Guards are flat by construction, and the trigger for
-  reconsidering is a workflow that genuinely cannot be written flat.
+  guard has a run's own findings to read.
+- ~~loops in workflows~~ — **promoted out of future work, 2026-08-18** (§7.8,
+  task 016): `type: loop` with `count:` and `for_each:`, `type: break`, and
+  `.Loop`. This was task 015's named trigger firing — "the first workflow that
+  cannot be written flat" — and a loop body was affordable where `branch` is
+  not, because a loop has one arm: the step list stays a list and
+  `current_step` stays an integer.
+- **`branch`/`switch` step types** with `then:`/`else:` bodies, which would
+  make the step list a tree and the §7 cursor something other than an integer.
+  Deferred by task 015 decision 1 and still deferred: §7.7's guards plus
+  §7.8's loop cover the shapes that have come up. The trigger is a workflow
+  needing two *different* bodies chosen at run time, which no guard-and-skip
+  spelling can express without duplicating every step of both.
+- **Dynamic per-item fan-out** — plausibly `for_each:` on a `fan_out` step, one
+  child task and branch per item. Kept apart from §7.8 deliberately (task 016
+  decision 4): §7.6's creation-time cycle, `max_depth` and `max_tasks` checks
+  are possible **only** because the lane list is static in the snapshot, and
+  015 decision 11 already had to weaken them into a conservative
+  over-approximation to allow *conditional* lanes. A width discovered at run
+  time leaves nothing to check at creation. The trigger is an answer to "what
+  replaces the creation-time bound".
+- **A template FuncMap for §8.4** — `hasSuffix`, `contains`, `split`, `trim`,
+  `default`. `text/template` builtins are all any template gets today, which
+  `for_each:` makes felt: `.Loop.Item` is a string authors immediately want to
+  test by extension or path segment, and the answer is to filter at the source
+  (`git diff --name-only … | grep -v _test.go`). A FuncMap lands in *every*
+  prompt, check, run and guard at once and invites the expression-language
+  argument 015 decision 4 settled, so it earns its own task. The trigger is
+  the first `for_each` that cannot filter at its source.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.
 - Task templates & recurring tasks; issue-tracker ingestion (Jira → task).

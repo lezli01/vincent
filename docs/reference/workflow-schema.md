@@ -118,9 +118,9 @@ Common to every step:
 |---|---|---|---|
 | `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` | ✅ | `check` is a *field*, not a type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` \| `loop` \| `break` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
-| `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group, bounds the whole group |
+| `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group or a `loop`, bounds the whole thing |
 | `if` | template | | Guard: skip this step unless it renders `true`. See [Conditions](#conditions) |
 
 `allow_failure: true` is available on `agent` and `command` steps only; it is
@@ -329,6 +329,129 @@ block.
 > is what `vincent gc` and `vincent doctor` are for, and you will meet it
 > before you meet anything else in this feature.
 
+### `type: loop`
+
+Runs its body — a **sequence** — repeatedly, in the task's one worktree. No
+branch, no child task, nothing to merge: that is `fan_out`. Where a `parallel`
+group is a set run once, a loop is a sequence run more than once.
+
+| Key | Type | Required |
+|---|---|---|
+| `steps` | list of steps | ✅ |
+| `count` | int | exactly one of `count` / `for_each` |
+| `for_each` | string, or list of strings | exactly one of `count` / `for_each` |
+| `max_iterations` | int | — (default `loop.max_iterations`, 10) |
+
+**Fix until green** — the archetype the feature exists for. Bounded by
+construction, and post-test by construction, because the condition lives in the
+body where it can see the body:
+
+```yaml
+  - id: green
+    type: loop
+    count: 5
+    steps:
+      - { id: suite, type: command, run: go test ./..., allow_failure: true, max_retries: 0 }
+      - { id: passed, type: break, if: '{{ eq (index .Steps "suite").ExitCode 0 }}' }
+      - id: repair
+        type: agent
+        prompt: |
+          The suite is red:
+
+          {{ (index .Steps "suite").Result }}
+
+          Fix the underlying cause. Do not weaken, skip or delete a test.
+```
+
+**Once per item**, over a list a step discovered at run time:
+
+```yaml
+  - id: changed
+    type: command
+    run: git diff --name-only {{.Task.BaseBranch}}...HEAD -- '*.go' | grep -v _test.go
+    allow_failure: true
+
+  - id: review-each
+    type: loop
+    for_each: '{{ .Steps.changed.Result }}'
+    max_iterations: 25
+    steps:
+      - { id: read, type: agent, prompt: 'Review {{ .Loop.Item }} against CLAUDE.md.' }
+```
+
+`for_each:` takes a YAML sequence or a single scalar. Either way each entry is
+rendered, trimmed and split on newlines with empty lines dropped, so
+`[api, web]` and a command's multi-line output are the same mechanism.
+
+**There is no `while:`.** A guard can read only what a run has already
+produced, and on the first iteration the body has not run — so a `while:`
+reading its own body is either an error or, worse, silently false, and one
+reading a step *before* the loop reads a constant and spins to the ceiling.
+`count:` plus `break` writes the same loop correctly.
+
+#### `.Loop`
+
+| Field | |
+|---|---|
+| `.Loop.Index` | the 1-based iteration, and **0** outside any loop, so a shared template can tell |
+| `.Loop.Item` | the `for_each` item this pass runs on; empty for a `count:` loop |
+| `.Loop.IsFirst` / `.Loop.IsLast` | |
+
+#### What a body may contain
+
+`agent`, `command`, `condition` and `break`. Rejected at load: `manual`,
+`on_input: require`, `parallel`, `fan_out` and a nested `loop` — each for the
+reason a `parallel` group rejects it. All of them park or end the task's
+admission mid-body, and a loop's position is *derived* from its rows, which
+have no way to say "iteration 3 of this loop is waiting on a human".
+
+#### Ending a loop
+
+- The driver runs out, or a `break` fires → the loop **succeeds** and the
+  cursor advances.
+- A `condition` inside the body is false → **that iteration** ends and the loop
+  carries on. That is `continue`, and it needs no new step type: a loop body is
+  a sequence, so "end the sequence" ends the pass.
+- The loop cannot run within `max_iterations` → the task **blocks** with
+  `loop_limit`. A `for_each` list longer than the ceiling blocks before the
+  first iteration, naming the count.
+- A body step exhausts its retries → the task blocks with **that step's** own
+  reason. Use `allow_failure:` when a red probe is the point.
+
+Retries and iterations are different things: `max_retries` is for a step that
+*failed*, and an iteration is for a body that *succeeded and must run again*.
+Each body step spends its own budget within each iteration.
+
+#### Human actions
+
+`skip` skips the **whole loop** and advances past it — there is no "skip this
+iteration". `retry` resumes at the failed body step of the iteration it
+stopped in, with a fresh budget; it does not restart at iteration 1. `edit +
+retry` rewrites that body step in the task's snapshot, so it applies to
+**every remaining iteration** — fix the prompt, let it keep going.
+
+The same is true after a crash: position is derived from the rows on every
+admission, so a restarted daemon resumes mid-iteration rather than redoing work
+you may have waited an hour for.
+
+> **A loop is one step: one index, one slot, one worktree, one timeline entry**,
+> and its iterations are strictly sequential. Unlike `max_parallel`, it adds no
+> concurrency your caps cannot see. What it does add is *spend*: ten iterations
+> of a three-step body is thirty agent runs, which is why the default ceiling
+> is 10.
+
+### `type: break`
+
+Ends the enclosing loop, successfully. Takes `id`, `name` and a required `if:`,
+and nothing else — like `condition`, it starts no process, so it cannot time
+out, be retried or write a transcript.
+
+```yaml
+      - { id: passed, type: break, if: '{{ eq (index .Steps "suite").ExitCode 0 }}' }
+```
+
+Only valid inside a loop body: elsewhere there is no loop for it to end.
+
 ## Conditions
 
 A workflow can decide at run time what to do next. Three fields do it.
@@ -422,6 +545,7 @@ Guards mostly read `.Steps`, which after this change carries a little more:
 | A step that succeeded | `{{ eq (index .Steps "x").Status "succeeded" }}` |
 | A step skipped by its guard | `{{ eq (index .Steps "x").Status "skipped" }}` |
 | A step that failed under `allow_failure` | `{{ ne (index .Steps "x").ExitCode 0 }}` |
+| A body step of the loop pass you are in | `{{ (index .Steps "probe").Result }}` — inside a loop, earlier body steps of the same iteration are visible; a repeated step id resolves to its **latest** iteration |
 | The platform | `{{ ne .Host.OS "windows" }}` |
 | A field typed at creation | `{{ eq (index .Task.Fields "ship") "yes" }}` |
 
@@ -456,14 +580,17 @@ starts.
 | `.Project` | `Name`, `Path` (the original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
+| `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. Includes steps skipped by a guard (`Status: "skipped"`) and steps that failed under `allow_failure`, once the workflow has moved past them |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retries only: `{Reason, Output}`; empty otherwise |
 
 `.Steps.<id>.Result` is the agent's final result text for agent steps, or the
-last 100 lines of stdout for command steps. That is how one step's output feeds
-the next:
+last **200** lines of stdout for command steps. That is how one step's output
+feeds the next — and, with `for_each:`, how one step's output becomes a loop's
+item list. A producer meant to feed a loop should filter at the source rather
+than lean on that tail:
 
 ```yaml
   - id: fix
@@ -530,6 +657,14 @@ network, no agent CLI installed.
   and `allow_failure` included. `allow_failure` is valid on `agent` and
   `command` steps only. A `condition` step in **last** position is a *warning*:
   the task is done whether it continues or stops.
+- A `loop` has at least one body step and **exactly one** driver: `count` (at
+  least 1, and at most the effective ceiling — the step's own `max_iterations`,
+  else `loop.max_iterations`) or `for_each`. Its body steps join the file-wide
+  id namespace, and are not `manual`, `parallel`, `fan_out` or another `loop`,
+  and do not resolve to `on_input: require`. A `loop` rejects `max_retries` and
+  `allow_failure`: it has no attempt of its own. A `break` has an `if:` and
+  nothing else, and is valid only inside a loop body. `count`, `for_each` and
+  `max_iterations` are rejected on every other step type.
 - A `fan_out` step has at least one lane; lane ids are unique within the step;
   each lane has exactly one of `workflow` and `steps`. `merge.agent` is
   required by, and only valid with, `on_conflict: agent`. A lane's inline
@@ -563,5 +698,5 @@ the task-creation response, and in the daemon log.
 ## See also
 
 - [Writing workflows](../guides/workflows.md) — the guide.
-- [Example workflows](../../examples) — four working files.
+- [Example workflows](../../examples) — five working files.
 - [Agent CLIs](../guides/agents.md) — what each adapter honors.
