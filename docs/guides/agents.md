@@ -77,7 +77,7 @@ The task moves to `awaiting_input`, keeps its concurrency slot, and pauses the
 step's timeout clock. Answer from the TUI popup or
 `POST /v1/tasks/{id}/answer`; the run resumes where it stopped. Set
 `on_input: deny` on a workflow that must stay unattended — see
-[Writing workflows → mid-run questions](workflows.md#mid-run-questions).
+[Writing workflows → mid-run questions](workflows.md#94-mid-run-questions-on_input).
 
 Input support is **version-gated** to the CLI family vincent has verified
 against real captured runs. Outside that range the adapter reports

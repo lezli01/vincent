@@ -446,7 +446,7 @@ ask it to.
 expanded, so `PATH: "${PATH}:/opt/bin"` sets that string verbatim rather than
 appending.
 
-Command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#writing-portable-command-steps)
+Command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#55-environment-variables)
 and then their own `env:` on top. Neither `unset` nor `set` can touch those —
 they are facts about the run, not inherited state — and a step's `env:` still
 wins over everything.
@@ -596,7 +596,7 @@ Command and check steps additionally receive `VINCENT_TASK_ID`,
 `VINCENT_TASK_TITLE`, `VINCENT_PROJECT_NAME`, `VINCENT_PROJECT_PATH`,
 `VINCENT_WORKTREE`, `VINCENT_BRANCH`, `VINCENT_BASE_BRANCH`, `VINCENT_STEP_ID`,
 `VINCENT_STEP_ATTEMPT` and `VINCENT_WORKFLOW` — see
-[Writing workflows](../guides/workflows.md#writing-portable-command-steps).
+[Writing workflows](../guides/workflows.md#55-environment-variables).
 
 ## Reading the config in effect
 

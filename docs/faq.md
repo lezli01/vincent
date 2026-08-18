@@ -91,7 +91,7 @@ Add `--project <id>` — without it you see built-in and global scopes only.
 Because a `check` disagreed. An agent reporting success is a claim; a build is a
 fact. `check_failed` is the healthy, common failure: read the transcript, then
 press `E` to edit the prompt and retry. See
-[Checks](guides/workflows.md#checks-are-how-you-stop-an-agent-grading-its-own-homework).
+[Checks](guides/workflows.md#7-verification-with-check).
 
 ### A task is stuck in `queued`
 

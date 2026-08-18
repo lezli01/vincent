@@ -824,7 +824,7 @@ description: Implement, test, review, then push and open a PR.
 platforms: [posix]                    # optional; where this workflow may run (§8.1.1)
 
 defaults:                             # optional; per-step values override
-  agent: claude                       # claude | codex
+  agent: claude                       # claude | codex | cursor (§9.7)
   model: ""                           # adapter-native id/alias (e.g. sonnet); options via GET /v1/agents (§9.6)
   effort: ""                          # adapter-native effort (claude: low…max; codex: minimal…high) (§8.6)
   permission_mode: full-auto          # full-auto | restricted   (§9.4)
@@ -1036,6 +1036,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
+| `.Conflicts` | *Documented 2026-08-18: the field has shipped since task 014 but was never listed here.* The conflicted file paths a `fan_out` join hands an `on_conflict: agent` resolver (§7.6). Empty for every other step, so a prompt may read it defensively anywhere |
 
 For `agent` steps on attempt > 1, in addition to `.LastFailure` being available, the
 daemon appends a structured block to the rendered prompt automatically:
