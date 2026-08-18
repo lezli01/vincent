@@ -199,7 +199,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// and never probe (§8.2).
 	workflows := workflow.NewRegistry(
 		filepath.Join(dirs.Config, workflow.GlobalDirName),
-		workflow.Options{KnownAgents: agents.Names(), Catalogs: catalog.Catalogs},
+		workflow.Options{
+			KnownAgents:   agents.Names(),
+			Catalogs:      catalog.Catalogs,
+			MaxIterations: func() int { return currentConfig().Loop.MaxIterations },
+		},
 		logger,
 	)
 	workflows.ReloadGlobal()

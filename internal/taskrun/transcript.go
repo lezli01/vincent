@@ -38,14 +38,25 @@ type transcript struct {
 // member of a `parallel` group shares its group's index with its siblings, so
 // its id joins the name — `{step_index}-{step_id}-{attempt}.jsonl` — or three
 // concurrent sub-steps would open, and truncate, one file (task 014 decision
-// 16). Ids are slugs, so nothing here can escape the directory.
-func openTranscript(dataDir string, taskID int64, stepIndex, attempt int, subStepID string) (*transcript, error) {
+// 16). A `loop` body step shares its loop's index *and* repeats, so it takes
+// an iteration segment as well:
+// `{step_index}-i{iteration}-{step_id}-{attempt}.jsonl` (task 016
+// decision 13). Ids are slugs, so nothing here can escape the directory.
+//
+// Only loop bodies gain the segment. Adding it everywhere for uniformity
+// would rename every transcript vincent has ever written to make a directory
+// listing consistent with itself; nothing parses these names, because
+// `transcript_path` is stored on the row.
+func openTranscript(dataDir string, taskID int64, stepIndex, iteration, attempt int, subStepID string) (*transcript, error) {
 	dir := filepath.Join(dataDir, "transcripts", strconv.FormatInt(taskID, 10))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create transcript dir: %w", err)
 	}
 	name := fmt.Sprintf("%d-%d.jsonl", stepIndex, attempt)
-	if subStepID != "" {
+	switch {
+	case iteration > 0:
+		name = fmt.Sprintf("%d-i%d-%s-%d.jsonl", stepIndex, iteration, subStepID, attempt)
+	case subStepID != "":
 		name = fmt.Sprintf("%d-%s-%d.jsonl", stepIndex, subStepID, attempt)
 	}
 	path := filepath.Join(dir, name)

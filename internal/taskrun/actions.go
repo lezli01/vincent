@@ -135,7 +135,11 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 	now := time.Now()
 	ch := store.TaskChange{RetryCursorAt: &now}
 	if !ov.Empty() {
-		snapshot, err := applyOverride(task, ov)
+		target, err := r.overrideTarget(ctx, task)
+		if err != nil {
+			return nil, err
+		}
+		snapshot, err := applyOverride(task, ov, target)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +387,8 @@ func (r *Runner) recordStepDecision(
 		return nil
 	}
 	stepID, stepType := describeStep(task, task.CurrentStep)
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, task.ID, task.CurrentStep, stepID, time.Time{})
+	attempts, err := r.deps.Store.CountStepAttempts(ctx,
+		store.StepRef{TaskID: task.ID, StepIndex: task.CurrentStep, StepID: stepID}, time.Time{})
 	if err != nil {
 		return err
 	}
@@ -406,9 +411,46 @@ func advance(task *store.Task) store.TaskChange {
 	return store.TaskChange{CurrentStep: &next}
 }
 
-// applyOverride rewrites the current step's prompt or run inside the task's
-// own snapshot copy (§5.3) and returns the new YAML.
-func applyOverride(task *store.Task, ov store.Override) (string, error) {
+// overrideTarget names the step an `edit + retry` rewrites: the current step,
+// or — when that is a `loop` — the body step whose failure blocked the task.
+//
+// A loop occupies one step_index and writes no row of its own, so the cursor
+// alone cannot say what the human is editing; the rows can, and they are the
+// only thing that knows (§7.8, decision 7). An empty string means "the
+// current step itself", which is every task that is not blocked inside a
+// loop.
+//
+// The edit lands in the snapshot, so it applies to **every remaining
+// iteration** (decision 12). That is the useful behaviour — fix the prompt,
+// let it keep going — rather than a one-shot patch the loop discards on its
+// next pass.
+func (r *Runner) overrideTarget(ctx context.Context, task *store.Task) (string, error) {
+	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	if err != nil {
+		return "", fmt.Errorf("parse workflow snapshot: %w", err)
+	}
+	if task.CurrentStep < 0 || task.CurrentStep >= len(wf.Steps) ||
+		wf.Steps[task.CurrentStep].Type != workflow.StepLoop {
+		return "", nil
+	}
+	history, err := r.deps.Store.ListStepRunsAt(ctx, task.ID, task.CurrentStep)
+	if err != nil {
+		return "", err
+	}
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].State == store.StepFailed {
+			return history[i].StepID, nil
+		}
+	}
+	return "", fmt.Errorf("task %d is blocked in a loop with no failed body step to edit", task.ID)
+}
+
+// applyOverride rewrites one step's prompt or run inside the task's own
+// snapshot copy (§5.3) and returns the new YAML.
+//
+// bodyID selects a step inside the current `loop`; empty means the current
+// step itself.
+func applyOverride(task *store.Task, ov store.Override, bodyID string) (string, error) {
 	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
 	if err != nil {
 		return "", fmt.Errorf("parse workflow snapshot: %w", err)
@@ -417,6 +459,18 @@ func applyOverride(task *store.Task, ov store.Override) (string, error) {
 		return "", fmt.Errorf("task %d has no step %d to override", task.ID, task.CurrentStep)
 	}
 	step := &wf.Steps[task.CurrentStep]
+	if bodyID != "" {
+		step = nil
+		for i := range wf.Steps[task.CurrentStep].Steps {
+			if body := &wf.Steps[task.CurrentStep].Steps[i]; body.ID == bodyID {
+				step = body
+				break
+			}
+		}
+		if step == nil {
+			return "", fmt.Errorf("task %d has no body step %q to override", task.ID, bodyID)
+		}
+	}
 	if ov.Prompt != "" {
 		if step.Type != workflow.StepAgent {
 			return "", &OverrideMismatchError{StepType: step.Type, Field: "prompt_override"}

@@ -1,0 +1,79 @@
+# converge — implement, then loop until the suite is green.
+#
+# The archetype `type: loop` exists for. `max_retries` was never this: a retry
+# re-runs *the same step* on *its own* failure, and converging needs three
+# different steps — probe, decide, repair — with the decision in the middle.
+#
+# Read the loop in three lines:
+#
+#   suite   is `allow_failure: true`, so a red run advances instead of blocking
+#           the task. That is what turns its exit code into data.
+#   passed  reads that exit code and ends the loop the first time it is zero.
+#           A `break` is post-test by construction: it can only run after the
+#           body above it has, which is why there is no `while:`.
+#   repair  only runs when the break did not fire, and sees the failure text.
+#
+# `count: 4` is the budget, not a target — four repairs and no more. The final
+# `verify` step is deliberately outside the loop and carries no
+# `allow_failure`: if the loop spent its budget without converging, that is the
+# step that blocks the task, and it is the one whose red output a human reads.
+name: converge
+description: Implement a change, then repair until the test suite passes.
+
+defaults:
+  agent: claude
+  max_retries: 2
+  timeout: 30m
+
+steps:
+  - id: implement
+    type: agent
+    prompt: |
+      Implement this change on {{.Task.BranchName}}.
+
+      {{.Task.Title}}
+      {{with .Task.Description}}
+      Details:
+      {{.}}
+      {{end}}
+      Match the conventions of the code you are editing. Add tests for what you
+      add; do not weaken, skip or delete an existing one.
+
+  - id: green
+    type: loop
+    count: 4
+    steps:
+      # A probe has nothing to gain from retrying: it is deterministic, and a
+      # second identical run costs a minute to reach the same answer.
+      - id: suite
+        type: command
+        run: go test ./...
+        allow_failure: true
+        max_retries: 0
+
+      - id: passed
+        type: break
+        if: '{{ eq (index .Steps "suite").ExitCode 0 }}'
+
+      - id: repair
+        type: agent
+        max_retries: 0
+        prompt: |
+          The test suite is red on iteration {{.Loop.Index}} of {{.Task.Title}}:
+
+          {{ (index .Steps "suite").Result }}
+
+          Fix the underlying cause. Do not weaken, skip, disable or delete a
+          test to get green, and do not change a test's expectations unless the
+          test itself is what is wrong — if it is, say so in the commit.
+
+  # Outside the loop on purpose: the loop succeeding means "it stopped", and
+  # this is what makes it mean "it worked".
+  - id: verify
+    type: command
+    run: go test ./...
+    max_retries: 0
+
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "{{.Task.Title}}"'

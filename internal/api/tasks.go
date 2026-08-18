@@ -81,6 +81,11 @@ type taskResponse struct {
 	ParentTaskID *int64  `json:"parent_task_id"`
 	LaneID       *string `json:"lane_id"`
 	LaneOrder    *int    `json:"lane_order"`
+	// Loop is the §7.8 rollup, present only while a `loop` step is the
+	// current one. Derived per request from the step's rows, never stored: a
+	// counter would be the persisted loop cursor decision 7 declined, and
+	// §12.4 recovery would have to reconcile it.
+	Loop *loopResponse `json:"loop,omitempty"`
 	// Children is the §13.2 subtree rollup, present on the detail endpoint
 	// whenever the task has lanes. Derived per request from one recursive
 	// CTE, never stored: a counter would be a second truth that drifts.
@@ -198,9 +203,17 @@ type stepRunResponse struct {
 	StepID    string `json:"step_id"`
 	// StepName is the snapshot's display name for this attempt's step, so a
 	// timeline reads in the workflow author's words rather than in step ids.
-	StepName      string  `json:"step_name"`
-	StepType      string  `json:"step_type"`
-	Attempt       int     `json:"attempt"`
+	StepName string `json:"step_name"`
+	StepType string `json:"step_type"`
+	Attempt  int    `json:"attempt"`
+	// Iteration is which pass of an enclosing `loop` produced this attempt —
+	// 1-based, and 0 for every row outside a loop (§7.8). Body steps share
+	// the loop's step_index, so this and step_id together are what tell two
+	// of them apart.
+	Iteration int `json:"iteration"`
+	// LoopItem is the `for_each` item that iteration ran on; null for a
+	// `count:` loop and outside a loop.
+	LoopItem      *string `json:"loop_item"`
 	State         string  `json:"state"`
 	Agent         *string `json:"agent"`
 	Model         *string `json:"model"`
@@ -255,6 +268,8 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		StepID:         r.StepID,
 		StepName:       summary.stepName(r.StepIndex),
 		StepType:       r.StepType,
+		Iteration:      r.Iteration,
+		LoopItem:       nilIfEmpty(r.LoopItem),
 		PromptOverride: r.PromptOverride != "",
 		RunOverride:    r.RunOverride != "",
 		Attempt:        r.Attempt,
@@ -622,6 +637,50 @@ func toChildrenResponse(r store.ChildrenRollup) *childrenResponse {
 	return out
 }
 
+// loopResponse is the §7.8 loop rollup — the shape of the §13.2 children
+// rollup, one level cheaper. It exists so a board can render `loop 4/10`
+// without a client re-deriving iteration numbers from the step rows, and it
+// is deliberately not a new event type: ten iterations of a four-step body
+// would put forty durable events on the stream to say what forty rows
+// already say (task 016 decision 14).
+type loopResponse struct {
+	// Driver is "count" or "for_each".
+	Driver string `json:"driver"`
+	// Iteration is the pass in progress — the highest a row carries, or 0
+	// before the first one starts.
+	Iteration int `json:"iteration"`
+	// MaxIterations is the largest iteration this loop could reach: the
+	// `count:` itself, or the ceiling a `for_each` is bounded by, whose real
+	// length is only known at run time.
+	MaxIterations int `json:"max_iterations"`
+	// Item is the `for_each` item the current iteration is running on; empty
+	// for a `count:` loop.
+	Item string `json:"item,omitempty"`
+}
+
+// loopRollup builds the §7.8 rollup for a task whose current step is a loop,
+// and returns nil for every other task. The extra query is why it is gated on
+// the snapshot rather than run for every row: the summary is cached, so a
+// task that is not in a loop costs a map lookup.
+func (s *Server) loopRollup(ctx context.Context, t *store.Task, summary snapshotSummary) *loopResponse {
+	def := summary.loopAt(t.CurrentStep)
+	if def == nil {
+		return nil
+	}
+	out := &loopResponse{Driver: def.driver, MaxIterations: def.total}
+	runs, err := s.deps.Store.ListStepRunsAt(ctx, t.ID, t.CurrentStep)
+	if err != nil {
+		s.deps.Logger.Error("loop rollup", "task", t.ID, "error", err)
+		return out
+	}
+	for i := range runs {
+		if run := &runs[i]; run.Iteration >= out.Iteration {
+			out.Iteration, out.Item = run.Iteration, run.LoopItem
+		}
+	}
+	return out
+}
+
 func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := store.TaskFilter{State: store.TaskState(q.Get("state"))}
@@ -695,6 +754,12 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 // snapshot's step count and current step name, and the cost/token rollups.
 // Three queries total regardless of task count — the point of the endpoint
 // is that a board never has to fan out per row.
+//
+// The §7.8 loop rollup is the one per-row query, and it is taken only for a
+// task whose *cached* snapshot says its current step is a loop. That is what
+// keeps "a board never fans out" true in practice: a board of fifty tasks
+// none of which is looping still costs three queries, and one that is
+// looping is the row a person is watching iterate.
 func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]listTaskResponse, error) {
 	ids := make([]int64, 0, len(tasks))
 	for i := range tasks {
@@ -723,6 +788,7 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 			InputTokens:  rollups[t.ID].InputTokens,
 			OutputTokens: rollups[t.ID].OutputTokens,
 		}
+		row.Loop = s.loopRollup(ctx, t, summary)
 		row.ProjectName = names[t.ProjectID]
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
@@ -759,6 +825,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	// already done, still wants its lane ids reachable from one GET, and
 	// gating the field on a state would force a client to know the state to
 	// know whether to look.
+	resp.Loop = s.loopRollup(r.Context(), t, summary)
 	if rollup, err := s.deps.Store.ChildrenOf(r.Context(), t.ID); err != nil {
 		s.deps.Logger.Error("children rollup", "task", t.ID, "error", err)
 	} else if rollup.Total > 0 {

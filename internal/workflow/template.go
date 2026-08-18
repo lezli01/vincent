@@ -15,11 +15,15 @@ const failureOutputLines = 200
 // populated before a step runs; rendering happens before any process is
 // started, so a bad reference fails the step without side effects.
 type RenderContext struct {
-	Task        TaskContext
-	Project     ProjectContext
-	Workflow    Info
-	Step        StepContext
-	Steps       map[string]StepResult
+	Task     TaskContext
+	Project  ProjectContext
+	Workflow Info
+	Step     StepContext
+	Steps    map[string]StepResult
+	// Loop is where this step sits inside an enclosing `loop` (§7.8, task 016
+	// decision 9). Its zero value — `Index: 0` — is what every step outside a
+	// loop renders with, so a template shared between the two can tell.
+	Loop        LoopContext
 	Worktree    WorktreeContext
 	LastFailure Failure
 	// Host is the daemon's own platform (§8.4, task 015 decision 12). The
@@ -79,6 +83,43 @@ type StepResult struct {
 	Status   string
 	Result   string
 	ExitCode int
+}
+
+// LoopContext is `.Loop` — the current iteration of the enclosing `loop`
+// step (§7.8).
+//
+// Item is a **string** rather than anything structured: `Task.Fields` is
+// map[string]string and every other value in §8.4 is a string, so a
+// structured item would push a new type through the render context, the API
+// DTOs and the TUI for a case nobody has yet (decision 9).
+type LoopContext struct {
+	// Index is the 1-based iteration, and 0 outside any loop.
+	Index int
+	// Item is the `for_each` item this iteration runs on, empty for a
+	// `count:` loop.
+	Item    string
+	IsFirst bool
+	IsLast  bool
+}
+
+// Driver names for a `loop` step's single item source (§7.8, decision 2).
+// There is deliberately no `while`: a guard can read only `.Steps`, which on
+// the first iteration has no row for the body that would fill it, so every
+// spelling of a useful `while` is either loud-and-unwritable or silently
+// false. `count:` plus `break` writes the same loop correctly, post-test by
+// construction, with the condition in the body where it can see the body.
+const (
+	DriverCount   = "count"
+	DriverForEach = "for_each"
+)
+
+// Driver reports which item source a loop step carries. Validation
+// guarantees exactly one, so this is total for a step that parsed.
+func (s Step) Driver() string {
+	if len(s.ForEach) > 0 {
+		return DriverForEach
+	}
+	return DriverCount
 }
 
 // HostContext is `.Host` — the daemon's GOOS and GOARCH.

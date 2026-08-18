@@ -1,6 +1,6 @@
 # 016 — Loops in workflows (`type: loop`, `type: break`)
 
-**Status:** 📋 planned (0/10) · **Opened:** 2026-08-18
+**Status:** ✅ done (10/10) · **Opened:** 2026-08-18 · **Closed:** 2026-08-18
 
 A workflow may now repeat a body of steps — a fixed number of times, or once
 per item in a list:
@@ -388,9 +388,8 @@ at its source.
 
 ## Spec §7.8 draft
 
-To land in `docs/spec.md` **with the code**, not before it — the spec describes
-the system as it is now (CLAUDE.md), so it is amended in the PR that makes the
-amendment true.
+*Landed in `docs/spec.md` as §7.8 on 2026-08-18, with the code.* Kept here as
+the record of what was drafted; the spec is the live text.
 
 > ### 7.8 Loops
 >
@@ -448,7 +447,7 @@ amendment true.
 
 ## Tasks
 
-- [ ] **016.1 — Schema, parser, validation.** `StepLoop` and `StepBreak` in the
+- [x] **016.1 — Schema, parser, validation.** `StepLoop` and `StepBreak` in the
   type set; `Count`, `ForEach`, `MaxIterations`, `Steps` on `Step`. Exactly one
   driver; `count` within the ceiling; body-type rejection list (decision 10);
   `break` required-`if:`-and-nothing-else and rejected outside a loop body;
@@ -456,46 +455,46 @@ amendment true.
   ids and body ids unique across the whole workflow; `max_retries` and
   `allow_failure` rejected on a loop. `loop.max_iterations` in
   `internal/config`. Spec §8.2, §8.1.
-- [ ] **016.2 — Store.** Migration `0009_loops.sql`: `step_runs.iteration`,
+- [x] **016.2 — Store.** Migration `0009_loops.sql`: `step_runs.iteration`,
   `step_runs.loop_item`. `ListStepRuns` ordered
   `(step_index, iteration, attempt)`. Spec §14.
-- [ ] **016.3 — Template context.** `.Loop` in `RenderContext`; the positional
+- [x] **016.3 — Template context.** `.Loop` in `RenderContext`; the positional
   `.Steps` visibility rule replacing `run.StepIndex >= env.index`, with the
   `parallel`-sibling case pinned by a test that fails under a naive rewrite.
   Spec §8.4.
   *Depends: 016.2.*
-- [ ] **016.4 — Engine: `count:`.** The loop executor, body sequencing, derived
+- [x] **016.4 — Engine: `count:`.** The loop executor, body sequencing, derived
   position and mid-iteration resumption; `loop_limit`; the loop-level
   `timeout:`. Spec §7.8, §18.
   *Depends: 016.1, 016.2, 016.3.*
-- [ ] **016.5 — Engine: `break` and iteration-scoped `condition`.** `break`
+- [x] **016.5 — Engine: `break` and iteration-scoped `condition`.** `break`
   ending the loop successfully; `condition` inside a body ending the iteration
   and leaving its existing top-level meaning untouched. Spec §7.7, §7.8.
   *Depends: 016.4.*
-- [ ] **016.6 — Engine: `for_each:`.** List resolution (sequence or scalar,
+- [x] **016.6 — Engine: `for_each:`.** List resolution (sequence or scalar,
   split on newlines); `loop_item` on the row and rows-are-authoritative
   resumption; the over-cap block before iteration 1; the empty-list no-op.
   Document the `outputTailLines` (100-line) bound on a list drawn from
   `.Steps[…].Result`. Spec §7.8.
   *Depends: 016.4.*
-- [ ] **016.7 — Recovery and human actions.** §12.4 finalization of an
+- [x] **016.7 — Recovery and human actions.** §12.4 finalization of an
   interrupted body step; `skip` skipping the whole loop; `retry` resuming at the
   failed body step; `edit + retry` applying to remaining iterations. Spec §6,
   §12.4.
   *Depends: 016.4, 016.6.*
-- [ ] **016.8 — API and TUI.** `iteration` and `loop_item` through
+- [x] **016.8 — API and TUI.** `iteration` and `loop_item` through
   `internal/api` and `internal/apiclient`; the `loop` rollup on the task detail
   endpoint; board `loop 4/10`; detail-view rows grouped by iteration, folded,
   latest open. No new event type (decision 14). Spec §13.2.
   *Depends: 016.2, 016.4.*
-- [ ] **016.9 — Gate.** `scripts/m8-gate.sh`, committed executable via
+- [x] **016.9 — Gate.** `scripts/m8-gate.sh`, committed executable via
   `git update-index --chmod=+x`. Command steps only, bodies restricted to
   `exit N` and `git …` so it is portable to pwsh the way `m7` is and `m6` is
   not. Scenarios: count to completion; converge-and-break; `loop_limit`;
   `for_each` static; `for_each` from step output; empty list; iteration-scoped
   `condition`; crash mid-iteration and resume.
   *Depends: 016.4, 016.5, 016.6, 016.7.*
-- [ ] **016.10 — Docs.** Workflow schema, guides and block-reason pages; the
+- [x] **016.10 — Docs.** Workflow schema, guides and block-reason pages; the
   config reference for `loop.max_iterations`; CLAUDE.md's gate list; the §20
   amendment promoting loops out of future work and leaving behind, with named
   triggers, `branch`/`switch` (015 decision 1), dynamic per-item fan-out
@@ -517,6 +516,25 @@ push token used for this work has no `workflow` scope, so a branch touching
 
 Say so in CLAUDE.md's command list beside `m6` and `m7`, so the gap stays
 documented rather than silently carried.
+
+**Three things the implementation settled that the plan left open.**
+
+- **`loop_limit` is reachable for `count:` too.** Decision 5 says the cap
+  blocks; §7.8's "Ending" says the *driver* being exhausted succeeds. Both are
+  true, and they meet at the ceiling: `count:` is validated against it at load,
+  so the only way a count loop reaches it is a config edit landing under a
+  queued task — `loop.max_iterations` is read per loop, so a hot reload does
+  exactly that. The engine enforces it, which is what stops the reason being
+  decorative on one of the two drivers.
+- **`for_each` has one rule, not two.** The draft distinguished "a sequence of
+  templates" from "a scalar template, split on newlines". The implementation
+  applies the split to *every* entry, which agrees with the draft on both
+  stated cases and makes a hand-written list and a command's output one
+  mechanism rather than two.
+- **§8.4's output tail is 200 lines, not 100.** The spec said 100 and the
+  daemon has always used 200; `for_each:` reading `.Steps[…].Result` turns that
+  from incidental into load-bearing, so the spec was corrected in the same PR
+  rather than left to be discovered.
 
 **Two decisions here reverse the design this task was drafted with**, both
 because examples were written before the doc was: `while:` was a driver

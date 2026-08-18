@@ -255,7 +255,7 @@ rather than inventing a model name.
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort? }` — `branch_name` is used verbatim and wins over any template |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt. `state` may be `stopped` (a `condition` step ended the run), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did |
+| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
 
 Human actions, all `POST /v1/tasks/{id}/…`:
 
@@ -330,6 +330,23 @@ request from one recursive CTE rather than stored — a counter would be a secon
 truth that drifts from the rows it counts. `blocked` and `awaiting_gate` are
 ids: fetch the ones you decide to show. This is what pays for hiding lanes from
 the list, since a blocked lane would otherwise be invisible.
+
+Both the list and the detail endpoint carry `loop` while a task's **current**
+step is a `loop` (§7.8), and omit it otherwise:
+
+```json
+"loop": { "driver": "for_each", "iteration": 4, "max_iterations": 10, "item": "internal/store" }
+```
+
+`iteration` is the pass in progress (0 before the first one starts) and
+`max_iterations` is the largest it could reach — the `count:` itself, or the
+ceiling a `for_each` is bounded by, whose real length is only known at run
+time. It is on the list endpoint too, so a board can render `loop 4/10` without
+a request per row. Like `children`, it is derived per request from the step
+rows rather than stored: a persisted loop cursor would be a second truth that
+recovery would have to reconcile. There is deliberately **no** step-lifecycle
+event for iterations — ten passes of a four-step body would put forty durable
+events on the stream to say what forty rows already say.
 - **`?archived=` defaults to false.** `true` selects only archived tasks, `all`
   returns both.
 - **Every task representation carries `available_actions`** (the actions valid

@@ -39,7 +39,29 @@ const (
 	// would be a false friend whose failure mode is a task reaching `done`
 	// having silently done half its work (task 015 decision 2).
 	StepCondition = "condition"
+	// StepLoop runs its body — a sequence — repeatedly in the task's one
+	// worktree (§7.8, task 016). It is `parallel`'s structural twin: one
+	// step_index, one scheduler slot, no branch, no child task and nothing to
+	// merge. Where a group is a set run once, a loop is a sequence run more
+	// than once.
+	StepLoop = "loop"
+	// StepBreak ends the enclosing loop successfully when its `if:` is true
+	// (§7.8, decision 3). It is a type rather than a field for the reason
+	// `condition` is: it starts no process, so it cannot time out, be
+	// retried, be interrupted or write a transcript.
+	//
+	// `continue` has no type of its own. A `condition` inside a loop body
+	// ends *that iteration*, which is what continue means, using the meaning
+	// §7.7 already gave the word.
+	StepBreak = "break"
 )
+
+// stepTypeList is the step-type vocabulary as one string, so the two "one of
+// …" messages cannot drift apart as the set grows.
+var stepTypeList = strings.Join([]string{
+	StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition,
+	StepLoop, StepBreak,
+}, ", ")
 
 // Conflict policies for a fan_out step's join (§7.6, task 014 decision 8).
 const (
@@ -159,6 +181,44 @@ type Step struct {
 	// fan_out steps (task 014)
 	Lanes []Lane `yaml:"lanes,omitempty"`
 	Merge *Merge `yaml:"merge,omitempty"`
+
+	// loop steps (task 016). Steps above carries the body — a loop and a
+	// group are the two structure steps, and one field for "the steps inside
+	// me" is what keeps allSteps, the catalog check and the snapshot
+	// marshaller from growing a second case each.
+	//
+	// Exactly one of Count and ForEach is set: the driver (decision 2).
+	// MaxIterations bounds the loop, defaulting to `loop.max_iterations`.
+	Count         *int    `yaml:"count,omitempty"`
+	ForEach       ForEach `yaml:"for_each,omitempty"`
+	MaxIterations *int    `yaml:"max_iterations,omitempty"`
+}
+
+// ForEach is a `loop` step's item list: a YAML sequence of templates, or a
+// single scalar template. Both spellings decode to the same slice, and both
+// are rendered the same way at run time — each entry is rendered, trimmed and
+// split on newlines with empty lines dropped (§7.8) — so a command's
+// multi-line output and a hand-written list are one mechanism, not two.
+//
+// The scalar spelling exists because the motivating case is
+// `for_each: '{{ .Steps.changed.Result }}'`, a list a step discovered at run
+// time, and wrapping that in a one-element sequence would be ceremony.
+type ForEach []string
+
+// UnmarshalYAML accepts either spelling. goccy hands the raw node bytes, so
+// the sequence attempt is tried first and a scalar falls out of its failure.
+func (f *ForEach) UnmarshalYAML(b []byte) error {
+	var list []string
+	if err := yaml.Unmarshal(b, &list); err == nil {
+		*f = list
+		return nil
+	}
+	var scalar string
+	if err := yaml.Unmarshal(b, &scalar); err != nil {
+		return fmt.Errorf("for_each must be a string or a list of strings: %w", err)
+	}
+	*f = ForEach{scalar}
+	return nil
 }
 
 // Lane is one branch of a `fan_out` step: a named registry workflow or inline
@@ -268,6 +328,18 @@ type Options struct {
 	// Nil disables catalog validation. The daemon wires the catalog cache's
 	// never-probing view here (T2.11).
 	Catalogs func() agent.Catalogs
+	// MaxIterations supplies `loop.max_iterations` — the ceiling a `count:`
+	// is checked against at load, so `count: 5000` is refused in front of the
+	// person typing (§7.8, task 016 decision 5).
+	//
+	// A func rather than an int, for the reason Catalogs is one: the registry
+	// captures these Options once and re-parses files for the rest of the
+	// daemon's life, so a plain value would pin the ceiling to whatever
+	// config said at startup and a hot reload (§12.3) would reach the engine
+	// without reaching validation. Nil disables the check, which is what a
+	// caller wanting only structural validation — a snapshot re-parse, a test
+	// — gets by leaving it unset.
+	MaxIterations func() int
 }
 
 // Error is a single validation failure, located in the source file when the
@@ -374,40 +446,11 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 	if len(wf.Steps) == 0 {
 		add("steps", "steps must not be empty")
 	}
-	// Ids are unique across the whole workflow, sub-steps included: a
-	// sub-step shares its group's step_index and is told apart from its
-	// siblings by step_id alone (task 014 decision 16), which is also what
-	// names its transcript file.
-	seen := make(map[string]string, len(wf.Steps))
-	checkID := func(step Step, base string) {
-		switch {
-		case step.ID == "":
-			add(base+".id", "id is required")
-		case !isSlug(step.ID):
-			add(base+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
-		default:
-			if prev, dup := seen[step.ID]; dup {
-				add(base+".id", "duplicate step id %q (first used by %s)", step.ID, prev)
-			}
-			seen[step.ID] = base
-		}
-	}
-	for i, step := range wf.Steps {
-		base := fmt.Sprintf("steps[%d]", i)
-		checkID(step, base)
-		validateStep(step, base, opts, add)
-		switch step.Type {
-		case StepParallel:
-			for j, sub := range step.Steps {
-				subBase := fmt.Sprintf("%s.steps[%d]", base, j)
-				checkID(sub, subBase)
-				validateSubStep(wf, sub, subBase, opts, add)
-			}
-		case StepFanOut:
-			validateLanes(wf, step, base, opts, add, addWarn)
-		}
-	}
-	warnTrailingCondition(wf.Steps, "steps", addWarn)
+	// Ids are unique across the whole workflow, sub-steps and loop bodies
+	// included: a member of either shares its structure step's step_index and
+	// is told apart from its siblings by step_id alone (task 014 decision 16,
+	// task 016 decision 7), which is also what names its transcript file.
+	validateBody(wf, wf.Steps, "steps", make(map[string]string, len(wf.Steps)), opts, add, addWarn)
 	warns = append(warns, validateCatalogs(wf, opts, loc, add)...)
 	sort.SliceStable(errs, func(i, j int) bool { return errs[i].Line < errs[j].Line })
 	sort.SliceStable(warns, func(i, j int) bool { return warns[i].Line < warns[j].Line })
@@ -521,8 +564,7 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 func validateStep(step Step, base string, opts Options, add func(string, string, ...any)) {
 	switch step.Type {
 	case "":
-		add(base+".type", "type is required (one of %s, %s, %s, %s, %s, %s)",
-			StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition)
+		add(base+".type", "type is required (one of %s)", stepTypeList)
 	case StepAgent:
 		if step.Prompt == "" {
 			add(base+".prompt", "agent steps require a prompt")
@@ -580,6 +622,20 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
 			"allow_failure")
+	case StepLoop:
+		validateLoop(step, base, add, opts)
+	case StepBreak:
+		// `break` is `condition` with the enclosing loop supplying the
+		// consequence, so it carries the same fields and rejects the same
+		// ones: it starts no process, so there is nothing to time out, retry
+		// or allow to fail (decision 3).
+		if step.If == "" {
+			add(base+".if", "break steps require an if expression")
+		}
+		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+			"run", "shell", "env", "instructions", "steps", "max_parallel",
+			"lanes", "merge", "allow_failure", "max_retries", "timeout")
 	case StepCondition:
 		// The guard *is* the body. `if:` may not also act as a skip-guard
 		// here: "skip the check that decides whether to continue" has two
@@ -595,8 +651,13 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
 			"lanes", "merge", "allow_failure", "max_retries", "timeout")
 	default:
-		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s, %s, %s)",
-			step.Type, StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition)
+		add(base+".type", "unknown step type %q (one of %s)", step.Type, stepTypeList)
+	}
+	// `count`, `for_each` and `max_iterations` belong to a loop and to
+	// nothing else. Rejecting them here rather than in each arm keeps the
+	// seven arms above from each growing the same three strings.
+	if step.Type != StepLoop {
+		rejectFields(step, base, add, "count", "for_each", "max_iterations")
 	}
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
@@ -674,6 +735,95 @@ func validateMerge(step Step, base string, opts Options, add func(string, string
 	validateStep(resolver, base+".merge.agent", opts, add)
 }
 
+// validateLoop checks a `loop` step: its body, its single driver, and the
+// ceiling the driver is bounded by (§7.8, task 016 decisions 2, 5, 11).
+//
+// The ceiling is the step's own `max_iterations:` when it declares one, else
+// `loop.max_iterations` from config. Checking `count:` against it at load is
+// the whole of decision 5's "bounded by construction": a loop that could
+// never have finished is a workflow bug, and this is the last moment it can
+// be reported to the person who wrote it.
+func validateLoop(step Step, base string, add func(string, string, ...any), opts Options) {
+	if len(step.Steps) == 0 {
+		add(base+".steps", "loop steps require at least one body step")
+	}
+	switch {
+	case step.Count == nil && len(step.ForEach) == 0:
+		add(base, "a loop needs exactly one driver: %s or %s", "count", "for_each")
+	case step.Count != nil && len(step.ForEach) > 0:
+		add(base, "a loop has either count or for_each, not both")
+	}
+	var ceiling int
+	if opts.MaxIterations != nil {
+		ceiling = opts.MaxIterations()
+	}
+	if step.MaxIterations != nil {
+		if *step.MaxIterations < 1 {
+			add(base+".max_iterations", "max_iterations must be at least 1, got %d", *step.MaxIterations)
+		} else {
+			ceiling = *step.MaxIterations
+		}
+	}
+	if step.Count != nil {
+		switch {
+		case *step.Count < 1:
+			add(base+".count", "count must be at least 1, got %d", *step.Count)
+		case ceiling > 0 && *step.Count > ceiling:
+			add(base+".count",
+				"count %d exceeds the %d-iteration ceiling; raise max_iterations on this step "+
+					"or loop.max_iterations in config", *step.Count, ceiling)
+		}
+	}
+	for i, item := range step.ForEach {
+		if _, err := template.New("for_each").Parse(item); err != nil {
+			add(fmt.Sprintf("%s.for_each[%d]", base, i), "template does not parse: %v", err)
+		}
+	}
+	// No `max_retries` and no `allow_failure` (decision 11): a loop has no
+	// attempt of its own to retry, and "allow" on a loop could only mean "a
+	// loop_limit block advances anyway", which is the silent success
+	// decision 5 refused. Both live on the body steps, where they already do
+	// the useful thing.
+	rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+		"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+		"run", "shell", "env", "instructions", "lanes", "merge", "max_parallel",
+		"allow_failure", "max_retries")
+}
+
+// validateBodyStep checks one member of a `loop` body. Four step types cannot
+// appear there and one field cannot be set on one, all for the reason §7.5
+// gives about a group: a loop's position is *derived from its rows*
+// (decision 7), and each of these needs a state no row can express — "this
+// task is parked in iteration 3" (decisions 10).
+func validateBodyStep(wf *Workflow, body Step, base string, opts Options, add func(string, string, ...any)) {
+	switch body.Type {
+	case StepManual:
+		add(base+".type", "manual steps are not valid inside a loop body: "+
+			"a gate ends the actor goroutine and releases the slot, and no state says which iteration is gated")
+	case StepFanOut:
+		add(base+".type", "fan_out steps are not valid inside a loop body: "+
+			"the task parks in awaiting_children, and a parked parent has no row to say which iteration it parked in")
+	case StepParallel:
+		add(base+".type", "parallel groups are not valid inside a loop body: "+
+			"a loop's position is derived from its rows, and that derivation stays affordable one level deep")
+	case StepLoop:
+		add(base+".type", "loops do not nest: a loop's position is derived from its rows, "+
+			"and that derivation stays affordable one level deep")
+	}
+	// Resolved, not literal, exactly as a group sub-step is: `defaults.on_input:
+	// require` reaches a body step that says nothing, and is just as unrunnable
+	// there (§7.4).
+	if wf.StepRequiresInput(body) {
+		field := base + ".on_input"
+		if body.OnInput == "" {
+			field = "defaults.on_input"
+		}
+		add(field, "on_input: %s is not valid inside a loop body: "+
+			"%s holds one pending request for the whole task", InputRequire, "awaiting_input")
+	}
+	validateStep(body, base, opts, add)
+}
+
 // validateLanes checks a fan_out step's lanes. Lane step ids live in their
 // own namespace — each lane becomes a **separate child task** with its own
 // flat snapshot (decision 4) — so they are checked against a fresh set rather
@@ -735,33 +885,65 @@ func validateLaneSteps(wf *Workflow, lane Lane, base string, opts Options,
 	if len(lane.Steps) == 0 {
 		return
 	}
-	seen := make(map[string]string, len(lane.Steps))
-	for i, step := range lane.Steps {
-		stepPath := fmt.Sprintf("%s.steps[%d]", base, i)
-		switch {
-		case step.ID == "":
-			add(stepPath+".id", "id is required")
-		case !isSlug(step.ID):
-			add(stepPath+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
-		default:
-			if prev, dup := seen[step.ID]; dup {
-				add(stepPath+".id", "duplicate step id %q (first used by %s)", step.ID, prev)
-			}
-			seen[step.ID] = stepPath
+	// A lane's inline steps *are* a workflow body — they become a child
+	// task's own flat snapshot — so they go through the same walk the
+	// top-level steps do, down to the trailing-`condition` warning. Their id
+	// namespace is their own, which is the one thing that differs and is why
+	// the map is made here (decision 4).
+	validateBody(wf, lane.Steps, base+".steps", make(map[string]string, len(lane.Steps)), opts, add, addWarn)
+}
+
+// validateBody validates one workflow body: the top-level steps, or a
+// fan-out lane's inline steps. ids is the namespace step ids are unique
+// within, shared with every structure step's members.
+func validateBody(wf *Workflow, steps []Step, base string, ids map[string]string, opts Options,
+	add func(string, string, ...any), addWarn func(string, string, ...any),
+) {
+	for i, step := range steps {
+		stepPath := fmt.Sprintf("%s[%d]", base, i)
+		checkStepID(step, stepPath, ids, add)
+		if step.Type == StepBreak {
+			// `break` names the loop it ends, and there is none here.
+			// Symmetric with `condition` being rejected inside a group: one
+			// word, one meaning, supplied by what it is attached to
+			// (decision 3).
+			add(stepPath+".type", "break steps are only valid inside a loop body: "+
+				"there is no loop here for one to end")
 		}
 		validateStep(step, stepPath, opts, add)
 		switch step.Type {
 		case StepParallel:
 			for j, sub := range step.Steps {
-				validateSubStep(wf, sub, fmt.Sprintf("%s.steps[%d]", stepPath, j), opts, add)
+				subPath := fmt.Sprintf("%s.steps[%d]", stepPath, j)
+				checkStepID(sub, subPath, ids, add)
+				validateSubStep(wf, sub, subPath, opts, add)
 			}
 		case StepFanOut:
 			validateLanes(wf, step, stepPath, opts, add, addWarn)
+		case StepLoop:
+			for j, body := range step.Steps {
+				bodyPath := fmt.Sprintf("%s.steps[%d]", stepPath, j)
+				checkStepID(body, bodyPath, ids, add)
+				validateBodyStep(wf, body, bodyPath, opts, add)
+			}
 		}
 	}
-	// A lane's inline steps are a workflow body, so its last step carries the
-	// same warning a top-level one does.
-	warnTrailingCondition(lane.Steps, base+".steps", addWarn)
+	warnTrailingCondition(steps, base, addWarn)
+}
+
+// checkStepID validates one step id and records it in the body's namespace.
+func checkStepID(step Step, base string, ids map[string]string, add func(string, string, ...any)) {
+	switch {
+	case step.ID == "":
+		add(base+".id", "id is required")
+	case !isSlug(step.ID):
+		add(base+".id", "id %q must be a slug (lowercase letters, digits, '-', '_', '.')", step.ID)
+	default:
+		if prev, dup := ids[step.ID]; dup {
+			add(base+".id", "duplicate step id %q (first used by %s)", step.ID, prev)
+		}
+		ids[step.ID] = base
+	}
 }
 
 // warnTrailingCondition reports a `condition` step in last position. It is a
@@ -803,6 +985,15 @@ func validateSubStep(wf *Workflow, sub Step, base string, opts Options, add func
 		// what `if:` on a sub-step already does.
 		add(base+".type", "condition steps are not valid inside a parallel group: "+
 			"a group has no later steps to stop; guard the sub-step with `if:` instead")
+	case StepLoop:
+		// A loop's position is derived from its rows, which are keyed by the
+		// structure step's index; nesting one inside a group would put two
+		// derivations on one index (task 016 decision 10).
+		add(base+".type", "loop steps are not valid inside a parallel group: "+
+			"both derive their position from rows sharing one step_index")
+	case StepBreak:
+		add(base+".type", "break steps are only valid inside a loop body: "+
+			"there is no loop here for one to end")
 	}
 	// Resolved, not literal: `defaults.on_input: require` reaches a sub-step
 	// that says nothing, and it is just as unrunnable there (§7.4).
@@ -832,6 +1023,8 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
 		"if": step.If != "", "allow_failure": step.AllowFailure,
 		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
+		"count": step.Count != nil, "for_each": len(step.ForEach) > 0,
+		"max_iterations": step.MaxIterations != nil,
 	}
 	for _, f := range fields {
 		if set[f] {

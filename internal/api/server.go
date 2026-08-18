@@ -115,7 +115,12 @@ func New(deps Deps) *Server {
 		// built-in ad-hoc workflow is still served.
 		deps.Workflows = workflow.NewRegistry("", workflow.Options{}, deps.Logger)
 	}
-	s := &Server{deps: deps, snaps: newSnapshotCache()}
+	s := &Server{deps: deps, snaps: newSnapshotCache(func() int {
+		if deps.Config == nil {
+			return 0
+		}
+		return deps.Config().Loop.MaxIterations
+	})}
 	s.handler = s.buildHandler()
 	s.httpSrv = &http.Server{
 		Handler:           s.handler,

@@ -347,6 +347,45 @@ re-evaluated from scratch, as it is on every pass.
 not one that parses and renders the wrong thing — that needs the task's
 context, which only exists at run time.
 
+### `loop_limit`
+
+A `loop` step has more iterations ahead of it than `max_iterations` allows, so
+the task blocked instead of doing some of them. Two ways to get here:
+
+- a **`for_each:` list longer than the ceiling**. It blocks *before* the first
+  iteration and names the count, so nothing has run yet;
+- a **`count:` the ceiling moved under** — `loop.max_iterations` was lowered
+  while the task was queued or paused. The ceiling is read per loop, so a
+  config reload reaches a task already in flight.
+
+It blocks rather than truncating the list or advancing past the loop, because a
+loop that ran out of iterations did not do what it was looping for, and
+advancing would hand every later guard a `.Steps` saying the work is finished.
+`condition` (the step type) is what a workflow uses to stop *and succeed*;
+running out of tries is not that.
+
+Three fixes, in the order worth trying:
+
+- **filter the list at its source.** `git diff --name-only … | grep -v
+  _test.go` is usually what you wanted anyway, and it keeps the filtering where
+  the output already is;
+- **raise the ceiling for this loop** with `max_iterations:` on the step;
+- **raise it for the machine** with `loop.max_iterations` in `config.yaml`. The
+  default of 10 is low on purpose: ten iterations of a three-step body is
+  thirty agent runs.
+
+### A loop ran fewer iterations than I expected after a retry
+
+Working as intended. A loop's position is derived from its step rows on every
+admission, so a `retry` resumes at the body step that failed, in the iteration
+it failed in — body steps that already succeeded in that iteration are not run
+again, and earlier iterations are not repeated. The detail view groups the rows
+by iteration, folded, with the latest one open, which is where to check what
+actually ran.
+
+If you wanted the whole loop again, the loop is not the unit to retry — retry
+the task from an earlier step, or `skip` the loop and start over.
+
 ### A workflow finished having run only half its steps
 
 Almost certainly working as intended. Two things end a run early:
@@ -354,7 +393,10 @@ Almost certainly working as intended. Two things end a run early:
 - a **`condition` step** whose guard was false. The task is `done`, and the
   detail view shows a `stopped` row where it ended;
 - a chain of **`if:` guards** that all evaluated false, each leaving a
-  `skipped` row with reason `condition`.
+  `skipped` row with reason `condition`;
+- a **`break`** inside a loop, which ends the loop successfully and moves on —
+  a `stopped` row on the break step, and the loop's own iterations stopping
+  short of its `count:`.
 
 Both are visible in the task's step list, which is the place to look: the board
 shows a finished task as finished, and does not try to say how much of the
@@ -398,6 +440,7 @@ The block reason names what happened:
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `template_error` | A template failed to render (see above) |
 | `condition_error` | A step's `if:` guard rendered nothing usable (see below) |
+| `loop_limit` | A `loop` has more iterations to run than it is allowed (see below) |
 | `restricted_unsupported` | The adapter cannot restrict on this platform |
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
