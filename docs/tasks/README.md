@@ -31,7 +31,7 @@ description of how the system actually behaves.
 | [014](014-workflow-fan-out.md) | Parallel steps and workflow fan-out | ✅ done (14/14) |
 | [015](015-conditional-steps.md) | Conditions between steps (`if:`, `type: condition`) | ✅ done (10/10) |
 | [016](016-workflow-loops.md) | Loops in workflows (`type: loop`, `type: break`) | ✅ done (10/10) |
-| [017](017-workflow-visualization.md) | Workflow visualization in the TUI | ⬜ planned (0/9) |
+| [017](017-workflow-visualization.md) | Workflow visualization in the TUI | 🚧 in progress (1/9) |
 
 ## How to add and update a task document
 

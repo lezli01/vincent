@@ -94,26 +94,39 @@ func agentOf(wf *workflow.Workflow, st workflow.Step) string {
 	return wf.Defaults.Agent
 }
 
+// projectIDParam reads the optional project_id scoping a registry request,
+// writing the §13.1 error envelope and reporting false when it cannot. A
+// missing parameter is 0, which both registry calls read as "global scope
+// only" — the project must exist to scope by, so an unknown id is a 404
+// rather than a silently global answer.
+func projectIDParam(s *Server, w http.ResponseWriter, r *http.Request) (int64, bool) {
+	raw := r.URL.Query().Get("project_id")
+	if raw == "" {
+		return 0, true
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"project_id must be a positive integer")
+		return 0, false
+	}
+	if _, err := s.deps.Store.GetProject(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, CodeNotFound, fmt.Sprintf("project %d not found", id))
+			return 0, false
+		}
+		s.internalError(w, "workflows: get project", err)
+		return 0, false
+	}
+	return id, true
+}
+
 // handleWorkflowList serves GET /v1/workflows?project_id= — the merged
 // registry view with §5.2 shadowing applied.
 func (s *Server) handleWorkflowList(w http.ResponseWriter, r *http.Request) {
-	var projectID int64
-	if raw := r.URL.Query().Get("project_id"); raw != "" {
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || id < 1 {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed,
-				"project_id must be a positive integer")
-			return
-		}
-		if _, err := s.deps.Store.GetProject(r.Context(), id); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				writeError(w, http.StatusNotFound, CodeNotFound, fmt.Sprintf("project %d not found", id))
-				return
-			}
-			s.internalError(w, "list workflows: get project", err)
-			return
-		}
-		projectID = id
+	projectID, ok := projectIDParam(s, w, r)
+	if !ok {
+		return
 	}
 	entries := s.deps.Workflows.List(projectID)
 	out := make([]workflowResponse, 0, len(entries))
