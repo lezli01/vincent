@@ -201,7 +201,13 @@ YAML
   [[ "$(rows_for "$TID" spin)" == "" ]] \
     || fail "the loop wrote a step_runs row of its own; its outcome is derived"
   [[ "$(rows_for "$TID" tick)" == $'1 succeeded\n2 succeeded\n3 succeeded' ]] \
-    || fail "body rows are not one per iteration, 1-based: $(rows_for "$TID" tick)"
+    || fail "body rows are not one per iteration, 1-based:
+--- actual bytes ---
+$(rows_for "$TID" tick | od -c)
+--- expected bytes ---
+$(printf '%s\n' $'1 succeeded\n2 succeeded\n3 succeeded' | od -c)
+--- raw steps ---
+$(steps_json "$TID")"
   daemon_down
 fi
 
