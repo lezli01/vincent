@@ -1,0 +1,32 @@
+-- 0008_conditions: why a step run was skipped (task 015, spec §7.7/§14).
+--
+-- `skipped` has meant one thing since 0001 — a human pressed skip (§6) — and
+-- now means two, because a false `if:` guard skips a step and carries on.
+-- The two are recorded in the same state and told apart by this column:
+-- 'condition' for the guard, NULL for the human action, which keeps every
+-- existing row correct without a backfill.
+--
+-- It is a column of its own rather than a value written into failure_reason.
+-- A row in state 'skipped' did not fail, and this schema has been careful that
+-- one column means one thing: `usage_limit` is a queued_reason and never a
+-- block_reason on exactly that principle (task 003). A reader filtering
+-- failure_reason IS NOT NULL to count failures would otherwise have counted
+-- skips.
+--
+-- No CHECK constraint, matching every other reason column in this schema
+-- (failure_reason, block_reason, queued_reason): the vocabulary lives in Go
+-- constants, where adding one is an append rather than a migration.
+ALTER TABLE step_runs ADD COLUMN skip_reason TEXT;
+
+-- The 'stopped' state joins the step_runs.state vocabulary in the same change
+-- (task 015 decision 9): it is what a `condition` step records when its guard
+-- is false, ending the sequence with the task `done`. It needs no DDL — state
+-- is TEXT with no CHECK — but it is written here because 0001's column comment
+-- is where a reader looks for the list, and that comment is now incomplete:
+--
+--   state: running | succeeded | failed | interrupted
+--        | approved | rejected | skipped | stopped
+--
+-- No existing value fitted. 'failed' contradicts a task that is `done`,
+-- 'skipped' is untrue because the step did evaluate, and 'succeeded' hides the
+-- single most important fact about the run — where it ended, and why.

@@ -22,6 +22,17 @@ type RenderContext struct {
 	Steps       map[string]StepResult
 	Worktree    WorktreeContext
 	LastFailure Failure
+	// Host is the daemon's own platform (§8.4, task 015 decision 12). The
+	// daemon is what runs the steps, so it is the daemon's GOOS a guard must
+	// judge — the same reasoning §8.1.1 gives for `platforms:`.
+	//
+	// It is what closes §8.1.1's deferred per-step `platforms:` with no new
+	// schema: `if: '{{ ne .Host.OS "windows" }}'` says the same thing using
+	// a guard whose skip semantics §7.7 defines. `.Now` was deliberately not
+	// added beside it — a guard reading wall-clock makes a run
+	// non-reproducible, which is the property §7.6 chose declared lane order
+	// to preserve.
+	Host HostContext
 	// Conflicts are the files a fan_out join is asking an `on_conflict:
 	// agent` resolver to fix (§7.6, task 014 decision 24). Empty for every
 	// other step, so a prompt that reads it defensively works anywhere.
@@ -68,6 +79,12 @@ type StepResult struct {
 	Status   string
 	Result   string
 	ExitCode int
+}
+
+// HostContext is `.Host` — the daemon's GOOS and GOARCH.
+type HostContext struct {
+	OS   string
+	Arch string
 }
 
 // WorktreeContext is `.Worktree`.

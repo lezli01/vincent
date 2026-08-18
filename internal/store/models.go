@@ -43,7 +43,17 @@ const (
 	StepApproved    StepRunState = "approved"
 	StepRejected    StepRunState = "rejected"
 	StepSkipped     StepRunState = "skipped"
+	// StepStopped is a `condition` step whose guard was false (§7.7, task
+	// 015): the sequence ends here and the task is `done`. It is the one
+	// state that is neither a success nor a failure of the step — the step
+	// evaluated perfectly, and its answer was "stop".
+	StepStopped StepRunState = "stopped"
 )
+
+// SkipReasonCondition is written to StepRun.SkipReason when a false `if:`
+// guard skipped the step (§7.7, task 015). A human `skip` (§6) leaves it
+// empty, which is what tells the two apart.
+const SkipReasonCondition = "condition"
 
 // Project is a registered local git repository (spec §5.1).
 type Project struct {
@@ -147,6 +157,9 @@ type StepRun struct {
 	ExitCode      *int
 	CheckExitCode *int
 	FailureReason string
+	// SkipReason says why a `skipped` row is skipped: SkipReasonCondition
+	// for a false guard, empty for the human `skip` action (§6, §7.7).
+	SkipReason    string
 	ResultSummary string
 	// PromptOverride and RunOverride record the text a human supplied for
 	// this attempt via edit+retry (spec §6). Empty on every other attempt,
