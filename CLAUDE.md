@@ -99,8 +99,12 @@ POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be
 spelled in the intersection of the two: `exit N`, `sleep N` and `git ...`.
 That excludes `touch`, `seq`, `[ -f ]` and `for`/`if`, and it is why a lane
 that needs a file on disk writes it with `git config -f x k v` and one that
-only needs a commit uses `git commit --allow-empty`. Assert concurrency and
-timing from the API instead of from inside a step body.
+only needs a commit uses `git commit --allow-empty`. `exit N` has to be the
+*whole* body: pwsh's `&&`/`||` take pipelines, so `... && exit 0` is parsed
+as a command named `exit` and fails. A body that must pass or fail on a
+condition is one command whose own exit code says so — `git config --get`
+exits 1 on a missing key. Assert concurrency and timing from the API instead
+of from inside a step body.
 
 Requires bash, go, git, curl, jq.
 
