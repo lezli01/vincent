@@ -176,10 +176,11 @@ func (r *Runner) applySubStepGuards(
 }
 
 // subStepIDOf names the transcript of an attempt: empty for an ordinary step,
-// whose index already identifies it, and the step id for a member of a group,
-// whose siblings share that index (decision 16).
+// whose index already identifies it, and the step id for a member of a group
+// or a loop body, whose siblings share that index (task 014 decision 16,
+// task 016 decision 13).
 func subStepIDOf(env *stepEnv) string {
-	if env.inGroup {
+	if env.inGroup || env.loop != nil {
 		return env.step.ID
 	}
 	return ""

@@ -205,6 +205,9 @@ func (d *detail) headerLine() string {
 	if k, n, ok := t.StepDisplay(); ok {
 		parts = append(parts, fmt.Sprintf("%d/%d", k, n))
 	}
+	if loop := t.Loop.Display(); loop != "" {
+		parts = append(parts, loop)
+	}
 	if t.ProjectName != "" {
 		parts = append(parts, styleDim.Render(t.ProjectName))
 	}
@@ -241,34 +244,63 @@ func (d *detail) renderTimeline(height int) string {
 	}
 
 	// A `parallel` group's sub-steps all carry the group's step index (task
-	// 014), so the header for that index names the group and each sub-step
-	// gets a tier of its own beneath it. Outside a group the shape is
+	// 014), and so do a `loop` body's steps across every iteration (task
+	// 016), so the header for such an index names the structure step and its
+	// members get a tier of their own beneath it. Outside both the shape is
 	// unchanged: one header, then its attempts.
+	//
+	// A loop's iterations are folded shut with the latest open. Ten passes of
+	// a four-step body is forty rows, and a reader arriving at a blocked task
+	// wants the pass it stopped on, not the nine that worked — the same
+	// judgement task 012 made about a twenty-file diff.
 	groups := groupedIndexes(runs)
+	loops := loopIndexes(runs)
+	openIteration := latestIterations(runs)
 	lines := make([]string, 0, len(runs)*2)
 	ids := make([]int64, 0, len(runs)*2)
 	cursorLine := 0
 	lastStep := -1
+	lastIteration := 0
 	lastSub := ""
 	for _, r := range runs {
-		grouped := groups[r.StepIndex]
+		looped := loops[r.StepIndex]
+		grouped := groups[r.StepIndex] && !looped
 		if r.StepIndex != lastStep {
 			lastStep = r.StepIndex
-			lastSub = ""
+			lastSub, lastIteration = "", 0
 			label := stepLabel(r)
-			if grouped {
-				label = d.groupLabel(r.StepIndex)
+			switch {
+			case looped:
+				label = d.structureLabel(r.StepIndex, "loop")
+			case grouped:
+				label = d.structureLabel(r.StepIndex, "parallel")
 			}
 			lines = append(lines, styleStepHeader.Render(
 				fmt.Sprintf("  %d %s", r.StepIndex+1, label)))
 			ids = append(ids, 0)
 		}
-		if grouped && r.StepID != lastSub {
-			lastSub = r.StepID
-			lines = append(lines, styleDim.Render("    · "+stepLabel(r)))
+		if looped && r.Iteration != lastIteration {
+			lastIteration = r.Iteration
+			lastSub = ""
+			lines = append(lines, styleDim.Render("    "+iterationHeader(r, openIteration[r.StepIndex])))
 			ids = append(ids, 0)
 		}
-		line := d.attemptLine(r, grouped)
+		if looped && r.Iteration != openIteration[r.StepIndex] {
+			// Folded: the header above stands for the whole iteration, and
+			// its attempts are not rendered. Selecting a run inside a folded
+			// iteration cannot happen, because it never entered ids.
+			continue
+		}
+		if (grouped || looped) && r.StepID != lastSub {
+			lastSub = r.StepID
+			indent := "    · "
+			if looped {
+				indent = "      · "
+			}
+			lines = append(lines, styleDim.Render(indent+stepLabel(r)))
+			ids = append(ids, 0)
+		}
+		line := d.attemptLine(r, grouped || looped)
 		if r.ID == d.selectedRun {
 			cursorLine = len(lines)
 			line = styleSelected.Render(line)
@@ -308,16 +340,61 @@ func groupedIndexes(runs []apiclient.StepRun) map[int]bool {
 	return out
 }
 
-// groupLabel names a group from the task's snapshot, since the group writes
-// no step_runs row to take a name from (task 014 decision 17). A snapshot
-// that has not loaded yet falls back to the type name, which is still true.
-func (d *detail) groupLabel(index int) string {
-	for _, s := range d.task.WorkflowSteps {
-		if s.Index == index {
-			return fmt.Sprintf("%s (parallel)", s.ID)
+// loopIndexes reports which step indexes hold rows from more than one
+// iteration, or any row carrying an iteration at all — which is exactly the
+// `loop` steps, since every other step type writes iteration 0.
+//
+// Derived from the rows rather than the snapshot for the reason groupedIndexes
+// is: the timeline has to render before workflow_steps arrives, and for a task
+// whose snapshot no longer parses.
+func loopIndexes(runs []apiclient.StepRun) map[int]bool {
+	out := map[int]bool{}
+	for _, r := range runs {
+		if r.Iteration > 0 {
+			out[r.StepIndex] = true
 		}
 	}
-	return "(parallel)"
+	return out
+}
+
+// latestIterations is the highest iteration each loop index has a row for —
+// the one iteration that renders open.
+func latestIterations(runs []apiclient.StepRun) map[int]int {
+	out := map[int]int{}
+	for _, r := range runs {
+		if r.Iteration > out[r.StepIndex] {
+			out[r.StepIndex] = r.Iteration
+		}
+	}
+	return out
+}
+
+// iterationHeader is one iteration's tier line, carrying the fold glyph and —
+// for a `for_each` loop — the item that pass ran on, which is the whole reason
+// a reader wants iteration headers rather than a flat list.
+func iterationHeader(r apiclient.StepRun, open int) string {
+	glyph := diffFoldClosed
+	if r.Iteration == open {
+		glyph = diffFoldOpen
+	}
+	out := fmt.Sprintf("%s iteration %d", glyph, r.Iteration)
+	if r.LoopItem != nil && *r.LoopItem != "" {
+		out += " · " + *r.LoopItem
+	}
+	return out
+}
+
+// structureLabel names a `parallel` group or a `loop` from the task's
+// snapshot, since neither writes a step_runs row to take a name from (task
+// 014 decision 17, task 016 decision 7). A snapshot that has not loaded yet
+// falls back to the type name, which is still true.
+func (d *detail) structureLabel(index int, kind string) string {
+	for _, s := range d.task.WorkflowSteps {
+		if s.Index == index {
+			return fmt.Sprintf("%s (%s)", s.ID, kind)
+		}
+	}
+	return "(" + kind + ")"
 }
 
 // stepStateStopped is the §7.7 state a `condition` step records when its

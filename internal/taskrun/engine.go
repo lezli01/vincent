@@ -89,7 +89,19 @@ const (
 	// the second try here is the human's, after they fix the workflow
 	// (task 015 decision 14).
 	ReasonConditionError = "condition_error"
-	ReasonInternalError  = "internal_error"
+	// ReasonLoopLimit is a `loop` step that cannot run within its
+	// `max_iterations` (§7.8, task 016 decision 5): a `for_each` list longer
+	// than the ceiling, or a `count:` the ceiling moved under.
+	//
+	// It blocks rather than truncating, and rather than advancing. A loop
+	// that ran out of iterations did not achieve what it was looping for, and
+	// advancing would hand every downstream guard a `.Steps` that says the
+	// work is finished. `condition` (§7.7) is how a workflow stops and
+	// succeeds when it genuinely has nothing more to do — that is a decision
+	// the workflow made. Running out of tries is not a decision, it is a
+	// wall.
+	ReasonLoopLimit     = "loop_limit"
+	ReasonInternalError = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit
@@ -135,7 +147,58 @@ type stepEnv struct {
 	// evidence is the previous attempt's outcome and creating this attempt's
 	// row hides it.
 	resumedFromConflict bool
-	log                 *slog.Logger
+	// loop is where this step sits inside an enclosing `loop` body (§7.8,
+	// task 016). Nil for every step outside one, which is where both
+	// `iteration = 0` on the row and `.Loop.Index: 0` in the context come
+	// from — a shared template can therefore tell whether it is in a loop
+	// without the engine keeping a second flag (decision 9).
+	loop *loopEnv
+	log  *slog.Logger
+}
+
+// iteration is the 1-based pass of the enclosing loop, 0 outside one.
+func (e *stepEnv) iteration() int {
+	if e.loop == nil {
+		return 0
+	}
+	return e.loop.iteration
+}
+
+// ref is the position this step's rows belong to: index, id and iteration
+// (§7.8, decision 7). Every attempt count, failure lookup and transcript name
+// is scoped by it, which is what keeps a loop body step's retry budget its
+// own in each iteration (decision 6).
+func (e *stepEnv) ref() store.StepRef {
+	return store.StepRef{
+		TaskID: e.task.ID, StepIndex: e.index, StepID: e.step.ID, Iteration: e.iteration(),
+	}
+}
+
+// precedes reports whether run sits before this step in the run order —
+// (step_index, iteration, body position) — which is the §8.4 visibility rule
+// for a *failed* row (decision 9).
+//
+// Before task 016 this was `run.StepIndex < env.index`, and that is still
+// what it says outside a loop. Inside one it cannot be: a loop's body steps
+// share the loop's index, so under the old rule a `break` guard could not
+// read the `allow_failure` probe two lines above it in its own body, and the
+// converge loop would never break.
+//
+// A `parallel` sub-step has no body position — a group is a set — so no
+// sibling ever precedes another, and §7.5's sibling-blindness is preserved
+// by the nil check rather than by the index comparison.
+func (e *stepEnv) precedes(run *store.StepRun) bool {
+	if run.StepIndex != e.index {
+		return run.StepIndex < e.index
+	}
+	if e.loop == nil {
+		return false // a group sibling, or this step's own earlier attempt
+	}
+	if run.Iteration != e.loop.iteration {
+		return run.Iteration < e.loop.iteration
+	}
+	pos, ok := e.loop.order[run.StepID]
+	return ok && pos < e.loop.pos
 }
 
 // stepOutcome is the result of one attempt.
@@ -251,6 +314,11 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		switch env.step.Type {
 		case workflow.StepParallel:
 			outcome = r.runGroup(ctx, env)
+		case workflow.StepLoop:
+			// Like a group: no attempt of its own, so no retry budget of its
+			// own either. The outcome is collected from the body's rows
+			// (§7.8, decision 7).
+			outcome = r.runLoop(ctx, env)
 		case workflow.StepFanOut:
 			// Spawning parks the task and ends this goroutine; joining
 			// returns an ordinary outcome the switch below acts on
@@ -350,7 +418,7 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 	if env.task.RetryCursorAt != nil {
 		since = *env.task.RetryCursorAt
 	}
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, env.step.ID, since)
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.ref(), since)
 	if err != nil {
 		env.log.Error("count step attempts", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -391,7 +459,7 @@ func (r *Runner) previousFailure(ctx context.Context, env *stepEnv, lastAttempt 
 	if lastAttempt == 0 {
 		return stepOutcome{}
 	}
-	prev, err := r.deps.Store.LastFailedStepRun(ctx, env.task.ID, env.index, env.step.ID)
+	prev, err := r.deps.Store.LastFailedStepRun(ctx, env.ref())
 	if err != nil {
 		env.log.Warn("previous failure unavailable for retry context", "error", err)
 		return stepOutcome{}
@@ -418,6 +486,8 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		StepID:    env.step.ID,
 		StepType:  env.step.Type,
 		Attempt:   attempt,
+		Iteration: env.iteration(),
+		LoopItem:  env.loopItem(),
 		State:     store.StepRunning,
 	}
 	var sel agent.Selection
@@ -426,7 +496,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		run.Agent, run.Model, run.Effort = sel.Agent, sel.Model, sel.Effort
 	}
 
-	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, attempt, subStepIDOf(env))
+	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, env.iteration(), attempt, subStepIDOf(env))
 	if err != nil {
 		env.log.Error("open transcript", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
@@ -531,8 +601,10 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 			// mid-retry, because `.LastFailure` is already that channel and
 			// two spellings of one fact is how a context rots. Sub-steps of a
 			// group share the group's index, so this also keeps concurrent
-			// siblings invisible to each other, which §7.5 requires.
-			if run.StepIndex >= env.index {
+			// siblings invisible to each other, which §7.5 requires — and a
+			// loop body's earlier steps become visible to its later ones,
+			// which §7.8 requires (task 016 decision 9).
+			if !env.precedes(&run) {
 				continue
 			}
 		default:
@@ -557,6 +629,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 			ID: env.step.ID, Name: env.step.DisplayName(), Index: env.index, Attempt: attempt,
 		},
 		Steps:       steps,
+		Loop:        env.loopContext(),
 		Host:        workflow.HostContext{OS: runtime.GOOS, Arch: runtime.GOARCH},
 		Worktree:    workflow.WorktreeContext{Path: env.task.WorktreePath},
 		LastFailure: workflow.Failure{Reason: previous.reason, Output: previous.output},
@@ -568,7 +641,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 // entry so the gate's wait is visible in the timeline, and the task gives up
 // its concurrency slot until a human approves or rejects (§6, §11).
 func (r *Runner) enterGate(ctx context.Context, env *stepEnv) {
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, env.step.ID, time.Time{})
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.ref(), time.Time{})
 	if err != nil {
 		env.log.Error("count gate attempts", "error", err)
 		r.fail(env.task, ReasonInternalError, env.log, "count gate attempts", err)

@@ -267,6 +267,11 @@ func formatCost(c *float64) string {
 // formatStep renders k/n plus the step name when there is room. A snapshot
 // that would not parse has no step count, so it renders a dash rather than
 // a confident "1/0".
+//
+// A task inside a `loop` gets its iteration appended — `3/7 green · loop 4/10`
+// — because k/n alone says nothing about the one number that is moving
+// (§7.8, task 016 decision 14). Every other task carries no rollup and reads
+// exactly as it did.
 func formatStep(t apiclient.Task, withName bool) string {
 	k, n, ok := t.StepDisplay()
 	if !ok {
@@ -275,6 +280,9 @@ func formatStep(t apiclient.Task, withName bool) string {
 	s := fmt.Sprintf("%d/%d", k, n)
 	if withName && t.StepName != "" {
 		s += " " + t.StepName
+	}
+	if loop := t.Loop.Display(); withName && loop != "" {
+		s += " · " + loop
 	}
 	return s
 }

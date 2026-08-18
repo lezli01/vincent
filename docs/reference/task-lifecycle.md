@@ -161,6 +161,7 @@ same thing wherever it originated.
 | `input_protocol_error` | A control message the adapter could not parse — it fails, it never hangs |
 | `template_error` | A template failed to render, before any process started |
 | `condition_error` | A step's `if:` guard failed to render, or rendered something that is neither `true` nor `false`. The one reason that is **not** retried — a guard is evaluated before the step becomes an attempt, and re-rendering it cannot answer differently. Fix the workflow and retry |
+| `loop_limit` | A `loop` step cannot run within `max_iterations`: a `for_each` list longer than the ceiling, or a `count:` the ceiling moved under. It blocks rather than truncating or advancing — running out of tries is not a decision the workflow made, and advancing would tell every later guard the work is finished. Raise `max_iterations:` on the step or `loop.max_iterations` in config, or narrow the list at its source |
 | `restricted_unsupported` | The adapter cannot restrict on this platform (cursor on Windows) |
 | `transcript_limit` | The attempt hit `transcript_max_bytes` |
 | `shell_unavailable` | The requested shell is not installed |

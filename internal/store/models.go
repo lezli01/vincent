@@ -142,12 +142,23 @@ type Task struct {
 // StepRun is one attempt at executing one step of one task; history is
 // append-only (spec §5.4).
 type StepRun struct {
-	ID            int64
-	TaskID        int64
-	StepIndex     int
-	StepID        string
-	StepType      string // agent | command | manual
-	Attempt       int    // 1-based
+	ID        int64
+	TaskID    int64
+	StepIndex int
+	StepID    string
+	StepType  string // agent | command | manual | condition | break | fan_out
+	Attempt   int    // 1-based
+	// Iteration is which pass of an enclosing `loop` produced this row —
+	// 1-based, and 0 for every row outside a loop (§7.8, task 016
+	// decision 7). Body steps share the loop's StepIndex, so this and StepID
+	// together are what tell two of them apart.
+	Iteration int
+	// LoopItem is the `for_each` item this iteration ran on, empty for a
+	// `count:` loop and outside a loop. It is recorded rather than
+	// re-derived: it is the loop's extent, not a question, and re-asking it
+	// mid-loop would re-index a resumed iteration onto different work
+	// (decision 8).
+	LoopItem      string
 	State         StepRunState
 	Agent         string // adapter name; agent steps only
 	Model         string // resolved model as passed to the adapter (spec §8.6); "" = CLI default
@@ -176,6 +187,23 @@ type StepRun struct {
 	InputWaitMS int64
 	StartedAt   time.Time
 	FinishedAt  *time.Time
+}
+
+// StepRef names one step's run history — the position a `step_runs` row
+// belongs to.
+//
+// It is four values because an index alone stopped identifying a step twice.
+// A `parallel` group's sub-steps share the group's StepIndex and are told
+// apart by StepID (task 014 decision 16); a `loop` body's steps share the
+// loop's StepIndex *and* repeat, and are told apart by Iteration as well
+// (§7.8, task 016 decision 7). Outside both, StepID is the step's own id and
+// Iteration is 0, so the extra fields cost an ordinary step nothing.
+type StepRef struct {
+	TaskID    int64
+	StepIndex int
+	StepID    string
+	// Iteration is the 1-based pass of an enclosing loop; 0 outside one.
+	Iteration int
 }
 
 // Override is the prompt or command a human supplied with `edit + retry`

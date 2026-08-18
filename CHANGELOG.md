@@ -26,6 +26,35 @@ Please pull request.
 
 ### Added
 
+- **Loops in workflows — `type: loop` and `type: break`.** A workflow can now
+  repeat a body of steps: `count:` a fixed number of times, or `for_each:` once
+  per item in a list, including a list a step discovered at run time. That
+  makes three shapes writable that were not: **converge** ("run the tests, fix
+  what broke, run them again" — a probe under `allow_failure:`, a `break`
+  reading it, a repair), **repeat** (ten passes of the race detector without
+  ten copy-pasted steps), and **iterate a set** (once per changed file). A loop
+  is one step, one index, one concurrency slot and the task's one worktree — no
+  branch and nothing to merge, which is what separates it from `fan_out`.
+
+  `type: break` ends the loop successfully when its `if:` is true. There is no
+  `continue` type: a `condition` inside a loop body ends *that iteration*,
+  which is what continue means, using the meaning that word already had. There
+  is no `while:` either — a guard can only read what a run has produced, so a
+  `while:` about its own body is either loud on iteration 1 or silently false,
+  and `count:` plus `break` is the same loop written correctly.
+
+  `.Loop` (`Index`, `Item`, `IsFirst`, `IsLast`) joins the template context,
+  with `Index: 0` outside any loop. `loop.max_iterations` (default **10**) is
+  the ceiling: `count:` is checked against it when the file loads, and a
+  `for_each` list longer than it blocks with `loop_limit` before the first
+  iteration rather than quietly doing the first ten — ten iterations of a
+  three-step body is already thirty agent runs. A loop's position is derived
+  from its step rows on every admission and never persisted, so `retry` and a
+  daemon restart both resume **mid-iteration**; `skip` skips the whole loop,
+  and `edit + retry` on a body step applies to every remaining iteration. The
+  board shows `loop 4/10` and the detail view groups rows by iteration, folded
+  with the latest open. See
+  [`type: loop`](docs/reference/workflow-schema.md#type-loop).
 - **Conditions between steps.** A workflow can decide at run time what to do
   next. `if:` on any step is a guard: false skips that step and the workflow
   carries on, recording a `skipped` row whose reason says a condition did it

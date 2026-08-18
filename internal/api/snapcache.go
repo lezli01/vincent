@@ -23,6 +23,19 @@ type stepDefinition struct {
 	prompt       string
 	run          string
 	instructions string
+	// loop is the §7.8 shape of a `loop` step, nil for every other type. It
+	// is what lets the task endpoints report a loop rollup without re-parsing
+	// the snapshot per request.
+	loop *loopDefinition
+}
+
+// loopDefinition is what a `loop` step's rollup needs from the snapshot: its
+// driver, and the largest iteration it could reach. For `count:` that is the
+// count itself; for `for_each:` the list length is only known at run time, so
+// the ceiling is the honest n in a k/n.
+type loopDefinition struct {
+	driver string
+	total  int
 }
 
 // stepName returns the display name of step index i, or "" when the index is
@@ -33,6 +46,16 @@ func (s snapshotSummary) stepName(i int) string {
 		return ""
 	}
 	return s.stepNames[i]
+}
+
+// loopAt is the loop shape of step index i, or nil when that step is not a
+// loop — which includes the out-of-range index a finished task's cursor sits
+// at.
+func (s snapshotSummary) loopAt(i int) *loopDefinition {
+	if i < 0 || i >= len(s.steps) {
+		return nil
+	}
+	return s.steps[i].loop
 }
 
 // snapshotCache memoizes parsed workflow snapshots by task id.
@@ -46,10 +69,18 @@ func (s snapshotSummary) stepName(i int) string {
 type snapshotCache struct {
 	mu sync.Mutex
 	m  map[int64]snapshotSummary
+	// ceiling supplies `loop.max_iterations` for a loop step that declares no
+	// bound of its own. It is a func for the reason the registry's is: config
+	// hot-reloads (§12.3), and an entry parsed at startup must not pin the
+	// number a rollup reports for the rest of the daemon's life.
+	ceiling func() int
 }
 
-func newSnapshotCache() *snapshotCache {
-	return &snapshotCache{m: make(map[int64]snapshotSummary)}
+func newSnapshotCache(ceiling func() int) *snapshotCache {
+	if ceiling == nil {
+		ceiling = func() int { return 0 }
+	}
+	return &snapshotCache{m: make(map[int64]snapshotSummary), ceiling: ceiling}
 }
 
 // get returns the summary for taskID, parsing snapshot on first use. A
@@ -62,7 +93,7 @@ func (c *snapshotCache) get(taskID int64, snapshot string) snapshotSummary {
 	if s, ok := c.m[taskID]; ok {
 		return s
 	}
-	s := parseSnapshot(snapshot)
+	s := parseSnapshot(snapshot, c.ceiling())
 	c.m[taskID] = s
 	return s
 }
@@ -75,7 +106,26 @@ func (c *snapshotCache) forget(taskID int64) {
 	delete(c.m, taskID)
 }
 
-func parseSnapshot(snapshot string) snapshotSummary {
+// loopDefinitionOf extracts the §7.8 rollup shape of a `loop` step. ceiling
+// is `loop.max_iterations`, used when the step declares no `max_iterations:`
+// of its own.
+func loopDefinitionOf(step workflow.Step, ceiling int) *loopDefinition {
+	if step.Type != workflow.StepLoop {
+		return nil
+	}
+	def := &loopDefinition{driver: step.Driver()}
+	switch {
+	case step.Count != nil:
+		def.total = *step.Count
+	case step.MaxIterations != nil:
+		def.total = *step.MaxIterations
+	default:
+		def.total = ceiling
+	}
+	return def
+}
+
+func parseSnapshot(snapshot string, ceiling int) snapshotSummary {
 	if snapshot == "" {
 		return snapshotSummary{}
 	}
@@ -103,6 +153,7 @@ func parseSnapshot(snapshot string) snapshotSummary {
 			prompt:       wf.Steps[i].Prompt,
 			run:          wf.Steps[i].Run,
 			instructions: wf.Steps[i].Instructions,
+			loop:         loopDefinitionOf(wf.Steps[i], ceiling),
 		})
 	}
 	return s

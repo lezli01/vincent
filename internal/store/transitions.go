@@ -297,15 +297,19 @@ type StepAttempts struct {
 // CountStepAttempts summarizes attempts for one step. `since` bounds Failed
 // to attempts started after a point in time — the hook a human retry uses to
 // reset the retry budget (§6); the zero time counts all failures. Last is
-// never bounded: attempt numbers must stay monotonic over the step's whole
-// history, or `{step_index}-{attempt}.jsonl` transcript names would collide
-// and truncate earlier attempts (phase 2 decision).
+// never bounded within the position ref names: attempt numbers must stay
+// monotonic over that position's whole history, or transcript names would
+// collide and truncate earlier attempts (phase 2 decision).
 //
-// stepID narrows the count to one member of a `parallel` group, whose
-// sub-steps all share the group's stepIndex and are told apart by id alone
-// (task 014 decision 16). For an ordinary step it is that step's own id and
-// the filter changes nothing — one step owns the index.
-func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex int, stepID string, since time.Time) (StepAttempts, error) {
+// The position is the whole of ref — index, id and iteration. The id narrows
+// the count to one member of a `parallel` group, whose sub-steps share the
+// group's index (task 014 decision 16); the iteration narrows it further to
+// one pass of a `loop` body, which is what makes retries and iterations
+// orthogonal: a body step spends a fresh budget in each iteration, because
+// each iteration is a different piece of work (§7.8, task 016 decision 6).
+// For an ordinary step both filters change nothing — one step owns the index
+// and its rows carry iteration 0.
+func (s *Store) CountStepAttempts(ctx context.Context, ref StepRef, since time.Time) (StepAttempts, error) {
 	var (
 		out    StepAttempts
 		last   sql.NullInt64
@@ -319,8 +323,8 @@ func (s *Store) CountStepAttempts(ctx context.Context, taskID int64, stepIndex i
 	}
 	q := `SELECT MAX(attempt),
 			SUM(CASE WHEN state = ? AND started_at > ? THEN 1 ELSE 0 END)
-		FROM step_runs WHERE task_id = ? AND step_index = ? AND step_id = ?`
-	args := []any{string(StepFailed), sinceArg, taskID, stepIndex, stepID}
+		FROM step_runs WHERE task_id = ? AND step_index = ? AND step_id = ? AND iteration = ?`
+	args := []any{string(StepFailed), sinceArg, ref.TaskID, ref.StepIndex, ref.StepID, ref.Iteration}
 	if err := s.db.QueryRowContext(ctx, q, args...).Scan(&last, &failed); err != nil {
 		return out, fmt.Errorf("count step attempts: %w", err)
 	}
