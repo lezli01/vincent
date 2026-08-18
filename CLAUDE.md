@@ -73,15 +73,17 @@ against the fake agent; CI runs all three on Linux, macOS, and Windows:
 ./scripts/m5-gate.sh                            # cursor adapter (§9.7)
 ./scripts/m6-gate.sh                            # parallel steps and fan-out (§7.5, §7.6)
 ./scripts/m7-gate.sh                            # conditions between steps (§7.7)
+./scripts/m8-gate.sh                            # loops (§7.8)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-CI runs `m1`, `m2` and `m5` on all three platforms. `m6` and `m7` are not
+CI runs `m1`, `m2` and `m5` on all three platforms. `m6`, `m7` and `m8` are not
 wired in: the push token used for this work has no `workflow` scope, so a
 branch touching `.github/workflows` is rejected outright. Adding them is two
-lines in `ci.yml`'s `gates` job, and both scripts run identically by hand.
+lines each in `ci.yml`'s `gates` job, and all three scripts run identically by
+hand.
 
 `scripts/m3-gate.sh` seeds a human walkthrough instead of asserting — M3's
 acceptance is a judgement about a TUI. The manual legs of M5 are walked
@@ -137,7 +139,7 @@ is a correctness bug, not a style issue:
 | `internal/api` | Localhost REST + SSE, bearer auth, snake_case error envelope |
 | `internal/apiclient` | Typed HTTP+SSE client — the one client for TUI and CLI; owns its wire types (server DTOs stay unexported) |
 | `internal/workflow` | YAML registry (builtin < global < project shadowing), live reload, `text/template` step engine |
-| `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out` and `condition` are structure, and `check` is a *field* agent and command steps may carry, never a type — plus guards (`if:`, §7.7), retries, timeouts, human actions, recovery, transcripts |
+| `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out`, `condition`, `loop` and `break` are structure, and `check` is a *field* agent and command steps may carry, never a type — plus guards (`if:`, §7.7), loop iteration (§7.8), retries, timeouts, human actions, recovery, transcripts |
 | `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |

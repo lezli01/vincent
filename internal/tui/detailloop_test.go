@@ -7,9 +7,12 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// iteration is `attempt` with a loop position on it (§7.8).
-func iteration(id int64, stepIndex, iter int, name, state, item string) apiclient.StepRun {
-	r := attempt(id, stepIndex, 1, name, state, false)
+// iteration is `attempt` with a loop position on it (§7.8). The step index is
+// the loop's own — a body step shares it, which is the whole reason the
+// iteration column exists — so it is fixed at 1 here, matching the workflow
+// these tests describe.
+func iteration(id int64, iter int, name, state, item string) apiclient.StepRun {
+	r := attempt(id, 1, 1, name, state, false)
 	r.Iteration = iter
 	if item != "" {
 		r.LoopItem = &item
@@ -29,10 +32,10 @@ func TestDetailTimelineGroupsLoopIterations(t *testing.T) {
 	build := attempt(1, 0, 1, "build", "succeeded", false)
 	rows := []apiclient.StepRun{
 		build,
-		iteration(2, 1, 1, "suite", "failed", "alpha"),
-		iteration(3, 1, 1, "repair", "succeeded", "alpha"),
-		iteration(4, 1, 2, "suite", "succeeded", "beta"),
-		iteration(5, 1, 2, "repair", "succeeded", "beta"),
+		iteration(2, 1, "suite", "failed", "alpha"),
+		iteration(3, 1, "repair", "succeeded", "alpha"),
+		iteration(4, 2, "suite", "succeeded", "beta"),
+		iteration(5, 2, "repair", "succeeded", "beta"),
 	}
 	d.applyLoaded(detailLoadedMsg{
 		id: d.taskID,

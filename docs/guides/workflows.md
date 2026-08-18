@@ -75,7 +75,7 @@ steps:                           # required; runs in order, top to bottom
 Unknown keys are rejected rather than ignored, so a typo is an error at
 validation time instead of a setting that silently never applied.
 
-## Six step types
+## Eight step types
 
 **`agent`** runs an agent CLI headlessly in the worktree. Needs `prompt`.
 
@@ -143,6 +143,23 @@ takes nothing else.
     if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
 ```
 
+**`loop`** runs its body over and over in the same worktree, a fixed number of
+times or once per item in a list. Needs `steps` and exactly one of `count:` /
+`for_each:`.
+
+```yaml
+  - id: green
+    type: loop
+    count: 5
+    steps:
+      - { id: suite, type: command, run: go test ./..., allow_failure: true, max_retries: 0 }
+      - { id: passed, type: break, if: '{{ eq (index .Steps "suite").ExitCode 0 }}' }
+      - { id: repair, type: agent, prompt: "The suite is red: {{ (index .Steps \"suite\").Result }}" }
+```
+
+**`break`** ends the enclosing loop, successfully. Needs `if:`, and takes
+nothing else — see the loop above.
+
 `check` is a **field** on agent and command steps, not a step of its own — see
 below.
 
@@ -193,6 +210,101 @@ It only ever swallows failures the step itself produced — a nonzero exit, a
 failed `check`, an agent error, a timeout. A missing CLI or an unrenderable
 template still blocks, because a workflow should not be able to branch on "the
 agent is not installed" as though that were a result.
+
+## Loops are for converging, repeating, and iterating a set
+
+Three shapes could not be written before, and all three are one step type.
+
+**Converge** — run the tests, fix what broke, run them again. This is the most
+common agent loop there is, and `max_retries` was never it: retries re-run
+*the same step* on *its own* failure, with no way to say "run the probe, and
+if it is red run a *different* step, then probe again."
+
+```yaml
+  - id: green
+    type: loop
+    count: 5
+    steps:
+      - { id: suite,  type: command, run: go test ./..., allow_failure: true, max_retries: 0 }
+      - { id: passed, type: break,   if: '{{ eq (index .Steps "suite").ExitCode 0 }}' }
+      - id: repair
+        type: agent
+        prompt: |
+          The suite is red:
+
+          {{ (index .Steps "suite").Result }}
+
+          Fix the underlying cause. Do not weaken, skip or delete a test.
+```
+
+Read it in three lines: the probe is `allow_failure`, so its red exit is
+*data* rather than a block; the `break` reads that data and ends the loop the
+first time it is green; the repair only runs when the break did not fire. The
+`count:` is the budget — five repairs and no more.
+
+**Repeat** — prove a flake is gone by running the race detector ten times,
+without ten copy-pasted steps and ten step ids.
+
+```yaml
+  - id: soak
+    type: loop
+    count: 10
+    steps:
+      - { id: race, type: command, run: go test -race ./internal/taskrun }
+```
+
+**Iterate a set** — do something once per item, over a list a step found at run
+time. `fan_out` looks like it should fit here and does not: its lane list has
+to be static in the snapshot, which is exactly what lets it check for cycles
+and cap the tree at creation.
+
+```yaml
+  - id: changed
+    type: command
+    run: git diff --name-only {{.Task.BaseBranch}}...HEAD -- '*.go' | grep -v _test.go
+    allow_failure: true
+
+  - id: review-each
+    type: loop
+    for_each: '{{ .Steps.changed.Result }}'
+    max_iterations: 25
+    steps:
+      - { id: read, type: agent, prompt: 'Review {{ .Loop.Item }} against CLAUDE.md.' }
+```
+
+`.Loop` carries `Index` (1-based, and `0` outside any loop), `Item`, `IsFirst`
+and `IsLast`.
+
+### Four things to know before you use one
+
+**There is no `while:`, and that is deliberate.** A guard can read only what a
+run has already produced, so on the first iteration a `while:` about the body
+has no row to read — it either errors out loudly or, worse, quietly renders
+false and the loop never runs. `count:` plus `break` is the same loop written
+correctly, and the ceiling it needs is a ceiling `while:` would have needed
+anyway.
+
+**`continue` is spelled `condition`.** A `condition` step inside a loop body
+ends *that iteration*, not the run — a loop body is a sequence, and "end the
+sequence" ends the pass. The same word means the same thing everywhere; what
+changes is what it is attached to.
+
+**Ten iterations of a three-step body is thirty agent runs.** That is why the
+default ceiling is 10, why `count:` is checked against it when the file loads,
+and why a `for_each` list longer than it **blocks** with `loop_limit` instead
+of quietly doing the first ten. Raise it per step with `max_iterations:`, or
+per machine with `loop.max_iterations`.
+
+**A loop resumes where it stopped.** Block it on iteration 4 and `retry` picks
+up at the body step that failed, in iteration 4 — including after a daemon
+restart. `skip` skips the whole loop, not one pass. And `E` (edit + retry)
+rewrites the body step in this task's snapshot, so your fix applies to every
+remaining iteration rather than to one.
+
+A loop body may hold `agent`, `command`, `condition` and `break` steps. It may
+not hold `manual`, `on_input: require`, `parallel`, `fan_out` or another loop:
+all of those park the task mid-body, and nothing in the schema can say
+"iteration 3 of this loop is waiting on a human".
 
 ## Verification is where parallel pays
 

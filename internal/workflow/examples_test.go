@@ -9,6 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
+	"github.com/lezli01/vincent/internal/config"
 )
 
 // TestShippedExamplesValidate parses every workflow in examples/ against the
@@ -37,9 +38,13 @@ func TestShippedExamplesValidate(t *testing.T) {
 	for _, a := range reg.All() {
 		catalogs[a.Name()] = a.Curated()
 	}
+	// The loop ceiling is the built-in default, matching what `vincent
+	// workflow validate` uses: an example must validate on a machine with no
+	// config file, so it cannot lean on a raised `loop.max_iterations`.
 	opts := Options{
-		KnownAgents: reg.Names(),
-		Catalogs:    func() agent.Catalogs { return catalogs },
+		KnownAgents:   reg.Names(),
+		Catalogs:      func() agent.Catalogs { return catalogs },
+		MaxIterations: func() int { return config.Default().Loop.MaxIterations },
 	}
 
 	found := 0

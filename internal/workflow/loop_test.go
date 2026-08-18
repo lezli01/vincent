@@ -7,12 +7,17 @@ import (
 	"time"
 )
 
+// testLoopCeiling is the `loop.max_iterations` these tests validate `count:`
+// against — the shipped default, so the messages they assert on are the ones a
+// user reads.
+const testLoopCeiling = 10
+
 // loopOpts is the validation surface a loop is judged against: a known agent
-// and the `loop.max_iterations` ceiling decision 5 validates `count:` on.
-func loopOpts(ceiling int) Options {
+// and the ceiling decision 5 validates `count:` on.
+func loopOpts() Options {
 	return Options{
 		KnownAgents:   []string{"claude"},
-		MaxIterations: func() int { return ceiling },
+		MaxIterations: func() int { return testLoopCeiling },
 	}
 }
 
@@ -34,7 +39,7 @@ steps:
       - {id: passed, type: break, if: '{{ eq (index .Steps "suite").ExitCode 0 }}'}
       - {id: repair, type: agent, prompt: "The suite is red: {{ (index .Steps \"suite\").Result }}"}
 `) + "\n"
-	wf, _, err := Parse([]byte(src), loopOpts(10))
+	wf, _, err := Parse([]byte(src), loopOpts())
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -63,7 +68,7 @@ steps:
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	back, _, err := Parse(out, loopOpts(10))
+	back, _, err := Parse(out, loopOpts())
 	if err != nil {
 		t.Fatalf("re-parse marshalled workflow: %v", err)
 	}
@@ -119,7 +124,7 @@ steps:
     steps:
       - {id: read, type: command, run: 'echo {{ .Loop.Item }}'}
 `) + "\n"
-			wf, _, err := Parse([]byte(src), loopOpts(10))
+			wf, _, err := Parse([]byte(src), loopOpts())
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -132,7 +137,7 @@ steps:
 			if err != nil {
 				t.Fatalf("Marshal: %v", err)
 			}
-			back, _, err := Parse(out, loopOpts(10))
+			back, _, err := Parse(out, loopOpts())
 			if err != nil {
 				t.Fatalf("re-parse: %v", err)
 			}
@@ -358,7 +363,7 @@ func TestValidateLoop(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			src := "name: t\nsteps:" + tt.src + "\n"
-			_, _, err := Parse([]byte(src), loopOpts(10))
+			_, _, err := Parse([]byte(src), loopOpts())
 			if tt.want == "" {
 				if err != nil {
 					t.Fatalf("Parse: %v", err)
@@ -422,7 +427,7 @@ func TestValidateBreak(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			src := "name: t\nsteps:" + tt.src + "\n"
-			_, _, err := Parse([]byte(src), loopOpts(10))
+			_, _, err := Parse([]byte(src), loopOpts())
 			if err == nil {
 				t.Fatalf("Parse accepted %s, want an error mentioning %q", tt.name, tt.want)
 			}
