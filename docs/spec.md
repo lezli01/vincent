@@ -76,7 +76,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 9 | Workflow storage | YAML files: global (config dir) + per-project (`.vincent/workflows/`); runs snapshot content |
 | 10 | Step context | Fresh agent session per step; Go `text/template` context; state persists via worktree |
 | 11 | Delivery | Owned entirely by workflow steps; no hardcoded push/PR/merge behavior |
-| 12 | Step types | `agent`, `command`, `manual` (gate) |
+| 12 | Step types | `agent`, `command`, `manual` (gate); `parallel` and `fan_out` added by row 23/24, `condition` by row 25 |
 | 13 | Permissions | Agents run full-auto by default; workflow/step can restrict |
 | 14 | Concurrency | Configurable global cap **and** per-project cap on parallel running tasks |
 | 15 | Task shape | Title, markdown description, project, workflow, base branch, free-form key/value fields |
@@ -90,6 +90,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 
 | 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
+| 25 | Conditions between steps | `if:` guards any step (skip and carry on) and any fan-out lane or group sub-step (subset the set); `type: condition` ends the sequence with the task `done`; `allow_failure:` turns the failures a step itself produced into an advance, so a guard has a run's own findings to read. Guards are §8.4 templates that must render exactly `true` or `false`, re-evaluated every time and never cached (§7.7, task 015) |
 
 ## 4. Architecture
 
@@ -205,10 +206,17 @@ One attempt at executing one step of one task. Every attempt (including retries 
 re-runs after interruption) is a distinct StepRun row — history is append-only.
 
 Records: step id/index/type, attempt number, state (`running`, `succeeded`, `failed`,
-`interrupted`, `approved`, `rejected`, `skipped`), timestamps, agent/model/effort used (as resolved per §8.6), exit code,
-check exit code, failure reason, transcript file path, input/output tokens, cost (USD,
+`interrupted`, `approved`, `rejected`, `skipped`, `stopped`), timestamps, agent/model/effort used (as resolved per §8.6), exit code,
+check exit code, failure reason, skip reason, transcript file path, input/output tokens, cost (USD,
 nullable — not all agents report cost), input wait time (ms spent in `awaiting_input`,
 §7.4 — excluded from duration metrics).
+
+*Amended 2026-08-18 (task 015).* `stopped` is a `condition` step whose guard
+was false: the run ended there, deliberately and successfully (§7.7). It is
+neither a success nor a failure of the step — the step evaluated perfectly, and
+its answer was "stop". `skip_reason` says why a `skipped` row is skipped:
+`condition` for a false guard, empty for the human `skip` action (§6), which
+share one state.
 
 ## 6. Task lifecycle
 
@@ -298,6 +306,12 @@ Steps execute strictly in order. Executing step *i* means: render templates → 
 step body → evaluate success → on success advance to step *i+1* (or `done` if last) →
 persist → repeat.
 
+*Amended 2026-08-18 (task 015).* A step may carry an `if:` guard and a
+workflow may carry `condition` steps (§7.7). Neither changes the order: a
+guarded step is skipped in place and the cursor advances past it, and a
+`condition` step advances the cursor to the end. The walk is still forward,
+one index at a time, over a flat list.
+
 *Amended 2026-08-17 (task 014).* Order is still strict **between** steps; a
 `parallel` step is one step whose body runs several sub-steps at once. It
 occupies one index, holds one scheduler slot, and the cursor advances past it
@@ -340,6 +354,30 @@ stdout/stderr are captured to the step transcript.
   between attempts a walled step would otherwise spend its whole budget in
   seconds. `usage_limit` is therefore a `queued_reason`, never a `block_reason`.
   Recovery needs no human: the scheduler re-admits the task when the hold expires.
+- **`allow_failure: true` advances instead of blocking.** *Added 2026-08-18
+  (task 015).* On an `agent` or `command` step, the failures **the step itself
+  produced** — `nonzero_exit`, `check_failed`, `agent_error`, `timeout`,
+  `transcript_limit` — advance the cursor once the retry budget is spent,
+  rather than blocking the task. The row keeps its `failed` state and its
+  reason: the failure happened, it just did not stop the workflow, and that row
+  is what a later guard reads through `.Steps` (§8.4). It is what gives a
+  condition something a run *discovered* to branch on.
+
+  Everything else is vincent failing to **run** the step —
+  `agent_unavailable`, `agent_unauthenticated`, `restricted_unsupported`,
+  `input_unsupported`, `platform_unsupported`, `invalid_snapshot`,
+  `template_error`, `condition_error` — and is never swallowed: a workflow must
+  not be able to branch on "the CLI is not installed" as though that were a
+  test result. `usage_limit` and `interrupted` are untouched for a different
+  reason: this section already says they are not failures.
+
+  It is orthogonal to the retry budget, which runs first and in full. A probe
+  that should not retry says `max_retries: 0`. There is no
+  `defaults: allow_failure:` — a workflow-wide "failures do not block" turns
+  this section off in one line at the top of a file.
+- **`condition_error` is the one reason that does not run this budget.**
+  *Added 2026-08-18 (task 015).* A guard is evaluated before the step becomes
+  an attempt, so there is no attempt to retry (§7.7).
 - **`agent_unauthenticated` stays under the normal budget.** *Added 2026-08-14
   (task 003).* A CLI that refuses because it is not logged in fails the attempt
   like any other, retries as usual, and blocks when the budget is spent. Waiting
@@ -474,7 +512,12 @@ that happens to share the word.
   actor goroutine and releases the slot (§6), and no state means "one sub-step
   is gated". `on_input: require` is rejected for the same reason —
   `awaiting_input` holds one pending request for the whole task (§7.4).
-  Groups do not nest.
+  Groups do not nest. *Amended 2026-08-18 (task 015):* `condition` steps are
+  rejected here too — a group is a set, with no sequence to end — and a
+  sub-step may carry an `if:`, which subsets the group. Sub-step guards are
+  evaluated **once, before anything in the group starts**, so no sibling has
+  run and none can be read by another's guard; a group whose sub-steps are all
+  guarded off succeeds having run nothing.
 - **Rows.** One `step_runs` row per sub-step, all sharing the group's
   `step_index` and told apart by `step_id`. The group has no row of its own;
   its outcome is derived. Attempt numbers and retry budgets are per sub-step,
@@ -520,6 +563,20 @@ does not finish until every lane is merged.
   resolved through the usual builtin < global < project shadowing at **task
   creation** and written into the task's snapshot — never read from the
   registry again (§5.3). A lane's workflow may itself fan out, to any depth.
+- **A lane may carry an `if:`.** *Added 2026-08-18 (task 015).* It is
+  evaluated when the `fan_out` step runs, in the parent's context, so a lane
+  can depend on what an earlier step found. A guarded-off lane is not spawned;
+  its siblings still run and the join still merges them, in **declared** lane
+  order — the absent lane's index is not reused, so a re-run merges identically.
+  A step whose lanes are *all* guarded off is a no-op success: it records a row
+  saying so and advances, and specifically does **not** park, because a parent
+  in `awaiting_children` with no children would be re-queued, spawn nothing and
+  park again.
+
+  A conditional lane makes the tree's shape non-static, so the creation-time
+  checks below count **every** lane, guarded ones included. A tree that could
+  never spawn `max_tasks` descendants may still be refused. That
+  over-approximation is stated here rather than left to be discovered.
 - **Creation-time checks**, possible because the whole tree's shape is static
   once lane lists are in the snapshot: a cycle is a `400` naming the path, and
   so is a tree past `fan_out.max_depth` (3) or `fan_out.max_tasks` (64,
@@ -551,7 +608,11 @@ does not finish until every lane is merged.
   to the block. Blocking by default is §7.2's posture: a human decides what a
   machine could not.
 - **A lane that settles without finishing** blocks the join with
-  `lane_failed`, and **nothing** is merged. A partial merge is
+  `lane_failed`, and **nothing** is merged. *Clarified 2026-08-18 (task 015):*
+  "without finishing" means `blocked` or `aborted`. A lane whose own workflow
+  stopped early at a `condition` step (§7.7) settles `done`, and `done` is
+  `done` — it merges normally. Lanes doing different amounts of work is the
+  point of guarding them. A partial merge is
   indistinguishable downstream from a complete one. `retry` re-checks the
   lanes; the remedy is to fix the child, which is an ordinary task. `skip`
   keeps its meaning — it skips the whole join — and is deliberately not a
@@ -568,6 +629,96 @@ does not finish until every lane is merged.
   dirty-worktree rules.
 - **Cost.** N lanes leave N worktrees on disk until someone archives them.
   That is what `vincent gc` and `vincent doctor` are for, and it will be felt.
+
+### 7.7 Conditions between steps
+
+*Added 2026-08-18 (task 015).* A workflow decides at run time what to do next.
+Three fields do it, and they are deliberately not one:
+
+```yaml
+steps:
+  - id: probe
+    type: command
+    run: git diff --quiet HEAD~1
+    allow_failure: true              # a nonzero exit is data, not a block
+
+  - id: nothing-to-do
+    type: condition                  # false ends the run; the task is `done`
+    if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
+
+  - id: changelog
+    type: agent
+    if: '{{ eq (index .Task.Fields "changelog") "yes" }}'   # skip, then carry on
+    prompt: Update CHANGELOG.md.
+```
+
+**`if:` on a step is a guard.** It renders against the §8.4 context — the same
+context, the same `missingkey=error`, the same parse-at-load check as `prompt`,
+`run` and `check` — and must produce, after trimming, exactly `true` or
+`false`. Loose truthiness was rejected: a guard reading a field that is not
+there renders the empty string or `<no value>`, and a permissive rule would
+accept either as a decision. A guard that renders anything else fails the step
+with `condition_error`.
+
+**A false guard skips the step and the workflow carries on.** The step records
+a `step_runs` row in state `skipped` with `skip_reason: condition` — the same
+state the human `skip` action writes (§6), told apart by that column — and the
+row stays visible in `.Steps` (§8.4) so a later guard can see that the step did
+not run. This is the answer §8.1.1 deferred for per-step `platforms:`.
+
+**A false guard on a *set* subsets it instead.** On a `fan_out` lane (§7.6) and
+on a `parallel` sub-step (§7.5), "skip and carry on" is subsetting: the other
+members still run, the group still succeeds, the join still happens. One word,
+one meaning — "this member does not run" — whose consequence follows from
+whether it is attached to a sequence or a set.
+
+**`type: condition` ends the sequence.** It carries `id`, `name` and a required
+`if:`, and nothing else — no `run`, no `timeout`, no `max_retries`, no
+`allow_failure` — because it starts no process: it cannot time out, cannot be
+interrupted, has nothing to retry and writes no transcript. Its `if:` is its
+condition rather than a skip-guard on itself.
+
+- **True** continues: the step records `succeeded` and the cursor advances.
+- **False** stops: the step records **`stopped`**, the cursor advances to the
+  end of the step list, and the task is `done`. The steps after it record
+  nothing, because they were never considered.
+
+There is no `on_false:` policy. "Stop and block for a human" already exists —
+it is a `command` step that exits nonzero (§7.1, §7.2) — and the gap this type
+fills is *stop and succeed*.
+
+The shell phrasing of an early finish composes rather than being built in:
+
+```yaml
+- { id: probe, type: command, run: git diff --quiet, allow_failure: true }
+- { id: gate,  type: condition, if: '{{ ne (index .Steps "probe").ExitCode 0 }}' }
+```
+
+A `condition` step is valid at the top level and in a lane's own workflow. It
+is **rejected inside a `parallel` group**, joining `manual` and
+`on_input: require` on §7.5's list: a group is a set, so "end the sequence" has
+nothing there to name.
+
+**Guards are re-evaluated every time, never sticky.** Every attempt, every
+human `retry`, every re-run after §12.4 recovery asks the question again; no
+verdict is persisted. A human who retries a blocked step whose guard is now
+false will see it skipped, and that is correct — if the guard is false now,
+running the step now would be wrong. The alternative is a decision cache
+recovery would have to reason about, holding a verdict computed against facts
+that have since changed.
+
+**A guard error blocks without consuming the retry budget** — the one failure
+in §18's vocabulary that does not run §7.2's budget. A guard is evaluated
+*before* the step becomes an attempt, so there is no attempt to retry, and
+re-rendering an unchanged template against an unchanged context cannot answer
+differently. One `failed` row is recorded for the step carrying
+`condition_error`, so the block names where and why. The second try that can
+succeed is the human's, after they fix the workflow.
+
+**`.Host`** (§8.4) is what a guard reads to gate on the platform:
+`if: '{{ ne .Host.OS "windows" }}'` is the per-step `platforms:` §8.1.1
+deferred, with no new schema. The whole-workflow `platforms:` stays as it is —
+it gates *offering* a workflow, which a run-time guard cannot do.
 
 ## 8. Workflow definition (YAML)
 
@@ -667,24 +818,36 @@ The restriction is **whole-workflow**. A per-step `platforms:` was considered
 and deferred: it needs an answer to "what does a skipped step do to `.Steps`
 and to the task's success", which is a lifecycle question, not a schema one.
 
+*Resolved 2026-08-18 (task 015).* §7.7 answers that question, and the answer
+made the schema unnecessary: a per-step platform gate is
+`if: '{{ ne .Host.OS "windows" }}'`, using `.Host` (§8.4) and the ordinary skip
+semantics. The whole-workflow `platforms:` stays exactly as described above,
+because it does something a run-time guard cannot — it stops the workflow being
+*offered*, in the picker and at task creation, rather than skipping steps once
+a task exists.
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
-`timeout`.
+`timeout`, and — *added 2026-08-18 (task 015)* — `if` (§7.7). A `condition`
+step is the exception: it takes `id`, `name` and `if` only.
 
 | Type | Required | Optional |
 |---|---|---|
-| `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `on_input`, `input_timeout`, `check`, `check_timeout` |
-| `command` | `run` | `shell`, `env` (map), `check`, `check_timeout` |
+| `agent` | `prompt` | `agent`, `model`, `effort`, `permission_mode`, `on_input`, `input_timeout`, `check`, `check_timeout`, `allow_failure` |
+| `command` | `run` | `shell`, `env` (map), `check`, `check_timeout`, `allow_failure` |
 | `manual` | `instructions` | — |
 | `parallel` | `steps` | `max_parallel` |
 | `fan_out` | `lanes` | `merge` |
+| `condition` | `if` | — |
 
-*`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.*
+*`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.
+`condition`, `if` and `allow_failure` added 2026-08-18 (task 015); see §7.7.*
 
 A lane carries `id` plus exactly one of `workflow` (a registry name) or
-`steps` (inline), and optionally `fields`, `agent`, `model`, `effort` and
-`priority`, which override the inherited values for that lane's subtree.
+`steps` (inline), and optionally `if` (*added 2026-08-18, task 015*), `fields`,
+`agent`, `model`, `effort` and `priority`, which override the inherited values
+for that lane's subtree.
 `merge` carries `on_conflict` (`block` | `agent`) and, for the latter, an
 `agent` step.
 
@@ -702,6 +865,14 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   lane ids are unique within the step, and a lane's inline steps have their
   own id namespace because each lane becomes a separate task. `merge.agent`
   is required by, and only valid with, `on_conflict: agent`.
+- *Added 2026-08-18 (task 015).* A `condition` step requires `if` and rejects
+  every other field, `timeout`, `max_retries` and `allow_failure` included: it
+  starts no process. `allow_failure` is valid only on `agent` and `command`
+  steps, sub-steps of a group included. Every `if` — a step's, a sub-step's and
+  a lane's — must parse as a template at load, like every other template field.
+  A `condition` step in **last** position is a **warning**, not an error: the
+  task is `done` whether it continues or stops, so the step cannot do anything
+  a missing step would not.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
   workflow validates on a Windows CI runner exactly as it does on Linux, or
@@ -753,7 +924,8 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Project` | `Name`, `Path` (original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
-| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last 100 lines of stdout (command steps) |
+| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last 100 lines of stdout (command steps). *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome |
+| `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
 
@@ -2031,6 +2203,9 @@ POST   /v1/tasks/{id}/archive          { force? } or ?force        (done/aborted
                                         never failed by a branch problem (§10, task 008)
 
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
+                                        (task 015, 2026-08-18: each carries `skip_reason`
+                                        — "condition" for a false `if:`, null for the human
+                                        skip — and `state` may now be "stopped", §5.4/§7.7)
 GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         the attempt's JSONL transcript, ranged.
                                         `offset=` (bytes) and `tail=` (last N bytes) are
@@ -2183,7 +2358,7 @@ CREATE TABLE step_runs (
   step_type           TEXT NOT NULL,          -- agent | command | manual
   attempt             INTEGER NOT NULL,       -- 1-based
   state               TEXT NOT NULL,          -- running | succeeded | failed | interrupted
-                                              -- | approved | rejected | skipped
+                                              -- | approved | rejected | skipped | stopped
   agent               TEXT,                   -- adapter name, agent steps only
   model               TEXT,                   -- resolved model as passed to the adapter (§8.6)
   effort              TEXT,                   -- resolved effort as passed to the adapter (§8.6)
@@ -2192,6 +2367,7 @@ CREATE TABLE step_runs (
   exit_code           INTEGER,
   check_exit_code     INTEGER,
   failure_reason      TEXT,
+  skip_reason         TEXT,                   -- 'condition' for a false `if:` (§7.7); NULL for the human skip (§6)
   result_summary      TEXT,                   -- agent result text / command stdout tail
   prompt_override     TEXT,                   -- edit+retry: the prompt a human supplied for this attempt (§6)
   run_override        TEXT,                   -- edit+retry: the command a human supplied for this attempt (§6)
@@ -2693,6 +2869,10 @@ currently true to show (§15 view 6).
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
 | Template references missing field | Step fails at render time (before any process starts) with the template error |
+| A step's `if:` does not render, or renders something that is not `true`/`false` | *Added 2026-08-18 (task 015).* The step blocks with `condition_error` and records one `failed` row naming it. The only reason in this table that does **not** run the §7.2 retry budget: a guard is evaluated before the step becomes an attempt, so there is no attempt to retry, and re-rendering an unchanged template cannot answer differently (§7.7). A human `retry` re-evaluates it |
+| A guard skips a step | *Added 2026-08-18 (task 015).* A `skipped` row with `skip_reason: condition`, visible in `.Steps`; the workflow carries on. The same guard on a fan-out lane or a group sub-step subsets the set instead — the others still run |
+| A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered |
+| Every lane of a `fan_out` is guarded off | *Added 2026-08-18 (task 015).* A no-op success: the step records a row saying no lane was selected and advances. It must not park — a parent in `awaiting_children` with no children would be re-queued, spawn nothing and park again (§7.6) |
 | `answer` posted when task isn't `awaiting_input` | `409` with the current state (standard invalid-transition handling) |
 | Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
 | `input_timeout` expires | Process killed; attempt fails with reason `input_timeout`; normal retry/blocked policy (§7.2) |
@@ -2766,8 +2946,15 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 - ~~More adapters~~ — **Cursor promoted out of future work to M5, 2026-08-11**
   (§9.7). Gemini CLI, opencode, and adapter capability flags remain here.
 - ~~parallel steps and step fan-out~~ — **promoted out of future work,
-  2026-08-17** (§7.5, §7.6, task 014). Workflow branching/conditionals remains
-  here.
+  2026-08-17** (§7.5, §7.6, task 014).
+- ~~workflow branching/conditionals~~ — **promoted out of future work,
+  2026-08-18** (§7.7, task 015): `if:` guards on steps, lanes and group
+  sub-steps, `type: condition` for early finish, and `allow_failure:` so a
+  guard has a run's own findings to read. What remains here is *nested*
+  control flow — `branch`/`switch` step types with `then:`/`else:` bodies,
+  which would make the step list a tree and the §7 cursor something other than
+  an integer. Guards are flat by construction, and the trigger for
+  reconsidering is a workflow that genuinely cannot be written flat.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.
 - Task templates & recurring tasks; issue-tracker ingestion (Jira → task).
