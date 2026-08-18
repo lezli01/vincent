@@ -27,7 +27,7 @@ whole system is built from, then walk the
 
 | Page | What it covers |
 |---|---|
-| [Writing workflows](guides/workflows.md) | The authoring guide: step types, checks, templates, retries, permission modes |
+| [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the eight step types, control flow, templates, checks, retries, agents, portability |
 | [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
 | [Using the TUI](guides/tui.md) | The board, task detail, the four takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |

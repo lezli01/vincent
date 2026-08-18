@@ -125,7 +125,7 @@ Three things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Four ready-to-copy workflows ship in [`examples/`](examples);
+Five ready-to-copy workflows ship in [`examples/`](examples);
 [Writing workflows](docs/guides/workflows.md) is the authoring guide and
 [Agent CLIs](docs/guides/agents.md) covers the adapters in full.
 
@@ -318,7 +318,8 @@ vincent workflow ls --project 1  # add this project's own .vincent/workflows
 `feature-pr` runs an agent, checks that the result still builds and passes
 tests, stops at a human gate, and pushes only after you approve. The others
 are [`fix-and-test`](examples/fix-and-test.yaml) (write a failing test, then
-fix it), [`docs-update`](examples/docs-update.yaml), and
+fix it), [`converge`](examples/converge.yaml) (loop until the suite is green),
+[`docs-update`](examples/docs-update.yaml), and
 [`cursor-review`](examples/cursor-review.yaml).
 
 Its check is `go build ./... && go test ./...`, so open the file and change
