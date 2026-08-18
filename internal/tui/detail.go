@@ -723,15 +723,21 @@ func (d *detail) moveSelection(delta int) tea.Cmd {
 	return d.syncOutput()
 }
 
-// attempts returns every attempt in timeline order: by step, then — inside a
-// `parallel` group, whose sub-steps share one step index (task 014) — by
-// sub-step, then by attempt. Without the middle tier a group's attempts
-// interleave by number and no sub-step reads as a unit.
+// attempts returns every attempt in timeline order: by step, then by
+// iteration, then — inside a `parallel` group, whose sub-steps share one step
+// index (task 014) — by sub-step, then by attempt. Without the middle tiers a
+// structure step's attempts interleave by number and neither a sub-step nor
+// an iteration reads as a unit.
+//
+// Iteration sits above the sub-step tier because a `loop` body is a
+// *sequence* run more than once (§7.8): iteration 2's first step belongs
+// under iteration 2, not beside iteration 1's copy of itself. Every row
+// outside a loop carries iteration 0, so this tier is invisible there.
 //
 // The order within a group is the server's: ListStepRuns returns rows by
-// index, attempt and id, so the first row of each sub-step appears in the
-// order the sub-steps started. A stable sort keeps that, which is as close to
-// declaration order as the rows can honestly report.
+// index, iteration, attempt and id, so the first row of each sub-step appears
+// in the order the sub-steps started. A stable sort keeps that, which is as
+// close to declaration order as the rows can honestly report.
 func (d *detail) attempts() []apiclient.StepRun {
 	runs := make([]apiclient.StepRun, len(d.task.Steps))
 	copy(runs, d.task.Steps)
@@ -746,6 +752,9 @@ func (d *detail) attempts() []apiclient.StepRun {
 		if runs[i].StepIndex != runs[j].StepIndex {
 			return runs[i].StepIndex < runs[j].StepIndex
 		}
+		if runs[i].Iteration != runs[j].Iteration {
+			return runs[i].Iteration < runs[j].Iteration
+		}
 		if runs[i].StepID != runs[j].StepID {
 			return order[stepRunKey(runs[i])] < order[stepRunKey(runs[j])]
 		}
@@ -755,9 +764,10 @@ func (d *detail) attempts() []apiclient.StepRun {
 }
 
 // stepRunKey identifies one step's run history within a task: the index alone
-// is not enough once a group's sub-steps share it.
+// is not enough once a group's sub-steps, or a loop body's iterations, share
+// it.
 func stepRunKey(r apiclient.StepRun) string {
-	return strconv.Itoa(r.StepIndex) + "/" + r.StepID
+	return strconv.Itoa(r.StepIndex) + "/" + strconv.Itoa(r.Iteration) + "/" + r.StepID
 }
 
 func (d *detail) runIndex(id int64) int {
