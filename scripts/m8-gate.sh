@@ -132,10 +132,14 @@ run_scenario() { # run_scenario N — honours VINCENT_GATE_SCENARIO
 
 steps_json() { api GET "/tasks/$1/steps"; }
 
-# rows_for prints "ITERATION STATE" for every attempt of one body step,
-# oldest first.
+# `tr -d '\r'` on every helper below that prints more than one line: jq writes
+# CRLF on Windows, and while `$(...)` in MSYS bash drops the trailing one, the
+# interior ones survive and make an exact multi-line comparison fail against a
+# `$'a\nb'` literal. Single-line captures are unaffected, which is why every
+# other gate has always passed there and only these assertions did not.
 rows_for() { # rows_for TASK_ID STEP_ID
-  steps_json "$1" | jq -r --arg s "$2" '.[] | select(.step_id == $s) | "\(.iteration) \(.state)"'
+  steps_json "$1" | jq -r --arg s "$2" '.[] | select(.step_id == $s) | "\(.iteration) \(.state)"' \
+    | tr -d '\r'
 }
 
 # iterations_ran is how many distinct iterations the loop produced rows for.
@@ -146,7 +150,8 @@ iterations_ran() { # iterations_ran TASK_ID
 # items_ran prints the for_each item of each iteration, in iteration order.
 items_ran() { # items_ran TASK_ID
   steps_json "$1" | jq -r '[.[] | select(.loop_item != null)]
-    | group_by(.iteration) | sort_by(.[0].iteration) | .[] | .[0].loop_item'
+    | group_by(.iteration) | sort_by(.[0].iteration) | .[] | .[0].loop_item' \
+    | tr -d '\r'
 }
 
 step_field() { # step_field TASK_ID STEP_ID FIELD
