@@ -94,6 +94,14 @@ New gate scripts must be committed **executable** (`git update-index
 bit, so a non-executable gate passes on Windows and fails both POSIX legs with
 exit 126 before running an assertion.
 
+A gate's *workflow* `run:` bodies run under the daemon's shell — `/bin/sh` on
+POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be
+spelled in the intersection of the two: `exit N`, `sleep N` and `git ...`.
+That excludes `touch`, `seq`, `[ -f ]` and `for`/`if`, and it is why a lane
+that needs a file on disk writes it with `git config -f x k v` and one that
+only needs a commit uses `git commit --allow-empty`. Assert concurrency and
+timing from the API instead of from inside a step body.
+
 Requires bash, go, git, curl, jq.
 
 ## Architecture

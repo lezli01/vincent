@@ -684,9 +684,12 @@ an `agent:` the policy will never run.
   worktrees until archived.
 - [x] **014.14 — Gate.** ✓ 2026-08-17 Depends: 014.2, 014.9, 014.10. New `scripts/m6-gate.sh`
   covering **both** phases, committed executable via `git update-index --chmod=+x`
-  — a non-executable gate passes on Windows and exits 126 on both POSIX legs —
-  and wired into CI on all three platforms, merge behaviour on Windows being
-  the thing a gate should prove rather than assume. Scenarios: a `parallel`
+  — a non-executable gate passes on Windows and exits 126 on both POSIX legs.
+  The CI wiring did **not** land with it: a cloud session's token has no
+  `workflow` scope, so `.github/workflows/` is unwritable from one, and the
+  step is tracked in #120. Merge behaviour on Windows is the thing the gate
+  exists to prove rather than assume, so hand-running it on Linux is a partial
+  result until that step is added. Scenarios: a `parallel`
   happy path; a failing sub-step; a retry re-running only the failed sub-step;
   happy-path two-lane merge; an induced conflict reaching `merge_conflict`,
   resolved by hand, retried, remaining lanes merged; a crash mid-merge
@@ -702,7 +705,18 @@ an `agent:` the policy will never run.
   for `windows`, `darwin` and `linux` — a host-only lint hides findings in
   build-tagged files.
 - Gates: `m1`, `m2` and `m5` re-run to prove no regression; the new `m6` passes
-  all nine scenarios, and is wired into CI on all three platforms.
+  all nine scenarios on Linux. It is not wired into CI (#120).
+
+*2026-08-18.* `m6`'s `run:` bodies were POSIX-only — `touch`, `seq`, `[ -f ]`
+and a `for` loop, none of which `pwsh` speaks — which only ever stood because
+the gate had never run anywhere but Linux. They now use the same restricted
+vocabulary `m7` and `m8` do (`exit N`, `sleep N`, `git ...`), so the Windows
+leg has a chance of passing the day #120 is applied. Two scenarios changed
+shape rather than spelling: scenario 1 proves the overlap by polling the API
+for three simultaneously-`running` sub-steps instead of having each sub-step
+wait on marker files its siblings write, and the lanes that must produce a
+file write it with `git config -f` because `echo >` and `Set-Content` share no
+spelling. Still nine scenarios, still passing on Linux.
 
 Three bugs the work surfaced, each recorded where it was found:
 

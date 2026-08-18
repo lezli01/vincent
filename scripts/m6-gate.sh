@@ -19,6 +19,15 @@
 # Every scenario uses command steps only, so no agent CLI is involved at all
 # and the gate is as fast on CI as it is locally.
 #
+# The `run:` bodies are restricted to what `/bin/sh` and `pwsh` both accept —
+# `exit N`, `sleep N` and `git ...`, and nothing else, the same rule `m7` and
+# `m8` follow. §8.3 leaves portability to the workflow author, and a gate that
+# runs on all three platforms is that author. This is why a lane that has to
+# produce a file writes it with `git config -f`: `echo > x` and `Set-Content`
+# share no spelling, and `touch` is not a shell builtin anywhere. The original
+# bodies were POSIX-only (`touch`, `seq`, `[ -f ]`), which stood only because
+# the gate was hand-run on Linux until it was wired into CI (#120).
+#
 # Each scenario gets fresh config/data/repo dirs and its own daemon, so one
 # scenario's leftovers cannot reach another's assertions (PR G decision,
 # inherited from m2-gate.sh). VINCENT_GATE_SCENARIO=N runs one scenario.
@@ -142,10 +151,12 @@ run_scenario() { # run_scenario N — honours VINCENT_GATE_SCENARIO
 # --------------------------------------------------------------------------
 # Scenario 1: a parallel group runs its sub-steps concurrently.
 #
-# Each sub-step waits for a marker file the others write, with a timeout. If
-# they ran in sequence, the first one would time out waiting for markers that
-# do not exist yet — which is a far stronger statement than a wall-clock
-# comparison, and does not go flaky on a loaded CI runner.
+# The overlap is observed from the API, not from inside the steps: each
+# sub-step only sleeps, and the gate polls until it sees all three `running`
+# at the same instant. Sequential execution tops out at one, so this fails
+# deterministically rather than on a wall-clock comparison — and it keeps the
+# step bodies to a vocabulary `/bin/sh` and `pwsh` both accept, which is what
+# the earlier marker-file version (`touch`, `seq`, `[ -f ]`) did not.
 # --------------------------------------------------------------------------
 if run_scenario 1; then
   echo "=== scenario 1: a parallel group runs concurrently"
@@ -158,32 +169,28 @@ steps:
     type: parallel
     max_parallel: 3
     steps:
-      - id: one
-        type: command
-        max_retries: 0
-        run: |
-          touch one.marker
-          for i in $(seq 1 100); do [ -f two.marker ] && [ -f three.marker ] && exit 0; sleep 0.1; done
-          echo "siblings never started: ran in sequence" >&2; exit 1
-      - id: two
-        type: command
-        max_retries: 0
-        run: |
-          touch two.marker
-          for i in $(seq 1 100); do [ -f one.marker ] && [ -f three.marker ] && exit 0; sleep 0.1; done
-          echo "siblings never started: ran in sequence" >&2; exit 1
-      - id: three
-        type: command
-        max_retries: 0
-        run: |
-          touch three.marker
-          for i in $(seq 1 100); do [ -f one.marker ] && [ -f two.marker ] && exit 0; sleep 0.1; done
-          echo "siblings never started: ran in sequence" >&2; exit 1
+      - {id: one, type: command, max_retries: 0, run: 'sleep 8'}
+      - {id: two, type: command, max_retries: 0, run: 'sleep 8'}
+      - {id: three, type: command, max_retries: 0, run: 'sleep 8'}
 YAML
 )"
   daemon_up
   PID="$(register_project "$REPO")"
   TID="$(create_task "$PID" parallel-ok "parallel happy path")"
+
+  # The eight-second body is the observation window: a one-second poll sees it
+  # several times over, and a sequential run would never show more than one.
+  MAX=0
+  for _ in $(seq 1 90); do
+    BODY="$(api GET "/tasks/$TID")"
+    # `.steps` is null until the group's first attempt rows exist.
+    N="$(jq '[(.steps // [])[] | select(.state == "running")] | length' <<<"$BODY")"
+    if [[ "$N" -gt "$MAX" ]]; then MAX="$N"; fi
+    if [[ "$MAX" == 3 || "$(jq -r .state <<<"$BODY")" == "done" ]]; then break; fi
+    sleep 1
+  done
+  [[ "$MAX" == 3 ]] || fail "sub-steps never overlapped: at most $MAX ran at once, want 3"
+
   wait_for_state "$TID" done 60
 
   RUNS="$(api GET "/tasks/$TID" | jq '[.steps[] | select(.state == "succeeded")] | length')"
@@ -216,16 +223,11 @@ steps:
       - id: flaky
         type: command
         max_retries: 0
-        run: |
-          if [ -f cleared.marker ]; then exit 0; fi
-          touch cleared.marker
-          exit 7
+        run: 'git config -f cleared.marker --get gate.cleared && exit 0 || git config -f cleared.marker gate.cleared 1 && exit 7'
       - id: steady
         type: command
         max_retries: 0
-        run: |
-          sleep 1
-          echo steady > steady.txt
+        run: 'sleep 2'
 YAML
 )"
   daemon_up
@@ -267,10 +269,10 @@ steps:
     lanes:
       - id: api
         steps:
-          - {id: write-api, type: command, max_retries: 0, run: 'echo api > api.txt && git add -A && git commit -qm api'}
+          - {id: write-api, type: command, max_retries: 0, run: 'git config -f api.txt gate.lane api && git add -A && git commit -qm api'}
       - id: docs
         steps:
-          - {id: write-docs, type: command, max_retries: 0, run: 'echo docs > docs.txt && git add -A && git commit -qm docs'}
+          - {id: write-docs, type: command, max_retries: 0, run: 'git config -f docs.txt gate.lane docs && git add -A && git commit -qm docs'}
 YAML
 )"
   daemon_up
@@ -312,10 +314,10 @@ steps:
     lanes:
       - id: left
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo left > shared.txt && git add -A && git commit -qm left'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f shared.txt gate.side left && git add -A && git commit -qm left'}
       - id: right
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo right > shared.txt && git add -A && git commit -qm right'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f shared.txt gate.side right && git add -A && git commit -qm right'}
 YAML
 )"
   daemon_up
@@ -365,10 +367,10 @@ steps:
     lanes:
       - id: left
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo left > shared.txt && git add -A && git commit -qm left'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f shared.txt gate.side left && git add -A && git commit -qm left'}
       - id: right
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo right > shared.txt && git add -A && git commit -qm right'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f shared.txt gate.side right && git add -A && git commit -qm right'}
 YAML
 )"
   daemon_up
@@ -407,7 +409,7 @@ steps:
     lanes:
       - id: leaf
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo leaf > leaf.txt && git add -A && git commit -qm leaf'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f leaf.txt gate.lane leaf && git add -A && git commit -qm leaf'}
 YAML
 )"
   write_workflow outer "$(cat <<'YAML'
@@ -450,7 +452,7 @@ steps:
     lanes:
       - id: quick
         steps:
-          - {id: w, type: command, max_retries: 0, run: 'echo quick > quick.txt && git add -A && git commit -qm quick'}
+          - {id: w, type: command, max_retries: 0, run: 'git config -f quick.txt gate.lane quick && git add -A && git commit -qm quick'}
       - id: slow
         steps:
           - {id: w, type: command, max_retries: 0, run: 'sleep 60'}
@@ -510,9 +512,9 @@ steps:
   - id: f
     type: fan_out
     lanes:
-      - {id: a, steps: [{id: sa, type: command, run: 'true'}]}
-      - {id: b, steps: [{id: sb, type: command, run: 'true'}]}
-      - {id: c, steps: [{id: sc, type: command, run: 'true'}]}
+      - {id: a, steps: [{id: sa, type: command, run: 'exit 0'}]}
+      - {id: b, steps: [{id: sb, type: command, run: 'exit 0'}]}
+      - {id: c, steps: [{id: sc, type: command, run: 'exit 0'}]}
 YAML
 )"
   daemon_up
