@@ -390,6 +390,11 @@ commit with `--allow-empty` rather than writing a file, because `printf >` and
 `Set-Content` share no spelling. It should pass on all three platforms the day
 someone can wire it in.
 
+*2026-08-18 (later).* It did. #122 applied, and `m7` passed ubuntu, macOS
+**and** Windows on the first CI run that reached it (run 32143694231), with no
+change to the script. `m6` needed two fixes to get there and `m8` one; the
+restricted vocabulary was worth writing to.
+
 ### One decision reversed by implementation
 
 Decision 14 (`condition_error` does not consume the retry budget) reverses the
