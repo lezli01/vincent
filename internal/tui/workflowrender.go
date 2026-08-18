@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -14,20 +16,153 @@ func (w *workflowsView) render(width, height int) string {
 	if height > 0 {
 		w.height = height
 	}
-	var out []string
-	out = append(out, w.statusLines()...)
+	if w.graph != nil {
+		w.sizeGraph()
+		return w.renderGraph(width, height)
+	}
+	return w.renderList(width, height)
+}
 
+// renderList draws the registry through a viewport. The status lines are
+// pinned above it rather than scrolled with it, the way the diff pane pins
+// its summary: a warning that scrolled away is a warning nobody sees.
+func (w *workflowsView) renderList(width, height int) string {
+	head := w.statusLines()
 	lines := w.lines()
 	if body, ok := w.emptyBody(lines); ok {
-		return strings.Join(append(out, body), "\n")
+		return strings.Join(append(head, body), "\n")
 	}
+
+	var rows []string
+	cursorRow := 0
 	for i, line := range lines {
-		out = append(out, w.renderLine(i, line))
+		if i == w.cursor {
+			cursorRow = len(rows)
+		}
+		rows = append(rows, w.renderLine(i, line))
 		if i == w.cursor && w.expanded && line.entry != nil {
-			out = append(out, w.renderSteps(line)...)
+			rows = append(rows, w.renderSteps(line)...)
 		}
 	}
-	return strings.Join(out, "\n")
+
+	// A view that has not been told its size yet has nothing to crop to.
+	// Returning one row because the height is still zero would hide the
+	// registry until the first resize.
+	if width <= 0 || height <= 0 {
+		return strings.Join(append(head, rows...), "\n")
+	}
+	body := max(height-len(head), 1)
+	w.vp.SetWidth(max(width, 1))
+	w.vp.SetHeight(body)
+	w.vp.SetContent(strings.Join(rows, "\n"))
+	// Reveal the cursor rather than the expansion below it: the row you are
+	// on is the one that has to stay on screen.
+	w.vp.EnsureVisible(cursorRow, 0, 0)
+	return strings.Join(append(head, w.vp.View()), "\n")
+}
+
+// renderGraph draws the open sub-layer: a header naming the entry, the graph
+// itself, and a fixed inspector strip. The strip's height is fixed so the
+// viewport's arithmetic does not change when a node with more detail is
+// selected.
+func (w *workflowsView) renderGraph(width, height int) string {
+	g := w.graph
+	out := []string{w.graphHeader()}
+	body := max(height-graphChromeRows, 1)
+
+	switch {
+	case g.err != "":
+		out = append(out, styleBad.Render("  ⚠ "+g.err),
+			styleDim.Render("  R retries · esc returns to the registry"))
+	case len(g.findings) > 0:
+		// The file broke between the list load and this fetch.
+		out = append(out, styleBad.Render("  ⚠ "+g.key.name+" no longer parses:"))
+		for _, f := range g.findings {
+			out = append(out, styleBad.Render("      "+findingText(f)))
+		}
+	case !g.loaded && g.loading:
+		out = append(out, styleDim.Render("  loading the definition…"))
+	case !g.loaded:
+		out = append(out, styleDim.Render("  nothing to draw"))
+	case g.graph.TooNarrow():
+		// A narrow terminal is told so rather than shown a flattened graph
+		// that would misrepresent the topology (decision 8).
+		out = append(out, styleWarn.Render("  terminal too narrow for the graph"),
+			styleDim.Render(fmt.Sprintf("  it needs %d columns; this one has %d",
+				g.graph.MinWidth(), w.width)))
+	default:
+		out = append(out, strings.Split(g.graph.View(), "\n")...)
+	}
+	for len(out) < 1+body {
+		out = append(out, "")
+	}
+	return strings.Join(append(out[:1+body], w.inspector(width)...), "\n")
+}
+
+func (w *workflowsView) graphHeader() string {
+	g := w.graph
+	parts := []string{" " + styleTitle.Render(g.key.name), styleDim.Render("[" + g.scope + "]")}
+	if g.loading {
+		parts = append(parts, styleDim.Render("refreshing…"))
+	}
+	if g.file != "" {
+		parts = append(parts, styleDim.Render(g.file))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// inspectorRows is the fixed height of the strip: a rule and two lines of
+// detail.
+const inspectorRows = 3
+
+// inspector is the selected node's detail — the full label and the fields the
+// box could only show as a badge. Prompts and command bodies are deliberately
+// absent: `e` opens the file, and a prompt truncated to one line is the noise
+// a badge already avoided (decision 15).
+func (w *workflowsView) inspector(width int) []string {
+	rule := strings.Repeat("─", max(width, 1))
+	out := []string{styleDim.Render(rule)}
+	fields := w.graph.graph.Detail()
+	if len(fields) == 0 {
+		return append(out, styleDim.Render("  nothing selected"), "")
+	}
+	var parts []string
+	for _, f := range fields {
+		parts = append(parts, styleDim.Render(f.Label+":")+" "+f.Value)
+	}
+	for _, row := range packRow(parts, max(width-2, 1), inspectorRows-1) {
+		out = append(out, "  "+row)
+	}
+	for len(out) < inspectorRows {
+		out = append(out, "")
+	}
+	return out[:inspectorRows]
+}
+
+// packRow fills at most rows lines with as many parts as fit, measuring
+// display width so a wide label does not overflow the strip.
+func packRow(parts []string, width, rows int) []string {
+	var out []string
+	current := ""
+	for _, p := range parts {
+		candidate := p
+		if current != "" {
+			candidate = current + styleDim.Render(" · ") + p
+		}
+		if lipgloss.Width(candidate) > width && current != "" {
+			out = append(out, current)
+			if len(out) == rows {
+				return out
+			}
+			current = p
+			continue
+		}
+		current = candidate
+	}
+	if current != "" && len(out) < rows {
+		out = append(out, current)
+	}
+	return out
 }
 
 func (w *workflowsView) statusLines() []string {

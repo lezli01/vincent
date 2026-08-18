@@ -1,6 +1,6 @@
 # 017 — Workflow visualization in the TUI
 
-**Status:** 🚧 in progress (4/9) · **Opened:** 2026-08-18
+**Status:** 🚧 in progress (8/9) · **Opened:** 2026-08-18
 
 Vincent's workflow screen currently explains a workflow as a numbered list of
 its top-level steps. That was sufficient while workflows were mostly linear,
@@ -677,16 +677,16 @@ should depend on a specific color profile.
 - [x] **017.4 — Terminal renderer.** ✓ 2026-08-18 Depends: 017.3. Render nodes, groups,
   routed connectors, labels and selection with display-width-safe truncation;
   keep semantic meaning visible without color.
-- [ ] **017.5 — Reusable `WorkflowGraph` Bubble.** Depends: 017.3, 017.4. Add
+- [x] **017.5 — Reusable `WorkflowGraph` Bubble.** ✓ 2026-08-18 Depends: 017.3, 017.4. Add
   viewport sizing, two-axis pan, focus, selection and deterministic keyboard
   navigation in read-only `ModeView`.
-- [ ] **017.6 — Workflows-screen integration.** Depends: 017.1, 017.5. Open the
+- [x] **017.6 — Workflows-screen integration.** ✓ 2026-08-18 Depends: 017.1, 017.5. Open the
   graph with `g` as a sub-layer of the list (decision 13), fetch its definition
   on every open with loading/error states (decision 19), keep `e` and `R` inside
   the layer under a `ctxWorkflowGraph` binding context, suppress `g` on an
   entry already known invalid, obey one-layer-per-Escape, and handle
   resize/narrow-terminal behaviour.
-- [ ] **017.7 — Integration and regression tests.** Depends: 017.6. Add TUI and
+- [x] **017.7 — Integration and regression tests.** ✓ 2026-08-18 Depends: 017.6. Add TUI and
   live-API coverage for definition loading, registry reloads, project shadowing,
   focus transitions, resize and large graphs. Run the normal race-enabled test
   suite and the three-platform CI matrix; do not mark done from assumed
@@ -697,7 +697,7 @@ should depend on a specific color profile.
   add `docs/gates/017-workflow-graph.md` carrying the acceptance corpus and its
   run record (decision 21), then walk it in the TUI before closing the task.
 
-- [ ] **017.9 — A viewport for the workflows list.** Depends: 017.6. Discovered
+- [x] **017.9 — A viewport for the workflows list.** ✓ 2026-08-18 Depends: 017.6. Discovered
   while designing the graph layer: `workflowrender.go` joins every line into one
   string and never crops, so a registry taller than the terminal is truncated
   today — before any graph exists. Give the list the viewport the detail, daemon

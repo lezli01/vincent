@@ -420,6 +420,62 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Errorf("R left the previous error on screen: %q", w.err)
 			}
 		},
+		"g": func(t *testing.T) {
+			w := newWorkflowsView()
+			w.client = offlineClient()
+			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			w.updateKey(registryKey(t, "g"))
+			if w.graph == nil {
+				t.Fatal("g did not open the graph layer")
+			}
+		},
+	},
+
+	ctxWorkflowGraph: {
+		"down": func(t *testing.T) {
+			w := graphFixture(t)
+			before := w.graph.graph.Selected()
+			w.updateKey(registryKey(t, "down"))
+			if w.graph.graph.Selected() == before {
+				t.Fatalf("down did not move the graph selection (still %q)", before)
+			}
+		},
+		"shift+down": func(t *testing.T) {
+			w := graphFixture(t)
+			before := w.graph.graph.Selected()
+			w.updateKey(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+			if got := w.graph.graph.Selected(); got != before {
+				t.Fatalf("shift+down moved the selection to %q; panning must not", got)
+			}
+			if w.graph.graph.ScrollPercent() == 0 {
+				t.Fatal("shift+down did not pan the canvas")
+			}
+		},
+		"tab": func(t *testing.T) {
+			w := graphFixture(t)
+			before := w.graph.graph.Selected()
+			w.updateKey(registryKey(t, "tab"))
+			if w.graph.graph.Selected() == before {
+				t.Fatalf("tab did not walk to the next node (still %q)", before)
+			}
+		},
+		"e": func(t *testing.T) {
+			w := graphFixture(t)
+			if _, cmd := w.updateKey(registryKey(t, "e")); cmd == nil {
+				t.Fatal("e did not open the workflow file from inside the graph")
+			}
+		},
+		"R": func(t *testing.T) {
+			w := graphFixture(t)
+			w.graph.err = "a stale fetch failure"
+			_, cmd := w.updateKey(registryKey(t, "R"))
+			if cmd == nil {
+				t.Fatal("R did not re-fetch the definition")
+			}
+			if w.graph.err != "" {
+				t.Errorf("R left the previous error on screen: %q", w.graph.err)
+			}
+		},
 	},
 
 	ctxDaemon: {
