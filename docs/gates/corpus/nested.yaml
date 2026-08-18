@@ -1,0 +1,9 @@
+name: nested
+steps:
+  - id: repeat
+    type: loop
+    count: 2
+    steps:
+      - {id: work, type: agent, prompt: work}
+      - {id: skip, type: condition, if: '{{ .Steps.work.Success }}'}
+      - {id: record, type: command, run: make record}

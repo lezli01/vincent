@@ -88,7 +88,11 @@ had passed on Linux for weeks, both recorded below.
 
 `scripts/m3-gate.sh` seeds a human walkthrough instead of asserting — M3's
 acceptance is a judgement about a TUI. The manual legs of M5 are walked
-through in `docs/gates/m5-gate.md`, which also records the runs.
+through in `docs/gates/m5-gate.md`, which also records the runs. Task 017's
+workflow graph has no script at all for the same reason M3's has none — what
+is judged is whether a picture is legible — so `docs/gates/017-workflow-graph.md`
+carries the corpus (`docs/gates/corpus/*.yaml`, kept parseable by a test) and
+the run record.
 
 New gate scripts must be committed **executable** (`git update-index
 --chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the

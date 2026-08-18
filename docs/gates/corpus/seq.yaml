@@ -1,0 +1,5 @@
+name: seq
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - {id: build, type: command, run: make build}
+  - {id: ship, type: manual, instructions: ship it}

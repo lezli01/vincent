@@ -2219,6 +2219,30 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         requires_input marks an entry whose §7.4 `require` steps
                                         leave their agent to the task, so the agent picked for a
                                         task must be one that can ask (task 013, added 2026-08-17)
+GET    /v1/workflows/definition         one workflow's whole recursive structure, selected with
+       ?name=&project_id=               the same §5.2 shadowing the list applies (task 017,
+                                        added 2026-08-18):
+                                        { name, scope, project_id, file, platforms[]?,
+                                          platform_supported, requires_input, errors[]?,
+                                          warnings[]?, error?, definition }
+                                        definition is { name, description, platforms[]?,
+                                        defaults, steps[] }, each step carrying every field its
+                                        type uses plus nested `steps`, fan-out `lanes`, `merge`,
+                                        guards and loop drivers. Steps are reported **as
+                                        authored**: workflow defaults stay in their own block and
+                                        are never folded into the steps that inherit them, so
+                                        "this step sets `agent`" and "this step inherits it" stay
+                                        distinguishable — the distinction §8.6 rests on. The
+                                        resolved answer is `POST /v1/resolve`'s.
+                                        The name travels in the query string because a registry
+                                        name is neither URL-safe nor unique: an entry whose file
+                                        does not parse is still listed, under a name that was
+                                        never validated, and the loser of a duplicate name is
+                                        listed beside the winner.
+                                        A workflow that does not parse is a **200** with its
+                                        findings and `definition: null`, the same way the list
+                                        shows a broken file rather than hiding it; 404 means no
+                                        entry of that name in that project's view at all
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
@@ -2595,6 +2619,10 @@ stream for the live tail.
    registry, it does not author it: creating a workflow file from the TUI is out of
    v1 — new files are written in the editor and appear on the next reload. §19's M3
    acceptance loop says "author workflow"; it means this edit path.
+   **A control-flow graph (task 017, added 2026-08-18):** `g` draws the entry under
+   the cursor as a graph — sequence, `parallel` groups, `fan_out` lanes and their
+   merge, guards, `condition`, `loop` and `break` — in a sub-layer over the list.
+   See *Workflow graph* below.
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
    log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
    beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
@@ -2782,6 +2810,54 @@ Views 3–6 stay full-screen because they are forms and lists, not observations:
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are for
 small things — the palette, confirmations, and the answer form.
+
+### Workflow graph
+
+*Added 2026-08-18 (task 017).* `g` on the workflows screen draws the selected
+entry's control flow. It is a **viewer**: nothing here creates, edits or deletes
+a step, and `e` remains the way a workflow is changed.
+
+It is a sub-layer over the list rather than a screen of its own. The list's
+`enter` expansion stays as it was — it carries findings, platform notes and the
+§8.6 resolution the graph does not show — and `Esc` closes one layer at a time:
+an error note, then the graph, then the takeover.
+
+What the picture says, all of it readable with every style stripped:
+
+- **Nodes** are boxes: a name line and a line carrying the §8.2 type word and
+  any badges. `if` marks a guard, `chk` a `check:` field, `×3`/`for_each` a
+  loop's driver, `max N` an explicit bound, `agent` a merge that may be resolved
+  by one. The badge says a thing exists; the inspector strip says what it is.
+- **Frames** enclose structure, by weight: light for a `parallel` group, heavy
+  for a `fan_out`, double for a `loop`. A fan_out's lanes are captioned with the
+  lane id and its guard.
+- **A `fan_out` has a merge node** below its frame, because the join is a git
+  merge that runs and can block (§7.6). **A `parallel` group has none**: its
+  join is its members finishing (§7.5).
+- **Exactly one END** terminates the top-level sequence. A `condition` whose
+  guard is false routes there — except inside a loop body, where false ends that
+  *iteration* (§7.8) and routes to the loop header. A `break` routes to whatever
+  follows the loop, never back to it.
+- **A guard on an ordinary step draws no branch.** False means skip and carry
+  on (§7.7), so the node carries an `if` badge and the flow is unchanged.
+- **A lane naming another workflow is one collapsed node.** Opening it is
+  navigation and is not in this version.
+
+Selection is by node, and the viewport follows it: arrows or `hjkl` move the
+selection, `shift`+arrows pan, `tab`/`shift+tab` walk source order, and the
+pager keys page. A terminal too narrow to draw a node readably says so rather
+than flattening the graph into a shape that is not true; a graph larger than
+the terminal is cropped and panned, never reflowed.
+
+`e` and `R` work inside the layer: `e` opens the graphed workflow's own file,
+and a save redraws the graph in place through the same live reload the list
+uses — the selected node survives it, because a node's identity is its step id
+and not its position. `R` refetches the one definition, which is the layer's
+recovery from a failed fetch. Nothing is cached: the registry changing is
+exactly when someone is editing files in this view.
+
+An entry that does not parse has no graph, and `g` says so instead of opening a
+layer that would repeat the findings already on screen.
 
 ### Discovery
 

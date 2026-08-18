@@ -1,0 +1,14 @@
+name: spread
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - id: spread
+    type: fan_out
+    lanes:
+      - id: api
+        steps:
+          - {id: api_impl, type: agent, prompt: build the api}
+          - {id: api_test, type: command, run: make test-api}
+      - {id: web, workflow: seq, if: '{{ .Fields.web }}'}
+    merge:
+      on_conflict: agent
+      agent: {id: fixup, type: agent, prompt: resolve the conflict}
