@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -76,7 +77,19 @@ const (
 	// agent_unavailable on the same grounds restricted_unsupported is — the
 	// CLI is installed and healthy, just not able to hold a conversation.
 	ReasonInputUnsupported = "input_unsupported"
-	ReasonInternalError    = "internal_error"
+	// ReasonConditionError is a step guard that did not produce a verdict
+	// (§7.7, task 015): the `if:` template failed to render, or it rendered
+	// to something that is neither `true` nor `false`.
+	//
+	// It blocks without consuming the retry budget, unlike every other
+	// failure in this vocabulary, because a guard is evaluated *before* the
+	// step becomes an attempt — there is no attempt to retry, and re-rendering
+	// an unchanged template against an unchanged context cannot answer
+	// differently. §7.2's budget bounds work that a second try could complete;
+	// the second try here is the human's, after they fix the workflow
+	// (task 015 decision 14).
+	ReasonConditionError = "condition_error"
+	ReasonInternalError  = "internal_error"
 )
 
 // Durable event types the engine emits (spec §13.3). State changes emit
@@ -188,6 +201,45 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			step: wf.Steps[index], index: index,
 			log: log.With("step", wf.Steps[index].ID, "step_index", index),
 		}
+		// Guards run before the dispatch below, so every step type is
+		// guarded by the same code — including the three that never reach
+		// runAttempt (§7.7). A verdict is computed fresh here and nowhere
+		// else (decision 10).
+		if env.step.Guarded() || env.step.Type == workflow.StepCondition {
+			pass, err := r.evaluateGuard(ctx, env)
+			switch {
+			case err != nil:
+				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError)
+				r.fail(task, ReasonConditionError, env.log, "evaluate step guard", err)
+				return
+			case env.step.Type == workflow.StepCondition && !pass:
+				// The sequence ends here and the task is `done` (§7.7,
+				// decision 8). The cursor goes to the end rather than
+				// staying put, so completion runs the same path every other
+				// finished task runs and no client reads a done task as
+				// mid-run.
+				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
+				task.CurrentStep = len(wf.Steps)
+				r.persistStepCursor(ctx, task, env.log)
+				env.log.Info("workflow stopped early by a condition step")
+				r.complete(task, log)
+				return
+			case env.step.Type == workflow.StepCondition:
+				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
+				task.CurrentStep = index + 1
+				r.persistStepCursor(ctx, task, env.log)
+				continue
+			case !pass:
+				// Skip and carry on: the step did not run, the workflow did
+				// not stop, and the row says which of the two kinds of skip
+				// this was (decision 9).
+				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "")
+				task.CurrentStep = index + 1
+				r.persistStepCursor(ctx, task, env.log)
+				env.log.Info("step skipped by its guard")
+				continue
+			}
+		}
 		if env.step.Type == workflow.StepManual {
 			r.enterGate(ctx, env)
 			return
@@ -214,10 +266,7 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		switch outcome.state {
 		case store.StepSucceeded:
 			task.CurrentStep = index + 1
-			next := task.CurrentStep
-			if err := r.deps.Store.SetTaskProgress(ctx, task.ID, &next, nil); err != nil {
-				env.log.Error("persist step advance", "error", err)
-			}
+			r.persistStepCursor(ctx, task, env.log)
 		case store.StepInterrupted:
 			// A quota stop is interruption-shaped — no retry consumed, the
 			// slot released — but it must not be re-admitted immediately, or
@@ -228,7 +277,19 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			}
 			r.interrupt(task, log)
 			return
-		case store.StepFailed, store.StepRunning, store.StepApproved, store.StepRejected, store.StepSkipped:
+		case store.StepFailed, store.StepRunning, store.StepApproved,
+			store.StepRejected, store.StepSkipped, store.StepStopped:
+			// `allow_failure` advances past the failures the step itself
+			// produced (§7.2, task 015 decision 5). The row keeps its
+			// `failed` state and its reason — the failure happened, it just
+			// did not stop the workflow — and that row is what a later
+			// guard reads through `.Steps`.
+			if outcome.state == store.StepFailed && allowFailure(env.step, outcome.reason) {
+				env.log.Info("step failed; advancing on allow_failure", "reason", outcome.reason)
+				task.CurrentStep = index + 1
+				r.persistStepCursor(ctx, task, env.log)
+				continue
+			}
 			r.fail(task, outcome.reason, env.log, "step failed", nil)
 			return
 		}
@@ -437,6 +498,17 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	return outcome
 }
 
+// persistStepCursor writes the task's advanced step cursor. A failed write is
+// logged rather than fatal, as it always has been: the in-memory cursor is
+// what this admission walks, and recovery re-runs the step the row still
+// names (§12.4).
+func (r *Runner) persistStepCursor(ctx context.Context, task *store.Task, log *slog.Logger) {
+	next := task.CurrentStep
+	if err := r.deps.Store.SetTaskProgress(ctx, task.ID, &next, nil); err != nil {
+		log.Error("persist step advance", "error", err)
+	}
+}
+
 // renderContext assembles the §8.4 template context, including the results
 // of steps completed so far.
 func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, previous stepOutcome) (workflow.RenderContext, error) {
@@ -449,6 +521,20 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		run := runs[i]
 		switch run.State {
 		case store.StepSucceeded, store.StepApproved, store.StepSkipped:
+		case store.StepFailed:
+			// A failed step is visible only once the engine has advanced past
+			// it — which happens only under `allow_failure` (§7.2), and is
+			// the whole point of that field: a guard downstream reads what
+			// the probe found (task 015 decision 6).
+			//
+			// A step's own failed attempt stays out of `.Steps["itself"]`
+			// mid-retry, because `.LastFailure` is already that channel and
+			// two spellings of one fact is how a context rots. Sub-steps of a
+			// group share the group's index, so this also keeps concurrent
+			// siblings invisible to each other, which §7.5 requires.
+			if run.StepIndex >= env.index {
+				continue
+			}
 		default:
 			continue
 		}
@@ -471,6 +557,7 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 			ID: env.step.ID, Name: env.step.DisplayName(), Index: env.index, Attempt: attempt,
 		},
 		Steps:       steps,
+		Host:        workflow.HostContext{OS: runtime.GOOS, Arch: runtime.GOARCH},
 		Worktree:    workflow.WorktreeContext{Path: env.task.WorktreePath},
 		LastFailure: workflow.Failure{Reason: previous.reason, Output: previous.output},
 		Conflicts:   env.conflicts,
