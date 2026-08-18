@@ -51,6 +51,7 @@ Tasks are `queued` immediately on creation. There is no draft state.
 | `running` | A step process is executing, or about to | **yes** |
 | `awaiting_gate` | Stopped at a `manual` step, waiting for approval | no |
 | `awaiting_input` | The running agent asked a question; its process is alive and idle on stdin | **yes** |
+| `awaiting_children` | A `fan_out` step's lanes are running as child tasks; this task owns no process | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human | no |
 | `paused` | You asked it to hold; takes effect at the next step boundary | no |
 | `done` | Every step succeeded. Worktree and branch retained for inspection | no |
@@ -69,6 +70,19 @@ the resume time on the row (`queued → 14:20`) and the detail header names the
 reason. Cancelling, pausing or otherwise acting on the task drops the wait
 immediately — a human action always means go.
 
+**`awaiting_children` holds no slot, and offers only `cancel`.** A fan-out
+parent waiting on its lanes owns no process, so keeping a slot would starve
+the queue for hours — and it is what makes fan-out deadlock-free at any depth,
+since a parent releases its slot before its children need one. It is not a
+reuse of `awaiting_gate` because approve, reject and skip would all be
+meaningless while children are still running: the states differ in what a
+human can do about them, which is the only thing the lifecycle is for.
+
+The parent resumes on its own once every lane has settled — finished or ended.
+A lane that is `blocked`, at a gate, or paused holds the join open until you
+deal with it; the `children` rollup on `GET /v1/tasks/{id}` (and the TUI's
+`awaiting_children (2 blocked)` row) is where you see that.
+
 **`awaiting_input` keeps its concurrency slot.** The agent process is alive
 mid-step, idle on its stdin; killing or re-queueing it would lose the very
 session the answer belongs to. So a forgotten question does occupy a slot, until
@@ -82,7 +96,7 @@ its worktree, its branch and its transcripts while it does.
 
 | Action | Valid from | Effect |
 |---|---|---|
-| `cancel` | queued, running, awaiting_input, awaiting_gate, blocked, paused | Kills any running process — graceful termination, then a kill after 10s — and moves to `aborted` |
+| `cancel` | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process — graceful termination, then a kill after 10s — and moves to `aborted`. From `awaiting_children` it cascades to every unfinished lane, whose branches and worktrees survive |
 | `pause` | queued, running | From `running`, finishes the current step then holds. The request is persisted, so it survives a daemon crash; any other action clears it |
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued` |
@@ -153,6 +167,8 @@ same thing wherever it originated.
 | `invalid_snapshot` | The task's stored workflow snapshot is unusable |
 | `platform_unsupported` | The workflow is restricted to platforms this host is not (`platforms:`). Only reachable for a task created on another OS |
 | `input_unsupported` | The step declares `on_input: require` and its agent cannot take mid-run input. Refused at task creation, so only reachable when the agent changed underneath the task |
+| `merge_conflict` | A fan-out lane's merge conflicted. The worktree is left conflicted on purpose: resolve it, stage the files, and retry — the join commits your resolution and merges the rest |
+| `lane_failed` | A fan-out lane was cancelled or ended without finishing. **Nothing is merged** — a partial merge looks exactly like a complete one downstream. Fix the lane (it is an ordinary task), then retry the parent |
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 

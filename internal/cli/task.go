@@ -105,10 +105,12 @@ func newTaskAddCmd() *cobra.Command {
 
 func newTaskLsCmd() *cobra.Command {
 	var (
-		projectID int64
-		state     string
-		archived  bool
-		limit     int
+		projectID       int64
+		state           string
+		archived        bool
+		includeChildren bool
+		parentID        int64
+		limit           int
 	)
 	cmd := &cobra.Command{
 		Use:   "ls",
@@ -116,7 +118,12 @@ func newTaskLsCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				opts := apiclient.ListTasksOptions{ProjectID: projectID, State: state, Limit: limit}
+				opts := apiclient.ListTasksOptions{
+					ProjectID: projectID, State: state, Limit: limit,
+					// Fan-out lanes are hidden by default (§13.2): the list is
+					// the work someone asked for, and a 64-task tree buries it.
+					IncludeChildren: includeChildren, ParentID: parentID,
+				}
 				if archived {
 					opts.Archived = apiclient.ArchivedAll
 				}
@@ -146,6 +153,10 @@ func newTaskLsCmd() *cobra.Command {
 	cmd.Flags().Int64Var(&projectID, "project", 0, "Only tasks in this project")
 	cmd.Flags().StringVar(&state, "state", "", "Only tasks in this state")
 	cmd.Flags().BoolVar(&archived, "archived", false, "Include archived tasks")
+	cmd.Flags().BoolVar(&includeChildren, "include-children", false,
+		"Include fan-out lanes, which are hidden by default")
+	cmd.Flags().Int64Var(&parentID, "parent", 0,
+		"List one fan-out task's lanes, in merge order")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum rows")
 	jsonFlag(cmd)
 	return cmd

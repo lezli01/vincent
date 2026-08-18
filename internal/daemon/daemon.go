@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -220,7 +221,23 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// The broker is the post-commit fan-out (§13.3): SSE subscribers and the
 	// scheduler's wake all hang off the store's single event hook through it.
 	broker := events.New()
-	st.SetEventHook(broker.Publish)
+	// Fan-out ancestors are notified through the same hook (§13.3, task 014
+	// decision 14). The relay runs post-commit like every other subscriber,
+	// and the events it appends come back through this hook themselves — no
+	// recursion, because children_changed is not one of the types it reacts
+	// to.
+	st.SetEventHook(func(e *store.Event) {
+		broker.Publish(e)
+		if e == nil || e.TaskID == nil {
+			return
+		}
+		if e.Type != store.EventTaskStateChanged && e.Type != store.EventTaskCreated {
+			return
+		}
+		if err := st.EmitChildrenChanged(ctx, *e.TaskID, store.TaskState(stateOfEvent(e))); err != nil {
+			logger.Error("notify fan-out ancestors", "task", *e.TaskID, "error", err)
+		}
+	})
 
 	// Crash recovery runs before anything can admit or execute (§12.4): it
 	// belongs to neither the scheduler nor the runner. Orphans are killed
@@ -492,4 +509,21 @@ func primeAgentCatalog(ctx context.Context, logger *slog.Logger, catalog *agent.
 			logger.Warn("agent not available", "agent", name, "error", av.Error)
 		}
 	}
+}
+
+// stateOfEvent reads the `to` field a task.state_changed event carries, so
+// the children_changed relay can pass it on. A task.created event has none —
+// the task is queued by definition — and an unreadable payload yields "",
+// which a client treats as "re-fetch the rollup", which it does anyway.
+func stateOfEvent(e *store.Event) string {
+	var payload struct {
+		To string `json:"to"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return ""
+	}
+	if payload.To == "" && e.Type == store.EventTaskCreated {
+		return string(store.TaskQueued)
+	}
+	return payload.To
 }

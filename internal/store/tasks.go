@@ -16,6 +16,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_input_json, admit_not_before, queued_reason,
+	parent_task_id, parent_step_index, lane_id, lane_order,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -81,12 +82,14 @@ func (s *Store) CreateTask(ctx context.Context, t *Task, resolveBranch func(id i
 			INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 				base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 				state, current_step, block_reason,
+				parent_task_id, parent_step_index, lane_id, lane_order,
 				created_at, updated_at, started_at, finished_at, archived_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 			t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
 			nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 			string(t.State), t.CurrentStep, nullString(t.BlockReason),
+			t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder,
 			formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 		if err != nil {
@@ -198,7 +201,24 @@ type TaskFilter struct {
 	Archived  ArchivedFilter
 	Limit     int // 0 = unlimited
 	Offset    int
+	// Children decides whether fan-out lanes appear (task 014 decision 13).
+	// The zero value is ChildrenExclude: a list is the work someone asked
+	// for, and a 64-task tree would bury it.
+	Children ChildrenFilter
+	// ParentID lists exactly one parent's lanes, in merge order. It implies
+	// nothing about Children — naming a parent *is* asking for children.
+	ParentID int64
 }
+
+// ChildrenFilter decides whether fan-out lanes are listed (task 014).
+type ChildrenFilter int
+
+const (
+	// ChildrenExclude returns root tasks only — parent_task_id IS NULL.
+	ChildrenExclude ChildrenFilter = iota
+	// ChildrenInclude returns the flat everything, roots and lanes alike.
+	ChildrenInclude
+)
 
 // ListTasks returns tasks matching f, newest first.
 func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
@@ -212,6 +232,15 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	if f.State != "" {
 		where = append(where, "state = ?")
 		args = append(args, string(f.State))
+	}
+	switch {
+	case f.ParentID != 0:
+		// Asking for one parent's lanes is asking for children, so the
+		// Children filter does not also apply here.
+		where = append(where, "parent_task_id = ?")
+		args = append(args, f.ParentID)
+	case f.Children == ChildrenExclude:
+		where = append(where, "parent_task_id IS NULL")
 	}
 	// An explicit State always wins: asking for state=archived and getting
 	// nothing back because the default excludes archives would be absurd.
@@ -229,7 +258,14 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY id DESC"
+	// Lanes of one parent read in merge order — the order the join will
+	// merge them, which is what someone drilling into a fan-out is looking
+	// at. Everything else is newest first.
+	if f.ParentID != 0 {
+		q += " ORDER BY lane_order ASC, id ASC"
+	} else {
+		q += " ORDER BY id DESC"
+	}
 	if f.Limit > 0 || f.Offset > 0 {
 		limit := f.Limit
 		if limit == 0 {
@@ -678,6 +714,9 @@ func scanTask(r rowScanner) (*Task, error) {
 		retryCursor, pendingOv      sql.NullString
 		pendingInput                sql.NullString
 		admitNotBefore, queuedWhy   sql.NullString
+		parentID, parentStep        sql.NullInt64
+		laneID                      sql.NullString
+		laneOrder                   sql.NullInt64
 		created, updated            string
 		started, finished, archived sql.NullString
 	)
@@ -687,9 +726,20 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingInput, &admitNotBefore, &queuedWhy,
+		&parentID, &parentStep, &laneID, &laneOrder,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
+	if parentID.Valid {
+		id := parentID.Int64
+		t.ParentTaskID = &id
+	}
+	if parentStep.Valid {
+		idx := int(parentStep.Int64)
+		t.ParentStepIndex = &idx
+	}
+	t.LaneID = laneID.String
+	t.LaneOrder = int(laneOrder.Int64)
 	t.WorktreePath = worktree.String
 	t.BlockReason = blockReason.String
 	t.PendingInputJSON = pendingInput.String

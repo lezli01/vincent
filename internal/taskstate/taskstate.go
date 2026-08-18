@@ -15,16 +15,27 @@ const (
 	Running       State = "running"
 	AwaitingGate  State = "awaiting_gate"
 	AwaitingInput State = "awaiting_input"
-	Blocked       State = "blocked"
-	Paused        State = "paused"
-	Done          State = "done"
-	Aborted       State = "aborted"
-	Archived      State = "archived"
+	// AwaitingChildren is a `fan_out` step's parent waiting for its lanes
+	// (§7.6, task 014). It holds **no** slot: the actor invariant says a
+	// gate, a block or a pause releases the slot and ends the goroutine, and
+	// a parent that kept one for hours while its children worked is the exact
+	// starvation awaiting_gate exists to avoid.
+	//
+	// It is a state of its own rather than a reuse of awaiting_gate because
+	// the two differ in what a human can do about them, which is the only
+	// thing §6 is for: awaiting_gate offers approve/reject/skip, and none of
+	// the three mean anything while children are still running.
+	AwaitingChildren State = "awaiting_children"
+	Blocked          State = "blocked"
+	Paused           State = "paused"
+	Done             State = "done"
+	Aborted          State = "aborted"
+	Archived         State = "archived"
 )
 
 // All lists every state, in the order §6 documents them.
 var All = []State{
-	Queued, Running, AwaitingGate, AwaitingInput,
+	Queued, Running, AwaitingGate, AwaitingInput, AwaitingChildren,
 	Blocked, Paused, Done, Aborted, Archived,
 }
 
@@ -45,6 +56,21 @@ func HoldsSlot(s State) bool { return s == Running || s == AwaitingInput }
 
 // Terminal reports whether no further transition is possible.
 func Terminal(s State) bool { return s == Archived }
+
+// Settled reports whether a task has finished in the sense a fan-out join
+// needs: it is done, or it ended without finishing (§6, task 014 decision
+// 20). A parent resumes when every descendant is settled.
+//
+// This is deliberately **not** Terminal, which means "no further transition
+// is possible" and is true of `archived` alone — a `done` task can still be
+// archived. Nor is it "holds no slot": `blocked`, `awaiting_gate` and
+// `paused` hold none, and a join that proceeded over a blocked lane would
+// merge a branch missing that lane's work with nothing in the result saying
+// so. Those three hold the join open until a human resolves them, which is
+// what the §13.2 children rollup exists to surface.
+//
+// `archived` counts as settled: it is reachable only from done or aborted.
+func Settled(s State) bool { return s == Done || s == Aborted || s == Archived }
 
 // Action is something that moves a task between states: either a human
 // action (§6) or an engine event.
@@ -87,6 +113,12 @@ const (
 	InputClosed Action = "input_closed"
 	// Park is a requested pause taking effect at the step boundary (§6).
 	Park Action = "park"
+	// FanOut is a fan_out step parking its parent after spawning its lanes
+	// (§7.6, task 014).
+	FanOut Action = "fan_out"
+	// ChildrenSettled is every descendant of a parked parent having settled,
+	// which returns it to the queue to run its join.
+	ChildrenSettled Action = "children_settled"
 )
 
 // humanActions is the set of actions a client may invoke, in the order §6
@@ -117,12 +149,13 @@ type Transition struct {
 // Every allowed transition in vincent appears here exactly once.
 var table = map[Action]map[State]Transition{
 	Cancel: {
-		Queued:        {To: Aborted},
-		Running:       {To: Aborted},
-		AwaitingInput: {To: Aborted},
-		AwaitingGate:  {To: Aborted},
-		Blocked:       {To: Aborted},
-		Paused:        {To: Aborted},
+		Queued:           {To: Aborted},
+		Running:          {To: Aborted},
+		AwaitingInput:    {To: Aborted},
+		AwaitingGate:     {To: Aborted},
+		AwaitingChildren: {To: Aborted},
+		Blocked:          {To: Aborted},
+		Paused:           {To: Aborted},
 	},
 	Pause: {
 		Queued: {To: Paused},
@@ -145,6 +178,17 @@ var table = map[Action]map[State]Transition{
 	Interrupt:    {Running: {To: Queued}, AwaitingInput: {To: Queued}},
 	InputClosed:  {AwaitingInput: {To: Running}},
 	Park:         {Running: {To: Paused}},
+
+	// Fan-out (task 014). A parent parks in awaiting_children when its
+	// fan_out step has spawned its lanes, and the scheduler — the one place
+	// admission decisions are unraced — re-queues it once every descendant
+	// has Settled.
+	//
+	// There is deliberately no Pause row: pause is valid from queued and
+	// running, and a parent that owns nothing running has nothing to pause.
+	// Its children are ordinary tasks and pause individually.
+	FanOut:          {Running: {To: AwaitingChildren}},
+	ChildrenSettled: {AwaitingChildren: {To: Queued}},
 }
 
 // Next returns the transition for applying a to a task in state from. ok is

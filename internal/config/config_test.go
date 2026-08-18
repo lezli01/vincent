@@ -95,9 +95,12 @@ agents:
 			Claude: Agent{Path: "/opt/bin/claude"},
 			Codex:  Agent{Path: `C:\tools\codex.exe`},
 		},
-		// And the same again for `tui:`: an unnamed section keeps the §15
-		// default grouping rather than flattening the board.
-		TUI: TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
+		// And the same again for `parallel:` and `tui:`: an unnamed section
+		// keeps its default rather than collapsing to a zero value — a
+		// max_parallel of 0 would refuse to run any sub-step at all.
+		Parallel: Parallel{MaxParallel: 4},
+		FanOut:   FanOut{MaxDepth: 3, MaxTasks: 64},
+		TUI:      TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)
@@ -113,6 +116,25 @@ func TestBranchCleanupDefaults(t *testing.T) {
 	}
 	if d.DeleteRemoteBranchOnArchive {
 		t.Error("delete_remote_branch_on_archive defaults to true, want false")
+	}
+}
+
+// TestParallelMaxParallel pins the task 014 default and the floor under it: a
+// group bounded at zero would deadlock rather than run serially, so the value
+// is rejected at load time instead of being quietly clamped.
+func TestParallelMaxParallel(t *testing.T) {
+	if got := Default().Parallel.MaxParallel; got != 4 {
+		t.Errorf("parallel.max_parallel default = %d, want 4", got)
+	}
+	cfg, err := Load(writeConfig(t, "parallel:\n  max_parallel: 8\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Parallel.MaxParallel != 8 {
+		t.Errorf("parallel.max_parallel = %d, want the configured 8", cfg.Parallel.MaxParallel)
+	}
+	if _, err := Load(writeConfig(t, "parallel:\n  max_parallel: 0\n")); err == nil {
+		t.Error("max_parallel: 0 loaded without error, want a validation failure")
 	}
 }
 

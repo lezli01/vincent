@@ -35,7 +35,8 @@ func (d *detail) timelinePanel(height int) string {
 	}
 	if height <= 1 {
 		if run := d.runByID(d.selectedRun); run.ID != 0 {
-			return d.attemptLine(run)
+			// The collapsed band has no header above it to indent under.
+			return d.attemptLine(run, false)
 		}
 		return d.headerLine()
 	}
@@ -239,18 +240,35 @@ func (d *detail) renderTimeline(height int) string {
 		return styleDim.Render("  queued — no attempts yet")
 	}
 
+	// A `parallel` group's sub-steps all carry the group's step index (task
+	// 014), so the header for that index names the group and each sub-step
+	// gets a tier of its own beneath it. Outside a group the shape is
+	// unchanged: one header, then its attempts.
+	groups := groupedIndexes(runs)
 	lines := make([]string, 0, len(runs)*2)
 	ids := make([]int64, 0, len(runs)*2)
 	cursorLine := 0
 	lastStep := -1
+	lastSub := ""
 	for _, r := range runs {
+		grouped := groups[r.StepIndex]
 		if r.StepIndex != lastStep {
 			lastStep = r.StepIndex
+			lastSub = ""
+			label := stepLabel(r)
+			if grouped {
+				label = d.groupLabel(r.StepIndex)
+			}
 			lines = append(lines, styleStepHeader.Render(
-				fmt.Sprintf("  %d %s", r.StepIndex+1, stepLabel(r))))
+				fmt.Sprintf("  %d %s", r.StepIndex+1, label)))
 			ids = append(ids, 0)
 		}
-		line := d.attemptLine(r)
+		if grouped && r.StepID != lastSub {
+			lastSub = r.StepID
+			lines = append(lines, styleDim.Render("    · "+stepLabel(r)))
+			ids = append(ids, 0)
+		}
+		line := d.attemptLine(r, grouped)
 		if r.ID == d.selectedRun {
 			cursorLine = len(lines)
 			line = styleSelected.Render(line)
@@ -268,6 +286,40 @@ func (d *detail) renderTimeline(height int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+// groupedIndexes reports which step indexes hold more than one distinct step
+// id — which is exactly the `parallel` groups, since every other step type
+// owns its index alone.
+//
+// Derived from the rows rather than read from the snapshot so the timeline
+// renders correctly even before workflow_steps arrives, and for a task whose
+// snapshot no longer parses.
+func groupedIndexes(runs []apiclient.StepRun) map[int]bool {
+	seen := map[int]map[string]bool{}
+	for _, r := range runs {
+		if seen[r.StepIndex] == nil {
+			seen[r.StepIndex] = map[string]bool{}
+		}
+		seen[r.StepIndex][r.StepID] = true
+	}
+	out := make(map[int]bool, len(seen))
+	for index, ids := range seen {
+		out[index] = len(ids) > 1
+	}
+	return out
+}
+
+// groupLabel names a group from the task's snapshot, since the group writes
+// no step_runs row to take a name from (task 014 decision 17). A snapshot
+// that has not loaded yet falls back to the type name, which is still true.
+func (d *detail) groupLabel(index int) string {
+	for _, s := range d.task.WorkflowSteps {
+		if s.Index == index {
+			return fmt.Sprintf("%s (parallel)", s.ID)
+		}
+	}
+	return "(parallel)"
+}
+
 func stepLabel(r apiclient.StepRun) string {
 	name := r.StepName
 	if name == "" {
@@ -281,12 +333,19 @@ func stepLabel(r apiclient.StepRun) string {
 
 // attemptLine is one attempt: what it did, how long it actually worked, and
 // what it cost.
-func (d *detail) attemptLine(r apiclient.StepRun) string {
+// indented is true for an attempt inside a `parallel` group, which sits one
+// tier deeper because its sub-step header is already at the attempt's usual
+// indent.
+func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	mark := " "
 	if r.PromptOverride || r.RunOverride {
 		mark = editedBadge
 	}
-	fields := []string{fmt.Sprintf("    a%d %s %-9s", r.Attempt, mark, r.State)}
+	indent := "    "
+	if indented {
+		indent = "      "
+	}
+	fields := []string{fmt.Sprintf("%sa%d %s %-9s", indent, r.Attempt, mark, r.State)}
 	if dur, ok := r.Duration(d.now()); ok {
 		fields = append(fields, formatElapsed(dur))
 	}

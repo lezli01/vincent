@@ -116,11 +116,11 @@ Common to every step:
 
 | Key | Type | Required | Notes |
 |---|---|---|---|
-| `id` | slug | ✅ | Unique within the file. How `.Steps` addresses it |
+| `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` | ✅ | There is no fourth type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
-| `timeout` | duration | | Per attempt; overrides `defaults` |
+| `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group, bounds the whole group |
 
 ### `type: agent`
 
@@ -199,6 +199,130 @@ Stops and waits for a person.
 
 The task enters `awaiting_gate` and **releases its concurrency slot**. Approving
 advances; rejecting moves the task to `blocked`.
+
+### `type: parallel`
+
+Runs its sub-steps at the same time, in the task's one worktree.
+
+| Key | Type | Required |
+|---|---|---|
+| `steps` | list of steps | ✅ |
+| `max_parallel` | int | — (default `parallel.max_parallel`, 4) |
+
+```yaml
+  - id: verify
+    type: parallel
+    max_parallel: 4
+    timeout: 30m          # bounds the whole group
+    steps:
+      - { id: test,      type: command, run: go test ./... }
+      - { id: lint,      type: command, run: golangci-lint run }
+      - { id: typecheck, type: command, run: go vet ./... }
+```
+
+Sub-steps are ordinary `agent` and `command` steps: each has its own `check`,
+`timeout`, `max_retries` and agent selection, resolved exactly as at the top
+level. What they may **not** be:
+
+- `manual` — a gate releases the task's slot, and there is no such thing as
+  half a task waiting at a gate;
+- another `parallel` — groups do not nest;
+- `on_input: require` — the task has one pending question at a time, so a
+  group of agents that each want to ask has nowhere to put the answers.
+
+The group is one step: one index, one slot, one entry in the timeline. It
+succeeds when every sub-step succeeds. A failure does **not** cancel the
+others — the group waits for everything it started, then blocks with the first
+failure in declaration order. A retry re-runs only what failed, including
+after a human retry: sub-steps that already succeeded are not run again.
+
+> **`max_parallel` is not governed by your concurrency caps.** Those count
+> *tasks* (`max_parallel_tasks`, §11); a group runs inside one of them. One
+> task at `max_parallel: 8` will happily start eight compilers while the board
+> shows a single running task. Size it for the machine, not for the board.
+
+Sub-steps share a working tree. Two of them writing the same file is a bug in
+your workflow — vincent isolates worktrees between *tasks*, not processes
+inside one.
+
+### `type: fan_out`
+
+Turns each lane into a **real child task** with its own worktree and branch,
+then merges those branches back into this task's own.
+
+| Key | Type | Required |
+|---|---|---|
+| `lanes` | list of lanes | ✅ |
+| `merge` | map | — |
+
+```yaml
+  - id: build
+    type: fan_out
+    merge:
+      on_conflict: block          # block (default) | agent
+    lanes:
+      - id: api
+        workflow: implement-module   # a registry workflow
+        fields: { module: api }
+      - id: docs
+        steps:                        # …or inline steps
+          - { id: write, type: agent, prompt: "Document the API." }
+```
+
+A **lane** carries `id` and exactly one of `workflow` or `steps`, plus:
+
+| Key | Type | Notes |
+|---|---|---|
+| `fields` | map | Merged over the parent task's fields; the lane wins |
+| `agent` / `model` / `effort` | string | Override the inherited selection for this lane's whole subtree |
+| `priority` | int | Same, for scheduler priority |
+
+A lane's workflow may itself contain a `fan_out`, to any depth. The bounds are
+`fan_out.max_depth` (3) and `fan_out.max_tasks` (64), both checked when the
+task is created — a cycle or an oversized tree is a `400` naming what is
+wrong, not something you discover as two hundred worktrees.
+
+**What a lane inherits.** Its base branch is the parent's branch, which is how
+the work lands where it belongs. Priority and the agent overrides propagate
+too — a fan-out inside an urgent task would otherwise queue behind unrelated
+work and make the urgent task *slower* than not fanning out.
+
+**One branch is still delivered.** The step does not finish until every lane is
+merged, `--no-ff`, in the order the lanes are declared.
+
+#### `merge` and conflicts
+
+| Key | Type | Notes |
+|---|---|---|
+| `on_conflict` | `block` \| `agent` | Default `block` |
+| `agent` | agent step | Required by, and only valid with, `on_conflict: agent` |
+
+`block` stops the task with `merge_conflict` and leaves the worktree
+conflicted, so you resolve it in place, stage the files, and retry — the join
+commits your resolution and merges what is left.
+
+`agent` tries an agent first. It is an ordinary agent step, `check` and all,
+and the conflicted files are in its template context as `{{.Conflicts}}`. If
+it fails, or its check fails, or conflict markers survive it, you get the same
+block.
+
+```yaml
+    merge:
+      on_conflict: agent
+      agent:
+        id: resolve
+        prompt: |
+          Resolve the merge conflict in: {{ range .Conflicts }}{{.}} {{ end }}
+        check: go build ./... && go test ./...
+```
+
+> **A fan-out fills your caps, it does not exceed them.** Each lane is a task
+> and competes for `max_parallel_tasks` like any other. What it buys is
+> parallelism you would otherwise have to start by hand.
+
+> **N lanes leave N worktrees** on disk until someone archives the tree. That
+> is what `vincent gc` and `vincent doctor` are for, and you will meet it
+> before you meet anything else in this feature.
 
 ### `check` is a field, not a step type
 
@@ -292,7 +416,15 @@ re-derives it.
 `vincent workflow validate <file>` checks all of this locally — no daemon, no
 network, no agent CLI installed.
 
-- `steps` non-empty; step `id`s unique; `type` known.
+- `steps` non-empty; step `id`s unique **across the whole file**, sub-steps
+  of a `parallel` group included; `type` known.
+- A `parallel` group has at least one sub-step and a `max_parallel` of at
+  least 1; its sub-steps are not `manual`, not `parallel`, and do not
+  resolve to `on_input: require`.
+- A `fan_out` step has at least one lane; lane ids are unique within the step;
+  each lane has exactly one of `workflow` and `steps`. `merge.agent` is
+  required by, and only valid with, `on_conflict: agent`. A lane's inline
+  steps have their own id namespace, because each lane becomes its own task.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.

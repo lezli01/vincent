@@ -65,6 +65,15 @@ transcript_max_bytes: 512MB
 # How long a quota-stopped task waits when the agent CLI named no reset time.
 usage_limit_recheck_interval: 15m
 
+# Sub-steps of one `parallel` step group running at once.
+parallel:
+  max_parallel: 4
+
+# Bounds on a `type: fan_out` tree, checked at task creation.
+fan_out:
+  max_depth: 3
+  max_tasks: 64
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -309,6 +318,47 @@ of the step's retry budget. See
 Must be positive. There is no exponential backoff; if you know your plan's
 window, set this to match it. Hot-reloaded, so a change applies to the next
 task that hits a limit.
+
+### `parallel`
+
+```yaml
+parallel:
+  max_parallel: 4
+```
+
+How many sub-steps of a `type: parallel` step group run at once, when the group
+does not set its own `max_parallel:`. Must be at least 1.
+
+**This is a second concurrency dimension, and your task caps do not cover it.**
+`max_parallel_tasks` counts *tasks* in a slot-holding state; a group runs
+inside one such task, so one running task can keep four processes busy. A board
+reading "1 running" is not a promise about the load on the machine — size this
+for the hardware, not for the board.
+
+Read when a group starts, so a reload governs the next group rather than
+resizing one already running. See
+[Workflow schema](workflow-schema.md#type-parallel).
+
+### `fan_out`
+
+```yaml
+fan_out:
+  max_depth: 3
+  max_tasks: 64
+```
+
+Bounds on a `type: fan_out` tree, both checked when a task is created and both
+reported as a `400` naming the bound crossed. `max_tasks` counts the child
+tasks one creation would produce, **not** counting the root.
+
+They are enforced at creation because the whole tree's shape is known there —
+lane lists live in the task's snapshot — which is what turns a depth-3
+explosion into an error in front of the person typing rather than two hundred
+worktrees discovered six hours later.
+
+Depth is unlimited by design and bounded by a default: a deeper tree is a
+config edit, not a code change. See
+[Workflow schema](workflow-schema.md#type-fan_out).
 
 ### `log_level`
 

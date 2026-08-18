@@ -250,14 +250,19 @@ rejected with exit 1.
 
 ```sh
 vincent task ls [--project ID] [--state STATE] [--archived] [--limit N] [--json]
+                [--include-children] [--parent ID]
 ```
 
 Lists tasks. Archived tasks are excluded unless `--archived` is passed. Rows
 carry the board fields — project name, step progress, and cost and token totals
 rolled up across every attempt.
 
-Valid states: `queued`, `running`, `awaiting_gate`, `awaiting_input`, `blocked`,
-`paused`, `done`, `aborted`, `archived` — see
+Fan-out lanes are excluded too: the list is the work you asked for, and a
+64-task tree would bury it. `--parent ID` lists one fan-out task's lanes in
+merge order, and `--include-children` lists everything flat.
+
+Valid states: `queued`, `running`, `awaiting_gate`, `awaiting_input`,
+`awaiting_children`, `blocked`, `paused`, `done`, `aborted`, `archived` — see
 [Task lifecycle](task-lifecycle.md).
 
 ### `vincent task show`

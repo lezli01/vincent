@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,162 @@ func TestParseValidation(t *testing.T) {
 			wantSub:  `unknown agent "gemini"`,
 			wantPath: "defaults.agent",
 		},
+		// task 014 — `type: parallel`.
+		{
+			name:     "parallel group with no sub-steps",
+			src:      "name: x\nsteps:\n  - {id: g, type: parallel, steps: []}\n",
+			wantSub:  "parallel steps require at least one sub-step",
+			wantPath: "steps[0].steps",
+		},
+		{
+			name: "parallel group with max_parallel below one",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    max_parallel: 0\n" +
+				"    steps:\n      - {id: t, type: command, run: go test ./...}\n",
+			wantSub:  "max_parallel must be at least 1",
+			wantPath: "steps[0].max_parallel",
+		},
+		{
+			name: "manual sub-step",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: m, type: manual, instructions: hi}\n",
+			wantSub:  "manual steps are not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name: "nested parallel group",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - id: h\n        type: parallel\n" +
+				"        steps:\n          - {id: t, type: command, run: ls}\n",
+			wantSub:  "parallel groups do not nest",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name: "sub-step requiring mid-run input",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - {id: a, type: agent, prompt: hi, on_input: require}\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].on_input",
+		},
+		{
+			// Resolved, not literal: the sub-step names no policy at all, and
+			// the requirement reaches it from `defaults:` — which is where the
+			// error must point, since that is the line to change.
+			name: "sub-step inheriting require from defaults",
+			src: "name: x\ndefaults:\n  on_input: require\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: a, type: agent, prompt: hi}\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "defaults.on_input",
+		},
+		{
+			// Sub-steps are validated like any other step of their type.
+			name: "sub-step failing its own type's rules",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: c, type: command}\n",
+			wantSub:  "command steps require a run command",
+			wantPath: "steps[0].steps[0].run",
+		},
+		{
+			// Ids are unique workflow-wide, not merely within a group: a
+			// sub-step shares its group's step_index and is told apart by id.
+			name: "sub-step id colliding with a top-level step",
+			src: "name: x\nsteps:\n  - {id: a, type: command, run: ls}\n  - id: g\n    type: parallel\n" +
+				"    steps:\n      - {id: a, type: command, run: ls}\n",
+			wantSub:  "duplicate step id",
+			wantPath: "steps[1].steps[0].id",
+		},
+		{
+			name: "group carrying a field of another type",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    prompt: hi\n" +
+				"    steps:\n      - {id: t, type: command, run: ls}\n",
+			wantSub:  "prompt is not valid on a parallel step",
+			wantPath: "steps[0].prompt",
+		},
+		{
+			name:     "sub-steps on a step that is not a group",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: ls, steps: [{id: b, type: command, run: ls}]}\n",
+			wantSub:  "steps is not valid on a command step",
+			wantPath: "steps[0].steps",
+		},
+		// task 014 — `type: fan_out`.
+		{
+			name:     "fan_out with no lanes",
+			src:      "name: x\nsteps:\n  - {id: f, type: fan_out, lanes: []}\n",
+			wantSub:  "fan_out steps require at least one lane",
+			wantPath: "steps[0].lanes",
+		},
+		{
+			name: "lane with neither a workflow nor steps",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    lanes:\n      - {id: api}\n",
+			wantSub:  "either a workflow name or inline steps",
+			wantPath: "steps[0].lanes[0]",
+		},
+		{
+			name: "lane with both a workflow and steps",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - id: api\n        workflow: build\n" +
+				"        steps: [{id: s, type: command, run: ls}]\n",
+			wantSub:  "not both",
+			wantPath: "steps[0].lanes[0]",
+		},
+		{
+			name: "duplicate lane id",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - {id: api, workflow: build}\n      - {id: api, workflow: docs}\n",
+			wantSub:  "duplicate lane id",
+			wantPath: "steps[0].lanes[1].id",
+		},
+		{
+			name: "inline lane step failing its own rules",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes:\n" +
+				"      - id: api\n        steps: [{id: s, type: agent}]\n",
+			wantSub:  "agent steps require a prompt",
+			wantPath: "steps[0].lanes[0].steps[0].prompt",
+		},
+		{
+			name: "on_conflict: agent without a resolver",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    merge: {on_conflict: agent}\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "requires merge.agent",
+			wantPath: "steps[0].merge.agent",
+		},
+		{
+			name: "a resolver the policy never runs",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    merge:\n      agent:\n" +
+				"        id: resolve\n        prompt: fix it\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "only used by on_conflict",
+			wantPath: "steps[0].merge.agent",
+		},
+		{
+			name: "unknown conflict policy",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n" +
+				"    merge: {on_conflict: yolo}\n    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "on_conflict must be",
+			wantPath: "steps[0].merge.on_conflict",
+		},
+		{
+			// The resolver is a full agent step, so it is judged by the
+			// ordinary agent rules rather than a private subset.
+			name: "resolver failing the ordinary agent rules",
+			src: "name: x\nsteps:\n  - id: f\n    type: fan_out\n    merge:\n      on_conflict: agent\n" +
+				"      agent: {id: resolve, prompt: fix it, agent: gemini}\n" +
+				"    lanes: [{id: api, workflow: build}]\n",
+			wantSub:  `unknown agent "gemini"`,
+			wantPath: "steps[0].merge.agent.agent",
+		},
+		{
+			name: "fan_out inside a parallel group",
+			src: "name: x\nsteps:\n  - id: g\n    type: parallel\n    steps:\n" +
+				"      - id: f\n        type: fan_out\n        lanes: [{id: api, workflow: build}]\n",
+			wantSub:  "not valid inside a parallel group",
+			wantPath: "steps[0].steps[0].type",
+		},
+		{
+			name:     "lanes on a step that is not a fan_out",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: ls, lanes: [{id: l, workflow: w}]}\n",
+			wantSub:  "lanes is not valid on a command step",
+			wantPath: "steps[0].lanes",
+		},
 	}
 
 	opts := Options{KnownAgents: []string{"claude", "codex"}}
@@ -243,6 +400,198 @@ func hasPath(errs Errors, path string) bool {
 
 // TestParseReportsLines pins the file/line reporting T2.1 promises: both a
 // strict-decoding failure and a semantic failure point at the offending line.
+// TestParseParallelGroup covers the shape task 014 exists to allow, and the
+// two properties the engine leans on: sub-steps decode in declaration order,
+// and a group's own `steps:` survives a Marshal round-trip — `edit + retry`
+// rewrites a snapshot through Marshal, and a group that lost its members
+// there would come back as an empty group.
+func TestParseParallelGroup(t *testing.T) {
+	src := strings.TrimSpace(`
+name: verify
+steps:
+  - id: build
+    type: command
+    run: go build ./...
+  - id: verify
+    type: parallel
+    max_parallel: 2
+    timeout: 30m
+    steps:
+      - {id: test, type: command, run: go test ./...}
+      - {id: lint, type: command, run: golangci-lint run}
+      - {id: review, type: agent, prompt: "Review {{.Task.Title}}.", check: go vet ./...}
+`) + "\n"
+	wf, _, err := Parse([]byte(src), Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	group := wf.Steps[1]
+	if group.Type != StepParallel {
+		t.Fatalf("steps[1].type = %q, want %q", group.Type, StepParallel)
+	}
+	if group.MaxParallel == nil || *group.MaxParallel != 2 {
+		t.Errorf("max_parallel = %v, want 2", group.MaxParallel)
+	}
+	if group.Timeout == nil || group.Timeout.Std() != 30*time.Minute {
+		t.Errorf("group timeout = %v, want 30m", group.Timeout)
+	}
+	gotIDs := make([]string, 0, len(group.Steps))
+	for _, sub := range group.Steps {
+		gotIDs = append(gotIDs, sub.ID)
+	}
+	if want := []string{"test", "lint", "review"}; !reflect.DeepEqual(gotIDs, want) {
+		t.Errorf("sub-step ids = %v, want %v in declaration order", gotIDs, want)
+	}
+	if group.Steps[2].Check != "go vet ./..." {
+		t.Errorf("sub-step check = %q, want it preserved", group.Steps[2].Check)
+	}
+
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, _, err := Parse(out, Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("re-parse marshalled workflow: %v", err)
+	}
+	// Not a whole-struct DeepEqual: Marshal is canonical rather than
+	// faithful, so an unset `env:` comes back as an empty map rather than a
+	// nil one. What matters here is that the group kept its members.
+	rt := back.Steps[1]
+	rtIDs := make([]string, 0, len(rt.Steps))
+	for _, sub := range rt.Steps {
+		rtIDs = append(rtIDs, sub.ID)
+	}
+	if want := []string{"test", "lint", "review"}; !reflect.DeepEqual(rtIDs, want) {
+		t.Errorf("round-tripped sub-step ids = %v, want %v", rtIDs, want)
+	}
+	if rt.MaxParallel == nil || *rt.MaxParallel != 2 {
+		t.Errorf("round-tripped max_parallel = %v, want 2", rt.MaxParallel)
+	}
+	if rt.Steps[2].Prompt != group.Steps[2].Prompt {
+		t.Errorf("round-tripped sub-step prompt = %q, want %q", rt.Steps[2].Prompt, group.Steps[2].Prompt)
+	}
+}
+
+// TestParseFanOutStep covers the shape phase 2 exists to allow, including the
+// two things the engine leans on: lane order is declaration order (it is the
+// merge order, decision 7), and lanes survive Marshal — the snapshot a child
+// is cut from goes through it.
+//
+// It also pins decision 5: a lane's inline steps may themselves fan out, to
+// any depth. The bound on that is a creation-time check against
+// `fan_out.max_depth`, not a parse-time ban.
+func TestParseFanOutStep(t *testing.T) {
+	src := strings.TrimSpace(`
+name: build-all
+steps:
+  - id: build
+    type: fan_out
+    merge:
+      on_conflict: agent
+      agent:
+        id: resolve
+        prompt: "Resolve the conflict in {{.Task.Title}}."
+        check: go build ./...
+    lanes:
+      - id: api
+        workflow: implement-module
+        fields: { module: api }
+        model: opus
+        priority: 5
+      - id: docs
+        steps:
+          - id: write
+            type: agent
+            prompt: Document the API.
+          - id: deep
+            type: fan_out
+            lanes:
+              - { id: inner, workflow: proofread }
+`) + "\n"
+	wf, _, err := Parse([]byte(src), Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	step := wf.Steps[0]
+	if step.Type != StepFanOut {
+		t.Fatalf("type = %q, want %q", step.Type, StepFanOut)
+	}
+	if got := []string{step.Lanes[0].ID, step.Lanes[1].ID}; got[0] != "api" || got[1] != "docs" {
+		t.Errorf("lane order = %v, want [api docs] as declared", got)
+	}
+	if step.Lanes[0].Fields["module"] != "api" {
+		t.Errorf("lane fields = %v, want module=api", step.Lanes[0].Fields)
+	}
+	if step.Lanes[0].Model != "opus" || step.Lanes[0].Priority == nil || *step.Lanes[0].Priority != 5 {
+		t.Errorf("lane overrides not decoded: model=%q priority=%v",
+			step.Lanes[0].Model, step.Lanes[0].Priority)
+	}
+	if step.ConflictPolicy() != ConflictAgent || step.Merge.Agent == nil {
+		t.Fatalf("conflict policy = %q, resolver = %v", step.ConflictPolicy(), step.Merge.Agent)
+	}
+	if step.Merge.Agent.Check != "go build ./..." {
+		t.Errorf("resolver check = %q, want it preserved", step.Merge.Agent.Check)
+	}
+	// Depth 2: a lane's inline steps fan out again.
+	if inner := step.Lanes[1].Steps[1]; inner.Type != StepFanOut || inner.Lanes[0].ID != "inner" {
+		t.Errorf("nested fan_out not parsed: %+v", inner)
+	}
+
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, _, err := Parse(out, Options{KnownAgents: []string{"claude"}})
+	if err != nil {
+		t.Fatalf("re-parse marshalled workflow: %v", err)
+	}
+	rt := back.Steps[0]
+	if len(rt.Lanes) != 2 || rt.Lanes[0].ID != "api" || rt.Lanes[1].ID != "docs" {
+		t.Errorf("round-tripped lanes = %+v, want both in order", rt.Lanes)
+	}
+	if rt.Lanes[1].Steps[1].Lanes[0].ID != "inner" {
+		t.Error("the depth-2 lane did not survive the round trip")
+	}
+	if rt.ConflictPolicy() != ConflictAgent || rt.Merge.Agent == nil ||
+		rt.Merge.Agent.Prompt != step.Merge.Agent.Prompt {
+		t.Errorf("round-tripped merge = %+v, want the resolver preserved", rt.Merge)
+	}
+}
+
+// TestDefaultConflictPolicyIsBlock: a fan_out that says nothing about
+// conflicts blocks on one. An agent resolving a semantic conflict silently is
+// the outcome decision 8 refuses to make the default.
+func TestDefaultConflictPolicyIsBlock(t *testing.T) {
+	src := "name: x\nsteps:\n  - id: f\n    type: fan_out\n    lanes: [{id: api, workflow: build}]\n"
+	wf, _, err := Parse([]byte(src), Options{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := wf.Steps[0].ConflictPolicy(); got != ConflictBlock {
+		t.Errorf("default conflict policy = %q, want %q", got, ConflictBlock)
+	}
+}
+
+// TestMarshalOmitsEmptyGroupFields: `steps:` and `max_parallel:` are omitempty
+// so a marshalled snapshot does not give every agent and command step an empty
+// group — which would then have to be ignored by everything reading it.
+func TestMarshalOmitsEmptyGroupFields(t *testing.T) {
+	wf, _, err := Parse([]byte("name: x\nsteps:\n  - {id: a, type: command, run: ls}\n"), Options{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, key := range []string{"steps:\n    -", "max_parallel"} {
+		if strings.Contains(string(out), key) {
+			t.Errorf("marshalled a command step with %q:\n%s", key, out)
+		}
+	}
+}
+
 func TestParseReportsLines(t *testing.T) {
 	semantic := "name: x\nsteps:\n  - id: a\n    type: agent\n    timeout: 0s\n    prompt: hi\n"
 	_, _, err := Parse([]byte(semantic), Options{})
