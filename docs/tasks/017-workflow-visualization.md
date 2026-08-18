@@ -1,6 +1,6 @@
 # 017 — Workflow visualization in the TUI
 
-**Status:** ⬜ planned (0/9) · **Opened:** 2026-08-18
+**Status:** 🚧 in progress (1/9) · **Opened:** 2026-08-18
 
 Vincent's workflow screen currently explains a workflow as a numbered list of
 its top-level steps. That was sufficient while workflows were mostly linear,
@@ -662,7 +662,7 @@ should depend on a specific color profile.
 
 ## Tasks
 
-- [ ] **017.1 — Full workflow-definition API and client model.** Add
+- [x] **017.1 — Full workflow-definition API and client model.** ✓ 2026-08-18 Add
   `GET /v1/workflows/definition?name=&project_id=` (decision 10), the server
   DTO, the apiclient DTO/method and API tests. Preserve project/global
   shadowing, built-ins and registry findings; a broken workflow answers 200
