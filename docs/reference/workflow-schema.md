@@ -118,9 +118,14 @@ Common to every step:
 |---|---|---|---|
 | `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` | ✅ | `check` is a *field*, not a type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
 | `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group, bounds the whole group |
+| `if` | template | | Guard: skip this step unless it renders `true`. See [Conditions](#conditions) |
+
+`allow_failure: true` is available on `agent` and `command` steps only; it is
+covered under [Conditions](#conditions), because it exists to give a guard
+something to read.
 
 ### `type: agent`
 
@@ -324,6 +329,105 @@ block.
 > is what `vincent gc` and `vincent doctor` are for, and you will meet it
 > before you meet anything else in this feature.
 
+## Conditions
+
+A workflow can decide at run time what to do next. Three fields do it.
+
+### `if:` — skip a step, carry on
+
+Any step may carry a guard. It renders like every other template here and must
+produce, after trimming, exactly `true` or `false` — nothing else counts, and
+`yes`, `1` and an empty string are all errors rather than a guess.
+
+```yaml
+  - id: changelog
+    type: agent
+    if: '{{ eq (index .Task.Fields "changelog") "yes" }}'
+    prompt: Update CHANGELOG.md.
+```
+
+A false guard **skips that step and the workflow continues**. The step still
+appears in the task's step list, in state `skipped` with reason `condition` —
+so you can tell it apart from a step you skipped by hand — and downstream
+templates can see it in `.Steps`.
+
+On a **fan-out lane** and on a **`parallel` sub-step**, the same `if:` means
+"do not start this one": the other lanes and sub-steps still run, and the join
+still happens. A set has no "later" to skip to, so a false guard subsets it.
+
+Guards are re-evaluated every single time — on each attempt, on a retry, and
+after a daemon restart. Nothing is cached. If you fix a workflow and retry a
+blocked step whose guard is now false, the step is skipped, which is the point.
+
+### `type: condition` — finish early
+
+A step whose entire body is the guard. True continues; **false ends the run and
+the task is `done`**. It takes `id`, `name` and `if:` and nothing else — no
+`run`, no `timeout`, no `max_retries` — because it starts no process.
+
+```yaml
+  - id: nothing-to-do
+    type: condition
+    if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
+```
+
+The steps after it are never considered and record nothing; the one row it
+leaves is in state `stopped`, which is where the detail view shows the run
+ended.
+
+There is no "stop and block for a human" option, because you already have one:
+a `command` step that exits nonzero. What this adds is *stop and succeed*.
+
+A `condition` step is valid at the top level and inside a lane's workflow. It
+is rejected inside a `parallel` group — a group is a set, so there is no
+sequence there to end.
+
+### `allow_failure:` — a failure that is data
+
+Without this, a guard can only read what a human typed when creating the task.
+A command step that exits nonzero **blocks the task**, so no step that
+succeeded ever has a nonzero exit code to branch on.
+
+`allow_failure: true` changes that for one step: once its retry budget is
+spent, the workflow advances instead of blocking. The row keeps its `failed`
+state and its reason — the failure happened — and that row is what the next
+guard reads.
+
+```yaml
+  - id: probe
+    type: command
+    run: git diff --quiet HEAD~1
+    allow_failure: true
+    max_retries: 0                # a probe should not retry
+  - id: stop-if-clean
+    type: condition
+    if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
+```
+
+It only swallows failures **the step itself produced** — a nonzero exit, a
+failed `check`, an agent error, a timeout, a transcript-cap kill. It never
+swallows vincent failing to *run* the step: a missing CLI, an expired login, a
+template error. Branching on "the agent is not installed" as though it were a
+test result is not a thing a workflow should be able to do.
+
+It is deliberately not available in `defaults:`. A file-wide "failures do not
+block" is a footgun, and it should cost you one line per step that wants it.
+
+### Reading the outcome of an earlier step
+
+Guards mostly read `.Steps`, which after this change carries a little more:
+
+| What | Reads as |
+|---|---|
+| A step that succeeded | `{{ eq (index .Steps "x").Status "succeeded" }}` |
+| A step skipped by its guard | `{{ eq (index .Steps "x").Status "skipped" }}` |
+| A step that failed under `allow_failure` | `{{ ne (index .Steps "x").ExitCode 0 }}` |
+| The platform | `{{ ne .Host.OS "windows" }}` |
+| A field typed at creation | `{{ eq (index .Task.Fields "ship") "yes" }}` |
+
+A step's *own* failed attempt is not in `.Steps` while it is retrying — use
+`.LastFailure` for that.
+
 ### `check` is a field, not a step type
 
 It runs after the step body, in the worktree, with the same environment as a
@@ -342,7 +446,7 @@ Invert it when failure is the deliverable: `check: '! go test ./...'`.
 
 ## Template context
 
-`prompt`, `run`, `check` and `instructions` are Go `text/template`, rendered
+`prompt`, `run`, `check`, `instructions` and `if` are Go `text/template`, rendered
 with `missingkey=error` — a bad reference fails the step *before* any process
 starts.
 
@@ -352,7 +456,8 @@ starts.
 | `.Project` | `Name`, `Path` (the original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
-| `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}` |
+| `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. Includes steps skipped by a guard (`Status: "skipped"`) and steps that failed under `allow_failure`, once the workflow has moved past them |
+| `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retries only: `{Reason, Output}`; empty otherwise |
 
@@ -419,8 +524,12 @@ network, no agent CLI installed.
 - `steps` non-empty; step `id`s unique **across the whole file**, sub-steps
   of a `parallel` group included; `type` known.
 - A `parallel` group has at least one sub-step and a `max_parallel` of at
-  least 1; its sub-steps are not `manual`, not `parallel`, and do not
-  resolve to `on_input: require`.
+  least 1; its sub-steps are not `manual`, not `parallel`, not `condition`,
+  and do not resolve to `on_input: require`.
+- A `condition` step has an `if:` and nothing else — `timeout`, `max_retries`
+  and `allow_failure` included. `allow_failure` is valid on `agent` and
+  `command` steps only. A `condition` step in **last** position is a *warning*:
+  the task is done whether it continues or stops.
 - A `fan_out` step has at least one lane; lane ids are unique within the step;
   each lane has exactly one of `workflow` and `steps`. `merge.agent` is
   required by, and only valid with, `on_conflict: agent`. A lane's inline

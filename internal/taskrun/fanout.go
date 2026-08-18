@@ -63,7 +63,27 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		return r.runStepWithRetries(ctx, &joinEnv), false
 	}
 
-	if err := r.spawnLanes(ctx, env); err != nil {
+	selected, err := r.selectLanes(ctx, env)
+	if err != nil {
+		r.recordDecisionRow(ctx, env, store.StepFailed, "", ReasonConditionError, "")
+		r.fail(env.task, ReasonConditionError, env.log, "evaluate lane guard", err)
+		return stepOutcome{}, true
+	}
+	if len(selected) == 0 {
+		// Every lane was guarded off. The step is reached, chooses nothing and
+		// advances: a fan-out whose conditions all said "not this time"
+		// decided correctly (§7.6, task 015 decision 11).
+		//
+		// It must not park. A parent in `awaiting_children` with no children
+		// would be re-queued by the scheduler the moment it looked, find no
+		// lanes, spawn none and park again — a loop with no exit.
+		env.log.Info("fan-out selected no lanes; nothing to spawn")
+		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
+			"no lane was selected: every lane's `if:` was false")
+		return stepOutcome{state: store.StepSucceeded}, false
+	}
+
+	if err := r.spawnLanes(ctx, env, selected); err != nil {
 		// A partial spawn is not left behind: the lanes that were created are
 		// cancelled, so a retry starts from a clean slate rather than
 		// half a tree.
@@ -86,12 +106,17 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 // child's base branch, its overrides and priority propagate, and a lane spec
 // may override any of them for its own subtree. Fields merge with the
 // parent's, the lane winning (decision 29).
-func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv) error {
+func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, selected []int) error {
 	project, err := r.deps.Store.GetProject(ctx, env.task.ProjectID)
 	if err != nil {
 		return fmt.Errorf("load project: %w", err)
 	}
-	for order, lane := range env.step.Lanes {
+	for _, order := range selected {
+		lane := env.step.Lanes[order]
+		// order is the lane's **declared** index, not its position among the
+		// selected: `lane_order` is what the join merges by (§7.6,
+		// decision 7), so renumbering around a guarded-off lane would make a
+		// re-run merge in a different order than the first run.
 		child, err := r.laneTask(env, lane, order)
 		if err != nil {
 			return err
@@ -117,6 +142,43 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv) error {
 		env.log.Info("lane spawned", "lane", lane.ID, "child", child.ID, "branch", child.BranchName)
 	}
 	return nil
+}
+
+// selectLanes evaluates every lane's `if:` and returns the declared indices of
+// the lanes to spawn (§7.6, task 015 decision 11).
+//
+// Evaluated here, at run time and in the parent's context, rather than at task
+// creation: that is what lets a lane depend on what an earlier step found,
+// which is the use case the feature exists for. The price is paid at creation,
+// where `fan_out.max_depth` and `fan_out.max_tasks` go on counting guarded
+// lanes — an over-approximation §7.6 states rather than leaves to be
+// discovered.
+func (r *Runner) selectLanes(ctx context.Context, env *stepEnv) ([]int, error) {
+	selected := make([]int, 0, len(env.step.Lanes))
+	for i, lane := range env.step.Lanes {
+		if !lane.Guarded() {
+			selected = append(selected, i)
+			continue
+		}
+		rc, err := r.renderContext(ctx, env, r.nextAttempt(ctx, env), stepOutcome{})
+		if err != nil {
+			return nil, err
+		}
+		pass, err := workflow.Evaluate(fmt.Sprintf("lanes[%d].if", i), lane.If, rc)
+		if err != nil {
+			return nil, err
+		}
+		if !pass {
+			// No child, so no row of its own to record it in: a lane that was
+			// never spawned has no task to carry the fact. The parent's log
+			// and the absent child are the record, which is the same way a
+			// lane list that never mentioned it would read.
+			env.log.Info("lane skipped by its guard", "lane", lane.ID)
+			continue
+		}
+		selected = append(selected, i)
+	}
+	return selected, nil
 }
 
 // laneTask builds the child task row for one lane, without inserting it.

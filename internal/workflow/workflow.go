@@ -30,6 +30,15 @@ const (
 	// runs processes, this creates tasks — they share concepts and nothing
 	// else, which is why they are two types (decision 2).
 	StepFanOut = "fan_out"
+	// StepCondition evaluates its `if:` and nothing else (§7.7, task 015).
+	// True continues; false ends the sequence and the task is `done`.
+	//
+	// It is a *type* rather than a second guard field because the
+	// consequence belongs on its own line: every CI system spells
+	// skip-and-continue `if:`, so a guard field that stopped the run instead
+	// would be a false friend whose failure mode is a task reaching `done`
+	// having silently done half its work (task 015 decision 2).
+	StepCondition = "condition"
 )
 
 // Conflict policies for a fan_out step's join (§7.6, task 014 decision 8).
@@ -100,6 +109,24 @@ type Step struct {
 	MaxRetries *int             `yaml:"max_retries"`
 	Timeout    *config.Duration `yaml:"timeout"`
 
+	// If guards the step (§7.7, task 015). It renders against the §8.4
+	// context and must produce exactly `true` or `false`. On an ordinary
+	// step false means *skip this step and carry on*; on a `condition` step
+	// it is the condition itself, and false ends the sequence. On a
+	// `parallel` sub-step it means *do not start this member*, because a
+	// group is a set with no "later" to skip to (decision 3).
+	//
+	// Empty means unguarded, which is why it is a plain string rather than a
+	// pointer: an empty template renders to an empty string, which is not
+	// `true`, so "unset" and "set to nothing" must be the same thing and are.
+	If string `yaml:"if,omitempty"`
+	// AllowFailure turns the failures the step itself produced into an
+	// advance instead of a block (§7.2, task 015 decision 5) — the field
+	// that gives a guard something a run discovered to read. It is
+	// orthogonal to the retry budget: the step retries as it always did, and
+	// this decides only what happens when the budget is spent.
+	AllowFailure bool `yaml:"allow_failure,omitempty"`
+
 	// agent steps
 	Prompt         string           `yaml:"prompt"`
 	Agent          string           `yaml:"agent"`
@@ -143,6 +170,13 @@ type Step struct {
 // `fan_out.max_depth` at creation (decision 5).
 type Lane struct {
 	ID string `yaml:"id"`
+	// If guards the lane (§7.6, task 015 decision 11): false means this lane
+	// is not spawned, while its siblings still run and the join still
+	// happens. Evaluated when the `fan_out` step runs, in the parent's
+	// context, so a lane can depend on what an earlier step found — which is
+	// why the creation-time `max_depth`/`max_tasks` limits count guarded
+	// lanes too.
+	If string `yaml:"if,omitempty"`
 	// Workflow names a registry workflow, resolved through the usual
 	// builtin < global < project shadowing at **task-creation** time.
 	Workflow string `yaml:"workflow,omitempty"`
@@ -325,6 +359,9 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 	add := func(path, format string, args ...any) {
 		errs = append(errs, Error{Path: path, Line: loc.line(path), Message: fmt.Sprintf(format, args...)})
 	}
+	addWarn := func(path, format string, args ...any) {
+		warns = append(warns, Error{Path: path, Line: loc.line(path), Message: fmt.Sprintf(format, args...)})
+	}
 
 	if wf.Name == "" {
 		add("name", "name is required")
@@ -367,10 +404,11 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 				validateSubStep(wf, sub, subBase, opts, add)
 			}
 		case StepFanOut:
-			validateLanes(wf, step, base, opts, add)
+			validateLanes(wf, step, base, opts, add, addWarn)
 		}
 	}
-	warns = validateCatalogs(wf, opts, loc, add)
+	warnTrailingCondition(wf.Steps, "steps", addWarn)
+	warns = append(warns, validateCatalogs(wf, opts, loc, add)...)
 	sort.SliceStable(errs, func(i, j int) bool { return errs[i].Line < errs[j].Line })
 	sort.SliceStable(warns, func(i, j int) bool { return warns[i].Line < warns[j].Line })
 	return errs, warns
@@ -483,8 +521,8 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 func validateStep(step Step, base string, opts Options, add func(string, string, ...any)) {
 	switch step.Type {
 	case "":
-		add(base+".type", "type is required (one of %s, %s, %s, %s, %s)",
-			StepAgent, StepCommand, StepManual, StepParallel, StepFanOut)
+		add(base+".type", "type is required (one of %s, %s, %s, %s, %s, %s)",
+			StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition)
 	case StepAgent:
 		if step.Prompt == "" {
 			add(base+".prompt", "agent steps require a prompt")
@@ -519,7 +557,8 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		}
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env", "steps", "max_parallel", "lanes", "merge")
+			"run", "shell", "env", "steps", "max_parallel", "lanes", "merge",
+			"allow_failure")
 	case StepParallel:
 		if len(step.Steps) == 0 {
 			add(base+".steps", "parallel steps require at least one sub-step")
@@ -531,7 +570,7 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		// `max_retries`, checked below for every type, bound the group itself.
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env", "instructions", "lanes", "merge")
+			"run", "shell", "env", "instructions", "lanes", "merge", "allow_failure")
 	case StepFanOut:
 		if len(step.Lanes) == 0 {
 			add(base+".lanes", "fan_out steps require at least one lane")
@@ -539,10 +578,25 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		validateMerge(step, base, opts, add)
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
-			"run", "shell", "env", "instructions", "steps", "max_parallel")
+			"run", "shell", "env", "instructions", "steps", "max_parallel",
+			"allow_failure")
+	case StepCondition:
+		// The guard *is* the body. `if:` may not also act as a skip-guard
+		// here: "skip the check that decides whether to continue" has two
+		// readings and neither is worth having (task 015 decision 7).
+		if step.If == "" {
+			add(base+".if", "condition steps require an if expression")
+		}
+		// Everything else goes, `timeout`, `max_retries` and `allow_failure`
+		// included: a condition step starts no process, so it cannot time
+		// out, has nothing to retry and has no failure of its own to allow.
+		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+			"run", "shell", "env", "instructions", "steps", "max_parallel",
+			"lanes", "merge", "allow_failure", "max_retries", "timeout")
 	default:
-		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s, %s)",
-			step.Type, StepAgent, StepCommand, StepManual, StepParallel, StepFanOut)
+		add(base+".type", "unknown step type %q (one of %s, %s, %s, %s, %s, %s)",
+			step.Type, StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition)
 	}
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
@@ -558,7 +612,8 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		add(base+".input_timeout", "input_timeout must be positive, got %s", step.InputTimeout)
 	}
 	for field, text := range map[string]string{
-		"prompt": step.Prompt, "run": step.Run, "check": step.Check, "instructions": step.Instructions,
+		"prompt": step.Prompt, "run": step.Run, "check": step.Check,
+		"instructions": step.Instructions, "if": step.If,
 	} {
 		if text == "" {
 			continue
@@ -623,7 +678,9 @@ func validateMerge(step Step, base string, opts Options, add func(string, string
 // own namespace — each lane becomes a **separate child task** with its own
 // flat snapshot (decision 4) — so they are checked against a fresh set rather
 // than the parent workflow's.
-func validateLanes(wf *Workflow, step Step, base string, opts Options, add func(string, string, ...any)) {
+func validateLanes(wf *Workflow, step Step, base string, opts Options,
+	add func(string, string, ...any), addWarn func(string, string, ...any),
+) {
 	seen := make(map[string]string, len(step.Lanes))
 	for i, lane := range step.Lanes {
 		lanePath := fmt.Sprintf("%s.lanes[%d]", base, i)
@@ -657,17 +714,24 @@ func validateLanes(wf *Workflow, step Step, base string, opts Options, add func(
 			add(lanePath+".agent", "unknown agent %q (known: %s)",
 				lane.Agent, strings.Join(opts.KnownAgents, ", "))
 		}
+		if lane.If != "" {
+			if _, err := template.New("if").Parse(lane.If); err != nil {
+				add(lanePath+".if", "template does not parse: %v", err)
+			}
+		}
 		// Inline steps are a workflow body in their own right, so they are
 		// validated like one: their own id namespace, and their own right to
 		// contain a fan_out (decision 5). What they may not contain is a
 		// gate-free assumption anyone else's steps do not also carry.
-		validateLaneSteps(wf, lane, lanePath, opts, add)
+		validateLaneSteps(wf, lane, lanePath, opts, add, addWarn)
 	}
 }
 
 // validateLaneSteps validates one lane's inline steps as the workflow body
 // they will become.
-func validateLaneSteps(wf *Workflow, lane Lane, base string, opts Options, add func(string, string, ...any)) {
+func validateLaneSteps(wf *Workflow, lane Lane, base string, opts Options,
+	add func(string, string, ...any), addWarn func(string, string, ...any),
+) {
 	if len(lane.Steps) == 0 {
 		return
 	}
@@ -692,8 +756,24 @@ func validateLaneSteps(wf *Workflow, lane Lane, base string, opts Options, add f
 				validateSubStep(wf, sub, fmt.Sprintf("%s.steps[%d]", stepPath, j), opts, add)
 			}
 		case StepFanOut:
-			validateLanes(wf, step, stepPath, opts, add)
+			validateLanes(wf, step, stepPath, opts, add, addWarn)
 		}
+	}
+	// A lane's inline steps are a workflow body, so its last step carries the
+	// same warning a top-level one does.
+	warnTrailingCondition(lane.Steps, base+".steps", addWarn)
+}
+
+// warnTrailingCondition reports a `condition` step in last position. It is a
+// warning rather than an error because a file being edited toward its final
+// shape should still load: what it says is that the step cannot do anything a
+// missing step would not, since continuing past the last step and stopping at
+// it are the same outcome — the task is `done` either way (task 015).
+func warnTrailingCondition(steps []Step, base string, addWarn func(string, string, ...any)) {
+	if n := len(steps); n > 0 && steps[n-1].Type == StepCondition {
+		addWarn(fmt.Sprintf("%s[%d].type", base, n-1),
+			"a %s step in last position has no effect: the task is done whether it continues or stops",
+			StepCondition)
 	}
 }
 
@@ -717,6 +797,12 @@ func validateSubStep(wf *Workflow, sub Step, base string, opts Options, add func
 		// `manual` is refused here.
 		add(base+".type", "fan_out steps are not valid inside a parallel group: "+
 			"the task parks while its lanes run, and a group cannot park half a task")
+	case StepCondition:
+		// A group is a set, not a sequence, so "end the sequence" has
+		// nothing to name here (task 015 decision 7). Subsetting a group is
+		// what `if:` on a sub-step already does.
+		add(base+".type", "condition steps are not valid inside a parallel group: "+
+			"a group has no later steps to stop; guard the sub-step with `if:` instead")
 	}
 	// Resolved, not literal: `defaults.on_input: require` reaches a sub-step
 	// that says nothing, and it is just as unrunnable there (§7.4).
@@ -744,6 +830,8 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"instructions": step.Instructions != "",
 		"steps":        len(step.Steps) > 0, "max_parallel": step.MaxParallel != nil,
 		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
+		"if": step.If != "", "allow_failure": step.AllowFailure,
+		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
 	}
 	for _, f := range fields {
 		if set[f] {

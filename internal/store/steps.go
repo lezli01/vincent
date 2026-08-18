@@ -11,7 +11,7 @@ import (
 )
 
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
-	proc_started_at, exit_code, check_exit_code, failure_reason, result_summary,
+	proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
 	prompt_override, run_override, transcript_path,
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
 
@@ -84,14 +84,14 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 	}
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
-			proc_started_at, exit_code, check_exit_code, failure_reason, result_summary,
+			proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
 			prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
-		nullString(r.FailureReason), nullString(r.ResultSummary),
+		nullString(r.FailureReason), nullString(r.SkipReason), nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
 		formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
@@ -111,13 +111,14 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
-			exit_code = ?, check_exit_code = ?, failure_reason = ?, result_summary = ?,
+			exit_code = ?, check_exit_code = ?, failure_reason = ?, skip_reason = ?, result_summary = ?,
 			prompt_override = ?, run_override = ?, transcript_path = ?,
 			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?
 		WHERE id = ?`,
 		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt),
-		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.ResultSummary),
+		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.SkipReason),
+		nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS, formatTimePtr(r.FinishedAt),
 		r.ID)
@@ -273,7 +274,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	var (
 		r                                       StepRun
 		agent, model, effort                    sql.NullString
-		failure, summary, transcript            sql.NullString
+		failure, skip, summary, transcript      sql.NullString
 		promptOv, runOv                         sql.NullString
 		pid, exitCode, checkExit, inTok, outTok sql.NullInt64
 		cost                                    sql.NullFloat64
@@ -282,7 +283,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &exitCode, &checkExit,
-		&failure, &summary, &promptOv, &runOv, &transcript,
+		&failure, &skip, &summary, &promptOv, &runOv, &transcript,
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
 		return nil, err
 	}
@@ -290,6 +291,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	r.Model = model.String
 	r.Effort = effort.String
 	r.FailureReason = failure.String
+	r.SkipReason = skip.String
 	r.ResultSummary = summary.String
 	r.PromptOverride = promptOv.String
 	r.RunOverride = runOv.String

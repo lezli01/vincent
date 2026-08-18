@@ -101,7 +101,7 @@ its worktree, its branch and its transcripts while it does.
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued` |
 | `edit + retry` | blocked | Overrides the step's prompt or command **in this task's snapshot only**, then retries. The override is recorded on the step run |
-| `skip` | blocked, awaiting_gate | Marks the step `skipped` and advances → `queued` |
+| `skip` | blocked, awaiting_gate | Marks the step `skipped` and advances → `queued`. A step skipped this way carries no `skip_reason`, which is how it stays distinguishable from one an `if:` guard skipped |
 | `answer` | awaiting_input | Delivers the answer into the live agent session → `running`, and the step clock resumes |
 | `approve` | awaiting_gate | Gate `approved`, advance → `queued` |
 | `reject` | awaiting_gate | Gate `rejected` → `blocked`, from which you can edit-and-retry an earlier step, skip, or abort |
@@ -126,7 +126,8 @@ that is what the TUI's timeline lists.
 | `succeeded` | Exit 0, a terminal result, and any `check` passed |
 | `failed` | A retryable failure; see the reasons below |
 | `interrupted` | The daemon stopped mid-step. **Does not consume a retry** |
-| `skipped` | You skipped it |
+| `skipped` | You skipped it, **or** its `if:` guard was false. `skip_reason` is `condition` in the second case and empty in the first |
+| `stopped` | A `condition` step whose guard was false: the run ended here, deliberately, and the task is `done` |
 | `approved` / `rejected` | A manual gate's two outcomes |
 
 A step succeeds only when *all* of its criteria hold:
@@ -159,6 +160,7 @@ same thing wherever it originated.
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `input_protocol_error` | A control message the adapter could not parse — it fails, it never hangs |
 | `template_error` | A template failed to render, before any process started |
+| `condition_error` | A step's `if:` guard failed to render, or rendered something that is neither `true` nor `false`. The one reason that is **not** retried — a guard is evaluated before the step becomes an attempt, and re-rendering it cannot answer differently. Fix the workflow and retry |
 | `restricted_unsupported` | The adapter cannot restrict on this platform (cursor on Windows) |
 | `transcript_limit` | The attempt hit `transcript_max_bytes` |
 | `shell_unavailable` | The requested shell is not installed |

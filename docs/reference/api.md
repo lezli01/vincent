@@ -255,7 +255,7 @@ rather than inventing a model name.
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort? }` — `branch_name` is used verbatim and wins over any template |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt |
+| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt. `state` may be `stopped` (a `condition` step ended the run), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did |
 
 Human actions, all `POST /v1/tasks/{id}/…`:
 
