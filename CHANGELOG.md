@@ -26,6 +26,33 @@ Please pull request.
 
 ### Added
 
+- **A control-flow graph for workflows in the TUI — `g`.** The workflows screen
+  explained a workflow as a numbered list of its top-level steps, which was
+  enough while workflows were linear. The language now has structure —
+  `parallel` groups, `fan_out` lanes and their merge, guards, `condition`,
+  `loop` and `break` — and a list can name those constructs without showing
+  where control goes. `g` on an entry draws it.
+
+  The graph opens *over* the registry list rather than replacing it: `enter`'s
+  step list still carries the findings, platform notes and agent resolution the
+  picture does not show, and `esc` closes one layer at a time. Arrows move the
+  selection and the view follows it; `shift`+arrows pan; a graph larger than the
+  terminal is cropped and panned, never reflowed into a different shape. `e`
+  works from inside the layer, so saving the file in your editor redraws the
+  graph in place with the same node still selected.
+
+  Everything the picture says survives having colour stripped: frame weights
+  separate a `parallel` group from a `fan_out` from a `loop`, boxes carry the
+  step's own type word, and a `condition`'s two ways out are labelled `true` and
+  `false`. A `fan_out` shows a merge node because its join is a git merge that
+  runs and can block; a `parallel` group shows none, because its join is only
+  its members finishing. A guard on an ordinary step draws no second branch —
+  false there means skip and carry on.
+
+  A new endpoint backs it: `GET /v1/workflows/definition?name=&project_id=`
+  serves one workflow's whole recursive structure, as authored, with workflow
+  defaults kept in their own block. The registry list keeps its compact shape.
+
 - **Loops in workflows — `type: loop` and `type: break`.** A workflow can now
   repeat a body of steps: `count:` a fixed number of times, or `for_each:` once
   per item in a list, including a list a step discovered at run time. That
