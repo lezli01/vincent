@@ -198,17 +198,21 @@ type stepRunResponse struct {
 	StepID    string `json:"step_id"`
 	// StepName is the snapshot's display name for this attempt's step, so a
 	// timeline reads in the workflow author's words rather than in step ids.
-	StepName       string   `json:"step_name"`
-	StepType       string   `json:"step_type"`
-	Attempt        int      `json:"attempt"`
-	State          string   `json:"state"`
-	Agent          *string  `json:"agent"`
-	Model          *string  `json:"model"`
-	Effort         *string  `json:"effort"`
-	PID            *int     `json:"pid"`
-	ExitCode       *int     `json:"exit_code"`
-	CheckExitCode  *int     `json:"check_exit_code"`
-	FailureReason  *string  `json:"failure_reason"`
+	StepName      string  `json:"step_name"`
+	StepType      string  `json:"step_type"`
+	Attempt       int     `json:"attempt"`
+	State         string  `json:"state"`
+	Agent         *string `json:"agent"`
+	Model         *string `json:"model"`
+	Effort        *string `json:"effort"`
+	PID           *int    `json:"pid"`
+	ExitCode      *int    `json:"exit_code"`
+	CheckExitCode *int    `json:"check_exit_code"`
+	FailureReason *string `json:"failure_reason"`
+	// SkipReason says why a `skipped` attempt was skipped: "condition" for a
+	// false `if:` guard (§7.7), null for the human `skip` action (§6). The
+	// two share one state, so this is what tells a timeline which it is.
+	SkipReason     *string  `json:"skip_reason"`
 	ResultSummary  string   `json:"result_summary"`
 	TranscriptPath *string  `json:"transcript_path"`
 	InputTokens    *int64   `json:"input_tokens"`
@@ -262,6 +266,7 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		ExitCode:       r.ExitCode,
 		CheckExitCode:  r.CheckExitCode,
 		FailureReason:  nilIfEmpty(r.FailureReason),
+		SkipReason:     nilIfEmpty(r.SkipReason),
 		ResultSummary:  r.ResultSummary,
 		TranscriptPath: nilIfEmpty(r.TranscriptPath),
 		InputTokens:    r.InputTokens,

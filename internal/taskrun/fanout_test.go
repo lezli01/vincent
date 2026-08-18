@@ -43,7 +43,7 @@ func fanOutSnapshot(merge string, lanes ...[2]string) string {
 	sb.WriteString("    lanes:\n")
 	for _, lane := range lanes {
 		fmt.Fprintf(&sb, "      - id: %s\n        steps:\n", lane[0])
-		sb.WriteString(indent(writeFileStep("write-"+lane[0], lane[1], lane[0]), laneStepIndent))
+		sb.WriteString(indent(writeFileStep("write-"+lane[0], lane[1], lane[0])))
 	}
 	return sb.String()
 }
@@ -169,9 +169,9 @@ func TestFanOutBlocksWhenALaneDidNotFinish(t *testing.T) {
 	// The slow lane is cancelled while it runs; the quick one finishes.
 	snapshot := "name: root\nsteps:\n  - id: build\n    type: fan_out\n    lanes:\n" +
 		"      - id: quick\n        steps:\n" +
-		indent(writeFileStep("write-quick", "quick.txt", "quick"), laneStepIndent) +
+		indent(writeFileStep("write-quick", "quick.txt", "quick")) +
 		"      - id: slow\n        steps:\n" +
-		indent(commandStep("wait", sleepCmd(30), "max_retries: 0"), laneStepIndent)
+		indent(commandStep("wait", sleepCmd(30), "max_retries: 0"))
 	task := h.createTask(t, snapshot)
 
 	lanes := h.waitForChildren(t, task.ID, 2)
@@ -197,11 +197,12 @@ func TestFanOutBlocksWhenALaneDidNotFinish(t *testing.T) {
 	}
 }
 
-// indent shifts a block of YAML right by prefix.
-func indent(block, prefix string) string {
+// indent shifts a block of YAML right to sit under a lane's `steps:`, which
+// is the only place these tests ever need it.
+func indent(block string) string {
 	var sb strings.Builder
 	for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
-		sb.WriteString(prefix + line + "\n")
+		sb.WriteString(laneStepIndent + line + "\n")
 	}
 	return sb.String()
 }

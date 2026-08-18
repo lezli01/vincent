@@ -317,6 +317,53 @@ The usual cause is an optional task field read directly. Read it defensively:
 The other cause is `.Steps.<id>` for a step that has not completed — `.Steps`
 holds *completed* steps only.
 
+### `condition_error`
+
+A step's `if:` guard did not produce a verdict. Guards must render to exactly
+`true` or `false`; anything else is this error, including the two spellings a
+broken guard usually produces:
+
+- **an empty string or `<no value>`** — the guard is reading something that is
+  not there. `{{ .Steps.probe.ExitCode }}` for a step that has not run yet does
+  this;
+- **a value that is merely truthy** — `yes`, `1`, `0`, a number. Loose
+  truthiness is deliberately not accepted, because it would treat the two cases
+  above as decisions.
+
+Write comparisons, not values:
+
+```yaml
+if: '{{ ne (index .Steps "probe").ExitCode 0 }}'    # ✅ renders true or false
+if: '{{ index .Steps "probe" }}'                    # ❌ renders a struct
+```
+
+This is the one block reason vincent does **not** retry. A guard is evaluated
+before the step becomes an attempt, so there is no attempt to retry, and
+re-rendering the same template against the same context cannot answer
+differently. Fix the workflow file and retry the task — the guard is
+re-evaluated from scratch, as it is on every pass.
+
+`vincent workflow validate <file>` catches a guard that does not *parse*, but
+not one that parses and renders the wrong thing — that needs the task's
+context, which only exists at run time.
+
+### A workflow finished having run only half its steps
+
+Almost certainly working as intended. Two things end a run early:
+
+- a **`condition` step** whose guard was false. The task is `done`, and the
+  detail view shows a `stopped` row where it ended;
+- a chain of **`if:` guards** that all evaluated false, each leaving a
+  `skipped` row with reason `condition`.
+
+Both are visible in the task's step list, which is the place to look: the board
+shows a finished task as finished, and does not try to say how much of the
+workflow it walked.
+
+If it was *not* intended, the guard is the thing to read. `.Steps` holds only
+steps the workflow has moved past, so a guard naming a later step, or naming a
+step that was itself skipped, evaluates against something you did not mean.
+
 ### `shell_unavailable`
 
 The shell a command step asked for is not installed. On Windows vincent uses
@@ -350,6 +397,7 @@ The block reason names what happened:
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `template_error` | A template failed to render (see above) |
+| `condition_error` | A step's `if:` guard rendered nothing usable (see below) |
 | `restricted_unsupported` | The adapter cannot restrict on this platform |
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |

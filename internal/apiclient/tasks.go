@@ -182,6 +182,10 @@ type StepRun struct {
 	ExitCode      *int    `json:"exit_code"`
 	CheckExitCode *int    `json:"check_exit_code"`
 	FailureReason *string `json:"failure_reason"`
+	// SkipReason is "condition" for an attempt skipped by a false `if:`
+	// guard (§7.7) and nil for the human `skip` action (§6) — both of which
+	// carry State "skipped".
+	SkipReason    *string `json:"skip_reason"`
 	ResultSummary string  `json:"result_summary"`
 
 	// TranscriptPath is nil for a step that produced no transcript — a manual

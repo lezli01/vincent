@@ -45,6 +45,20 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 		return stepOutcome{state: store.StepSucceeded}
 	}
 
+	subs, guarded, err := r.applySubStepGuards(ctx, env, subs)
+	if err != nil {
+		env.log.Error("evaluate sub-step guard", "error", err)
+		return stepOutcome{state: store.StepFailed, reason: ReasonConditionError}
+	}
+	if len(subs) == 0 {
+		// Every sub-step was guarded off. A group whose conditions all said
+		// "not this time" decided correctly, so it succeeds having run
+		// nothing (§7.5, task 015).
+		env.log.Info("parallel group ran nothing: every sub-step was guarded off",
+			"guarded_off", guarded)
+		return stepOutcome{state: store.StepSucceeded}
+	}
+
 	// A group-level `timeout:` bounds the whole group; each sub-step still
 	// has its own. Expiry cancels the sub-steps, which end as interruptions —
 	// the group turns that back into a failure below, because the work ran
@@ -58,7 +72,8 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 
 	limit := r.groupLimit(env.step)
 	env.log.Info("parallel group started",
-		"sub_steps", len(subs), "already_succeeded", skipped, "max_parallel", limit)
+		"sub_steps", len(subs), "already_succeeded", skipped,
+		"guarded_off", guarded, "max_parallel", limit)
 
 	outcomes := make([]stepOutcome, len(subs))
 	sem := make(chan struct{}, limit)
@@ -77,7 +92,15 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 				step: sub, index: env.index, inGroup: true,
 				log: env.log.With("sub_step", sub.ID),
 			}
-			outcomes[i] = r.runStepWithRetries(groupCtx, subEnv)
+			out := r.runStepWithRetries(groupCtx, subEnv)
+			// `allow_failure` on a sub-step keeps its `failed` row and its
+			// reason — the failure happened — while taking it out of the
+			// group's own verdict (§7.2, task 015 decision 5).
+			if out.state == store.StepFailed && allowFailure(sub, out.reason) {
+				subEnv.log.Info("sub-step failed; allowed by allow_failure", "reason", out.reason)
+				out = stepOutcome{state: store.StepSucceeded}
+			}
+			outcomes[i] = out
 		}()
 	}
 	wg.Wait()
@@ -112,6 +135,44 @@ func (r *Runner) pendingSubSteps(ctx context.Context, env *stepEnv) (subs []work
 		subs = append(subs, sub)
 	}
 	return subs, skipped, nil
+}
+
+// applySubStepGuards drops the sub-steps whose `if:` is false, recording a
+// `skipped` row for each, and returns the rest in declaration order.
+//
+// Guards are evaluated **before anything in the group starts**, one after
+// another, which is what makes §7.5's sibling-blindness a fact rather than a
+// warning: no sibling has run, so none can be in `.Steps` for another's guard
+// to read. A group is a set, so a false guard subsets it rather than stopping
+// anything — the same meaning `if:` has on a fan-out lane (task 015
+// decision 3), and the reason a `condition` step is refused in here at all.
+func (r *Runner) applySubStepGuards(
+	ctx context.Context, env *stepEnv, subs []workflow.Step,
+) (kept []workflow.Step, guardedOff int, err error) {
+	for _, sub := range subs {
+		if !sub.Guarded() {
+			kept = append(kept, sub)
+			continue
+		}
+		subEnv := &stepEnv{
+			task: env.task, project: env.project, wf: env.wf,
+			step: sub, index: env.index, inGroup: true,
+			log: env.log.With("sub_step", sub.ID),
+		}
+		pass, evalErr := r.evaluateGuard(ctx, subEnv)
+		if evalErr != nil {
+			r.recordGuardOutcome(ctx, subEnv, store.StepFailed, "", ReasonConditionError)
+			return nil, 0, evalErr
+		}
+		if !pass {
+			r.recordGuardOutcome(ctx, subEnv, store.StepSkipped, store.SkipReasonCondition, "")
+			subEnv.log.Info("sub-step skipped by its guard")
+			guardedOff++
+			continue
+		}
+		kept = append(kept, sub)
+	}
+	return kept, guardedOff, nil
 }
 
 // subStepIDOf names the transcript of an attempt: empty for an ordinary step,
@@ -156,7 +217,7 @@ func collectGroup(outcomes []stepOutcome) stepOutcome {
 				failure = &outcomes[i]
 			}
 		case store.StepSucceeded, store.StepRunning, store.StepApproved,
-			store.StepRejected, store.StepSkipped:
+			store.StepRejected, store.StepSkipped, store.StepStopped:
 		}
 	}
 	if failure != nil {

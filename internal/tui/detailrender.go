@@ -320,6 +320,10 @@ func (d *detail) groupLabel(index int) string {
 	return "(parallel)"
 }
 
+// stepStateStopped is the §7.7 state a `condition` step records when its
+// guard is false: the run ended here, on purpose and successfully.
+const stepStateStopped = "stopped"
+
 func stepLabel(r apiclient.StepRun) string {
 	name := r.StepName
 	if name == "" {
@@ -363,6 +367,15 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	}
 	if r.FailureReason != nil && *r.FailureReason != "" {
 		fields = append(fields, styleBad.Render(*r.FailureReason))
+	}
+	// A `skipped` row is either a human pressing skip (§6) or a false `if:`
+	// guard (§7.7). The state cannot tell them apart, so the reason is shown
+	// whenever there is one — a bare "skipped" means the human.
+	if r.SkipReason != nil && *r.SkipReason != "" {
+		fields = append(fields, styleDim.Render("by "+*r.SkipReason))
+	}
+	if r.State == stepStateStopped {
+		fields = append(fields, styleDim.Render("workflow ended here"))
 	}
 	if r.Agent != nil && *r.Agent != "" {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
@@ -485,7 +498,7 @@ func (d *detail) outputEmptyState() (string, bool) {
 	case d.selectedRun == 0:
 		return "no attempt selected", true
 	case d.noTranscript:
-		return "this step wrote no transcript (a gate or a skipped step)", true
+		return "this step wrote no transcript (a gate, a skipped step, or a condition)", true
 	case d.fetching && len(d.records) == 0:
 		return "loading transcript…", true
 	case d.fetchErr != nil && len(d.records) == 0:

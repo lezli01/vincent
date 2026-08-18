@@ -26,6 +26,19 @@ Please pull request.
 
 ### Added
 
+- **Conditions between steps.** A workflow can decide at run time what to do
+  next. `if:` on any step is a guard: false skips that step and the workflow
+  carries on, recording a `skipped` row whose reason says a condition did it
+  rather than you. On a fan-out lane or a `parallel` sub-step the same `if:`
+  subsets the set instead — the others still run and the join still happens.
+  `type: condition` is a step whose whole body is the guard: false ends the run
+  and the task is `done`, which is how a workflow finishes early. And
+  `allow_failure:` on agent and command steps turns the failures a step itself
+  produced into an advance, so a guard has something a run *discovered* to
+  read — without it, a guard could only see what you typed when you created the
+  task. Guards are ordinary templates that must render exactly `true` or
+  `false`, are re-evaluated every time rather than cached, and can now read
+  `.Host.OS`. See [Conditions](docs/reference/workflow-schema.md#conditions).
 - **`type: parallel` — sub-steps that run at once.** A group runs its
   sub-steps concurrently in the task's one worktree: one step, one index, one
   concurrency slot, no branch and no merge. It succeeds when every sub-step
