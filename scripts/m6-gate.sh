@@ -21,7 +21,9 @@
 #
 # The `run:` bodies are restricted to what `/bin/sh` and `pwsh` both accept —
 # `exit N`, `sleep N` and `git ...`, and nothing else, the same rule `m7` and
-# `m8` follow. §8.3 leaves portability to the workflow author, and a gate that
+# `m8` follow. `exit N` may only be the *whole* body: pwsh's `&&` and `||`
+# take pipelines, so an `exit` after one is parsed as a command name and dies
+# with "the term 'exit' is not recognized" (run 32140128084, windows leg). §8.3 leaves portability to the workflow author, and a gate that
 # runs on all three platforms is that author. This is why a lane that has to
 # produce a file writes it with `git config -f`: `echo > x` and `Set-Content`
 # share no spelling, and `touch` is not a shell builtin anywhere. The original
@@ -206,9 +208,12 @@ fi
 # Scenario 2: a failing sub-step blocks the group without cancelling siblings.
 # Scenario 3: the retry re-runs only what failed.
 #
-# The failing sub-step succeeds once a marker exists, so the human retry can
-# clear it — and the sibling's attempt count is what proves the retry did not
-# re-run work that had already succeeded.
+# The failing sub-step is one `git config --get`, which exits 1 while its
+# marker file is absent and 0 once it is there. The gate writes that marker
+# into the worktree before retrying, the way scenario 5 resolves its conflict
+# — a human clearing the fault is what a retry means here. The sibling's
+# attempt count is what proves the retry did not re-run work that had already
+# succeeded.
 # --------------------------------------------------------------------------
 if run_scenario 2; then
   echo "=== scenario 2+3: a failing sub-step blocks, and the retry re-runs only it"
@@ -223,7 +228,7 @@ steps:
       - id: flaky
         type: command
         max_retries: 0
-        run: 'git config -f cleared.marker --get gate.cleared && exit 0 || git config -f cleared.marker gate.cleared 1 && exit 7'
+        run: git config -f cleared.marker --get gate.cleared
       - id: steady
         type: command
         max_retries: 0
@@ -241,6 +246,13 @@ YAML
   # The sibling ran to completion: a failure does not cancel it (decision 18).
   STEADY="$(jq -r '[.steps[] | select(.step_id == "steady" and .state == "succeeded")] | length' <<<"$BODY")"
   [[ "$STEADY" == 1 ]] || fail "the sibling did not finish (succeeded rows: $STEADY)"
+
+  # Clear the fault by hand, then retry: `git config -f` writes the marker
+  # byte-identically on every platform, where `touch` exists on none of the
+  # shells that matter.
+  WT="$(jq -r .worktree_path <<<"$BODY")"
+  [[ -f "$WT/.git" || -d "$WT/.git" ]] || fail "no worktree left to clear the fault in"
+  git config -f "$WT/cleared.marker" gate.cleared 1
 
   api POST "/tasks/$TID/retry" '{}' >/dev/null
   wait_for_state "$TID" done 60
