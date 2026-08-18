@@ -75,7 +75,7 @@ steps:                           # required; runs in order, top to bottom
 Unknown keys are rejected rather than ignored, so a typo is an error at
 validation time instead of a setting that silently never applied.
 
-## Five step types
+## Six step types
 
 **`agent`** runs an agent CLI headlessly in the worktree. Needs `prompt`.
 
@@ -134,8 +134,65 @@ back into this task's own. Needs `lanes`.
       - { id: docs, steps: [ { id: write, type: agent, prompt: "Document the API." } ] }
 ```
 
+**`condition`** ends the workflow when its guard is false. Needs `if:`, and
+takes nothing else.
+
+```yaml
+  - id: nothing-to-do
+    type: condition
+    if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
+```
+
 `check` is a **field** on agent and command steps, not a step of its own — see
 below.
+
+## Conditions let a workflow do less when there is less to do
+
+Every step can carry an `if:`, and a false one **skips that step and carries
+on**:
+
+```yaml
+  - id: changelog
+    type: agent
+    if: '{{ eq (index .Task.Fields "changelog") "yes" }}'
+    prompt: Update CHANGELOG.md.
+```
+
+A guard must render exactly `true` or `false`. That strictness is on purpose:
+the two things a broken guard usually renders — an empty string, or a truthy
+`yes` — are exactly the cases where guessing an answer is worse than refusing
+to have one. You will get `condition_error` instead of a silent decision.
+
+Three things follow from "skip, then carry on":
+
+- On a **fan-out lane** or a **`parallel` sub-step**, `if:` means *do not start
+  this one*. The others still run and the join still happens — a set has no
+  "later" to skip to.
+- To finish *early* rather than skip one step, use a **`condition` step**. False
+  ends the run and the task is `done`.
+- Guards are re-evaluated every time — on each attempt, on a retry, after a
+  restart. Nothing is cached, so fixing a workflow and retrying really does ask
+  the question again.
+
+**The field that makes guards worth having is `allow_failure`.** Without it,
+nothing a run *discovers* is readable: a nonzero command exit blocks the task,
+so any step that succeeded has exit code 0 and there is nothing to branch on.
+
+```yaml
+  - id: probe
+    type: command
+    run: git diff --quiet HEAD~1
+    allow_failure: true          # the failure advances instead of blocking
+    max_retries: 0               # a probe has nothing to gain from retrying
+  - id: stop-if-clean
+    type: condition
+    if: '{{ ne (index .Steps "probe").ExitCode 0 }}'
+```
+
+It only ever swallows failures the step itself produced — a nonzero exit, a
+failed `check`, an agent error, a timeout. A missing CLI or an unrenderable
+template still blocks, because a workflow should not be able to branch on "the
+agent is not installed" as though that were a result.
 
 ## Verification is where parallel pays
 
@@ -469,6 +526,16 @@ its own fix.
 step that pushes, publishes, deploys or deletes. The gate costs you one
 keystroke and is the difference between "an agent wrote to a branch" and "an
 agent wrote to production".
+
+**Guard the expensive step, not the whole workflow.** Splitting one workflow
+into `with-changelog` and `without-changelog` moves the decision to task
+creation, which is the one moment the facts that decide it do not exist yet. An
+`if:` on the step keeps one workflow and lets the run decide.
+
+**Probe, then decide, in two steps.** `allow_failure` on a cheap command that
+answers a question, then a `condition` or an `if:` that reads its exit code.
+Trying to do both in one step means a step whose failure is sometimes a failure
+and sometimes an answer, which nothing downstream can tell apart.
 
 **Use `restricted` for steps that only read and write text.** A docs pass has no
 business running commands; the mode says so, and the adapter enforces it.

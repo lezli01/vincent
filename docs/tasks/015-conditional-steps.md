@@ -1,6 +1,6 @@
 # 015 — Conditions between steps (`if:`, `type: condition`, `allow_failure:`)
 
-**Status:** 🚧 in progress (0/10) · **Opened:** 2026-08-18
+**Status:** ✅ done (10/10) · **Opened:** 2026-08-18
 
 A workflow may now decide, at run time, what to do next:
 
@@ -324,34 +324,86 @@ no step behind it.
 
 ## Tasks
 
-- [ ] **015.1 — Schema and validation.** `If` and `AllowFailure` on `Step`, `If`
+- [x] **015.1 — Schema and validation.** ✓ 2026-08-18 `If` and `AllowFailure` on `Step`, `If`
   on `Lane`, `StepCondition` in the type set. Guard templates parse-checked at
   load like every other template field. `rejectFields` extended so a `condition`
   step refuses everything but `id`/`name`/`if`, and so `allow_failure` is
   rejected on `manual`, `parallel`, `fan_out` and `condition`. A trailing
   `condition` step is a **warning**, not an error (it can only mean "or don't"),
   riding the existing `warnings[]`. Spec §8.2.
-- [ ] **015.2 — Evaluation.** `.Host` in `RenderContext`; an `Evaluate` that
+- [x] **015.2 — Evaluation.** ✓ 2026-08-18 `.Host` in `RenderContext`; an `Evaluate` that
   renders a guard and demands exactly `true`/`false`; `ReasonConditionError`
   under §7.2's ordinary retry budget (uniformity, per the `agent_unauthenticated`
   precedent); `.Steps` widened per decision 6. Spec §8.4, §18.
-- [ ] **015.3 — Store.** Migration `0008`: `step_runs.skip_reason`. `StepStopped`
+- [x] **015.3 — Store.** ✓ 2026-08-18 Migration `0008`: `step_runs.skip_reason`. `StepStopped`
   in `StepRunState`. Spec §14.
-- [ ] **015.4 — Engine.** Depends: 015.1, 015.2, 015.3. Guard evaluation before a
+- [x] **015.4 — Engine.** ✓ 2026-08-18 Depends: 015.1, 015.2, 015.3. Guard evaluation before a
   step runs; the skipped row; the `condition` executor and its `stopped` row;
   `current_step` → `len(steps)` on a stop; `allow_failure` converting the
   decision-5 reasons into an advance. New spec §7.7, amended §7.2.
-- [ ] **015.5 — Parallel groups.** Depends: 015.4. `if:` on sub-steps (subset
+- [x] **015.5 — Parallel groups.** ✓ 2026-08-18 Depends: 015.4. `if:` on sub-steps (subset
   semantics, evaluated once at group start, so siblings are invisible to each
   other); `condition` rejected as a sub-step. Spec §7.5.
-- [ ] **015.6 — Fan-out lanes.** Depends: 015.4. Lane `if:` at run time; the
+- [x] **015.6 — Fan-out lanes.** ✓ 2026-08-18 Depends: 015.4. Lane `if:` at run time; the
   zero-lane no-op; conservative creation-time counting; the early-stopped-lane
   clarification. Spec §7.6.
-- [ ] **015.7 — API.** Depends: 015.3. `skip_reason` and the `stopped` state
+- [x] **015.7 — API.** ✓ 2026-08-18 Depends: 015.3. `skip_reason` and the `stopped` state
   through `internal/api` and `internal/apiclient`. Spec §13.2.
-- [ ] **015.8 — TUI.** Depends: 015.7. Skipped and stopped rows in the detail
+- [x] **015.8 — TUI.** ✓ 2026-08-18 Depends: 015.7. Skipped and stopped rows in the detail
   view, both on the existing no-transcript path.
-- [ ] **015.9 — Gate.** Depends: 015.4, 015.5, 015.6. New `scripts/m7-gate.sh`,
+- [x] **015.9 — Gate.** ✓ 2026-08-18 Depends: 015.4, 015.5, 015.6. New `scripts/m7-gate.sh`,
   command steps only, committed executable via `git update-index --chmod=+x`.
-- [ ] **015.10 — Docs.** Depends: all. User-facing schema, guides and
+- [x] **015.10 — Docs.** ✓ 2026-08-18 Depends: all. User-facing schema, guides and
   block-reason pages; §20 promotion; CLAUDE.md's gate list.
+
+## Verification
+
+*2026-08-18.* All 10 subtasks delivered.
+
+- `go run mage.go build test testrace lint`, plus `golangci-lint` cross-built
+  for `windows`, `darwin` and `linux` — a host-only lint hides findings in
+  build-tagged files, and this change touches none of them, which is worth
+  having proved rather than assumed.
+- Gates: `m1`, `m2`, `m5` and `m6` re-run to prove no regression; the new `m7`
+  passes all seven scenarios.
+- `m7` is **not wired into CI**, for the reason `m6` is not: the push token
+  used for this work has no `workflow` scope, so a branch touching
+  `.github/workflows` is rejected outright. The addition is two lines in
+  `ci.yml`'s `gates` job, beside the existing M1/M2/M5 steps:
+
+  ```yaml
+      - name: M7 gate (conditions)
+        shell: bash
+        run: ./scripts/m7-gate.sh
+  ```
+
+  `CLAUDE.md`'s command list now names both `m6` and `m7` and says they are
+  hand-run, so the gap is documented rather than silently carried.
+
+### `m7` is portable where `m6` is not
+
+`m6`'s `run:` bodies use `touch`, `seq` and `sleep 0.1`, which pwsh does not
+speak — it is a POSIX-only gate whose header claims three platforms, and never
+having been wired into CI is what let that stand. `m7`'s bodies are restricted
+to `exit N` and `git …`, which `/bin/sh` and `pwsh` both accept, and its lanes
+commit with `--allow-empty` rather than writing a file, because `printf >` and
+`Set-Content` share no spelling. It should pass on all three platforms the day
+someone can wire it in.
+
+### One decision reversed by implementation
+
+Decision 14 (`condition_error` does not consume the retry budget) reverses the
+answer this task was designed with. The reasoning is in that decision; the
+short version is that a guard is evaluated before the step becomes an attempt,
+so honouring the budget would have meant inventing attempt rows for a step that
+never ran — which decision 8 refuses on its own grounds.
+
+### A pre-existing flake, observed and left alone
+
+`TestFanOutBlocksWhenALaneDidNotFinish` (task 014) fails roughly 1 run in 30:
+it cancels a lane it expects to still be `queued`, and the scheduler sometimes
+admits that lane first. Measured at 1/30 on `origin/master` and at the same
+order on this branch, so it is not this task's doing. Left unfixed
+deliberately — a timing fix to somebody else's test does not belong in a diff
+about conditions — and recorded here so the next person to see it red does not
+re-diagnose it.

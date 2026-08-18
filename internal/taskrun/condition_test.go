@@ -304,3 +304,38 @@ steps:
 		t.Error("the workflow did not carry on past the no-op fan_out")
 	}
 }
+
+// TestEngineGuardIsReEvaluatedOnRetry proves decision 10 with a guard whose
+// verdict actually changes: `.Step.Attempt` is 1 on the first pass and 2 on
+// the retry, so a cached verdict would run the step twice and a re-evaluated
+// one skips it the second time.
+func TestEngineGuardIsReEvaluatedOnRetry(t *testing.T) {
+	h := newEngineHarness(t)
+	snapshot := "name: reeval\nsteps:\n" +
+		commandStep("once", script("exit 4", "exit 4"),
+			`if: "{{ eq .Step.Attempt 1 }}"`, "max_retries: 0")
+	task := h.createTask(t, snapshot)
+	h.start(t)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task = %s, want blocked on the first pass", blocked.State)
+	}
+
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task after retry = %s/%q, want done: the guard is false on attempt 2",
+			done.State, done.BlockReason)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 2 {
+		t.Fatalf("rows = %d, want 2 (the failed attempt, then the skip)", len(runs))
+	}
+	if runs[1].State != store.StepSkipped || runs[1].SkipReason != store.SkipReasonCondition {
+		t.Errorf("second row = %s/%q, want skipped/condition — the guard was re-evaluated",
+			runs[1].State, runs[1].SkipReason)
+	}
+}

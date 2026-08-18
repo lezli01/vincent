@@ -29,7 +29,7 @@ description of how the system actually behaves.
 | [012](012-diff-view-file-grouping.md) | A diff tab grouped by file, folded shut | ✅ done (5/5) |
 | [013](013-interactive-workflow-agent-gating.md) | Gating workflows that require mid-run interaction | ✅ done (8/8) |
 | [014](014-workflow-fan-out.md) | Parallel steps and workflow fan-out | ✅ done (14/14) |
-| [015](015-conditional-steps.md) | Conditions between steps (`if:`, `type: condition`) | 🚧 in progress (0/10) |
+| [015](015-conditional-steps.md) | Conditions between steps (`if:`, `type: condition`) | ✅ done (10/10) |
 
 ## How to add and update a task document
 
