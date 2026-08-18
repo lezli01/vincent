@@ -24,7 +24,7 @@ steps:
     type: command
     run: git push
 `
-	got := parseSnapshot(src).steps
+	got := parseSnapshot(src, 10).steps
 	want := []stepDefinition{
 		{index: 0, id: "implement", stepType: "agent", prompt: "write the thing"},
 		{index: 1, id: "review", stepType: "manual", instructions: "look at the diff"},

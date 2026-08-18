@@ -1,0 +1,34 @@
+-- 0009_loops: where a step run sits inside a `loop` (task 016, spec §7.8/§14).
+--
+-- A loop step occupies one step_index and its body steps share it, exactly as
+-- a `parallel` group's sub-steps do (task 014 decision 16). What a loop adds
+-- is that the same body step runs more than once, so step_id no longer tells
+-- two rows apart. `iteration` is what does — 1-based, and 0 for every row that
+-- is not inside a loop, which keeps every existing row correct without a
+-- backfill.
+--
+-- It is a column rather than a composite step id (`repair#3`), which would
+-- have needed no migration: manufactured ids are not in the workflow file,
+-- they break the "step ids are unique across the whole workflow" rule, they
+-- poison `.Steps` keys, and every consumer would have to parse a string to
+-- recover a number (decision 7).
+--
+-- Nothing here records a loop *cursor*. The loop step writes no row of its
+-- own, and a re-admitted loop derives its position — (step_index, iteration,
+-- body position) — from these rows. A persisted cursor would be a second
+-- source of truth for a fact the rows already hold, and §12.4 recovery would
+-- have to reconcile the two (decision 7).
+ALTER TABLE step_runs ADD COLUMN iteration INTEGER NOT NULL DEFAULT 0;
+
+-- The item a `for_each` iteration ran on, NULL for a `count:` loop and for
+-- every row outside one.
+--
+-- Iterations that already have rows take their item from *here*, and only new
+-- iterations draw from a re-derived list (decision 8). That is what separates
+-- a loop's extent from a guard: 015 decision 10 makes guards re-evaluate
+-- every time and never stick, which is right for a question, but a for_each
+-- list is not a question — it is the thing iteration numbers are indices into.
+-- Re-deriving it mid-loop (after a crash, after an `edit + retry` on the
+-- producing step) would make "iteration 3" name a different item than the row
+-- recorded, and resumption would silently re-index onto the wrong work.
+ALTER TABLE step_runs ADD COLUMN loop_item TEXT;

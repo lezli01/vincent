@@ -44,6 +44,9 @@ type Task struct {
 	// the task has lanes. Lanes are hidden from the task list by design, and
 	// this is what pays for that: it is where a blocked lane becomes visible.
 	Children *ChildrenRollup `json:"children,omitempty"`
+	// Loop is the §7.8 rollup, present only while a `loop` step is the
+	// current one. It is what a board renders `loop 4/10` from.
+	Loop *LoopRollup `json:"loop,omitempty"`
 
 	BlockReason      *string  `json:"block_reason"`
 	PauseRequested   bool     `json:"pause_requested"`
@@ -173,7 +176,14 @@ type StepRun struct {
 	StepName  string `json:"step_name"`
 	StepType  string `json:"step_type"`
 	Attempt   int    `json:"attempt"`
-	State     string `json:"state"`
+	// Iteration is which pass of an enclosing `loop` produced this attempt —
+	// 1-based, 0 outside a loop (§7.8). Body steps share the loop's
+	// StepIndex, so this and StepID together identify one of them.
+	Iteration int `json:"iteration"`
+	// LoopItem is the `for_each` item that iteration ran on; nil for a
+	// `count:` loop and outside a loop.
+	LoopItem *string `json:"loop_item"`
+	State    string  `json:"state"`
 
 	Agent  *string `json:"agent"`
 	Model  *string `json:"model"`
@@ -236,6 +246,29 @@ type ChildrenRollup struct {
 	ByState      map[string]int `json:"by_state"`
 	Blocked      []int64        `json:"blocked"`
 	AwaitingGate []int64        `json:"awaiting_gate"`
+}
+
+// LoopRollup is the §7.8 loop rollup: where a task is inside the `loop` step
+// it is currently on.
+type LoopRollup struct {
+	Driver        string `json:"driver"`
+	Iteration     int    `json:"iteration"`
+	MaxIterations int    `json:"max_iterations"`
+	Item          string `json:"item,omitempty"`
+}
+
+// Display is the short form a board row shows beside the k/n step column:
+// "loop 4/10", plus the item when a `for_each` is running one. Empty before
+// the first iteration has a row, when there is nothing yet to report.
+func (r *LoopRollup) Display() string {
+	if r == nil || r.Iteration == 0 {
+		return ""
+	}
+	out := fmt.Sprintf("loop %d/%d", r.Iteration, r.MaxIterations)
+	if r.Item != "" {
+		out += " " + r.Item
+	}
+	return out
 }
 
 // Summary is the short form a board row shows beside `awaiting_children` —

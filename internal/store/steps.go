@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
+const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
+	state, agent, model, effort, pid,
 	proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
 	prompt_override, run_override, transcript_path,
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
@@ -83,12 +84,14 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 		r.StartedAt = time.Now()
 	}
 	res, err := db.ExecContext(ctx, `
-		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, state, agent, model, effort, pid,
+		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
+			state, agent, model, effort, pid,
 			proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
 			prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, string(r.State),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
+		string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.SkipReason), nullString(r.ResultSummary),
@@ -146,14 +149,15 @@ func (s *Store) GetStepRun(ctx context.Context, id int64) (*StepRun, error) {
 // starts on a step whose earlier attempts failed under a previous actor —
 // the human-retry path, where the §8.4 failure block matters most.
 //
-// stepID narrows it to one member of a `parallel` group, for the reason
-// CountStepAttempts gives (task 014 decision 16): the failure block a
-// sub-step retries under must be its own, not a sibling's.
-func (s *Store) LastFailedStepRun(ctx context.Context, taskID int64, stepIndex int, stepID string) (*StepRun, error) {
+// ref narrows it to one position for the reason CountStepAttempts gives: the
+// failure block a step retries under must be its own — not a group sibling's
+// (task 014 decision 16), and not the same body step's failure from a
+// previous loop iteration (task 016 decision 6).
+func (s *Store) LastFailedStepRun(ctx context.Context, ref StepRef) (*StepRun, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
-		WHERE task_id = ? AND step_index = ? AND step_id = ? AND state = ?
+		WHERE task_id = ? AND step_index = ? AND step_id = ? AND iteration = ? AND state = ?
 		ORDER BY attempt DESC, id DESC LIMIT 1`,
-		taskID, stepIndex, stepID, string(StepFailed))
+		ref.TaskID, ref.StepIndex, ref.StepID, ref.Iteration, string(StepFailed))
 	r, err := scanStepRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -223,11 +227,49 @@ func (s *Store) LatestStepRun(ctx context.Context, taskID int64, stepIndex int, 
 	return r, nil
 }
 
-// ListStepRuns returns every attempt of every step of the task, ordered by
-// step index, then attempt.
+// ListStepRunsAt returns every row at one step index, in position order:
+// iteration, then attempt. It is a `loop` step's whole history in one read.
+//
+// A loop derives everything it needs from these rows rather than from a
+// stored cursor (task 016 decision 7): which iteration it is in, which body
+// steps of that iteration already succeeded, and — for `for_each` — which
+// item each iteration ran on (decision 8). One query rather than three
+// because the reduction is a walk in Go over a bounded set: a loop's rows are
+// at most max_iterations × body size × attempts.
+func (s *Store) ListStepRunsAt(ctx context.Context, taskID int64, stepIndex int) ([]StepRun, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+		WHERE task_id = ? AND step_index = ?
+		ORDER BY iteration ASC, attempt ASC, id ASC`, taskID, stepIndex)
+	if err != nil {
+		return nil, fmt.Errorf("list step runs at index %d: %w", stepIndex, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []StepRun
+	for rows.Next() {
+		r, err := scanStepRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan step run: %w", err)
+		}
+		out = append(out, *r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list step runs at index %d: %w", stepIndex, err)
+	}
+	return out, nil
+}
+
+// ListStepRuns returns every attempt of every step of the task in position
+// order: step index, then iteration, then attempt.
+//
+// `iteration` sits between the two on purpose (task 016 decision 9). The §8.4
+// assembly walks these rows in order and does `steps[run.StepID] = res`, so
+// last row wins — which is exactly what makes `.Steps["suite"]` under
+// repetition resolve to the *latest* iteration, for free, provided the
+// ordering is this one. Ordering by attempt first would interleave the
+// iterations and hand a guard an older pass's result.
 func (s *Store) ListStepRuns(ctx context.Context, taskID int64) ([]StepRun, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
-		WHERE task_id = ? ORDER BY step_index ASC, attempt ASC, id ASC`, taskID)
+		WHERE task_id = ? ORDER BY step_index ASC, iteration ASC, attempt ASC, id ASC`, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("list step runs: %w", err)
 	}
@@ -275,6 +317,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		r                                       StepRun
 		agent, model, effort                    sql.NullString
 		failure, skip, summary, transcript      sql.NullString
+		loopItem                                sql.NullString
 		promptOv, runOv                         sql.NullString
 		pid, exitCode, checkExit, inTok, outTok sql.NullInt64
 		cost                                    sql.NullFloat64
@@ -282,6 +325,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		started                                 string
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
+		&r.Iteration, &loopItem,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &exitCode, &checkExit,
 		&failure, &skip, &summary, &promptOv, &runOv, &transcript,
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
@@ -290,6 +334,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	r.Agent = agent.String
 	r.Model = model.String
 	r.Effort = effort.String
+	r.LoopItem = loopItem.String
 	r.FailureReason = failure.String
 	r.SkipReason = skip.String
 	r.ResultSummary = summary.String

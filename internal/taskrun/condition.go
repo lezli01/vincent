@@ -34,7 +34,7 @@ func (r *Runner) evaluateGuard(ctx context.Context, env *stepEnv) (bool, error) 
 // back to 1 rather than failing the guard — the count is context for a
 // template, not the decision itself.
 func (r *Runner) nextAttempt(ctx context.Context, env *stepEnv) int {
-	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.task.ID, env.index, env.step.ID, time.Time{})
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, env.ref(), time.Time{})
 	if err != nil {
 		env.log.Warn("count attempts for guard context", "error", err)
 		return 1
@@ -60,11 +60,18 @@ func (r *Runner) recordDecisionRow(
 ) {
 	finished := time.Now()
 	run := &store.StepRun{
-		TaskID:        env.task.ID,
-		StepIndex:     env.index,
-		StepID:        env.step.ID,
-		StepType:      env.step.Type,
-		Attempt:       r.nextAttempt(ctx, env),
+		TaskID:    env.task.ID,
+		StepIndex: env.index,
+		StepID:    env.step.ID,
+		StepType:  env.step.Type,
+		Attempt:   r.nextAttempt(ctx, env),
+		// A decision row inside a loop body carries its position like any
+		// other (§7.8, task 016 decision 7). Leaving it at 0 would sort every
+		// `break` and `condition` verdict ahead of the iteration it belongs
+		// to, and hide a `stopped` row from the derivation that resumes the
+		// loop.
+		Iteration:     env.iteration(),
+		LoopItem:      env.loopItem(),
 		State:         state,
 		SkipReason:    skipReason,
 		FailureReason: failureReason,

@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -205,9 +206,15 @@ func localValidateOptions() workflow.Options {
 	for _, a := range reg.All() {
 		catalogs[a.Name()] = a.Curated()
 	}
+	// The loop ceiling comes from the built-in default rather than the user's
+	// config: `vincent workflow validate` runs wherever the file does — a CI
+	// runner with no config file at all — and a workflow that validates on a
+	// laptop must validate there too.
+	ceiling := config.Default().Loop.MaxIterations
 	return workflow.Options{
-		KnownAgents: reg.Names(),
-		Catalogs:    func() agent.Catalogs { return catalogs },
+		KnownAgents:   reg.Names(),
+		Catalogs:      func() agent.Catalogs { return catalogs },
+		MaxIterations: func() int { return ceiling },
 	}
 }
 

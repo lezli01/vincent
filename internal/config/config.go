@@ -211,6 +211,10 @@ type Config struct {
 	// in the task-creation path, so a reload governs the next task rather
 	// than anything already running (decision 30).
 	FanOut FanOut `yaml:"fan_out"`
+	// Loop bounds a `type: loop` step (§7.8, task 016). It sits beside
+	// Parallel and FanOut for the same reason they do: it is a ceiling on
+	// what one step may do, not a timeout a step inherits.
+	Loop Loop `yaml:"loop"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -304,6 +308,22 @@ type FanOut struct {
 	MaxTasks int `yaml:"max_tasks"`
 }
 
+// Loop configures `type: loop` steps (spec §7.8 — task 016).
+//
+// MaxIterations is both the default for a step that declares no
+// `max_iterations:` and the ceiling `count:` is validated against at load, so
+// `count: 5000` is refused in front of the person typing rather than
+// discovered on iteration 300. It is deliberately low: an agent step is
+// minutes and dollars, and ten iterations of a three-step body is already
+// thirty agent runs (decision 5).
+//
+// It is read per loop rather than cached, so a hot reload (§12.3) governs
+// the next loop — including one already running, which blocks with
+// `loop_limit` if the lowered ceiling is already behind it.
+type Loop struct {
+	MaxIterations int `yaml:"max_iterations"`
+}
+
 // Agents configures how agent CLIs are located.
 type Agents struct {
 	Claude Agent `yaml:"claude"`
@@ -349,6 +369,7 @@ func Default() Config {
 		// caps will run concurrently anyway, so it bounds the explosion
 		// rather than the throughput.
 		FanOut: FanOut{MaxDepth: 3, MaxTasks: 64},
+		Loop:   Loop{MaxIterations: 10},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},
@@ -407,6 +428,9 @@ func (c Config) validate() error {
 	}
 	if c.FanOut.MaxTasks < 1 {
 		return fmt.Errorf("fan_out.max_tasks must be at least 1, got %d", c.FanOut.MaxTasks)
+	}
+	if c.Loop.MaxIterations < 1 {
+		return fmt.Errorf("loop.max_iterations must be at least 1, got %d", c.Loop.MaxIterations)
 	}
 	if c.TranscriptRetentionDays < 0 {
 		return fmt.Errorf("transcript_retention_days must not be negative, got %d", c.TranscriptRetentionDays)

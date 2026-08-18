@@ -121,7 +121,7 @@ func TestRecoverRequeuesThroughTheFSM(t *testing.T) {
 	}
 
 	// An interruption consumes no retry (§7.2).
-	attempts, err := st.CountStepAttempts(ctx, running.ID, 0, "s", time.Time{})
+	attempts, err := st.CountStepAttempts(ctx, store.StepRef{TaskID: running.ID, StepID: "s"}, time.Time{})
 	if err != nil {
 		t.Fatalf("CountStepAttempts: %v", err)
 	}

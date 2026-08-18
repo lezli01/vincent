@@ -168,7 +168,7 @@ func TestTaskListArchivedParamRejectsGarbage(t *testing.T) {
 // on the board's refresh path, and re-parsing immutable YAML per row per
 // request is the cost it was added to avoid.
 func TestSnapshotCacheParsesOnce(t *testing.T) {
-	c := newSnapshotCache()
+	c := newSnapshotCache(nil)
 	const yaml = "name: x\nsteps:\n  - id: a\n    type: agent\n    prompt: hi\n  - id: b\n    name: second\n    type: agent\n    prompt: yo\n"
 
 	first := c.get(7, yaml)
@@ -201,7 +201,7 @@ func TestSnapshotCacheParsesOnce(t *testing.T) {
 // TestSnapshotCacheToleratesUnparsableSnapshot keeps a corrupt snapshot from
 // failing the whole board: the row renders without step columns.
 func TestSnapshotCacheToleratesUnparsableSnapshot(t *testing.T) {
-	c := newSnapshotCache()
+	c := newSnapshotCache(nil)
 	got := c.get(1, "this: is: not: a: workflow")
 	if got.stepTotal != 0 || got.stepName(0) != "" {
 		t.Errorf("got %+v, want an empty summary", got)
