@@ -1,6 +1,6 @@
 # 017 — Workflow visualization in the TUI
 
-**Status:** 🚧 in progress (1/9) · **Opened:** 2026-08-18
+**Status:** 🚧 in progress (4/9) · **Opened:** 2026-08-18
 
 Vincent's workflow screen currently explains a workflow as a numbered list of
 its top-level steps. That was sufficient while workflows were mostly linear,
@@ -667,14 +667,14 @@ should depend on a specific color profile.
   DTO, the apiclient DTO/method and API tests. Preserve project/global
   shadowing, built-ins and registry findings; a broken workflow answers 200
   with findings and a null definition (decision 11).
-- [ ] **017.2 — Semantic diagram builder.** Depends: 017.1. Add the
+- [x] **017.2 — Semantic diagram builder.** ✓ 2026-08-18 Depends: 017.1. Add the
   `workflowgraph` diagram types and conversion from the API definition. Cover
   sequence, guards, condition, parallel, fan-out/merge, workflow references,
   loop and break with unit tests for stable ids and edges.
-- [ ] **017.3 — Deterministic layered layout.** Depends: 017.2. Place nodes,
+- [x] **017.3 — Deterministic layered layout.** ✓ 2026-08-18 Depends: 017.2. Place nodes,
   groups and orthogonal connector routes top-to-bottom with source-ordered
   siblings. Add geometry/invariant tests including nested structures.
-- [ ] **017.4 — Terminal renderer.** Depends: 017.3. Render nodes, groups,
+- [x] **017.4 — Terminal renderer.** ✓ 2026-08-18 Depends: 017.3. Render nodes, groups,
   routed connectors, labels and selection with display-width-safe truncation;
   keep semantic meaning visible without color.
 - [ ] **017.5 — Reusable `WorkflowGraph` Bubble.** Depends: 017.3, 017.4. Add
