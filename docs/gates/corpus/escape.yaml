@@ -1,0 +1,10 @@
+name: escape
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - id: repeat
+    type: loop
+    for_each: '{{ .Steps.plan.Result }}'
+    steps:
+      - {id: work, type: agent, prompt: keep going}
+      - {id: enough, type: break, if: '{{ .Steps.work.Success }}'}
+  - {id: ship, type: command, run: make ship}

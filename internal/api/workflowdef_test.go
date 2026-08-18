@@ -3,9 +3,11 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -345,6 +347,55 @@ func TestWorkflowDefinitionCoversEveryField(t *testing.T) {
 				t.Errorf("workflow.%s.%s has no counterpart in the API DTO — map it, "+
 					"or record why it stays off the wire", p.name, f)
 			}
+		}
+	}
+}
+
+// TestGateCorpusIsServable holds the acceptance corpus honest. The task 017
+// gate is a manual walkthrough of `docs/gates/corpus/*.yaml`, and a walkthrough
+// whose fixtures no longer parse is worse than no walkthrough: it fails at the
+// first step for a reason that has nothing to do with what is being judged.
+//
+// This loads them through the real registry and serves each one, which also
+// exercises every construct the graph draws against the endpoint at once.
+func TestGateCorpusIsServable(t *testing.T) {
+	corpus := filepath.Join("..", "..", "docs", "gates", "corpus")
+	files, err := os.ReadDir(corpus)
+	if err != nil {
+		t.Fatalf("read the gate corpus: %v", err)
+	}
+	h := newWorkflowHarness(t)
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		if filepath.Ext(f.Name()) != ".yaml" {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(corpus, f.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", f.Name(), err)
+		}
+		name := strings.TrimSuffix(f.Name(), ".yaml")
+		writeWorkflowFile(t, h.globalDir, name, string(src))
+		names = append(names, name)
+	}
+	if len(names) < 9 {
+		t.Fatalf("the corpus has %d workflows; the gate documents nine", len(names))
+	}
+	h.reg.ReloadGlobal()
+
+	for _, name := range names {
+		resp, body := h.definition(t, name, 0)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: status %d, body %s", name, resp.StatusCode, body)
+			continue
+		}
+		got := decodeDefinition(t, body)
+		if len(got.Errors) > 0 {
+			t.Errorf("%s does not parse — the gate would fail before it began: %v", name, got.Errors)
+			continue
+		}
+		if got.Definition == nil || len(got.Definition.Steps) == 0 {
+			t.Errorf("%s served no steps", name)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 # 017 — Workflow visualization in the TUI
 
-**Status:** 🚧 in progress (8/9) · **Opened:** 2026-08-18
+**Status:** ✅ done (9/9) · **Opened:** 2026-08-18
 
 Vincent's workflow screen currently explains a workflow as a numbered list of
 its top-level steps. That was sufficient while workflows were mostly linear,
@@ -691,7 +691,7 @@ should depend on a specific color profile.
   focus transitions, resize and large graphs. Run the normal race-enabled test
   suite and the three-platform CI matrix; do not mark done from assumed
   portability.
-- [ ] **017.8 — Behaviour docs and acceptance walkthrough.** Depends: 017.7.
+- [x] **017.8 — Behaviour docs and acceptance walkthrough.** ✓ 2026-08-18 Depends: 017.7.
   Amend `docs/spec.md`, `docs/reference/api.md` and `docs/guides/tui.md` in the
   same change as the implemented behaviour. Document keys and graph semantics,
   add `docs/gates/017-workflow-graph.md` carrying the acceptance corpus and its
