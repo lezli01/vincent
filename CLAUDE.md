@@ -65,7 +65,7 @@ go test -race ./internal/tui -run TestLiveChangeFromRealServer
 ```
 
 Acceptance gates — bash scripts that drive a real daemon end to end over curl
-against the fake agent; CI runs all three on Linux, macOS, and Windows:
+against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 
 ```sh
 ./scripts/m1-gate.sh
@@ -79,11 +79,12 @@ VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CL
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-CI runs `m1`, `m2` and `m5` on all three platforms. `m6`, `m7` and `m8` are not
-wired in: the push token used for this work has no `workflow` scope, so a
-branch touching `.github/workflows` is rejected outright. Adding them is two
-lines each in `ci.yml`'s `gates` job, and all three scripts run identically by
-hand.
+All six run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
+`m8` spent a while unwired because a cloud session's token has no `workflow`
+scope and so cannot write `.github/workflows/` by any route — push or API
+(#120, #122, #125). A gate that has never run on a platform is not known to
+pass there: wiring these in turned up two Windows-only faults in a script that
+had passed on Linux for weeks, both recorded below.
 
 `scripts/m3-gate.sh` seeds a human walkthrough instead of asserting — M3's
 acceptance is a judgement about a TUI. The manual legs of M5 are walked
@@ -93,6 +94,24 @@ New gate scripts must be committed **executable** (`git update-index
 --chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the
 bit, so a non-executable gate passes on Windows and fails both POSIX legs with
 exit 126 before running an assertion.
+
+A gate's *workflow* `run:` bodies run under the daemon's shell — `/bin/sh` on
+POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be
+spelled in the intersection of the two: `exit N`, `sleep N` and `git ...`.
+That excludes `touch`, `seq`, `[ -f ]` and `for`/`if`, and it is why a lane
+that needs a file on disk writes it with `git config -f x k v` and one that
+only needs a commit uses `git commit --allow-empty`. `exit N` has to be the
+*whole* body: pwsh's `&&`/`||` take pipelines, so `... && exit 0` is parsed
+as a command named `exit` and fails. A body that must pass or fail on a
+condition is one command whose own exit code says so — `git config --get`
+exits 1 on a missing key. Assert concurrency and timing from the API instead
+of from inside a step body.
+
+In the gate's own bash, a capture spanning **several lines** of `jq` output
+needs `| tr -d '\r'`: jq writes CRLF on Windows, `$(...)` drops only the
+trailing one, and the interior CRs then fail an exact comparison against a
+`$'a\nb'` literal. Single-line captures are unaffected, which is how this hid
+until `m8` compared a list.
 
 Requires bash, go, git, curl, jq.
 
