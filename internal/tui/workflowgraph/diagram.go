@@ -160,8 +160,10 @@ func Build(wf *apiclient.WorkflowBody) Diagram {
 	if wf == nil {
 		return b.d
 	}
-	b.add(Node{ID: EndNodeID, Kind: KindEnd, Label: "END"})
 	_, exits := b.sequence(wf.Steps, flow{next: EndNodeID, end: EndNodeID})
+	// END is appended last so Nodes reads in source order, which is the
+	// deterministic fallback order keyboard navigation falls back to.
+	b.add(Node{ID: EndNodeID, Kind: KindEnd, Label: "END"})
 	b.linkAll(exits, EndNodeID, EdgeFlow)
 	b.d.Root = make([]string, 0, len(wf.Steps)+1)
 	for _, st := range wf.Steps {

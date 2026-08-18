@@ -31,8 +31,12 @@ const (
 	ctxNewTask   bindingContext = "new task"
 	ctxProjects  bindingContext = "projects"
 	ctxWorkflows bindingContext = "workflows"
-	ctxDaemon    bindingContext = "daemon"
-	ctxForm      bindingContext = "answer form"
+	// ctxWorkflowGraph is the graph sub-layer of the workflows takeover. It
+	// is its own context because its keys are entirely different from the
+	// list's, and the footer and the ? overlay must say which set is live.
+	ctxWorkflowGraph bindingContext = "workflow graph"
+	ctxDaemon        bindingContext = "daemon"
+	ctxForm          bindingContext = "answer form"
 )
 
 // binding is one registry row.
@@ -146,6 +150,16 @@ var bindings = []binding{
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
 	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2},
 	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3},
+	{key: "g", label: "draw the workflow as a control-flow graph", scope: scopePanel, context: ctxWorkflows, hint: "g graph", priority: 4},
+
+	// The graph sub-layer (task 017). Arrows move the selection and the
+	// viewport follows it; panning is deliberately a separate, shifted key,
+	// so an arrow can never scroll the canvas out from under the cursor.
+	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxWorkflowGraph, hint: "↑↓←→ select", priority: 1},
+	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxWorkflowGraph, hint: "⇧ pan", priority: 2},
+	{key: "tab", label: "walk the nodes in source order (shift+tab goes back)", scope: scopePanel, context: ctxWorkflowGraph, hint: "tab next", priority: 3},
+	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4},
+	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5},
 
 	// Daemon.
 	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
