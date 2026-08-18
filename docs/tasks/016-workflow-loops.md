@@ -517,6 +517,15 @@ push token used for this work has no `workflow` scope, so a branch touching
 Say so in CLAUDE.md's command list beside `m6` and `m7`, so the gap stays
 documented rather than silently carried.
 
+*2026-08-18.* Wired in after all (#125), and green on all three platforms
+(run 32143694231). The `run:` bodies were as portable as claimed — the
+Windows fault was in the gate's **own** bash: `jq` writes CRLF there, and
+while `$(...)` drops the trailing one it keeps the interior ones, so six
+assertions comparing a multi-line capture against a `$'a\nb'` literal failed
+on stray `\r`s. `rows_for` and `items_ran` now end in `tr -d '\r'`. Worth
+knowing that the portability rule has two halves: what the daemon's shell
+accepts, and what the gate's own shell reads back.
+
 **Three things the implementation settled that the plan left open.**
 
 - **`loop_limit` is reachable for `count:` too.** Decision 5 says the cap

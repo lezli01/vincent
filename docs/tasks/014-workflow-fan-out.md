@@ -718,6 +718,16 @@ wait on marker files its siblings write, and the lanes that must produce a
 file write it with `git config -f` because `echo >` and `Set-Content` share no
 spelling. Still nine scenarios, still passing on Linux.
 
+*2026-08-18 (later).* #120 applied: the `gates` job runs `m6` on all three
+platforms, and all nine scenarios pass on each (run 32143694231). The Windows
+leg took one more fix first — the rewritten flaky sub-step chained `exit 0`
+after a `&&`, and pwsh's chain operators take pipelines, so `exit` was parsed
+as a command name. It is now a single `git config --get` that exits 1 while
+its marker is absent, with the gate writing the marker before it retries. The
+prediction this note opened with is settled: the merge half of task 014 does
+behave the same on Windows, which is a fact rather than an assumption for the
+first time.
+
 Three bugs the work surfaced, each recorded where it was found:
 
 1. **A resolved lane could not carry both `workflow:` and `steps:`.** They are
