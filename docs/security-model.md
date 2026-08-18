@@ -106,7 +106,7 @@ automatically, keeping the run strictly unattended.
 
 Use `restricted` for steps that have no business running commands: a docs pass, a
 review, a summarization step. See
-[Writing workflows](guides/workflows.md#permission-modes).
+[Writing workflows](guides/workflows.md#93-permission-modes).
 
 ## The API surface
 
@@ -195,5 +195,5 @@ Stated so you do not assume otherwise:
 
 - [SECURITY.md](../SECURITY.md) — reporting a vulnerability.
 - [Agent CLIs](guides/agents.md) — per-adapter behavior.
-- [Writing workflows](guides/workflows.md#permission-modes).
+- [Writing workflows](guides/workflows.md#93-permission-modes).
 - Spec [§16](spec.md) — the normative version.
