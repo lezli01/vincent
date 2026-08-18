@@ -7,11 +7,33 @@ The complete YAML field reference. The practical, prose version is
 **Unknown keys are errors, not ignored.** A typo fails validation instead of
 becoming a setting that silently never applied.
 
+**The file**
+
 - [File structure](#file-structure)
 - [Top level](#top-level)
-- [`platforms`](#platforms)
-- [`defaults`](#defaults)
-- [Step fields](#step-fields)
+  - [`platforms`](#platforms)
+  - [`defaults`](#defaults)
+
+**Steps**
+
+- [Step fields](#step-fields) — common to every type
+  - [`type: agent`](#type-agent)
+  - [`type: command`](#type-command)
+  - [`type: manual`](#type-manual)
+  - [`type: parallel`](#type-parallel)
+  - [`type: fan_out`](#type-fan_out) · [`merge` and conflicts](#merge-and-conflicts)
+  - [`type: loop`](#type-loop) · [`.Loop`](#loop) · [body contents](#what-a-body-may-contain) · [ending](#ending-a-loop) · [human actions](#human-actions)
+  - [`type: break`](#type-break)
+  - [Nesting rules](#nesting-rules) — which type may appear where
+
+**Behaviour**
+
+- [Conditions](#conditions)
+  - [`if:` — skip a step](#if--skip-a-step-carry-on)
+  - [`type: condition` — finish early](#type-condition--finish-early)
+  - [`allow_failure:` — a failure that is data](#allow_failure--a-failure-that-is-data)
+  - [Reading an earlier step](#reading-the-outcome-of-an-earlier-step)
+  - [`check` is a field](#check-is-a-field-not-a-step-type)
 - [Template context](#template-context)
 - [Environment](#environment)
 - [Resolution order](#resolution-order)
@@ -141,7 +163,7 @@ Runs an agent CLI headlessly in the worktree.
 | `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex or cursor; `require` refuses them |
 | `input_timeout` | duration | | Bounds each wait in `awaiting_input`, per request |
 | `check` | string | | Shell command that must exit 0 for the attempt to succeed |
-| `check_timeout` | duration | | Defaults to the command timeout |
+| `check_timeout` | duration | | Defaults to the daemon's `defaults.command_timeout` (15m) — **not** the step's own `timeout`, and not workflow `defaults.timeout` |
 
 ```yaml
   - id: implement
@@ -172,13 +194,13 @@ Runs a shell command in the worktree.
 | `shell` | `sh` \| `pwsh` \| `cmd` | | Pin the shell; default is the platform's |
 | `env` | map | | Extra environment for this step |
 | `check` | string | | Must exit 0 for the attempt to succeed |
-| `check_timeout` | duration | | Defaults to the command timeout |
+| `check_timeout` | duration | | Defaults to the daemon's `defaults.command_timeout` (15m) |
 
 ```yaml
   - id: commit
     type: command
     run: 'git add -A && git commit -m "{{.Task.Title}}"'
-    shell: bash
+    shell: sh
     env:
       CI: "true"
 ```
@@ -186,6 +208,21 @@ Runs a shell command in the worktree.
 Default shells: `/bin/sh -c` on POSIX, `pwsh -NoProfile -Command` on Windows
 (falling back to `powershell`). vincent does not translate between them —
 portability is the author's job.
+
+`shell:` accepts exactly three values — **`bash` is not one of them**. Use `sh`
+for portable POSIX syntax, or invoke bash explicitly with `run: bash -c '…'`.
+
+| Value | Runs as |
+|---|---|
+| `sh` | `/bin/sh -c`; on Windows, whatever `sh` resolves to on `PATH` (Git Bash's, if it is there) |
+| `pwsh` | `pwsh -NoProfile -Command` |
+| `cmd` | `cmd /C` |
+
+A pinned shell is never silently replaced: if it is not installed the step
+fails with `shell_unavailable`.
+
+Quote a `run:` containing a colon — `run: git commit -m "fix: thing"` is a YAML
+parse error, since the parser reads `fix:` as a second mapping key.
 
 ### `type: manual`
 
@@ -226,14 +263,23 @@ Runs its sub-steps at the same time, in the task's one worktree.
 ```
 
 Sub-steps are ordinary `agent` and `command` steps: each has its own `check`,
-`timeout`, `max_retries` and agent selection, resolved exactly as at the top
-level. What they may **not** be:
+`timeout`, `max_retries`, `if:` and agent selection, resolved exactly as at the
+top level. Those two types are the whole list — see
+[Nesting rules](#nesting-rules) for what is refused and why:
 
 - `manual` — a gate releases the task's slot, and there is no such thing as
   half a task waiting at a gate;
-- another `parallel` — groups do not nest;
+- another `parallel`, and `loop` — both derive their position from rows sharing
+  one `step_index`, and that derivation stays affordable one level deep;
+- `fan_out` — the task parks in `awaiting_children`, and a group cannot park
+  half a task;
+- `condition` — a group is a set with no later steps to stop; guard the
+  sub-step with `if:` instead;
+- `break` — there is no loop here for one to end;
 - `on_input: require` — the task has one pending question at a time, so a
-  group of agents that each want to ask has nowhere to put the answers.
+  group of agents that each want to ask has nowhere to put the answers. This is
+  judged on the **resolved** value, so a `defaults.on_input: require` reaching a
+  silent sub-step is caught too.
 
 The group is one step: one index, one slot, one entry in the timeline. It
 succeeds when every sub-step succeeds. A failure does **not** cancel the
@@ -278,6 +324,7 @@ A **lane** carries `id` and exactly one of `workflow` or `steps`, plus:
 
 | Key | Type | Notes |
 |---|---|---|
+| `if` | template | Guard. False means this lane is not spawned; siblings still run and the join still happens |
 | `fields` | map | Merged over the parent task's fields; the lane wins |
 | `agent` / `model` / `effort` | string | Override the inherited selection for this lane's whole subtree |
 | `priority` | int | Same, for scheduler priority |
@@ -293,7 +340,23 @@ too — a fan-out inside an urgent task would otherwise queue behind unrelated
 work and make the urgent task *slower* than not fanning out.
 
 **One branch is still delivered.** The step does not finish until every lane is
-merged, `--no-ff`, in the order the lanes are declared.
+merged, `--no-ff`, in the order the lanes are declared. Order is the lane's
+**declared** index, not its position among the lanes actually spawned, so a
+guarded-off lane does not renumber the merge.
+
+**Spawning parks the parent** in `awaiting_children` and releases its slot; the
+scheduler re-admits it once every descendant has settled, and that second
+admission runs the join. If the spawn is only partial, the lanes already created
+are cancelled, so a retry starts from a clean slate rather than half a tree.
+
+**When every lane is guarded off**, the step chooses nothing and advances. It
+must not park: a parent in `awaiting_children` with no children would be
+re-queued forever.
+
+**The join gets one attempt** unless the step declares `max_retries` itself. The
+two ways a join fails — a conflict, and a lane that did not finish — are both
+"a human decides", and an automatic second merge would abort the first, hit the
+same conflict and block anyway.
 
 #### `merge` and conflicts
 
@@ -310,6 +373,11 @@ commits your resolution and merges what is left.
 and the conflicted files are in its template context as `{{.Conflicts}}`. If
 it fails, or its check fails, or conflict markers survive it, you get the same
 block.
+
+A merge resolver is a full agent step and needs an `id`, since it gets step-run
+rows of its own. It may **not** declare `on_input: require`: it runs mid-join,
+and the worktree state it is resolving is not something a human can inspect
+through a question.
 
 ```yaml
     merge:
@@ -452,6 +520,31 @@ out, be retried or write a transcript.
 
 Only valid inside a loop body: elsewhere there is no loop for it to end.
 
+### Nesting rules
+
+| Type | Top level | In a `parallel` group | In a `loop` body | In a lane's inline steps |
+|---|:--:|:--:|:--:|:--:|
+| `agent` | ✅ | ✅ | ✅ | ✅ |
+| `command` | ✅ | ✅ | ✅ | ✅ |
+| `manual` | ✅ | ❌ | ❌ | ✅ |
+| `parallel` | ✅ | ❌ | ❌ | ✅ |
+| `fan_out` | ✅ | ❌ | ❌ | ✅ |
+| `condition` | ✅ | ❌ | ✅ | ✅ |
+| `loop` | ✅ | ❌ | ❌ | ✅ |
+| `break` | ❌ | ❌ | ✅ | ❌ |
+
+A lane's inline steps become a child task's own flat snapshot, so they are a
+workflow body in their own right: the "top level" column is the one that applies
+to them, and their step ids live in their own namespace.
+
+Every ❌ has one cause. A `parallel` group and a `loop` iteration run inside a
+**single admission of a single task**, and each rejected type needs a task state
+saying "one member of this structure is parked" — which §6 has no room for.
+`on_input: require` is refused inside both for the same reason: `awaiting_input`
+holds one pending request for the whole task. Refusal is judged on the
+**resolved** value, so `defaults.on_input: require` reaching a silent member is
+caught at load.
+
 ## Conditions
 
 A workflow can decide at run time what to do next. Three fields do it.
@@ -581,10 +674,22 @@ starts.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
-| `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. Includes steps skipped by a guard (`Status: "skipped"`) and steps that failed under `allow_failure`, once the workflow has moved past them |
+| `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retries only: `{Reason, Output}`; empty otherwise |
+| `.Conflicts` | the conflicted file paths, on an `on_conflict: agent` [merge resolver](#merge-and-conflicts) only. Empty everywhere else, so a prompt may read it defensively anywhere |
+
+Visibility follows one rule — a step appears once the engine has advanced past
+it — and three consequences follow from it:
+
+- a step's **own** failed attempt is never in `.Steps["itself"]` mid-retry;
+  `.LastFailure` is that channel;
+- members of a `parallel` group are **invisible to each other**, since
+  concurrent siblings have never been advanced past;
+- inside a `loop` body, earlier steps of the current iteration **are** visible
+  to later ones, and under repetition an id resolves to its **latest**
+  iteration.
 
 `.Steps.<id>.Result` is the agent's final result text for agent steps, or the
 last **200** lines of stdout for command steps. That is how one step's output
@@ -646,7 +751,16 @@ re-derives it.
 ## Validation rules
 
 `vincent workflow validate <file>` checks all of this locally — no daemon, no
-network, no agent CLI installed.
+network, no agent CLI installed. Two values it cannot ask a daemon for, and
+substitutes deterministically so a file that validates on a laptop validates on
+a bare CI runner:
+
+- **agent catalogs** are the curated, compiled-in ones rather than a live
+  `claude --help`. Probing only ever *adds* values, so a verdict can soften on a
+  real daemon but never harden;
+- **the loop ceiling** is the built-in default (10), not your `config.yaml`.
+
+Exit status is 1 for an invalid file; `--json` emits the findings structurally.
 
 - `steps` non-empty; step `id`s unique **across the whole file**, sub-steps
   of a `parallel` group included; `type` known.
@@ -665,10 +779,12 @@ network, no agent CLI installed.
   `allow_failure`: it has no attempt of its own. A `break` has an `if:` and
   nothing else, and is valid only inside a loop body. `count`, `for_each` and
   `max_iterations` are rejected on every other step type.
-- A `fan_out` step has at least one lane; lane ids are unique within the step;
-  each lane has exactly one of `workflow` and `steps`. `merge.agent` is
-  required by, and only valid with, `on_conflict: agent`. A lane's inline
-  steps have their own id namespace, because each lane becomes its own task.
+- A `fan_out` step has at least one lane; lane ids are unique within the step
+  and are slugs; each lane has exactly one of `workflow` and `steps`.
+  `merge.agent` is required by, and only valid with, `on_conflict: agent`; it is
+  a full agent step, needs an `id`, and may not declare `on_input: require`. A
+  lane's inline steps have their own id namespace, because each lane becomes its
+  own task. `resolved_from` is written by task creation and is an error by hand.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.
