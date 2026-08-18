@@ -87,3 +87,29 @@ jobs:
       - name: M5 gate (fake agent)
         shell: bash
         run: ./scripts/m5-gate.sh
+
+      # M6: parallel step groups and workflow fan-out (task 014). It runs on
+      # all three OSes because the merge half is where platform differences
+      # actually bite — git's behaviour on Windows is the thing a gate should
+      # prove rather than assume.
+      - name: M6 gate (parallel and fan-out)
+        shell: bash
+        run: ./scripts/m6-gate.sh
+
+      # M7: conditions between steps (task 015). Guards, condition steps and
+      # allow_failure are pure control flow, so the value of the three-OS
+      # matrix here is the shell: every `run:` body is written to be accepted
+      # by /bin/sh and pwsh alike, and Windows is what proves it.
+      - name: M7 gate (conditions)
+        shell: bash
+        run: ./scripts/m7-gate.sh
+
+      # M8: loops (task 016). Every `run:` body is `exit N` or `git …`, the
+      # same restricted vocabulary m7 uses, so the three-OS matrix is proving
+      # the shell as much as the feature. Scenario 8 is the one that most
+      # needs Windows: it hard-kills the daemon and asserts the loop resumes
+      # mid-iteration, and the kill path is `taskkill` there and SIGKILL
+      # everywhere else.
+      - name: M8 gate (loops)
+        shell: bash
+        run: ./scripts/m8-gate.sh
