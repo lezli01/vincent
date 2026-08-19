@@ -1,4 +1,3 @@
-{'push': {'branches': ['codex-author-rewrite-20260819']}, 'pull_request': {'branches': ['master']}}
 name: Temporary master author rewrite
 
 on:
