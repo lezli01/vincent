@@ -5,26 +5,46 @@ All notable changes to vincent are recorded here. The format follows
 [Semantic Versioning](https://semver.org/) with the pre-1.0 caveat spelled out
 in [Versioning and stability](#versioning-and-stability) below.
 
-Release Please maintains release entries from Conventional Commit history. The
-release pull request is the review point for improving generated entries with
-the human context a commit subject cannot carry. The existing `[Unreleased]`
-content predates that automation and should be reconciled in the first Release
-Please pull request.
+Release Please creates release entries from Conventional Commit history. Its
+release pull request is the review point for replacing the mechanical commit
+list with the user-facing context a commit subject cannot carry.
 
-## [0.2.0](https://github.com/lezli01/vincent/compare/v0.1.1...v0.2.0) (2026-08-16)
-
-
-### Features
-
-* **codex:** report logged_in from `codex login status` ([7c1a506](https://github.com/lezli01/vincent/commit/7c1a506ef826d2508c1164eb484d2d07067e9783))
-* **doctor:** `vincent doctor` — one command that answers "why is nothing running?" ([e298676](https://github.com/lezli01/vincent/commit/e298676533dfab7cab42693dc4ff2be36590cb59))
-* **doctor:** one command that answers "why is nothing running?" ([e0d63c7](https://github.com/lezli01/vincent/commit/e0d63c7f99b8ad04e72c72cb6e64cff49cfac0b5))
-* reclaim orphaned worktrees with `vincent gc` ([e1195e4](https://github.com/lezli01/vincent/commit/e1195e4f6e611e68a6c25d20dae6beb6f940bfbf))
-* reclaim orphaned worktrees with `vincent gc` ([5a9037d](https://github.com/lezli01/vincent/commit/5a9037d8392fb32b9e539f072d5fd75c73429743)), closes [#95](https://github.com/lezli01/vincent/issues/95)
-
-## [Unreleased]
+## [0.3.0](https://github.com/lezli01/vincent/compare/8efa4c8c7bb8b034831c04447f17122f9d8aaf0a...v0.3.0) (2026-08-19)
 
 ### Added
+
+- **Reusable workflow composition with `type: include`.** An include splices a
+  registry workflow's steps into the caller when the task is created, so shared
+  fragments run in the same task and worktree and their results remain available
+  through `.Steps`. Nested includes carry provenance, honour the included
+  workflow's defaults, and are checked for cycles, depth, duplicate step ids and
+  platform compatibility before execution. Includes work at top level and inside
+  loops, parallel groups and inline fan-out lanes.
+
+- **Workflow platform restrictions with `platforms:`.** A workflow can declare
+  `linux`, `darwin`, `windows` or `posix`. Unsupported workflows remain visible
+  and explain why they cannot run, but task creation refuses them and migrated
+  snapshots block with `platform_unsupported` before creating a worktree.
+
+- **Input-capability gating with `on_input: require`.** Workflows that depend on
+  mid-run questions can now reject an agent that cannot pause for an answer,
+  instead of silently continuing with a guess. Static incompatibilities fail
+  validation; installed-agent capability is checked again at creation and just
+  before the step starts.
+
+- **A configurable, grouped task board.** `tui.board.group_by` defaults to
+  project then workflow, with `g` cycling project/workflow/flat layouts for the
+  current session. Groups preserve the existing attention-first ordering and
+  never hide tasks behind collapsible headers.
+
+- **Bulk task actions in the TUI.** `space` marks one task and `V` marks all
+  visible tasks; the normal action keys then operate on the eligible selection.
+  Successful tasks are unmarked, refusals remain selected for retry, and dirty
+  worktrees receive the same explicit confirmation as single-task archive.
+
+- **File-grouped diffs.** The task detail diff tab groups hunks by file and
+  starts them folded, so large agent changes are navigable without losing the
+  full patch.
 
 - **A control-flow graph for workflows in the TUI — `g`.** The workflows screen
   explained a workflow as a numbered list of its top-level steps, which was
@@ -130,6 +150,10 @@ Please pull request.
 
 ### Fixed
 
+- **Long structured-input prompts no longer truncate in the TUI.** The answer
+  popup is wider and wraps both questions and free-text answers, keeping the
+  full prompt usable in ordinary terminal sizes.
+
 - **A fan-out whose spawn failed part-way could never be retried.** Lanes were
   created one at a time, each committing before the next, so a failure on lane
   two left lane one committed; the cleanup cancelled it, and a cancelled lane
@@ -192,124 +216,27 @@ Please pull request.
   published after this change is the first release under the new licensing, and
   every release after it follows.
 
-### Added
+- **Archiving removes a task's empty branch by default.** A branch is deleted
+  only when it contains no commit beyond the task's recorded base; dirty,
+  diverged or unverifiable branches are retained and archiving still succeeds.
+  `delete_empty_branch_on_archive: false` restores the old behaviour, while the
+  opt-in `delete_remote_branch_on_archive` also removes a configured upstream
+  after the safe local deletion. Project deletion never deletes remote branches.
 
-- **`vincent gc` reclaims directories no task claims.** A worktree could outlive
-  every reference to it: deleting a project removes worktrees best-effort and
-  drops the task rows regardless, so a removal that failed — a file locked by
-  another process, a shell sitting in the directory — left a directory nothing
-  could ever name again. A crash between creating a worktree and recording its
-  path did the same, and made the task's next admission fail
-  `worktree_path_occupied` pointing at a directory the user had never been told
-  about.
+- **Release dependencies were refreshed without major-version changes.** This
+  release uses Bubble Tea 2.0.9, Lip Gloss 2.0.6, `x/ansi` 0.11.8,
+  modernc.org/sqlite 1.57.0 and govulncheck 1.7.0.
 
-  `vincent gc` lists those directories with their sizes and removes them.
-  `--dry-run` prints the identical report and removes nothing. A worktree with
-  local changes (untracked files count) is skipped as `worktree_dirty`; one whose
-  repository is gone, so `git status` cannot run at all, is skipped as
-  `dirty_unknown` — the common case for a real orphan — and `--force` removes
-  both. Orphaned transcript directories are reclaimed too, since retention walks
-  task *rows* and a cascade-deleted row's transcripts are reached by no pass.
-  Nothing outside `{data_dir}/worktrees` and `{data_dir}/transcripts` is ever
-  removed, no branch is ever deleted, and no task row is modified.
+## [0.2.0](https://github.com/lezli01/vincent/compare/v0.1.1...v0.2.0) (2026-08-16)
 
-  New endpoints `GET /v1/maintenance/orphans` and `POST /v1/maintenance/gc`, and
-  `orphans` on `GET /v1/info`.
 
-- **The daemon reports orphans at startup and never deletes them.** One warning
-  per directory in the log, plus the count on `/v1/info` and a line in the TUI
-  daemon view naming `vincent gc`. The unattended path reports; a human deletes.
+### Features
 
-- **`scripts/install-local.sh`** installs the checked-out tree as a regular
-  local install: one binary on PATH, built with the release flags from
-  `.goreleaser.yaml` and the same three version symbols, so `vincent version`
-  names your commit. Defaults to `/usr/local/bin` (`--user` for `~/.local/bin`,
-  `--bin-dir` for anywhere else), and reports the two things that make a fresh
-  build look like it did not take: another `vincent` shadowing it on PATH, and
-  a daemon still running the previous binary. `--uninstall` removes the binary
-  and leaves config, database and transcripts alone.
-
-- **`vincent doctor` — one command that answers "why is nothing running?".**
-  It used to take five surfaces and a hand-extracted bearer token: `daemon
-  status`, reading `daemon.json` yourself, the TUI's daemon view for a log tail,
-  `curl /v1/agents`, and finding the config file. Doctor prints all of it in one
-  pass — the config and data directories and whether `config.yaml` parses; the
-  daemon's status, pid, port, uptime and version; the log's size and last lines;
-  the database's size, schema version and `PRAGMA integrity_check`; every agent
-  CLI with its path, version and `logged_in`; free disk, worktree count and
-  bytes, and orphaned worktrees; and task counts by state. `--json` emits the
-  whole report for scripting and for pasting into a bug report.
-
-  It exits `0` healthy, `1` on problems found, `2` when no daemon answered — and
-  **it still prints a full report with no daemon running**, since that is one of
-  the answers. In that mode the database and task rows read *unknown — daemon
-  not running* rather than opening SQLite behind the daemon's back. A missing or
-  logged-out agent CLI is reported plainly and deliberately does not set the exit
-  code.
-
-- **`vincent doctor --fix` reclaims orphaned directories and compacts the
-  database.** Doctor reports the same orphans `vincent gc` does and `--fix` runs
-  the same reclaim — one definition, one removal path, so the two commands
-  cannot disagree about what is safe to delete. What doctor adds is the report
-  beside the disk figures, and the database, which grew forever with no surface
-  naming its size. Both writes are performed by the daemon. Two refusals are by
-  design and are reported rather than hidden: an orphan with local changes is
-  skipped until `--force`, and the `VACUUM` is skipped while any task is in
-  flight instead of stalling it mid-step. With no daemon answering, orphans read
-  *unknown* — the claim set lives in a database only the daemon opens.
-
-- **`GET /v1/doctor` and `POST /v1/doctor/fix`** serve the report and the
-  repair. Agent availability on `/v1/doctor` is re-probed unconditionally,
-  unlike `GET /v1/agents`: authentication is not a function of the binary, so a
-  cached `logged_in: false` would survive you logging in.
-
-### Changed
-
-- **Releases are managed by Release Please.** Conventional Commits maintain a
-  release pull request; merging it creates the version tag and GitHub release,
-  then the existing GoReleaser workflow publishes signed artifacts and updates
-  the stable Homebrew cask. Prerelease tags continue to skip the tap.
-
-- **Archiving a task now deletes its branch when that branch has no commits past
-  its base.** A workflow that files an issue, posts a summary or reviews
-  read-only writes nothing to the repository, but it still got a branch, and
-  archiving it left that branch behind forever — one empty `vincent/*` ref per
-  run, with no reliable glob to clean up with, since branch names are
-  configurable. The only remedy was to list the archived tasks and delete them by
-  hand.
-
-  The test is exact: `git rev-list -n 1 {base}..{branch}` must produce nothing,
-  meaning the tip is an ancestor of the base the task was cut from. **A branch
-  carrying any commit is never touched**, the delete is `git branch -d` rather
-  than `-D`, and anything git cannot answer — the base branch renamed away, the
-  repository gone — keeps the branch and is logged. A branch problem never fails
-  an archive: the task still reaches `archived`, and the branch simply survives,
-  which is what always used to happen.
-
-  Set `delete_empty_branch_on_archive: false` in `config.yaml` for the previous
-  behaviour on every path. `POST /v1/tasks/{id}/archive` reports what it did in a
-  new `branch` object beside the task, and the TUI says it in one line;
-  `DELETE /v1/projects/{id}?force` applies the same rule to every row it is about
-  to drop, because the cascade erases the branch names for good. `vincent gc` and
-  `vincent doctor --fix` still delete no branch at all — an orphaned directory has
-  no task row, so there is no base branch to judge it against.
-
-- **`delete_remote_branch_on_archive` deletes the upstream counterpart too — off
-  by default.** It runs only when you archive a task yourself, only after the
-  local branch was deleted, and only when the branch has a configured upstream;
-  a project delete never touches a remote. A rejected push, an unreachable host
-  or a timeout is logged and the archive still succeeds. It is off by default
-  because a forge is shared with other people and the deletion cannot be undone.
-
-- **codex now reports `logged_in`.** `Detect` probes `codex login status`, so
-  "the CLI is installed but your session expired" is visible on the board, in
-  the new-task form, in `GET /v1/agents` and in doctor — instead of first
-  appearing as a task that burned its whole retry budget. The parse never
-  guesses: a non-zero exit is `false`, an explicit negative is `false`, an
-  explicit positive is `true`, and anything else — including a probe that times
-  out or cannot be spawned — stays `null`. **claude** keeps `logged_in: null`,
-  because its CLI exposes no non-interactive auth surface at all and the only
-  definite answer would be a billed prompt round-trip.
+* **codex:** report logged_in from `codex login status` ([7c1a506](https://github.com/lezli01/vincent/commit/7c1a506ef826d2508c1164eb484d2d07067e9783))
+* **doctor:** `vincent doctor` — one command that answers "why is nothing running?" ([e298676](https://github.com/lezli01/vincent/commit/e298676533dfab7cab42693dc4ff2be36590cb59))
+* **doctor:** one command that answers "why is nothing running?" ([e0d63c7](https://github.com/lezli01/vincent/commit/e0d63c7f99b8ad04e72c72cb6e64cff49cfac0b5))
+* reclaim orphaned worktrees with `vincent gc` ([e1195e4](https://github.com/lezli01/vincent/commit/e1195e4f6e611e68a6c25d20dae6beb6f940bfbf))
+* reclaim orphaned worktrees with `vincent gc` ([5a9037d](https://github.com/lezli01/vincent/commit/5a9037d8392fb32b9e539f072d5fd75c73429743)), closes [#95](https://github.com/lezli01/vincent/issues/95)
 
 ## [0.1.1] — 2026-08-15
 
