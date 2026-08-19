@@ -103,7 +103,18 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 		// An empty `for_each` list. The loop had nothing to iterate, which is
 		// a correct answer rather than a failure — the same way a group whose
 		// every sub-step was guarded off succeeds having run nothing (§7.5).
+		//
+		// It records a row saying so (task 018 D6). "The loop has no row of
+		// its own" is about its *iterations*: those are the body's rows, and
+		// here there are none, so without this the step index a task passed
+		// through would have no row at all — breaking the phase 2 invariant
+		// that every one has at least one, and leaving a detail view unable to
+		// tell "ran nothing" from "never reached". A `fan_out` that selects no
+		// lane has recorded exactly this row since task 015; this is the same
+		// degenerate case in the other structure step.
 		env.log.Info("loop ran nothing: the for_each list is empty")
+		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
+			"the for_each list is empty: the loop ran nothing")
 		return stepOutcome{state: store.StepSucceeded}
 	}
 
@@ -112,7 +123,7 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 	// body step in flight, which ends as an interruption — turned back into a
 	// failure below, because the work ran out of the time the workflow gave
 	// it rather than stopping for the daemon's sake (§7.2).
-	loopCtx, cancel := context.WithCancel(ctx)
+	loopCtx, cancel := ctx, func() {}
 	if env.step.Timeout != nil {
 		loopCtx, cancel = context.WithTimeout(ctx, env.step.Timeout.Std())
 	}
@@ -288,10 +299,31 @@ func (r *Runner) planLoop(
 		return loopPlan{}, fmt.Errorf("%w: for_each produced %d items, max_iterations is %d",
 			errLoopLimit, len(items), limit)
 	}
-	for iteration, recorded := range recordedItems(history) {
-		if iteration >= 1 && iteration <= len(items) {
-			items[iteration-1] = recorded
+	// Recorded iterations win over the fresh list, and they also *extend* it:
+	// the list is re-derived on every admission (decision 8), so a source
+	// whose output shrank between admissions would otherwise leave the loop
+	// with fewer iterations than it already has rows for — it would report
+	// success having silently skipped work iterations 1..n are on record as
+	// having started. Clamping to the highest recorded iteration keeps the
+	// loop's extent monotonic without persisting a plan.
+	recorded := recordedItems(history)
+	highest := 0
+	for iteration := range recorded {
+		if iteration > highest {
+			highest = iteration
 		}
+	}
+	for len(items) < highest {
+		items = append(items, "")
+	}
+	for iteration, item := range recorded {
+		items[iteration-1] = item
+	}
+	if len(items) > limit {
+		// Re-checked after the clamp: rows past a ceiling that has since been
+		// lowered are still work this loop is not allowed to finish.
+		return loopPlan{}, fmt.Errorf("%w: for_each has %d iterations on record, max_iterations is %d",
+			errLoopLimit, len(items), limit)
 	}
 	return loopPlan{driver: workflow.DriverForEach, total: len(items), items: items}, nil
 }

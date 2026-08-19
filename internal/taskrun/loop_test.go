@@ -1,11 +1,14 @@
 package taskrun
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
@@ -216,24 +219,79 @@ func TestLoopForEachFromStepOutput(t *testing.T) {
 // TestLoopForEachEmptyListSucceeds: a loop with nothing to iterate decided
 // correctly, so it succeeds having run nothing — the same posture §7.5 takes
 // for a group whose every sub-step was guarded off.
+//
+// It records one row saying so, and no body rows. This test used to assert the
+// opposite — that the step index stayed empty — which left the one step index a
+// task can pass through carrying no row at all: the phase 2 invariant says
+// every one has at least one, and a detail view has no way to tell "ran
+// nothing" from "never reached". A `fan_out` selecting no lane had recorded
+// exactly this row since task 015 (task 018 D6).
 func TestLoopForEachEmptyListSucceeds(t *testing.T) {
 	h := newEngineHarness(t)
 	h.start(t)
 	snapshot := "name: each\nsteps:\n" +
 		commandStep("discover", script("true", "exit 0")) +
 		"  - id: visit\n    type: loop\n    for_each: '{{ .Steps.discover.Result }}'\n    steps:\n" +
-		bodyIndent(commandStep("touch", appendCmd("items.txt", "x")))
+		bodyIndent(commandStep("touch", appendCmd("items.txt", "x"))) +
+		// The loop's own row must not become a `.Steps` entry: its id would
+		// then be a key that is present exactly when the loop did nothing.
+		commandStep("peek", appendCmd("seen.txt", `[{{ (index .Steps "visit").Status }}]`))
 	task := h.createTask(t, snapshot)
 
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {
 		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
 	}
+	var atLoop []store.StepRun
 	for _, r := range h.stepRuns(t, task.ID) {
 		if r.StepIndex == 1 {
-			t.Errorf("the loop wrote a row (%s) for an empty list; it must run nothing", r.StepID)
+			atLoop = append(atLoop, r)
 		}
 	}
+	if len(atLoop) != 1 {
+		t.Fatalf("rows at the loop = %d, want exactly 1 saying it ran nothing", len(atLoop))
+	}
+	row := atLoop[0]
+	if row.StepID != "visit" {
+		t.Errorf("row step_id = %q, want the loop's own %q — a body step must not have run",
+			row.StepID, "visit")
+	}
+	if row.State != store.StepSucceeded {
+		t.Errorf("row state = %s, want %s", row.State, store.StepSucceeded)
+	}
+	if row.Iteration != 0 {
+		t.Errorf("row iteration = %d, want 0 — there was no iteration to belong to", row.Iteration)
+	}
+	if row.ResultSummary == "" {
+		t.Error("row carries no summary; the detail view has nothing to show for a step that did nothing")
+	}
+	// No body rows, so nothing feeds the loop's own derivation on a
+	// re-admission: the iteration-0 row is invisible to both latestStatesIn
+	// (which filters on the iteration it is asking about) and recordedItems
+	// (which requires iteration > 0).
+	if got := countLoopBodyRows(atLoop); got != 0 {
+		t.Errorf("body rows = %d, want 0", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(done.WorktreePath, "seen.txt"))
+	if err != nil {
+		t.Fatalf("read seen.txt: %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "[]" {
+		t.Errorf("a later step read the loop id as %q, want %q — a loop's own row is not a result",
+			got, "[]")
+	}
+}
+
+// countLoopBodyRows is how many of a loop step index's rows belong to an
+// iteration rather than to the loop step itself.
+func countLoopBodyRows(runs []store.StepRun) int {
+	n := 0
+	for _, r := range runs {
+		if r.Iteration > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // TestLoopForEachOverCeilingBlocks pins decision 5: reaching the cap is not a
@@ -469,5 +527,86 @@ func TestLoopBodyStepSeesEarlierBodySteps(t *testing.T) {
 	}
 	if got := countLines(t, done.WorktreePath, "peeked.txt"); got != 2 {
 		t.Errorf("guarded body step ran %d times, want 2 — it must read the probe above it", got)
+	}
+}
+
+// TestLoopForEachExtentNeverShrinksBelowItsRows: a `for_each` list re-derived
+// smaller than the iterations already on record does not shorten the loop.
+//
+// §7.8 re-derives the list on every admission and takes each already-started
+// iteration's item from its rows rather than from the fresh list, which keeps
+// "iteration 3" naming the work iteration 3 actually did. The extent was still
+// taken from the fresh list alone, so a shorter one would have left the loop
+// reporting success over iterations it has rows for and never revisited.
+//
+// Every `for_each` source §8.4 offers is stable between admissions — a step
+// result, a task field, the host — so this is a guard on the derivation rather
+// than a reachable failure today. It is cheap, and the failure it forecloses
+// is silent: a loop that says it finished having skipped work.
+func TestLoopForEachExtentNeverShrinksBelowItsRows(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	// One item in the list; three iterations on record.
+	snapshot := loopSnapshot("for_each: [alpha]", commandStep("body", appendCmd("ran.txt", "x")))
+	task := h.createTask(t, snapshot)
+	recorded := []string{"alpha", "beta", "gamma"}
+	for i, item := range recorded {
+		finished := time.Now()
+		if err := h.store.CreateStepRun(ctx, &store.StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "body", StepType: "command",
+			Attempt: 1, Iteration: i + 1, LoopItem: item,
+			State: store.StepSucceeded, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatalf("seed iteration %d: %v", i+1, err)
+		}
+	}
+
+	env := h.firstStepEnv(t, task, snapshot)
+	history, err := h.store.ListStepRunsAt(ctx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("ListStepRunsAt: %v", err)
+	}
+	plan, err := h.runner.planLoop(ctx, env, history, 10)
+	if err != nil {
+		t.Fatalf("planLoop: %v", err)
+	}
+	if plan.total != len(recorded) {
+		t.Errorf("plan.total = %d, want %d — the extent must cover every recorded iteration",
+			plan.total, len(recorded))
+	}
+	if !reflect.DeepEqual(plan.items, recorded) {
+		t.Errorf("plan.items = %q, want %q — a recorded iteration keeps the item its rows carry",
+			plan.items, recorded)
+	}
+}
+
+// TestLoopForEachRecordedIterationsPastTheCeilingBlock: the ceiling is
+// re-checked after the clamp, so rows past a `max_iterations` that has since
+// been lowered block rather than silently running to the smaller list.
+func TestLoopForEachRecordedIterationsPastTheCeilingBlock(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := loopSnapshot("for_each: [alpha]", commandStep("body", appendCmd("ran.txt", "x")))
+	task := h.createTask(t, snapshot)
+	for i, item := range []string{"alpha", "beta", "gamma"} {
+		finished := time.Now()
+		if err := h.store.CreateStepRun(ctx, &store.StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "body", StepType: "command",
+			Attempt: 1, Iteration: i + 1, LoopItem: item,
+			State: store.StepSucceeded, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatalf("seed iteration %d: %v", i+1, err)
+		}
+	}
+
+	env := h.firstStepEnv(t, task, snapshot)
+	history, err := h.store.ListStepRunsAt(ctx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("ListStepRunsAt: %v", err)
+	}
+	if _, err := h.runner.planLoop(ctx, env, history, 2); !errors.Is(err, errLoopLimit) {
+		t.Errorf("planLoop error = %v, want errLoopLimit", err)
 	}
 }

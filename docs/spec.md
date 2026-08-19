@@ -517,7 +517,14 @@ that happens to share the word.
   sub-step may carry an `if:`, which subsets the group. Sub-step guards are
   evaluated **once, before anything in the group starts**, so no sibling has
   run and none can be read by another's guard; a group whose sub-steps are all
-  guarded off succeeds having run nothing.
+  guarded off succeeds having run nothing. *Amended 2026-08-19 (task 018):*
+  the blindness is a property of the *set*, not of that ordering, and holds in
+  every admission. A group re-admitted after one sub-step failed skips the
+  ones that already succeeded, and their rows are still on disk — so a
+  sub-step's context omits **every** row sharing the group's `step_index` that
+  is not its own, whatever state that row ended in. Without it the same guard
+  against the same context would answer one way on the first run and another
+  after a human pressed `retry`.
 - **Rows.** One `step_runs` row per sub-step, all sharing the group's
   `step_index` and told apart by `step_id`. The group has no row of its own;
   its outcome is derived. Attempt numbers and retry budgets are per sub-step,
@@ -588,13 +595,31 @@ does not finish until every lane is merged.
   of them for its own subtree. Priority inheritance is load-bearing: admission
   is `priority DESC, created_at ASC` and descendants are created late, so
   priority-0 children of a priority-5 root would queue behind unrelated work.
+- **The spawn is one transaction.** *Added 2026-08-19 (task 018).* Every lane
+  of a step is inserted together, so a failure part-way leaves **no** lane
+  behind and the step blocks having spawned nothing; `retry` re-spawns from a
+  clean slate. Creating them one at a time made a partial spawn reachable, and
+  it had no honest recovery: whatever is cleaned up afterwards, a lane that
+  committed stays attached to the step, so the parent's next admission reads
+  it as its lanes and takes the join path below — blocking `lane_failed`
+  forever on work that never ran. Deleting the committed rows was the
+  alternative, and it would have made a hard task delete the first thing in
+  vincent that destroys work.
 - **Parking.** After spawning, the parent moves to `awaiting_children`, which
   holds **no** slot (§6, §11). That is what makes fan-out deadlock-free at any
   depth: a parent releases its slot *before* its children need one, so there
   is no hold-and-wait anywhere in the chain under any cap. A fan-out is not a
   way to exceed the caps — it is a way to fill them.
 - **Resuming.** The scheduler returns the parent to the queue once every
-  descendant has *settled* (`done` or `aborted`). A `blocked`, `awaiting_gate`
+  descendant has *settled* (`done` or `aborted`). *Amended 2026-08-19
+  (task 018):* the step decides "spawn or join" on whether its lanes have
+  settled, not merely on whether they exist. A parent admitted at the step
+  with unsettled lanes **parks again** rather than joining. That state is not
+  produced on purpose — it is a park transition that lost its compare-and-swap
+  or failed to commit, after which §12.4 re-queues a `running` parent whose
+  lanes are still `queued` — and joining there would read every lane as "not
+  done" and block `lane_failed` on work about to run perfectly well, which
+  `retry` cannot clear because the lanes are still not done. A `blocked`, `awaiting_gate`
   or `paused` lane holds the join open until a human resolves it; the §13.2
   `children` rollup is what makes that visible.
 - **The join** merges each lane branch with `git merge --no-ff` in **declared**
@@ -769,7 +794,17 @@ once, a loop is a **sequence** run more than once.
   workflow uses to stop and succeed. A `for_each` list longer than
   `max_iterations` blocks before the first iteration, naming the count. An
   empty list, or a whole loop guarded off by its `if:`, succeeds having run
-  nothing.
+  nothing. *Amended 2026-08-19 (task 018):* an empty list records **one** row
+  under the loop's own id — `succeeded`, `iteration: 0`, with a summary saying
+  the list was empty. "The loop has no row of its own" is about its
+  *iterations*: those are the body's rows, and with none of those the step index
+  a task passed through would carry no row at all, breaking the phase 2
+  invariant that every one has at least one and leaving a detail view unable to
+  tell "ran nothing" from "never reached". A `fan_out` that selects no lane has
+  recorded exactly this row since task 015. The row is invisible to the loop's
+  own derivation, which filters on `iteration > 0`, and it is **not** a
+  `.Steps` entry (§8.4): a loop's id is never one, or it would be a key present
+  exactly when the loop did nothing and absent when it did something.
 - **Failure.** A body step that exhausts its retry budget fails the iteration
   and blocks the task with that step's own reason. `allow_failure:` (§7.2) is
   how a probe's red result becomes data a `break` can read. Retries are for a
@@ -779,6 +814,15 @@ once, a loop is a **sequence** run more than once.
   re-admitted loop skips body steps whose latest attempt succeeded and
   continues mid-iteration. Iterations that already have rows take their item
   from those rows; only new iterations draw from a re-derived `for_each` list.
+  *Amended 2026-08-19 (task 018):* the loop's **extent** likewise never falls
+  below the iterations it has rows for. A re-derived list shorter than those
+  rows would otherwise leave the loop reporting success over iterations it
+  started and never revisited, so the extent is the longer of the two and the
+  `max_iterations` ceiling is re-checked against it. Every `for_each` source
+  §8.4 offers is stable between admissions, so this bounds the derivation
+  rather than a reachable failure; a `for_each` whose source is *not* stable
+  across admissions is a workflow bug, and the one silent way it could fail is
+  the one closed here.
 - **Human actions** (§6). `skip` skips the **whole loop step** and advances
   past it; there is no "skip this iteration". `retry` resumes at the failed
   body step of the current iteration with a fresh budget. `edit + retry`

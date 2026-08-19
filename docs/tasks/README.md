@@ -32,6 +32,7 @@ description of how the system actually behaves.
 | [015](015-conditional-steps.md) | Conditions between steps (`if:`, `type: condition`) | ✅ done (10/10) |
 | [016](016-workflow-loops.md) | Loops in workflows (`type: loop`, `type: break`) | ✅ done (10/10) |
 | [017](017-workflow-visualization.md) | Workflow visualization in the TUI | ✅ done (9/9) |
+| [018](018-control-flow-review.md) | Control-flow review: four correctness fixes | ✅ done (9/9) |
 
 ## How to add and update a task document
 
