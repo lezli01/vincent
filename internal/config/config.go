@@ -215,6 +215,10 @@ type Config struct {
 	// Parallel and FanOut for the same reason they do: it is a ceiling on
 	// what one step may do, not a timeout a step inherits.
 	Loop Loop `yaml:"loop"`
+	// Include bounds a `type: include` expansion (§7.9, task 019). It is read
+	// in the task-creation path, like FanOut, so a reload governs the next
+	// task rather than anything already running.
+	Include Include `yaml:"include"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -324,6 +328,22 @@ type Loop struct {
 	MaxIterations int `yaml:"max_iterations"`
 }
 
+// Include configures `type: include` expansion (spec §7.9 — task 019).
+//
+// MaxDepth is enforced at task creation, which is possible for the reason
+// FanOut's bounds are: the callee is resolved into the snapshot there, so the
+// whole expanded shape is static in the insert path (task 019 decision 2).
+//
+// There is deliberately no bound on the expanded *step count*. Step ids are
+// unique across an expansion (decision 5), so a callee reached twice is a 400
+// rather than a doubling, and an expansion cannot multiply silently — depth is
+// the only dimension left to bound.
+type Include struct {
+	// MaxDepth is how many include levels one expansion may have. A root
+	// including a workflow is depth 1; that workflow's own include is depth 2.
+	MaxDepth int `yaml:"max_depth"`
+}
+
 // Agents configures how agent CLIs are located.
 type Agents struct {
 	Claude Agent `yaml:"claude"`
@@ -370,6 +390,10 @@ func Default() Config {
 		// rather than the throughput.
 		FanOut: FanOut{MaxDepth: 3, MaxTasks: 64},
 		Loop:   Loop{MaxIterations: 10},
+		// Five levels, where fan-out gets three: an include costs a splice
+		// rather than a worktree, so the bound is about keeping a mistake
+		// legible rather than about what the machine can afford.
+		Include: Include{MaxDepth: 5},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},
@@ -428,6 +452,9 @@ func (c Config) validate() error {
 	}
 	if c.FanOut.MaxTasks < 1 {
 		return fmt.Errorf("fan_out.max_tasks must be at least 1, got %d", c.FanOut.MaxTasks)
+	}
+	if c.Include.MaxDepth < 1 {
+		return fmt.Errorf("include.max_depth must be at least 1, got %d", c.Include.MaxDepth)
 	}
 	if c.Loop.MaxIterations < 1 {
 		return fmt.Errorf("loop.max_iterations must be at least 1, got %d", c.Loop.MaxIterations)
