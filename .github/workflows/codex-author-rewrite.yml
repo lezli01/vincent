@@ -1,0 +1,138 @@
+name: Temporary master metadata cleanup
+
+on:
+  push:
+    branches:
+      - codex-author-rewrite-clean-20260819
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: master
+      READY_BRANCH: codex-author-rewrite-ready-20260819
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ github.token }}
+
+      - name: Rewrite authors and remove Claude metadata
+        id: rewrite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ready_ref="refs/heads/${READY_BRANCH}"
+          original_sha="$(git rev-parse "origin/${TARGET_BRANCH}")"
+          original_tree="$(git rev-parse "${original_sha}^{tree}")"
+          original_count="$(git rev-list --count "${original_sha}")"
+          original_merges="$(git rev-list --min-parents=2 --count "${original_sha}")"
+
+          git branch --force rewrite-author "${original_sha}"
+          FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force \
+            --env-filter '
+              GIT_AUTHOR_NAME="lezli01"
+              GIT_AUTHOR_EMAIL="lezli01@gmail.com"
+              committer_identity=$(printf "%s" "${GIT_COMMITTER_NAME} ${GIT_COMMITTER_EMAIL}" \
+                | tr "[:upper:]" "[:lower:]")
+              case "${committer_identity}" in
+                *claude*|*anthropic*)
+                  GIT_COMMITTER_NAME="lezli01"
+                  GIT_COMMITTER_EMAIL="lezli01@gmail.com"
+                  ;;
+              esac
+              export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL
+              export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+            ' \
+            --msg-filter '
+              cleaned=$(sed -E "/claude/Id; /Co-authored-by:.*anthropic/Id")
+              if [ -n "$(printf "%s" "${cleaned}" | tr -d "[:space:]")" ]; then
+                printf "%s\n" "${cleaned}"
+              else
+                printf "%s\n" "Update"
+              fi
+            ' \
+            -- rewrite-author
+
+          rewritten_sha="$(git rev-parse rewrite-author)"
+          rewritten_count="$(git rev-list --count "${rewritten_sha}")"
+          rewritten_merges="$(git rev-list --min-parents=2 --count "${rewritten_sha}")"
+          rewritten_tree="$(git rev-parse "${rewritten_sha}^{tree}")"
+          mismatched_authors="$(git log "${rewritten_sha}" --format='%an%x09%ae' \
+            | awk -F '\t' '$1 != "lezli01" || $2 != "lezli01@gmail.com" { count++ } END { print count + 0 }')"
+          raw_claude_mentions="$(
+            while IFS= read -r commit_sha; do
+              git cat-file commit "${commit_sha}"
+            done < <(git rev-list "${rewritten_sha}") \
+              | grep -aic 'claude' || true
+          )"
+          claude_coauthors="$(git log "${rewritten_sha}" --format='%B' \
+            | grep -Eic '^Co-authored-by:.*(claude|anthropic)' || true)"
+
+          test "${rewritten_count}" -eq "${original_count}"
+          test "${rewritten_merges}" -eq "${original_merges}"
+          test "${rewritten_tree}" = "${original_tree}"
+          test "${mismatched_authors}" -eq 0
+          test "${raw_claude_mentions}" -eq 0
+          test "${claude_coauthors}" -eq 0
+          git diff --quiet "${original_sha}" "${rewritten_sha}"
+
+          git push --force origin "${rewritten_sha}:${ready_ref}"
+          git fetch --force origin \
+            "${ready_ref}:refs/remotes/origin/${READY_BRANCH}"
+          remote_sha="$(git rev-parse "refs/remotes/origin/${READY_BRANCH}")"
+          remote_author_mismatches="$(git log "${remote_sha}" --format='%an%x09%ae' \
+            | awk -F '\t' '$1 != "lezli01" || $2 != "lezli01@gmail.com" { count++ } END { print count + 0 }')"
+          remote_claude_mentions="$(
+            while IFS= read -r commit_sha; do
+              git cat-file commit "${commit_sha}"
+            done < <(git rev-list "${remote_sha}") \
+              | grep -aic 'claude' || true
+          )"
+          remote_claude_coauthors="$(git log "${remote_sha}" --format='%B' \
+            | grep -Eic '^Co-authored-by:.*(claude|anthropic)' || true)"
+
+          test "${remote_sha}" = "${rewritten_sha}"
+          test "$(git rev-list --count "${remote_sha}")" -eq "${original_count}"
+          test "$(git rev-parse "${remote_sha}^{tree}")" = "${original_tree}"
+          test "${remote_author_mismatches}" -eq 0
+          test "${remote_claude_mentions}" -eq 0
+          test "${remote_claude_coauthors}" -eq 0
+
+          {
+            echo "### Clean rewritten history staged"
+            echo "- Old SHA: \`${original_sha}\`"
+            echo "- New SHA: \`${rewritten_sha}\`"
+            echo "- Commits: ${original_count}"
+            echo "- Merge commits: ${original_merges}"
+            echo "- Author mismatches: ${remote_author_mismatches}"
+            echo "- Claude metadata mentions: ${remote_claude_mentions}"
+            echo "- Claude co-author trailers: ${remote_claude_coauthors}"
+            echo "- Tip tree preserved: \`${original_tree}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "old_sha=${original_sha}" >> "${GITHUB_OUTPUT}"
+          echo "new_sha=${rewritten_sha}" >> "${GITHUB_OUTPUT}"
+          echo "commit_count=${original_count}" >> "${GITHUB_OUTPUT}"
+
+          if [ -n "${PR_NUMBER:-}" ]; then
+            gh pr close "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --comment "Clean rewritten history validated and staged; closing this temporary execution PR." \
+              || true
+          fi
+          bootstrap_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin --delete "${bootstrap_branch}" || true
