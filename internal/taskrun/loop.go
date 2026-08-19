@@ -112,7 +112,7 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 	// body step in flight, which ends as an interruption — turned back into a
 	// failure below, because the work ran out of the time the workflow gave
 	// it rather than stopping for the daemon's sake (§7.2).
-	loopCtx, cancel := context.WithCancel(ctx)
+	loopCtx, cancel := ctx, func() {}
 	if env.step.Timeout != nil {
 		loopCtx, cancel = context.WithTimeout(ctx, env.step.Timeout.Std())
 	}
@@ -288,10 +288,31 @@ func (r *Runner) planLoop(
 		return loopPlan{}, fmt.Errorf("%w: for_each produced %d items, max_iterations is %d",
 			errLoopLimit, len(items), limit)
 	}
-	for iteration, recorded := range recordedItems(history) {
-		if iteration >= 1 && iteration <= len(items) {
-			items[iteration-1] = recorded
+	// Recorded iterations win over the fresh list, and they also *extend* it:
+	// the list is re-derived on every admission (decision 8), so a source
+	// whose output shrank between admissions would otherwise leave the loop
+	// with fewer iterations than it already has rows for — it would report
+	// success having silently skipped work iterations 1..n are on record as
+	// having started. Clamping to the highest recorded iteration keeps the
+	// loop's extent monotonic without persisting a plan.
+	recorded := recordedItems(history)
+	highest := 0
+	for iteration := range recorded {
+		if iteration > highest {
+			highest = iteration
 		}
+	}
+	for len(items) < highest {
+		items = append(items, "")
+	}
+	for iteration, item := range recorded {
+		items[iteration-1] = item
+	}
+	if len(items) > limit {
+		// Re-checked after the clamp: rows past a ceiling that has since been
+		// lowered are still work this loop is not allowed to finish.
+		return loopPlan{}, fmt.Errorf("%w: for_each has %d iterations on record, max_iterations is %d",
+			errLoopLimit, len(items), limit)
 	}
 	return loopPlan{driver: workflow.DriverForEach, total: len(items), items: items}, nil
 }

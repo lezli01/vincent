@@ -1,11 +1,14 @@
 package taskrun
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
@@ -469,5 +472,86 @@ func TestLoopBodyStepSeesEarlierBodySteps(t *testing.T) {
 	}
 	if got := countLines(t, done.WorktreePath, "peeked.txt"); got != 2 {
 		t.Errorf("guarded body step ran %d times, want 2 — it must read the probe above it", got)
+	}
+}
+
+// TestLoopForEachExtentNeverShrinksBelowItsRows: a `for_each` list re-derived
+// smaller than the iterations already on record does not shorten the loop.
+//
+// §7.8 re-derives the list on every admission and takes each already-started
+// iteration's item from its rows rather than from the fresh list, which keeps
+// "iteration 3" naming the work iteration 3 actually did. The extent was still
+// taken from the fresh list alone, so a shorter one would have left the loop
+// reporting success over iterations it has rows for and never revisited.
+//
+// Every `for_each` source §8.4 offers is stable between admissions — a step
+// result, a task field, the host — so this is a guard on the derivation rather
+// than a reachable failure today. It is cheap, and the failure it forecloses
+// is silent: a loop that says it finished having skipped work.
+func TestLoopForEachExtentNeverShrinksBelowItsRows(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	// One item in the list; three iterations on record.
+	snapshot := loopSnapshot("for_each: [alpha]", commandStep("body", appendCmd("ran.txt", "x")))
+	task := h.createTask(t, snapshot)
+	recorded := []string{"alpha", "beta", "gamma"}
+	for i, item := range recorded {
+		finished := time.Now()
+		if err := h.store.CreateStepRun(ctx, &store.StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "body", StepType: "command",
+			Attempt: 1, Iteration: i + 1, LoopItem: item,
+			State: store.StepSucceeded, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatalf("seed iteration %d: %v", i+1, err)
+		}
+	}
+
+	env := h.firstStepEnv(t, task, snapshot)
+	history, err := h.store.ListStepRunsAt(ctx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("ListStepRunsAt: %v", err)
+	}
+	plan, err := h.runner.planLoop(ctx, env, history, 10)
+	if err != nil {
+		t.Fatalf("planLoop: %v", err)
+	}
+	if plan.total != len(recorded) {
+		t.Errorf("plan.total = %d, want %d — the extent must cover every recorded iteration",
+			plan.total, len(recorded))
+	}
+	if !reflect.DeepEqual(plan.items, recorded) {
+		t.Errorf("plan.items = %q, want %q — a recorded iteration keeps the item its rows carry",
+			plan.items, recorded)
+	}
+}
+
+// TestLoopForEachRecordedIterationsPastTheCeilingBlock: the ceiling is
+// re-checked after the clamp, so rows past a `max_iterations` that has since
+// been lowered block rather than silently running to the smaller list.
+func TestLoopForEachRecordedIterationsPastTheCeilingBlock(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := loopSnapshot("for_each: [alpha]", commandStep("body", appendCmd("ran.txt", "x")))
+	task := h.createTask(t, snapshot)
+	for i, item := range []string{"alpha", "beta", "gamma"} {
+		finished := time.Now()
+		if err := h.store.CreateStepRun(ctx, &store.StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "body", StepType: "command",
+			Attempt: 1, Iteration: i + 1, LoopItem: item,
+			State: store.StepSucceeded, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatalf("seed iteration %d: %v", i+1, err)
+		}
+	}
+
+	env := h.firstStepEnv(t, task, snapshot)
+	history, err := h.store.ListStepRunsAt(ctx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("ListStepRunsAt: %v", err)
+	}
+	if _, err := h.runner.planLoop(ctx, env, history, 2); !errors.Is(err, errLoopLimit) {
+		t.Errorf("planLoop error = %v, want errLoopLimit", err)
 	}
 }

@@ -2,6 +2,7 @@ package taskrun
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // fanOutBudget is how long a fan-out test waits. It is larger than the
@@ -34,12 +36,13 @@ func writeFileStep(id, file, content string) string {
 // lanes, each writing a file. The content is the lane id, so two lanes given
 // the same filename produce a real conflict rather than an identical blob git
 // merges without noticing.
-func fanOutSnapshot(merge string, lanes ...[2]string) string {
+//
+// Every lane takes the default `on_conflict: block`; a test that wants
+// `agent` writes its own `merge:` block, which is what the removed parameter
+// never once carried.
+func fanOutSnapshot(lanes ...[2]string) string {
 	var sb strings.Builder
 	sb.WriteString("name: root\nsteps:\n  - id: build\n    type: fan_out\n")
-	if merge != "" {
-		sb.WriteString(merge)
-	}
 	sb.WriteString("    lanes:\n")
 	for _, lane := range lanes {
 		fmt.Fprintf(&sb, "      - id: %s\n        steps:\n", lane[0])
@@ -105,7 +108,7 @@ func (h *engineHarness) cancelRacingAdmission(t *testing.T, id int64) {
 func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 	h := newEngineHarness(t)
 	h.start(t)
-	task := h.createTask(t, fanOutSnapshot("", [2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"}))
+	task := h.createTask(t, fanOutSnapshot([2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"}))
 
 	lanes := h.waitForChildren(t, task.ID, 2)
 	// A lane is an ordinary task carrying four extra columns (decision 1).
@@ -155,7 +158,7 @@ func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 func TestFanOutParentHoldsNoSlotWhileWaiting(t *testing.T) {
 	h := newEngineHarnessWith(t, func(c *config.Config) { c.MaxParallelTasks = 1 })
 	h.start(t)
-	task := h.createTask(t, fanOutSnapshot("", [2]string{"api", "api.txt"}))
+	task := h.createTask(t, fanOutSnapshot([2]string{"api", "api.txt"}))
 
 	// Under a cap of 1 this can only finish if the parked parent stopped
 	// counting against it.
@@ -172,7 +175,7 @@ func TestFanOutParentHoldsNoSlotWhileWaiting(t *testing.T) {
 func TestFanOutBlocksOnMergeConflict(t *testing.T) {
 	h := newEngineHarness(t)
 	h.start(t)
-	task := h.createTask(t, fanOutSnapshot("",
+	task := h.createTask(t, fanOutSnapshot(
 		[2]string{"api", "shared.txt"}, [2]string{"docs", "shared.txt"}))
 
 	blocked := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskBlocked, store.TaskDone)
@@ -250,3 +253,93 @@ func (h *engineHarness) fileOnBranch(t *testing.T, branch, file string) bool {
 
 // git is a handle for reading the repository the test asserts against.
 func (h *engineHarness) git() *gitx.Git { return gitx.New() }
+
+// TestFanOutParksWhenItsLanesHaveNotSettled: a parent admitted at a fan_out
+// step whose lanes exist but are still running parks again instead of joining.
+//
+// The route is narrow and expensive. runFanOut decides "spawn or join" by
+// whether this step has lanes, which is only the same question as "have the
+// lanes finished" when the parent reliably parked after spawning them. It does
+// not: the park is a transition that can lose its compare-and-swap or fail to
+// commit, leaving a `running` parent with `queued` lanes for recovery to
+// re-queue. Joining there reads every lane as "not done" and blocks
+// lane_failed on work that is about to run perfectly well — and `retry` walks
+// straight back into it, because the lanes are still not done.
+//
+// It is driven directly rather than through the scheduler because the state it
+// needs is one no admission produces on purpose.
+func TestFanOutParksWhenItsLanesHaveNotSettled(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := fanOutSnapshot([2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"})
+	parent := h.createTask(t, snapshot)
+	if _, _, err := h.store.TransitionTask(ctx, parent.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("put the parent in running: %v", err)
+	}
+	parent, err := h.store.GetTask(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	// Two lanes that exist and have not settled — exactly what a spawn
+	// followed by a lost park leaves behind.
+	index := 0
+	for order, lane := range []string{"api", "docs"} {
+		child := &store.Task{
+			ProjectID: h.projectID, Title: "lane " + lane,
+			WorkflowName: lane, WorkflowSnapshot: "name: " + lane + "\nsteps: []",
+			BaseBranch: parent.BranchName, BranchName: "vincent/lane-" + lane,
+			State:        store.TaskQueued,
+			ParentTaskID: &parent.ID, ParentStepIndex: &index,
+			LaneID: lane, LaneOrder: order,
+		}
+		if err := h.store.CreateTask(ctx, child, nil); err != nil {
+			t.Fatalf("create lane %s: %v", lane, err)
+		}
+	}
+
+	env := h.firstStepEnv(t, parent, snapshot)
+	outcome, stop := h.runner.runFanOut(ctx, env)
+	if !stop {
+		t.Fatalf("runFanOut stop = false, want true — the parent must park, not fall through")
+	}
+	if outcome.state != "" {
+		t.Errorf("outcome state = %q, want empty — parking is not a step outcome", outcome.state)
+	}
+
+	got, err := h.store.GetTask(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.State != store.TaskAwaitingChildren {
+		t.Errorf("parent state = %s, want %s", got.State, store.TaskAwaitingChildren)
+	}
+	if got.BlockReason != "" {
+		t.Errorf("block_reason = %q, want empty — nothing failed here", got.BlockReason)
+	}
+	for _, run := range h.stepRuns(t, parent.ID) {
+		if run.FailureReason == ReasonLaneFailed {
+			t.Errorf("the join ran and blocked %q against lanes that had not started", ReasonLaneFailed)
+		}
+	}
+}
+
+// firstStepEnv is the stepEnv the engine would build for the first step of
+// snapshot, for a test that drives one step directly.
+func (h *engineHarness) firstStepEnv(t *testing.T, task *store.Task, snapshot string) *stepEnv {
+	t.Helper()
+	wf, _, err := workflow.Parse([]byte(snapshot), workflow.Options{})
+	if err != nil {
+		t.Fatalf("parse snapshot: %v", err)
+	}
+	project, err := h.store.GetProject(t.Context(), task.ProjectID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	return &stepEnv{
+		task: task, project: project, wf: wf,
+		step: wf.Steps[0], index: 0,
+		log: slog.New(slog.DiscardHandler),
+	}
+}
