@@ -1,9 +1,13 @@
+{'push': {'branches': ['codex-author-rewrite-20260819']}, 'pull_request': {'branches': ['master']}}
 name: Temporary master author rewrite
 
 on:
   push:
     branches:
       - codex-author-rewrite-20260819
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -17,6 +21,7 @@ jobs:
       AUTHOR_NAME: lezli01
       AUTHOR_EMAIL: lezli01@gmail.com
       GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -279,7 +284,17 @@ jobs:
           restore_all
           trap - EXIT
 
-          git push origin --delete "${GITHUB_REF_NAME}" || true
+          if [ -n "${PR_NUMBER:-}" ]; then
+            gh pr close "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --comment "One-time master author rewrite completed; closing this temporary execution PR." \
+              || true
+          fi
+
+          bootstrap_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          gh api --method DELETE \
+            "${repository_api}/git/refs/heads/${bootstrap_branch}" \
+            || true
 
           {
             echo "### Master author rewrite complete"
