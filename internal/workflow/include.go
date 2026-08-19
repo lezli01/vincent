@@ -308,22 +308,26 @@ func (x *expander) nested(step Step, path string, depth int, stack, chain []stri
 
 // splice resolves one include and returns the steps that replace it.
 func (x *expander) splice(step Step, path string, depth int, stack, chain []string) ([]Step, error) {
-	if depth+1 > x.opts.Limits.MaxDepth {
-		return nil, &IncludeError{
-			Path: path,
-			Message: fmt.Sprintf("includes nest %d levels deep, past include.max_depth (%d)",
-				depth+1, x.opts.Limits.MaxDepth),
-		}
-	}
 	// A cycle is workflow A including B while B includes A: an expansion that
-	// never terminates, and the one failure here no bound would catch in a
-	// useful way. The path is named because "there is a cycle" sends the
+	// never terminates. The path is named because "there is a cycle" sends the
 	// reader to grep every workflow file they own.
+	//
+	// Checked *before* the depth bound, because a cycle crosses any bound
+	// eventually and the bound's message is actively misleading about it:
+	// "past include.max_depth" invites raising a limit that will never help,
+	// while the cycle is a structural error no configuration fixes.
 	if idx := indexOf(stack, step.Workflow); idx >= 0 {
 		return nil, &IncludeError{
 			Path: path,
 			Message: fmt.Sprintf("workflow cycle: %s",
 				strings.Join(append(append([]string{}, stack[idx:]...), step.Workflow), " → ")),
+		}
+	}
+	if depth+1 > x.opts.Limits.MaxDepth {
+		return nil, &IncludeError{
+			Path: path,
+			Message: fmt.Sprintf("includes nest %d levels deep, past include.max_depth (%d)",
+				depth+1, x.opts.Limits.MaxDepth),
 		}
 	}
 	if x.opts.Lookup == nil {

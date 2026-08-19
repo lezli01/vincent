@@ -482,3 +482,18 @@ func TestIncludeStepAccepted(t *testing.T) {
 		t.Fatalf("a well-formed include did not validate: %v", err)
 	}
 }
+
+// TestExpandReportsACycleAheadOfTheDepthBound: a cycle crosses any bound
+// eventually, so whichever check runs first decides what the person sees.
+// "past include.max_depth" invites raising a limit that will never help.
+func TestExpandReportsACycleAheadOfTheDepthBound(t *testing.T) {
+	lookup := registry(t, map[string]string{
+		"b": "name: b\nsteps:\n  - {id: back, type: include, workflow: a}\n",
+	})
+	opts := expandOpts(lookup)
+	opts.Limits.MaxDepth = 1
+	_, err := Expand(mustParse(t, "name: a\nsteps:\n  - {id: to, type: include, workflow: b}\n"), opts)
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("error = %v, want the cycle rather than the bound it also crosses", err)
+	}
+}
