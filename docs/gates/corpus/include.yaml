@@ -1,0 +1,32 @@
+# 10 — includes (§7.9). The graph draws the file as authored, so each include
+# is one collapsed node labelled with the workflow it splices in: what it
+# expands to is decided at task creation, against a registry this view is not
+# resolving (task 019 decision 12).
+#
+# Two of them, one at the top level and one inside a loop body, because an
+# include may appear anywhere a step may (decision 9) and the node has to read
+# correctly inside a frame as well as outside one.
+name: include
+steps:
+  - id: plan
+    type: agent
+    prompt: plan the work
+
+  - id: verify
+    type: include
+    workflow: go-checks
+
+  - id: repeat
+    type: loop
+    count: 2
+    steps:
+      - id: attempt
+        type: agent
+        prompt: fix what the checks found
+      - id: recheck
+        type: include
+        workflow: go-checks
+
+  - id: ship
+    type: command
+    run: git push

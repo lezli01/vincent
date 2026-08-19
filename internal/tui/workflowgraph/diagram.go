@@ -23,14 +23,22 @@ const (
 	KindCondition NodeKind = "condition"
 	KindLoop      NodeKind = "loop"
 	KindBreak     NodeKind = "break"
+	KindInclude   NodeKind = "include"
 
 	// KindMerge is a fan_out's join (§7.6). It is a node because it is work
 	// that runs and can block on a conflict, unlike a parallel group's join,
 	// which is nothing but the members finishing.
 	KindMerge NodeKind = "merge"
-	// KindWorkflowRef is a fan_out lane naming another registry workflow. It
-	// stays collapsed: expanding it is navigation, not rendering (task 017
-	// non-goals).
+	// KindWorkflowRef is a reference to another registry workflow: a fan_out
+	// lane naming one, or — since task 019 — an `include` step splicing one
+	// in. It stays collapsed: expanding it is navigation, not rendering (task
+	// 017 non-goals), and making includes the exception would give one
+	// question two answers (task 019 decision 12).
+	//
+	// The two references differ in what they produce — a lane becomes a child
+	// task, an include becomes steps in this one — which the inspector says
+	// and the node does not: at node size, "this is another workflow" is the
+	// whole of what fits.
 	KindWorkflowRef NodeKind = "workflow_ref"
 	// KindEnd terminates the top-level sequence. Exactly one exists, and only
 	// at the top level: a `condition` inside a loop body ends its iteration
@@ -262,6 +270,15 @@ func (b *builder) step(st apiclient.WorkflowStepDef, f flow) []string {
 		b.add(b.plainNode(st, f))
 		b.link(st.ID, f.brk, EdgeBranch, "true")
 		return []string{st.ID}
+	case KindInclude:
+		// One collapsed node labelled with the workflow it splices in. The
+		// graph draws the file as authored, and as authored this *is* one
+		// step; what it expands to is decided at task creation, against a
+		// registry this view is not resolving (task 019 decision 12).
+		n := b.plainNode(st, f)
+		n.Kind, n.Label = KindWorkflowRef, st.Workflow
+		b.add(n)
+		return []string{st.ID}
 	default:
 		b.add(b.plainNode(st, f))
 		return []string{st.ID}
@@ -432,6 +449,13 @@ func stepDetail(st apiclient.WorkflowStepDef) []DetailField {
 		}
 	}
 	add("name", st.Name)
+	// An authored include says what it will splice in; a step in a task's
+	// snapshot says what it was spliced *through*. They never appear
+	// together, because expansion replaces the one with the other (§7.9).
+	add("workflow", st.Workflow)
+	if len(st.ResolvedFrom) > 0 {
+		add("from", strings.Join(st.ResolvedFrom, " → "))
+	}
 	add("if", st.If)
 	add("check", st.Check)
 	add("agent", st.Agent)
