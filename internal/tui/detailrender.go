@@ -275,8 +275,14 @@ func (d *detail) renderTimeline(height int) string {
 			case grouped:
 				label = d.structureLabel(r.StepIndex, "parallel")
 			}
-			lines = append(lines, styleStepHeader.Render(
-				fmt.Sprintf("  %d %s", r.StepIndex+1, label)))
+			header := fmt.Sprintf("  %d %s", r.StepIndex+1, label)
+			if from := d.includedFrom(r.StepIndex); from != "" {
+				// A spliced step is an ordinary step in every other respect,
+				// so the only thing worth saying is where it was written
+				// (§7.9). The full chain is in the workflow graph's inspector.
+				header += styleDim.Render("  from " + from)
+			}
+			lines = append(lines, styleStepHeader.Render(header))
 			ids = append(ids, 0)
 		}
 		if looped && r.Iteration != lastIteration {
@@ -395,6 +401,26 @@ func (d *detail) structureLabel(index int, kind string) string {
 		}
 	}
 	return "(" + kind + ")"
+}
+
+// includedFrom names the workflow step `index` was spliced in from (§7.9,
+// task 019), or "" for a step the task's own workflow wrote.
+//
+// The *innermost* name, where the snapshot carries the whole chain: at the
+// width of a step header, "from go-checks" is the answer to the question the
+// reader is asking, and the chain that reached it is the graph inspector's
+// job.
+func (d *detail) includedFrom(index int) string {
+	for _, s := range d.task.WorkflowSteps {
+		if s.Index != index {
+			continue
+		}
+		if n := len(s.ResolvedFrom); n > 0 {
+			return s.ResolvedFrom[n-1]
+		}
+		return ""
+	}
+	return ""
 }
 
 // stepStateStopped is the §7.7 state a `condition` step records when its

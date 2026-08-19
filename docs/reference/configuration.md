@@ -391,6 +391,28 @@ Read when a loop starts, so a reload governs the next loop — including one
 already running, which will block with `loop_limit` if the lowered ceiling is
 already behind it. See [Workflow schema](workflow-schema.md#type-loop).
 
+### `include`
+
+```yaml
+include:
+  max_depth: 5
+```
+
+How many levels of `type: include` one workflow may expand to. A workflow
+including another is depth 1; that one's own include is depth 2. Must be at
+least 1.
+
+Checked when a task is created, which is where an include is resolved: the
+callee's steps are spliced into the task's snapshot there and the registry is
+never read again. Exceeding it is a `400` naming the depth and the bound.
+
+There is no bound on the expanded *step count*, because step ids must be unique
+across an expansion — a workflow reached twice is an error rather than a
+doubling, so an expansion cannot multiply silently. Depth is the only dimension
+left to bound, and a deeper chain is a config edit rather than a code change.
+
+See [Workflow schema](workflow-schema.md#type-include).
+
 ### `log_level`
 
 ```yaml

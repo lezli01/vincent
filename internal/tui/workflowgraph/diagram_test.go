@@ -298,3 +298,31 @@ func TestBuildIdsAreStableAndNamespaced(t *testing.T) {
 		}
 	}
 }
+
+// TestIncludeDrawsAsACollapsedRef is task 019 decision 12: an include reuses
+// the node kind a fan_out lane's `workflow:` already has, because both are the
+// same statement — "this is another workflow" — and expanding either is
+// navigation rather than rendering (task 017 non-goals).
+//
+// It is labelled with the workflow it splices in rather than with its own id:
+// at node size the callee's name is the useful half, and the id is in the
+// inspector.
+func TestIncludeDrawsAsACollapsedRef(t *testing.T) {
+	d := Build(fixtureInclude())
+	for _, id := range []string{"verify", "recheck"} {
+		n := node(t, d, id)
+		if n.Kind != KindWorkflowRef {
+			t.Errorf("%s kind = %q, want %q", id, n.Kind, KindWorkflowRef)
+		}
+		if n.Label != "go-checks" {
+			t.Errorf("%s label = %q, want the included workflow's name", id, n.Label)
+		}
+		if len(n.Detail) == 0 {
+			t.Errorf("%s has no inspector detail", id)
+		}
+	}
+	// The include is an ordinary member of its sequence: it does not branch,
+	// so `plan → verify → repeat` still reads straight through.
+	hasEdge(t, d, "plan->verify[flow]")
+	hasEdge(t, d, "verify->repeat[flow]")
+}
