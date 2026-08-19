@@ -336,6 +336,9 @@ func (m *root) activeContext() (bindingContext, *shell) {
 	case viewProjects:
 		return ctxProjects, nil
 	case viewWorkflows:
+		if c, ok := m.views[viewWorkflows].(contextual); ok {
+			return c.bindingContext(), nil
+		}
 		return ctxWorkflows, nil
 	case viewDaemon:
 		return ctxDaemon, nil

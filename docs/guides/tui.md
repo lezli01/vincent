@@ -345,11 +345,80 @@ The merged registry with scope badges and validation status.
 | Key | Does |
 |---|---|
 | `enter` | Show the entry's steps |
+| `g` | Draw the entry as a control-flow graph |
 | `e` | Open the file in `$EDITOR` — the view updates when you save |
 | `R` | Re-read the registry |
 
 The view **reads** the registry; it does not author it. New workflow files are
 written in your editor and appear on the next reload.
+
+#### The graph — `g`
+
+A numbered list of top-level steps can name a `parallel` group or a `fan_out`
+but cannot show where control goes. `g` draws it:
+
+```
+             ╭────────────────────╮
+             │ spread             │
+             │ fan_out            │
+             ╰────────────────────╯
+                        │
+┏━ fan_out ━━━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━┓
+┃api                    │ web if                ┃
+┃           ┌───────────┴────────────┐          ┃
+┃╭────────────────────╮   ╭────────────────────╮┃
+┃│ api_impl           │   │ web-feature        │┃
+┃│ agent              │   │ workflow           │┃
+┃╰────────────────────╯   ╰────────────────────╯┃
+┗━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━━│━━━━━━━━━━┛
+            └───────────┬────────────┘
+             ╭────────────────────╮
+             │ spread             │
+             │ merge              │
+             ╰────────────────────╯
+```
+
+The graph opens **over** the list, not instead of it: `enter`'s step list, with
+its findings and platform notes, is still there when you press `esc`.
+
+How to read it. Every one of these works with color turned off:
+
+| You see | It means |
+|---|---|
+| A box's second line | The step's type, and any badges |
+| `if` | The step is guarded — the expression is in the strip at the bottom |
+| `chk` | The step carries a `check:` |
+| `×3`, `for_each` | A loop's driver. `max N` is an explicit bound |
+| `agent` on a merge | `on_conflict: agent` — an agent may resolve a conflict |
+| A light frame | A `parallel` group |
+| A heavy frame | A `fan_out`, with its lanes captioned by id and guard |
+| A double frame | A `loop` body, with a back-edge to its header |
+| `true` / `false` | A `condition`'s or `break`'s two ways out |
+| `END` | Where the workflow finishes |
+
+A `fan_out` has a **merge** node below its frame, because the join is a git
+merge that runs and can block. A `parallel` group has none: its join is only its
+members finishing. A guard on an ordinary step draws **no** second branch — false
+there means skip and carry on, so the flow is unchanged. A lane naming another
+workflow is one collapsed box; opening it is not in this version.
+
+| Key | Does |
+|---|---|
+| `↑` `↓` `←` `→` or `hjkl` | Move the selection — the view follows it |
+| `shift` + arrows | Pan the canvas |
+| `pgup` `pgdn` `u` `d` `f` `b` | Page it |
+| `tab` / `shift+tab` | Walk the nodes in source order |
+| `e` | Open the file in `$EDITOR` — the graph redraws when you save |
+| `R` | Re-fetch this workflow's definition |
+| `esc` | Back to the registry |
+
+Editing is the point of `e` here: save the file and the graph redraws in place,
+with your selected node still selected. A terminal too narrow to draw a node
+says so rather than showing you a flattened shape that is not the workflow; a
+graph bigger than the terminal is panned, never reflowed.
+
+A workflow that does not parse has no graph — `g` says so, and the errors are
+already under `enter`.
 
 ### Daemon
 

@@ -1,0 +1,5 @@
+name: guarded
+steps:
+  - {id: plan, type: agent, prompt: plan it, check: make test}
+  - {id: maybe, type: command, run: make deploy, if: '{{ eq .Fields.mode "full" }}'}
+  - {id: ship, type: command, run: make ship}

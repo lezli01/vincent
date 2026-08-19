@@ -1,0 +1,11 @@
+name: group
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - id: checks
+    type: parallel
+    max_parallel: 2
+    steps:
+      - {id: lint, type: command, run: make lint}
+      - {id: unit, type: command, run: make test}
+      - {id: e2e, type: command, run: make e2e, if: '{{ .Fields.slow }}'}
+  - {id: ship, type: command, run: make ship}

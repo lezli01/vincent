@@ -1,0 +1,11 @@
+name: repeat
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - id: repeat
+    type: loop
+    count: 3
+    max_iterations: 5
+    steps:
+      - {id: work, type: agent, prompt: keep going}
+      - {id: verify, type: command, run: make verify}
+  - {id: ship, type: command, run: make ship}

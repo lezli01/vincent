@@ -1,0 +1,4 @@
+name: wide
+steps:
+  - {id: a, name: 実装をレビューしてからマージする, type: agent, prompt: review}
+  - {id: b, name: "🚀🚀🚀 deploy 🚀🚀🚀 everything everywhere", type: command, run: make deploy}
