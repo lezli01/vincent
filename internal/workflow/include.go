@@ -202,32 +202,37 @@ func IncludeNames(wf *Workflow) []string {
 	return out
 }
 
-// IncludeCycleWarnings reports include cycles reachable from a workflow, for
-// the §8.2 registry-load warning (decision 8).
+// IncludeWarnings reports what is wrong with a workflow's includes as seen
+// from one project's resolved view, for the §8.2 registry-load warning
+// (decision 8): a cycle, a name this project cannot resolve, or a callee that
+// does not run on this host.
 //
-// A warning rather than an error, and only at load, for the reason
-// LaneCycleWarnings is one: a cycle between two files is real only once a task
-// picks a root, and shadowing decides which files those even are — a project
-// workflow may shadow the very name that closed the loop. Task creation is
-// where it becomes a 400.
-func IncludeCycleWarnings(wf *Workflow, lookup LookupFunc) []string {
+// Warnings rather than errors, and only at load, for the reason
+// LaneCycleWarnings gives: every one of these is a property of *resolved*
+// names, and shadowing decides which files even participate — a project
+// workflow may shadow the very name that closed the loop or restricted the
+// platform. Task creation, where the root is known, is where each becomes a
+// 400.
+//
+// At most one is reported: expansion stops at the first problem, and a second
+// pass would only describe the same file differently.
+func IncludeWarnings(wf *Workflow, lookup LookupFunc) []string {
 	if wf == nil || lookup == nil || !HasInclude(wf) {
 		return nil
 	}
-	// A generous depth and no platform: this is a cycle probe, not a bound
-	// check, and both bounds are enforced at creation where the config and
-	// the host are in hand. Ids are not checked either — a duplicate is a
-	// creation-time error about a specific pair of files, and reporting it as
-	// a load warning would blame whichever file happened to be loading. Going
-	// through the expander rather than Expand is what leaves it out.
+	// A generous depth: this is a probe, not a bound check, and the bound is
+	// enforced at creation where the config is in hand. Step ids are not
+	// checked either — a duplicate is a creation-time error about a specific
+	// pair of files, and reporting it as a load warning would blame whichever
+	// file happened to be loading. Going through the expander rather than
+	// Expand is what leaves that check out.
 	x := &expander{opts: ExpandOptions{
-		Lookup:   lookup,
-		Limits:   IncludeLimits{MaxDepth: cycleProbeDepth},
-		Platform: anyPlatform,
+		Lookup: lookup,
+		Limits: IncludeLimits{MaxDepth: cycleProbeDepth},
 	}}
 	if _, err := x.body(wf.Steps, "steps", 0, []string{wf.Name}, nil); err != nil {
 		var ie *IncludeError
-		if errors.As(err, &ie) && strings.Contains(ie.Message, "cycle") {
+		if errors.As(err, &ie) {
 			return []string{ie.Error()}
 		}
 	}
@@ -238,11 +243,6 @@ func IncludeCycleWarnings(wf *Workflow, lookup LookupFunc) []string {
 // is include.max_depth at creation — only a guard against walking a legal but
 // enormous graph while holding the registry's lock.
 const cycleProbeDepth = 64
-
-// anyPlatform disables the platform check. It is not a GOOS, so
-// SupportsPlatform's token match could never accept it anyway — which is why
-// the check tests for it explicitly rather than relying on the comparison.
-const anyPlatform = "*"
 
 type expander struct {
 	opts ExpandOptions
@@ -340,7 +340,7 @@ func (x *expander) splice(step Step, path string, depth int, stack, chain []stri
 	// fragment cannot run here either. The caller's own `platforms:` is not
 	// rewritten — it stays a property of the file as written, so
 	// Entry.RunsHere keeps one meaning (decision 8).
-	if x.opts.Platform != anyPlatform && !callee.SupportsPlatform(x.opts.Platform) {
+	if !callee.SupportsPlatform(x.opts.Platform) {
 		return nil, &IncludeError{
 			Path: path,
 			Message: fmt.Sprintf("included workflow %q does not run on %s (platforms: %s)",

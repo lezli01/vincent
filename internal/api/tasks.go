@@ -395,16 +395,62 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Include expansion (§7.9, task 019). Every `type: include` is spliced
+	// into the snapshot **now**, for the reason the fan-out tree below is
+	// resolved now: §5.3 says execution uses the snapshot precisely so later
+	// edits to a workflow file cannot mutate an in-flight task.
+	//
+	// It runs before fan-out resolution because an include can *bring* a
+	// fan_out step, and that step's lanes need resolving like any other.
+	//
+	// The task's own override goes in because it outranks a callee's
+	// `defaults:` in §8.6's order (decision 7); it is read here rather than
+	// from the task row below because expansion has to happen before the row
+	// is built.
+	wf, snapshot := entry.Workflow, entry.Source
+	if workflow.HasInclude(wf) {
+		expanded, xerr := workflow.Expand(wf, workflow.ExpandOptions{
+			Lookup: s.laneLookup(project.ID),
+			Limits: workflow.IncludeLimits{MaxDepth: s.deps.Config().Include.MaxDepth},
+			Override: agent.Level{
+				Agent:  agentOverride,
+				Model:  strings.TrimSpace(ptrValue(req.Model)),
+				Effort: strings.TrimSpace(ptrValue(req.Effort)),
+			},
+		})
+		if xerr != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, xerr.Error())
+			return
+		}
+		// Re-validate the expansion, not just its shape. The nesting rules an
+		// include can break — no `loop` inside a `loop`, no `fan_out` inside a
+		// `parallel` — are decidable only once the steps are in place
+		// (decision 9), and so is the §8.2 catalog check over a callee's
+		// materialised agent fields.
+		out, merr := workflow.Marshal(expanded)
+		if merr != nil {
+			s.internalError(w, "re-encode expanded snapshot", merr)
+			return
+		}
+		revalidated, _, verr := workflow.Parse(out, s.deps.Workflows.Options())
+		if verr != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("workflow %q does not validate once its includes are expanded: %s",
+					workflowName, verr.Error()))
+			return
+		}
+		wf, snapshot = revalidated, string(out)
+	}
+
 	// Fan-out tree resolution (§7.6, task 014 decisions 4, 5). Every lane
 	// naming a registry workflow is resolved into the snapshot **now**, so
 	// the tree's shape is fixed at creation and later edits to those files
 	// cannot mutate this task. The bounds are checked here for the same
 	// reason: a depth-3 explosion should be a 400 in front of the person
 	// typing, not two hundred worktrees discovered six hours later.
-	snapshot := entry.Source
-	if workflow.HasFanOut(entry.Workflow) {
+	if workflow.HasFanOut(wf) {
 		cfg := s.deps.Config()
-		resolved, _, terr := workflow.ResolveTree(entry.Workflow, s.laneLookup(project.ID),
+		resolved, _, terr := workflow.ResolveTree(wf, s.laneLookup(project.ID),
 			workflow.Limits{MaxDepth: cfg.FanOut.MaxDepth, MaxTasks: cfg.FanOut.MaxTasks})
 		if terr != nil {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed, terr.Error())
@@ -415,7 +461,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, "re-encode resolved fan-out snapshot", merr)
 			return
 		}
-		snapshot = string(out)
+		wf, snapshot = resolved, string(out)
 	}
 
 	t := store.Task{
@@ -440,7 +486,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.Effort != nil {
 		t.EffortOverride = strings.TrimSpace(*req.Effort)
 	}
-	warnings, cerr := s.checkTaskCatalog(entry.Workflow, &t)
+	warnings, cerr := s.checkTaskCatalog(wf, &t)
 	if cerr != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
 		return
@@ -448,7 +494,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// The `on_input: require` gate (§7.4, task 013), after the catalog check
 	// so a task with two problems reports the model one first — that is the
 	// field the human just typed.
-	if mismatch := s.inputMismatch(ctx, entry.Workflow, &t); mismatch != "" {
+	if mismatch := s.inputMismatch(ctx, wf, &t); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
 		return
 	}

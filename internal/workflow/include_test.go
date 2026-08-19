@@ -370,20 +370,24 @@ func TestExpandNestedDefaultsNearestWins(t *testing.T) {
 	}
 }
 
-// TestIncludeCycleWarnings is decision 8's load-time half: a warning, because
+// TestIncludeWarnings is decision 8's load-time half: a warning, because
 // shadowing decides which files even participate and a project workflow may
-// shadow the very name that closed the loop.
-func TestIncludeCycleWarnings(t *testing.T) {
+// shadow the very name that closed the loop — or the one that was missing.
+func TestIncludeWarnings(t *testing.T) {
 	lookup := registry(t, map[string]string{
 		"b": "name: b\nsteps:\n  - {id: toa, type: include, workflow: a}\n",
 	})
 	root := mustParse(t, "name: a\nsteps:\n  - {id: tob, type: include, workflow: b}\n")
-	warns := IncludeCycleWarnings(root, lookup)
+	warns := IncludeWarnings(root, lookup)
 	if len(warns) != 1 || !strings.Contains(warns[0], "cycle") {
 		t.Fatalf("warnings = %v, want one cycle warning", warns)
 	}
+	missing := mustParse(t, "name: c\nsteps:\n  - {id: x, type: include, workflow: gone}\n")
+	if w := IncludeWarnings(missing, lookup); len(w) != 1 || !strings.Contains(w[0], "not found") {
+		t.Errorf("warnings for an unresolvable include = %v, want one not-found", w)
+	}
 	clean := mustParse(t, "name: c\nsteps:\n  - {id: x, type: command, run: make}\n")
-	if w := IncludeCycleWarnings(clean, lookup); len(w) != 0 {
+	if w := IncludeWarnings(clean, lookup); len(w) != 0 {
 		t.Errorf("warnings on an include-free workflow = %v", w)
 	}
 }

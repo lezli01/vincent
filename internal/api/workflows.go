@@ -30,8 +30,13 @@ type workflowResponse struct {
 	// that can stop and ask (§7.4, task 013). Derived by the daemon for the
 	// same reason platform_supported is: the process that would run the steps
 	// is the one that says what they need.
-	RequiresInput bool             `json:"requires_input"`
-	Errors        []workflow.Error `json:"errors,omitempty"`
+	RequiresInput bool `json:"requires_input"`
+	// Includes names the workflows this one splices in (§7.9). It is what a
+	// client shows as "depends on"; whether those names resolve is not
+	// answered here, because it is a property of the project's resolved view
+	// and becomes a 400 at task creation (task 019 decision 8).
+	Includes []string         `json:"includes,omitempty"`
+	Errors   []workflow.Error `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []workflow.Error `json:"warnings,omitempty"`
 	Error    *string          `json:"error"`
@@ -52,6 +57,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 		Steps:             []workflowStepResponse{},
 		PlatformSupported: e.RunsHere(),
 		RequiresInput:     e.NeedsInputAgent(),
+		Includes:          e.Includes(),
 	}
 	if e.ProjectID != 0 {
 		id := e.ProjectID

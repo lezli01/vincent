@@ -131,6 +131,18 @@ type workflowStepDef struct {
 	Count         *int     `json:"count,omitempty"`
 	ForEach       []string `json:"for_each,omitempty"`
 	MaxIterations *int     `json:"max_iterations,omitempty"`
+
+	// include steps (§7.9). Workflow is the registry name an authored
+	// include carries; ResolvedFrom is the chain of workflows a step was
+	// spliced through, outermost first, and appears only in a task's
+	// snapshot. Both are carried here so one DTO describes a registry entry
+	// and a snapshot alike, which is what a lane's ResolvedFrom already does.
+	//
+	// They never appear together: expansion replaces the include with the
+	// steps it resolved to, so the step carrying the name is gone by the time
+	// anything carries a chain.
+	Workflow     string   `json:"workflow,omitempty"`
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
 }
 
 // workflowLaneDef is one fan_out lane. Exactly one of Workflow and Steps is
@@ -256,6 +268,8 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 		MaxParallel:    st.MaxParallel,
 		Count:          st.Count,
 		MaxIterations:  st.MaxIterations,
+		Workflow:       st.Workflow,
+		ResolvedFrom:   st.ResolvedFrom,
 	}
 	if len(st.Steps) > 0 {
 		out.Steps = toWorkflowStepDefs(st.Steps)
