@@ -1,6 +1,6 @@
 # 019 — Including one workflow in another (`type: include`)
 
-**Status:** [~] in progress (0/10) · **Opened:** 2026-08-19
+**Status:** [~] in progress (9/10) · **Opened:** 2026-08-19
 
 Make a workflow reusable inside another workflow: a step that runs another
 registry workflow's steps in the caller's own task and worktree.
@@ -285,32 +285,53 @@ cannot tell what a workflow does without opening three files.
 
 ## Tasks
 
-- [ ] **019.1** `include.max_depth` in `internal/config` (default 5, validated
-      ≥ 1), documented in `docs/reference/configuration.md`.
-- [ ] **019.2** `StepInclude`, the `workflow:` and `resolved_from:` fields on
+- [x] **019.1** `include.max_depth` in `internal/config` (default 5, validated
+      ≥ 1), documented in `docs/reference/configuration.md`. ✓ 2026-08-19
+
+- [x] **019.2** `StepInclude`, the `workflow:` and `resolved_from:` fields on
       `Step`, and §8.2 validation: `include` requires `workflow` and rejects
       every other field (decision 11); `workflow`/`resolved_from` are rejected
-      on every other step type; `resolved_from` is machine-written.
-- [ ] **019.3** `internal/workflow/include.go`: `Expand` — splice, cycle
+      on every other step type; `resolved_from` is machine-written. ✓ 2026-08-19
+
+- [x] **019.3** `internal/workflow/include.go`: `Expand` — splice, cycle
       detection, depth bound, platform check, defaults materialisation
       (decision 7), duplicate-id detection (decision 5), provenance chains
       (decision 6). Plus `HasInclude` and load-time cycle warnings.
-      *Depends: 019.2*
-- [ ] **019.4** Wire expansion into task creation in `internal/api/tasks.go`,
+      *Depends: 019.2* ✓ 2026-08-19
+
+- [x] **019.4** Wire expansion into task creation in `internal/api/tasks.go`,
       before fan-out tree resolution, with post-splice re-validation
-      (decision 9). *Depends: 019.3*
-- [ ] **019.5** `Entry.Includes` on the registry and `GET /v1/workflows`;
-      `workflow`/`resolved_from` on the workflow-definition DTOs.
-- [ ] **019.6** TUI: `KindWorkflowRef` for an include in the graph; the
-      `from <name>` badge in the task detail. *Depends: 019.5*
-- [ ] **019.7** Spec: new §7.9, the §8.2 table row and constraint bullets, and
-      the §20 promotion note.
-- [ ] **019.8** User docs: `reference/workflow-schema.md`,
-      `reference/configuration.md`, `reference/api.md`, `guides/workflows.md`.
-- [ ] **019.9** `scripts/m9-gate.sh`, committed executable, written to the
-      POSIX ∩ pwsh intersection the CLAUDE.md gate notes describe.
-- [ ] **019.10** Wire `m9` into `ci.yml`'s `gates` job on all three platforms.
+      (decision 9). *Depends: 019.3* ✓ 2026-08-19
+
+- [x] **019.5** `Entry.Includes` on the registry and `GET /v1/workflows`;
+      `workflow`/`resolved_from` on the workflow-definition DTOs. ✓ 2026-08-19
+
+- [x] **019.6** TUI: `KindWorkflowRef` for an include in the graph; the
+      `from <name>` badge in the task detail. *Depends: 019.5* ✓ 2026-08-19
+
+- [x] **019.7** Spec: new §7.9, the §8.2 table row and constraint bullets, and
+      the §20 promotion note. ✓ 2026-08-19
+
+- [x] **019.8** User docs: `reference/workflow-schema.md`,
+      `reference/configuration.md`, `reference/api.md`, `guides/workflows.md`. ✓ 2026-08-19
+
+- [x] **019.9** `scripts/m9-gate.sh`, committed executable, written to the
+      POSIX ∩ pwsh intersection the CLAUDE.md gate notes describe. ✓ 2026-08-19
+
+- [!] **019.10** Wire `m9` into `ci.yml`'s `gates` job on all three platforms.
       **Not doable from a cloud session:** its token has no `workflow` scope and
       so cannot write `.github/workflows/` by any route (#120, #122, #125).
       Until this lands, `m9` is not known to pass on any platform CI has not run
-      it on.
+      it on. Walked green on Linux at 019.9, together with m1, m2, m5, m6, m7
+      and m8 as a regression check.
+
+      The edit is one step appended to the `gates` job, beside M8's:
+
+      ```yaml
+            # M9: includes (task 019). Command steps only, with `run:` bodies
+            # in the same `exit N` / `git …` vocabulary m7 and m8 use, so the
+            # matrix proves the shell as much as the feature.
+            - name: M9 gate (includes)
+              shell: bash
+              run: ./scripts/m9-gate.sh
+      ```
