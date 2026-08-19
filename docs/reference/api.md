@@ -205,7 +205,7 @@ to disable the sweep.
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, requires_input, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, requires_input, includes[]?, errors[]?, warnings[]?, error? }`.
 
 `platforms[]` is the entry's [platform restriction](workflow-schema.md#platforms)
 as the file declares it, and `platform_supported` is **the daemon's own verdict**
@@ -221,6 +221,12 @@ mid-run, or `POST /v1/tasks` rejects it with a `400` naming the step. Each
 adapter's `input_verdict` in `GET /v1/agents` (`supported`, `unsupported`,
 `unknown`) is the verdict that gate uses; only `unsupported` refuses anything,
 so an agent that is not installed never blocks a task.
+
+`includes[]` names the workflows this one splices in with
+[`type: include`](workflow-schema.md#type-include). Whether those names resolve
+is **not** answered here: which file a name reaches depends on the project's
+registry, so an unresolvable or cyclic include is a `400` from `POST /v1/tasks`
+rather than an error on the entry.
 
 ### One workflow's full definition
 
@@ -409,10 +415,16 @@ events on the stream to say what forty rows already say.
 - **Every task representation carries `available_actions`** (the actions valid
   right now) and `pause_requested`, so clients never restate the state machine.
   The detail response adds `workflow_steps[]` — this task's snapshot, which is
-  what edit-and-retry prefills an editor with, reflecting any earlier edit.
+  what edit-and-retry prefills an editor with, reflecting any earlier edit. A
+  step spliced in by [`type: include`](workflow-schema.md#type-include) carries
+  `resolved_from[]`, the chain of workflows it came through, outermost first.
 
 Task creation validates the agent/model/effort override: a known-invalid value is
-`400`, a catalog-unknown one is reported in `warnings[]` on the `201` body.
+`400`, a catalog-unknown one is reported in `warnings[]` on the `201` body. It is
+also where a workflow's [includes](workflow-schema.md#type-include) are
+resolved into the snapshot, so an include that cycles, names a workflow this
+project cannot see, nests past `include.max_depth`, brings a step id already in
+use, or is restricted to another platform is a `400` here.
 
 ## Transcripts and diffs
 

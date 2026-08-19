@@ -23,6 +23,11 @@ type stepDefinition struct {
 	prompt       string
 	run          string
 	instructions string
+	// resolvedFrom is the chain of workflows this step was spliced through
+	// (§7.9), outermost first, and empty for a step the task's own workflow
+	// wrote. It is what the detail view attributes a step to — after a splice
+	// there is no include left to point at, so the step has to carry it.
+	resolvedFrom []string
 	// loop is the §7.8 shape of a `loop` step, nil for every other type. It
 	// is what lets the task endpoints report a loop rollup without re-parsing
 	// the snapshot per request.
@@ -153,6 +158,7 @@ func parseSnapshot(snapshot string, ceiling int) snapshotSummary {
 			prompt:       wf.Steps[i].Prompt,
 			run:          wf.Steps[i].Run,
 			instructions: wf.Steps[i].Instructions,
+			resolvedFrom: wf.Steps[i].ResolvedFrom,
 			loop:         loopDefinitionOf(wf.Steps[i], ceiling),
 		})
 	}

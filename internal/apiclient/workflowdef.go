@@ -99,6 +99,14 @@ type WorkflowStepDef struct {
 	Count         *int     `json:"count,omitempty"`
 	ForEach       []string `json:"for_each,omitempty"`
 	MaxIterations *int     `json:"max_iterations,omitempty"`
+
+	// Workflow is the registry workflow an `include` step splices in (§7.9);
+	// ResolvedFrom is the chain of workflows a step was spliced *through*,
+	// outermost first. An authored definition has the first and never the
+	// second; a task's snapshot has the second and never the first, because
+	// expansion replaces the include with the steps it resolved to.
+	Workflow     string   `json:"workflow,omitempty"`
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
 }
 
 // WorkflowLaneDef is one fan_out lane: a named registry workflow or inline

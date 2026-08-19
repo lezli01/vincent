@@ -313,6 +313,11 @@ type WorkflowStep struct {
 	Prompt       string `json:"prompt,omitempty"`
 	Run          string `json:"run,omitempty"`
 	Instructions string `json:"instructions,omitempty"`
+	// ResolvedFrom is the chain of workflows this step was spliced through
+	// (§7.9, task 019), outermost first. Empty for a step the task's own
+	// workflow wrote, and for a daemon that predates the field — which are
+	// indistinguishable and treated the same.
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
 }
 
 // EditableText reports the text edit+retry opens for this step and the

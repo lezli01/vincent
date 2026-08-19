@@ -54,13 +54,26 @@ const (
 	// ends *that iteration*, which is what continue means, using the meaning
 	// §7.7 already gave the word.
 	StepBreak = "break"
+	// StepInclude splices another registry workflow's steps into this one
+	// (§7.9, task 019). It is resolved at **task creation**: the callee's
+	// steps replace it in the snapshot, each becoming an ordinary top-level
+	// step with its own step_index, and no include survives into the run.
+	//
+	// That is what separates it from every other structure type here. A
+	// `parallel` or a `loop` owns a step_index and runs its body under it; an
+	// include owns nothing, because by the time anything runs there is no
+	// include left. Splicing rather than nesting is decision 1: a callee may
+	// then itself contain a `loop`, a `parallel` or a `fan_out`, which a
+	// nested body could not, since two position derivations cannot share one
+	// step_index (task 016 decision 10).
+	StepInclude = "include"
 )
 
 // stepTypeList is the step-type vocabulary as one string, so the two "one of
 // …" messages cannot drift apart as the set grows.
 var stepTypeList = strings.Join([]string{
 	StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition,
-	StepLoop, StepBreak,
+	StepLoop, StepBreak, StepInclude,
 }, ", ")
 
 // Conflict policies for a fan_out step's join (§7.6, task 014 decision 8).
@@ -192,6 +205,27 @@ type Step struct {
 	Count         *int    `yaml:"count,omitempty"`
 	ForEach       ForEach `yaml:"for_each,omitempty"`
 	MaxIterations *int    `yaml:"max_iterations,omitempty"`
+
+	// include steps (task 019). Workflow names the registry workflow to
+	// splice in, resolved through the usual builtin < global < project
+	// shadowing at **task creation**.
+	//
+	// Unlike a lane's `workflow:`, which is moved to `resolved_from:` beside
+	// the steps it resolved to, this field does not survive resolution at
+	// all: the step it sits on is *replaced* by those steps.
+	Workflow string `yaml:"workflow,omitempty"`
+	// ResolvedFrom is the chain of workflow names a spliced step came
+	// through, outermost first — `[outer, inner]` for a step that workflow
+	// `outer` included from `inner`. Empty for a step the caller wrote
+	// itself. Written by Expand at task creation, never by hand
+	// (decision 6).
+	//
+	// A chain rather than the single name `Lane.ResolvedFrom` carries,
+	// because a nested include otherwise cannot say how its steps got where
+	// they are. It is unambiguous because a given callee appears at most once
+	// in one expansion: a second appearance is a duplicate step id, which is
+	// a 400 (decision 5).
+	ResolvedFrom []string `yaml:"resolved_from,omitempty"`
 }
 
 // ForEach is a `loop` step's item list: a YAML sequence of templates, or a
@@ -650,14 +684,46 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
 			"lanes", "merge", "allow_failure", "max_retries", "timeout")
+	case StepInclude:
+		if step.Workflow == "" {
+			add(base+".workflow", "include steps require the name of the workflow to include")
+		}
+		// An include is resolved away at task creation, so it owns no
+		// step_runs row, no attempt and no process — which is what rejects
+		// `timeout`, `max_retries`, `allow_failure` and `check`: there is
+		// nothing for them to bind to (decision 11).
+		//
+		// `if` goes with them, and that one had a real alternative. Honouring
+		// a guard here would mean distributing it onto every spliced step,
+		// which reads correctly until one of them is a `condition` or a
+		// `break` — both of which carry their own `if:` and reject every
+		// other field, so the two would have to be combined by rewriting Go
+		// template text. Guard the callee's own steps instead, or put a
+		// `condition` in front of the include.
+		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
+			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
+			"run", "shell", "env", "instructions", "steps", "max_parallel",
+			"lanes", "merge", "if", "allow_failure", "max_retries", "timeout")
 	default:
 		add(base+".type", "unknown step type %q (one of %s)", step.Type, stepTypeList)
 	}
 	// `count`, `for_each` and `max_iterations` belong to a loop and to
 	// nothing else. Rejecting them here rather than in each arm keeps the
-	// seven arms above from each growing the same three strings.
+	// eight arms above from each growing the same three strings. `workflow`
+	// is the same shape for `include`.
 	if step.Type != StepLoop {
 		rejectFields(step, base, add, "count", "for_each", "max_iterations")
+	}
+	if step.Type != StepInclude {
+		rejectFields(step, base, add, "workflow")
+	}
+	// resolved_from is written by Expand at task creation. A hand-written
+	// file carrying one is claiming a provenance nothing produced, and a
+	// snapshot re-parse is the only caller that should ever see it — which is
+	// why this is checked against the field being *set*, not against the step
+	// type (decision 6).
+	if len(step.ResolvedFrom) > 0 && step.Workflow != "" {
+		add(base+".resolved_from", "resolved_from is set by task creation, not by hand")
 	}
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
@@ -1025,6 +1091,7 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
 		"count": step.Count != nil, "for_each": len(step.ForEach) > 0,
 		"max_iterations": step.MaxIterations != nil,
+		"workflow":       step.Workflow != "",
 	}
 	for _, f := range fields {
 		if set[f] {

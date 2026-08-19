@@ -63,6 +63,12 @@ func (e Entry) RunsHere() bool { return e.Workflow == nil || e.Workflow.Supports
 // already why it cannot back a task.
 func (e Entry) NeedsInputAgent() bool { return e.Workflow != nil && e.Workflow.RequiresInput() }
 
+// Includes lists the workflows this entry includes directly (§7.9, task 019),
+// so a client can show what a workflow depends on. Derived rather than stored,
+// for the reason RunsHere and NeedsInputAgent are: one source of truth, and
+// nothing to keep in sync when a file reloads.
+func (e Entry) Includes() []string { return IncludeNames(e.Workflow) }
+
 // Registry holds the parsed workflows of every scope and reloads them when
 // their files change (§5.2).
 type Registry struct {
@@ -188,7 +194,7 @@ func (r *Registry) ReloadGlobal() {
 	r.mu.Lock()
 	r.global = entries
 	r.mu.Unlock()
-	r.warnFanOutCycles(0)
+	r.warnCrossFileRefs(0)
 	r.notify()
 }
 
@@ -211,22 +217,23 @@ func (r *Registry) ReloadProject(id int64) {
 		ps.entries = entries
 	}
 	r.mu.Unlock()
-	r.warnFanOutCycles(id)
+	r.warnCrossFileRefs(id)
 	r.notify()
 }
 
-// warnFanOutCycles logs the §8.2 fan-out cycle warning for one project's
-// resolved view (task 014 decision 5).
+// warnCrossFileRefs logs the §8.2 warnings that are properties of *resolved*
+// names for one project's view: fan-out cycles (task 014 decision 5) and
+// whatever is wrong with a workflow's includes (task 019 decision 8).
 //
-// It runs after the load rather than inside it, because a cycle is a property
-// of *resolved* names: which files a lane's `workflow:` reaches is decided by
-// builtin < global < project shadowing, which loadDir cannot see while it is
-// still building a scope.
+// It runs after the load rather than inside it, because which files a lane's
+// `workflow:` or an `include:` reaches is decided by builtin < global <
+// project shadowing, which loadDir cannot see while it is still building a
+// scope.
 //
-// A warning, not an error. A cycle between two files is real only once a task
-// picks a root, and a project workflow may shadow the very name that closed
-// the loop. Task creation is where it becomes a 400.
-func (r *Registry) warnFanOutCycles(projectID int64) {
+// Warnings, not errors. Each is real only once a task picks a root, and a
+// project workflow may shadow the very name that closed the loop, went missing
+// or restricted the platform. Task creation is where each becomes a 400.
+func (r *Registry) warnCrossFileRefs(projectID int64) {
 	lookup := func(name string) (*Workflow, bool) {
 		e, ok := r.Lookup(projectID, name)
 		if !ok || !e.Valid() {
@@ -235,11 +242,16 @@ func (r *Registry) warnFanOutCycles(projectID int64) {
 		return e.Workflow, true
 	}
 	for _, e := range r.List(projectID) {
-		if !e.Valid() || !HasFanOut(e.Workflow) {
+		if !e.Valid() {
 			continue
 		}
-		for _, w := range LaneCycleWarnings(e.Workflow, lookup) {
-			r.log.Warn("workflow fan-out cycle", "file", e.File, "name", e.Name, "warning", w)
+		if HasFanOut(e.Workflow) {
+			for _, w := range LaneCycleWarnings(e.Workflow, lookup) {
+				r.log.Warn("workflow fan-out cycle", "file", e.File, "name", e.Name, "warning", w)
+			}
+		}
+		for _, w := range IncludeWarnings(e.Workflow, lookup) {
+			r.log.Warn("workflow include unresolvable", "file", e.File, "name", e.Name, "warning", w)
 		}
 	}
 }

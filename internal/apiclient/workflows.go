@@ -32,6 +32,11 @@ type WorkflowEntry struct {
 	// indistinguishable from "no such step" and treated as such.
 	RequiresInput bool `json:"requires_input,omitempty"`
 
+	// Includes names the workflows this one splices in (§7.9, task 019).
+	// Absent means the daemon predates the field, which is indistinguishable
+	// from "includes nothing" and treated as such.
+	Includes []string `json:"includes,omitempty"`
+
 	Errors []WorkflowFinding `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []WorkflowFinding `json:"warnings,omitempty"`

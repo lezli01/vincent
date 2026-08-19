@@ -74,12 +74,13 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m6-gate.sh                            # parallel steps and fan-out (§7.5, §7.6)
 ./scripts/m7-gate.sh                            # conditions between steps (§7.7)
 ./scripts/m8-gate.sh                            # loops (§7.8)
+./scripts/m9-gate.sh                            # workflow includes (§7.9)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All six run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
+All seven run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
 `m8` spent a while unwired because a cloud session's token has no `workflow`
 scope and so cannot write `.github/workflows/` by any route — push or API
 (#120, #122, #125). A gate that has never run on a platform is not known to
@@ -161,8 +162,8 @@ is a correctness bug, not a style issue:
 | `internal/daemon` | Lifecycle: foreground/detached start, lock file, token, `daemon.json`, log rotation |
 | `internal/api` | Localhost REST + SSE, bearer auth, snake_case error envelope |
 | `internal/apiclient` | Typed HTTP+SSE client — the one client for TUI and CLI; owns its wire types (server DTOs stay unexported) |
-| `internal/workflow` | YAML registry (builtin < global < project shadowing), live reload, `text/template` step engine |
-| `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out`, `condition`, `loop` and `break` are structure, and `check` is a *field* agent and command steps may carry, never a type — plus guards (`if:`, §7.7), loop iteration (§7.8), retries, timeouts, human actions, recovery, transcripts |
+| `internal/workflow` | YAML registry (builtin < global < project shadowing), live reload, `text/template` step engine, creation-time expansion of `include` steps (§7.9) |
+| `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out`, `condition`, `loop` and `break` are structure, `check` is a *field* agent and command steps may carry, never a type, and `include` never arrives at all — it is spliced away at task creation (§7.9) — plus guards (`if:`, §7.7), loop iteration (§7.8), retries, timeouts, human actions, recovery, transcripts |
 | `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |

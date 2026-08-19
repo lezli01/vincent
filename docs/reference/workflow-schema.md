@@ -24,6 +24,7 @@ becoming a setting that silently never applied.
   - [`type: fan_out`](#type-fan_out) · [`merge` and conflicts](#merge-and-conflicts)
   - [`type: loop`](#type-loop) · [`.Loop`](#loop) · [body contents](#what-a-body-may-contain) · [ending](#ending-a-loop) · [human actions](#human-actions)
   - [`type: break`](#type-break)
+  - [`type: include`](#type-include) — reuse another workflow
   - [Nesting rules](#nesting-rules) — which type may appear where
 
 **Behaviour**
@@ -140,7 +141,7 @@ Common to every step:
 |---|---|---|---|
 | `id` | slug | ✅ | Unique within the file, sub-steps included. How `.Steps` addresses it |
 | `name` | string | | Display name; defaults to `id` |
-| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` \| `loop` \| `break` | ✅ | `check` is a *field*, not a type |
+| `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` \| `loop` \| `break` \| `include` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
 | `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group or a `loop`, bounds the whole thing |
 | `if` | template | | Guard: skip this step unless it renders `true`. See [Conditions](#conditions) |
@@ -520,6 +521,80 @@ out, be retried or write a transcript.
 
 Only valid inside a loop body: elsewhere there is no loop for it to end.
 
+### `type: include`
+
+Runs another registry workflow's steps here, in this task and this worktree.
+It is how a workflow becomes reusable.
+
+| Field | | Required |
+|---|---|:--:|
+| `workflow` | the name of the workflow to include, resolved with the usual project > global > built-in shadowing | ✅ |
+
+```yaml
+# .vincent/workflows/go-checks.yaml
+name: go-checks
+defaults: { max_retries: 0 }
+steps:
+  - { id: lint, type: command, run: go run mage.go lint }
+  - { id: test, type: command, run: go run mage.go test }
+```
+
+```yaml
+# .vincent/workflows/feature.yaml
+name: feature
+steps:
+  - { id: implement, type: agent, prompt: "{{ .Task.Description }}" }
+  - { id: checks, type: include, workflow: go-checks }
+  - { id: review, type: agent, prompt: "lint said: {{ .Steps.lint.Result }}" }
+```
+
+**The include disappears.** When the task is created, `checks` is replaced by
+`lint` and `test`, and the task runs four steps. There is no include at run
+time: no step of its own, no grouping, no boundary. That is why `review` can
+read `.Steps.lint` — after the splice, those steps *are* `feature`'s steps.
+
+It also means an include takes no other fields. `if`, `timeout`, `max_retries`,
+`allow_failure` and `check` are all rejected, because there is no step for them
+to bind to. To make an include conditional, guard the callee's own steps, or
+put a [`type: condition`](#type-condition--finish-early) in front of it.
+
+**Resolved once, when the task is created.** Editing `go-checks.yaml`
+afterwards does not touch a task already running — the task's snapshot is its
+execution truth. It also means everything that can go wrong is reported when
+you create the task, not six hours in:
+
+| | |
+|---|---|
+| The workflow is not found | `400` naming it |
+| A cycle — `a` includes `b` includes `a` | `400` naming the path |
+| More than `include.max_depth` levels (default 5) | `400` naming the bound |
+| The callee brings a step id already in use | `400` naming both workflows |
+| The callee's `platforms:` excludes this machine | `400` naming both |
+
+**Step ids are shared.** The whole expansion is one namespace, so a callee
+cannot bring an id the caller already uses — and a given workflow can be
+included at most once per caller. Ids are never rewritten or prefixed: the
+callee's own templates say `.Steps.<id>`, and renaming its steps would break
+them.
+
+**The callee's `defaults:` come with it.** `go-checks` above was written with
+`max_retries: 0`, and its steps keep that after being spliced into a workflow
+whose defaults say otherwise. The order is
+[the usual one](#resolution-order) with the included workflow inserted below
+the task: the step's own field, then the task's `--agent`/`--model`/`--effort`,
+then the *included* workflow's defaults, then the including workflow's, then
+the daemon's.
+
+**A `condition` inside a callee ends the whole run.** There is no include
+boundary for it to end instead, so a fragment that finishes early finishes the
+caller too. And a fragment containing a `break` cannot be factored out at all,
+because `break` is only valid inside a loop body and so a workflow whose top
+level has one does not load.
+
+In the TUI a workflow's graph shows an include as a single collapsed node
+labelled with the workflow it pulls in; a task's detail view badges each
+spliced step with `from <workflow>`.
+
 ### Nesting rules
 
 | Type | Top level | In a `parallel` group | In a `loop` body | In a lane's inline steps |
@@ -532,6 +607,13 @@ Only valid inside a loop body: elsewhere there is no loop for it to end.
 | `condition` | ✅ | ❌ | ✅ | ✅ |
 | `loop` | ✅ | ❌ | ❌ | ✅ |
 | `break` | ❌ | ❌ | ✅ | ❌ |
+| `include` | ✅ | ✅ | ✅ | ✅ |
+
+`include` is ✅ everywhere because it is not there when the workflow runs — what
+matters is what it *expands to*, and that is checked against this same table
+once the steps are in place. A fragment containing a `loop`, included into a
+loop body, is refused when the task is created with the message a hand-written
+nested loop would get.
 
 A lane's inline steps become a child task's own flat snapshot, so they are a
 workflow body in their own right: the "top level" column is the one that applies
@@ -736,8 +818,10 @@ For each agent step, `agent`, `model` and `effort` resolve first-hit-wins:
 1. the explicit **step** field
 2. the **task**-level override chosen at creation (`--agent`, `--model`,
    `--effort`) — replaces workflow `defaults`, never an explicit step field
-3. workflow **`defaults`**
-4. the **adapter** default (usually empty: the CLI decides)
+3. the **included** workflow's `defaults`, for a step that came from a
+   [`type: include`](#type-include) — innermost first when includes nest
+4. the including workflow's **`defaults`**
+5. the **adapter** default (usually empty: the CLI decides)
 
 **Agent-scoped inheritance:** `model` and `effort` only inherit from a level
 whose resolved agent matches the step's. Switching agent without setting them
@@ -759,6 +843,12 @@ a bare CI runner:
   `claude --help`. Probing only ever *adds* values, so a verdict can soften on a
   real daemon but never harden;
 - **the loop ceiling** is the built-in default (10), not your `config.yaml`.
+
+One thing it cannot check at all: whether a [`type: include`](#type-include)
+resolves. Which file a name reaches depends on the project's registry, and a
+project workflow may shadow the very name that was missing or that closed a
+cycle — so includes are resolved and checked when a task is created, and a
+`400` there is the report.
 
 Exit status is 1 for an invalid file; `--json` emits the findings structurally.
 
@@ -785,6 +875,10 @@ Exit status is 1 for an invalid file; `--json` emits the findings structurally.
   a full agent step, needs an `id`, and may not declare `on_input: require`. A
   lane's inline steps have their own id namespace, because each lane becomes its
   own task. `resolved_from` is written by task creation and is an error by hand.
+- An `include` step has a `workflow` and nothing else. `workflow` is rejected on
+  every other type, and `resolved_from` — written by task creation — is an error
+  beside it. Whether the name resolves is *not* checked here: see the note
+  above.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.
