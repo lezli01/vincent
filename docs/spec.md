@@ -855,6 +855,106 @@ sub-step has no body position and therefore never precedes a sibling, so
 §7.5's set-invisibility is unchanged. A step's own failed attempt still stays
 out of `.Steps["itself"]` mid-retry, because `.LastFailure` is that channel.
 
+### 7.9 Included workflows
+
+*Added 2026-08-19 (task 019).*
+
+A `type: include` step names another registry workflow, and is replaced by
+that workflow's steps when the task is **created**:
+
+```yaml
+# .vincent/workflows/go-checks.yaml
+name: go-checks
+defaults: { max_retries: 0 }
+steps:
+  - { id: lint, type: command, run: go run mage.go lint }
+  - { id: test, type: command, run: go run mage.go test }
+
+# .vincent/workflows/feature.yaml
+name: feature
+steps:
+  - { id: implement, type: agent, prompt: "{{ .Task.Description }}" }
+  - { id: checks, type: include, workflow: go-checks }
+  - { id: review, type: agent, prompt: "lint said: {{ .Steps.lint.Result }}" }
+```
+
+The created task's snapshot holds four steps — `implement`, `lint`, `test`,
+`review` — each with its own `step_index`. **No include survives into the
+run.** There is no `step_runs` row for one, no cursor, no boundary, and
+nothing in §7's engine, §11's scheduler or §12.4's recovery knows the word:
+they see the flat step list they already saw.
+
+That is what separates an include from `parallel` (§7.5) and `loop` (§7.8),
+which own a `step_index` and run a body under it, and from `fan_out` (§7.6),
+which creates tasks. An include creates nothing. It is an authoring-time
+construct that has been resolved away before anything runs.
+
+**Resolved once, at creation.** §5.3 says execution uses the snapshot
+precisely so that later edits to a workflow file cannot mutate an in-flight
+task, and a callee read from the registry six hours into a run would be
+exactly that mutation. It is also what makes the whole expanded shape
+checkable in the insert path, so every failure below is a 400 in front of the
+person creating the task.
+
+**An include may appear anywhere a step may**: at the top level, inside a
+`parallel` group, inside a `loop` body, and inside a `fan_out` lane's inline
+`steps:`. This is the point of splicing rather than nesting — a callee may
+itself contain a `loop`, a `parallel` or a `fan_out`, because those land at
+the caller's own level rather than one level inside something. The nesting
+rules of §8.2 are therefore checked **after** expansion: a fragment containing
+a `loop`, included into a loop body, is refused at creation with the same
+message a hand-written nested loop gets.
+
+**Step ids are shared, and a collision is refused.** Ids are unique across the
+whole expansion, so a callee bringing an id the caller already uses is a 400
+naming both workflows. A given callee can therefore appear at most once in one
+expansion. Ids are *not* rewritten or prefixed: a callee's own templates read
+`.Steps.<id>`, and renaming its steps would mean rewriting them.
+
+**A callee's `defaults:` travel with its steps.** At creation each spliced step
+is given the callee's defaults for any field it does not set itself, so a
+fragment keeps the behaviour it was written with rather than adopting its
+caller's. The resolution order is §8.6's, with the callee inserted below the
+task: **step field → task override → callee `defaults:` → caller `defaults:` →
+daemon default**, innermost callee first when includes nest. Because task-level
+overrides are immutable (§13.2 — `priority` is the only mutable task field),
+this is decided at creation and written into the snapshot; a value no level
+supplies is left unset, so the caller's defaults still apply at run time.
+
+**A `condition` inside a callee ends the whole task's sequence.** There is no
+include boundary at run time for it to end instead. A fragment ending in a
+`condition` therefore stops the caller too, and the task is `done` — which is
+§7.7's meaning applied to a step list that no longer records where it came
+from.
+
+**`break` cannot be factored out.** It is valid only inside a loop body
+(§7.8), so a workflow whose top-level steps contain one does not load and can
+never be a callee.
+
+**Provenance.** Every spliced step records `resolved_from:` — the chain of
+workflow names it came through, outermost first — written by the resolver and
+never by hand. It is what the TUI attributes a step to; it has no effect on
+execution.
+
+**Refused at creation** (each a 400, and each a warning at registry load,
+because which files a name reaches is decided by builtin < global < project
+shadowing and only a task picks a root):
+
+| Refusal | Message names |
+|---|---|
+| A cycle: A includes B includes A | the path, `a → b → a` |
+| A name this project cannot resolve | the missing workflow |
+| More than `include.max_depth` levels (§12.3) | the depth and the bound |
+| A step id the expansion already used | both workflows |
+| A callee whose `platforms:` (§8.1.1) excludes this host | the callee and the host |
+
+The caller's own `platforms:` is **not** rewritten from its callees': it stays
+a property of the file as written, so a workflow's declared restriction means
+one thing. The consequence is that `vincent workflow validate` cannot tell you
+a caller includes a fragment this host cannot run — the same trade §8.1.1
+already makes by checking the list for shape rather than against the
+validating host.
+
 ## 8. Workflow definition (YAML)
 
 ### 8.1 File format
@@ -977,6 +1077,13 @@ step is the exception: it takes `id`, `name` and `if` only.
 | `condition` | `if` | — |
 | `loop` | `steps`, and exactly one of `count` / `for_each` | `max_iterations` |
 | `break` | `if` | — |
+| `include` | `workflow` | — |
+
+*`include` added 2026-08-19 (task 019); see §7.9. It takes `id`, `name`,
+`type` and `workflow` and nothing else — not `if`, `timeout`, `max_retries`,
+`allow_failure` or `check` — because it is resolved away at task creation and
+owns no attempt for any of them to bind to. It is the third exception to this
+table's common fields, after `condition` and `break`.*
 
 *`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.
 `condition`, `if` and `allow_failure` added 2026-08-18 (task 015); see §7.7.
@@ -1024,6 +1131,12 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   resolve to `on_input: require`. A `break` requires `if`, rejects every other
   field, and is valid **only** inside a loop body. `count`, `for_each` and
   `max_iterations` are rejected on every other step type.
+- *Added 2026-08-19 (task 019).* An `include` step requires `workflow` and
+  rejects every other field. `workflow` is rejected on every other step type,
+  and `resolved_from` — which the resolver writes into a task's snapshot — may
+  not be set by hand beside it. Everything an include implies about the
+  *expansion* is checked at task creation rather than at load, because it
+  depends on which files the name resolves to: see §7.9's table.
 - `platforms` entries are known tokens and carry no duplicate (§8.1.1). The
   list is checked for *shape*, never against the validating host: a POSIX-only
   workflow validates on a Windows CI runner exactly as it does on Linux, or
@@ -2257,12 +2370,16 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         (shadowing applied); each entry:
                                         { name, scope, project_id, file, description, steps[],
                                           platforms[]?, platform_supported, requires_input,
-                                          errors[]?, warnings[]?, error? }
+                                          includes[]?, errors[]?, warnings[]?, error? }
                                         platform_supported is this daemon's own verdict on the
                                         entry's §8.1.1 restriction (task 010, added 2026-08-16);
                                         requires_input marks an entry whose §7.4 `require` steps
                                         leave their agent to the task, so the agent picked for a
-                                        task must be one that can ask (task 013, added 2026-08-17)
+                                        task must be one that can ask (task 013, added 2026-08-17);
+                                        includes names the workflows this one splices in (§7.9,
+                                        task 019, added 2026-08-19). Whether those names resolve
+                                        is not answered here: it depends on the project's
+                                        resolved view and becomes a 400 at task creation
 GET    /v1/workflows/definition         one workflow's whole recursive structure, selected with
        ?name=&project_id=               the same §5.2 shadowing the list applies (task 017,
                                         added 2026-08-18):
@@ -2349,10 +2466,14 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         (the §6 human actions valid right now) and
                                         `pause_requested`, so clients never restate the FSM.
                                         Detail-only: `workflow_steps[]` — the task's snapshot
-                                        as { index, id, type, prompt?, run?, instructions? },
-                                        which is what edit+retry prefills an editor with. It
-                                        reflects edits made by a previous edit+retry, since
-                                        the snapshot is this task's execution truth (§5.3)
+                                        as { index, id, type, prompt?, run?, instructions?,
+                                        resolved_from[]? }, which is what edit+retry prefills
+                                        an editor with. It reflects edits made by a previous
+                                        edit+retry, since the snapshot is this task's execution
+                                        truth (§5.3). resolved_from is the chain of workflows a
+                                        step was spliced through (§7.9, task 019, added
+                                        2026-08-19), absent for a step the task's own workflow
+                                        wrote
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only);
                                         emits task.priority_changed and re-runs admission
 POST   /v1/tasks/{id}/cancel
@@ -3081,6 +3202,7 @@ currently true to show (§15 view 6).
 | Agent CLI missing at step start | Step fails (retry policy applies) with a `agent_unavailable` reason; typically → blocked |
 | A fan-out lane's merge conflicts | The join stops at that lane and the task blocks `merge_conflict`, with the worktree left conflicted so a human resolves in place (*added 2026-08-17, task 014*). `on_conflict: agent` tries a resolver first, gated by its `check`, and falls back to the same block. Archive gets no special case: a conflicted worktree is dirty by construction and §10 already refuses a dirty worktree without confirmation |
 | A fan-out lane ends without finishing | The join blocks `lane_failed` and merges **nothing** — a partial merge is indistinguishable downstream from a complete one. `retry` re-checks the lanes; the remedy is to fix the child, which is an ordinary task (*added 2026-08-17, task 014*) |
+| A workflow's includes are cyclic, unresolvable or too deep | Refused at task creation with a `400` naming the cycle path, the missing workflow, or `include.max_depth`. A callee bringing a step id the expansion already uses, and one whose `platforms:` excludes this host, are refused there too. Possible because expansion happens in the insert path (*added 2026-08-19, task 019*) |
 | A fan-out tree is cyclic or too large | Refused at task creation with a `400` naming the cycle path or the bound crossed (`fan_out.max_depth`, `fan_out.max_tasks`). Possible because the whole tree's shape is static once lane lists are in the snapshot (*added 2026-08-17, task 014*) |
 | Two sub-steps of a `parallel` group write the same file | Undefined: the group shares one worktree, and §10 isolates working trees between *tasks*, not processes within one. A workflow bug, documented as such rather than arbitrated (*added 2026-08-17, task 014*) |
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
@@ -3199,6 +3321,15 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   cannot be written flat" — and a loop body was affordable where `branch` is
   not, because a loop has one arm: the step list stays a list and
   `current_step` stays an integer.
+- ~~reusable workflows / including one workflow in another~~ — **promoted out
+  of future work, 2026-08-19** (§7.9, task 019): `type: include`, spliced into
+  the caller's snapshot at task creation. Splicing rather than nesting is what
+  kept it affordable: the step list stays a list, `current_step` stays an
+  integer, and a callee may contain a `loop`, a `parallel` or a `fan_out`
+  because those land at the caller's own level. Deliberately *not* included:
+  per-call parameters. Two calls with no arguments are the same call, which is
+  why a duplicate id is refused outright; the trigger for both is the first
+  workflow that must include one callee twice with different values.
 - **`branch`/`switch` step types** with `then:`/`else:` bodies, which would
   make the step list a tree and the §7 cursor something other than an integer.
   Deferred by task 015 decision 1 and still deferred: §7.7's guards plus
