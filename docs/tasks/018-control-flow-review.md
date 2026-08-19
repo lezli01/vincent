@@ -1,11 +1,11 @@
-# 018 — Control-flow review: three correctness fixes
+# 018 — Control-flow review: four correctness fixes
 
-**Status:** ✅ done (7/7) · **Opened:** 2026-08-19 · **Closed:** 2026-08-19
+**Status:** ✅ done (9/9) · **Opened:** 2026-08-19 · **Closed:** 2026-08-19
 
 A review of the control-flow engine — `parallel` (§7.5), `fan_out` (§7.6),
 `condition`/`if:` (§7.7) and `loop`/`break` (§7.8) — against the spec sections
-that define them. Three of the four findings are behaviour changes with a
-recorded alternative; the fourth is a leak. Nothing here adds a step type, a
+that define them. Four of the five findings are behaviour changes with a
+recorded alternative; the fifth is a leak. Nothing here adds a step type, a
 field or a driver: the feature surface is unchanged, and the last section
 records what a review of that surface concluded should *not* change.
 
@@ -77,6 +77,22 @@ run. `govet`'s `lostcancel` does not see it, because `cancel` *is* used.
 
 **Fixed:** one context, not two.
 
+### 5. A loop with an empty `for_each` left its step index with no row at all
+
+`fan_out` and `loop` are the two structure steps, and each has a degenerate
+case where it is reached and runs nothing: every lane guarded off, and an empty
+`for_each` list. The fan-out recorded a row saying so; the loop recorded
+nothing, and `TestLoopForEachEmptyListSucceeds` asserted that it must not.
+
+That leaves the one step index a task can pass through carrying no row —
+against the phase 2 invariant that every one has at least one — and a detail
+view with no way to tell "ran nothing" from "never reached".
+
+**Fixed:** the empty case records one row under the loop's own id, `succeeded`
+with `iteration: 0` and a summary. It is invisible to the loop's own
+derivation, which filters on `iteration > 0`, and it is filtered out of
+`.Steps`.
+
 ## Decisions
 
 **D1 (2026-08-19) — a partial spawn is made unreachable, not recoverable.**
@@ -114,6 +130,27 @@ through any documented input today. It is eight lines, and the failure it
 forecloses is the silent kind: a loop reporting success over iterations it
 started and never revisited.
 
+**D6 (2026-08-19) — the empty loop records a row, and that row is not a
+`.Steps` entry.** §7.8's "the loop has no row of its own" is about its
+*iterations*, which are the body's rows; with no iterations there are none, and
+the invariant that loses is the phase 2 one. Beat: *leave it and reverse
+nothing*, which was this review's own first answer — filed as a separate task on
+the grounds that it changes what a detail view shows rather than fixing a
+correctness bug. That reasoning does not survive the invariant being named: a
+step index with no row is not a display preference.
+
+The second half of the decision is the one that took the work. A `succeeded`
+row is visible in `.Steps` under the loop's id, which would make that id a key
+present exactly when the loop did **nothing** and absent when it did something
+— an inverted signal, worse than no signal, and worse than the gap it was
+closing. Beat: *record it as `skipped` with a new skip reason*, which is
+arguably the more accurate state but reads as visible-and-meaningful under §7.7
+and so has the same problem. So the row is `succeeded`, matching the fan-out's
+no-lane row exactly, and `stepEnv.blindTo` filters every `loop`-typed row out
+of `.Steps`. A `fan_out`'s row is a real result — "merged 3 lanes" — and stays
+visible; the asymmetry between the two structure steps is now in one place and
+stated, rather than spread across a missing row and a surprising key.
+
 **D5 (2026-08-19) — no new step type, field or driver.** The last section says
 why, item by item. The review's conclusion is that the control-flow surface is
 the right size for the project's scope and that its stated omissions —
@@ -132,6 +169,9 @@ the right size for the project's scope and that its stated omissions —
 - [x] 018.6 one context per structure step, not two ✓ 2026-08-19
 - [x] 018.7 §7.5, §7.6 and §7.8 amended in place; tests for each fix, each
   verified red without it ✓ 2026-08-19
+- [x] 018.8 an empty `for_each` records one row under the loop's own id;
+  `TestLoopForEachEmptyListSucceeds` reversed ✓ 2026-08-19
+- [x] 018.9 `blindTo` keeps a `loop`-typed row out of `.Steps` ✓ 2026-08-19
 
 ## Verification
 
@@ -147,6 +187,8 @@ Each behaviour fix has a test that was verified to fail without it:
 | 2 | `TestFanOutParksWhenItsLanesHaveNotSettled` | `stop = false` — falls through to the join |
 | 3 | `TestGroupSiblingsStayInvisibleAcrossAdmissions` | attempt 2 reads `[succeeded]`, want `[]` |
 | 4 | `TestLoopForEachExtentNeverShrinksBelowItsRows` | `plan.total = 1`, want 3 |
+| 5 | `TestLoopForEachEmptyListSucceeds` | 0 rows at the loop, want 1 |
+| 5 | `TestLoopForEachEmptyListSucceeds` | a later step reads the loop id as `[succeeded]`, want `[]` |
 
 Fix 2 and 018.5 are driven directly rather than through the scheduler, because
 each needs a state no admission produces on purpose. That is stated rather than
@@ -207,12 +249,8 @@ truthiness in a guard (§7.7). These are binding decisions from tasks 015 and
   plus an `if:` on the next step is the same thing composed from parts that
   already exist, and it keeps one failure vocabulary (§7.2) instead of two.
 
-**One observability asymmetry, left alone.** A `fan_out` that selects no lanes
-records a decision row saying so; a `loop` whose `for_each` list is empty
-records nothing, and `TestLoopForEachEmptyListSucceeds` asserts that it must
-not. The two are inconsistent, and the loop's side is the odd one — "every step
-index a task passes through has at least one row" is a phase 2 decision the
-empty loop breaks. It is left as it is because the assertion is deliberate and
-reversing it is a change to what the TUI shows for a step that did nothing, not
-a correctness fix. Worth a task of its own if the empty-loop case ever confuses
-someone reading a detail view.
+**One observability asymmetry, fixed rather than deferred.** The empty-loop row
+was first written up here, as a display question worth a task of its own. It is
+finding 5 above instead: naming the phase 2 invariant it broke settled that it
+was not a display question. D6 records both halves, including the `.Steps`
+visibility problem that only appeared once the row existed.
