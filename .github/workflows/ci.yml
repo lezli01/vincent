@@ -113,3 +113,13 @@ jobs:
       - name: M8 gate (loops)
         shell: bash
         run: ./scripts/m8-gate.sh
+
+      # M9: workflow includes (task 019). Command steps only, with `run:`
+      # bodies in the same restricted `exit N` / `git …` vocabulary m7 and m8
+      # use, so the three-OS matrix proves the shell as much as the feature.
+      # Scenario 1 is the one that most needs Windows: it asserts the exact
+      # multi-line step order and provenance chain, which is where jq's CRLF
+      # bites (the m8 finding).
+      - name: M9 gate (includes)
+        shell: bash
+        run: ./scripts/m9-gate.sh
