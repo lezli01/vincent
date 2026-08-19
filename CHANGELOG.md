@@ -128,6 +128,44 @@ Please pull request.
   --include-children/--parent`, and `L` in the TUI to drill into a fan-out's
   lanes.
 
+### Fixed
+
+- **A fan-out whose spawn failed part-way could never be retried.** Lanes were
+  created one at a time, each committing before the next, so a failure on lane
+  two left lane one committed; the cleanup cancelled it, and a cancelled lane
+  stays attached to its step. The parent's `retry` therefore found a lane, took
+  the *join* path instead of re-spawning, read the lane as aborted and blocked
+  `lane_failed` — again on every retry, with nothing in the API or the TUI able
+  to clear it. Lanes are now inserted in one transaction, so a failure leaves no
+  lane behind and `retry` re-spawns from a clean slate.
+
+- **A fan-out could join lanes that had not started.** The parent decided
+  *spawn or join* on whether the step had lanes, which only answers "have the
+  lanes finished" if the park after spawning always commits — and it is a
+  compare-and-swap. A parent left `running` with `queued` lanes joined on its
+  next admission and blocked `lane_failed` against work about to run perfectly
+  well. It now parks again instead.
+
+- **A `parallel` sub-step's guard could read a sibling after a retry.** §7.5
+  says a group is a set whose members cannot see each other, and that held on a
+  group's first admission only: a re-admitted group skips the sub-steps that
+  already succeeded, and their rows were still visible in `.Steps`. The same
+  guard against the same context answered one way on the first run and another
+  after a human pressed `retry`. Set-invisibility now holds in every admission.
+
+- **A `loop` whose `for_each` list re-derived shorter than its own rows.** The
+  extent came from the fresh list alone, so a shorter one would have left the
+  loop reporting success over iterations it started and never revisited. The
+  extent is now the longer of the list and the recorded iterations, with the
+  `max_iterations` ceiling re-checked against it. Every `for_each` source §8.4
+  offers is stable between admissions, so this bounds the derivation rather than
+  a reachable failure.
+
+- **A leaked context in `parallel` and `loop` steps.** Both created a
+  cancellable context and then overwrote it — `cancel` included — when the step
+  carried a `timeout:`, leaving the first context attached to the parent for the
+  rest of the task's run.
+
 ### Changed
 
 - **vincent is now source-available and dual-licensed, not MIT.** Personal and

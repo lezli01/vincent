@@ -64,7 +64,11 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 	// the group turns that back into a failure below, because the work ran
 	// out of the time the workflow gave it rather than stopping for the
 	// daemon's sake (§7.2).
-	groupCtx, cancel := context.WithCancel(ctx)
+	// One context, not two: the unconditional WithCancel that used to stand
+	// here was overwritten — cancel and all — when the step carried a
+	// `timeout:`, leaking its child context onto the parent for the rest of
+	// the task's run.
+	groupCtx, cancel := ctx, func() {}
 	if env.step.Timeout != nil {
 		groupCtx, cancel = context.WithTimeout(ctx, env.step.Timeout.Std())
 	}
@@ -141,11 +145,14 @@ func (r *Runner) pendingSubSteps(ctx context.Context, env *stepEnv) (subs []work
 // `skipped` row for each, and returns the rest in declaration order.
 //
 // Guards are evaluated **before anything in the group starts**, one after
-// another, which is what makes §7.5's sibling-blindness a fact rather than a
-// warning: no sibling has run, so none can be in `.Steps` for another's guard
-// to read. A group is a set, so a false guard subsets it rather than stopping
-// anything — the same meaning `if:` has on a fan-out lane (task 015
-// decision 3), and the reason a `condition` step is refused in here at all.
+// another, so within an admission no sibling has run and none can be in
+// `.Steps` for another's guard to read. Across admissions that ordering is not
+// enough — a re-admitted group's already-succeeded siblings still have their
+// rows — so §7.5's sibling-blindness is enforced by stepEnv.blindTo rather
+// than by this timing alone. A group is a set, so a false guard subsets it
+// rather than stopping anything — the same meaning `if:` has on a fan-out lane
+// (task 015 decision 3), and the reason a `condition` step is refused in here
+// at all.
 func (r *Runner) applySubStepGuards(
 	ctx context.Context, env *stepEnv, subs []workflow.Step,
 ) (kept []workflow.Step, guardedOff int, err error) {

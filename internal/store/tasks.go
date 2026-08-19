@@ -66,76 +66,131 @@ func (e *BranchClaimedError) Error() string {
 // rolls back. Archived tasks are excluded on purpose: they keep their
 // branch_name, so counting them would forbid reusing a name even after the user
 // deleted the branch by hand, which is the one case where reuse is legitimate.
+//
+// It is the one-task spelling of CreateTasks, which is where the transaction
+// lives.
 func (s *Store) CreateTask(ctx context.Context, t *Task, resolveBranch func(id int64) (string, error)) error {
+	return s.CreateTasks(ctx, []*Task{t}, resolveBranch)
+}
+
+// CreateTasks inserts several tasks in **one** transaction, resolving each
+// one's branch name the way CreateTask does. Either every row is committed or
+// none is.
+//
+// It exists for a fan_out step's lanes (spec §7.6). Spawning them one
+// CreateTask at a time made a *partial* spawn reachable — some lanes
+// committed, the rest not — and there is no honest way to clean that up
+// afterwards: cancelling the lanes that made it leaves them settled-aborted
+// and still attached to the step, so the parent's next admission takes the
+// join path and blocks `lane_failed` forever, while deleting them would need
+// the first destructive task primitive in a system whose posture is that
+// nothing destroys work. One transaction removes the state instead of
+// cleaning up after it.
+//
+// The branch claim (claimBranchTx) runs per task inside the shared
+// transaction, so two lanes resolving to the same name collide here exactly
+// as a lane colliding with an existing task does.
+func (s *Store) CreateTasks(ctx context.Context, tasks []*Task, resolveBranch func(id int64) (string, error)) error {
+	if len(tasks) == 0 {
+		return nil
+	}
 	now := time.Now()
+	events := make([]*Event, 0, len(tasks))
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		events = events[:0]
+		for _, t := range tasks {
+			ev, err := insertTaskTx(ctx, tx, t, now, resolveBranch)
+			if err != nil {
+				return err
+			}
+			events = append(events, ev)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	// After the commit, in insertion order: a subscriber must never see a
+	// task.created for a row a rollback took away.
+	for _, ev := range events {
+		s.notify(ev)
+	}
+	return nil
+}
+
+// insertTaskTx is one task's insert, branch-name resolution, branch claim and
+// task.created event, inside the caller's transaction. The event is returned
+// rather than published: publishing belongs after the commit.
+func insertTaskTx(
+	ctx context.Context, tx *sql.Tx, t *Task, now time.Time,
+	resolveBranch func(id int64) (string, error),
+) (*Event, error) {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = now
 	}
 	t.UpdatedAt = now
 	fields, err := marshalFields(t.Fields)
 	if err != nil {
-		return fmt.Errorf("insert task: %w", err)
+		return nil, fmt.Errorf("insert task: %w", err)
 	}
-	var ev *Event
-	err = s.withTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `
-			INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-				base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
-				state, current_step, block_reason,
-				parent_task_id, parent_step_index, lane_id, lane_order,
-				created_at, updated_at, started_at, finished_at, archived_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-			t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
-			nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
-			string(t.State), t.CurrentStep, nullString(t.BlockReason),
-			t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder,
-			formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
-			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
+			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+			state, current_step, block_reason,
+			parent_task_id, parent_step_index, lane_id, lane_order,
+			created_at, updated_at, started_at, finished_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
+		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
+		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
+		string(t.State), t.CurrentStep, nullString(t.BlockReason),
+		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder,
+		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
+		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
+	t.ID = id
+	// The id exists now, so a name that needed it can be produced and written
+	// before this transaction commits.
+	if resolveBranch != nil {
+		branch, err := resolveBranch(id)
 		if err != nil {
-			return fmt.Errorf("insert task: %w", err)
+			return nil, err
 		}
-		id, err := res.LastInsertId()
-		if err != nil {
-			return fmt.Errorf("insert task: %w", err)
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE tasks SET branch_name = ? WHERE id = ?`, branch, id); err != nil {
+			return nil, fmt.Errorf("assign branch name: %w", err)
 		}
-		t.ID = id
-		// The id exists now, so a name that needed it can be produced and written
-		// before this transaction commits.
-		if resolveBranch != nil {
-			branch, err := resolveBranch(id)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE tasks SET branch_name = ? WHERE id = ?`, branch, id); err != nil {
-				return fmt.Errorf("assign branch name: %w", err)
-			}
-			t.BranchName = branch
-		}
-		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
-			return err
-		}
-		payload, err := json.Marshal(map[string]any{
-			"state": string(t.State), "title": t.Title, "workflow": t.WorkflowName,
-		})
-		if err != nil {
-			return fmt.Errorf("marshal task.created event: %w", err)
-		}
-		// Copied, not aliased: the event goes to the broker, and t belongs to the
-		// caller.
-		taskID, projectID := t.ID, t.ProjectID
-		ev = &Event{
-			TS: now, Type: EventTaskCreated,
-			TaskID: &taskID, ProjectID: &projectID, Payload: payload,
-		}
-		return appendEventTx(ctx, tx, ev)
+		t.BranchName = branch
+	}
+	if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"state": string(t.State), "title": t.Title, "workflow": t.WorkflowName,
 	})
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("marshal task.created event: %w", err)
 	}
-	s.notify(ev)
-	return nil
+	// Copied, not aliased: the event goes to the broker, and t belongs to the
+	// caller.
+	taskID, projectID := t.ID, t.ProjectID
+	ev := &Event{
+		TS: now, Type: EventTaskCreated,
+		TaskID: &taskID, ProjectID: &projectID, Payload: payload,
+	}
+	// Appended inside the caller's transaction, so a rolled-back insert takes
+	// its event with it; the caller publishes it to the broker after the
+	// commit.
+	if err := appendEventTx(ctx, tx, ev); err != nil {
+		return nil, err
+	}
+	return ev, nil
 }
 
 // claimBranchTx fails when another unarchived task in the project already holds

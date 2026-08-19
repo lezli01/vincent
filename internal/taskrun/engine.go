@@ -201,6 +201,31 @@ func (e *stepEnv) precedes(run *store.StepRun) bool {
 	return ok && pos < e.loop.pos
 }
 
+// blindTo reports whether run is a `parallel` sibling this step may not see
+// at all, whatever state it ended in (§7.5).
+//
+// A group is a *set*: §7.5 promises that no sibling can be read by another's
+// guard, and gives as its reason that guards are evaluated before anything in
+// the group starts. That reason only covers the first admission. A group
+// re-admitted after one sub-step failed skips the ones that already succeeded
+// (pendingSubSteps) and their `succeeded` rows are still on disk, so without
+// this the surviving sub-step's guard would read a sibling on the retry and
+// not on the first run — the same guard, the same context, two verdicts,
+// decided by whether a human had pressed retry. Making the blindness
+// unconditional is what keeps §7.5's set semantics a fact rather than a
+// property of timing.
+//
+// It is deliberately narrower than precedes, which answers a different
+// question for *failed* rows only: this one is about the whole set, so it
+// covers every state, and it says nothing about a step's own rows — a
+// sub-step being retried still reads its own history through `.LastFailure`.
+func (e *stepEnv) blindTo(run *store.StepRun) bool {
+	if !e.inGroup || e.loop != nil {
+		return false
+	}
+	return run.StepIndex == e.index && run.StepID != e.step.ID
+}
+
 // stepOutcome is the result of one attempt.
 type stepOutcome struct {
 	state         store.StepRunState
@@ -589,6 +614,9 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 	steps := map[string]workflow.StepResult{}
 	for i := range runs {
 		run := runs[i]
+		if env.blindTo(&run) {
+			continue
+		}
 		switch run.State {
 		case store.StepSucceeded, store.StepApproved, store.StepSkipped:
 		case store.StepFailed:
