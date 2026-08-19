@@ -1,0 +1,5 @@
+name: gate
+steps:
+  - {id: plan, type: agent, prompt: plan it}
+  - {id: gate, type: condition, if: '{{ .Fields.deploy }}'}
+  - {id: deploy, type: command, run: make deploy}

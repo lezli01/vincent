@@ -26,7 +26,7 @@ var everyAction = taskActions{id: 9, state: stateRunning, actions: []string{
 func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 	contexts := []bindingContext{
 		ctxTasks, ctxTimeline, ctxOutput, ctxDiff,
-		ctxNewTask, ctxProjects, ctxWorkflows, ctxDaemon,
+		ctxNewTask, ctxProjects, ctxWorkflows, ctxWorkflowGraph, ctxDaemon,
 	}
 	for _, b := range bindings {
 		if b.noPalette {

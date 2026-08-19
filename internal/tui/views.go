@@ -57,6 +57,14 @@ type pasteReceiving interface {
 	paste(text string) tea.Cmd
 }
 
+// contextual is implemented by views whose binding context depends on which
+// of their own layers has the keyboard. The workflows takeover is the one:
+// its graph sub-layer has a different set of keys from the list behind it,
+// and the footer and the ? overlay have to name the live one.
+type contextual interface {
+	bindingContext() bindingContext
+}
+
 // projectHinting is implemented by views that know which project the user is
 // looking at, so the new-task form opens on it rather than making them pick
 // the project they were just staring at.

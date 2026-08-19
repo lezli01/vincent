@@ -200,6 +200,7 @@ to disable the sweep.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/workflows?project_id=` | The merged registry: built-in + global + that project's, with shadowing applied |
+| `GET` | `/v1/workflows/definition?name=&project_id=` | One workflow's whole recursive structure, with the same shadowing applied |
 | `POST` | `/v1/workflows/validate` | `{ yaml }` → `{ valid, errors[], warnings[] }` |
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
@@ -220,6 +221,62 @@ mid-run, or `POST /v1/tasks` rejects it with a `400` naming the step. Each
 adapter's `input_verdict` in `GET /v1/agents` (`supported`, `unsupported`,
 `unknown`) is the verdict that gate uses; only `unsupported` refuses anything,
 so an agent that is not installed never blocks a task.
+
+### One workflow's full definition
+
+`GET /v1/workflows/definition?name=&project_id=` returns the registry entry
+above — the same derived fields — plus `definition`, the workflow's whole
+recursive structure. The list endpoint's `steps[]` carries only
+`{ id, name, type, agent }`, which is right for a registry listing and not
+enough to draw a graph: nested `steps`, fan-out `lanes`, `merge`, guards and
+loop drivers are gone before a client sees them.
+
+```
+GET /v1/workflows/definition?name=feature-pr&project_id=3
+```
+
+```json
+{
+  "name": "feature-pr",
+  "scope": "project",
+  "project_id": 3,
+  "file": "/src/app/.vincent/workflows/feature-pr.yaml",
+  "platform_supported": true,
+  "requires_input": false,
+  "definition": {
+    "name": "feature-pr",
+    "defaults": { "agent": "claude", "model": "sonnet" },
+    "steps": [
+      { "id": "plan", "type": "agent", "prompt": "…", "check": "go build ./..." },
+      { "id": "spread", "type": "fan_out",
+        "lanes": [ { "id": "api", "steps": [ … ] },
+                   { "id": "web", "workflow": "web-feature", "if": "…" } ],
+        "merge": { "on_conflict": "agent", "agent": { "id": "fixup", … } } }
+    ]
+  }
+}
+```
+
+Three things about this contract are deliberate.
+
+**The name is a query parameter, not a path segment.** A registry name is
+neither URL-safe nor unique. An entry whose file fails to parse is still listed,
+under a name taken from an unvalidated `name:` field or the filename — it may
+contain anything. And the loser of a duplicate name is listed beside the winner.
+The endpoint serves the shadowing winner and reports the `scope` and `file` it
+came from, so you can tell which entry you got.
+
+**A workflow that does not parse is a `200`,** carrying its `errors[]` and
+`definition: null` — the same rule the list follows in showing a broken file
+rather than hiding it. A `404` means no entry of that name in that project's
+view of the registry at all.
+
+**Steps are reported as authored.** Workflow `defaults` stay in their own block
+and are never folded into the steps that inherit them, so `"agent": "claude"`
+written on a step and the same value inherited stay distinguishable — the
+distinction the [resolution order](workflow-schema.md#resolution-order) rests on,
+and the one anything that round-trips a workflow needs. For the *resolved*
+answer, use `POST /v1/resolve`.
 
 `POST /v1/resolve` applies the [resolution order](workflow-schema.md#resolution-order)
 to every step under a candidate task-level override, returning `{ value, source }`

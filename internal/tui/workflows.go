@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -88,12 +89,23 @@ type workflowsView struct {
 	// that just changed is exactly the one whose resolution may have moved.
 	resolutions map[wfResolveKey]apiclient.Resolution
 
+	// graph is the open graph sub-layer, nil when the list has the keyboard.
+	// It follows the shape projectsView uses for its form: a nullable
+	// sub-model that takes the keys and renders in place (decision 13).
+	graph *graphLayer
+
+	// vp scrolls the list. Without it a registry taller than the terminal is
+	// simply cut off — a truncation that predates the graph and that the
+	// graph makes worse, because Escape returns you to a list that may not
+	// show the row you came from (017.9).
+	vp viewport.Model
+
 	refreshPending bool
 	width, height  int
 }
 
 func newWorkflowsView() *workflowsView {
-	return &workflowsView{exec: tea.ExecProcess, now: time.Now}
+	return &workflowsView{exec: tea.ExecProcess, now: time.Now, vp: viewport.New()}
 }
 
 func (w *workflowsView) title() string { return "Workflows" }
@@ -186,6 +198,7 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		w.width, w.height = msg.Width, msg.Height
+		w.sizeGraph()
 		return w, nil
 	case viewActivatedMsg:
 		if msg.id == viewWorkflows {
@@ -206,6 +219,9 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 			w.resolutions[msg.key] = msg.resolution
 		}
 		return w, nil
+	case workflowDefinitionMsg:
+		w.applyDefinition(msg)
+		return w, nil
 	case workflowEditedMsg:
 		if msg.err != nil {
 			w.err = "editor: " + errString(msg.err)
@@ -219,6 +235,9 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return w, w.updateNote(msg.note)
 	case tea.KeyPressMsg:
 		return w.updateKey(msg)
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+		w.updateGraphMouse(msg)
+		return w, nil
 	}
 	return w, nil
 }
@@ -296,12 +315,24 @@ func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 	}
 	if ev.Event.Type == eventWorkflowRegistryChanged ||
 		strings.HasPrefix(ev.Event.Type, "project.") {
-		return w.scheduleRefresh()
+		cmds := []tea.Cmd{w.scheduleRefresh()}
+		// An open graph refetches too, and re-lays-out in place. Live reload
+		// reflecting saves immediately is this view's stated §15 behaviour,
+		// and a graph that went stale while you edited the file under it
+		// would be the wrong half of that promise (decision 19).
+		if w.graph != nil {
+			w.graph.loading = true
+			cmds = append(cmds, w.definitionCmd(w.graph.key))
+		}
+		return tea.Batch(cmds...)
 	}
 	return nil
 }
 
 func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	if w.graph != nil {
+		return w.updateGraphKey(msg)
+	}
 	switch msg.String() {
 	case "up", "k":
 		w.moveCursor(-1)
@@ -312,6 +343,8 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "enter":
 		w.expanded = !w.expanded
 		return w, w.resolveCmd()
+	case "g":
+		return w, w.openGraph()
 	case "e":
 		return w, w.editCmd()
 	case "R":
