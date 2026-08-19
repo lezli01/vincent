@@ -29,7 +29,7 @@ parts you want to change.
 **The file**
 
 - [3. File anatomy](#3-file-anatomy) — [3.1 Top-level keys](#31-top-level-keys) · [3.2 `defaults`](#32-defaults) · [3.3 Steps and ids](#33-steps-and-ids) · [3.4 What a step inherits](#34-what-a-step-inherits)
-- [4. The eight step types](#4-the-eight-step-types) — [4.1 Choosing](#41-choosing-a-step-type) · [4.2 `agent`](#42-agent) · [4.3 `command`](#43-command) · [4.4 `manual`](#44-manual) · [4.5 `parallel`](#45-parallel) · [4.6 `fan_out`](#46-fan_out) · [4.7 `condition`](#47-condition) · [4.8 `loop`](#48-loop) · [4.9 `break`](#49-break) · [4.10 Nesting rules](#410-where-each-type-may-appear)
+- [4. The nine step types](#4-the-nine-step-types) — [4.1 Choosing](#41-choosing-a-step-type) · [4.2 `agent`](#42-agent) · [4.3 `command`](#43-command) · [4.4 `manual`](#44-manual) · [4.5 `parallel`](#45-parallel) · [4.6 `fan_out`](#46-fan_out) · [4.7 `condition`](#47-condition) · [4.8 `loop`](#48-loop) · [4.9 `break`](#49-break) · [4.10 `include`](#410-include) · [4.11 Nesting rules](#411-where-each-type-may-appear)
 
 **Making steps talk to each other**
 
@@ -322,7 +322,7 @@ codex step. The full rules are in [§9.1](#91-resolution-order).
 
 ---
 
-## 4. The eight step types
+## 4. The nine step types
 
 ### 4.1 Choosing a step type
 
@@ -336,11 +336,13 @@ codex step. The full rules are in [§9.1](#91-resolution-order).
 | Finish the run early, successfully | [`condition`](#47-condition) |
 | Repeat a sequence until it converges, or once per item | [`loop`](#48-loop) |
 | End the enclosing loop | [`break`](#49-break) |
+| Reuse another workflow's steps here | [`include`](#410-include) |
 
 `check` is a **field** on agent and command steps, not a type of its own
 ([§7](#7-verification-with-check)). Four types — `parallel`, `fan_out`, `loop`
 and `condition`/`break` — are *structure*: they organise other steps rather than
-running anything themselves.
+running anything themselves. `include` is a fifth kind of thing again: it is
+resolved away before the task runs.
 
 ### 4.2 `agent`
 
@@ -457,7 +459,7 @@ timeline, one thing to retry.
 Sub-steps are ordinary `agent` and `command` steps with their own `check`,
 `timeout`, `max_retries`, `if:` and agent selection, resolved exactly as at the
 top level. They may not be any other type — see
-[§4.10](#410-where-each-type-may-appear).
+[§4.11](#411-where-each-type-may-appear).
 
 > **Sub-steps share one working tree.** Two of them writing the same file is a
 > bug in your workflow. vincent isolates worktrees between *tasks*, not
@@ -648,7 +650,68 @@ Like `condition`, it starts no process, so it cannot time out, be retried, or
 write a transcript. It is valid **only** inside a loop body — elsewhere there is
 no loop for it to end, and that is a validation error rather than a no-op.
 
-### 4.10 Where each type may appear
+### 4.10 `include`
+
+Runs another workflow's steps here, in **this** task and **this** worktree.
+This is how you stop copy-pasting the same three verification steps into every
+workflow you own.
+
+```yaml
+# .vincent/workflows/go-checks.yaml — the fragment
+name: go-checks
+defaults: { max_retries: 0 }
+steps:
+  - { id: lint, type: command, run: go run mage.go lint }
+  - { id: test, type: command, run: go run mage.go test }
+```
+
+```yaml
+# .vincent/workflows/feature.yaml — a workflow that uses it
+name: feature
+steps:
+  - { id: implement, type: agent, prompt: "{{ .Task.Description }}" }
+  - { id: checks, type: include, workflow: go-checks }
+  - { id: review, type: agent, prompt: "lint said: {{ .Steps.lint.Result }}" }
+```
+
+Create a task on `feature` and it runs **four** steps: `implement`, `lint`,
+`test`, `review`. The include is not one of them. It is replaced by the steps it
+names when the task is created, and after that nothing can tell the difference —
+which is why `review` reads `.Steps.lint` as if you had typed it there yourself.
+
+Three things follow from that, and they are the whole of what you need to know:
+
+**The include takes no other fields.** No `if:`, no `timeout`, no
+`max_retries` — there is no step at run time for them to apply to. To make one
+conditional, guard the fragment's own steps, or put a `condition` in front of
+it.
+
+**Step ids must not collide.** The expansion is one namespace, so `go-checks`
+cannot bring a `lint` if `feature` already has one, and you cannot include the
+same fragment twice. Name a fragment's steps as if they were going to sit
+beside someone else's, because they are.
+
+**The fragment keeps its own `defaults:`.** `go-checks` says `max_retries: 0`,
+and its steps still get 0 after being spliced into a workflow that says 3. A
+fragment behaves the way it was written to behave. Your task-level `--agent`
+still wins over both.
+
+Everything else is an error when you create the task, with a message naming
+what is wrong: a workflow that isn't there, a cycle (`a` includes `b` includes
+`a`), more than `include.max_depth` levels (5 by default), a colliding step id,
+or a fragment whose `platforms:` rules out this machine. Nothing fails halfway
+through a run because of an include.
+
+> **Careful with `condition` in a fragment.** There is no include boundary at
+> run time, so a `condition` that stops the fragment stops the *whole task* —
+> the steps after the include never run. And a fragment that needs a `break`
+> cannot be factored out at all, since `break` only validates inside a loop
+> body.
+
+Editing `go-checks.yaml` never affects a task that is already running: the task
+took its copy when it was created. New tasks pick up the new version.
+
+### 4.11 Where each type may appear
 
 | Type | Top level | In a `parallel` group | In a `loop` body | In a lane's inline steps |
 |---|:--:|:--:|:--:|:--:|
@@ -660,6 +723,12 @@ no loop for it to end, and that is a validation error rather than a no-op.
 | `condition` | ✅ | ❌ | ✅ | ✅ |
 | `loop` | ✅ | ❌ | ❌ | ✅ |
 | `break` | ❌ | ❌ | ✅ | ❌ |
+| `include` | ✅ | ✅ | ✅ | ✅ |
+
+`include` is allowed everywhere because it is gone by the time anything runs.
+What gets checked against this table is what it *expands to* — so a fragment
+containing a `loop`, included into a loop body, is refused when you create the
+task, with the message a hand-written nested loop would get.
 
 A lane's inline steps are a workflow body in their own right — they become a
 child task's flat snapshot — so the "top level" column is the one that applies
