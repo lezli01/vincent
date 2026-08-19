@@ -44,8 +44,25 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		}
 	}
 	if len(mine) > 0 {
-		// The children exist, so this admission is the join (decision 3). It
-		// runs through the ordinary attempt path, which gives it a
+		if unsettled := unsettledLanes(mine); unsettled > 0 {
+			// The lanes exist but have not all settled, so this admission is
+			// not the join: the parent was admitted without having parked.
+			// The route is a park transition that did not commit — a lost CAS
+			// or a DB error after a successful spawn — after which recovery
+			// re-queues a `running` parent whose lanes are still `queued`.
+			// Joining here would read them as "not done" and block
+			// `lane_failed` on lanes that are about to run perfectly well, so
+			// the parent parks now and the scheduler brings it back when they
+			// have settled (§7.6).
+			env.log.Info("fan-out lanes are still running; parking",
+				"lanes", len(mine), "unsettled", unsettled)
+			if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
+				env.log.Info("awaiting children", "step", env.step.ID)
+			}
+			return stepOutcome{}, true
+		}
+		// Every lane has settled, so this admission is the join (decision 3).
+		// It runs through the ordinary attempt path, which gives it a
 		// step_runs row like any other step.
 		//
 		// The budget is one attempt unless the author asked for more: the two
@@ -84,10 +101,12 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 	}
 
 	if err := r.spawnLanes(ctx, env, selected); err != nil {
-		// A partial spawn is not left behind: the lanes that were created are
-		// cancelled, so a retry starts from a clean slate rather than
-		// half a tree.
-		r.abandonPartialSpawn(ctx, env)
+		// Nothing to clean up: the lanes are created in one transaction
+		// (store.CreateTasks), so a failure leaves *no* lane behind and a
+		// retry re-spawns from a clean slate. Cancelling half a tree used to
+		// stand here, and it was the bug: a cancelled lane stays attached to
+		// this step, so the retry took the join path and blocked
+		// `lane_failed` on lanes that had never run.
 		env.log.Error("spawn lanes", "error", err)
 		r.fail(env.task, ReasonInternalError, env.log, "spawn lanes", err)
 		return stepOutcome{}, true
@@ -111,6 +130,11 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, selected []int) e
 	if err != nil {
 		return fmt.Errorf("load project: %w", err)
 	}
+	spec := worktree.BranchSpec{
+		ProjectTemplate: project.BranchTemplate,
+		ConfigTemplate:  r.deps.Config().BranchTemplate,
+	}
+	children := make([]*store.Task, 0, len(selected))
 	for _, order := range selected {
 		lane := env.step.Lanes[order]
 		// order is the lane's **declared** index, not its position among the
@@ -121,27 +145,62 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, selected []int) e
 		if err != nil {
 			return err
 		}
-		// The child's branch is resolved inside the insert's own transaction,
-		// exactly as any other task's is (task 001) — a lane is not a special
-		// case in the one place branch names are decided.
-		spec := worktree.BranchSpec{
-			ProjectTemplate: project.BranchTemplate,
-			ConfigTemplate:  r.deps.Config().BranchTemplate,
+		children = append(children, child)
+	}
+	// The children's branch names are resolved inside the insert's own
+	// transaction, exactly as any other task's are (task 001) — a lane is not
+	// a special case in the one place branch names are decided. resolveBranch
+	// is called once per row, and the row it is called for is the one whose ID
+	// the insert has just assigned: matching on that rather than counting
+	// calls keeps this correct however CreateTasks orders its inserts.
+	resolve := func(id int64) (string, error) {
+		child := laneByID(children, id)
+		if child == nil {
+			return "", fmt.Errorf("resolve lane branch: no lane holds task id %d", id)
 		}
 		bctx := worktree.NewBranchContext(child.Title, child.BaseBranch, child.Fields,
 			worktree.BranchProject{
 				Name: project.Name, Path: project.Path, DefaultBranch: project.DefaultBranch,
 			})
-		resolve := func(id int64) (string, error) {
-			name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
-			return name, err
-		}
-		if err := r.deps.Store.CreateTask(r.persistCtx(), child, resolve); err != nil {
-			return fmt.Errorf("create lane %q: %w", lane.ID, err)
-		}
-		env.log.Info("lane spawned", "lane", lane.ID, "child", child.ID, "branch", child.BranchName)
+		name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
+		return name, err
+	}
+	// One transaction for every lane (§7.6): a partial spawn is the one
+	// fan-out state with no honest recovery, so it is made unreachable rather
+	// than cleaned up. A lane that fails to insert takes its siblings with it
+	// and the step blocks with nothing spawned.
+	if err := r.deps.Store.CreateTasks(r.persistCtx(), children, resolve); err != nil {
+		return fmt.Errorf("create %d lanes of step %q: %w", len(children), env.step.ID, err)
+	}
+	for _, child := range children {
+		env.log.Info("lane spawned", "lane", child.LaneID, "child", child.ID, "branch", child.BranchName)
 	}
 	return nil
+}
+
+// laneByID is the child CreateTasks has just assigned id to. insertTaskTx
+// writes the id onto the row before it asks for a branch name, which is what
+// makes this lookup possible at all.
+func laneByID(children []*store.Task, id int64) *store.Task {
+	for _, child := range children {
+		if child.ID == id {
+			return child
+		}
+	}
+	return nil
+}
+
+// unsettledLanes counts the lanes of one fan_out step that have not reached a
+// terminal state. A non-zero count means the parent is mid-fan-out and must
+// park, not join.
+func unsettledLanes(lanes []store.Task) int {
+	n := 0
+	for i := range lanes {
+		if !taskstate.Settled(lanes[i].State) {
+			n++
+		}
+	}
+	return n
 }
 
 // selectLanes evaluates every lane's `if:` and returns the declared indices of
@@ -262,29 +321,4 @@ func mergeFields(parent, lane map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
-}
-
-// abandonPartialSpawn cancels lanes created before a spawn failed part-way.
-//
-// Without it a retry would create a second set of lanes beside the first, and
-// the join would merge a mixture of the two. Cancelling rather than deleting
-// keeps the rule that nothing destroys work: the branches and worktrees of
-// anything that started survive (decision 11).
-func (r *Runner) abandonPartialSpawn(ctx context.Context, env *stepEnv) {
-	children, err := r.deps.Store.ListChildren(ctx, env.task.ID)
-	if err != nil {
-		env.log.Error("list lanes to abandon", "error", err)
-		return
-	}
-	for _, c := range children {
-		if c.ParentStepIndex == nil || *c.ParentStepIndex != env.index {
-			continue
-		}
-		if taskstate.Settled(c.State) {
-			continue
-		}
-		if _, err := r.Cancel(r.persistCtx(), c.ID); err != nil {
-			env.log.Error("abandon partial lane", "child", c.ID, "error", err)
-		}
-	}
 }

@@ -2,6 +2,8 @@ package taskrun
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -264,5 +266,64 @@ func TestParallelSubStepTranscriptsDoNotCollide(t *testing.T) {
 			t.Errorf("sub-steps %q and %q share transcript %s", other, r.StepID, r.TranscriptPath)
 		}
 		seen[r.TranscriptPath] = r.StepID
+	}
+}
+
+// TestGroupSiblingsStayInvisibleAcrossAdmissions is TestGroupSiblingsStay-
+// Invisible's re-admission half, and it is the case §7.5's own reasoning did
+// not cover.
+//
+// §7.5 says no sibling can be read by another sub-step's guard, and grounds
+// that in *when* guards run: before anything in the group starts. That holds
+// within one admission. It does not hold across two — a group re-admitted
+// after one sub-step failed skips the ones that already succeeded, whose
+// `succeeded` rows are still on disk — so the same guard, against the same
+// context, would answer one way on the first run and another after a human
+// pressed retry.
+//
+// `peek` writes what it can see of its sibling on every attempt: the first
+// (which fails) and the retry. Both lines must be empty. `[succeeded]` on the
+// second would mean set membership had become a function of retry history.
+func TestGroupSiblingsStayInvisibleAcrossAdmissions(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	peek := script(
+		`echo "[{{ (index .Steps "first" ).Status }}]" >> seen.txt; `+
+			`if [ -f marker ]; then exit 0; fi; touch marker; exit 1`,
+		`Add-Content -Path seen.txt -Value '[{{ (index .Steps "first" ).Status }}]'; `+
+			`if (Test-Path marker) { exit 0 }; New-Item -ItemType File marker | Out-Null; exit 1`,
+	)
+	// max_parallel: 1 in declaration order, so `first` has finished and its row
+	// is on disk by the time `peek` renders — only the filter can hide it.
+	snapshot := groupSnapshot("max_parallel: 1",
+		commandStep("first", script("true", "Write-Output ok"), "max_retries: 0"),
+		commandStep("peek", peek, "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	if blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone); blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked before the retry", blocked.State)
+	}
+	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(done.WorktreePath, "seen.txt"))
+	if err != nil {
+		t.Fatalf("read seen.txt: %v", err)
+	}
+	lines := strings.Fields(string(raw))
+	if len(lines) != 2 {
+		t.Fatalf("seen.txt = %q, want one line per attempt", lines)
+	}
+	for i, line := range lines {
+		if line != "[]" {
+			t.Errorf("attempt %d saw sibling status %q, want %q — a group is a set in every admission",
+				i+1, line, "[]")
+		}
 	}
 }
