@@ -1,6 +1,6 @@
 # 019 — Including one workflow in another (`type: include`)
 
-**Status:** [~] in progress (9/10) · **Opened:** 2026-08-19
+**Status:** ✅ done (10/10) · **Opened:** 2026-08-19 · **Closed:** 2026-08-19
 
 Make a workflow reusable inside another workflow: a step that runs another
 registry workflow's steps in the caller's own task and worktree.
@@ -318,20 +318,16 @@ cannot tell what a workflow does without opening three files.
 - [x] **019.9** `scripts/m9-gate.sh`, committed executable, written to the
       POSIX ∩ pwsh intersection the CLAUDE.md gate notes describe. ✓ 2026-08-19
 
-- [!] **019.10** Wire `m9` into `ci.yml`'s `gates` job on all three platforms.
-      **Not doable from a cloud session:** its token has no `workflow` scope and
-      so cannot write `.github/workflows/` by any route (#120, #122, #125).
-      Until this lands, `m9` is not known to pass on any platform CI has not run
-      it on. Walked green on Linux at 019.9, together with m1, m2, m5, m6, m7
-      and m8 as a regression check.
+- [x] **019.10** Wire `m9` into `ci.yml`'s `gates` job on all three platforms.
+      ✓ 2026-08-19
 
-      The edit is one step appended to the `gates` job, beside M8's:
+      Not doable from the cloud session that wrote the rest: its token has no
+      `workflow` scope and so cannot write `.github/workflows/` by any route
+      (#120, #122, #125) — confirmed by attempting the push and being refused.
+      Applied by hand on the branch instead.
 
-      ```yaml
-            # M9: includes (task 019). Command steps only, with `run:` bodies
-            # in the same `exit N` / `git …` vocabulary m7 and m8 use, so the
-            # matrix proves the shell as much as the feature.
-            - name: M9 gate (includes)
-              shell: bash
-              run: ./scripts/m9-gate.sh
-      ```
+      **First three-platform run, 2026-08-19** (run 322, head `0e971e7`): m9
+      green on ubuntu-latest, macos-latest and windows-latest, alongside m1,
+      m2, m5, m6, m7 and m8. Windows was the leg worth watching — scenario 1
+      compares an exact multi-line step order and provenance chain, which is
+      where jq's CRLF bit m8 — and the `tr -d '\r'` the helpers carry held.

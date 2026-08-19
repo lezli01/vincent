@@ -80,10 +80,7 @@ VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CL
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All six of those run in `ci.yml`'s `gates` job on all three platforms. **`m9`
-does not yet**: a cloud session cannot write `.github/workflows/`, so task
-019.10 carries the one-step edit that wires it in. Until that lands, m9 is
-known to pass on Linux only. `m6`, `m7` and
+All seven run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
 `m8` spent a while unwired because a cloud session's token has no `workflow`
 scope and so cannot write `.github/workflows/` by any route — push or API
 (#120, #122, #125). A gate that has never run on a platform is not known to
