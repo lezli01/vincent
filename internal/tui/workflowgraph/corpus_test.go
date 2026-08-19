@@ -109,3 +109,18 @@ func fixtureWideLabels() *apiclient.WorkflowBody {
 	b.Name = "🚀🚀🚀 deploy 🚀🚀🚀 everything everywhere"
 	return body(a, b)
 }
+
+// 10 — includes, at the top level and inside a loop body. Each draws as one
+// collapsed node labelled with the workflow it splices in: the graph shows the
+// file as authored, and as authored an include *is* one step (task 019
+// decision 12).
+func fixtureInclude() *apiclient.WorkflowBody {
+	inc := step("verify", "include")
+	inc.Workflow = "go-checks"
+	nested := step("recheck", "include")
+	nested.Workflow = "go-checks"
+	loop := step("repeat", "loop")
+	loop.Count = intp(2)
+	loop.Steps = []apiclient.WorkflowStepDef{step("attempt", "agent"), nested}
+	return body(step("plan", "agent"), inc, loop, step("ship", "command"))
+}

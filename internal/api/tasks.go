@@ -120,6 +120,10 @@ type snapshotStepResponse struct {
 	Prompt       string `json:"prompt,omitempty"`
 	Run          string `json:"run,omitempty"`
 	Instructions string `json:"instructions,omitempty"`
+	// ResolvedFrom is the chain of workflows this step was spliced through
+	// (§7.9), outermost first. Absent for a step the task's own workflow
+	// wrote.
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
 }
 
 // workflowSteps renders the parsed snapshot for the detail response. Nil for
@@ -138,6 +142,7 @@ func workflowSteps(summary snapshotSummary) []snapshotStepResponse {
 			Prompt:       s.prompt,
 			Run:          s.run,
 			Instructions: s.instructions,
+			ResolvedFrom: s.resolvedFrom,
 		})
 	}
 	return out

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/store"
@@ -33,8 +34,10 @@ steps:
 	if len(got) != len(want) {
 		t.Fatalf("steps = %d, want %d", len(got), len(want))
 	}
+	// reflect.DeepEqual rather than ==: stepDefinition carries the §7.9
+	// provenance chain, and a struct holding a slice is not comparable.
 	for i := range want {
-		if got[i] != want[i] {
+		if !reflect.DeepEqual(got[i], want[i]) {
 			t.Errorf("step %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
