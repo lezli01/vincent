@@ -101,6 +101,7 @@ agents:
 		Parallel: Parallel{MaxParallel: 4},
 		FanOut:   FanOut{MaxDepth: 3, MaxTasks: 64},
 		Loop:     Loop{MaxIterations: 10},
+		Include:  Include{MaxDepth: 5},
 		TUI:      TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
