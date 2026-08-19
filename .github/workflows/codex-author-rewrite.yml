@@ -1,4 +1,3 @@
-name: Temporary master author rewrite
 
 on:
   push:
@@ -10,16 +9,18 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   rewrite:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       TARGET_BRANCH: master
+      READY_BRANCH: codex-author-rewrite-ready-20260819
       AUTHOR_NAME: lezli01
       AUTHOR_EMAIL: lezli01@gmail.com
-      GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v7
@@ -29,186 +30,18 @@ jobs:
           persist-credentials: true
           token: ${{ github.token }}
 
-      - name: Rewrite authors and update master
+      - name: Rewrite authors and stage the new history
         id: rewrite
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "RELEASE_PLEASE_TOKEN is unavailable" >&2
-            exit 1
-          fi
-
-          repository_api="repos/${GITHUB_REPOSITORY}"
           target_ref="refs/heads/${TARGET_BRANCH}"
+          ready_ref="refs/heads/${READY_BRANCH}"
           original_sha="$(git rev-parse "origin/${TARGET_BRANCH}")"
           original_tree="$(git rev-parse "${original_sha}^{tree}")"
           original_count="$(git rev-list --count "${original_sha}")"
           original_merges="$(git rev-list --min-parents=2 --count "${original_sha}")"
-          protection_json="${RUNNER_TEMP}/master-protection.json"
-          protection_restore_json="${RUNNER_TEMP}/master-protection-restore.json"
-          disabled_rulesets="${RUNNER_TEMP}/disabled-rulesets"
-          mkdir -p "${disabled_rulesets}"
-
-          classic_disabled=false
-          master_changed=false
-          remote_validated=false
-
-          pattern_matches() {
-            local pattern="$1"
-            case "${pattern}" in
-              '~ALL'|'~DEFAULT_BRANCH') return 0 ;;
-            esac
-            [[ "${target_ref}" == ${pattern} || "${TARGET_BRANCH}" == ${pattern} ]]
-          }
-
-          ruleset_applies() {
-            local file="$1"
-            local included=false
-            local excluded=false
-            local pattern
-
-            if [ "$(jq -r '.target // empty' "${file}")" != "branch" ] \
-              || [ "$(jq -r '.enforcement // empty' "${file}")" = "disabled" ]; then
-              return 1
-            fi
-
-            mapfile -t include_patterns < <(jq -r '.conditions.ref_name.include[]?' "${file}")
-            if [ "${#include_patterns[@]}" -eq 0 ]; then
-              included=true
-            else
-              for pattern in "${include_patterns[@]}"; do
-                if pattern_matches "${pattern}"; then
-                  included=true
-                  break
-                fi
-              done
-            fi
-
-            mapfile -t exclude_patterns < <(jq -r '.conditions.ref_name.exclude[]?' "${file}")
-            for pattern in "${exclude_patterns[@]}"; do
-              if pattern_matches "${pattern}"; then
-                excluded=true
-                break
-              fi
-            done
-
-            [ "${included}" = true ] && [ "${excluded}" = false ]
-          }
-
-          restore_rulesets() {
-            local failed=0
-            local file id payload
-            shopt -s nullglob
-            for file in "${disabled_rulesets}"/*.json; do
-              id="$(basename "${file}" .json)"
-              payload="${file%.json}-restore.json"
-              jq '{
-                    name,
-                    target,
-                    enforcement,
-                    bypass_actors: (.bypass_actors // []),
-                    conditions: (.conditions // {}),
-                    rules: (.rules // [])
-                  }' "${file}" > "${payload}"
-              if ! gh api --method PUT "${repository_api}/rulesets/${id}" --input "${payload}" >/dev/null; then
-                echo "failed to restore ruleset ${id}" >&2
-                failed=1
-              else
-                rm -f "${file}" "${payload}"
-              fi
-            done
-            shopt -u nullglob
-            return "${failed}"
-          }
-
-          restore_classic_protection() {
-            if [ "${classic_disabled}" != true ]; then
-              return 0
-            fi
-
-            jq '{
-                  required_status_checks:
-                    (if .required_status_checks == null then null else {
-                      strict: (.required_status_checks.strict // false),
-                      checks: ((.required_status_checks.checks // []) | map({context, app_id}))
-                    } end),
-                  enforce_admins: (.enforce_admins.enabled // false),
-                  required_pull_request_reviews:
-                    (if .required_pull_request_reviews == null then null else {
-                      dismissal_restrictions: {
-                        users: [(.required_pull_request_reviews.dismissal_restrictions.users // [])[] | .login],
-                        teams: [(.required_pull_request_reviews.dismissal_restrictions.teams // [])[] | .slug],
-                        apps: [(.required_pull_request_reviews.dismissal_restrictions.apps // [])[] | .slug]
-                      },
-                      dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
-                      require_code_owner_reviews: (.required_pull_request_reviews.require_code_owner_reviews // false),
-                      required_approving_review_count: (.required_pull_request_reviews.required_approving_review_count // 0),
-                      require_last_push_approval: (.required_pull_request_reviews.require_last_push_approval // false),
-                      bypass_pull_request_allowances: {
-                        users: [(.required_pull_request_reviews.bypass_pull_request_allowances.users // [])[] | .login],
-                        teams: [(.required_pull_request_reviews.bypass_pull_request_allowances.teams // [])[] | .slug],
-                        apps: [(.required_pull_request_reviews.bypass_pull_request_allowances.apps // [])[] | .slug]
-                      }
-                    } end),
-                  restrictions:
-                    (if .restrictions == null then null else {
-                      users: [(.restrictions.users // [])[] | .login],
-                      teams: [(.restrictions.teams // [])[] | .slug],
-                      apps: [(.restrictions.apps // [])[] | .slug]
-                    } end),
-                  required_linear_history: (.required_linear_history.enabled // false),
-                  allow_force_pushes: (.allow_force_pushes.enabled // false),
-                  allow_deletions: (.allow_deletions.enabled // false),
-                  block_creations: (.block_creations.enabled // false),
-                  required_conversation_resolution: (.required_conversation_resolution.enabled // false),
-                  lock_branch: (.lock_branch.enabled // false),
-                  allow_fork_syncing: (.allow_fork_syncing.enabled // false)
-                }' "${protection_json}" > "${protection_restore_json}"
-
-            gh api --method PUT \
-              "${repository_api}/branches/${TARGET_BRANCH}/protection" \
-              --input "${protection_restore_json}" >/dev/null
-
-            if jq -e '.required_signatures.enabled == true' "${protection_json}" >/dev/null 2>&1; then
-              gh api --method POST \
-                "${repository_api}/branches/${TARGET_BRANCH}/protection/required_signatures" >/dev/null
-            fi
-
-            classic_disabled=false
-          }
-
-          restore_all() {
-            local attempt
-            for attempt in 1 2 3; do
-              if restore_rulesets; then
-                break
-              fi
-              sleep 2
-            done
-            restore_rulesets
-
-            for attempt in 1 2 3; do
-              if restore_classic_protection; then
-                break
-              fi
-              sleep 2
-            done
-            restore_classic_protection
-          }
-
-          emergency_cleanup() {
-            local exit_code=$?
-            set +e
-            if [ "${master_changed}" = true ] && [ "${remote_validated}" != true ]; then
-              echo "remote validation failed; restoring original master ${original_sha}" >&2
-              git push --force origin "${original_sha}:${target_ref}"
-            fi
-            restore_all
-            exit "${exit_code}"
-          }
-          trap emergency_cleanup EXIT
 
           git branch --force rewrite-author "${original_sha}"
           FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force \
@@ -232,45 +65,10 @@ jobs:
           test "${mismatched_authors}" -eq 0
           git diff --quiet "${original_sha}" "${rewritten_sha}"
 
-          if gh api "${repository_api}/branches/${TARGET_BRANCH}/protection" > "${protection_json}" 2>"${RUNNER_TEMP}/protection-error"; then
-            gh api --method DELETE \
-              "${repository_api}/branches/${TARGET_BRANCH}/protection" >/dev/null
-            classic_disabled=true
-          elif ! grep -q 'HTTP 404' "${RUNNER_TEMP}/protection-error"; then
-            cat "${RUNNER_TEMP}/protection-error" >&2
-            exit 1
-          fi
-
-          gh api --paginate "${repository_api}/rulesets?includes_parents=true&per_page=100" \
-            --slurp | jq '[.[][]]' > "${RUNNER_TEMP}/rulesets.json"
-
-          while IFS= read -r ruleset_id; do
-            ruleset_file="${disabled_rulesets}/${ruleset_id}.json"
-            gh api "${repository_api}/rulesets/${ruleset_id}" > "${ruleset_file}"
-
-            if ruleset_applies "${ruleset_file}"; then
-              jq '{
-                    name,
-                    target,
-                    enforcement: "disabled",
-                    bypass_actors: (.bypass_actors // []),
-                    conditions: (.conditions // {}),
-                    rules: (.rules // [])
-                  }' "${ruleset_file}" > "${ruleset_file%.json}-disabled.json"
-              gh api --method PUT \
-                "${repository_api}/rulesets/${ruleset_id}" \
-                --input "${ruleset_file%.json}-disabled.json" >/dev/null
-            else
-              rm -f "${ruleset_file}"
-            fi
-          done < <(jq -r '.[] | select(.source_type == "Repository") | .id' "${RUNNER_TEMP}/rulesets.json")
-
-          git push --force origin "${rewritten_sha}:${target_ref}"
-          master_changed=true
-
+          git push --force origin "${rewritten_sha}:${ready_ref}"
           git fetch --force origin \
-            "${target_ref}:refs/remotes/origin/${TARGET_BRANCH}"
-          remote_sha="$(git rev-parse "refs/remotes/origin/${TARGET_BRANCH}")"
+            "${ready_ref}:refs/remotes/origin/${READY_BRANCH}"
+          remote_sha="$(git rev-parse "refs/remotes/origin/${READY_BRANCH}")"
           remote_mismatches="$(git log "${remote_sha}" --format='%an%x09%ae' \
             | awk -F '\t' '$1 != "lezli01" || $2 != "lezli01@gmail.com" { count++ } END { print count + 0 }')"
 
@@ -278,34 +76,45 @@ jobs:
           test "$(git rev-list --count "${remote_sha}")" -eq "${original_count}"
           test "$(git rev-parse "${remote_sha}^{tree}")" = "${original_tree}"
           test "${remote_mismatches}" -eq 0
-          remote_validated=true
-
-          restore_all
-          trap - EXIT
-
-          if [ -n "${PR_NUMBER:-}" ]; then
-            gh pr close "${PR_NUMBER}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --comment "One-time master author rewrite completed; closing this temporary execution PR." \
-              || true
-          fi
-
-          bootstrap_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          gh api --method DELETE \
-            "${repository_api}/git/refs/heads/${bootstrap_branch}" \
-            || true
 
           {
-            echo "### Master author rewrite complete"
+            echo "### Rewritten history staged"
             echo "- Old SHA: \`${original_sha}\`"
             echo "- New SHA: \`${rewritten_sha}\`"
             echo "- Commits: ${original_count}"
             echo "- Merge commits: ${original_merges}"
             echo "- Mismatched authors: ${remote_mismatches}"
             echo "- Tip tree preserved: \`${original_tree}\`"
-            echo "- Classic branch protection restored: yes"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           echo "old_sha=${original_sha}" >> "${GITHUB_OUTPUT}"
           echo "new_sha=${rewritten_sha}" >> "${GITHUB_OUTPUT}"
           echo "commit_count=${original_count}" >> "${GITHUB_OUTPUT}"
+
+          for attempt in $(seq 1 72); do
+            current_master="$(git ls-remote origin "${target_ref}" | awk '{print $1}')"
+            if [ "${current_master}" = "${rewritten_sha}" ]; then
+              if [ -n "${PR_NUMBER:-}" ]; then
+                gh pr close "${PR_NUMBER}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --comment "One-time master author rewrite completed; closing this temporary execution PR." \
+                  || true
+              fi
+              bootstrap_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+              git push origin --delete "${READY_BRANCH}" || true
+              git push origin --delete "${bootstrap_branch}" || true
+              exit 0
+            fi
+            sleep 5
+          done
+
+          if [ -n "${PR_NUMBER:-}" ]; then
+            gh pr close "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --comment "The rewritten history is staged on ${READY_BRANCH}, but protected master was not updated automatically." \
+              || true
+          fi
+          bootstrap_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin --delete "${bootstrap_branch}" || true
+          echo "rewritten history remains staged at ${READY_BRANCH}" >&2
+          exit 1
