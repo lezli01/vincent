@@ -201,8 +201,22 @@ func (e *stepEnv) precedes(run *store.StepRun) bool {
 	return ok && pos < e.loop.pos
 }
 
-// blindTo reports whether run is a `parallel` sibling this step may not see
-// at all, whatever state it ended in (§7.5).
+// blindTo reports whether run is a row this step's context may not see. Two
+// unrelated rules share the gate because both are "this row is not a result of
+// a step that precedes me".
+//
+// The second is the simpler one: a `loop` step's own row is never a `.Steps`
+// entry. A loop contributes results under its *body* steps' ids, and the one
+// row it writes under its own — the task 018 D6 row saying an empty `for_each`
+// ran nothing — is a record for a detail view, not a result. Letting it
+// through would make the loop's id a `.Steps` key that is present exactly when
+// the loop did nothing and absent when it did something, which is a worse
+// signal than no signal. A `fan_out`'s row is a real result ("merged 3 lanes")
+// and stays visible; only `loop` is filtered, and every row a loop step writes
+// under its own id carries that type.
+//
+// The first rule: run is a `parallel` sibling this step may not see at all,
+// whatever state it ended in (§7.5).
 //
 // A group is a *set*: §7.5 promises that no sibling can be read by another's
 // guard, and gives as its reason that guards are evaluated before anything in
@@ -220,6 +234,9 @@ func (e *stepEnv) precedes(run *store.StepRun) bool {
 // covers every state, and it says nothing about a step's own rows — a
 // sub-step being retried still reads its own history through `.LastFailure`.
 func (e *stepEnv) blindTo(run *store.StepRun) bool {
+	if run.StepType == workflow.StepLoop {
+		return true
+	}
 	if !e.inGroup || e.loop != nil {
 		return false
 	}

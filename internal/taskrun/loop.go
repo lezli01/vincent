@@ -103,7 +103,18 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 		// An empty `for_each` list. The loop had nothing to iterate, which is
 		// a correct answer rather than a failure — the same way a group whose
 		// every sub-step was guarded off succeeds having run nothing (§7.5).
+		//
+		// It records a row saying so (task 018 D6). "The loop has no row of
+		// its own" is about its *iterations*: those are the body's rows, and
+		// here there are none, so without this the step index a task passed
+		// through would have no row at all — breaking the phase 2 invariant
+		// that every one has at least one, and leaving a detail view unable to
+		// tell "ran nothing" from "never reached". A `fan_out` that selects no
+		// lane has recorded exactly this row since task 015; this is the same
+		// degenerate case in the other structure step.
 		env.log.Info("loop ran nothing: the for_each list is empty")
+		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
+			"the for_each list is empty: the loop ran nothing")
 		return stepOutcome{state: store.StepSucceeded}
 	}
 

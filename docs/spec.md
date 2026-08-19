@@ -794,7 +794,17 @@ once, a loop is a **sequence** run more than once.
   workflow uses to stop and succeed. A `for_each` list longer than
   `max_iterations` blocks before the first iteration, naming the count. An
   empty list, or a whole loop guarded off by its `if:`, succeeds having run
-  nothing.
+  nothing. *Amended 2026-08-19 (task 018):* an empty list records **one** row
+  under the loop's own id — `succeeded`, `iteration: 0`, with a summary saying
+  the list was empty. "The loop has no row of its own" is about its
+  *iterations*: those are the body's rows, and with none of those the step index
+  a task passed through would carry no row at all, breaking the phase 2
+  invariant that every one has at least one and leaving a detail view unable to
+  tell "ran nothing" from "never reached". A `fan_out` that selects no lane has
+  recorded exactly this row since task 015. The row is invisible to the loop's
+  own derivation, which filters on `iteration > 0`, and it is **not** a
+  `.Steps` entry (§8.4): a loop's id is never one, or it would be a key present
+  exactly when the loop did nothing and absent when it did something.
 - **Failure.** A body step that exhausts its retry budget fails the iteration
   and blocks the task with that step's own reason. `allow_failure:` (§7.2) is
   how a probe's red result becomes data a `break` can read. Retries are for a

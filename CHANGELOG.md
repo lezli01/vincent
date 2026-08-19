@@ -161,6 +161,15 @@ Please pull request.
   offers is stable between admissions, so this bounds the derivation rather than
   a reachable failure.
 
+- **A `loop` with an empty `for_each` list left its step index with no row.**
+  The two structure steps each have a case where they are reached and run
+  nothing — every `fan_out` lane guarded off, an empty `for_each` list — and only
+  the fan-out recorded a row saying so, leaving a detail view unable to tell
+  "ran nothing" from "never reached" for the loop. The empty case now records
+  one row under the loop's own id. That row is deliberately not a `.Steps`
+  entry: a loop's id is never one, or it would be a key present exactly when the
+  loop did nothing and absent when it did something.
+
 - **A leaked context in `parallel` and `loop` steps.** Both created a
   cancellable context and then overwrote it — `cancel` included — when the step
   carried a `timeout:`, leaving the first context attached to the parent for the

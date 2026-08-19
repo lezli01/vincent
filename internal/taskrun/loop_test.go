@@ -219,24 +219,79 @@ func TestLoopForEachFromStepOutput(t *testing.T) {
 // TestLoopForEachEmptyListSucceeds: a loop with nothing to iterate decided
 // correctly, so it succeeds having run nothing — the same posture §7.5 takes
 // for a group whose every sub-step was guarded off.
+//
+// It records one row saying so, and no body rows. This test used to assert the
+// opposite — that the step index stayed empty — which left the one step index a
+// task can pass through carrying no row at all: the phase 2 invariant says
+// every one has at least one, and a detail view has no way to tell "ran
+// nothing" from "never reached". A `fan_out` selecting no lane had recorded
+// exactly this row since task 015 (task 018 D6).
 func TestLoopForEachEmptyListSucceeds(t *testing.T) {
 	h := newEngineHarness(t)
 	h.start(t)
 	snapshot := "name: each\nsteps:\n" +
 		commandStep("discover", script("true", "exit 0")) +
 		"  - id: visit\n    type: loop\n    for_each: '{{ .Steps.discover.Result }}'\n    steps:\n" +
-		bodyIndent(commandStep("touch", appendCmd("items.txt", "x")))
+		bodyIndent(commandStep("touch", appendCmd("items.txt", "x"))) +
+		// The loop's own row must not become a `.Steps` entry: its id would
+		// then be a key that is present exactly when the loop did nothing.
+		commandStep("peek", appendCmd("seen.txt", `[{{ (index .Steps "visit").Status }}]`))
 	task := h.createTask(t, snapshot)
 
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {
 		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
 	}
+	var atLoop []store.StepRun
 	for _, r := range h.stepRuns(t, task.ID) {
 		if r.StepIndex == 1 {
-			t.Errorf("the loop wrote a row (%s) for an empty list; it must run nothing", r.StepID)
+			atLoop = append(atLoop, r)
 		}
 	}
+	if len(atLoop) != 1 {
+		t.Fatalf("rows at the loop = %d, want exactly 1 saying it ran nothing", len(atLoop))
+	}
+	row := atLoop[0]
+	if row.StepID != "visit" {
+		t.Errorf("row step_id = %q, want the loop's own %q — a body step must not have run",
+			row.StepID, "visit")
+	}
+	if row.State != store.StepSucceeded {
+		t.Errorf("row state = %s, want %s", row.State, store.StepSucceeded)
+	}
+	if row.Iteration != 0 {
+		t.Errorf("row iteration = %d, want 0 — there was no iteration to belong to", row.Iteration)
+	}
+	if row.ResultSummary == "" {
+		t.Error("row carries no summary; the detail view has nothing to show for a step that did nothing")
+	}
+	// No body rows, so nothing feeds the loop's own derivation on a
+	// re-admission: the iteration-0 row is invisible to both latestStatesIn
+	// (which filters on the iteration it is asking about) and recordedItems
+	// (which requires iteration > 0).
+	if got := countLoopBodyRows(atLoop); got != 0 {
+		t.Errorf("body rows = %d, want 0", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(done.WorktreePath, "seen.txt"))
+	if err != nil {
+		t.Fatalf("read seen.txt: %v", err)
+	}
+	if got := strings.TrimSpace(string(raw)); got != "[]" {
+		t.Errorf("a later step read the loop id as %q, want %q — a loop's own row is not a result",
+			got, "[]")
+	}
+}
+
+// countLoopBodyRows is how many of a loop step index's rows belong to an
+// iteration rather than to the loop step itself.
+func countLoopBodyRows(runs []store.StepRun) int {
+	n := 0
+	for _, r := range runs {
+		if r.Iteration > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // TestLoopForEachOverCeilingBlocks pins decision 5: reaching the cap is not a
