@@ -119,6 +119,82 @@ func loadedForm(t *testing.T) *newTask {
 	return n
 }
 
+func TestNewTaskGuidedLayoutShowsOnlyTheActiveStage(t *testing.T) {
+	n := loadedForm(t)
+	n.projectID = 1
+	n.titleIn.SetValue("Improve takeover UX")
+	moveTo(n, ntTitle)
+	out := n.render(140, 40)
+	for _, want := range []string{"Plan", "3 of 6 · Task details", "title", "description", "fields"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guided render is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "base branch") {
+		t.Errorf("guided task-details stage also rendered the Git fields:\n%s", out)
+	}
+}
+
+func TestNewTaskCompactFallbackKeepsTheWholeForm(t *testing.T) {
+	n := loadedForm(t)
+	out := n.render(120, 40)
+	for _, want := range []string{"project", "description", "base branch", "agent", "create task"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("compact render is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "1 of 6") {
+		t.Errorf("compact render contains guided-stage chrome:\n%s", out)
+	}
+}
+
+func TestNewTaskReviewSummarizesTheRequest(t *testing.T) {
+	n := loadedForm(t)
+	n.projectID = 1
+	n.workflow = "two-step"
+	n.titleIn.SetValue("Improve takeover UX")
+	n.desc.SetValue("Give each decision room to breathe")
+	n.fields = []kv{{key: "ticket", value: "UX-20"}}
+	n.branch.SetValue("main")
+	n.agent = "claude"
+	moveTo(n, ntCreate)
+	out := n.render(140, 40)
+	for _, want := range []string{
+		"6 of 6 · Review", "vincent", "two-step", "Improve takeover UX",
+		"ticket=UX-20", "base branch", "claude", "create task",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("review is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestNewTaskResizeDoesNotResetTheDraftStage(t *testing.T) {
+	n := loadedForm(t)
+	n.titleIn.SetValue("kept across resize")
+	moveTo(n, ntDescription)
+	n.render(140, 40)
+	n.render(120, 40)
+	if n.cursor != ntDescription || n.titleText() != "kept across resize" {
+		t.Errorf("resize changed the draft: cursor=%v title=%q", n.cursor, n.titleText())
+	}
+}
+
+func TestNewTaskResizeKeepsAnOpenPicker(t *testing.T) {
+	n := loadedForm(t)
+	moveTo(n, ntWorkflow)
+	press(n, "enter")
+	pick := n.pick
+	if n.mode != ntPicking || pick == nil {
+		t.Fatal("workflow picker did not open")
+	}
+	n.render(140, 40)
+	n.render(120, 40)
+	if n.mode != ntPicking || n.pick != pick || n.cursor != ntWorkflow {
+		t.Errorf("resize changed the picker: mode=%v cursor=%v pick=%p", n.mode, n.cursor, n.pick)
+	}
+}
+
 func TestNewTaskPrefillsFromTheHintedProject(t *testing.T) {
 	n := newNewTask()
 	n.hintProject = 2

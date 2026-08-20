@@ -2778,7 +2778,15 @@ stream for the live tail.
    catalog makes a viewport with a scroll indicator and incremental filtering
    mandatory; the flagging of unavailable agents grows a second reason —
    *installed but not authenticated* (`logged_in: false`, §9.5).
-4. **Projects.** List/add/edit/remove; per-project cap and defaults.
+   **Guided wide layout (task 020, added 2026-08-20):** the same row order is
+   grouped into six visual stages — Project, Workflow, Task details, Git &
+   priority, Execution, Review. The stage is derived from the field cursor,
+   not independently navigated; Review summarizes the whole request and the
+   existing `ctrl+s` shortcut still submits from anywhere.
+4. **Projects.** List/add/edit/remove; per-project cap and defaults. On a wide
+   terminal the project list remains as a rail while the selected repository's
+   configuration, execution defaults, current workload, or add/edit form uses
+   the focused surface (task 020, added 2026-08-20).
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
    registry, it does not author it: creating a workflow file from the TUI is out of
@@ -2788,6 +2796,9 @@ stream for the live tail.
    the cursor as a graph — sequence, `parallel` groups, `fan_out` lanes and their
    merge, guards, `condition`, `loop` and `break` — in a sub-layer over the list.
    See *Workflow graph* below.
+   On a wide terminal the registry remains as a rail while the selected entry's
+   provenance, availability and resolved steps use the focused surface; an open
+   graph replaces that surface, not the rail (task 020, added 2026-08-20).
 6. **Daemon.** Version, uptime, config in effect, adapters detected, recent daemon
    log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
    beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
@@ -2806,6 +2817,14 @@ stream for the live tail.
 The list above is a contract about **capabilities**, not about screens. Views 1
 and 2 — the daily loop — are one persistent screen of three panels; views 3–6 are
 full-screen takeovers reached from the command palette.
+
+**Guided takeovers (task 020, added 2026-08-20).** At a terminal size of at
+least **128 columns by 24 rows**, New task, Projects and Workflows use a
+persistent navigation rail beside one focused work surface. Below either
+dimension they use their compact single-column form, table or registry. A
+resize changes composition only: it may not reset the field/resource cursor,
+filter, open picker or form, expansion, or graph. The split introduces no new
+daemon state and no capability that exists only at one size.
 
 ```
 ┌─ Tasks ──────────────────────────────────────────────┐

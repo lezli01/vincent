@@ -55,6 +55,12 @@ The other four views — new task, projects, workflows, daemon — are full-scre
 takeovers. `esc` closes one layer at a time (popup → screen → selection →
 filter) and **never quits**.
 
+At **128×24 and above**, New task, Projects, and Workflows use that room as a
+guided two-pane surface: progress or resources stay in a narrow rail, and the
+current decision gets the rest of the screen. Below that size they fall back to
+the compact form, table, or registry. Resizing does not move the cursor or close
+the picker, editor, project form, workflow expansion, or graph you were using.
+
 ## The board
 
 One row per task: id, project, title, state, current step `k/n` with its name,
@@ -314,6 +320,13 @@ Opens for the project you are looking at. A guided form: project → workflow
 → title → description → custom fields → base branch → priority → optional
 agent/model/effort override.
 
+On a wide terminal those fields are grouped into six stages in the left rail:
+**Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
+and **Review**. The main pane shows only the fields in the current stage, while
+Review gathers the complete request beside the Create action. The rail follows
+the ordinary field cursor — there is no separate Next button or second set of
+navigation keys.
+
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker |
@@ -330,6 +343,12 @@ form tells you what will actually run rather than what you typed.
 
 ### Projects
 
+On a wide terminal the repository list stays in the left rail. The selected
+project's path, branch convention, workflow and concurrency defaults, and
+current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
+in that same pane. This keeps the project you were looking at visible while you
+change its configuration.
+
 | Key | Does |
 |---|---|
 | `a` | Register a repository |
@@ -341,6 +360,12 @@ form tells you what will actually run rather than what you typed.
 ### Workflows
 
 The merged registry with scope badges and validation status.
+
+On a wide terminal the merged registry stays in the left rail. The focused
+pane names the selected entry's scope and source, availability and findings,
+then reveals its resolved step list with `enter`. `g` uses that focused pane
+for the graph while keeping the registry visible, so `esc` returns to the same
+entry with its surrounding scopes still in view.
 
 | Key | Does |
 |---|---|

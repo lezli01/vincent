@@ -412,6 +412,73 @@ func TestProjectsSurviveAColumnBreakpoint(t *testing.T) {
 	}
 }
 
+func TestProjectsGuidedLayoutPairsTheRailWithAWorkload(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p,
+		[]apiclient.Project{testProject(1, "vincent"), testProject(2, "docs")},
+		[]apiclient.Task{{ID: 20, ProjectID: 1, State: stateRunning, Title: "Improve takeover UX"}},
+	)
+	out := p.render(160, 32)
+	for _, want := range []string{
+		"Projects · 2", "Overview · vincent", "Repository", "Execution defaults",
+		"Current workload", "Improve takeover UX",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guided projects render is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestProjectsCompactFallbackKeepsTheTable(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
+	out := p.render(120, 24)
+	if !strings.Contains(out, "running / cap") {
+		t.Errorf("compact projects render lost its table:\n%s", out)
+	}
+	if strings.Contains(out, "Current workload") {
+		t.Errorf("compact projects render contains the guided overview:\n%s", out)
+	}
+}
+
+func TestProjectFormUsesTheGuidedWorkSurface(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
+	p.render(160, 32)
+	pressView(p, "a")
+	out := p.render(160, 32)
+	for _, want := range []string{"Projects · 1", "vincent", "Add project", "repository", "ctrl+s save"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guided project form is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestProjectFormAndFilterSurviveTheGuidedBreakpoint(t *testing.T) {
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
+	p.render(160, 32)
+	pressView(p, "a")
+	form := p.form
+	form.move(3)
+	form.activate()
+	pick := form.pick
+	p.render(160, 32)
+	p.render(120, 24)
+	if p.form != form || form.pick != pick || pick == nil {
+		t.Error("resize closed or replaced the project form's workflow picker")
+	}
+
+	p.form = nil
+	pressView(p, "/")
+	p.update(tea.KeyPressMsg{Code: 'v', Text: "v"})
+	p.render(160, 32)
+	p.render(120, 24)
+	if !p.filtering || p.filter.Value() != "v" {
+		t.Errorf("resize changed the filter: filtering=%v value=%q", p.filtering, p.filter.Value())
+	}
+}
+
 func TestProjectsHintTheProjectUnderTheCursor(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(7, "vincent")}, nil)

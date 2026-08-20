@@ -22,9 +22,9 @@ const loadTimeout = 10 * time.Second
 
 // ntRow identifies one line of the form. The order is §15's: project →
 // workflow → title → description → fields → base branch → branch name →
-// priority → agent/model/effort → create. It is one screen rather than nine, because
-// the arrows in §15 are field order, not screen count, and a form gets
-// back-navigation and review-before-submit for free.
+// priority → agent/model/effort → create. Wide terminals group that order into
+// six visual stages, but this remains the one cursor: back-navigation and
+// review-before-submit do not need a second wizard state machine (task 020).
 type ntRow int
 
 const (
