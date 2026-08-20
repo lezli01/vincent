@@ -18,9 +18,157 @@ func (w *workflowsView) render(width, height int) string {
 	}
 	if w.graph != nil {
 		w.sizeGraph()
+		if guidedTakeover(w.width, w.height) {
+			return w.renderGuidedGraph()
+		}
 		return w.renderGraph(width, height)
 	}
+	if guidedTakeover(w.width, w.height) {
+		return w.renderGuidedList()
+	}
 	return w.renderList(width, height)
+}
+
+func (w *workflowsView) renderGuidedList() string {
+	lines := w.lines()
+	rail := w.renderRegistryRail(lines, w.height-2)
+	title := "Overview"
+	var main string
+	if line, ok := w.currentLine(); ok {
+		title = "Overview · " + line.entry.Name
+		main = w.renderWorkflowOverview(line, w.height-2)
+	} else if body, ok := w.emptyBody(lines); ok {
+		main = strings.Join(append(w.statusLines(), body), "\n")
+	}
+	return guidedSurface(w.width, w.height,
+		"Registry", rail, title, main)
+}
+
+func (w *workflowsView) renderGuidedGraph() string {
+	_, mainWidth := guidedPaneWidths(w.width)
+	rail := w.renderRegistryRail(w.lines(), w.height-2)
+	main := w.renderGraph(mainWidth-2, w.height-2)
+	return guidedSurface(w.width, w.height,
+		"Registry", rail, "Graph · "+w.graph.key.name, main)
+}
+
+func (w *workflowsView) renderRegistryRail(lines []wfLine, height int) string {
+	rows := append([]string{}, w.statusLines()...)
+	if len(rows) > 0 {
+		rows = append(rows, "")
+	}
+	if len(lines) == 0 {
+		if body, ok := w.emptyBody(lines); ok {
+			rows = append(rows, body)
+		}
+		return strings.Join(window(rows, 0, height), "\n")
+	}
+	from, to := 0, 1
+	for i, line := range lines {
+		start := len(rows)
+		if line.entry == nil {
+			rows = append(rows, w.renderHeader(line))
+			continue
+		}
+		marker := "   "
+		name := line.entry.Name
+		if i == w.cursor {
+			marker = styleFocus.Render(" ▸ ")
+			name = styleTitle.Render(name)
+			from = start
+		}
+		badge := workflowRailBadge(*line.entry)
+		rows = append(rows, marker+name+badge)
+		if line.shadows != "" {
+			rows = append(rows, styleWarn.Render("      shadows global"))
+		}
+		if i == w.cursor {
+			to = len(rows)
+		}
+	}
+	return strings.Join(windowRange(rows, from, to, height), "\n")
+}
+
+func workflowRailBadge(entry apiclient.WorkflowEntry) string {
+	switch {
+	case !entry.Valid():
+		return "  " + styleBad.Render("✗ invalid")
+	case !entry.RunsHere():
+		return "  " + styleWarn.Render("! platform")
+	case len(entry.Warnings) > 0:
+		return "  " + styleWarn.Render("⚠")
+	case entry.File == "":
+		return "  " + styleDim.Render("built-in")
+	default:
+		return ""
+	}
+}
+
+func (w *workflowsView) renderWorkflowOverview(line wfLine, height int) string {
+	e := line.entry
+	rows := append([]string{}, w.statusLines()...)
+	rows = append(rows, "  "+styleTitle.Render(e.Name))
+	if e.Description != "" {
+		rows = append(rows, "  "+styleDim.Render(e.Description))
+	}
+	rows = append(rows, "",
+		section("Registry"),
+		workflowFact("scope", e.Scope),
+		workflowFact("source", firstNonEmpty(e.File, "built-in")),
+	)
+	if line.block != nil {
+		rows = append(rows, workflowFact("registry", line.block.name))
+	}
+	if line.shadows != "" {
+		rows = append(rows, workflowFact("shadowing", styleWarn.Render("global "+line.shadows)))
+	}
+	rows = append(rows, "", section("Availability"))
+	rows = append(rows, workflowAvailability(e)...)
+	rows = append(rows, "", section("Steps"))
+	if w.expanded {
+		steps := w.renderStepRows(line, "  ")
+		available := max(height-len(rows)-1, 1)
+		shown := min(len(steps), available)
+		if shown < len(steps) {
+			shown = max(shown-1, 0)
+		}
+		rows = append(rows, steps[:shown]...)
+		if shown < len(steps) {
+			rows = append(rows, styleDim.Render(fmt.Sprintf(
+				"  … %d more top-level steps", len(steps)-shown)))
+		}
+	} else {
+		rows = append(rows, styleDim.Render(fmt.Sprintf(
+			"  %d top-level steps · enter to show the resolved list", len(e.Steps))))
+	}
+	rows = append(rows, styleDim.Render("  enter steps · g graph · e edit · R reload"))
+	return strings.Join(window(rows, 0, height), "\n")
+}
+
+func workflowFact(label, value string) string {
+	return "  " + styleDim.Render(fmt.Sprintf("%-12s", label)) + " " + value
+}
+
+func workflowAvailability(e *apiclient.WorkflowEntry) []string {
+	var rows []string
+	switch {
+	case !e.Valid():
+		rows = append(rows, styleBad.Render("  ✗ validation failed"))
+	case !e.RunsHere():
+		rows = append(rows, styleWarn.Render("  ! not on this platform · "+e.PlatformNote()))
+	default:
+		rows = append(rows, styleOK.Render("  ✓ available on this host"))
+	}
+	if note := e.PlatformNote(); note != "" && e.RunsHere() {
+		rows = append(rows, workflowFact("platforms", strings.TrimPrefix(note, "needs ")))
+	}
+	for _, finding := range e.Errors {
+		rows = append(rows, styleBad.Render("  ⚠ "+findingText(finding)))
+	}
+	for _, finding := range e.Warnings {
+		rows = append(rows, styleWarn.Render("  ⚠ "+findingText(finding)))
+	}
+	return rows
 }
 
 // renderList draws the registry through a viewport. The status lines are
@@ -89,7 +237,7 @@ func (w *workflowsView) renderGraph(width, height int) string {
 		// that would misrepresent the topology (decision 8).
 		out = append(out, styleWarn.Render("  terminal too narrow for the graph"),
 			styleDim.Render(fmt.Sprintf("  it needs %d columns; this one has %d",
-				g.graph.MinWidth(), w.width)))
+				g.graph.MinWidth(), width)))
 	default:
 		out = append(out, strings.Split(g.graph.View(), "\n")...)
 	}
@@ -273,24 +421,31 @@ func (w *workflowsView) renderSteps(line wfLine) []string {
 	// The daemon's resolution names §8.6 level 4; the registry listing cannot
 	// (T4.7). Until it arrives the old wording stands — "adapter default" is
 	// incomplete, not wrong.
+	out = append(out, w.renderStepRows(line, "      ")...)
+	return out
+}
+
+func (w *workflowsView) renderStepRows(line wfLine, indent string) []string {
+	e := line.entry
 	res := w.resolutionFor(line)
-	for i, s := range e.Steps {
-		label := firstNonEmpty(s.Name, s.ID)
-		row := fmt.Sprintf("      %d. %s  %s", i+1, label, styleDim.Render(s.Type))
-		name := s.Agent
+	out := make([]string, 0, len(e.Steps))
+	for i, step := range e.Steps {
+		label := firstNonEmpty(step.Name, step.ID)
+		row := fmt.Sprintf("%s%d. %s  %s", indent, i+1, label, styleDim.Render(step.Type))
+		name := step.Agent
 		if i < len(res.Steps) && res.Steps[i].Agent != nil {
 			name = res.Steps[i].Agent.Value
 		}
 		switch {
 		case name != "":
 			row += "  " + styleDim.Render("→ "+name)
-		case s.Type == "agent":
+		case step.Type == "agent":
 			row += "  " + styleDim.Render("→ adapter default")
 		}
 		out = append(out, row)
 	}
 	if len(e.Steps) == 0 && e.Valid() {
-		out = append(out, styleDim.Render("      no steps"))
+		out = append(out, styleDim.Render(indent+"no steps"))
 	}
 	return out
 }

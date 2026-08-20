@@ -149,6 +149,47 @@ func TestWorkflowsRenderAPlatformRestrictedEntry(t *testing.T) {
 	}
 }
 
+func TestWorkflowsGuidedLayoutPairsTheRegistryWithDetails(t *testing.T) {
+	entry := globalEntry("review")
+	entry.Steps = []apiclient.WorkflowEntryStep{
+		{ID: "plan", Name: "Plan", Type: "agent", Agent: "claude"},
+		{ID: "check", Name: "Check", Type: "command"},
+	}
+	w := newWorkflowsView()
+	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{entry}})
+	out := w.render(160, 32)
+	for _, want := range []string{
+		"Registry", "Overview · review", "Availability", "2 top-level steps",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guided workflows render is missing %q:\n%s", want, out)
+		}
+	}
+	pressView(w, "enter")
+	out = w.render(160, 32)
+	for _, want := range []string{"Plan", "Check", "claude"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expanded guided workflow is missing %q:\n%s", want, out)
+		}
+	}
+	w.render(120, 24)
+	if !w.expanded {
+		t.Error("crossing to the compact registry closed the step expansion")
+	}
+}
+
+func TestWorkflowsCompactFallbackKeepsTheFlatRegistry(t *testing.T) {
+	w := newWorkflowsView()
+	loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+	out := w.render(120, 24)
+	if !strings.Contains(out, "review workflow") {
+		t.Errorf("compact workflow registry lost its row detail:\n%s", out)
+	}
+	if strings.Contains(out, "Availability") {
+		t.Errorf("compact workflow registry contains the guided overview:\n%s", out)
+	}
+}
+
 // One unreadable project degrades its own block and nothing else.
 func TestWorkflowsIsolateAFailedProjectFetch(t *testing.T) {
 	w := newWorkflowsView()

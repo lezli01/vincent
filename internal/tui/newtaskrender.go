@@ -24,9 +24,77 @@ var ntLabels = [ntRowCount]string{
 	ntCreate:      "",
 }
 
-// render draws the form. The width is unused: every row is a short line and
-// the description is wrapped by the textarea, which was sized on resize.
-func (n *newTask) render(_, height int) string {
+type ntStage int
+
+const (
+	ntStageProject ntStage = iota
+	ntStageWorkflow
+	ntStageDetails
+	ntStageGit
+	ntStageExecution
+	ntStageReview
+	ntStageCount
+)
+
+var ntStageLabels = [ntStageCount]string{
+	ntStageProject:   "Project",
+	ntStageWorkflow:  "Workflow",
+	ntStageDetails:   "Task details",
+	ntStageGit:       "Git & priority",
+	ntStageExecution: "Execution",
+	ntStageReview:    "Review",
+}
+
+var ntStageHints = [ntStageCount]string{
+	ntStageProject:   "Choose the repository that will own this task.",
+	ntStageWorkflow:  "Choose what Vincent should run and inspect its steps.",
+	ntStageDetails:   "Describe the outcome and add any workflow fields.",
+	ntStageGit:       "Choose the base, task branch, and queue priority.",
+	ntStageExecution: "Keep workflow defaults or override the agent selection.",
+	ntStageReview:    "Review the complete request before Vincent creates it.",
+}
+
+func ntStageForRow(row ntRow) ntStage {
+	switch row {
+	case ntProject:
+		return ntStageProject
+	case ntWorkflow:
+		return ntStageWorkflow
+	case ntTitle, ntDescription, ntFields:
+		return ntStageDetails
+	case ntBranch, ntBranchName, ntPriority:
+		return ntStageGit
+	case ntAgent, ntModel, ntEffort:
+		return ntStageExecution
+	case ntCreate, ntRowCount:
+		return ntStageReview
+	}
+	return ntStageProject
+}
+
+func ntRowsForStage(stage ntStage) []ntRow {
+	switch stage {
+	case ntStageProject:
+		return []ntRow{ntProject}
+	case ntStageWorkflow:
+		return []ntRow{ntWorkflow}
+	case ntStageDetails:
+		return []ntRow{ntTitle, ntDescription, ntFields}
+	case ntStageGit:
+		return []ntRow{ntBranch, ntBranchName, ntPriority}
+	case ntStageExecution:
+		return []ntRow{ntAgent, ntModel, ntEffort}
+	case ntStageReview:
+		return []ntRow{ntCreate}
+	case ntStageCount:
+		return nil
+	}
+	return nil
+}
+
+// render draws a six-stage guided surface when two panes fit, and preserves
+// the original all-fields form as the responsive fallback.
+func (n *newTask) render(width, height int) string {
 	if n.loadErr != nil {
 		return fmt.Sprintf("\n  %s\n\n  press R to retry\n",
 			styleBad.Render("could not load the form: "+errString(n.loadErr)))
@@ -37,7 +105,14 @@ func (n *newTask) render(_, height int) string {
 	if len(n.projects) == 0 {
 		return "\n  no projects registered yet — add one in the Projects view (4)\n"
 	}
+	if guidedTakeover(width, height) {
+		return n.renderGuided(width, height)
+	}
+	n.desc.SetWidth(max(20, width-8))
+	return n.renderCompact(height)
+}
 
+func (n *newTask) renderCompact(height int) string {
 	lines := make([]string, 0, int(ntRowCount)+12)
 	cursorLine := 0
 	for row := ntProject; row < ntRowCount; row++ {
@@ -50,6 +125,120 @@ func (n *newTask) render(_, height int) string {
 	lines = append(lines, "")
 	lines = append(lines, n.statusLines()...)
 	return strings.Join(window(lines, cursorLine, height), "\n")
+}
+
+func (n *newTask) renderGuided(width, height int) string {
+	_, mainWidth := guidedPaneWidths(width)
+	n.desc.SetWidth(max(20, mainWidth-8))
+	stage := ntStageForRow(n.cursor)
+	rail := n.renderStageRail(stage, height-2)
+	main, cursorLine := n.renderStage(stage)
+	main = window(main, cursorLine, height-2)
+	title := fmt.Sprintf("%d of %d · %s", stage+1, ntStageCount, ntStageLabels[stage])
+	return guidedSurface(width, height,
+		"Plan", strings.Join(rail, "\n"), title, strings.Join(main, "\n"))
+}
+
+func (n *newTask) renderStageRail(active ntStage, height int) []string {
+	lines := []string{styleDim.Render("  One decision at a time"), ""}
+	from, to := 0, 1
+	for stage := ntStageProject; stage < ntStageCount; stage++ {
+		from = len(lines)
+		marker := "  "
+		label := ntStageLabels[stage]
+		if stage == active && n.mode != ntConfirming {
+			marker = styleFocus.Render("› ")
+			label = styleTitle.Render(label)
+		} else if stage > active {
+			label = styleDim.Render(label)
+		}
+		lines = append(lines, fmt.Sprintf("%s%d  %s", marker, stage+1, label))
+		if summary := n.stageSummary(stage); summary != "" {
+			lines = append(lines, styleDim.Render("     "+summary))
+		}
+		lines = append(lines, "")
+		if stage == active {
+			to = len(lines)
+			break
+		}
+	}
+	for stage := active + 1; stage < ntStageCount; stage++ {
+		lines = append(lines,
+			fmt.Sprintf("  %d  %s", stage+1, styleDim.Render(ntStageLabels[stage])), "")
+	}
+	return windowRange(lines, from, to, height)
+}
+
+func (n *newTask) stageSummary(stage ntStage) string {
+	switch stage {
+	case ntStageProject:
+		if p, ok := n.project(); ok {
+			return p.Name
+		}
+		return "Not selected"
+	case ntStageWorkflow:
+		return firstNonEmpty(n.workflow, "Not selected")
+	case ntStageDetails:
+		return firstNonEmpty(n.titleText(), "Title required")
+	case ntStageGit:
+		return "Base " + firstNonEmpty(strings.TrimSpace(n.branch.Value()), "project default")
+	case ntStageExecution:
+		return firstNonEmpty(n.agent, "Workflow defaults")
+	case ntStageReview:
+		return "Create task"
+	case ntStageCount:
+		return ""
+	}
+	return ""
+}
+
+func (n *newTask) renderStage(stage ntStage) ([]string, int) {
+	lines := []string{
+		"  " + styleTitle.Render(ntStageLabels[stage]),
+		"  " + styleDim.Render(ntStageHints[stage]),
+		"",
+	}
+	if stage == ntStageReview {
+		return n.renderReview(lines)
+	}
+	cursorLine := len(lines)
+	for _, row := range ntRowsForStage(stage) {
+		if row == n.cursor {
+			cursorLine = len(lines)
+		}
+		lines = append(lines, n.renderRow(row))
+		lines = append(lines, n.renderExpansion(row)...)
+	}
+	lines = append(lines, "", styleDim.Render("  ↑/↓ or tab moves · enter changes the focused field"))
+	lines = append(lines, n.statusLines()...)
+	return lines, cursorLine
+}
+
+func (n *newTask) renderReview(lines []string) ([]string, int) {
+	lines = append(lines,
+		section("Project & workflow"),
+		n.reviewLine("project", n.rowValue(ntProject)),
+		n.reviewLine("workflow", n.rowValue(ntWorkflow)),
+		section("Task"),
+		n.reviewLine("title", n.rowValue(ntTitle)),
+		n.reviewLine("description", n.rowValue(ntDescription)),
+		n.reviewLine("fields", n.rowValue(ntFields)),
+		section("Git & execution"),
+		n.reviewLine("base branch", n.rowValue(ntBranch)),
+		n.reviewLine("branch", n.rowValue(ntBranchName)),
+		n.reviewLine("priority", n.rowValue(ntPriority)),
+		n.reviewLine("execution", strings.Join([]string{
+			n.rowValue(ntAgent), n.rowValue(ntModel), n.rowValue(ntEffort),
+		}, styleDim.Render(" · "))),
+	)
+	cursorLine := len(lines)
+	lines = append(lines, n.renderRow(ntCreate))
+	lines = append(lines, n.statusLines()...)
+	return lines, cursorLine
+}
+
+func (n *newTask) reviewLine(label, value string) string {
+	return "  " + styleDim.Render(fmt.Sprintf("%-13s", label)) + " " + value
 }
 
 func (n *newTask) renderRow(row ntRow) string {

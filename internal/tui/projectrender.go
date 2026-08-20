@@ -17,22 +17,36 @@ func (p *projectsView) render(width, height int) string {
 	if height > 0 {
 		p.height = height
 	}
+	rows := p.visible()
 	if p.form != nil {
+		if guidedTakeover(p.width, p.height) {
+			return p.renderGuided(rows)
+		}
 		return p.form.render()
 	}
+	p.syncTable(rows)
+	if guidedTakeover(p.width, p.height) {
+		return p.renderGuided(rows)
+	}
+	return p.renderCompact(rows)
+}
 
+func (p *projectsView) renderCompact(rows []apiclient.Project) string {
 	var sb strings.Builder
 	for _, line := range p.statusLines() {
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
 
-	rows := p.visible()
 	if body, ok := p.emptyBody(rows); ok {
 		sb.WriteString(body)
 		return sb.String()
 	}
+	sb.WriteString(p.tbl.View())
+	return sb.String()
+}
 
+func (p *projectsView) syncTable(rows []apiclient.Project) {
 	cols, set := projectColumns(p.width)
 	if len(cols) != len(p.tbl.Columns()) {
 		// Crossing a breakpoint: clear the rows first, or the table
@@ -50,8 +64,140 @@ func (p *projectsView) render(width, height int) string {
 	if p.tbl.Cursor() < 0 && len(rows) > 0 {
 		p.tbl.SetCursor(0)
 	}
-	sb.WriteString(p.tbl.View())
-	return sb.String()
+}
+
+func (p *projectsView) renderGuided(rows []apiclient.Project) string {
+	rail := p.renderProjectRail(rows, p.height-2)
+	mainTitle := "Overview"
+	var main string
+	if p.form != nil {
+		mainTitle = p.form.heading()
+		main = p.form.renderFocused(p.height - 2)
+	} else if pr, ok := p.current(); ok {
+		mainTitle = "Overview · " + pr.Name
+		main = p.renderProjectOverview(pr, p.height-2)
+	} else if body, ok := p.emptyBody(rows); ok {
+		main = strings.Join(append(p.statusLines(), body), "\n")
+	}
+	return guidedSurface(p.width, p.height,
+		fmt.Sprintf("Projects · %d", len(rows)), rail, mainTitle, main)
+}
+
+func (p *projectsView) renderProjectRail(rows []apiclient.Project, height int) string {
+	lines := []string{styleDim.Render("  Registered repositories"), ""}
+	if p.filter.Value() != "" {
+		lines = append(lines, styleDim.Render("  Filter: "+p.filter.Value()), "")
+	}
+	if len(rows) == 0 {
+		lines = append(lines, styleDim.Render("  No matching projects"))
+		return strings.Join(window(lines, 0, height), "\n")
+	}
+	from, to := 0, 1
+	for i, pr := range rows {
+		start := len(lines)
+		marker := "  "
+		name := pr.Name
+		if i == p.tbl.Cursor() {
+			marker = styleFocus.Render("› ")
+			name = styleTitle.Render(name)
+			from = start
+		}
+		lines = append(lines,
+			marker+name,
+			styleDim.Render("    "+p.projectRailSummary(pr)),
+			"")
+		if i == p.tbl.Cursor() {
+			to = len(lines)
+		}
+	}
+	return strings.Join(windowRange(lines, from, to, height), "\n")
+}
+
+func (p *projectsView) projectRailSummary(pr apiclient.Project) string {
+	running := p.runningIn(pr.ID)
+	if pr.MaxParallelTasks != nil {
+		return fmt.Sprintf("%d running · cap %d", running, *pr.MaxParallelTasks)
+	}
+	if p.infoOK {
+		return fmt.Sprintf("%d running · global %d", running, p.globalCap)
+	}
+	return fmt.Sprintf("%d running · no project cap", running)
+}
+
+func (p *projectsView) renderProjectOverview(pr apiclient.Project, height int) string {
+	lines := append([]string{}, p.statusLines()...)
+	lines = append(lines,
+		"  "+styleTitle.Render(pr.Name),
+		"  "+styleDim.Render(pr.Path),
+		"",
+		section("Repository"),
+		p.projectFact("path", pr.Path),
+		p.projectFact("default branch", pr.DefaultBranch),
+		p.projectFact("branch naming", projectBranchTemplate(pr)),
+		"",
+		section("Execution defaults"),
+		p.projectFact("workflow", pr.Workflow()),
+		p.projectFact("project cap", projectCap(pr)),
+		p.projectFact("global cap", p.globalCapLabel()),
+		p.projectFact("running now", strconv.Itoa(p.runningIn(pr.ID))),
+		"",
+		section("Current workload"),
+	)
+	tasks := p.tasksFor(pr.ID)
+	if len(tasks) == 0 {
+		lines = append(lines, styleDim.Render("  No current tasks for this project."))
+	} else {
+		available := max(height-len(lines)-1, 1)
+		shown := min(len(tasks), available)
+		if shown < len(tasks) {
+			shown = max(shown-1, 0)
+		}
+		for _, task := range tasks[:shown] {
+			lines = append(lines, fmt.Sprintf("  #%-4d %-20s %s",
+				task.ID, renderState(task.State), task.Title))
+		}
+		if shown < len(tasks) {
+			lines = append(lines, styleDim.Render(fmt.Sprintf(
+				"  … %d more on the board", len(tasks)-shown)))
+		}
+	}
+	lines = append(lines, styleDim.Render("  enter/e edit · a add · d remove · n new task"))
+	return strings.Join(window(lines, 0, height), "\n")
+}
+
+func (p *projectsView) projectFact(label, value string) string {
+	return "  " + styleDim.Render(fmt.Sprintf("%-17s", label)) + " " + value
+}
+
+func projectBranchTemplate(pr apiclient.Project) string {
+	if pr.BranchTemplate != nil && *pr.BranchTemplate != "" {
+		return *pr.BranchTemplate
+	}
+	return styleDim.Render("inherits config.yaml")
+}
+
+func projectCap(pr apiclient.Project) string {
+	if pr.MaxParallelTasks == nil {
+		return styleDim.Render("none — global cap still applies")
+	}
+	return strconv.Itoa(*pr.MaxParallelTasks)
+}
+
+func (p *projectsView) globalCapLabel() string {
+	if !p.infoOK {
+		return styleDim.Render("unavailable")
+	}
+	return strconv.Itoa(p.globalCap)
+}
+
+func (p *projectsView) tasksFor(projectID int64) []apiclient.Task {
+	out := make([]apiclient.Task, 0, len(p.tasks))
+	for _, task := range p.tasks {
+		if task.ProjectID == projectID {
+			out = append(out, task)
+		}
+	}
+	return out
 }
 
 // Projects column widths. As on the board, the table pads every cell by one
@@ -209,14 +355,33 @@ func (p *projectsView) emptyBody(rows []apiclient.Project) (string, bool) {
 	}
 }
 
-func (f *projectForm) render() string {
-	var lines []string
-	heading := "edit project"
+func (f *projectForm) heading() string {
 	if f.adding() {
-		heading = "add a project"
+		return "Add project"
 	}
-	lines = append(lines, " "+styleTitle.Render(heading), "")
+	return "Edit project"
+}
+
+func (f *projectForm) render() string {
+	lines, _ := f.renderLines(true)
+	return strings.Join(lines, "\n")
+}
+
+func (f *projectForm) renderFocused(height int) string {
+	lines, cursorLine := f.renderLines(false)
+	return strings.Join(window(lines, cursorLine, height), "\n")
+}
+
+func (f *projectForm) renderLines(includeHeading bool) ([]string, int) {
+	var lines []string
+	if includeHeading {
+		lines = append(lines, " "+styleTitle.Render(strings.ToLower(f.heading())), "")
+	}
+	cursorLine := len(lines)
 	for row := pfRow(0); row < pfRowCount; row++ {
+		if row == f.cursor {
+			cursorLine = len(lines)
+		}
 		lines = append(lines, f.renderRow(row))
 		if msg, ok := f.rowErr[row]; ok {
 			lines = append(lines, styleBad.Render("      ⚠ "+msg))
@@ -241,7 +406,7 @@ func (f *projectForm) render() string {
 		lines = append(lines, styleDim.Render(
 			"  an empty cap means no project cap — the daemon-wide limit still applies"))
 	}
-	return strings.Join(lines, "\n")
+	return lines, cursorLine
 }
 
 func (f *projectForm) renderRow(row pfRow) string {

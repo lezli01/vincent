@@ -139,7 +139,13 @@ func (w *workflowsView) sizeGraph() {
 	if w.graph == nil {
 		return
 	}
-	w.graph.graph.SetSize(max(w.width, 1), max(w.height-graphChromeRows, 1))
+	width, height := w.width, w.height
+	if guidedTakeover(width, height) {
+		_, width = guidedPaneWidths(width)
+		width -= 2  // focused pane border
+		height -= 2 // focused pane border
+	}
+	w.graph.graph.SetSize(max(width, 1), max(height-graphChromeRows, 1))
 }
 
 // graphChromeRows is the header line plus the inspector strip and its rule.
@@ -202,7 +208,11 @@ func (w *workflowsView) updateGraphMouse(msg tea.Msg) {
 		if msg.Button != tea.MouseLeft {
 			return
 		}
-		w.graph.graph.ClickAt(msg.X-graphPaneX, msg.Y-graphPaneY)
+		x, y := w.graphPaneOrigin()
+		if msg.X < x || msg.Y < y {
+			return
+		}
+		w.graph.graph.ClickAt(msg.X-x, msg.Y-y)
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelDown:
@@ -211,4 +221,12 @@ func (w *workflowsView) updateGraphMouse(msg tea.Msg) {
 			w.graph.graph.Scroll(-1)
 		}
 	}
+}
+
+func (w *workflowsView) graphPaneOrigin() (x, y int) {
+	if !guidedTakeover(w.width, w.height) {
+		return graphPaneX, graphPaneY
+	}
+	railWidth, _ := guidedPaneWidths(w.width)
+	return graphPaneX + railWidth + 1, graphPaneY + 1
 }

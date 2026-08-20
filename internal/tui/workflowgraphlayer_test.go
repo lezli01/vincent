@@ -206,6 +206,27 @@ func TestGraphClickSelects(t *testing.T) {
 	}
 }
 
+func TestGraphKeepsTheRegistryRailOnAWideTerminal(t *testing.T) {
+	w := graphFixture(t)
+	layer := w.graph
+	selected := layer.graph.Selected()
+	out := w.render(160, 40)
+	for _, want := range []string{"Registry", "global", "Graph · review", "plan", "check"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guided graph is missing %q:\n%s", want, out)
+		}
+	}
+	x, y := w.graphPaneOrigin()
+	rail, _ := guidedPaneWidths(160)
+	if x <= rail || y != graphPaneY+1 {
+		t.Errorf("guided graph origin = %d,%d; rail width = %d", x, y, rail)
+	}
+	w.render(120, 40)
+	if w.graph != layer || layer.graph.Selected() != selected {
+		t.Error("crossing the guided breakpoint reset the graph layer")
+	}
+}
+
 func TestGraphWheelScrolls(t *testing.T) {
 	w := graphFixture(t)
 	w.render(40, 10)
