@@ -20,6 +20,7 @@
 
 <p align="center">
   <a href="#why-vincent">Why</a> &bull;
+  <a href="#tui-tour">TUI Tour</a> &bull;
   <a href="#what-it-does">What It Does</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#quickstart">Quickstart</a> &bull;
@@ -72,6 +73,35 @@ non-commercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE),
 with a [separate commercial license](COMMERCIAL-LICENSE.md) for business use —
 and created by `lezli01` at [lezli01.is-a.dev](https://lezli01.is-a.dev).
 Contributions are welcome — see [Contributing](#contributing).
+
+## TUI Tour
+
+These are actual renders from vincent's Bubble Tea TUI using representative
+workload data — not UI mockups.
+
+<p align="center">
+  <img src="docs/assets/tui-new-task.png" alt="The guided new-task flow at its final review stage, with the six-step plan and a populated task request" width="1000">
+</p>
+
+<p align="center">
+  <em>The guided task flow keeps all six decisions visible while giving the active review stage room to breathe.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/tui-projects.png" alt="The Projects view showing seven repositories, execution defaults, concurrency limits, and a mixed active workload" width="1000">
+</p>
+
+<p align="center">
+  <em>Projects pairs a persistent repository rail with defaults, concurrency limits, and the selected project's current workload.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/tui-workflow-graph.png" alt="The Workflows view showing the registry beside a four-lane fan-out graph with merge and approval steps" width="1000">
+</p>
+
+<p align="center">
+  <em>The workflow registry stays anchored beside the navigable graph, including fan-out lanes, merge behavior, and manual gates.</em>
+</p>
 
 ## What It Does
 
