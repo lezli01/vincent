@@ -14,6 +14,41 @@ acceptance gates on first.
 
 ## Install
 
+Stable releases attach deb and rpm packages for both supported architectures:
+
+```sh
+# Debian / Ubuntu (use _arm64.deb on ARM64)
+sudo apt install ./vincent_*_amd64.deb
+
+# Fedora / RHEL family (use .aarch64.rpm on ARM64)
+sudo dnf install ./vincent-*.x86_64.rpm
+```
+
+Download the package from the
+[latest release](https://github.com/lezli01/vincent/releases/latest) first.
+These are release assets rather than an apt/dnf repository, so install the next
+downloaded package the same way to upgrade. Both formats put the binary at
+`/usr/bin/vincent`, depend on git, carry the license documents, and deliberately
+do not create a root-owned service for Vincent's per-user daemon.
+
+On Arch Linux, install the AUR binary package with your normal helper or build
+it directly:
+
+```sh
+git clone https://aur.archlinux.org/vincent-agent-bin.git
+cd vincent-agent-bin
+makepkg -si
+```
+
+mise works across distributions without a distro package:
+
+```sh
+mise use -g github:lezli01/vincent
+```
+
+Package-manager metadata moves on stable releases only. If a newly introduced
+channel has not received its first stable release, use mise or the archive:
+
 ```sh
 tar -xzf vincent_*_linux_amd64.tar.gz       # or _linux_arm64
 sudo mv vincent /usr/local/bin/

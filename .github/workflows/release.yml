@@ -2,7 +2,8 @@ name: Release
 
 # Tag-driven packaging (T4.5). Normally Release Please creates the tag and the
 # GitHub release; this workflow then uploads the signed artifacts to that
-# release and publishes the stable Homebrew cask. The build runs once on ubuntu
+# release, attaches native Linux packages, and publishes the stable Homebrew,
+# Scoop, WinGet, and AUR metadata. The build runs once on ubuntu
 # — the binaries are pure Go, so a build matrix would produce identical
 # artifacts three times — and the per-OS jobs afterwards smoke-test what it
 # produced, which is the part a single runner genuinely cannot do.
@@ -30,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write # create the release and upload archives
+      contents: write # upload archives/packages and publish repository metadata
       id-token: write # keyless cosign + build attestations
       attestations: write
     outputs:
@@ -67,14 +68,88 @@ jobs:
           # who has no such secret: goreleaser only reads it when it actually
           # publishes, and --snapshot never does.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || 'unset' }}
+          # Each publisher gets a credential scoped only to its destination.
+          # Placeholder values keep fork/contributor dry runs self-contained;
+          # snapshot mode renders manifests but never uses the credentials.
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN || 'unset' }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN || 'unset' }}
+          AUR_KEY: ${{ secrets.AUR_KEY || 'unset' }}
 
-      # Provenance for every archive, so a downloader can prove which workflow
-      # and commit produced the file they hold.
+      - name: Install Linux package inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes cpio jq rpm
+
+      - name: Verify generated packages and manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ "$(find dist -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 2 ]
+          [ "$(find dist -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 2 ]
+          [ "$(find dist/winget -type f -name '*.yaml' | wc -l)" -eq 3 ]
+          test -f dist/scoop/vincent.json
+          test -f dist/aur/vincent-agent-bin.pkgbuild
+          test -f dist/aur/vincent-agent-bin.srcinfo
+
+          for deb_package in dist/*.deb; do
+            [ "$(dpkg-deb --field "$deb_package" Package)" = vincent ]
+            dpkg-deb --field "$deb_package" Depends | grep -E '(^|, )git([ ,]|$)' >/dev/null
+            dpkg-deb --contents "$deb_package" | grep -E './usr/bin/vincent$' >/dev/null
+            dpkg-deb --contents "$deb_package" | grep -E './usr/share/licenses/vincent/LICENSE$' >/dev/null
+            dpkg-deb --contents "$deb_package" | grep -E './usr/share/doc/vincent/COMMERCIAL-LICENSE.md$' >/dev/null
+          done
+
+          for rpm_package in dist/*.rpm; do
+            [ "$(rpm -qp --queryformat '%{NAME}' "$rpm_package")" = vincent ]
+            [ "$(rpm -qp --queryformat '%{LICENSE}' "$rpm_package")" = PolyForm-Noncommercial-1.0.0 ]
+            rpm -qp --requires "$rpm_package" | grep -x git >/dev/null
+            rpm -qpl "$rpm_package" | grep -E '^/usr/bin/vincent$' >/dev/null
+            rpm -qpl "$rpm_package" | grep -E '^/usr/share/licenses/vincent/LICENSE$' >/dev/null
+            rpm -qpl "$rpm_package" | grep -E '^/usr/share/doc/vincent/COMMERCIAL-LICENSE.md$' >/dev/null
+          done
+
+          deb="$(find dist -maxdepth 1 -type f -name '*_amd64.deb' -print -quit)"
+          rpm_package="$(find dist -maxdepth 1 -type f -name '*.x86_64.rpm' -print -quit)"
+          test -n "$deb"
+          test -n "$rpm_package"
+
+          package_tmp="$(mktemp -d)"
+          trap 'rm -rf -- "$package_tmp"' EXIT
+          mkdir "$package_tmp/deb" "$package_tmp/rpm"
+          dpkg-deb --extract "$deb" "$package_tmp/deb"
+          rpm2cpio "$rpm_package" | (cd "$package_tmp/rpm" && cpio -idm --quiet)
+          "$package_tmp/deb/usr/bin/vincent" version
+          "$package_tmp/rpm/usr/bin/vincent" version
+
+          jq -e '
+            .license == "PolyForm-Noncommercial-1.0.0" and
+            .depends == ["git"] and
+            (.architecture["64bit"].bin | index("vincent.exe")) != null and
+            (.architecture.arm64.bin | index("vincent.exe")) != null
+          ' dist/scoop/vincent.json >/dev/null
+          winget_version="$(find dist/winget -type f -name 'lezli01.Vincent.yaml' -print -quit)"
+          winget_installer="$(find dist/winget -type f -name 'lezli01.Vincent.installer.yaml' -print -quit)"
+          winget_locale="$(find dist/winget -type f -name 'lezli01.Vincent.locale.en-US.yaml' -print -quit)"
+          test -n "$winget_version"
+          test -n "$winget_installer"
+          test -n "$winget_locale"
+          grep -q '^PackageIdentifier: lezli01.Vincent$' "$winget_version"
+          [ "$(grep -c '^  - Architecture:' "$winget_installer")" -eq 2 ]
+          grep -q '^    - PackageIdentifier: Git.Git$' "$winget_installer"
+          grep -q '^License: PolyForm-Noncommercial-1.0.0$' "$winget_locale"
+          grep -q "^pkgname='vincent-agent-bin'$" dist/aur/vincent-agent-bin.pkgbuild
+          grep -q "^license=('PolyForm-Noncommercial-1.0.0')$" dist/aur/vincent-agent-bin.pkgbuild
+          grep -q "^depends=('git')$" dist/aur/vincent-agent-bin.pkgbuild
+          grep -q 'COMMERCIAL-LICENSE.md' dist/aur/vincent-agent-bin.pkgbuild
+
+      # Provenance for every archive and native Linux package, so a downloader
+      # can prove which workflow and commit produced the file they hold.
       - name: Attest build provenance
         if: github.event_name == 'push'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-path: "dist/*.tar.gz,dist/*.zip"
+          subject-path: "dist/*.tar.gz,dist/*.zip,dist/*.deb,dist/*.rpm"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -82,6 +157,8 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
+            dist/*.rpm
             dist/checksums.txt
           retention-days: 7
 

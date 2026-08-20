@@ -5,41 +5,60 @@ release pull request current. Merging that pull request makes Release Please
 create the `vMAJOR.MINOR.PATCH` tag and GitHub release; that tag triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which uses
 [`.goreleaser.yaml`](.goreleaser.yaml) to cross-compile, checksum, sign, attest,
-upload, smoke-test on all three OSes, and update the stable Homebrew cask. There
+upload, smoke-test on all three OSes, build deb/rpm packages, update the stable
+Homebrew, Scoop, and AUR metadata, and submit the stable WinGet manifest. There
 is no manual tag or upload step, and no artifact is built on a maintainer's
 machine.
 
 Only a maintainer with push access can cut a release.
 
-## Repository secrets
+## Channel bootstrap and repository secrets
 
-Two narrowly scoped secrets are required.
+Before enabling a stable release, all three external destinations must exist:
+
+- public `lezli01/scoop-bucket`, with `main` as its default branch;
+- a `lezli01/winget-pkgs` fork of `microsoft/winget-pkgs`; and
+- the AUR account/key that may push
+  `ssh://aur@aur.archlinux.org/vincent-agent-bin.git`.
+
+A GoReleaser snapshot renders all three manifests without contacting those
+destinations. That proves the content, not publication. Do not merge a release
+change that names a missing destination: the next stable tag would discover it
+after the GitHub release already exists.
+
+Five secrets are required.
 
 | Secret | Scope and permissions | Why it exists |
 |---|---|---|
 | `RELEASE_PLEASE_TOKEN` | Fine-grained PAT selecting only `lezli01/vincent`, with **Contents**, **Issues**, and **Pull requests: read and write** | Events created by `GITHUB_TOKEN` do not start other workflows. The PAT lets the release PR run normal CI and lets the generated tag trigger the GoReleaser workflow. |
 | `HOMEBREW_TAP_TOKEN` | Fine-grained PAT selecting only [`lezli01/homebrew-tap`](https://github.com/lezli01/homebrew-tap), with **Contents: read and write** | `GITHUB_TOKEN` and the Release Please PAT are scoped to this repository; pushing the cask is a cross-repo write. |
+| `SCOOP_BUCKET_TOKEN` | Fine-grained PAT selecting only `lezli01/scoop-bucket`, with **Contents: read and write** | Push the stable `vincent.json` manifest to the bucket root. |
+| `WINGET_TOKEN` | Dedicated classic PAT with **`public_repo`** | Push a version branch to `lezli01/winget-pkgs` and open its pull request against `microsoft/winget-pkgs`. GitHub cannot express that cross-owner PR as a fine-grained token scoped only to the fork. |
+| `AUR_KEY` | Contents of a dedicated, unencrypted SSH private key whose public key is registered with the maintainer's AUR account | Push only the generated `vincent-agent-bin` PKGBUILD and `.SRCINFO`. Do not reuse a login or workstation key. |
 
 Nothing else needs a secret: cosign signs keylessly with the packaging
 workflow's OIDC identity.
 
-**The single-repository scope of each token is the point.** Each token is handed
-to one pinned third-party action, so its blast radius is whatever it can reach.
-The two actions do not share credentials: Release Please can change vincent but
-not the tap; GoReleaser can change the tap but receives only this workflow's
-short-lived `GITHUB_TOKEN` for vincent itself. A classic PAT cannot express that
-separation because its `repo` scope covers every repository the account owns.
+**Narrow scope is the default, not a claim that WinGet has one.** Release Please,
+Homebrew, and Scoop each have a single-repository token; AUR has a dedicated key.
+`WINGET_TOKEN` is the exception: `public_repo` can change any public repository
+the account can write. Prefer a publisher bot account if that blast radius is
+not acceptable. Every credential is passed to the pinned GoReleaser action only
+for the tag-driven release job; none is available to pull-request workflows.
 
-The token does not expire, which trades a silent standing credential for never
-failing a release on a surprise expiry. Two consequences worth knowing: nothing
-will prompt a rotation, and revoking it is a manual step if the account is ever
-compromised. Rotate at
+Credentials created without expiration trade a silent standing secret for
+never failing a release on a surprise expiry. Nothing will prompt their
+rotation, and revoking them is manual if an account is compromised. Rotate
+GitHub tokens at
 [Settings → Developer settings → Fine-grained tokens](https://github.com/settings/personal-access-tokens).
 Update the repository copies with:
 
 ```sh
 gh secret set RELEASE_PLEASE_TOKEN --repo lezli01/vincent
 gh secret set HOMEBREW_TAP_TOKEN --repo lezli01/vincent
+gh secret set SCOOP_BUCKET_TOKEN --repo lezli01/vincent
+gh secret set WINGET_TOKEN --repo lezli01/vincent
+gh secret set AUR_KEY --repo lezli01/vincent < /path/to/dedicated-aur-private-key
 ```
 
 ## Version numbers
@@ -61,13 +80,15 @@ binary.
 
 The normal Release Please path creates stable releases. If a maintainer cuts an
 exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
-`homebrew_casks.skip_upload: auto` prevents it from moving the stable cask.
+`skip_upload: auto` prevents it from moving the Homebrew, Scoop, WinGet, or AUR
+metadata. The prerelease still carries its deb and rpm assets on GitHub.
 
 ## Cutting a release
 
-1. **Check `master` and the Release Please PR are green.** All three `ci` and all
-   three `gates` checks must pass. `RELEASE_PLEASE_TOKEN` is what lets the bot's
-   pull request trigger those checks.
+1. **Check `master` and the Release Please PR are green.** The
+   `packaging-config` check plus all three `ci` and all three `gates` checks must
+   pass. `RELEASE_PLEASE_TOKEN` is what lets the bot's pull request trigger
+   those checks.
 
 2. **Run the vulnerability sweep** if the last run predates a dependency change:
 
@@ -84,7 +105,9 @@ exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
    the archive contents changed since the last release. Actions → **Release** →
    *Run workflow*, leaving `dry_run` checked. That runs
    `release --snapshot --clean --skip=publish,sign` — real cross-compilation and
-   real archives, published nowhere. Download the `dist` artifact and look at it.
+   real archives/packages/manifests, published nowhere. The job inspects the
+   deb/rpm payloads and generated Scoop, WinGet, and AUR metadata before it
+   uploads the `dist` artifact for a manual look.
 
 5. **Merge the Release Please PR.** This is the release action. Release Please
    creates the tag and GitHub release; do not create or push the tag by hand.
@@ -93,9 +116,10 @@ exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
    - `Release Please` creates the tag and GitHub release from the merged release
      PR. The dedicated PAT makes that tag start the next workflow.
    - `Release` runs GoReleaser, preserves Release Please's notes, builds and
-     signs every archive, attests provenance, uploads the artifacts to the
-     existing GitHub release, and pushes the updated stable cask to
-     `lezli01/homebrew-tap`. A prerelease tag skips the cask automatically.
+     signs the checksum, inspects deb/rpm payloads, attests every archive and
+     native package, uploads the artifacts to the existing GitHub release, and
+     updates Homebrew, Scoop, AUR, and the WinGet submission for a stable tag.
+     A prerelease skips all four manager publishers automatically.
    - `smoke` (one job per OS) downloads the **real published archive**, unpacks
      it, asserts `vincent version` reports the tag rather than `dev`, runs
      `vincent workflow validate` and checks that `vincent task ls` exits 2 with
@@ -117,6 +141,7 @@ exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    sha256sum -c checksums.txt --ignore-missing
    gh attestation verify vincent_X.Y.Z_linux_amd64.tar.gz --repo lezli01/vincent
+   gh attestation verify vincent_X.Y.Z_amd64.deb --repo lezli01/vincent
    ```
 
 8. **Check the Homebrew cask** (skip for a pre-release, which does not publish
@@ -133,7 +158,29 @@ exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
    `com.apple.provenance` is expected and harmless; `com.apple.quarantine` is
    not, and means the cask's `postflight` hook did not run.
 
-9. **Read the published notes.** Release Please generates them from the
+9. **Check the Windows and Linux channels** (skip for a pre-release).
+
+   ```sh
+   # Scoop: the bucket should carry the tag and both Windows architectures.
+   scoop bucket add vincent https://github.com/lezli01/scoop-bucket
+   scoop update
+   scoop info vincent/vincent
+
+   # AUR: pkgver, URLs, and checksums should name this release.
+   git clone https://aur.archlinux.org/vincent-agent-bin.git
+   grep -E '^(pkgver|source_|sha256sums_)' vincent-agent-bin/PKGBUILD
+
+   # WinGet: this can lag while Microsoft's catalog PR is reviewed.
+   winget show --id lezli01.Vincent --exact --versions
+   ```
+
+   Install the deb and rpm on representative clean systems with `apt install
+   ./vincent_*_amd64.deb` and `dnf install ./vincent-*.x86_64.rpm`; run
+   `vincent version` after each. Confirm the GoReleaser log contains the WinGet
+   pull-request URL—cross-repository PR creation errors can be non-fatal, so a
+   green release job alone is not that proof.
+
+10. **Read the published notes.** Release Please generates them from the
    Conventional Commits since the last tag and GoReleaser keeps them unchanged
    while attaching artifacts. If a user-visible change is missing, fix the
    commit convention before merging the release PR or edit the notes after the
@@ -158,16 +205,18 @@ exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
   creates the tag and GitHub release. The tag remains the only version injected
   into the binary; the manifest is automation state, not product state.
 - **GoReleaser owns distribution channels.** It attaches archives, signatures,
-  checksums and attestations to Release Please's existing GitHub release, then
-  updates the Homebrew tap for stable releases. Keeping this in one run means a
-  failed cask update fails the release workflow instead of silently leaving the
-  install channel stale.
+  checksums, deb/rpm packages and attestations to Release Please's existing
+  GitHub release, then updates Homebrew, Scoop and AUR and prepares the WinGet
+  catalog PR for stable releases. mise consumes the GitHub archives directly
+  and needs no publisher. Keeping artifact and manifest generation in one run
+  prevents channel checksums from drifting from the release they name.
 - **OS code signing.** Authenticode and Apple notarization are recurring
   certificate costs v0 does not take on — recorded as a descope in spec §19.
   Releases carry cosign signatures and build provenance instead, and the README
   documents the SmartScreen and Gatekeeper prompts users will meet.
-- **Scoop and winget publishing.** The Homebrew cask *is* automated (see step 6),
-  because it deletes the `xattr -d com.apple.quarantine` step for macOS users.
-  No Windows packager erases the SmartScreen prompt the same way, so Windows
-  keeps `go install` and the release archives — the reasoning is in
-  [docs/tasks/002](docs/tasks/002-homebrew-tap.md).
+- **External catalogs remain external.** Scoop and AUR update repositories the
+  maintainer controls. WinGet is a pull request into Microsoft's catalog and
+  can remain pending after the GitHub release succeeds. The accepted
+  maintenance and credential trade-offs are recorded in
+  [docs/tasks/021](docs/tasks/021-package-distribution-channels.md), which
+  explicitly supersedes task 002's Windows rejection.

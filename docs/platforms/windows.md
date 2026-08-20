@@ -16,7 +16,26 @@ different.
 
 ## Install
 
-Unzip the release archive and put `vincent.exe` somewhere on your `PATH`:
+WinGet is the shortest system-managed path:
+
+```powershell
+winget install --id lezli01.Vincent --exact
+```
+
+Or use Vincent's Scoop bucket:
+
+```powershell
+scoop bucket add vincent https://github.com/lezli01/scoop-bucket
+scoop install vincent/vincent
+```
+
+Both support x86-64 and ARM64, install Git when it is missing, and consume the
+same release zip as the manual path. Stable releases update Scoop immediately;
+WinGet can lag while Microsoft reviews the catalog pull request. mise is also
+supported: `mise use -g github:lezli01/vincent`.
+
+To install without a manager, unzip the release archive and put `vincent.exe`
+somewhere on your `PATH`:
 
 ```powershell
 Expand-Archive vincent_*_windows_amd64.zip -DestinationPath $env:LOCALAPPDATA\Programs\vincent
@@ -28,7 +47,11 @@ vincent version
 **More info** → **Run anyway**. Releases carry cosign signatures, SHA-256
 checksums and GitHub build attestations, but not Authenticode code signing,
 which is a recurring certificate cost this project does not take on. The prompt
-appears once per binary.
+appears once per binary and can also appear for WinGet, Scoop, or mise: those
+channels verify the archive but do not add Authenticode signing.
+
+Package-manager metadata moves on stable releases only. If a newly introduced
+channel has not received its first stable release, use mise or the archive.
 
 Full detail, including how to verify a download: [Installation](../getting-started/installation.md).
 

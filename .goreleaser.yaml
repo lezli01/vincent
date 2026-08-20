@@ -49,19 +49,47 @@ archives:
       - COMMERCIAL-LICENSE.md
       - examples/*.yaml
 
+# Native Linux packages use the same pure-Go binaries as the release archives.
+# There are no maintainer scripts: vincent's service is per-user and captures
+# that user's PATH and data directories, which a root package transaction must
+# not guess or rewrite (task 021).
+nfpms:
+  - id: vincent-linux-packages
+    ids: [vincent]
+    package_name: vincent
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: László Szabó
+    homepage: "https://github.com/lezli01/vincent"
+    maintainer: "László Szabó <lezli01@gmail.com>"
+    description: "Vendor-independent control plane for executing native agent tooling"
+    license: PolyForm-Noncommercial-1.0.0
+    formats: [deb, rpm]
+    dependencies: [git]
+    bindir: /usr/bin
+    section: devel
+    priority: optional
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/vincent/LICENSE
+      - src: LICENSE
+        dst: /usr/share/doc/vincent/copyright
+      - src: COMMERCIAL-LICENSE.md
+        dst: /usr/share/doc/vincent/COMMERCIAL-LICENSE.md
+      - src: README.md
+        dst: /usr/share/doc/vincent/README.md
+
 checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
-# Homebrew tap (macOS only), docs/tasks/002. This reverses the X decision's
-# "GitHub Releases only" line, and the reversal's cost is exactly what that
-# decision named: a second repo (lezli01/homebrew-tap) and a release-time
-# publish step. It is a *cask*, not a formula, because goreleaser deprecated
+# Homebrew tap (macOS only), docs/tasks/002. This was the first reversal of the
+# X decision's "GitHub Releases only" line; task 021 now widens that reversal
+# to Windows and Linux. Its cost is exactly what X named: a second repo
+# (lezli01/homebrew-tap) and a release-time publish step. It is a *cask*, not a
+# formula, because goreleaser deprecated
 # `brews` in v2.10 and Homebrew now packages pre-built binaries as casks;
 # formulas are for things brew builds from source.
 #
-# Linux and Windows are unchanged — casks do not exist on Linuxbrew, so the
-# download-and-unpack path stays the only path there.
 homebrew_casks:
   - name: vincent
     ids: [vincent]
@@ -123,6 +151,98 @@ homebrew_casks:
 
       Start the daemon in the background and keep it across reboots with:
         vincent service install
+
+# Windows package-manager manifests consume the same signed, checksummed zip
+# archives as GitHub Releases. Stable releases update our Scoop bucket and
+# submit a versioned branch from our winget-pkgs fork to Microsoft's catalog;
+# prereleases render the manifests in dist but do not move either channel.
+scoops:
+  - name: vincent
+    homepage: "https://github.com/lezli01/vincent"
+    description: "Vendor-independent control plane for executing native agent tooling"
+    license: PolyForm-Noncommercial-1.0.0
+    depends: [git]
+    skip_upload: auto
+    repository:
+      owner: lezli01
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    commit_author:
+      name: goreleaser
+      email: goreleaser@users.noreply.github.com
+    commit_msg_template: "chore: vincent {{ .Tag }}"
+
+winget:
+  - name: vincent
+    ids: [vincent]
+    publisher: László Szabó
+    package_identifier: lezli01.Vincent
+    package_name: Vincent
+    default_locale: en-US
+    short_description: "Vendor-independent control plane for native coding-agent CLIs"
+    description: >-
+      Vincent runs Claude Code, Codex, and Cursor CLI workflows in isolated git
+      worktrees, with a local daemon, terminal UI, audit transcripts, and gates.
+    license: PolyForm-Noncommercial-1.0.0
+    license_url: "https://github.com/lezli01/vincent/blob/{{ .Tag }}/LICENSE"
+    homepage: "https://github.com/lezli01/vincent"
+    publisher_url: "https://lezli01.is-a.dev"
+    publisher_support_url: "https://github.com/lezli01/vincent/issues"
+    author: László Szabó
+    copyright: "Copyright © 2026 László Szabó"
+    release_notes_url: "https://github.com/lezli01/vincent/releases/tag/{{ .Tag }}"
+    installation_notes: >-
+      Vincent requires at least one supported agent CLI. Agents run full-auto
+      by default; read the security model before the first task. Releases are
+      not Authenticode-signed, so Windows may show SmartScreen on first launch.
+    tags: [ai, automation, cli, developer-tools, orchestration]
+    dependencies:
+      - package_identifier: Git.Git
+    skip_upload: auto
+    repository:
+      owner: lezli01
+      name: winget-pkgs
+      branch: "vincent-{{ .Version }}"
+      token: "{{ .Env.WINGET_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    commit_author:
+      name: goreleaser
+      email: goreleaser@users.noreply.github.com
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+
+# AUR binary packages are generated from the Linux release archives rather
+# than rebuilt from source. The dedicated SSH key may write only
+# vincent-agent-bin; vincent-bin is already an unrelated AUR package.
+aurs:
+  - name: vincent-agent-bin
+    ids: [vincent]
+    homepage: "https://github.com/lezli01/vincent"
+    description: "Vendor-independent control plane for executing native agent tooling"
+    maintainers:
+      - "László Szabó <lezli01 at gmail dot com>"
+    license: PolyForm-Noncommercial-1.0.0
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/vincent-agent-bin.git"
+    skip_upload: auto
+    provides: [vincent]
+    conflicts: [vincent]
+    depends: [git]
+    package: |-
+      install -Dm755 "./vincent" "${pkgdir}/usr/bin/vincent"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/vincent-agent-bin/LICENSE"
+      install -Dm644 "./COMMERCIAL-LICENSE.md" "${pkgdir}/usr/share/doc/vincent-agent-bin/COMMERCIAL-LICENSE.md"
+      install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/vincent-agent-bin/README.md"
+    commit_msg_template: "chore: vincent {{ .Tag }}"
+    commit_author:
+      name: goreleaser
+      email: goreleaser@users.noreply.github.com
 
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
 # without vincent publishing or rotating a key. Authenticode and Apple
