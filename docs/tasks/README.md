@@ -35,6 +35,7 @@ description of how the system actually behaves.
 | [018](018-control-flow-review.md) | Control-flow review: four correctness fixes | ✅ done (9/9) |
 | [019](019-workflow-includes.md) | Including one workflow in another (`type: include`) | ✅ done (10/10) |
 | [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ⚠ verification blocked (6/7) |
+| [021](021-package-distribution-channels.md) | WinGet, Scoop, mise, deb, and rpm distribution | ⚠ verification blocked (5/7) |
 
 ## How to add and update a task document
 

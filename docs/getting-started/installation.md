@@ -5,6 +5,10 @@ and no database server — the store is an embedded SQLite file.
 
 - [What you need](#what-you-need)
 - [Homebrew (macOS)](#homebrew-macos)
+- [WinGet (Windows)](#winget-windows)
+- [Scoop (Windows)](#scoop-windows)
+- [mise (all platforms)](#mise-all-platforms)
+- [deb and rpm (Linux)](#deb-and-rpm-linux)
 - [Download a release](#download-a-release)
 - [First launch is flagged](#first-launch-is-flagged)
 - [Verify a download](#verify-a-download)
@@ -51,6 +55,95 @@ brew uninstall --zap vincent
 
 Plain `brew uninstall vincent` removes the binary and unloads the LaunchAgent
 but leaves `~/Library/Application Support/vincent` intact.
+
+## WinGet (Windows)
+
+```powershell
+winget install --id lezli01.Vincent --exact
+vincent version
+```
+
+The package depends on `Git.Git`, so WinGet installs Git when it is missing.
+The manifest points at the same checksummed zip as the GitHub release; it is a
+portable package, not an MSI. Releases are not Authenticode-signed, so
+SmartScreen may still prompt on first launch.
+
+Upgrade with `winget upgrade --id lezli01.Vincent --exact`. Before uninstalling
+a copy used by the background service, run `vincent service uninstall`, then
+`winget uninstall --id lezli01.Vincent --exact`.
+
+Microsoft reviews submissions to the public WinGet catalog. A new stable
+release can therefore appear here after its GitHub assets do.
+
+## Scoop (Windows)
+
+Add Vincent's bucket once, then install its manifest:
+
+```powershell
+scoop bucket add vincent https://github.com/lezli01/scoop-bucket
+scoop install vincent/vincent
+vincent version
+```
+
+The manifest installs both x86-64 and ARM64 from the matching GitHub release
+zip and declares Scoop's `git` package as a dependency. Upgrade with `scoop
+update vincent`. Before `scoop uninstall vincent`, run `vincent service
+uninstall` if you registered the background service.
+
+## mise (all platforms)
+
+mise can consume the existing GitHub release archives directly; Vincent does
+not need a mise plugin or registry entry:
+
+```sh
+mise use -g github:lezli01/vincent
+vincent version
+```
+
+That records `latest` in mise's global config and selects the archive matching
+the current OS and architecture. For Vincent's releases, mise also verifies the
+GitHub artifact attestation before extracting the archive. Pin a project or
+machine to a specific release instead with:
+
+```sh
+mise use github:lezli01/vincent@0.3.0       # current directory
+mise use -g github:lezli01/vincent@0.3.0    # global
+```
+
+Use `mise upgrade github:lezli01/vincent` to move an unpinned install forward.
+Shell activation or mise shims must be configured for `vincent` to be on
+`PATH`; follow mise's own shell setup if `mise which vincent` succeeds but the
+shell cannot find it.
+
+## deb and rpm (Linux)
+
+Stable releases attach native packages for x86-64 and ARM64. Download the file
+for your system from the [latest release](https://github.com/lezli01/vincent/releases/latest),
+then let the system package tool install it and its `git` dependency:
+
+```sh
+# Debian / Ubuntu, x86-64 (use _arm64.deb on ARM64)
+sudo apt install ./vincent_*_amd64.deb
+
+# Fedora / RHEL family, x86-64 (use .aarch64.rpm on ARM64)
+sudo dnf install ./vincent-*.x86_64.rpm
+
+vincent version
+```
+
+Both formats put the binary at `/usr/bin/vincent` and the license documents
+under `/usr/share`. They deliberately install no system service: Vincent's
+service is per-user and must capture that user's `PATH`, config, and data
+directories, so opt in afterwards with `vincent service install`.
+
+These files are GitHub release assets, not an apt or dnf repository. The system
+package database records the install, but it cannot discover a newer release;
+download the next deb/rpm and run the same command to upgrade.
+
+WinGet and Scoop metadata is published only for stable releases. If a
+newly introduced channel reports that Vincent is not found before its first
+stable publication, use [mise](#mise-all-platforms) or
+[download a release](#download-a-release).
 
 ## Download a release
 
@@ -119,10 +212,10 @@ you.)
 
 ## Verify a download
 
-The signature is over `checksums.txt`, and `checksums.txt` covers every
-archive — so verifying the signature and then the checksum covers the binary
-you are about to run. Download `checksums.txt`, `checksums.txt.sig` and
-`checksums.txt.pem` from the same release:
+The signature is over `checksums.txt`, and `checksums.txt` covers every archive,
+deb, and rpm — so verifying the signature and then the checksum covers the
+package or binary you are about to run. Download `checksums.txt`,
+`checksums.txt.sig` and `checksums.txt.pem` from the same release:
 
 ```sh
 cosign verify-blob checksums.txt \
@@ -136,9 +229,12 @@ sha256sum -c checksums.txt --ignore-missing
 
 Keyless cosign means there is no vincent public key to trust or rotate: the
 certificate binds the signature to the GitHub Actions workflow that produced
-it. Every archive additionally carries a build provenance attestation, which
-`gh attestation verify vincent_*_linux_amd64.tar.gz --repo lezli01/vincent`
-checks.
+it. Every archive, deb, and rpm additionally carries a build provenance
+attestation. For example:
+
+```sh
+gh attestation verify vincent_*_linux_amd64.tar.gz --repo lezli01/vincent
+```
 
 ## Install an agent CLI
 
@@ -213,11 +309,16 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the development workflow.
 
 ## Upgrading
 
-Replace the binary and restart the daemon:
+Use the channel's upgrade command, or replace the archive binary and restart
+the daemon:
 
 ```sh
 vincent daemon stop
-# unpack the new archive over the old binary — or: brew upgrade vincent
+# brew upgrade vincent
+# winget upgrade --id lezli01.Vincent --exact
+# scoop update vincent
+# mise upgrade github:lezli01/vincent
+# or unpack/install the new archive, deb, or rpm
 vincent daemon start
 vincent version
 ```
@@ -250,6 +351,13 @@ the data directory removes the database, transcripts and worktrees.
 Installed with Homebrew, `brew uninstall --zap vincent` does all of the above in
 one step — it unloads the LaunchAgent, removes the binary, and trashes the
 config and data directory.
+
+For the other managers, remove the binary only after `vincent service
+uninstall`: `winget uninstall --id lezli01.Vincent --exact`, `scoop uninstall
+vincent`, `mise unuse -g github:lezli01/vincent` followed by `mise uninstall
+--all github:lezli01/vincent`, `sudo apt remove vincent`, `sudo dnf remove
+vincent`. None of these removes Vincent's config, database, transcripts, or
+worktrees.
 
 **A branch with commits on it is never deleted by vincent.** Archiving a task
 deletes its branch only when that branch has no commits past its base, so

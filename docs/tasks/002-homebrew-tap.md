@@ -33,6 +33,11 @@ it beat.
   so Windows would pay the X decision's cost and get only a shorter command. The
   Windows and Linux install paths are unchanged.
 
+  **Superseded 2026-08-20 by [task 021](021-package-distribution-channels.md).**
+  The owner now accepts the second-repository and release-publisher cost for
+  discoverability and one-command upgrades on Windows and Linux. The historical
+  reasoning remains here; task 021 is the current distribution decision.
+
 - **A cask, not a formula.** GoReleaser deprecated `brews` in v2.10 and Homebrew
   packages pre-built binaries as casks; formulas are for what brew builds from
   source. Not a stylistic choice — `goreleaser check` fails the config on the

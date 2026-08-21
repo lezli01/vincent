@@ -3316,6 +3316,28 @@ path most macOS users take. Windows is untouched: no packager erases SmartScreen
 the same way, so Scoop and winget stay rejected. Reasoning in
 `docs/tasks/002-homebrew-tap.md`.
 
+**Amended 2026-08-20 — package-manager distribution is now accepted on
+Windows and Linux.** This explicitly supersedes the final two sentences above
+and task 002's Windows-only rejection. Stable releases generate deb and rpm
+assets, update `lezli01/scoop-bucket`, and submit `lezli01.Vincent` from
+`lezli01/winget-pkgs` to Microsoft's public catalog. Prereleases may carry
+deb/rpm assets but never move the Homebrew, Scoop, or WinGet stable channels.
+mise uses the standard
+`github:lezli01/vincent` backend over the existing archives and therefore adds
+no repository or release-time publisher.
+
+The maintenance cost named by the original X decision is accepted: the Scoop
+bucket and WinGet fork are release dependencies with separate credentials.
+Scoop is destination-scoped; WinGet's cross-owner catalog
+pull request requires the explicitly documented classic-`public_repo`
+exception. All formats consume the same GoReleaser build, checksums and release
+tag. None changes the security boundary: binaries remain
+without Authenticode/Apple notarization, package metadata preserves the
+PolyForm Noncommercial license, and no root package script registers Vincent's
+per-user service. External bootstrap and first-release proof are tracked in
+`docs/tasks/021-package-distribution-channels.md`; documentation must not infer
+catalog availability from a successful local manifest render.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the

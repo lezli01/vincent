@@ -233,6 +233,46 @@ vincent`; `brew uninstall --zap vincent` also removes the LaunchAgent and
 
 Homebrew casks are macOS-only — on Linuxbrew, use the archive below.
 
+### WinGet or Scoop (Windows)
+
+```powershell
+winget install --id lezli01.Vincent --exact
+
+# Or, with Scoop:
+scoop bucket add vincent https://github.com/lezli01/scoop-bucket
+scoop install vincent/vincent
+```
+
+Both install the same Windows zip published on GitHub. Releases are not
+Authenticode-signed, so SmartScreen may still appear on first launch.
+
+### deb or rpm (Linux)
+
+Download the deb or rpm for your architecture from the
+[latest release](https://github.com/lezli01/vincent/releases/latest), then:
+
+```sh
+sudo apt install ./vincent_*_amd64.deb       # Debian / Ubuntu
+sudo dnf install ./vincent-*.x86_64.rpm      # Fedora / RHEL family
+```
+
+The deb and rpm files are release assets, not hosted apt/dnf repositories, so
+download the next package to upgrade.
+
+### mise (all platforms)
+
+```sh
+mise use -g github:lezli01/vincent
+vincent version
+```
+
+mise selects the matching GitHub release archive for the current OS and
+architecture. Pin a version with `github:lezli01/vincent@0.3.0`.
+
+Package-manager metadata moves on stable releases only. If a newly added
+channel has not received its first stable release yet, use mise or the archive
+path below.
+
 ### Archive (all platforms)
 
 Download the archive for your platform from the
