@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vincent Workflows"
+  short_description: "Design efficient, validated Vincent workflows"
+  default_prompt: "Use $vincent-workflows to design and validate a cost-effective Vincent workflow."

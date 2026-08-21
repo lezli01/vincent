@@ -17,6 +17,20 @@ rather read one working workflow than a guide, start with
 [`feature-pr.yaml`](../../examples/feature-pr.yaml) and come back here for the
 parts you want to change.
 
+## Agent-assisted authoring
+
+The portable [Vincent Workflows skill](../../skills/vincent-workflows/SKILL.md)
+helps supporting coding agents design and validate these files:
+
+```sh
+npx skills add lezli01/vincent --skill vincent-workflows -g
+```
+
+It asks only for decisions that change the workflow, including possible human
+gates and interaction needs. It prefers deterministic command steps and native
+control flow, and reserves prompt-based agent steps for work that actually
+requires reasoning.
+
 ---
 
 ## Contents

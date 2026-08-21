@@ -440,6 +440,18 @@ Full documentation lives in **[docs/](docs/README.md)**.
 - [Using the TUI](docs/guides/tui.md) · [Scripting vincent](docs/guides/scripting.md)
 - [Running at login](docs/guides/running-at-login.md) · [Troubleshooting](docs/guides/troubleshooting.md)
 
+**Agent skill**
+
+Install the portable workflow-authoring skill for Claude Code, Codex, Cursor,
+or another Agent Skills client:
+
+```sh
+npx skills add lezli01/vincent --skill vincent-workflows -g
+```
+
+It asks about human gates and cost constraints, prefers deterministic commands
+and native control flow, and validates generated workflow YAML.
+
 **Platforms** — [Windows](docs/platforms/windows.md) ·
 [macOS](docs/platforms/macos.md) · [Linux](docs/platforms/linux.md)
 
