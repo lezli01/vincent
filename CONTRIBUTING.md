@@ -14,43 +14,38 @@ Thanks for your interest in contributing!
   `type(scope?): summary` with types like `feat`, `fix`, `docs`, `ci`,
   `chore`, `refactor`, `test`.
 - **Branch naming:** `type/short-description`, e.g. `feat/scheduler-caps`,
-  `docs/v0-spec-fixes`.
+  `docs/feature-overview`.
 - **CI must be green** (build, test, lint on Linux, macOS, and Windows) before
   merging.
 
 ## Before you start
 
 User-facing documentation lives in [docs/](docs/README.md) — getting started,
-guides, per-platform notes and reference. It is written **from the source**: the
+features, guides, per-platform notes and reference. It is written **from the source**: the
 configuration reference tracks `internal/config`, the CLI page the cobra command
 tree, the API page the route table in `internal/api/server.go`, the TUI key
 tables `internal/tui/bindings.go`, and the failure reasons the `Reason*`
 constants. If your PR changes one of those, update its page in the same PR.
 
-The project is specified in [docs/spec.md](docs/spec.md) — one spec, not
-versioned, describing the system as it is now. Behaviour changes are amended into
-it in the same PR as the code, never ahead of it.
+For anything not already agreed, **open an issue first** and describe the user
+problem, expected outcome, and alternatives before investing significant effort.
+Reference that issue in the pull request.
 
-Planned and in-flight work lives in [docs/tasks/](docs/tasks/README.md), one
-document per piece of work. If what you want to do is a task there, mention its
-ID in your PR (e.g. "closes 001.4") and mark it `[~]` before you start. That
-README also defines the status markers and the rule that a decision recorded in a
-task document is binding.
+Maintainers also keep a living [engineering specification](docs/spec.md) for
+code-level contracts and [engineering work records](docs/tasks/README.md) for
+substantial tracked changes. If your change touches one of those records, update
+it alongside the code and mention the relevant section or task ID in the PR.
+These records support implementation; user-visible behavior must still be
+explained in the feature, guide, or reference page where users will look for it.
 
-For anything not in that folder, **open an issue first** and let it be agreed
-before you invest significant effort, then reference the issue in your PR.
-
-The v0 ledger, [docs/history/v0-tasks.md](docs/history/v0-tasks.md), is a
-**closed** record — all 70 tasks are done and `v0.1.0` is released. There is no
-open task ID in it to claim, but it is worth reading: the design decisions it
-carries are binding, and code comments cite them by name ("phase 2 decision",
-"T1.5/T1.6 decision"). If your change touches an area the spec covers, say which section
-(`§9.7`) and whether you believe the spec needs updating alongside the code —
-a change that contradicts the spec without amending it will be sent back.
+Historical decision records remain in the repository because source comments
+cite them. Treat a cited decision as part of the current design until the change
+explicitly supersedes it and records why.
 
 ## Development
 
-The daemon and TUI are written in Go (see the spec for the architecture).
+The daemon and TUI are written in Go; [Concepts](docs/getting-started/concepts.md)
+is the quickest architecture overview.
 Build targets run via [mage](https://magefile.org/) with zero install
 (list all targets with `go run mage.go -l`):
 
@@ -77,7 +72,7 @@ It warns when another `vincent` earlier on PATH shadows the install, and when a
 daemon is still running the previous build (`vincent daemon stop` hands over).
 
 Cross-platform support is a hard requirement — Windows, macOS and Linux all run
-the full suite plus three acceptance gates in CI. If you touch build-tagged
+the full suite plus seven end-to-end acceptance gates in CI. If you touch build-tagged
 code, lint the *other* platforms too, since a host-only lint cannot see them:
 
 ```sh

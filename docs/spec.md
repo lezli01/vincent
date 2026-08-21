@@ -1,26 +1,40 @@
-# vincent — Local AI Workload Orchestrator
+# vincent engineering specification
 
-**Status:** Draft v1 · **Date:** 2026-08-06 · **Owner:** László Szabó
+**Status:** Living engineering reference · **Owner:** László Szabó
 
-vincent is a single-user, local-first facade for AI engineers: one central place to
-monitor and manage many AI coding-agent workloads on a host. A background daemon
-(`vincentd` role of the `vincent` binary) owns all state and execution; clients (a TUI
-in v1, a web UI later) are thin, disposable views over the daemon's HTTP API. Work
-continues even when no client is attached.
+> [!NOTE]
+> This document preserves code-level contracts and design decisions for
+> maintainers. It is not the product landing page or the recommended starting
+> point for users. See the [feature tour](features.md),
+> [documentation home](README.md), and [workflow schema](reference/workflow-schema.md)
+> for the current user-facing view of vincent.
+
+vincent is a single-user, local-first control plane for AI coding-agent
+workloads. A background daemon owns all state and execution; the TUI, CLI, and
+other integrations are clients of its localhost HTTP API. Work continues when
+no client is attached.
+
+The current product combines isolated git worktrees, durable scheduling,
+Claude Code/Codex/Cursor adapters, a structured workflow language, deterministic
+checks, human gates and mid-run input, crash recovery, live output and diffs,
+and REST + SSE automation in one cross-platform binary. The numbered sections
+below remain stable because source comments cite them; dated amendments record
+how the implementation has evolved.
 
 ---
 
 ## 1. Overview
 
 An engineer registers any number of local git repositories ("projects"), authors
-reusable **workflows** (ordered steps: agent prompts, shell commands, manual gates),
-and creates **tasks** against a project. Each task selects a workflow and executes its
-steps sequentially inside a dedicated **git worktree**, so parallel tasks never
-collide. Agent steps run locally installed agent CLIs (Claude Code and Codex in v1)
-headlessly. The daemon schedules tasks under configurable global and per-project
-concurrency caps, records full transcripts and run metrics, streams live progress over
-SSE, and pauses for human input when a step fails, a manual gate is reached, or a
-running agent asks a structured question (§7.4).
+reusable **workflows**, and creates **tasks** against a project. A workflow can
+combine agent prompts, shell commands and manual gates with parallel groups,
+isolated fan-out, conditions, loops and reusable includes. Each task runs inside
+a dedicated **git worktree**, so parallel tasks never collide. Agent steps run
+locally installed Claude Code, Codex, or Cursor CLIs headlessly. The daemon
+schedules tasks under configurable global and per-project concurrency caps,
+records full transcripts and run metrics, streams live progress over SSE, and
+pauses for human input when a step fails, a manual gate is reached, or a running
+agent asks a structured question (§7.4).
 
 **Nothing about delivery is hardcoded.** Whether a finished task pushes a branch,
 opens a PR, or just leaves a diff for review is entirely determined by the workflow's
@@ -28,7 +42,12 @@ steps.
 
 ## 2. Goals and non-goals
 
-### Goals (v1)
+The lists in this section preserve the original design scope so later decisions
+remain understandable. They are not the current product feature matrix; dated
+amendments in this specification record superseded boundaries, while
+[Features](features.md) describes what ships now.
+
+### Original goals
 
 - One daemon per developer machine; localhost-only API; the OS user is the trust boundary.
 - Cross-platform: Windows, macOS, Linux from day one.
@@ -47,7 +66,7 @@ steps.
 - Human-in-the-loop when needed: gates, blocked tasks, and mid-run agent questions alert in the client; a question is answered into the still-live agent session (§7.4).
 - Crash-safe: daemon restart recovers and resumes interrupted work automatically.
 
-### Non-goals (v1) — explicitly deferred
+### Original non-goals — explicitly deferred
 
 - Web UI (the API is designed for it; it is not built in v1).
 - Multi-user / remote access / multi-host orchestration.

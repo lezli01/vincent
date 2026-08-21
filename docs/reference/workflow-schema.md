@@ -1,8 +1,7 @@
 # Workflow schema
 
-The complete YAML field reference. The practical, prose version is
-[Writing workflows](../guides/workflows.md); the normative one is
-[spec §8](../spec.md).
+The complete YAML field reference. For a practical, pattern-oriented tour, see
+[Writing workflows](../guides/workflows.md).
 
 **Unknown keys are errors, not ignored.** A typo fails validation instead of
 becoming a setting that silently never applied.

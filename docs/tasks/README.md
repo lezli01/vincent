@@ -1,15 +1,14 @@
-# Tasks
+# Engineering work records
 
-Planned and in-flight work. One document per piece of work, numbered in the
-order they were opened, each carrying its own task list and — more importantly —
-the **decisions** behind it.
+These are maintainer planning and decision records, not the product
+documentation. If you want to install or use vincent, start with the
+[feature tour](../features.md) or [documentation home](../README.md).
 
-This replaced the per-version ledgers v0 was built with
-(`docs/versions/v0/tasks.md`, now [history/v0-tasks.md](../history/v0-tasks.md)).
-That file reached 279 KB because one document accumulated every decision and
-every verification note for a whole release. Splitting by piece of work keeps
-each one readable; the spec, which is *not* versioned, stays the single
-description of how the system actually behaves.
+One document is kept per substantial piece of work, numbered in the order it
+was opened and carrying both its task list and the decisions behind it.
+Completed records stay in place so pull requests and code comments retain stable
+citations. Current user-visible behavior belongs in the user documentation;
+the living engineering specification records implementation contracts.
 
 ## Index
 
@@ -55,9 +54,8 @@ description of how the system actually behaves.
 - **Never delete a task.** Descoped: strike it through (`~~001.4~~`) with a dated
   note. Newly discovered work: append with the next free ID.
 - **Decisions go in the document, dated, with the alternative they beat.** This
-  is the part that earns its keep later. A decision recorded here is binding in
-  the same way v0's phase decisions are — don't relitigate one without saying so
-  explicitly.
+  is the part that earns its keep later. A recorded decision remains binding
+  until it is explicitly superseded with the new reasoning.
 - **Finished documents stay put.** Status lives in the markers and the index, so
   there is no "done" folder to move things to and no link to break.
 - No time estimates are tracked — only status.

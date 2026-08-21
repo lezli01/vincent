@@ -10,9 +10,19 @@ and every client — the Bubble Tea TUI, `vincent` CLI subcommands, curl — is 
 consumer of its localhost REST+SSE API. One Go binary (`cmd/vincent`) serves all
 roles.
 
-## Spec-driven workflow
+## Documentation model
 
-These documents govern the work and are **not** optional reading:
+Public documentation is feature-first and rooted at `docs/README.md`:
+`docs/features.md` presents the product surface, while `getting-started/`,
+`guides/`, `platforms/`, `reference/`, `security-model.md`, and `faq.md` explain
+how to use it. It is derived from the source, not from planning records: the
+config reference tracks `internal/config`, the CLI page the cobra tree, the API
+page `internal/api/server.go`'s route table, the TUI key tables
+`internal/tui/bindings.go`, and the block reasons the `Reason*` constants. A
+change to any of those is a change to its page.
+
+Implementation work also uses these maintainer records. They are **not**
+optional when a change touches the behavior or decision they describe:
 
 - `docs/spec.md` — the product and implementation spec, and the **only** one.
   Section numbers (§6, §12.2, §13.3 …) are used as identifiers throughout the code
@@ -20,26 +30,18 @@ These documents govern the work and are **not** optional reading:
   It is deliberately **not versioned**: it describes the system as it is now, and is
   amended in place with dated notes, in the same PR as the code that makes an
   amendment true. Two specs would make every `spec §9.1` citation ambiguous, which
-  is why v0's copy was extracted here rather than forked.
+  is why the original version's copy was extracted here rather than forked.
 - `docs/tasks/` — planned and in-flight work, one document per piece of work
   (`001-configurable-branch-names.md`), with its decisions. `docs/tasks/README.md`
   is the index and defines the conventions: status markers
   (`[ ]`/`[~]`/`[x]`/`[!]`), `NNN.n` task IDs, updating the index row in the same
   edit, and never deleting a task. Mention the task ID in the PR ("closes 001.4").
-- `docs/history/v0-tasks.md` — the **closed** v0 ledger (70/70, released as
-  `v0.1.0`). Frozen: there is no open task in it to claim. Read it for the design
+- `docs/history/v0-tasks.md` — the **closed** initial-release ledger (70/70,
+  released as `v0.1.0`). Frozen: there is no open task in it to claim. Read it for the design
   decisions it carries, which are binding and are cited from code comments
   ("phase 2 decision", "T1.5/T1.6 decision", "PR L decision").
 - `docs/gates/` — the manual walkthroughs behind the scripted acceptance gates,
   and the record of when each was last walked.
-
-User-facing documentation is a separate tree rooted at `docs/README.md`
-(`getting-started/`, `guides/`, `platforms/`, `reference/`, plus
-`security-model.md` and `faq.md`). It is derived from the source, not from the
-spec: the config reference tracks `internal/config`, the CLI page the cobra
-tree, the API page `internal/api/server.go`'s route table, the TUI key tables
-`internal/tui/bindings.go`, and the block reasons the `Reason*` constants. A
-change to any of those is a change to its page.
 
 Phase decisions ("phase 2 decision", "PR G decision", "T1.5/T1.6 decision") recorded
 inline in comments and in tasks.md are binding — they are the outcome of design

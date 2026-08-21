@@ -54,13 +54,22 @@ a name in a narrower scope shadows the same name in a wider one:
 The daemon watches both directories and reloads on save. A file that fails to
 parse is reported invalid; the previously loaded version keeps running.
 
-There are exactly **three step types**:
+There are **nine step types**. Three perform work or wait for a person:
 
 - **`agent`** — runs an agent CLI headlessly in the worktree, with a prompt.
 - **`command`** — runs a shell command in the worktree.
 - **`manual`** — stops and waits for a person (a gate).
 
-`check` is a **field** on agent and command steps, not a fourth type. It is the
+Six compose or control those steps:
+
+- **`parallel`** — runs sub-steps concurrently in the task's worktree.
+- **`fan_out`** — creates child tasks with isolated worktrees, then merges them.
+- **`condition`** — ends a sequence successfully when its expression is true.
+- **`loop`** — repeats a body by count or once per item.
+- **`break`** — exits the surrounding loop successfully.
+- **`include`** — expands another workflow into this one when the task is created.
+
+`check` is a **field** on agent and command steps, not another type. It is the
 mechanism that stops an agent from grading its own homework: the step succeeds
 only if the check command also exits 0.
 
@@ -121,15 +130,18 @@ carrying any commit is never deleted.** Turn the cleanup off with
 
 ## How a step actually runs
 
-Steps execute strictly in order. Executing one means:
+Top-level steps advance in order, but a structural step can introduce
+concurrency, branching, repetition, or composition. An agent, command, or
+manual step follows this lifecycle:
 
 1. **Render templates.** Prompts, `run`, `check` and `instructions` are Go
    `text/template`, rendered against the task, project, worktree, and the
    results of completed steps. Rendering uses `missingkey=error`, so a typo
    fails the step *before* any process starts rather than writing a silent hole
    into a prompt.
-2. **Run the body.** An agent CLI subprocess, a shell command, or a wait for a
-   human.
+2. **Run the body.** Start an agent CLI subprocess, execute a shell command, or
+   wait for a human. Structural steps coordinate their nested steps or child
+   tasks using the same persisted state model.
 3. **Evaluate success.** An agent step succeeds when the process exits 0 *and*
    its event stream produced a terminal result *and* any declared `check` exits
    0. A command step succeeds when it exits 0 and its check does. A manual step
@@ -198,6 +210,7 @@ transcripts already on disk.
 ## Where to go next
 
 - [Quickstart](quickstart.md) — do it.
+- [Features](../features.md) — see the complete product surface.
 - [Writing workflows](../guides/workflows.md) — the part you will spend time in.
+- [Using the TUI](../guides/tui.md) — operate and inspect active workloads.
 - [Task lifecycle](../reference/task-lifecycle.md) — states and actions in full.
-- [The spec](../spec.md) — the normative version of everything above.

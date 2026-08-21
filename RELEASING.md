@@ -203,7 +203,8 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
   and needs no publisher. Keeping artifact and manifest generation in one run
   prevents channel checksums from drifting from the release they name.
 - **OS code signing.** Authenticode and Apple notarization are recurring
-  certificate costs v0 does not take on — recorded as a descope in spec §19.
+  certificate costs the project does not currently take on — recorded as a
+  descope in spec §19.
   Releases carry cosign signatures and build provenance instead, and the README
   documents the SmartScreen and Gatekeeper prompts users will meet.
 - **External catalogs remain external.** Scoop updates a repository the
