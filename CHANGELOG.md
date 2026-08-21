@@ -9,6 +9,25 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.4.0](https://github.com/lezli01/vincent/compare/v0.3.0...v0.4.0) (2026-08-21)
+
+### Added
+
+- **Roomier, responsive TUI workflows.** At terminals 128×24 and larger, task
+  creation now uses a six-stage guided takeover layout, while Projects and
+  Workflows gain persistent navigation rails and contextual main panes. The
+  workflow graph stays alongside its registry, interaction state survives
+  resizes, and smaller terminals retain the compact layouts.
+  ([#153](https://github.com/lezli01/vincent/pull/153))
+
+- **WinGet, Scoop, mise, deb and rpm distribution.** Stable releases now publish
+  Vincent's Windows archives through its Scoop bucket and submit them to
+  Microsoft's WinGet catalog, attach native deb/rpm packages for x86-64 and
+  ARM64, and support mise through its standard GitHub backend. All formats use
+  the same checksummed release binaries and preserve the noncommercial license;
+  deb/rpm packages install no root-owned service for Vincent's per-user daemon.
+  ([#158](https://github.com/lezli01/vincent/pull/158))
+
 ## [0.3.0](https://github.com/lezli01/vincent/compare/8efa4c8c7bb8b034831c04447f17122f9d8aaf0a...v0.3.0) (2026-08-19)
 
 ### Added
