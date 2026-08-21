@@ -14,6 +14,7 @@ list with the user-facing context a commit subject cannot carry.
 ### Fixed
 
 - **Release package verification.** RPM payloads are now extracted safely inside a temporary directory during validation, allowing provenance generation and Linux, macOS and Windows smoke tests to complete for published releases. ([#159](https://github.com/lezli01/vincent/pull/159))
+
 ## [0.4.0](https://github.com/lezli01/vincent/compare/v0.3.0...v0.4.0) (2026-08-21)
 
 ### Added
