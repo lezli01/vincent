@@ -1,6 +1,6 @@
 # 023 — Vincent workflow authoring skill
 
-**Status:** 🚧 in progress (4/5)  
+**Status:** 🚧 in progress (4/5)
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
