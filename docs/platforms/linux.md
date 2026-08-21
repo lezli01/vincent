@@ -31,15 +31,6 @@ downloaded package the same way to upgrade. Both formats put the binary at
 `/usr/bin/vincent`, depend on git, carry the license documents, and deliberately
 do not create a root-owned service for Vincent's per-user daemon.
 
-On Arch Linux, install the AUR binary package with your normal helper or build
-it directly:
-
-```sh
-git clone https://aur.archlinux.org/vincent-agent-bin.git
-cd vincent-agent-bin
-makepkg -si
-```
-
 mise works across distributions without a distro package:
 
 ```sh

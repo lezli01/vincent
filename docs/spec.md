@@ -3319,17 +3319,16 @@ the same way, so Scoop and winget stay rejected. Reasoning in
 **Amended 2026-08-20 — package-manager distribution is now accepted on
 Windows and Linux.** This explicitly supersedes the final two sentences above
 and task 002's Windows-only rejection. Stable releases generate deb and rpm
-assets, update the AUR `vincent-agent-bin` package and
-`lezli01/scoop-bucket`, and submit `lezli01.Vincent` from
+assets, update `lezli01/scoop-bucket`, and submit `lezli01.Vincent` from
 `lezli01/winget-pkgs` to Microsoft's public catalog. Prereleases may carry
-deb/rpm assets but never move the Homebrew,
-Scoop, WinGet, or AUR stable channels. mise uses the standard
+deb/rpm assets but never move the Homebrew, Scoop, or WinGet stable channels.
+mise uses the standard
 `github:lezli01/vincent` backend over the existing archives and therefore adds
 no repository or release-time publisher.
 
 The maintenance cost named by the original X decision is accepted: the Scoop
-bucket, WinGet fork and AUR repository are release dependencies with separate
-credentials. Scoop and AUR are destination-scoped; WinGet's cross-owner catalog
+bucket and WinGet fork are release dependencies with separate credentials.
+Scoop is destination-scoped; WinGet's cross-owner catalog
 pull request requires the explicitly documented classic-`public_repo`
 exception. All formats consume the same GoReleaser build, checksums and release
 tag. None changes the security boundary: binaries remain

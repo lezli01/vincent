@@ -9,7 +9,6 @@ and no database server — the store is an embedded SQLite file.
 - [Scoop (Windows)](#scoop-windows)
 - [mise (all platforms)](#mise-all-platforms)
 - [deb and rpm (Linux)](#deb-and-rpm-linux)
-- [AUR (Arch Linux)](#aur-arch-linux)
 - [Download a release](#download-a-release)
 - [First launch is flagged](#first-launch-is-flagged)
 - [Verify a download](#verify-a-download)
@@ -141,25 +140,7 @@ These files are GitHub release assets, not an apt or dnf repository. The system
 package database records the install, but it cannot discover a newer release;
 download the next deb/rpm and run the same command to upgrade.
 
-## AUR (Arch Linux)
-
-The AUR package is `vincent-agent-bin` (`vincent-bin` belongs to an unrelated
-project). With an AUR helper, install it through that helper's normal flow.
-Without one:
-
-```sh
-git clone https://aur.archlinux.org/vincent-agent-bin.git
-cd vincent-agent-bin
-makepkg -si
-vincent version
-```
-
-`vincent-agent-bin` uses Vincent's published Linux archive rather than
-rebuilding from source, supports x86-64 and ARM64, depends on git, and installs
-both license documents. Pull the AUR checkout and rerun `makepkg -si`, or use
-the helper's normal upgrade command, for a newer stable release.
-
-WinGet, Scoop, and AUR metadata is published only for stable releases. If a
+WinGet and Scoop metadata is published only for stable releases. If a
 newly introduced channel reports that Vincent is not found before its first
 stable publication, use [mise](#mise-all-platforms) or
 [download a release](#download-a-release).
@@ -375,8 +356,8 @@ For the other managers, remove the binary only after `vincent service
 uninstall`: `winget uninstall --id lezli01.Vincent --exact`, `scoop uninstall
 vincent`, `mise unuse -g github:lezli01/vincent` followed by `mise uninstall
 --all github:lezli01/vincent`, `sudo apt remove vincent`, `sudo dnf remove
-vincent`, or the normal AUR removal command. None of these removes Vincent's
-config, database, transcripts, or worktrees.
+vincent`. None of these removes Vincent's config, database, transcripts, or
+worktrees.
 
 **A branch with commits on it is never deleted by vincent.** Archiving a task
 deletes its branch only when that branch has no commits past its base, so

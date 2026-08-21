@@ -246,7 +246,7 @@ scoop install vincent/vincent
 Both install the same Windows zip published on GitHub. Releases are not
 Authenticode-signed, so SmartScreen may still appear on first launch.
 
-### deb, rpm, or AUR (Linux)
+### deb or rpm (Linux)
 
 Download the deb or rpm for your architecture from the
 [latest release](https://github.com/lezli01/vincent/releases/latest), then:
@@ -256,8 +256,6 @@ sudo apt install ./vincent_*_amd64.deb       # Debian / Ubuntu
 sudo dnf install ./vincent-*.x86_64.rpm      # Fedora / RHEL family
 ```
 
-On Arch Linux, install `vincent-agent-bin` from AUR with your normal AUR
-workflow.
 The deb and rpm files are release assets, not hosted apt/dnf repositories, so
 download the next package to upgrade.
 

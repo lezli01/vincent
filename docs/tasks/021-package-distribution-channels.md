@@ -1,9 +1,9 @@
 # 021 — Package distribution channels
 
-**Status:** ⚠ verification blocked (6/8) · **Opened:** 2026-08-20
+**Status:** ⚠ verification blocked (5/7) · **Opened:** 2026-08-20
 
 Vincent releases should meet people in the package manager they already use:
-WinGet and Scoop on Windows; deb, rpm, and AUR on Linux; and mise on every
+WinGet and Scoop on Windows; deb and rpm on Linux; and mise on every
 platform mise supports. GitHub release archives and the Homebrew cask remain
 available and remain the source artifacts behind those channels.
 
@@ -22,8 +22,8 @@ configuration and user documentation.
 
 - **GoReleaser remains the single artifact and manifest producer.** nFPM emits
   deb and rpm packages from the existing Linux binaries; GoReleaser emits the
-  Scoop manifest, the WinGet submission, and `vincent-agent-bin`'s PKGBUILD
-  from the same checksummed archives. A second release workflow would make
+  Scoop manifest and the WinGet submission from the same checksummed archives.
+  A second release workflow would make
   version, checksum, and license drift possible. Stable tags publish manager
   metadata; prerelease tags render it for inspection but do not move stable
   channels.
@@ -51,8 +51,7 @@ configuration and user documentation.
 
 - **Publishing credentials stay separate, with one explicit WinGet
   exception.** Scoop gets a fine-grained token scoped only to
-  `lezli01/scoop-bucket`; AUR gets a dedicated unencrypted SSH key used only
-  for `vincent-agent-bin`. WinGet must both push the owner's fork and open a
+  `lezli01/scoop-bucket`. WinGet must both push the owner's fork and open a
   pull request in Microsoft's repository, which a fine-grained token scoped to
   the fork cannot express; its dedicated classic PAT therefore needs
   `public_repo` and can write other public repositories as that account. A bot
@@ -61,15 +60,9 @@ configuration and user documentation.
   permission boundary.
 
 - **The commercial-license boundary is visible in every format.** Package
-  metadata names `PolyForm-Noncommercial-1.0.0`, and deb/rpm/AUR installs carry
+  metadata names `PolyForm-Noncommercial-1.0.0`, and deb/rpm installs carry
   both `LICENSE` and `COMMERCIAL-LICENSE.md`. A package manager making install
   easier does not broaden the rights granted by the release.
-
-- **The AUR name is `vincent-agent-bin`, not `vincent-bin`.** The shorter name
-  is already maintained by an unrelated terminal color-scheme project. The
-  collision cannot be solved by overwriting someone else's package, so the
-  descriptive free name owns this PKGBUILD while `provides=('vincent')` and
-  `conflicts=('vincent')` preserve the installed command's identity.
 
 ## Tasks
 
@@ -81,31 +74,27 @@ configuration and user documentation.
   WinGet metadata from the existing zip archives, stable-only publishing,
   isolated credentials, and a cross-repository WinGet pull request.
   ✓ 2026-08-20
-- [x] **021.3 — Generate `vincent-agent-bin` and wire publishing.** Add a
-  stable-only AUR PKGBUILD that installs the binary and both license documents
-  and depends on git. ✓ 2026-08-20
-- [x] **021.4 — Add the mise path.** Document and execute an isolated install
+- [x] **021.3 — Add the mise path.** Document and execute an isolated install
   through mise's standard GitHub backend, including version pinning and
   upgrades. ✓ 2026-08-20
-- [x] **021.5 — Extend release provenance and smoke checks.** Upload and attest
+- [x] **021.4 — Extend release provenance and smoke checks.** Upload and attest
   deb/rpm artifacts, inspect their payloads, and make CI reject an invalid
   GoReleaser schema. ✓ 2026-08-20
-- [x] **021.6 — Amend product and operator documentation.** Update §19, README,
+- [x] **021.5 — Amend product and operator documentation.** Update §19, README,
   installation/platform guides, and RELEASING without claiming an unpublished
   channel is already live. ✓ 2026-08-20
-- [!] **021.7 — Run repository verification and review the final diff.** — the
+- [!] **021.6 — Run repository verification and review the final diff.** — the
   container's PID namespace makes the existing `procx` live-process tests and
   dependent `taskrun` recovery tests fail; the same four failures reproduce
   without `-race` and are already recorded by task 020.
   Done only when GoReleaser check/snapshot, package payload checks, docs/link
   lint, and the repository's required code checks have actually run;
   unavailable checks remain explicit.
-- [!] **021.8 — Bootstrap and prove the external channels.** — requires the
+- [!] **021.7 — Bootstrap and prove the external channels.** — requires the
   owner's authorization and credentials for external repository/account writes.
-  Create the public
-  Scoop bucket and WinGet fork, register `vincent-agent-bin` in AUR, install
-  the three destination credentials, publish a stable tag, and install that
-  version through all six new paths. This is an external repository/account
+  Confirm the Scoop bucket and WinGet fork, install the two destination
+  credentials, publish a stable tag, and install that version through all five
+  new paths. This is an external repository/account
   mutation and must not be inferred from a successful local snapshot.
 
 ## Verification (2026-08-20)
@@ -115,8 +104,8 @@ Run with Go 1.26.6, GoReleaser 2.17.1, actionlint 1.7.12, and mise 2026.8.9:
 - `goreleaser check` — pass.
 - `goreleaser release --snapshot --clean --skip=publish,sign` — pass. It
   produced six OS/architecture archives, two debs, two rpms, three WinGet
-  manifests, one Scoop manifest, `vincent-agent-bin`'s PKGBUILD and `.SRCINFO`,
-  and the existing Homebrew cask. `checksums.txt` contains all ten binary
+  manifests, one Scoop manifest, and the existing Homebrew cask.
+  `checksums.txt` contains all ten binary
   artifacts.
 - Debian inspection — both architectures present; the amd64 control data names
   package `vincent`, architecture `amd64`, and dependency `git`; its payload
@@ -131,9 +120,7 @@ Run with Go 1.26.6, GoReleaser 2.17.1, actionlint 1.7.12, and mise 2026.8.9:
   a normal GitHub runner.
 - Generated metadata — Scoop JSON parses and contains x86-64/ARM64, `git`, and
   the PolyForm license; all three WinGet YAML files name
-  `lezli01.Vincent`; the AUR PKGBUILD passes `bash -n` and `.SRCINFO` carries
-  both architectures, release URLs, checksums, dependency, provides, conflicts,
-  and license.
+  `lezli01.Vincent`.
 - mise isolated install — `mise use -g github:lezli01/vincent@0.3.0` selected
   `vincent_0.3.0_linux_amd64.tar.gz`, verified its GitHub artifact attestation,
   installed it, and ran the real binary. `mise unuse` and `mise uninstall`
@@ -146,12 +133,13 @@ Run with Go 1.26.6, GoReleaser 2.17.1, actionlint 1.7.12, and mise 2026.8.9:
 - `GOOS=windows CGO_ENABLED=0 go build ./...` and the equivalent Darwin build
   — pass.
 - `go run mage.go testrace` — all other packages pass; the four existing
-  live-PID/recovery tests fail for the environment reason on 021.7. `go test
+  live-PID/recovery tests fail for the environment reason on 021.6. `go test
   ./internal/procx ./internal/taskrun -count=1` reproduces the same failures
   without the race detector.
 
-External readiness checks found that `lezli01/scoop-bucket` and
-`lezli01/winget-pkgs` do not yet exist. AUR's `vincent-bin` is already an
-unrelated package, so this task uses the currently unclaimed
-`vincent-agent-bin`; no AUR package was registered and no destination
-credential or stable tag was created in this task.
+The owner has since created `lezli01/scoop-bucket` and the
+`lezli01/winget-pkgs` fork and configured their destination credentials. No
+stable tag has yet proved publication and installation through these channels.
+AUR support is intentionally deferred to
+[#157](https://github.com/lezli01/vincent/issues/157) because new AUR account
+registration is temporarily suspended.

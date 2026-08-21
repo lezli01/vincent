@@ -217,33 +217,6 @@ winget:
       email: goreleaser@users.noreply.github.com
     commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
 
-# AUR binary packages are generated from the Linux release archives rather
-# than rebuilt from source. The dedicated SSH key may write only
-# vincent-agent-bin; vincent-bin is already an unrelated AUR package.
-aurs:
-  - name: vincent-agent-bin
-    ids: [vincent]
-    homepage: "https://github.com/lezli01/vincent"
-    description: "Vendor-independent control plane for executing native agent tooling"
-    maintainers:
-      - "László Szabó <lezli01 at gmail dot com>"
-    license: PolyForm-Noncommercial-1.0.0
-    private_key: "{{ .Env.AUR_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/vincent-agent-bin.git"
-    skip_upload: auto
-    provides: [vincent]
-    conflicts: [vincent]
-    depends: [git]
-    package: |-
-      install -Dm755 "./vincent" "${pkgdir}/usr/bin/vincent"
-      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/vincent-agent-bin/LICENSE"
-      install -Dm644 "./COMMERCIAL-LICENSE.md" "${pkgdir}/usr/share/doc/vincent-agent-bin/COMMERCIAL-LICENSE.md"
-      install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/vincent-agent-bin/README.md"
-    commit_msg_template: "chore: vincent {{ .Tag }}"
-    commit_author:
-      name: goreleaser
-      email: goreleaser@users.noreply.github.com
-
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
 # without vincent publishing or rotating a key. Authenticode and Apple
 # notarization are recurring certificate costs v1 does not take on — §19's ‡

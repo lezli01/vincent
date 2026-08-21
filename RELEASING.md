@@ -6,7 +6,7 @@ create the `vMAJOR.MINOR.PATCH` tag and GitHub release; that tag triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which uses
 [`.goreleaser.yaml`](.goreleaser.yaml) to cross-compile, checksum, sign, attest,
 upload, smoke-test on all three OSes, build deb/rpm packages, update the stable
-Homebrew, Scoop, and AUR metadata, and submit the stable WinGet manifest. There
+Homebrew and Scoop metadata, and submit the stable WinGet manifest. There
 is no manual tag or upload step, and no artifact is built on a maintainer's
 machine.
 
@@ -14,19 +14,17 @@ Only a maintainer with push access can cut a release.
 
 ## Channel bootstrap and repository secrets
 
-Before enabling a stable release, all three external destinations must exist:
+Before enabling a stable release, both external destinations must exist:
 
 - public `lezli01/scoop-bucket`, with `main` as its default branch;
-- a `lezli01/winget-pkgs` fork of `microsoft/winget-pkgs`; and
-- the AUR account/key that may push
-  `ssh://aur@aur.archlinux.org/vincent-agent-bin.git`.
+- a `lezli01/winget-pkgs` fork of `microsoft/winget-pkgs`.
 
-A GoReleaser snapshot renders all three manifests without contacting those
+A GoReleaser snapshot renders both manifests without contacting those
 destinations. That proves the content, not publication. Do not merge a release
 change that names a missing destination: the next stable tag would discover it
 after the GitHub release already exists.
 
-Five secrets are required.
+Four secrets are required.
 
 | Secret | Scope and permissions | Why it exists |
 |---|---|---|
@@ -34,13 +32,12 @@ Five secrets are required.
 | `HOMEBREW_TAP_TOKEN` | Fine-grained PAT selecting only [`lezli01/homebrew-tap`](https://github.com/lezli01/homebrew-tap), with **Contents: read and write** | `GITHUB_TOKEN` and the Release Please PAT are scoped to this repository; pushing the cask is a cross-repo write. |
 | `SCOOP_BUCKET_TOKEN` | Fine-grained PAT selecting only `lezli01/scoop-bucket`, with **Contents: read and write** | Push the stable `vincent.json` manifest to the bucket root. |
 | `WINGET_TOKEN` | Dedicated classic PAT with **`public_repo`** | Push a version branch to `lezli01/winget-pkgs` and open its pull request against `microsoft/winget-pkgs`. GitHub cannot express that cross-owner PR as a fine-grained token scoped only to the fork. |
-| `AUR_KEY` | Contents of a dedicated, unencrypted SSH private key whose public key is registered with the maintainer's AUR account | Push only the generated `vincent-agent-bin` PKGBUILD and `.SRCINFO`. Do not reuse a login or workstation key. |
 
 Nothing else needs a secret: cosign signs keylessly with the packaging
 workflow's OIDC identity.
 
 **Narrow scope is the default, not a claim that WinGet has one.** Release Please,
-Homebrew, and Scoop each have a single-repository token; AUR has a dedicated key.
+Homebrew, and Scoop each have a single-repository token.
 `WINGET_TOKEN` is the exception: `public_repo` can change any public repository
 the account can write. Prefer a publisher bot account if that blast radius is
 not acceptable. Every credential is passed to the pinned GoReleaser action only
@@ -58,7 +55,6 @@ gh secret set RELEASE_PLEASE_TOKEN --repo lezli01/vincent
 gh secret set HOMEBREW_TAP_TOKEN --repo lezli01/vincent
 gh secret set SCOOP_BUCKET_TOKEN --repo lezli01/vincent
 gh secret set WINGET_TOKEN --repo lezli01/vincent
-gh secret set AUR_KEY --repo lezli01/vincent < /path/to/dedicated-aur-private-key
 ```
 
 ## Version numbers
@@ -80,7 +76,7 @@ binary.
 
 The normal Release Please path creates stable releases. If a maintainer cuts an
 exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
-`skip_upload: auto` prevents it from moving the Homebrew, Scoop, WinGet, or AUR
+`skip_upload: auto` prevents it from moving the Homebrew, Scoop, or WinGet
 metadata. The prerelease still carries its deb and rpm assets on GitHub.
 
 ## Cutting a release
@@ -106,7 +102,7 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
    *Run workflow*, leaving `dry_run` checked. That runs
    `release --snapshot --clean --skip=publish,sign` — real cross-compilation and
    real archives/packages/manifests, published nowhere. The job inspects the
-   deb/rpm payloads and generated Scoop, WinGet, and AUR metadata before it
+   deb/rpm payloads and generated Scoop and WinGet metadata before it
    uploads the `dist` artifact for a manual look.
 
 5. **Merge the Release Please PR.** This is the release action. Release Please
@@ -118,8 +114,8 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
    - `Release` runs GoReleaser, preserves Release Please's notes, builds and
      signs the checksum, inspects deb/rpm payloads, attests every archive and
      native package, uploads the artifacts to the existing GitHub release, and
-     updates Homebrew, Scoop, AUR, and the WinGet submission for a stable tag.
-     A prerelease skips all four manager publishers automatically.
+     updates Homebrew, Scoop, and the WinGet submission for a stable tag.
+     A prerelease skips all three manager publishers automatically.
    - `smoke` (one job per OS) downloads the **real published archive**, unpacks
      it, asserts `vincent version` reports the tag rather than `dev`, runs
      `vincent workflow validate` and checks that `vincent task ls` exits 2 with
@@ -166,10 +162,6 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
    scoop update
    scoop info vincent/vincent
 
-   # AUR: pkgver, URLs, and checksums should name this release.
-   git clone https://aur.archlinux.org/vincent-agent-bin.git
-   grep -E '^(pkgver|source_|sha256sums_)' vincent-agent-bin/PKGBUILD
-
    # WinGet: this can lag while Microsoft's catalog PR is reviewed.
    winget show --id lezli01.Vincent --exact --versions
    ```
@@ -206,7 +198,7 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
   into the binary; the manifest is automation state, not product state.
 - **GoReleaser owns distribution channels.** It attaches archives, signatures,
   checksums, deb/rpm packages and attestations to Release Please's existing
-  GitHub release, then updates Homebrew, Scoop and AUR and prepares the WinGet
+  GitHub release, then updates Homebrew and Scoop and prepares the WinGet
   catalog PR for stable releases. mise consumes the GitHub archives directly
   and needs no publisher. Keeping artifact and manifest generation in one run
   prevents channel checksums from drifting from the release they name.
@@ -214,7 +206,7 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
   certificate costs v0 does not take on — recorded as a descope in spec §19.
   Releases carry cosign signatures and build provenance instead, and the README
   documents the SmartScreen and Gatekeeper prompts users will meet.
-- **External catalogs remain external.** Scoop and AUR update repositories the
+- **External catalogs remain external.** Scoop updates a repository the
   maintainer controls. WinGet is a pull request into Microsoft's catalog and
   can remain pending after the GitHub release succeeds. The accepted
   maintenance and credential trade-offs are recorded in

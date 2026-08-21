@@ -3,7 +3,7 @@ name: Release
 # Tag-driven packaging (T4.5). Normally Release Please creates the tag and the
 # GitHub release; this workflow then uploads the signed artifacts to that
 # release, attaches native Linux packages, and publishes the stable Homebrew,
-# Scoop, WinGet, and AUR metadata. The build runs once on ubuntu
+# Scoop, and WinGet metadata. The build runs once on ubuntu
 # — the binaries are pure Go, so a build matrix would produce identical
 # artifacts three times — and the per-OS jobs afterwards smoke-test what it
 # produced, which is the part a single runner genuinely cannot do.
@@ -73,7 +73,6 @@ jobs:
           # snapshot mode renders manifests but never uses the credentials.
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN || 'unset' }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN || 'unset' }}
-          AUR_KEY: ${{ secrets.AUR_KEY || 'unset' }}
 
       - name: Install Linux package inspection tools
         run: |
@@ -89,8 +88,6 @@ jobs:
           [ "$(find dist -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 2 ]
           [ "$(find dist/winget -type f -name '*.yaml' | wc -l)" -eq 3 ]
           test -f dist/scoop/vincent.json
-          test -f dist/aur/vincent-agent-bin.pkgbuild
-          test -f dist/aur/vincent-agent-bin.srcinfo
 
           for deb_package in dist/*.deb; do
             [ "$(dpkg-deb --field "$deb_package" Package)" = vincent ]
@@ -138,10 +135,6 @@ jobs:
           [ "$(grep -c '^  - Architecture:' "$winget_installer")" -eq 2 ]
           grep -q '^    - PackageIdentifier: Git.Git$' "$winget_installer"
           grep -q '^License: PolyForm-Noncommercial-1.0.0$' "$winget_locale"
-          grep -q "^pkgname='vincent-agent-bin'$" dist/aur/vincent-agent-bin.pkgbuild
-          grep -q "^license=('PolyForm-Noncommercial-1.0.0')$" dist/aur/vincent-agent-bin.pkgbuild
-          grep -q "^depends=('git')$" dist/aur/vincent-agent-bin.pkgbuild
-          grep -q 'COMMERCIAL-LICENSE.md' dist/aur/vincent-agent-bin.pkgbuild
 
       # Provenance for every archive and native Linux package, so a downloader
       # can prove which workflow and commit produced the file they hold.
