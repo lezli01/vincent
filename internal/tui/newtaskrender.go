@@ -288,7 +288,15 @@ func (n *newTask) rowValue(row ntRow) string {
 		}
 		parts := make([]string, 0, len(n.fields))
 		for _, f := range n.fields {
-			parts = append(parts, f.key+"="+f.value)
+			value := f.value
+			if value == "" && f.declared {
+				if f.definition.Required {
+					value = styleBad.Render("(required)")
+				} else {
+					value = styleDim.Render("(optional)")
+				}
+			}
+			parts = append(parts, f.key+"="+value)
 		}
 		return strings.Join(parts, "  ")
 	case ntBranch:
@@ -505,7 +513,7 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 
 func (n *newTask) renderFields() []string {
 	f := n.fieldsEd
-	out := []string{styleDim.Render("    custom fields — available to templates as .Task.Fields:")}
+	out := []string{styleDim.Render("    task fields — available to templates as .Task.Fields:")}
 	for i, r := range f.rows {
 		marker := "  "
 		if i == f.cursor {
@@ -518,8 +526,32 @@ func (n *newTask) renderFields() []string {
 		if i == f.cursor && f.editing == 2 {
 			value = f.input.View()
 		}
-		out = append(out, "    "+marker+firstNonEmpty(key, styleDim.Render("(key)"))+" = "+
-			firstNonEmpty(value, styleDim.Render("(empty)")))
+		name := firstNonEmpty(key, styleDim.Render("(key)"))
+		meta := ""
+		if r.declared {
+			name = r.definition.DisplayLabel()
+			if name != r.key {
+				name += " (" + r.key + ")"
+			}
+			tags := []string{r.definition.Type}
+			if r.definition.Required {
+				tags = append(tags, "required")
+			}
+			meta = " " + styleDim.Render("["+strings.Join(tags, " · ")+"]")
+		}
+		placeholder := styleDim.Render("(empty)")
+		if r.declared && r.definition.Type == apiclient.WorkflowFieldBoolean {
+			placeholder = styleDim.Render("(choose true/false)")
+		}
+		out = append(out, "    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder))
+		if i == f.cursor && r.declared {
+			if r.definition.Description != "" {
+				out = append(out, styleDim.Render("        "+r.definition.Description))
+			}
+			if r.definition.Pattern != "" {
+				out = append(out, styleDim.Render("        pattern: "+r.definition.Pattern))
+			}
+		}
 	}
 	if len(f.rows) == 0 {
 		out = append(out, styleDim.Render("      none yet"))
@@ -527,7 +559,8 @@ func (n *newTask) renderFields() []string {
 	if f.err != "" {
 		out = append(out, styleWarn.Render("    ⚠ "+f.err))
 	}
-	out = append(out, styleDim.Render("    a add · enter edit · d delete · esc done"))
+	out = append(out, styleDim.Render(
+		"    a add custom · enter edit/toggle · d delete custom · esc done"))
 	return out
 }
 

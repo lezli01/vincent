@@ -34,6 +34,11 @@ import (
 // claude at the fakeagent binary and codex at a path that does not exist.
 const validWorkflow = `name: two-step
 description: Implement then publish.
+fields:
+  - name: ticket
+    label: Ticket
+    type: string
+    pattern: '^OPS-[0-9]+$'
 defaults:
   agent: claude
 steps:
@@ -182,6 +187,10 @@ func TestListWorkflowsKeepsBrokenEntriesVisible(t *testing.T) {
 	}
 	if good.Description != "Implement then publish." {
 		t.Errorf("Description = %q", good.Description)
+	}
+	if len(good.Fields) != 1 || good.Fields[0].Name != "ticket" ||
+		good.Fields[0].DisplayLabel() != "Ticket" || good.Fields[0].Pattern != `^OPS-[0-9]+$` {
+		t.Errorf("Fields = %+v, want the declared ticket contract", good.Fields)
 	}
 	if len(good.Steps) != 2 {
 		t.Fatalf("steps = %d, want 2", len(good.Steps))

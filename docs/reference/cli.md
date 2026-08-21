@@ -223,7 +223,7 @@ Lists registered projects with their ids, paths and defaults.
 vincent task add --project ID --title TITLE
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
-                 [--effort E] [--json]
+                 [--effort E] [--field NAME=VALUE]... [--json]
 ```
 
 Creates a task. It is `queued` immediately — there is no draft state.
@@ -236,7 +236,16 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
 | `--priority` | Higher runs first; default 0 |
+| `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
+
+Declared workflow fields are validated by the daemon, while additional names
+remain valid and are recorded on the same open field map:
+
+```sh
+vincent task add --project 1 --workflow release --title "Release 2.0" \
+  --field ticket=OPS-42 --field owner=ana
+```
 
 Model and effort **only inherit from a level whose agent matches**, so switching
 agent without setting them resets them to the new adapter's default rather than

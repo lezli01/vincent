@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -10,6 +12,8 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
+
+var taskFieldDecimalNumber = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
 
 // pickerOption is one selectable value. note is the dim suffix — a
 // provenance tag, a scope badge, an availability warning — and disabled
@@ -346,11 +350,11 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		}
 		// The registry is project-scoped (§5.2), so the workflow list and
 		// the selection made from it are both stale now.
-		n.workflow = ""
 		n.workflows = nil
+		n.setWorkflow("")
 		return n.workflowsCmd(id)
 	case ntWorkflow:
-		n.workflow = value
+		n.setWorkflow(value)
 	case ntAgent:
 		if value == n.agent {
 			return nil
@@ -518,21 +522,32 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 	case "up", "k":
 		if f.cursor > 0 {
 			f.cursor--
+			f.err = ""
 		}
 	case "down", "j":
 		if f.cursor < len(f.rows)-1 {
 			f.cursor++
+			f.err = ""
 		}
 	case "a":
 		f.rows = append(f.rows, kv{})
 		f.cursor = len(f.rows) - 1
 		f.startEdit(1)
-	case "enter":
+	case "enter", " ", "left", "right":
 		if len(f.rows) > 0 {
-			f.startEdit(1)
+			if f.rows[f.cursor].declared &&
+				f.rows[f.cursor].definition.Type == apiclient.WorkflowFieldBoolean {
+				f.toggleBoolean()
+			} else if msg.String() == "enter" {
+				f.startEdit(1)
+			}
 		}
 	case "d":
 		if len(f.rows) > 0 {
+			if f.rows[f.cursor].declared {
+				f.err = "workflow-declared fields cannot be deleted"
+				return nil
+			}
 			f.rows = append(f.rows[:f.cursor], f.rows[f.cursor+1:]...)
 			if f.cursor >= len(f.rows) {
 				f.cursor = max(0, len(f.rows)-1)
@@ -540,6 +555,7 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "esc":
 		n.commitFields()
+		return n.resolveCmd()
 	}
 	return nil
 }
@@ -547,6 +563,13 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 func (f *fieldsEditor) startEdit(which int) {
 	if f.cursor < 0 || f.cursor >= len(f.rows) {
 		return
+	}
+	if f.rows[f.cursor].declared {
+		if f.rows[f.cursor].definition.Type == apiclient.WorkflowFieldBoolean {
+			f.toggleBoolean()
+			return
+		}
+		which = 2 // the workflow owns a declared field's key
 	}
 	f.editing = which
 	f.err = ""
@@ -583,6 +606,9 @@ func (f *fieldsEditor) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		f.editing = 0
 		f.input.Blur()
 		f.dedupe()
+		if f.err == "" && f.cursor < len(f.rows) {
+			f.err = fieldValidationMessage(f.rows[f.cursor])
+		}
 		return nil
 	case "esc":
 		f.editing = 0
@@ -592,6 +618,74 @@ func (f *fieldsEditor) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	var cmd tea.Cmd
 	f.input, cmd = f.input.Update(msg)
 	return cmd
+}
+
+func (f *fieldsEditor) toggleBoolean() {
+	if f.cursor < 0 || f.cursor >= len(f.rows) {
+		return
+	}
+	switch f.rows[f.cursor].value {
+	case "true":
+		f.rows[f.cursor].value = "false"
+	case "false":
+		if f.rows[f.cursor].definition.Required {
+			f.rows[f.cursor].value = "true"
+		} else {
+			f.rows[f.cursor].value = ""
+		}
+	default:
+		f.rows[f.cursor].value = "true"
+	}
+	f.err = ""
+}
+
+// fieldValidationMessage mirrors the daemon's pure value checks so the TUI
+// can attach immediate feedback to the Fields row. POST /v1/tasks remains the
+// authoritative gate for every client and for workflow reload races.
+func fieldValidationMessage(field kv) string {
+	if !field.declared {
+		return ""
+	}
+	if field.value == "" {
+		if field.definition.Required {
+			return fmt.Sprintf("%s is required", field.definition.DisplayLabel())
+		}
+		return ""
+	}
+	switch field.definition.Type {
+	case apiclient.WorkflowFieldInteger:
+		if _, err := strconv.ParseInt(field.value, 10, 64); err != nil {
+			return fmt.Sprintf("%s must be a base-10 integer", field.definition.DisplayLabel())
+		}
+	case apiclient.WorkflowFieldNumber:
+		value, err := strconv.ParseFloat(field.value, 64)
+		if !taskFieldDecimalNumber.MatchString(field.value) || err != nil ||
+			math.IsInf(value, 0) || math.IsNaN(value) {
+			return fmt.Sprintf("%s must be a finite decimal number", field.definition.DisplayLabel())
+		}
+	case apiclient.WorkflowFieldBoolean:
+		if field.value != "true" && field.value != "false" {
+			return fmt.Sprintf("%s must be true or false", field.definition.DisplayLabel())
+		}
+	case apiclient.WorkflowFieldString:
+		if field.definition.Pattern != "" {
+			pattern, err := regexp.Compile(field.definition.Pattern)
+			if err != nil || !pattern.MatchString(field.value) {
+				return fmt.Sprintf("%s must match %s",
+					field.definition.DisplayLabel(), field.definition.Pattern)
+			}
+		}
+	}
+	return ""
+}
+
+func (n *newTask) firstFieldError() string {
+	for _, field := range n.fields {
+		if message := fieldValidationMessage(field); message != "" {
+			return message
+		}
+	}
+	return ""
 }
 
 // dedupe collapses a repeated key onto the row that already holds it, and

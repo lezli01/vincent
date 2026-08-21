@@ -14,13 +14,14 @@ import (
 // integration-tested against the real handlers, so drift cannot ship
 // unnoticed, and the API package keeps its DTOs unexported.
 type Task struct {
-	ID          int64  `json:"id"`
-	ProjectID   int64  `json:"project_id"`
-	ProjectName string `json:"project_name"`
-	Title       string `json:"title"`
-	Workflow    string `json:"workflow"`
-	State       string `json:"state"`
-	Priority    int    `json:"priority"`
+	ID          int64             `json:"id"`
+	ProjectID   int64             `json:"project_id"`
+	ProjectName string            `json:"project_name"`
+	Title       string            `json:"title"`
+	Fields      map[string]string `json:"fields,omitempty"`
+	Workflow    string            `json:"workflow"`
+	State       string            `json:"state"`
+	Priority    int               `json:"priority"`
 
 	// CurrentStep is zero-based; StepTotal is the snapshot's step count.
 	// A board renders them as k/n with k = CurrentStep+1, clamped, because

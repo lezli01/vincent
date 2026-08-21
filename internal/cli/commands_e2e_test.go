@@ -77,21 +77,26 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 	t.Run("task add ls show cancel", func(t *testing.T) {
 		out, code := runVincent(t, dataDir, cfgDir,
 			"task", "add", "--project", "1", "--title", "cli e2e task",
-			"--description", "created by the CLI test", "--json")
+			"--description", "created by the CLI test",
+			"--field", "ticket=OPS-42", "--field", "url=https://example.test/?a=b", "--json")
 		if code != 0 {
 			t.Fatalf("task add: code %d, out %q", code, out)
 		}
 		var created struct {
-			ID         int64  `json:"id"`
-			Title      string `json:"title"`
-			BranchName string `json:"branch_name"`
-			State      string `json:"state"`
+			ID         int64             `json:"id"`
+			Title      string            `json:"title"`
+			BranchName string            `json:"branch_name"`
+			State      string            `json:"state"`
+			Fields     map[string]string `json:"fields"`
 		}
 		if err := json.Unmarshal([]byte(out), &created); err != nil {
 			t.Fatalf("task add --json is not JSON: %v (%q)", err, out)
 		}
 		if created.ID == 0 || created.Title != "cli e2e task" || created.BranchName == "" {
 			t.Fatalf("created task = %+v, want id, title and branch", created)
+		}
+		if created.Fields["ticket"] != "OPS-42" || created.Fields["url"] != "https://example.test/?a=b" {
+			t.Fatalf("created fields = %v, want both --field values", created.Fields)
 		}
 		taskID = strconv.FormatInt(created.ID, 10)
 

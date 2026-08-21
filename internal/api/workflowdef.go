@@ -55,11 +55,12 @@ type workflowDefinitionResponse struct {
 
 // workflowDefinition is the workflow itself, as the file declares it.
 type workflowDefinition struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Platforms   []string          `json:"platforms,omitempty"`
-	Defaults    workflowDefaults  `json:"defaults"`
-	Steps       []workflowStepDef `json:"steps"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description,omitempty"`
+	Platforms   []string                `json:"platforms,omitempty"`
+	Fields      []workflowFieldResponse `json:"fields"`
+	Defaults    workflowDefaults        `json:"defaults"`
+	Steps       []workflowStepDef       `json:"steps"`
 }
 
 // workflowDefaults is the §8.1 defaults block, kept separate from the steps
@@ -221,6 +222,7 @@ func toWorkflowDefinition(wf *workflow.Workflow) *workflowDefinition {
 		Name:        wf.Name,
 		Description: wf.Description,
 		Platforms:   wf.Platforms,
+		Fields:      toWorkflowFieldResponses(wf.Fields),
 		Defaults: workflowDefaults{
 			Agent:          wf.Defaults.Agent,
 			Model:          wf.Defaults.Model,

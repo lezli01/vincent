@@ -13,12 +13,13 @@ import (
 // workflowResponse is one registry entry (spec §13.2). A broken file is
 // listed with its errors instead of being hidden, so the TUI can show it.
 type workflowResponse struct {
-	Name        string                 `json:"name"`
-	Scope       string                 `json:"scope"`
-	ProjectID   *int64                 `json:"project_id"`
-	File        string                 `json:"file,omitempty"`
-	Description string                 `json:"description"`
-	Steps       []workflowStepResponse `json:"steps"`
+	Name        string                  `json:"name"`
+	Scope       string                  `json:"scope"`
+	ProjectID   *int64                  `json:"project_id"`
+	File        string                  `json:"file,omitempty"`
+	Description string                  `json:"description"`
+	Fields      []workflowFieldResponse `json:"fields"`
+	Steps       []workflowStepResponse  `json:"steps"`
 	// Platforms is the §8.1.1 restriction as the file declares it; empty
 	// means the workflow runs anywhere. PlatformSupported is the daemon's verdict
 	// on its own host — the client never re-derives it, because the daemon is
@@ -42,6 +43,15 @@ type workflowResponse struct {
 	Error    *string          `json:"error"`
 }
 
+type workflowFieldResponse struct {
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Pattern     string `json:"pattern,omitempty"`
+}
+
 type workflowStepResponse struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
@@ -54,6 +64,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 		Name:              e.Name,
 		Scope:             string(e.Scope),
 		File:              e.File,
+		Fields:            []workflowFieldResponse{},
 		Steps:             []workflowStepResponse{},
 		PlatformSupported: e.RunsHere(),
 		RequiresInput:     e.NeedsInputAgent(),
@@ -66,6 +77,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	if e.Workflow != nil {
 		out.Description = e.Workflow.Description
 		out.Platforms = e.Workflow.Platforms
+		out.Fields = toWorkflowFieldResponses(e.Workflow.Fields)
 		for _, st := range e.Workflow.Steps {
 			out.Steps = append(out.Steps, workflowStepResponse{
 				ID:    st.ID,
@@ -82,6 +94,21 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	}
 	if len(e.Warnings) > 0 {
 		out.Warnings = e.Warnings
+	}
+	return out
+}
+
+func toWorkflowFieldResponses(fields []workflow.FieldDefinition) []workflowFieldResponse {
+	out := make([]workflowFieldResponse, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, workflowFieldResponse{
+			Name:        field.Name,
+			Label:       field.Label,
+			Description: field.Description,
+			Type:        field.Type,
+			Required:    field.Required,
+			Pattern:     field.Pattern,
+		})
 	}
 	return out
 }
