@@ -115,7 +115,11 @@ jobs:
           trap 'rm -rf -- "$package_tmp"' EXIT
           mkdir "$package_tmp/deb" "$package_tmp/rpm"
           dpkg-deb --extract "$deb" "$package_tmp/deb"
-          rpm2cpio "$rpm_package" | (cd "$package_tmp/rpm" && cpio -idm --quiet)
+          # RPM payload names are absolute; keep extraction inside the temp root.
+          rpm2cpio "$rpm_package" | (
+            cd "$package_tmp/rpm"
+            cpio --extract --make-directories --quiet --no-absolute-filenames
+          )
           "$package_tmp/deb/usr/bin/vincent" version
           "$package_tmp/rpm/usr/bin/vincent" version
 
