@@ -9,6 +9,16 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.4.0](https://github.com/lezli01/vincent/compare/v0.3.0...v0.4.0) (2026-08-21)
+
+
+### Features
+
+* **distribution:** add package manager channels ([9883ba4](https://github.com/lezli01/vincent/commit/9883ba44b51edc2938d50822cf7934aefa691b5b))
+* **distribution:** add package manager channels ([150f4b8](https://github.com/lezli01/vincent/commit/150f4b85d5c3445b99c278179083b498493362d6))
+* **tui:** add guided takeover layouts ([a4fdae6](https://github.com/lezli01/vincent/commit/a4fdae62060e0bc6dc70948d10e67da606dc774f))
+* **tui:** add guided takeover layouts ([3b96f87](https://github.com/lezli01/vincent/commit/3b96f87ba7bb0ae903a6a1a807beb9e5ecd53ef9))
+
 ## [0.3.0](https://github.com/lezli01/vincent/compare/8efa4c8c7bb8b034831c04447f17122f9d8aaf0a...v0.3.0) (2026-08-19)
 
 ### Added
