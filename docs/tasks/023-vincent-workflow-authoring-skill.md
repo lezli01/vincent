@@ -1,6 +1,6 @@
 # 023 — Vincent workflow authoring skill
 
-**Status:** 🚧 in progress (0/5)  
+**Status:** 🚧 in progress (4/5)  
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
@@ -40,8 +40,18 @@ workflow is committed.
 
 ## Work
 
-- [~] **023.1 — Define the portable skill entrypoint and interaction/step-selection process.**
-- [ ] **023.2 — Add compact schema and control-flow/cost references.**
-- [ ] **023.3 — Document GitHub and `npx skills` installation/discovery.**
-- [ ] **023.4 — Validate skill structure, discovery, and representative workflow behavior.**
-- [ ] **023.5 — Review the final diff and repository verification.**
+- [x] **023.1 — Define the portable skill entrypoint and interaction/step-selection process.** ✓ 2026-08-21
+- [x] **023.2 — Add compact schema and control-flow/cost references.** ✓ 2026-08-21
+- [x] **023.3 — Document GitHub and `npx skills` installation/discovery.** ✓ 2026-08-21
+- [x] **023.4 — Validate skill structure, discovery, and representative workflow behavior.** ✓ 2026-08-21
+- [~] **023.5 — Review the final diff and repository verification.**
+
+## Verification
+
+- The skill-creator structural validator passes.
+- `npx skills` discovers the skill, installs it into a clean test directory,
+  and copies its entrypoint, references, metadata, and license unchanged.
+- Vincent v0.4.2 accepts representative probe/gate, bounded-loop, parallel, and
+  fan-out workflows without warnings. It also rejects
+  `on_input: require` inside a loop at the documented validation boundary.
+- Final repository verification remains under 023.5.
