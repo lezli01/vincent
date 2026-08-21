@@ -16,7 +16,8 @@ sessions, while genuine reasoning should not be forced into brittle shell code.
 | Run independent read-only or disjoint work in one worktree | `parallel` | Sequential execution without a dependency |
 | Isolate concurrent branches and merge later | `fan_out` | Parallel writers in one worktree |
 | Reuse a stable workflow fragment | `include` | Copying steps into every workflow |
-| Human review or authorization between steps | `manual` | `on_input` or a long-running idle agent |
+| Typed choice known before the run | Declared task `field` | Hiding the choice in a prompt |
+| Binary human review or authorization between steps | `manual` | Treating approval as a data-entry form |
 | A question must continue the same reasoning session | Supported agent with `on_input: require` | A manual gate that loses necessary conversation state |
 | Interpret ambiguity, modify code from intent, synthesize, review prose | `agent` with a concrete prompt and check | Encoding semantic judgment in fragile shell heuristics |
 
@@ -60,17 +61,35 @@ Ask, for each distinct authority boundary:
 - What should the reviewer inspect?
 - May it run unattended when the requested fields or conditions are present?
 - Is dry-run or preview output available before approval?
+- Is there an authoritative read-only command that proves the effect happened?
+- Is replay idempotent, and what happens if the command times out after the
+  remote system accepts it?
 
 Default recommendation: generate and verify locally, expose the diff or preview,
 then place one `manual` gate directly before a consolidated side-effect step.
 Respect an explicit unattended policy; make it visible in the final explanation.
 
+### Credentials and persisted data
+
+Assume task fields, rendered prompts and instructions, command output, agent
+transcripts, and step results can be stored or inspected. Never put passwords,
+tokens, private keys, or other secret material in them. In particular, do not
+declare a `token` field and render it into `env` or a command.
+
+Use credentials already supplied through the daemon environment, an OS
+credential store, or an authenticated CLI. A manual gate may confirm that a
+person completed out-of-band credential setup, but the approval itself carries
+no credential. Avoid shell tracing and commands that print sensitive
+environment variables.
+
 ### Interaction mode
 
-Ask whether a human must answer during the agent's live reasoning. If the person
-only approves an artifact or supplies a choice used by the next fresh step, use
-`manual`. If the same agent session must incorporate the answer, verify a
-question-capable adapter and consider `on_input: require`.
+Ask whether a human must answer during the agent's live reasoning. Use `manual`
+only for binary approve/reject decisions; it cannot return a choice, comment, or
+credential. Declare choices known before execution as task fields. Vincent has
+no generic between-step input form, so redesign a later-discovered value as a
+pre-run field, split the work into another task, or—only when the same agent
+session needs it—use `on_input: require` on a question-capable adapter.
 
 Claude can support mid-run questions. Codex and Cursor cannot. `on_input: wait`
 keeps a process and task slot alive, whereas `manual` parks the task and releases
@@ -89,6 +108,42 @@ Use concurrency for wall-clock benefit, not as a default. Multiple independent
 command checks are cheap parallel candidates. Multiple agent reviewers often
 multiply spend without adding distinct evidence; give each a non-overlapping
 purpose or keep one.
+
+## Calculate the agent-session envelope
+
+Report the maximum automatic agent sessions Vincent may start before any human
+chooses retry. This is a planned-cost upper bound, not a token or currency
+estimate. Human-triggered retries can make lifetime use unbounded and are
+reported separately.
+
+Calculate recursively:
+
+| Structure | Maximum automatic sessions |
+|---|---|
+| Agent step | `1 + effective max_retries` |
+| Sequence | Sum of its members |
+| Parallel group | Sum of its members; concurrency changes time, not total sessions |
+| Loop | Maximum iterations × sum of body members |
+| Fan-out | Sum of all possible lanes, nested descendants, and a configured agent merge resolver |
+| Include | Cost of its expanded steps |
+| Command, manual, condition, break | 0 |
+
+Use the effective inherited retry value, not only fields written directly on a
+step. For a `for_each` loop, use `max_iterations` unless the rendered list has a
+smaller proven bound. Count guarded agents in the upper bound unless the guard
+is statically impossible. Count a conflict resolver because conflict is
+possible, even though its expected cost may be zero.
+
+Inspect named lane workflows and includes recursively. If any referenced
+workflow is unavailable, or structural retry behavior cannot be bounded from
+the available definition, report the total as `unknown` with the known subtotal
+and missing contributor. Never turn a dynamic graph into a reassuring but false
+number.
+
+Example: a four-iteration loop with one repair agent at `max_retries: 0` has a
+maximum of four automatic agent sessions. At the default retry value of 1, the
+same YAML permits eight. A command probe that breaks early lowers actual use but
+does not lower that upper bound.
 
 ## Cost-aware patterns
 
@@ -143,6 +198,7 @@ steps:
 
       - id: repair
         type: agent
+        max_retries: 0
         prompt: |
           The test suite failed:
 
@@ -156,8 +212,9 @@ steps:
     max_retries: 0
 ```
 
-The command decides whether repair is needed. The final command prevents the
-loop ceiling from turning an unverified last repair into success.
+The command decides whether repair is needed. This design permits at most four
+automatic agent sessions; the final command prevents the loop ceiling from
+turning an unverified last repair into success.
 
 ### Gate immediately before an external effect
 
@@ -177,11 +234,22 @@ steps:
   - id: publish
     type: command
     run: ./scripts/publish-release.sh
+    allow_failure: true
+    max_retries: 0
+
+  - id: verify-published
+    type: command
+    run: ./scripts/verify-published.sh
     max_retries: 0
 ```
 
 Prepare and verify before occupying a person's attention. Keep authorization
-adjacent to the effect so later work cannot invalidate what was reviewed.
+adjacent to the effect so later work cannot invalidate what was reviewed. Here,
+`allow_failure` is safe only because the following read-only command is the
+authoritative postcondition: a timeout after a successful remote publish can
+still reconcile to success, while an absent release blocks at verification. If
+no authoritative postcondition exists, omit `allow_failure`, block on the
+effect, and inspect remote state before a human retries it.
 
 ### Parallel checks in one worktree
 
@@ -240,6 +308,7 @@ For each retained agent:
    justifies the override.
 5. Avoid redundant reviewers. If two are needed, make their scopes distinct.
 6. Remember that each retry and each loop iteration starts a fresh session.
+7. Include the step's retry and structural multipliers in the session envelope.
 
 ## Final cost and safety review
 
@@ -252,11 +321,18 @@ Before returning a workflow, verify:
 - Parallel substeps have no write collision; `max_parallel` fits the machine.
 - Fan-out has enough isolated work to justify child tasks and merge overhead.
 - Each agent has a one-sentence necessity and an objective completion signal.
+- The maximum automatic agent-session envelope is calculated; unresolved named
+  workflows make it explicitly unknown rather than guessed.
 - No model or high-effort override is present without a capability reason.
 - Every external, destructive, or irreversible effect has the user-selected
-  gate policy and `max_retries: 0` when replay is unsafe.
-- `manual` is used for between-step authority; mid-run input is used only for
-  essential same-session dialogue on a supported adapter.
+  gate policy, a preflight where useful, `max_retries: 0` when replay is unsafe,
+  and a separate read-only postcondition where available.
+- No secret appears in a field, prompt, instruction, command, output, or
+  transcript; credentials are supplied out of band.
+- `manual` is used only for binary between-step authority; task fields handle
+  pre-run choices, and mid-run input is reserved for essential same-session
+  dialogue on a supported adapter.
 - Templates read optional values defensively and do not assume parallel sibling
   output.
-- `vincent workflow validate` passes without unresolved warnings.
+- The schema source and `vincent version` are recorded, and that binary's
+  workflow validator passes without unresolved warnings.

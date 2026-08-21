@@ -4,6 +4,23 @@ Use this compact reference while authoring or reviewing. The repository's
 `docs/reference/workflow-schema.md` remains authoritative if Vincent has evolved
 since this skill was installed.
 
+## Compatibility and authority
+
+This file is a schema snapshot, not a promise that every released Vincent
+binary supports every listed feature. Establish the target before writing:
+
+1. Inside a Vincent source checkout, prefer its current
+   `docs/reference/workflow-schema.md`.
+2. Run `vincent version` and record the exact output when a binary is available.
+3. Run that binary's `vincent workflow validate`; its result is the final local
+   compatibility verdict.
+
+If the validator rejects a referenced feature, report the mismatch and ask
+whether to upgrade Vincent or author against the installed version. A generic
+YAML parser cannot answer this question. When another host or version will run
+the workflow, treat local validation as provisional until that target binary
+also accepts the file.
+
 ## File and top-level fields
 
 Project workflows normally live in `.vincent/workflows/*.yaml`.
@@ -73,7 +90,7 @@ types deliberately reject timeout or retry fields; see the table below.
 |---|---|---|---|
 | `command` | `run` | `shell`, `env`, `check`, `check_timeout`, `allow_failure` | Deterministic shell work |
 | `agent` | `prompt` | agent selection, input policy, `check`, `allow_failure` | Reasoning or synthesis |
-| `manual` | `instructions` | none | Human approval or judgment |
+| `manual` | `instructions` | none | Binary human approval or judgment |
 | `condition` | `if` | nothing else | False finishes the run successfully |
 | `parallel` | `steps` | `max_parallel`, group `timeout` | Same-worktree concurrent commands/agents |
 | `fan_out` | `lanes` | `merge` | Child tasks, branches, worktrees, then merge |
@@ -112,6 +129,20 @@ not resume the previous conversation.
 
 `manual` takes only templated `instructions`. It enters `awaiting_gate` and
 releases the task's concurrency slot. Approval continues; rejection blocks.
+It is a binary gate: it cannot return free-form text, a selected option, or a
+credential. Downstream steps can observe approval status but receive no new
+human-supplied value.
+
+Use the mechanisms according to when and how a value is needed:
+
+| Need | Mechanism |
+|---|---|
+| Typed value or choice known at task creation | Declared task `field` |
+| Binary review or authorization between steps | `manual` |
+| Answer required by the same live agent session | `on_input: require` on a supported adapter |
+
+Vincent has no generic between-step data-entry step. Do not model a runtime
+choice as a manual gate and then assume `.Steps` contains the answer.
 
 ### Parallel
 
@@ -243,6 +274,7 @@ Common guards:
 Run locally without a daemon, network, or agent installation:
 
 ```sh
+vincent version
 vincent workflow validate .vincent/workflows/example.yaml
 vincent workflow validate .vincent/workflows/example.yaml --json
 ```
@@ -253,4 +285,5 @@ and platform tokens. Unknown model values can be warnings because the live CLI
 is the final authority. Include resolution is deferred until task creation.
 
 Treat a warning as a review item. The file being syntactically valid YAML is
-not evidence that Vincent accepts or safely executes it.
+not evidence that Vincent accepts or safely executes it. Report the exact
+Vincent version with the verdict so a future reader can reproduce the result.

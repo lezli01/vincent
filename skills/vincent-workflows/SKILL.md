@@ -21,12 +21,19 @@ set of questions only when an answer changes the YAML, especially:
 - What deliverable ends the run, and which commands prove it is correct?
 - Which task inputs are required, optional, typed, or pattern-constrained?
 - Which host platforms and shells must the commands support?
+- Which Vincent version and environment will execute the workflow, and is the
+  locally available binary representative of that target?
 - Does any step publish, deploy, push, delete, spend money, mutate an external
   service, or otherwise become difficult to reverse?
-- Where does a person need to judge quality, authorize an effect, supply a
-  secret outside the workflow, or choose among alternatives?
+- Which choices must be known when the task is created and declared as typed
+  task fields?
+- Where does a person need a binary approve/reject gate for quality or an
+  external effect?
 - Must a person answer an agent during the same reasoning session, or is a
   between-step approval gate sufficient?
+- Which credentials must already be available through the daemon environment,
+  an OS credential store, or an authenticated CLI without entering workflow
+  data or transcripts?
 - Can independent work safely share one worktree, or does it require isolated
   child branches? Is the extra concurrency worth its compute and merge cost?
 - Which failures are observations, which should retry, and which should block?
@@ -36,17 +43,28 @@ For an external or irreversible effect, ask a concrete gate question such as:
 before publishing, run that step unattended, or omit publishing?" Do not add a
 ritual gate when the user has already made the policy clear.
 
-## Read the relevant references
+## Establish compatibility and read references
 
-Read [references/workflow-schema.md](references/workflow-schema.md) before
-writing or reviewing YAML. It contains the supported fields, nesting rules,
-template context, and validation contract.
+If this work is inside a Vincent source checkout, read its current
+`docs/reference/workflow-schema.md`; it is newer and more authoritative than a
+bundled snapshot. Otherwise use
+[references/workflow-schema.md](references/workflow-schema.md) as the design
+reference.
 
-Also read
+Run `vincent version` when the binary is available and retain the exact output
+for the final summary. The installed binary's
+`vincent workflow validate <file>` result is the compatibility verdict. If it
+rejects a feature described by the reference, explain the version mismatch and
+ask whether to upgrade Vincent or target the installed feature set. Do not
+silently claim compatibility or rewrite the requested design. If execution
+targets another host or version, identify local validation as provisional until
+the target binary validates it.
+
+Read
 [references/control-flow-and-cost.md](references/control-flow-and-cost.md) when
 the workflow involves branching, repetition, concurrency, composition,
-side-effects, human interaction, or more than one agent step. Use its patterns
-and cost review before finalizing the design.
+side effects, human interaction, or any agent step. Use its patterns,
+agent-session envelope, and cost review before finalizing the design.
 
 ## Choose the cheapest correct primitive
 
@@ -56,7 +74,7 @@ Apply this order for every unit of work:
    operation, structured query, API call, or other deterministic action.
 2. Use `if`, `condition`, `loop`/`break`, `parallel`, `fan_out`, or `include`
    for orchestration. Never ask an agent to simulate control flow.
-3. Use `manual` for human judgment or authorization between steps.
+3. Use `manual` for binary human judgment or authorization between steps.
 4. Use `agent` only for work whose correct execution requires interpreting
    ambiguous context, synthesizing a plan or prose, modifying code based on
    intent, or reviewing unstructured material.
@@ -74,10 +92,20 @@ agent sessions for trivial phases; every agent step and retry is a fresh
 session. Split only when an intermediate result is independently useful,
 separately checkable, or must feed a later prompt.
 
+Calculate a conservative upper bound for automatic agent sessions before a
+human manually retries anything. Count `1 + max_retries` per agent, multiply
+loop bodies by their maximum iterations, add parallel members and fan-out lanes,
+expand includes, and include an agent merge resolver. If referenced workflows
+or dynamic structure cannot be inspected, report the envelope as unknown rather
+than guessing. See the cost reference for the full rules.
+
 ## Choose the human mechanism deliberately
 
-- Use `manual` for review, approval, credentials, or choices between steps. It
-  puts the task in `awaiting_gate` and releases its concurrency slot.
+- Use `manual` only for a binary approve/reject decision between steps. It
+  returns no arbitrary value or credential, puts the task in `awaiting_gate`,
+  and releases its concurrency slot.
+- Use declared task `fields` for typed choices known when the task is created.
+  Vincent has no generic between-step form that returns a new value.
 - Use `on_input: require` only when an agent must ask a question and continue
   the same reasoning session. It requires an adapter that supports mid-run
   input and cannot be nested in `parallel` or `loop` or used by a merge
@@ -87,8 +115,16 @@ separately checkable, or must feed a later prompt.
 
 Place a manual gate immediately before the effect it authorizes. Make the
 instructions name the artifact or change to inspect and the next action that
-approval permits. Set `max_retries: 0` on non-idempotent side effects such as
-publish, push, release, comment, or delete.
+approval permits.
+
+Assume task fields, rendered prompts, instructions, command output, and agent
+transcripts are persisted or inspectable. Never put a secret in them. Use
+preconfigured environment credentials, credential stores, or authenticated
+CLIs, and avoid commands that echo sensitive values. For an external effect,
+prefer preflight or dry-run → optional manual approval → one effect attempt → a
+separate read-only postcondition check. Set `max_retries: 0` when replay is not
+provably safe. After an ambiguous failure, inspect remote state before any
+human-triggered retry.
 
 ## Author and validate
 
@@ -100,12 +136,22 @@ publish, push, release, comment, or delete.
    prompt's claim of success is not verification.
 4. Make loops bounded, concurrent writes disjoint, fan-out lanes independent,
    and platform assumptions explicit.
-5. Run `vincent workflow validate <file>`. Use `--json` when structured output
-   helps. Resolve warnings as design findings, not just syntax noise.
+5. Run `vincent version`, then `vincent workflow validate <file>`. Use `--json`
+   when structured output helps. Resolve warnings as design findings, not just
+   syntax noise.
 6. If the binary is unavailable, say validation was not run; do not substitute
    a generic YAML parser or claim the workflow is valid.
+7. Calculate and review the maximum automatic agent-session envelope.
 
-Return the created or edited path, the validator result, material assumptions,
-and a short explanation of every retained agent step and human gate. When
-reviewing an existing workflow, lead with concrete correctness, safety, and
-cost findings before offering a revised file.
+Return a compact design summary with:
+
+- the created or edited path;
+- Vincent version, schema source, and validator result;
+- every retained agent step's necessity, check, and maximum automatic sessions;
+- the workflow's total session envelope and any unknown dynamic contribution;
+- task fields, binary manual gates, and live interaction separately;
+- external effects, credential source category, retry policy, and postcondition;
+- material assumptions and unresolved warnings.
+
+When reviewing an existing workflow, lead with concrete correctness, safety,
+and cost findings before offering a revised file.
