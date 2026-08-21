@@ -11,12 +11,9 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.4.1](https://github.com/lezli01/vincent/compare/v0.4.0...v0.4.1) (2026-08-21)
 
+### Fixed
 
-### Bug Fixes
-
-* **release:** constrain RPM package extraction ([5f61f9a](https://github.com/lezli01/vincent/commit/5f61f9a5f86fd62079b057331add3b83d7ab0ec5))
-* **release:** constrain RPM package extraction ([233e839](https://github.com/lezli01/vincent/commit/233e8391c0ae19b6ba8c667199a15d957e040b0d))
-
+- **Release package verification.** RPM payloads are now extracted safely inside a temporary directory during validation, allowing provenance generation and Linux, macOS and Windows smoke tests to complete for published releases. ([#159](https://github.com/lezli01/vincent/pull/159))
 ## [0.4.0](https://github.com/lezli01/vincent/compare/v0.3.0...v0.4.0) (2026-08-21)
 
 ### Added
