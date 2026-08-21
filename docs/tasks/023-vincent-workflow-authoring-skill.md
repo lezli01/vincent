@@ -1,6 +1,6 @@
 # 023 — Vincent workflow authoring skill
 
-**Status:** 🚧 in progress (4/5)
+**Status:** ✅ done (5/5)
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
@@ -44,7 +44,7 @@ workflow is committed.
 - [x] **023.2 — Add compact schema and control-flow/cost references.** ✓ 2026-08-21
 - [x] **023.3 — Document GitHub and `npx skills` installation/discovery.** ✓ 2026-08-21
 - [x] **023.4 — Validate skill structure, discovery, and representative workflow behavior.** ✓ 2026-08-21
-- [~] **023.5 — Review the final diff and repository verification.**
+- [x] **023.5 — Review the final diff and repository verification.** ✓ 2026-08-21
 
 ## Verification
 
@@ -54,4 +54,4 @@ workflow is committed.
 - Vincent v0.4.2 accepts representative probe/gate, bounded-loop, parallel, and
   fan-out workflows without warnings. It also rejects
   `on_input: require` inside a loop at the documented validation boundary.
-- Final repository verification remains under 023.5.
+- CI run 364 passes all seven Linux, macOS, Windows, gate, and packaging jobs.

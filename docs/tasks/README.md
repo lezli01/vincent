@@ -37,7 +37,7 @@ description of how the system actually behaves.
 | [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ⚠ verification blocked (6/7) |
 | [021](021-package-distribution-channels.md) | WinGet, Scoop, mise, deb, and rpm distribution | ⚠ verification blocked (5/7) |
 | [022](022-workflow-fields.md) | Workflow-declared task fields | ⚠ verification blocked (6/7) |
-| [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware Vincent workflow authoring skill | 🚧 in progress (4/5) |
+| [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware Vincent workflow authoring skill | ✅ done (5/5) |
 
 ## How to add and update a task document
 
