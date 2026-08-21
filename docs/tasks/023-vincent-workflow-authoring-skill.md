@@ -1,6 +1,6 @@
 # 023 — Vincent workflow authoring skill
 
-**Status:** ✅ done (5/5)
+**Status:** 🚧 in progress (5/10)
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
@@ -37,6 +37,25 @@ workflow is committed.
    installers must retain the same terms as the source repository. This beats
    relying on consumers to discover a parent-directory license after the skill
    has been copied elsewhere.
+6. **2026-08-21 — Treat `manual` as a binary gate, not a data-input step.** Use
+   task fields for choices known at creation and supported mid-run agent input
+   only when the same reasoning session needs an answer. This beats implying
+   that approval can return an arbitrary choice or credential.
+7. **2026-08-21 — Make schema-version drift visible.** Prefer repository-local
+   workflow documentation, record the installed Vincent version, and rely on
+   that binary's validator for the final compatibility verdict. This beats
+   silently treating the bundled reference as timeless.
+8. **2026-08-21 — Report a conservative agent-session cost envelope.** Count
+   retry, loop, parallel, and fan-out multipliers before presenting a design.
+   This beats calling a workflow cost-effective without quantifying its maximum
+   planned AI use.
+9. **2026-08-21 — Handle secrets and external effects explicitly.** Keep
+   credentials out of persisted task data and transcripts, prefer preflight or
+   dry-run support, disable unsafe retries, and verify remote state separately.
+   This beats relying on a manual gate as the whole safety model.
+10. **2026-08-21 — Return a compact design summary with every workflow.** State
+    agent justifications, the session envelope, gates, effects, compatibility,
+    and validation result. This beats leaving those decisions implicit in YAML.
 
 ## Work
 
@@ -45,6 +64,11 @@ workflow is committed.
 - [x] **023.3 — Document GitHub and `npx skills` installation/discovery.** ✓ 2026-08-21
 - [x] **023.4 — Validate skill structure, discovery, and representative workflow behavior.** ✓ 2026-08-21
 - [x] **023.5 — Review the final diff and repository verification.** ✓ 2026-08-21
+- [~] **023.6 — Correct manual-gate, choice, and credential guidance.**
+- [ ] **023.7 — Add Vincent version and schema-drift handling.**
+- [ ] **023.8 — Add a conservative agent-session cost envelope.**
+- [ ] **023.9 — Strengthen secret and external-effect safety guidance.**
+- [ ] **023.10 — Add the final workflow design summary and re-verify the skill.**
 
 ## Verification
 
