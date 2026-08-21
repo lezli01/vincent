@@ -77,7 +77,7 @@ jobs:
       - name: Install Linux package inspection tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes cpio jq rpm
+          sudo apt-get install --no-install-recommends --yes jq rpm
 
       - name: Verify generated packages and manifests
         shell: bash
@@ -115,11 +115,9 @@ jobs:
           trap 'rm -rf -- "$package_tmp"' EXIT
           mkdir "$package_tmp/deb" "$package_tmp/rpm"
           dpkg-deb --extract "$deb" "$package_tmp/deb"
-          # RPM payload names are absolute; keep extraction inside the temp root.
-          rpm2cpio "$rpm_package" | (
-            cd "$package_tmp/rpm"
-            cpio --extract --make-directories --quiet --no-absolute-filenames
-          )
+          # rpm2archive normalizes payload paths to ./..., keeping tar in the temp root.
+          rpm2archive "$rpm_package" |
+            tar --extract --gzip --file - --directory "$package_tmp/rpm"
           "$package_tmp/deb/usr/bin/vincent" version
           "$package_tmp/rpm/usr/bin/vincent" version
 
