@@ -11,11 +11,9 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
 
+### Fixed
 
-### Bug Fixes
-
-* **release:** verify RPM packages through tar ([5ca9fcd](https://github.com/lezli01/vincent/commit/5ca9fcd683da407085bf767b4e6427f071c6b15f))
-* **release:** verify RPM packages through tar ([a979b8a](https://github.com/lezli01/vincent/commit/a979b8a6b788a14e716b86856f68e313f6939f19))
+- **RPM release verification.** Release validation now converts RPM payloads to normalized tar paths before extraction, avoiding GNU cpio's warning exit while still running the packaged binary and keeping extraction inside a temporary directory. ([#161](https://github.com/lezli01/vincent/pull/161))
 
 ## [0.4.1](https://github.com/lezli01/vincent/compare/v0.4.0...v0.4.1) (2026-08-21)
 
