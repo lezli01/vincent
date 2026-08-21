@@ -9,6 +9,12 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
+
+### Fixed
+
+- **RPM release verification.** Release validation now converts RPM payloads to normalized tar paths before extraction, avoiding GNU cpio's warning exit while still running the packaged binary and keeping extraction inside a temporary directory. ([#161](https://github.com/lezli01/vincent/pull/161))
+
 ## [0.4.1](https://github.com/lezli01/vincent/compare/v0.4.0...v0.4.1) (2026-08-21)
 
 ### Fixed
