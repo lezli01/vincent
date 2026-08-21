@@ -180,7 +180,7 @@ A unit of work delivered by running a workflow against a project.
 | `project_id` | FK |
 | `title` | short summary; slugged into the branch name |
 | `description` | markdown, arbitrary length |
-| `fields` | free-form string key/value map (e.g. `ticket: OPS-123`); available to templates |
+| `fields` | open string key/value map (e.g. `ticket: OPS-123`); available to templates. The selected workflow may declare expected names and validate those values (§8.1.2), but undeclared names remain accepted and recorded |
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch` |
@@ -967,6 +967,16 @@ name: feature-pr                      # required; unique per scope; project shad
 description: Implement, test, review, then push and open a PR.
 platforms: [posix]                    # optional; where this workflow may run (§8.1.1)
 
+fields:                               # optional; ordered task-input contract (§8.1.2)
+  - name: ticket
+    label: Ticket
+    description: Issue tracker key.
+    required: true
+    pattern: '^OPS-[0-9]+$'
+  - name: dry-run
+    label: Dry run
+    type: boolean
+
 defaults:                             # optional; per-step values override
   agent: claude                       # claude | codex | cursor (§9.7)
   model: ""                           # adapter-native id/alias (e.g. sonnet); options via GET /v1/agents (§9.6)
@@ -1060,6 +1070,40 @@ semantics. The whole-workflow `platforms:` stays exactly as described above,
 because it does something a run-time guard cannot — it stops the workflow being
 *offered*, in the picker and at task creation, rather than skipping steps once
 a task exists.
+
+#### 8.1.2 Declared task fields (`fields:`)
+
+*Added 2026-08-21 (task 022).* A workflow may publish the task fields it expects
+as an ordered list. Clients use the order to build a form before the task
+exists; the values themselves remain strings everywhere — in the API, task
+row, templates, branch naming, and fan-out inheritance.
+
+```yaml
+fields:
+  - name: ticket                 # required lowercase slug; .Task.Fields key
+    label: Ticket                # optional presentation label
+    description: Issue tracker key.
+    type: string                 # string (default) | integer | number | boolean
+    required: true               # default false
+    pattern: '^OPS-[0-9]+$'      # optional Go RE2 expression; string only
+```
+
+- `integer` is a base-10 whole number, `number` is a finite decimal, and
+  `boolean` is exactly `true` or `false`. A `pattern` is compiled when the workflow loads;
+  authors use `^` and `$` when the whole value must match.
+- Names are unique within the list. A missing type becomes `string`; a missing
+  `required` becomes false. An optional absent or empty value is valid.
+- `POST /v1/tasks` is the authoritative validation boundary. A required,
+  mistyped, or pattern-mismatched declared value is a 400 before any task is
+  inserted. The TUI mirrors the pure checks to place feedback on its Fields row.
+- The map deliberately stays **open**: additional names not declared by the
+  workflow are accepted, recorded, inherited by fan-out lanes, and available to
+  templates exactly as before. Declarations add a public form contract; they do
+  not mean `additionalProperties: false`.
+- Only the selected root workflow owns this contract. Declarations on included
+  workflows or named fan-out lane workflows are not recursively merged. A
+  composing workflow re-declares any input it wants to expose; a lane's own
+  `fields:` map continues to bind internal values.
 
 ### 8.2 Step types and fields
 
@@ -2368,9 +2412,11 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
-                                        { name, scope, project_id, file, description, steps[],
+                                        { name, scope, project_id, file, description, fields[], steps[],
                                           platforms[]?, platform_supported, requires_input,
                                           includes[]?, errors[]?, warnings[]?, error? }
+                                        fields is the ordered §8.1.2 declaration list; an empty
+                                        list means the workflow publishes no task-input contract
                                         platform_supported is this daemon's own verdict on the
                                         entry's §8.1.1 restriction (task 010, added 2026-08-16);
                                         requires_input marks an entry whose §7.4 `require` steps
@@ -2386,7 +2432,7 @@ GET    /v1/workflows/definition         one workflow's whole recursive structure
                                         { name, scope, project_id, file, platforms[]?,
                                           platform_supported, requires_input, errors[]?,
                                           warnings[]?, error?, definition }
-                                        definition is { name, description, platforms[]?,
+                                        definition is { name, description, platforms[]?, fields[],
                                         defaults, steps[] }, each step carrying every field its
                                         type uses plus nested `steps`, fan-out `lanes`, `merge`,
                                         guards and loop drivers. Steps are reported **as
@@ -2461,6 +2507,9 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         task-level override (§8.6), validated per §8.2 —
                                         known-invalid = 400, catalog-unknown values are
                                         reported in `warnings[]` on the 201 body
+                                        The selected root workflow's §8.1.2 declarations are
+                                        validated before insert. Additional, undeclared field
+                                        names remain accepted and are recorded on the task
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
@@ -2768,10 +2817,16 @@ stream for the live tail.
    itself with a badge on the row and a footer hint, and the human opens it.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
-   `$EDITOR`) → custom fields (key/value) → base branch (default prefilled) →
+   `$EDITOR`) → fields → base branch (default prefilled) →
    priority → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
    replaces workflow defaults, never explicit step fields, §8.6) → create.
+   **Workflow fields (task 022, added 2026-08-21):** selecting a workflow
+   pre-renders its ordered §8.1.2 declarations with labels, descriptions,
+   type/required badges, pattern help, and a boolean toggle. Declared names are
+   locked but their values remain editable; additional custom key/value rows can
+   still be added and deleted. Values survive workflow switches, and local
+   feedback mirrors the daemon's authoritative create-time validation.
    **Pickers are windowed and type-filterable (M5, §9.7):** through v1 every
    catalog fit on a screen (claude: 3 models, 5 efforts; codex: efforts only),
    so the picker rendered all options unconditionally. Cursor's ~180-model

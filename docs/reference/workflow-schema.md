@@ -12,6 +12,7 @@ becoming a setting that silently never applied.
 - [File structure](#file-structure)
 - [Top level](#top-level)
   - [`platforms`](#platforms)
+  - [`fields`](#fields)
   - [`defaults`](#defaults)
 
 **Steps**
@@ -48,6 +49,12 @@ becoming a setting that silently never applied.
 name: feature-pr
 description: One line, shown in the picker.
 
+fields:
+  - name: ticket
+    label: Ticket
+    required: true
+    pattern: '^OPS-[0-9]+$'
+
 defaults:
   agent: claude
   max_retries: 2
@@ -72,6 +79,7 @@ built-in workflow, `adhoc`, is always present: a single agent step.
 | `name` | string | ✅ | How tasks refer to it. Unique per scope |
 | `description` | string | | Shown in the TUI's workflow picker |
 | `platforms` | list | | Where this workflow may run. Empty means anywhere — see [`platforms`](#platforms) |
+| `fields` | list | | Ordered task-input declarations — see [`fields`](#fields) |
 | `defaults` | map | | Inherited by every step |
 | `steps` | list | ✅ | Runs in order, top to bottom. Must be non-empty |
 
@@ -112,6 +120,53 @@ POSIX-only workflow validates the same on a Windows CI runner as it does on
 Linux.
 
 The restriction covers the whole workflow; there is no per-step `platforms`.
+
+## `fields`
+
+A workflow can declare the task fields it expects. The TUI pre-renders these
+rows as soon as the workflow is selected, while the daemon validates them for
+every client when the task is created.
+
+```yaml
+fields:
+  - name: ticket
+    label: Ticket
+    description: Issue tracker key, including its project prefix.
+    type: string
+    required: true
+    pattern: '^OPS-[0-9]+$'
+  - name: retries
+    type: integer
+  - name: threshold
+    type: number
+  - name: dry-run
+    label: Dry run
+    type: boolean
+```
+
+Definitions stay in source order. Each definition has:
+
+| Key | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `name` | slug | ✅ | | Key in `.Task.Fields`; unique in this list |
+| `label` | string | | `name` | Presentation text only |
+| `description` | string | | | Help text shown by clients |
+| `type` | `string` \| `integer` \| `number` \| `boolean` | | `string` | Editing and validation contract; stored value is still a string |
+| `required` | bool | | `false` | Missing or whitespace-only values are rejected when true |
+| `pattern` | string | | | Go RE2 expression, valid only for `string`; use `^` and `$` for a whole-value match |
+
+Integers are base-10 whole numbers, numbers must be finite decimals, and
+booleans are exactly `true` or `false`. Optional absent or empty values skip
+type and pattern validation.
+
+The task map remains **open**. A caller may send additional names; vincent
+records them and exposes them to templates just like declared fields. Only the
+declared names receive required, type, and pattern checks.
+
+The selected workflow is the public boundary. Fields declared by an included
+workflow or a named `fan_out` lane are not merged into the caller's form. A
+composing workflow re-declares the inputs it exposes; lane `fields:` remains a
+separate map of values bound for that lane.
 
 ## `defaults`
 
@@ -790,12 +845,16 @@ than lean on that tail:
       Fix exactly those items.
 ```
 
-`.Task.Fields` is free-form per task, so **optional** fields must be read
-defensively or rendering fails:
+`.Task.Fields` remains an open string map per task. A declared **optional**
+field, or an undeclared field that may be absent, must be read defensively or
+rendering fails:
 
 ```yaml
 {{with index .Task.Fields "ticket"}}Ticket: {{.}}{{end}}
 ```
+
+A declared required field may be read directly because task creation rejects a
+missing value before a snapshot can run.
 
 ## Environment
 

@@ -37,6 +37,7 @@ type WorkflowBody struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
 	Platforms   []string          `json:"platforms,omitempty"`
+	Fields      []WorkflowField   `json:"fields"`
 	Defaults    WorkflowDefaults  `json:"defaults"`
 	Steps       []WorkflowStepDef `json:"steps"`
 }

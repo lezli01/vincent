@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// Workflow field types as GET /v1/workflows reports them (§8.1.2).
+const (
+	WorkflowFieldString  = "string"
+	WorkflowFieldInteger = "integer"
+	WorkflowFieldNumber  = "number"
+	WorkflowFieldBoolean = "boolean"
+)
+
 // WorkflowEntry is one row of GET /v1/workflows (§13.2): the merged registry
 // with §5.2 shadowing already applied. A file that failed to parse is listed
 // with its Errors rather than omitted, so a picker can show the human what
@@ -17,6 +25,7 @@ type WorkflowEntry struct {
 	ProjectID   *int64              `json:"project_id"`
 	File        string              `json:"file,omitempty"`
 	Description string              `json:"description"`
+	Fields      []WorkflowField     `json:"fields"`
 	Steps       []WorkflowEntryStep `json:"steps"`
 
 	// Platforms is the workflow's §8.1.1 platform restriction, empty when it
@@ -41,6 +50,26 @@ type WorkflowEntry struct {
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []WorkflowFinding `json:"warnings,omitempty"`
 	Error    *string           `json:"error"`
+}
+
+// WorkflowField is one ordered public task input declared by a workflow
+// (§8.1.2, task 022). Values remain strings; Type tells a client how to edit
+// and validate a declared name. Additional task fields are still accepted.
+type WorkflowField struct {
+	Name        string `json:"name"`
+	Label       string `json:"label,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Pattern     string `json:"pattern,omitempty"`
+}
+
+// DisplayLabel is the presentation label, falling back to the field name.
+func (f WorkflowField) DisplayLabel() string {
+	if f.Label != "" {
+		return f.Label
+	}
+	return f.Name
 }
 
 // WorkflowEntryStep is one step as the registry reports it. Agent is the

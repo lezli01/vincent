@@ -374,6 +374,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("workflow %q cannot run here: %s", workflowName, mismatch))
 		return
 	}
+	// Workflow-declared fields (§8.1.2, task 022) are a contract on the
+	// selected root workflow. The map remains open: ValidateTaskFields checks
+	// only names the workflow declared, so existing custom metadata continues
+	// to pass through and be snapshotted on the task unchanged.
+	if fieldErrs := entry.Workflow.ValidateTaskFields(req.Fields); len(fieldErrs) > 0 {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, fieldErrs.Error())
+		return
+	}
 	baseBranch := project.DefaultBranch
 	if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
 		baseBranch = strings.TrimSpace(*req.BaseBranch)

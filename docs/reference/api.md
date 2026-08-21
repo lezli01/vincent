@@ -205,7 +205,13 @@ to disable the sweep.
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, steps[], platforms[]?, platform_supported, requires_input, includes[]?, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, includes[]?, errors[]?, warnings[]?, error? }`.
+
+`fields[]` is the selected workflow's ordered
+[`fields:` declaration](workflow-schema.md#fields). Each entry is
+`{ name, label?, description?, type, required, pattern? }`; `type` is always
+explicit (`string` when the YAML omitted it). An empty list means the workflow
+publishes no task-input contract, not that task fields are forbidden.
 
 `platforms[]` is the entry's [platform restriction](workflow-schema.md#platforms)
 as the file declares it, and `platform_supported` is **the daemon's own verdict**
@@ -251,6 +257,10 @@ GET /v1/workflows/definition?name=feature-pr&project_id=3
   "requires_input": false,
   "definition": {
     "name": "feature-pr",
+    "fields": [
+      { "name": "ticket", "label": "Ticket", "type": "string",
+        "required": true, "pattern": "^OPS-[0-9]+$" }
+    ],
     "defaults": { "agent": "claude", "model": "sonnet" },
     "steps": [
       { "id": "plan", "type": "agent", "prompt": "…", "check": "go build ./..." },
@@ -319,6 +329,12 @@ rather than inventing a model name.
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
+
+On `POST /v1/tasks`, the daemon validates the selected root workflow's
+declared fields before inserting the task. Missing required values and invalid
+types or patterns return `400 validation_failed`. The `fields` object remains
+open: additional names that the workflow did not declare are accepted, stored,
+and returned with the task.
 
 Human actions, all `POST /v1/tasks/{id}/…`:
 

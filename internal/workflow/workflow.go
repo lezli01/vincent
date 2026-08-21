@@ -117,8 +117,13 @@ type Workflow struct {
 	// Platforms restricts where the workflow may run (§8.1.1, task 010).
 	// Empty means every platform; see platform.go for the token set.
 	Platforms []string `yaml:"platforms,omitempty"`
-	Defaults  Defaults `yaml:"defaults"`
-	Steps     []Step   `yaml:"steps"`
+	// Fields declares the ordered public task inputs this workflow expects
+	// (§8.1.2, task 022). The task still stores one open map[string]string:
+	// declarations guide clients and validate named values without rejecting
+	// any additional fields a caller supplies.
+	Fields   []FieldDefinition `yaml:"fields,omitempty"`
+	Defaults Defaults          `yaml:"defaults"`
+	Steps    []Step            `yaml:"steps"`
 }
 
 // Defaults are the workflow-level fallbacks for step fields. Pointer fields
@@ -475,6 +480,7 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 		add("name", "name %q must not contain whitespace or path separators", wf.Name)
 	}
 	validatePlatforms(wf, add)
+	validateFieldDefinitions(wf, add)
 	validateDefaults(wf, opts, add)
 
 	if len(wf.Steps) == 0 {

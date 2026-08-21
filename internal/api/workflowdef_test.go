@@ -325,6 +325,7 @@ func TestWorkflowDefinitionCoversEveryField(t *testing.T) {
 		dto   any
 	}{
 		{"Workflow", workflow.Workflow{}, workflowDefinition{}},
+		{"FieldDefinition", workflow.FieldDefinition{}, workflowFieldResponse{}},
 		{"Defaults", workflow.Defaults{}, workflowDefaults{}},
 		{"Step", workflow.Step{}, workflowStepDef{}},
 		{"Lane", workflow.Lane{}, workflowLaneDef{}},

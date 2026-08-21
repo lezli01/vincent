@@ -27,6 +27,11 @@ import (
 
 const laneYAML = `name: shipit
 description: fan out and merge
+fields:
+  - name: environment
+    label: Environment
+    type: string
+    required: true
 defaults:
   agent: claude
   model: sonnet
@@ -109,6 +114,10 @@ func TestGetWorkflowDefinitionOverTheWire(t *testing.T) {
 	}
 	if body.Defaults.Agent != "claude" || body.Defaults.Model != "sonnet" {
 		t.Errorf("defaults = %+v, want the authored block", body.Defaults)
+	}
+	if len(body.Fields) != 1 || body.Fields[0].Name != "environment" ||
+		body.Fields[0].DisplayLabel() != "Environment" || !body.Fields[0].Required {
+		t.Errorf("fields = %+v, want the authored input contract", body.Fields)
 	}
 	if len(body.Steps) != 3 {
 		t.Fatalf("steps = %d, want 3", len(body.Steps))

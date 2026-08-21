@@ -32,14 +32,19 @@ func newTaskAddCmd() *cobra.Command {
 		agent       string
 		model       string
 		effort      string
+		fields      []string
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a task",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			fieldMap, err := parseFieldFlags(fields)
+			if err != nil {
+				return err
+			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				req := apiclient.CreateTaskRequest{ProjectID: projectID, Title: title}
+				req := apiclient.CreateTaskRequest{ProjectID: projectID, Title: title, Fields: fieldMap}
 				for _, f := range []struct {
 					name string
 					dst  **string
@@ -97,10 +102,31 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "Agent override (§8.6 level 2)")
 	cmd.Flags().StringVar(&model, "model", "", "Model override (§8.6 level 2)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort override (§8.6 level 2)")
+	cmd.Flags().StringArrayVar(&fields, "field", nil,
+		"Task field as name=value; repeat for additional fields")
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("title")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// parseFieldFlags preserves everything after the first '=' so URLs, regexes,
+// and other structured values do not need CLI-specific escaping. A repeated
+// name follows the task field editor's existing rule: the later value wins.
+func parseFieldFlags(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	fields := make(map[string]string, len(values))
+	for _, value := range values {
+		name, fieldValue, ok := strings.Cut(value, "=")
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			return nil, fmt.Errorf("field must be name=value, got %q", value)
+		}
+		fields[name] = fieldValue
+	}
+	return fields, nil
 }
 
 func newTaskLsCmd() *cobra.Command {

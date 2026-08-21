@@ -317,8 +317,17 @@ key.
 
 Opens for the project you are looking at. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ title → description → custom fields → base branch → priority → optional
+→ title → description → fields → base branch → priority → optional
 agent/model/effort override.
+
+When the selected workflow declares [`fields:`](../reference/workflow-schema.md#fields),
+the Fields row is pre-rendered in declaration order. It shows labels,
+descriptions, type/required badges, and regex help; boolean values toggle between
+`true` and `false`. Workflow-owned names are locked, but their values remain
+editable. You can still add and delete custom key/value rows — additional,
+undeclared fields remain valid and are recorded on the task. Values are kept
+when you switch workflows, including fields that the new workflow does not
+declare.
 
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
@@ -330,6 +339,7 @@ navigation keys.
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker |
+| `a` / `d` | In Fields, add or delete a custom row (declared rows cannot be deleted) |
 | `e` | Edit the description in `$EDITOR` |
 | `+` / `-` | Nudge the priority (higher runs first) |
 | `R` | Re-probe the adapters (the list is otherwise cache-served) |

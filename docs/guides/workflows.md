@@ -236,6 +236,12 @@ name: feature-pr                 # required — how tasks refer to it
 description: One line, shown in the picker.
 platforms: [posix]               # optional — where this file may run (§10.3)
 
+fields:                          # optional — ordered task inputs (§5.4)
+  - name: ticket
+    label: Ticket
+    required: true
+    pattern: '^OPS-[0-9]+$'
+
 defaults:                        # optional — inherited by every step
   agent: claude
   max_retries: 2
@@ -253,6 +259,7 @@ steps:                           # required, non-empty — runs top to bottom
 | `name` | ✅ | Unique per scope. No whitespace and no `/` or `\` |
 | `description` | | One line; shown in the TUI picker and `vincent workflow ls` |
 | `platforms` | | Empty means anywhere — [§10.3](#103-platforms--declare-what-you-did-not-port) |
+| `fields` | | Expected task inputs — [§5.4](#54-task-fields) |
 | `defaults` | | Workflow-wide fallbacks — [§3.2](#32-defaults) |
 | `steps` | ✅ | Runs strictly in order |
 
@@ -858,9 +865,48 @@ on the tail.
 
 ### 5.4 Task fields
 
-`.Task.Fields` is a free-form `map[string]string` supplied when the task is
-created. It is how one workflow serves many jobs — a ticket id, a module name, a
-"ship it: yes/no" flag.
+`.Task.Fields` is an open `map[string]string` supplied when the task is created.
+It is how one workflow serves many jobs — a ticket id, a module name, a "ship
+it: yes/no" flag. A workflow can predeclare the fields it expects so the TUI
+can render the right rows before a task exists:
+
+```yaml
+fields:
+  - name: ticket
+    label: Ticket
+    description: Issue tracker key.
+    required: true
+    pattern: '^OPS-[0-9]+$'
+  - name: retries
+    type: integer
+  - name: confidence
+    type: number
+  - name: dry-run
+    label: Dry run
+    type: boolean
+```
+
+The definition order is the form order. `string` is the default type;
+`integer` accepts base-10 whole numbers, `number` accepts finite decimal values,
+and `boolean` accepts exactly `true` or `false`. `pattern` is a Go RE2 expression
+for strings only — anchor it with `^` and `$` when the whole value must match.
+`label` and `description` only improve presentation.
+
+The daemon checks required/type/pattern rules at task creation, including for
+CLI and API callers. The selected root workflow owns the contract: fields from
+included workflows and named fan-out lane workflows are not automatically
+merged, so a composing workflow re-declares any input it exposes.
+
+Declarations do **not** close the map. Extra fields remain accepted, recorded,
+inherited by lanes, and visible to templates. Both of these travel together:
+
+```sh
+vincent task add --project 1 --workflow feature-pr --title "Ship it" \
+  --field ticket=OPS-42 --field owner=ana
+```
+
+Here `ticket` may be declared and validated while `owner` is additional
+metadata; both are stored as strings in `.Task.Fields`.
 
 Because rendering is strict, an **optional** field must be read defensively or
 the step fails:

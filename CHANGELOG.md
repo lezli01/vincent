@@ -9,6 +9,16 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **Workflow-declared task fields.** Workflows can publish ordered task inputs
+  with labels, descriptions, required flags, string/integer/number/boolean
+  types and Go RE2 patterns. The TUI pre-renders those inputs, the daemon
+  validates declared values for every client, and additional undeclared fields
+  remain accepted and recorded on the task.
+
 ## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
 
 ### Fixed

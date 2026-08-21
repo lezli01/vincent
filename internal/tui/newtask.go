@@ -97,9 +97,14 @@ type (
 	ntFailedMsg struct{ err error }
 )
 
-// kv is one custom field. Order is preserved so a human sees the rows where
-// they left them; the wire format is a map.
-type kv struct{ key, value string }
+// kv is one task field row. A declared row carries the workflow's presentation
+// and validation contract; a custom row leaves declared false. Both flatten to
+// the same open map on the wire (task 022 decision 3).
+type kv struct {
+	key, value string
+	declared   bool
+	definition apiclient.WorkflowField
+}
 
 // newTask is the §15 new-task flow.
 type newTask struct {
@@ -496,6 +501,7 @@ func (n *newTask) setProject(p apiclient.Project) {
 // the first valid entry — the same fallback handleTaskCreate applies.
 func (n *newTask) selectDefaultWorkflow() {
 	if n.workflow != "" && n.workflowEntry(n.workflow) != nil {
+		n.syncWorkflowFields()
 		return
 	}
 	p, ok := n.project()
@@ -504,16 +510,54 @@ func (n *newTask) selectDefaultWorkflow() {
 		want = p.Workflow()
 	}
 	if e := n.workflowEntry(want); e != nil {
-		n.workflow = e.Name
+		n.setWorkflow(e.Name)
 		return
 	}
 	for _, e := range n.workflows {
 		if e.Valid() && e.RunsHere() {
-			n.workflow = e.Name
+			n.setWorkflow(e.Name)
 			return
 		}
 	}
-	n.workflow = ""
+	n.setWorkflow("")
+}
+
+func (n *newTask) setWorkflow(name string) {
+	n.workflow = name
+	n.syncWorkflowFields()
+}
+
+// syncWorkflowFields rebuilds the declared prefix from the selected workflow
+// while preserving every value already typed. Non-empty rows no longer
+// declared become ordinary custom fields instead of being discarded; untouched
+// declaration chrome disappears. A custom row whose name the new workflow
+// declares becomes that locked declared row (task 022).
+func (n *newTask) syncWorkflowFields() {
+	values := make(map[string]string, len(n.fields))
+	for _, field := range n.fields {
+		values[field.key] = field.value
+	}
+
+	entry := n.workflowEntry(n.workflow)
+	declared := map[string]bool{}
+	out := make([]kv, 0, len(n.fields))
+	if entry != nil && entry.Valid() {
+		out = make([]kv, 0, len(entry.Fields)+len(n.fields))
+		for _, definition := range entry.Fields {
+			declared[definition.Name] = true
+			out = append(out, kv{
+				key: definition.Name, value: values[definition.Name],
+				declared: true, definition: definition,
+			})
+		}
+	}
+	for _, field := range n.fields {
+		if field.key == "" || declared[field.key] || (field.declared && field.value == "") {
+			continue
+		}
+		out = append(out, kv{key: field.key, value: field.value})
+	}
+	n.fields = out
 }
 
 func (n *newTask) project() (apiclient.Project, bool) {
@@ -744,6 +788,9 @@ func (n *newTask) submit() tea.Cmd {
 	if n.titleText() == "" {
 		n.rowErr[ntTitle] = "a title is required"
 	}
+	if message := n.firstFieldError(); message != "" {
+		n.rowErr[ntFields] = message
+	}
 	if e := n.workflowEntry(n.workflow); n.workflow != "" && e != nil {
 		switch {
 		case !e.Valid():
@@ -762,6 +809,15 @@ func (n *newTask) submit() tea.Cmd {
 		}
 	}
 	if len(n.rowErr) > 0 {
+		// In the guided layout only the cursor's stage is visible. Move to the
+		// first invalid row so a required workflow field cannot fail submit on
+		// a different, hidden stage.
+		for row := ntProject; row < ntRowCount; row++ {
+			if _, invalid := n.rowErr[row]; invalid {
+				n.cursor = row
+				break
+			}
+		}
 		return nil
 	}
 	if n.client == nil {
@@ -816,17 +872,22 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	return req
 }
 
-// fieldMap flattens the ordered rows. A later duplicate key wins, which is
-// also what the editor shows.
+// fieldMap flattens the ordered rows. Untouched declarations are form chrome,
+// not task data, so they stay absent; an explicitly added custom field keeps
+// its empty value for compatibility. A later duplicate key wins, which is also
+// what the editor shows.
 func (n *newTask) fieldMap() map[string]string {
 	if len(n.fields) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(n.fields))
 	for _, f := range n.fields {
-		if f.key != "" {
+		if f.key != "" && (!f.declared || f.value != "") {
 			out[f.key] = f.value
 		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -841,6 +902,7 @@ func (n *newTask) applyFailure(err error) {
 		needle string
 		row    ntRow
 	}{
+		{"fields.", ntFields},
 		{"base_branch", ntBranch},
 		{"branch", ntBranchName},
 		{"workflow", ntWorkflow},

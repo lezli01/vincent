@@ -653,6 +653,140 @@ func TestNewTaskFieldsEditorDropsAnAbandonedRow(t *testing.T) {
 	}
 }
 
+func formWithDeclaredFields(t *testing.T) *newTask {
+	t.Helper()
+	n := loadedForm(t)
+	for i := range n.workflows {
+		if n.workflows[i].Name != "two-step" {
+			continue
+		}
+		n.workflows[i].Fields = []apiclient.WorkflowField{
+			{
+				Name: "ticket", Label: "Ticket", Description: "Issue tracker key.",
+				Type: apiclient.WorkflowFieldString, Required: true, Pattern: `^OPS-[0-9]+$`,
+			},
+			{Name: "retries", Type: apiclient.WorkflowFieldInteger},
+			{Name: "dry-run", Label: "Dry run", Type: apiclient.WorkflowFieldBoolean},
+		}
+	}
+	n.setWorkflow("two-step")
+	return n
+}
+
+func TestNewTaskPrerendersWorkflowFields(t *testing.T) {
+	n := formWithDeclaredFields(t)
+	if len(n.fields) != 3 {
+		t.Fatalf("fields = %+v, want the workflow's three declarations", n.fields)
+	}
+	for _, field := range n.fields {
+		if !field.declared {
+			t.Errorf("field = %+v, want a locked declared row", field)
+		}
+	}
+	if got := n.fieldMap(); got != nil {
+		t.Errorf("untouched declarations became task data: %v", got)
+	}
+	if got := n.rowValue(ntFields); !strings.Contains(got, "ticket=") ||
+		!strings.Contains(got, "required") || !strings.Contains(got, "retries=") {
+		t.Errorf("collapsed fields = %q, want required and optional placeholders", got)
+	}
+
+	moveTo(n, ntFields)
+	press(n, "enter")
+	out := n.render(140, 60)
+	for _, want := range []string{
+		"Ticket (ticket)", "string", "required", "Issue tracker key.",
+		"pattern: ^OPS-[0-9]+$", "Dry run", "choose true/false", "add custom",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("field editor is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestNewTaskDeclaredFieldsLockNamesButAllowCustomFields(t *testing.T) {
+	n := formWithDeclaredFields(t)
+	moveTo(n, ntFields)
+	press(n, "enter")
+
+	press(n, "enter") // declared ticket: edit its value, never its key
+	if n.fieldsEd.editing != 2 {
+		t.Fatalf("editing = %d, want the declared value editor", n.fieldsEd.editing)
+	}
+	typeText(n, "OPS-42")
+	press(n, "enter")
+	press(n, "d")
+	if !strings.Contains(n.fieldsEd.err, "cannot be deleted") {
+		t.Errorf("delete error = %q", n.fieldsEd.err)
+	}
+
+	press(n, "down")
+	press(n, "down")
+	press(n, "enter") // boolean declarations toggle instead of opening text
+	if got := n.fieldsEd.rows[2].value; got != "true" {
+		t.Errorf("boolean = %q, want true after the first toggle", got)
+	}
+	press(n, "enter")
+	press(n, "enter")
+	if got := n.fieldsEd.rows[2].value; got != "" {
+		t.Errorf("optional boolean = %q after three toggles, want unset", got)
+	}
+	press(n, "enter") // leave true for the request assertion below
+	addField(n, "owner", "ana")
+	press(n, "esc")
+	if got := n.fieldMap(); got["ticket"] != "OPS-42" || got["dry-run"] != "true" || got["owner"] != "ana" {
+		t.Errorf("fields = %v, want declared values plus the custom field", got)
+	}
+}
+
+func TestNewTaskWorkflowSwitchPreservesFieldValues(t *testing.T) {
+	n := formWithDeclaredFields(t)
+	n.fields[0].value = "OPS-42"
+	n.fields = append(n.fields, kv{key: "owner", value: "ana"})
+
+	n.setWorkflow("adhoc")
+	if len(n.fields) != 2 || n.fields[0].declared {
+		t.Fatalf("fields after adhoc = %+v; typed values should become custom, while untouched declarations disappear", n.fields)
+	}
+	n.setWorkflow("two-step")
+	if len(n.fields) != 4 || !n.fields[0].declared || n.fields[0].value != "OPS-42" {
+		t.Fatalf("fields after switching back = %+v", n.fields)
+	}
+	if n.fields[3].key != "owner" || n.fields[3].declared {
+		t.Errorf("additional field after switching = %+v", n.fields[3])
+	}
+}
+
+func TestNewTaskValidatesDeclaredFieldsBeforeSubmit(t *testing.T) {
+	n := formWithDeclaredFields(t)
+	n.projectID = 1
+	n.titleIn.SetValue("release")
+	n.client = nil
+	if cmd := n.submit(); cmd != nil {
+		t.Fatal("submit posted a task with a missing required field")
+	}
+	if got := n.rowErr[ntFields]; !strings.Contains(got, "Ticket is required") {
+		t.Errorf("fields row error = %q", got)
+	}
+	if n.cursor != ntFields {
+		t.Errorf("cursor = %v, want the fields row", n.cursor)
+	}
+}
+
+func TestNewTaskParksDaemonFieldErrorsOnTheFieldsRow(t *testing.T) {
+	n := loadedForm(t)
+	n.update(ntFailedMsg{err: &apiclient.Error{
+		Status: 400, Code: "validation_failed",
+		Message: `fields.ticket: field "ticket" must match pattern "^OPS-[0-9]+$"`,
+	}})
+	if got := n.rowErr[ntFields]; !strings.Contains(got, "fields.ticket") {
+		t.Errorf("fields row error = %q", got)
+	}
+	if n.cursor != ntFields {
+		t.Errorf("cursor = %v, want the fields row", n.cursor)
+	}
+}
+
 func TestNewTaskCapturesInputOnlyWhileTyping(t *testing.T) {
 	n := loadedForm(t)
 	if n.capturesInput() {
