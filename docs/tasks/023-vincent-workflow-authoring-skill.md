@@ -1,6 +1,6 @@
 # 023 — Vincent workflow authoring skill
 
-**Status:** 🚧 in progress (5/10)
+**Status:** ✅ done (10/10)
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
@@ -64,11 +64,11 @@ workflow is committed.
 - [x] **023.3 — Document GitHub and `npx skills` installation/discovery.** ✓ 2026-08-21
 - [x] **023.4 — Validate skill structure, discovery, and representative workflow behavior.** ✓ 2026-08-21
 - [x] **023.5 — Review the final diff and repository verification.** ✓ 2026-08-21
-- [~] **023.6 — Correct manual-gate, choice, and credential guidance.**
-- [ ] **023.7 — Add Vincent version and schema-drift handling.**
-- [ ] **023.8 — Add a conservative agent-session cost envelope.**
-- [ ] **023.9 — Strengthen secret and external-effect safety guidance.**
-- [ ] **023.10 — Add the final workflow design summary and re-verify the skill.**
+- [x] **023.6 — Correct manual-gate, choice, and credential guidance.** ✓ 2026-08-21
+- [x] **023.7 — Add Vincent version and schema-drift handling.** ✓ 2026-08-21
+- [x] **023.8 — Add a conservative agent-session cost envelope.** ✓ 2026-08-21
+- [x] **023.9 — Strengthen secret and external-effect safety guidance.** ✓ 2026-08-21
+- [x] **023.10 — Add the final workflow design summary and re-verify the skill.** ✓ 2026-08-21
 
 ## Verification
 
@@ -79,3 +79,10 @@ workflow is committed.
   fan-out workflows without warnings. It also rejects
   `on_input: require` inside a loop at the documented validation boundary.
 - CI run 364 passes all seven Linux, macOS, Windows, gate, and packaging jobs.
+- The updated source and a clean `npx skills` copy both pass the skill-creator
+  validator and compare byte-for-byte.
+- Vincent v0.4.2 accepts the four-session convergence and external-effect
+  reconciliation examples without warnings. It rejects a made-up manual
+  `value` field and the newer workflow `fields` key, exercising both corrected
+  gate semantics and explicit version-mismatch handling.
+- CI run 367 passes all seven Linux, macOS, Windows, gate, and packaging jobs.
