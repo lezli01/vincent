@@ -1,3 +1,5 @@
+{% raw %}
+
 # Concepts
 
 Five nouns and one process. Everything else in vincent is a consequence of how
@@ -214,3 +216,5 @@ transcripts already on disk.
 - [Writing workflows](../guides/workflows.md) — the part you will spend time in.
 - [Using the TUI](../guides/tui.md) — operate and inspect active workloads.
 - [Task lifecycle](../reference/task-lifecycle.md) — states and actions in full.
+
+{% endraw %}

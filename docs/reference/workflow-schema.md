@@ -1,3 +1,5 @@
+{% raw %}
+
 # Workflow schema
 
 The complete YAML field reference. For a practical, pattern-oriented tour, see
@@ -968,3 +970,5 @@ the task-creation response, and in the daemon log.
 - [Writing workflows](../guides/workflows.md) — the guide.
 - [Example workflows](../../examples) — five working files.
 - [Agent CLIs](../guides/agents.md) — what each adapter honors.
+
+{% endraw %}
