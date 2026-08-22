@@ -1,3 +1,5 @@
+{% raw %}
+
 # Writing workflows
 
 A **workflow** is a YAML file describing an ordered list of steps. Every task
@@ -1766,3 +1768,5 @@ workflow-level problem: see
 - [Configuration](../reference/configuration.md) — the daemon-side defaults
   every workflow inherits.
 - [Security model](../security-model.md) — what `full-auto` really allows.
+
+{% endraw %}
