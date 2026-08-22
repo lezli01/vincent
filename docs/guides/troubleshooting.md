@@ -1,3 +1,5 @@
+{% raw %}
+
 # Troubleshooting
 
 The failures people actually hit, what each one means, and what to do.
@@ -571,3 +573,5 @@ Include:
 issues go through
 [private advisories](https://github.com/lezli01/vincent/security/advisories/new)
 instead — see [SECURITY.md](../../SECURITY.md).
+
+{% endraw %}
