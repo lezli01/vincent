@@ -1,5 +1,5 @@
 # GitHub Pages builds this repository with Jekyll 3.x. Keep internal engineering
-# records and bundled agent-skill material out of the site build; several of
+# records and template-heavy bundled reference material out of the site build;
 # those files intentionally contain Vincent Go-template expressions (`{{ ... }}`)
 # that Liquid would otherwise try to evaluate.
 exclude:
@@ -10,4 +10,4 @@ exclude:
   - docs/history/
   - docs/spec.md
   - docs/tasks/
-  - skills/
+  - skills/vincent-workflows/references/
