@@ -176,8 +176,6 @@ instead. Include `vincent version`, your OS, and the relevant part of
 ### Can I contribute?
 
 Please. [CONTRIBUTING.md](../CONTRIBUTING.md) has the setup, the commit
-convention and the PR checklist. Read the [spec](spec.md) first — it is the
-normative description of the system — then [Tasks](tasks/README.md) for what is
-planned or in flight. The [v0 ledger](history/v0-tasks.md) is a closed record of
-how the first release was built, and still the best explanation of *why* most of
-it works the way it does.
+convention, architecture pointers, documentation expectations, and the PR
+checklist. For substantial changes, open an issue first so the problem and user
+impact can be agreed before implementation begins.

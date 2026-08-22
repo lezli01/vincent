@@ -1,0 +1,204 @@
+# Features
+
+vincent turns locally installed coding agents into managed, repeatable
+workloads. Your repositories, credentials, worktrees, transcripts, and task
+state stay on your machine; vincent provides the control plane around them.
+
+## At a glance
+
+| Area | Highlights |
+|---|---|
+| Orchestration | Durable daemon, priority queue, global and per-project concurrency, per-user service installation |
+| Git isolation | One worktree and branch per task, configurable branch names, safe archive cleanup |
+| Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
+| Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
+| Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
+| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry |
+| Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
+| Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
+| Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks |
+| Platforms | Windows, macOS, and Linux; Homebrew, WinGet, Scoop, mise, deb/rpm, and archives |
+
+## Orchestrate work instead of terminals
+
+The daemon owns task state, agent processes, workflow execution, scheduling,
+and git worktrees. The TUI and CLI are clients, so closing either does not stop
+the work behind it. `vincent service install` can start the daemon with your
+login on launchd, systemd, or Windows Task Scheduler.
+
+The scheduler admits work by priority and creation time while enforcing a
+global concurrency cap and an optional cap for each project. A task waiting at
+a human gate, blocked step, or fan-out join releases its slot instead of
+starving other work.
+
+Each task runs in a dedicated git worktree on its own branch. Parallel tasks do
+not collide with one another, and vincent never changes your active checkout.
+The branch convention is configurable globally, per project, or for one task.
+
+## Express the workflow the work needs
+
+Workflows are reusable YAML files that reload when saved and can travel with a
+repository under `.vincent/workflows/`. Strict validation catches unknown
+fields and invalid combinations before a task starts.
+
+Three step types perform work or wait for a person:
+
+- `agent` runs Claude Code, Codex, or Cursor with a rendered prompt.
+- `command` runs a deterministic shell command in the task worktree.
+- `manual` creates an explicit approval gate.
+
+Six structural types compose those steps:
+
+- `parallel` runs independent sub-steps concurrently in one worktree.
+- `fan_out` creates child tasks with isolated branches and merges their results.
+- `condition` ends a sequence early when a rendered condition is true.
+- `loop` repeats a body by count or over a discovered list.
+- `break` exits a loop cleanly.
+- `include` reuses another workflow inside the current one.
+
+Prompts, commands, checks, and instructions use Go templates. A step can read
+task and project data, declared task fields, loop context, and earlier step
+results. Workflows can declare ordered inputs with labels, descriptions,
+required flags, types, and validation patterns; the TUI renders them before the
+task is submitted, while additional ad hoc fields remain available.
+
+The [workflow guide](guides/workflows.md) explains the patterns, and the
+[workflow schema](reference/workflow-schema.md) lists every field.
+
+## Verify outcomes and recover cleanly
+
+An agent saying “done” is not the success condition. Agent and command steps
+can carry a `check` command, and the step advances only when both its body and
+its check succeed. A retry receives the actual failure, so the next attempt can
+correct the work rather than guess what happened.
+
+Timeouts are enforced, retry counts are bounded, and exhausted steps become
+`blocked` instead of being silently skipped. From there a person can retry,
+edit the step for this task and retry, skip it, or cancel the task.
+
+Every state transition is persisted before execution. If the daemon dies
+mid-step, restart recovery finalizes the interrupted attempt, verifies and
+stops orphan processes, and reruns the step without charging it as a failed
+retry. Every attempt also keeps a durable JSONL transcript.
+
+When Claude Code reports a usage limit, vincent treats it as a temporary wait
+instead of a failure: the task returns to the queue without consuming a retry or
+slot, shows its next admission time, and starts again when the window reopens.
+
+## Keep people in the loop
+
+Human oversight is part of the workflow instead of an informal terminal habit:
+
+- Add `manual` steps before publishing, merging, deployment, or any other
+  irreversible boundary.
+- Review the task's file-grouped git diff before approving it.
+- Answer a supported agent's structured question while its session remains
+  alive, or require that capability when the workflow depends on it.
+- Pause active work at a step boundary, change task priority, and recover a
+  blocked step without discarding its branch or transcript.
+- Use bulk selection to act on several eligible tasks while refusals remain
+  selected for follow-up.
+
+The daemon computes the actions valid in each state and sends that list to
+every client, so the TUI, CLI, and API agree on what can happen next. See the
+[task lifecycle](reference/task-lifecycle.md) for the complete model.
+
+## Operate from a purpose-built TUI
+
+Running `vincent` opens a Bubble Tea interface for active agent workloads:
+
+- A filterable, grouped task board shows state, current step, elapsed time, and
+  reported cost.
+- Task detail keeps the attempt timeline beside live output and the git diff.
+- Guided task creation exposes project, workflow, declared fields, git and
+  priority settings, agent overrides, and a final review stage.
+- Project and workflow workspaces keep navigation visible beside contextual
+  details on wider terminals and fall back to compact layouts when needed.
+- The workflow graph visualizes parallel groups, fan-out lanes and merges,
+  conditions, loops, guards, checks, and nested includes.
+
+The screenshots in the main [README](../README.md#tui-tour) are real renders
+using representative workloads. [Using the TUI](guides/tui.md) documents every
+view and key.
+
+## Bring the agent you already use
+
+vincent invokes locally installed and authenticated CLIs; it stores no agent
+API keys or login credentials.
+
+| Agent | What vincent integrates |
+|---|---|
+| Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, and mid-run questions |
+| Codex | Headless execution and restricted mode; no mid-run input or cost reported by the CLI |
+| Cursor | Headless execution and model discovery; reasoning effort is part of the model id, and restricted mode is unavailable on Windows |
+
+Agent, model, effort, and permission settings resolve from step to task override
+to workflow default to adapter default. The TUI shows which level won, and free
+text remains available when a newly released model is not in a catalog yet.
+Read [Agent CLIs](guides/agents.md) for installation and capability details.
+
+## Script and integrate it
+
+The TUI, command-line subcommands, and external integrations all use the same
+localhost API.
+
+- Every subcommand supports `--json` for machine-readable output.
+- Stable exit codes distinguish a rejected request from an unavailable daemon.
+- REST endpoints cover projects, workflows, tasks, actions, output, and diffs.
+- Server-sent events provide durable state replay and live per-task output.
+- `vincent workflow validate` works without a daemon or installed agent CLI, so
+  it fits pre-commit hooks and CI.
+
+Start with [Scripting vincent](guides/scripting.md), then use the complete
+[HTTP API reference](reference/api.md) when you need direct integration.
+
+## Diagnose and maintain it
+
+`vincent doctor` produces one report covering paths, configuration, daemon
+health, the recent log tail, SQLite integrity, agent availability and login
+state, disk use, worktrees, and task counts. It supports JSON output for bug
+reports and automation, while `--fix` can reclaim orphans and compact the
+database when it is safe to do so.
+
+`vincent gc` focuses on orphaned worktrees and transcripts. It supports a dry
+run, refuses to remove dirty or unknown work without an explicit force, and
+never deletes a branch or anything outside vincent's data roots. The daemon
+also reports orphaned paths at startup.
+
+See [Troubleshooting](guides/troubleshooting.md) for the diagnostic workflow and
+the [CLI reference](reference/cli.md) for exact flags and exit codes.
+
+## Run it on your platform
+
+vincent is one self-contained Go binary with no runtime, CGO dependency, or
+external database. Releases cover Windows, macOS, and Linux, and are published
+as archives plus platform-friendly packages:
+
+- Homebrew on macOS
+- WinGet or Scoop on Windows
+- deb and rpm packages on Linux
+- mise or release archives on all platforms
+
+Release archives are checksummed, the checksum manifest is signed with cosign,
+and builds carry GitHub attestations. Platform-specific installation, service,
+shell, and restricted-mode differences are documented in
+[Installation](getting-started/installation.md) and the
+[platform guides](README.md#platforms).
+
+## Common ways to use vincent
+
+- **Verified feature delivery:** implement with an agent, build and test with a
+  command, stop for review, then publish only after approval.
+- **Converging repair loops:** run a probe, let an agent repair the result, and
+  repeat until the check is green or the iteration bound is reached.
+- **Parallel implementation:** fan out independent changes into child tasks and
+  merge the finished branches back in a declared order.
+- **Cross-agent review:** implement with one adapter and review with another.
+- **Repository-specific intake:** declare ticket numbers, environment choices,
+  flags, and other validated task fields directly in the workflow.
+- **Repeatable maintenance:** replace prompt-heavy steps with commands where the
+  operation is deterministic, reserving agent calls for reasoning and edits.
+
+Ready to try it? Follow the [Quickstart](getting-started/quickstart.md), copy one
+of the [example workflows](../examples), or install the
+[workflow-authoring skill](../skills/vincent-workflows/SKILL.md).

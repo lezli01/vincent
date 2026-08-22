@@ -20,8 +20,9 @@
 
 <p align="center">
   <a href="#why-vincent">Why</a> &bull;
+  <a href="#features">Features</a> &bull;
   <a href="#tui-tour">TUI Tour</a> &bull;
-  <a href="#what-it-does">What It Does</a> &bull;
+  <a href="#how-it-works">How It Works</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="#quickstart">Quickstart</a> &bull;
   <a href="#documentation">Documentation</a> &bull;
@@ -59,20 +60,34 @@ The name is an acronym, and every part of it maps to the system:
 - **Native agent tooling** — it invokes locally installed tools such as
   Claude Code, Codex, and Cursor.
 
-**All 70 tasks in the [v0 breakdown](docs/history/v0-tasks.md) are done.** The
-daemon, the workflow engine, the TUI, the CLI subcommands, OS service
-registration and all three agent adapters are built, released as signed
-binaries, and exercised on Windows, macOS and Linux in CI on every pull
-request — unit tests, the race detector, the linter, and three end-to-end
-acceptance gates that drive a real daemon over HTTP. Binaries on the
-[releases page](https://github.com/lezli01/vincent/releases) are signed,
-checksummed and attested.
+vincent is an operating layer for day-to-day agent work, not a terminal
+multiplexer. It combines reusable workflows, durable scheduling, git isolation,
+deterministic verification, human oversight, crash recovery, and live
+observability in one self-contained binary. The same workload can be operated
+from the TUI, scripted through the CLI, or integrated through the localhost API.
 
 It is **source-available and dual-licensed** — free for personal and
 non-commercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE),
 with a [separate commercial license](COMMERCIAL-LICENSE.md) for business use —
 and created by `lezli01` at [lezli01.is-a.dev](https://lezli01.is-a.dev).
 Contributions are welcome — see [Contributing](#contributing).
+
+## Features
+
+| Capability | What it gives you |
+|---|---|
+| **Durable local control plane** | A background daemon owns execution and state, so tasks keep running when terminals and TUI sessions close. Install it as a per-user service to resume work after login or reboot. |
+| **Structured, reusable workflows** | Combine agent prompts, deterministic commands, approval gates, parallel groups, isolated fan-out, conditions, loops, breaks, and reusable includes in validated YAML. |
+| **Agent choice at every level** | Run Claude Code, Codex, or Cursor using the CLIs and authentication already on your machine; choose the agent, model, effort, and permission mode per workflow, step, or task. |
+| **Safe parallel development** | Every task receives its own git worktree and branch. Global and per-project concurrency caps, priorities, and platform restrictions keep many workloads organized without touching your checkout. |
+| **Verification and recovery** | Checks decide whether work succeeded, retries receive the real failure, timeouts are enforced, transcripts are durable, and interrupted steps recover after a daemon restart. |
+| **Human control where it matters** | Pause at approval gates, answer supported agents mid-run, inspect file-grouped diffs, edit and retry blocked steps, and decide when publishing happens. |
+| **A TUI built for active workloads** | Use a grouped task board, guided task creation, project and workflow workspaces, bulk actions, live output, cost and duration metrics, and a navigable workflow graph. |
+| **Automation-ready interfaces** | Every operation is available through CLI subcommands and a localhost REST + SSE API. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
+| **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, WinGet, Scoop, mise, deb/rpm packages, or release archives. |
+
+Explore the [complete feature guide](docs/features.md), or jump directly to the
+[five-minute quickstart](#quickstart).
 
 ## TUI Tour
 
@@ -103,7 +118,7 @@ workload data — not UI mockups.
   <em>The workflow registry stays anchored beside the navigable graph, including fan-out lanes, merge behavior, and manual gates.</em>
 </p>
 
-## What It Does
+## How It Works
 
 A background daemon owns all state and execution: register local git
 repositories, author reusable workflows (agent prompts, shell commands, manual
@@ -328,17 +343,17 @@ and stores no credentials of its own. Per-platform detail, build-from-source
 and upgrade instructions:
 [Installation](docs/getting-started/installation.md).
 
-**vincent is `0.x`.** The config file, workflow YAML schema, REST API and CLI
-flags may change in any minor release — pin a version if you script against
-them. Patch releases are fixes only, and the on-disk database migrates forward
-automatically. Full policy and release history:
+vincent currently follows **pre-1.0 Semantic Versioning**. The config file,
+workflow YAML schema, REST API and CLI flags may change in a minor release — pin
+a version if you script against them. Patch releases are fixes only, and the
+on-disk database migrates forward automatically. Full policy and release history:
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Quickstart
 
 > [!WARNING]
 > **Agents run full-auto by default: they can execute arbitrary commands as
-> you.** This is the design (spec §16), not an oversight — unattended
+> you.** This is intentional — unattended
 > orchestration is the point. The git worktree isolates tasks from *each
 > other*, not from your machine: an agent can still reach your home
 > directory, your credentials and the network. Nothing is pushed or merged
@@ -428,6 +443,7 @@ Full documentation lives in **[docs/](docs/README.md)**.
 
 **Start here**
 
+- [Features](docs/features.md) — the product tour and common use cases
 - [Installation](docs/getting-started/installation.md) — download, verify, and
   install an agent CLI
 - [Quickstart](docs/getting-started/quickstart.md) — first task, end to end
@@ -463,14 +479,13 @@ and native control flow, and validates generated workflow YAML.
 [HTTP API](docs/reference/api.md)
 
 **Also** — [Security model](docs/security-model.md) · [FAQ](docs/faq.md) ·
-[Specification](docs/spec.md) · [Tasks](docs/tasks/README.md) ·
-[v0 ledger](docs/history/v0-tasks.md)
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## Build & Test
 
 vincent is a single Go module; Go 1.26 or newer is the only prerequisite.
 `go.mod` pins an exact patch toolchain that the default `GOTOOLCHAIN=auto`
-fetches on the first build ([004](docs/tasks/004-go-toolchain-pin.md)).
+fetches on the first build.
 Build targets run via [mage](https://magefile.org/) with zero install — CI
 runs exactly these targets (list them all with `go run mage.go -l`):
 
@@ -492,9 +507,9 @@ Tests are self-contained: they run against temporary SQLite databases,
 throwaway git repositories, and a fake agent built from `cmd/fakeagent` on
 the fly — no real agent CLI, network access, or running daemon required.
 CI runs lint, the race-enabled tests, and the build on Linux, macOS, and
-Windows, plus the phase acceptance gates — `scripts/m1-gate.sh`,
-`scripts/m2-gate.sh`, and `scripts/m5-gate.sh` — which drive a real daemon end
-to end against the fake agent on all three platforms.
+Windows, plus seven end-to-end acceptance gates that exercise the daemon,
+workflow engine, adapters, control flow, and API against the fake agent on all
+three platforms.
 
 ## Contributing
 

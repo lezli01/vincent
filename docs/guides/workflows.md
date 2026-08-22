@@ -5,12 +5,9 @@ runs exactly one, in its own git worktree on its own branch, and the daemon is
 what runs it.
 
 This page is the practical guide: what to write, in what order, and why the
-schema is shaped the way it is. Two companions sit beside it:
-
-| Document | Use it for |
-|---|---|
-| [Workflow schema](../reference/workflow-schema.md) | Every field, every default, in tables |
-| [spec §7–§8](../spec.md) | The normative definition — authoritative when this page and it disagree |
+schema is shaped the way it is. Keep the
+[Workflow schema](../reference/workflow-schema.md) beside it when you need every
+field and default in table form.
 
 Five ready-to-copy files live in [`examples/`](../../examples). If you would
 rather read one working workflow than a guide, start with

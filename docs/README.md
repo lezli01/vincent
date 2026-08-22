@@ -9,11 +9,38 @@ background daemon owns the state and the execution — SQLite, git worktrees,
 agent CLI subprocesses — and every client (the TUI, the `vincent` subcommands,
 `curl`) is a thin consumer of its localhost API.
 
-New here? Read [Concepts](getting-started/concepts.md) for the five nouns the
-whole system is built from, then walk the
-[Quickstart](getting-started/quickstart.md).
+It gives locally installed agents durable scheduling, reusable workflows,
+isolated branches, deterministic checks, human gates, crash recovery, and one
+place to see the work. Start with the [feature tour](features.md), or run a real
+task with the [Quickstart](getting-started/quickstart.md).
 
 ---
+
+## Explore vincent
+
+| I want to… | Start here |
+|---|---|
+| Understand what vincent can do | [Features](features.md) |
+| Run my first managed agent task | [Quickstart](getting-started/quickstart.md) |
+| Learn the daemon, workflow, task, and worktree model | [Concepts](getting-started/concepts.md) |
+| Build reliable, cost-aware workflows | [Writing workflows](guides/workflows.md) |
+| Operate active workloads from the terminal | [Using the TUI](guides/tui.md) |
+| Integrate vincent with scripts or CI | [Scripting vincent](guides/scripting.md) |
+
+## What makes it different
+
+- **Work survives the client.** Close the TUI or terminal and the daemon keeps
+  scheduling, running, and recording tasks.
+- **Workflows are more than prompts.** Mix agents with commands, approval gates,
+  parallel groups, fan-out, conditions, loops, and reusable includes.
+- **Every task is isolated.** A dedicated git worktree and branch protect your
+  checkout and let multiple changes run at once.
+- **Success is verified.** Checks, retries, timeouts, blocked-step recovery, and
+  durable transcripts make outcomes inspectable instead of aspirational.
+- **People retain control.** Review diffs, approve gates, answer supported agents,
+  edit and retry failed steps, and choose exactly when delivery happens.
+- **The interface is yours to choose.** Use the full TUI, JSON-capable CLI, or
+  localhost REST + SSE API on Windows, macOS, and Linux.
 
 ## Getting started
 
@@ -27,7 +54,7 @@ whole system is built from, then walk the
 
 | Page | What it covers |
 |---|---|
-| [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the eight step types, control flow, templates, checks, retries, agents, portability |
+| [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the nine step types, control flow, templates, checks, retries, agents, portability |
 | [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
 | [Using the TUI](guides/tui.md) | The board, task detail, the four takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
@@ -62,33 +89,26 @@ that is *not* true are stated rather than smoothed over.
   does and does not isolate, and how to tighten it.
 - [FAQ](faq.md) — the short answers.
 - [Example workflows](../examples) — five ready-to-copy files.
+- [Changelog](../CHANGELOG.md) — user-visible changes in every release.
 - [Commercial licensing](../COMMERCIAL-LICENSE.md) — vincent is source-available
   and dual-licensed: free for personal and non-commercial use under the
   [PolyForm Noncommercial License 1.0.0](../LICENSE), separate license required
   for commercial or business use.
 
-## Design and internals
+## Contributing
 
-Everything above is written for people *using* vincent. These are for people
-changing it.
+Want to improve vincent itself? The [Contributing guide](../CONTRIBUTING.md)
+covers development setup, architecture pointers, documentation expectations,
+tests, cross-platform checks, commit conventions, and pull requests.
 
-- [Specification](spec.md) — the normative document, and the only one. Section
-  numbers (§7.2, §9.7 …) are cited throughout the code and these docs; when a
-  guide and the spec disagree, the spec wins. It is not versioned: it describes
-  the system as it is now, amended in place with dated notes.
-- [Tasks](tasks/README.md) — planned and in-flight work, one document per piece
-  of work, with the design decisions behind it.
-- [Acceptance gates](gates/m5-gate.md) — the manual walkthroughs behind the
-  scripted gates in [`scripts/`](../scripts), and the record of when each was
-  last walked. ([M3](gates/m3-gate.md) seeds a TUI walkthrough instead of
-  asserting.)
-- [History](history/v0-tasks.md) — the closed v0 ledger: how the first release
-  was delivered, task by task, with the decision behind each one. Frozen, and
-  still worth reading — code comments cite its decisions by name.
+The repository also retains maintainer specifications, engineering work
+records, acceptance walkthroughs, and historical decision records. They support
+implementation work and stable code citations, but they are not prerequisites
+for installing or using vincent; the contributing guide points to the relevant
+record when a change needs one.
 
 ## Conventions in these docs
 
 - `{config_dir}` and `{data_dir}` are the platform-native directories resolved
   in [Files and directories](reference/files.md).
 - Shell samples are POSIX unless a PowerShell equivalent is shown beside them.
-- `§n` references point at [the spec](spec.md).
