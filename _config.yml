@@ -1,3 +1,13 @@
+title: vincent
+description: Durable local orchestration for agentic development workloads.
+repository: lezli01/vincent
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
 # GitHub Pages builds this repository with Jekyll 3.x. Keep internal engineering
 # records and template-heavy bundled reference material out of the site build;
 # those files intentionally contain Vincent Go-template expressions (`{{ ... }}`)
