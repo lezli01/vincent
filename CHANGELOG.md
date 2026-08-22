@@ -9,6 +9,17 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.5.0](https://github.com/lezli01/vincent/compare/v0.4.2...v0.5.0) (2026-08-22)
+
+
+### Features
+
+* add Vincent workflow authoring skill ([090405a](https://github.com/lezli01/vincent/commit/090405a8b34ebd09142cb6c117d9a0be2a259146))
+* add Vincent workflow authoring skill ([5def996](https://github.com/lezli01/vincent/commit/5def996209b22d563ac6d3a331ac6b7fa325649b))
+* add workflow-declared task fields ([ee3c06d](https://github.com/lezli01/vincent/commit/ee3c06dfc42d95454326ba0e1d8101012481e4c9))
+* add workflow-declared task fields ([49659a2](https://github.com/lezli01/vincent/commit/49659a242dbd7e2c1f8ffc595450d1ea16660e8b))
+* harden Vincent workflow skill guidance ([bdc7262](https://github.com/lezli01/vincent/commit/bdc7262920d8b0fc2ffb8d2a5d8ce4a5cc38a25b))
+
 ## [Unreleased]
 
 ### Added
