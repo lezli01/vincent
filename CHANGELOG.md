@@ -9,6 +9,22 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.5.1](https://github.com/lezli01/vincent/compare/v0.5.0...v0.5.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* **pages:** exclude internal docs from Jekyll ([c394b8f](https://github.com/lezli01/vincent/commit/c394b8f8de850a4510503efb60c874363d30cf8b))
+* **pages:** keep workflow skill page published ([f54b1b8](https://github.com/lezli01/vincent/commit/f54b1b8a1764dbde7a424f846efbfc78df5dc638))
+* **pages:** link rendered changelog and contributing pages ([29dab39](https://github.com/lezli01/vincent/commit/29dab393feef13dac2757b67fc96d46677266942))
+* **pages:** protect concepts templates from Liquid ([bf665a2](https://github.com/lezli01/vincent/commit/bf665a258714f4aa855a3c992683153b8c451364))
+* **pages:** protect troubleshooting templates from Liquid ([e08d62a](https://github.com/lezli01/vincent/commit/e08d62aa77557fb02137975dcc2ca6bffd1908ad))
+* **pages:** protect workflow guide templates from Liquid ([9a28617](https://github.com/lezli01/vincent/commit/9a286171977992ea93717db580cd0541263413fe))
+* **pages:** protect workflow schema templates from Liquid ([c20dbf3](https://github.com/lezli01/vincent/commit/c20dbf3a9ec363352675ec24c25f1d331a7dccd9))
+* **pages:** publish contributing guide ([201942c](https://github.com/lezli01/vincent/commit/201942c71a019c2585f506b793cd84f92a4edb5c))
+* **pages:** repair contributing and changelog pages ([f530c69](https://github.com/lezli01/vincent/commit/f530c69134c7cea3b6ae9878fce8574b7de5a0db))
+* **pages:** stop Liquid parsing Vincent templates ([9e63c32](https://github.com/lezli01/vincent/commit/9e63c32cc57ef9b9669db6ea73b3d003d605ee2d))
+
 ## [0.5.0](https://github.com/lezli01/vincent/compare/v0.4.2...v0.5.0) (2026-08-22)
 
 
