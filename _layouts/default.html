@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#282828">
+  <meta name="color-scheme" content="dark">
+  <title>{% if page.title %}{{ page.title }} · {% endif %}vincent</title>
+  <meta name="description" content="{{ page.description | default: site.description | escape }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto+Slab:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <header class="site-header framed">
+      <div class="brand-block">
+        <a class="brand" href="{{ '/' | relative_url }}" aria-label="vincent documentation home">
+          <span class="eyebrow">// lezli01 / agentic tooling</span>
+          <span class="brand-mark"><span>#</span> vincent</span>
+        </a>
+        <p class="tagline">durable local orchestration for agentic development</p>
+      </div>
+
+      <nav class="top-nav" aria-label="Primary">
+        <a href="{{ '/docs/features.html' | relative_url }}">Features</a>
+        <a href="{{ '/docs/getting-started/quickstart.html' | relative_url }}">Quickstart</a>
+        <a href="https://github.com/lezli01/vincent">GitHub ↗</a>
+        <a href="https://lezli01.is-a.dev/">Portfolio ↗</a>
+        <a href="https://blog.lezli01.is-a.dev/">Blog ↗</a>
+      </nav>
+    </header>
+
+    <div class="site-grid">
+      <aside class="docs-nav" aria-label="Documentation">
+        <div class="nav-card framed">
+          <div class="nav-label">// navigate</div>
+          <a href="{{ '/docs/features.html' | relative_url }}"># Features</a>
+          <a href="{{ '/docs/getting-started/quickstart.html' | relative_url }}"># Quickstart</a>
+          <a href="{{ '/docs/getting-started/concepts.html' | relative_url }}"># Concepts</a>
+          <a href="{{ '/docs/guides/workflows.html' | relative_url }}"># Workflows</a>
+          <a href="{{ '/docs/guides/tui.html' | relative_url }}"># TUI</a>
+          <a href="{{ '/docs/reference/cli.html' | relative_url }}"># CLI</a>
+          <a href="{{ '/docs/reference/api.html' | relative_url }}"># API</a>
+          <a href="{{ '/docs/security-model.html' | relative_url }}"># Security</a>
+          <div class="nav-divider"></div>
+          <a class="nav-muted" href="{{ '/CHANGELOG.html' | relative_url }}">Changelog</a>
+          <a class="nav-muted" href="{{ '/CONTRIBUTING.html' | relative_url }}">Contributing</a>
+        </div>
+      </aside>
+
+      <main id="content" class="content-card framed">
+        <div class="page-chrome">
+          <span class="page-path">// {{ page.path | default: 'docs' }}</span>
+          <span class="page-status"><i aria-hidden="true"></i> docs online</span>
+        </div>
+        <article class="prose">
+          {{ content }}
+        </article>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <span>// built by László Szabó — <a href="https://lezli01.is-a.dev/">lezli01.is-a.dev ↗</a></span>
+      <span>vincent · agentic workload orchestration</span>
+    </footer>
+  </div>
+</body>
+</html>
