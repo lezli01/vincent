@@ -1,0 +1,35 @@
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+# This workflow only reads event metadata and never checks out or executes the
+# pull request's code.
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plain-language:
+    # These tools couple their PR titles to conventional generated commits. Their
+    # ci/chore merge messages are hidden from Release Please's changelog.
+    if: github.event.pull_request.user.login != 'dependabot[bot]' && !startsWith(github.event.pull_request.head.ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Reject Conventional Commit titles
+        env:
+          # PR titles are untrusted input. Passing the value through the
+          # environment prevents GitHub expression interpolation into shell code.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          pattern='^[a-z][a-z0-9_-]*(\([^)]+\))?!?:[[:space:]]+'
+          if [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "::error title=Use a plain-language PR title::Conventional Commit prefixes belong on commits, not PR titles. GitHub copies the title into the merge commit, which makes Release Please record the change twice."
+            exit 1
+          fi
+          echo "PR title is plain language."

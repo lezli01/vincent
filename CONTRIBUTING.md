@@ -13,6 +13,12 @@ Thanks for your interest in contributing!
   [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope?): summary` with types like `feat`, `fix`, `docs`, `ci`,
   `chore`, `refactor`, `test`.
+- **Plain-language PR titles.** Put the Conventional Commit prefix on the commits,
+  not on the PR title: use `Add scheduler caps`, not `feat: add scheduler caps`.
+  GitHub copies the PR title into the merge commit body, and a conventional title
+  makes Release Please add the same change to the generated changelog twice.
+  The PR-title guard exempts Release Please and Dependabot PRs because those tools
+  couple their generated PR titles to their commit messages.
 - **Branch naming:** `type/short-description`, e.g. `feat/scheduler-caps`,
   `docs/feature-overview`.
 - **CI must be green** (build, test, lint on Linux, macOS, and Windows) before
@@ -100,6 +106,7 @@ You retain copyright in your contribution unless otherwise agreed.
 
 ## Pull request checklist
 
+- [ ] PR title is plain language (no Conventional Commit prefix)
 - [ ] Commits follow Conventional Commits
 - [ ] Tests added/updated for behavior changes
 - [ ] User-visible changes noted under `## [Unreleased]` in

@@ -125,5 +125,5 @@ jobs:
           # is overwritten rather than reconciled.
           git push -f -u origin "$branch"
           gh pr create \
-            --title "chore: bump go toolchain to ${LATEST}" \
+            --title "Bump Go toolchain to ${LATEST}" \
             --body-file /tmp/pr-body.md

@@ -526,6 +526,8 @@ features. Start here:
 
 All changes land via pull request to `master`, merged with merge commits (no
 squashing), using [Conventional Commits](https://www.conventionalcommits.org/).
+Conventional prefixes belong on commit messages; PR titles use plain language so
+release automation does not duplicate the change through the merge commit.
 Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security

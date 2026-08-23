@@ -267,7 +267,14 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
 - **Git flow:** everything lands via PR to `master`, merged with merge commits (no
   squash — branch history becomes `master`'s history). Conventional Commits
   (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`), branches named
-  `type/short-description`. CI green on all three platforms is required.
+  `type/short-description`. Conventional prefixes belong on commits, not human PR
+  titles: use a plain-language title such as `Add workflow fields`, never
+  `feat: add workflow fields`. GitHub copies the PR title into the merge commit
+  body, so a conventional title makes Release Please record both the merge and
+  the matching inner commit in `CHANGELOG.md`. The `PR title` workflow enforces
+  this; Release Please and Dependabot PRs are narrowly exempt because those tools
+  couple their PR titles to their generated commit messages. CI green on all
+  three platforms is required.
 - **Never** add co-author to commits.
 
 ## Security posture
