@@ -27,7 +27,7 @@
 # Known wart: this workflow commits nothing, so every run still leaves an
 # empty `vincent/{id}-{slug}` branch and worktree behind — a task always gets
 # one. Archive the task when you're done to clean it up.
-name: github-issue
+name: github-create-issue
 description: Clarify a draft issue with the author, then file it on GitHub and report it back.
 
 defaults:
