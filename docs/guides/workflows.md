@@ -107,6 +107,11 @@ Details that matter in practice:
 
 - Both `.yaml` and `.yml` are read, from the directory itself — **not**
   recursively, so a `subdir/` inside `workflows/` is ignored.
+- **Only regular files, up to 1 MiB.** A symlink, named pipe, socket or device
+  named `*.yaml` is not a workflow source and is never opened or followed, and a
+  file over 1 MiB is not read whole. Either one is listed as an invalid entry
+  saying why, exactly like a file that fails to parse — the rest of the scope
+  keeps working. Both bounds are fixed; there is no setting for them.
 - Workflows are addressed by their `name:` field, not by filename. A file named
   `ci.yaml` declaring `name: feature-pr` is the workflow `feature-pr`.
   Keeping the two the same is a convention worth following, not a rule.

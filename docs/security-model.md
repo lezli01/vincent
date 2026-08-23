@@ -80,6 +80,16 @@ Command steps and checks are the same story: they execute user-authored workflow
 content at the same trust level as your own shell. No additional sandboxing is
 attempted or implied.
 
+**Workflow files are read at registration and on reload, not when you run one.**
+Adding a project puts every `*.yaml` in its `.vincent/workflows/` in front of the
+parser right away, and the daemon re-reads them whenever they change — before
+anybody picks a workflow. Cataloguing is therefore bounded (spec §5.2): only
+**regular files** are sourced, so a symlink, FIFO, socket or device named `*.yaml`
+is rejected without being opened or followed, and a source is capped at **1 MiB**.
+A rejected file is listed as an invalid entry naming the path and the reason; its
+valid siblings stay available. What the parsed content is then allowed to *do* is
+unchanged — a `command` step is still a shell command.
+
 ## Restricted mode
 
 `permission_mode: restricted` maps each adapter onto its own confinement:
