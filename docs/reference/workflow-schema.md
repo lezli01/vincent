@@ -70,8 +70,10 @@ steps:
 ```
 
 Files live in `.vincent/workflows/*.yaml` (project scope), or
-`{config_dir}/workflows/*.yaml` (global). Project shadows global by `name`. One
-built-in workflow, `adhoc`, is always present: a single agent step.
+`{config_dir}/workflows/*.yaml` (global). Project shadows global by `name`. Two
+built-in workflows are always present: `adhoc`, a single agent step, and
+`create-workflow`, a single agent step that writes another workflow file into
+one of the two registries.
 
 ## Top level
 

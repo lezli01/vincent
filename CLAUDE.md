@@ -45,6 +45,15 @@ optional when a change touches the behavior or decision they describe:
 - `docs/gates/` — the manual walkthroughs behind the scripted acceptance gates,
   and the record of when each was last walked.
 
+`skills/vincent-workflows/SKILL.md` is **runtime text, not just documentation**:
+`skills/embed.go` embeds it and `internal/workflow/builtin.go` splices it into
+the built-in `create-workflow` workflow's prompt at build time (task 024). An
+edit to that file changes what the daemon tells an agent to do. It reaches the
+prompt escaped for `text/template` and re-indented into a YAML block scalar, so
+it may contain anything — but the three standing corrections the prompt applies
+to it (what asking costs, destination, missing `references/`) live in
+`createWorkflowHeader`, never in the skill.
+
 Phase decisions ("phase 2 decision", "PR G decision", "T1.5/T1.6 decision") recorded
 inline in comments and in tasks.md are binding — they are the outcome of design
 sessions, not incidental notes. Don't relitigate one without saying so explicitly.

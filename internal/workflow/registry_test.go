@@ -42,19 +42,22 @@ func find(entries []Entry, name string) (Entry, bool) {
 	return Entry{}, false
 }
 
-func TestRegistryListsBuiltinWithoutAnyFiles(t *testing.T) {
+func TestRegistryListsBuiltinsWithoutAnyFiles(t *testing.T) {
 	reg, _ := newTestRegistry(t)
 	reg.Reload()
 
 	entries := reg.List(0)
-	if len(entries) != 1 {
-		t.Fatalf("entries = %d, want only the built-in (%v)", len(entries), entries)
+	if len(entries) != len(builtinSources) {
+		t.Fatalf("entries = %d, want only the %d built-ins (%v)", len(entries), len(builtinSources), entries)
 	}
-	if entries[0].Name != AdhocName || entries[0].Scope != ScopeBuiltin {
-		t.Errorf("entry = %+v, want the built-in adhoc", entries[0])
-	}
-	if _, ok := reg.Lookup(0, AdhocName); !ok {
-		t.Error("Lookup(adhoc) failed; the built-in must always resolve")
+	for name := range builtinSources {
+		e, ok := find(entries, name)
+		if !ok || e.Scope != ScopeBuiltin {
+			t.Errorf("entry %q = %+v, %v; want it listed at builtin scope", name, e, ok)
+		}
+		if _, ok := reg.Lookup(0, name); !ok {
+			t.Errorf("Lookup(%q) failed; a built-in must always resolve", name)
+		}
 	}
 }
 
@@ -71,9 +74,12 @@ func TestRegistryScopeShadowing(t *testing.T) {
 	reg.ReloadGlobal()
 	reg.SetProjects(map[int64]string{7: repo})
 
+	// One row per distinct name: every built-in, plus feature and onlyglobal.
+	// The project's adhoc.yaml shadows a built-in rather than adding a row.
 	entries := reg.List(7)
-	if len(entries) != 3 {
-		t.Fatalf("entries = %d, want 3 (adhoc, feature, onlyglobal): %v", len(entries), entries)
+	if want := len(builtinSources) + 2; len(entries) != want {
+		t.Fatalf("entries = %d, want %d (the built-ins, feature, onlyglobal): %v",
+			len(entries), want, entries)
 	}
 	feature, _ := find(entries, "feature")
 	if feature.Scope != ScopeProject || feature.Workflow.Description != "project" {

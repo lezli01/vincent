@@ -51,7 +51,7 @@ a name in a narrower scope shadows the same name in a wider one:
 |---|---|
 | Project | `.vincent/workflows/*.yaml` inside the repository |
 | Global | `{config_dir}/workflows/*.yaml` |
-| Built-in | `adhoc` — a single agent step, always available |
+| Built-in | `adhoc` and `create-workflow` — one agent step each, always available |
 
 The daemon watches both directories and reloads on save. A file that fails to
 parse is reported invalid; the previously loaded version keeps running.

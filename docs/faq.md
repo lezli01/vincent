@@ -69,7 +69,11 @@ retry**. See [Task lifecycle](reference/task-lifecycle.md#interruption-is-not-fa
 
 Not to start: the built-in `adhoc` workflow is one agent step, and four
 [examples](../examples) ship ready to copy. You will want your own soon after —
-[Writing workflows](guides/workflows.md) is short.
+[Writing workflows](guides/workflows.md) is short. If you would rather not write
+the first one by hand, run the built-in `create-workflow` against the repository
+that needs it: describe the workflow in the task, name it in the required
+`workflow_name` field, and leave `global` unset to install into that repo's
+`.vincent/workflows` — or set it to `true` for `{config_dir}/workflows`.
 
 ### How do I make a workflow only apply to one repository?
 

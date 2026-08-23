@@ -646,3 +646,150 @@ func TestBuiltinAdhocIsValid(t *testing.T) {
 		t.Errorf("adhoc max_retries = %v, want 0 (fail fast)", mr)
 	}
 }
+
+func TestBuiltinCreateWorkflowIsValid(t *testing.T) {
+	e, ok := builtins()[CreateWorkflowName]
+	if !ok {
+		t.Fatalf("builtins() has no %q entry", CreateWorkflowName)
+	}
+	if !e.Valid() {
+		t.Fatalf("built-in create-workflow is invalid: %v", e.Errors)
+	}
+	if e.Scope != ScopeBuiltin || e.File != "" {
+		t.Errorf("scope = %q, file = %q; want builtin scope and no file", e.Scope, e.File)
+	}
+	if len(e.Workflow.Steps) != 1 || e.Workflow.Steps[0].Type != StepAgent {
+		t.Fatalf("create-workflow steps = %+v, want one agent step", e.Workflow.Steps)
+	}
+	if mr := e.Workflow.Steps[0].MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("create-workflow max_retries = %v, want 0 (a replay would find the first file)", mr)
+	}
+	// The prompt tells the agent it may stop and ask; the YAML has to agree,
+	// and say so rather than leaning on the engine's fallback (decision 9).
+	if got := e.Workflow.Steps[0].OnInput; got != InputWait {
+		t.Errorf("create-workflow on_input = %q, want %q", got, InputWait)
+	}
+	if len(e.Workflow.Fields) != 2 {
+		t.Fatalf("fields = %+v, want the name and the destination switch", e.Workflow.Fields)
+	}
+	name := e.Workflow.Fields[0]
+	if name.Name != "workflow_name" || name.Type != FieldString || !name.Required {
+		t.Errorf("field[0] = %+v, want a required string named workflow_name", name)
+	}
+	if f := e.Workflow.Fields[1]; f.Name != "global" || f.Type != FieldBoolean || f.Required {
+		t.Errorf("field[1] = %+v, want an optional boolean named global", f)
+	}
+
+	// The name is also a file name, so the pattern has to reject what a file
+	// name cannot carry while still accepting the whole slug vocabulary.
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"release", true},
+		{"feature-pr", true},
+		{"release.v2", true},
+		{"deploy_prod", true},
+		{"Release", false},
+		{"feature pr", false},
+		{"../escape", false},
+		{"a/b", false},
+		{"-leading", false},
+		{"", false},
+	} {
+		errs := e.Workflow.ValidateTaskFields(map[string]string{"workflow_name": tc.value})
+		if got := len(errs) == 0; got != tc.want {
+			t.Errorf("workflow_name %q accepted = %v, want %v (%v)", tc.value, got, tc.want, errs)
+		}
+	}
+}
+
+// The skill is prose that the step renders as a template, so a "{{" arriving
+// in it must not become an action. Nothing in the skill opens one today; this
+// is the guard for the day one does (task 024 decision 8).
+func TestCreateWorkflowSkillSplicingIsTemplateSafe(t *testing.T) {
+	const src = "---\nname: x\ndescription: y\n---\n\nUse {{.Task.Title}} and a lone }} here.\n"
+
+	body := skillInstructions(src)
+	if strings.HasPrefix(body, "---") {
+		t.Fatalf("front matter survived: %q", body)
+	}
+
+	indented := indentBlock(escapeTemplate(body), promptIndent)
+	for _, line := range strings.Split(indented, "\n") {
+		if line != "" && !strings.HasPrefix(line, promptIndent) {
+			t.Errorf("line %q is not indented into the block scalar", line)
+		}
+	}
+
+	got, err := Render("prompt", indented, RenderContext{})
+	if err != nil {
+		t.Fatalf("Render() error = %v; an escaped skill must never execute", err)
+	}
+	if !strings.Contains(got, "{{.Task.Title}}") || !strings.Contains(got, "lone }} here") {
+		t.Errorf("rendered = %q, want the braces back as literal text", got)
+	}
+}
+
+// The destination is the whole point of the `global` field, so both branches
+// are rendered rather than eyeballed. An unset field renders as the project
+// branch, which is what makes the switch safe to leave blank (task 024).
+func TestBuiltinCreateWorkflowDestinationBranches(t *testing.T) {
+	prompt := builtins()[CreateWorkflowName].Workflow.Steps[0].Prompt
+
+	for _, tc := range []struct {
+		name       string
+		fields     map[string]string
+		wantSubstr string
+		notSubstr  string
+	}{
+		{
+			name:       "unset renders the project registry",
+			fields:     map[string]string{"workflow_name": "release"},
+			wantSubstr: "/repo/root/.vincent/workflows",
+			notSubstr:  "vincent doctor --json",
+		},
+		{
+			name:       "false renders the project registry",
+			fields:     map[string]string{"workflow_name": "release", "global": "false"},
+			wantSubstr: "/repo/root/.vincent/workflows",
+			notSubstr:  "vincent doctor --json",
+		},
+		{
+			name:       "true renders the global registry",
+			fields:     map[string]string{"workflow_name": "release", "global": "true"},
+			wantSubstr: "vincent doctor --json",
+			notSubstr:  "/repo/root/.vincent/workflows",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rc := RenderContext{
+				Task:    TaskContext{Title: "add a release workflow", Fields: tc.fields},
+				Project: ProjectContext{Name: "vincent", Path: "/repo/root"},
+			}
+			got, err := Render("prompt", prompt, rc)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			if !strings.Contains(got, tc.wantSubstr) {
+				t.Errorf("rendered prompt does not mention %q:\n%s", tc.wantSubstr, got)
+			}
+			if strings.Contains(got, tc.notSubstr) {
+				t.Errorf("rendered prompt mentions the other branch (%q):\n%s", tc.notSubstr, got)
+			}
+			// The skill is spliced in, not summarized, and its front
+			// matter is not.
+			if !strings.Contains(got, "Choose the cheapest correct primitive") {
+				t.Errorf("rendered prompt does not carry the embedded skill:\n%s", got)
+			}
+			if strings.Contains(got, "name: vincent-workflows") {
+				t.Errorf("rendered prompt still carries the skill's front matter:\n%s", got)
+			}
+			// The declared name reaches the prompt, so the agent is told
+			// which name to use rather than inventing one.
+			if !strings.Contains(got, "use release\nverbatim") {
+				t.Errorf("rendered prompt does not carry workflow_name:\n%s", got)
+			}
+		})
+	}
+}
