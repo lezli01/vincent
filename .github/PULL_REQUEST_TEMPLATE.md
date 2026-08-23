@@ -10,6 +10,7 @@
 
 ## Checklist
 
+- [ ] PR title is plain language (no Conventional Commit prefix)
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
 - [ ] Tests added/updated for behavior changes
 - [ ] User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md`

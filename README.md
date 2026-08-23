@@ -34,7 +34,7 @@
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/screenshot.png" alt="The vincent TUI: task board, step timeline, and live agent output" width="900">
+  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/tui-board.png" alt="The vincent TUI: task board, step timeline, and live agent output" width="900">
 </p>
 
 <p align="center">
@@ -91,8 +91,9 @@ Explore the [complete feature guide](docs/features.md), or jump directly to the
 
 ## TUI Tour
 
-These are actual renders from vincent's Bubble Tea TUI using representative
-workload data — not UI mockups.
+Every image here is a photograph of the running program, captured from a real
+terminal by [`scripts/screenshots.sh`](scripts/screenshots.sh) against a seeded
+daemon — not a mockup, and not a drawing of one.
 
 <p align="center">
   <img src="docs/assets/tui-new-task.png" alt="The guided new-task flow at its final review stage, with the six-step plan and a populated task request" width="1000">
@@ -111,11 +112,11 @@ workload data — not UI mockups.
 </p>
 
 <p align="center">
-  <img src="docs/assets/tui-workflow-graph.png" alt="The Workflows view showing the registry beside a four-lane fan-out graph with merge and approval steps" width="1000">
+  <img src="docs/assets/tui-workflow-graph.png" alt="The Workflows view showing the registry beside a four-lane fan-out graph" width="1000">
 </p>
 
 <p align="center">
-  <em>The workflow registry stays anchored beside the navigable graph, including fan-out lanes, merge behavior, and manual gates.</em>
+  <em>The workflow registry stays anchored beside the navigable graph — scopes, shadowing and invalid entries on the left, fan-out lanes and their guards on the right.</em>
 </p>
 
 ## How It Works
@@ -525,6 +526,8 @@ features. Start here:
 
 All changes land via pull request to `master`, merged with merge commits (no
 squashing), using [Conventional Commits](https://www.conventionalcommits.org/).
+Conventional prefixes belong on commit messages; PR titles use plain language so
+release automation does not duplicate the change through the merge commit.
 Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security

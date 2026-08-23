@@ -36,20 +36,12 @@ is the longer version.
 Two of the six views — the board and task detail, the daily loop — share one
 persistent screen of three panels:
 
-```
-┌─ Tasks ──────────────────────────────────────────────┐
-│  #12  api    add rate limiting   running   3/5  …    │   ← always full width
-│  #13  web    fix flaky test      ● gate    2/4  …    │
-└──────────────────────────────────────────────────────┘
-┌─ Timeline ───────────┐┌─ Output │ Diff ──────────────┐
-│  1 ✓ plan      1m2s  ││  … live tail …               │
-│  2 ▸ implement 4m9s  ││                              │
-└──────────────────────┘└──────────────────────────────┘
-```
+![The board filtered to one running task, with the timeline of its attempts on
+the left and the live output of its current step on the right](../assets/tui-board.png)
 
-The task table drives everything below it: moving the selection moves the
-timeline and the output pane with it. `tab` moves focus between panels;
-`shift+tab` goes back.
+The task table is always full width, and it drives everything below it: moving
+the selection moves the timeline and the output pane with it. `tab` moves focus
+between panels; `shift+tab` goes back.
 
 The other four views — new task, projects, workflows, daemon — are full-screen
 takeovers. `esc` closes one layer at a time (popup → screen → selection →
@@ -95,17 +87,8 @@ beside it rather than silently subtracted.
 The rows are **grouped by project, and by workflow within a project**, out of
 the box:
 
-```
-▾ api  4  ! 1
-  ▾ feature-pr  3
-   12  add rate limiting        running        3/5 implement   4m09s  $0.42
-   14  ! fix the flaky test     ! awaiting_gate 2/4 review     1m02s  $0.08
-  ▾ docs-update  1
-   15  document the cache       queued         —               —      —
-▾ web  1
-  ▾ feature-pr  1
-   13  bump the design tokens   done           4/4 pr          6m11s  $0.90
-```
+![The board grouped by project and then by workflow, each header carrying its
+task count and its needs-attention badge](../assets/tui-grouping.png)
 
 - The header shows the group's task count, and the needs-attention badge when
   it holds any — a group can never be the reason you missed something waiting.
@@ -139,9 +122,8 @@ While anything is selected, a `✓` appears beside those rows, the panel title
 counts them (`Tasks — 5 selected`), and the **action keys act on the whole
 selection**:
 
-```
- A archive (5) · c cancel (2)          archive · 5 of 5 · 3 branches deleted
-```
+![Every row selected, the panel title reading "Tasks — 13 selected", and the
+action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
 
 The count beside each key is how many of the selected tasks that action can
 actually move — an action shows up when *some* selected task accepts it, and the
@@ -197,11 +179,8 @@ task inside a loop reads `3/7 green · loop 4/10`.
 The output pane holds the **end** of a transcript — the last 256 KB, capped at
 5000 records — because a single attempt is allowed to produce gigabytes. When a
 step fails, the part you want is often the beginning, which is exactly the part
-not on screen. The pane says so when it has dropped something:
-
-```
-… earlier output truncated — press e for the whole transcript
-```
+not on screen. When it has dropped something, the first line in the pane says
+so: **… earlier output truncated — press e for the whole transcript**.
 
 `e` hands the complete file to your `$EDITOR`, the same way `e` opens a
 workflow file in the workflows view. What opens is the raw JSONL on disk —
@@ -230,16 +209,8 @@ It is **grouped by file**, and every file starts **collapsed** — so the first
 thing you see is what the task touched, not the first eighty lines of whichever
 file git wrote first:
 
-```
-  6 files  +128 -33
-▸ internal/tui/diffpane.go     +64 -18
-▾ internal/tui/bindings.go     +11 -1
-@@ -113,6 +113,11 @@
-   {key: "]", label: "switch the tab …
-+  {key: "O", label: "expand every file", …
-▸ docs/guides/tui.md           +23 -4
-▸ assets/logo.png              binary
-```
+![The Diff tab listing three changed files with their line counts, two folded
+and one expanded to its hunk](../assets/tui-diff.png)
 
 | Key | Does |
 |---|---|
@@ -336,6 +307,10 @@ Review gathers the complete request beside the Create action. The rail follows
 the ordinary field cursor — there is no separate Next button or second set of
 navigation keys.
 
+![New task at its Review stage: the six stages in the left rail, and on the
+right the whole request — project, workflow, title, description, base branch,
+branch name, priority and agent — above the create action](../assets/tui-new-task.png)
+
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker |
@@ -358,6 +333,10 @@ project's path, branch convention, workflow and concurrency defaults, and
 current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
 in that same pane. This keeps the project you were looking at visible while you
 change its configuration.
+
+![The Projects view: seven registered repositories with their running counts and
+caps on the left, and the selected project's path, branch convention, execution
+defaults and current workload on the right](../assets/tui-projects.png)
 
 | Key | Does |
 |---|---|
@@ -392,26 +371,9 @@ written in your editor and appear on the next reload.
 A numbered list of top-level steps can name a `parallel` group or a `fan_out`
 but cannot show where control goes. `g` draws it:
 
-```
-             ╭────────────────────╮
-             │ spread             │
-             │ fan_out            │
-             ╰────────────────────╯
-                        │
-┏━ fan_out ━━━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━┓
-┃api                    │ web if                ┃
-┃           ┌───────────┴────────────┐          ┃
-┃╭────────────────────╮   ╭────────────────────╮┃
-┃│ api_impl           │   │ web-feature        │┃
-┃│ agent              │   │ workflow           │┃
-┃╰────────────────────╯   ╰────────────────────╯┃
-┗━━━━━━━━━━━│━━━━━━━━━━━━━━━━━━━━━━━━│━━━━━━━━━━┛
-            └───────────┬────────────┘
-             ╭────────────────────╮
-             │ spread             │
-             │ merge              │
-             ╰────────────────────╯
-```
+![The Workflows view: the registry on the left with its scopes, shadowing and
+one invalid entry, and on the right the selected workflow drawn as a graph — an
+agent step into a four-lane fan_out, one lane guarded by an `if`](../assets/tui-workflow-graph.png)
 
 The graph opens **over** the list, not instead of it: `enter`'s step list, with
 its findings and platform notes, is still there when you press `esc`.

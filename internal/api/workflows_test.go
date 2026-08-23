@@ -119,22 +119,29 @@ func decodeWorkflowList(t *testing.T, body []byte) workflowListBody {
 	return out
 }
 
-func TestWorkflowListBuiltinOnly(t *testing.T) {
+func TestWorkflowListBuiltinsOnly(t *testing.T) {
 	h := newWorkflowHarness(t)
 	resp, body := h.doJSON(t, http.MethodGet, "/v1/workflows", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, body %s", resp.StatusCode, body)
 	}
 	list := decodeWorkflowList(t, body)
-	if len(list.Workflows) != 1 {
-		t.Fatalf("workflows = %d, want the built-in only: %s", len(list.Workflows), body)
+	byName := make(map[string]workflowEntryBody, len(list.Workflows))
+	for _, wf := range list.Workflows {
+		if wf.Scope != "builtin" {
+			t.Errorf("entry %q scope = %q, want builtin with no files on disk", wf.Name, wf.Scope)
+		}
+		byName[wf.Name] = wf
 	}
-	wf := list.Workflows[0]
-	if wf.Name != "adhoc" || wf.Scope != "builtin" {
-		t.Errorf("entry = %+v, want the built-in adhoc", wf)
+	wf, ok := byName["adhoc"]
+	if !ok {
+		t.Fatalf("no adhoc entry: %s", body)
 	}
 	if len(wf.Steps) != 1 || wf.Steps[0].Type != "agent" || wf.Steps[0].Agent != "claude" {
-		t.Errorf("steps = %+v, want one claude agent step", wf.Steps)
+		t.Errorf("adhoc steps = %+v, want one claude agent step", wf.Steps)
+	}
+	if _, ok := byName["create-workflow"]; !ok {
+		t.Errorf("no create-workflow entry: %s", body)
 	}
 }
 

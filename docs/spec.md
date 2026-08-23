@@ -178,9 +178,25 @@ supported). The repo itself is never modified by registration.
 A named, ordered list of steps defined in YAML (§8). Workflows live in files, not the
 DB; the daemon maintains a registry of parsed workflows from three scopes:
 
-- **Built-in:** shipped in the binary; currently only `adhoc`, the single-step agent
-  workflow used when a task is created without naming one (§5.3). Lowest precedence —
-  a global or project file of the same name shadows it.
+- **Built-in:** shipped in the binary. Lowest precedence — a global or project file
+  of the same name shadows it. Two are present:
+  - `adhoc` — the single-step agent workflow used when a task is created without
+    naming one (§5.3).
+  - `create-workflow` — *added 2026-08-23 (task 024).* One agent step that writes
+    another workflow file. It declares two task fields: `workflow_name`
+    (required; becomes both the new workflow's `name:` and its file name, so it
+    is held to `^[a-z0-9][a-z0-9._-]*$`) and `global`. Its prompt carries the
+    `vincent-workflows` skill,
+    embedded from `skills/vincent-workflows/SKILL.md` at build time, so the
+    published skill is the only copy of that guidance. The step runs under
+    `on_input: wait`: it may stop and ask a design question the repository
+    cannot answer, at the §7.4 cost of holding its slot while parked and
+    failing on `input_timeout` if nobody replies. Its optional boolean task field `global` picks the
+    destination registry: `true` writes `{config_dir}/workflows`, and `false` or
+    unset writes `{repo}/.vincent/workflows` for the task's own project. Both are
+    the live registry directory rather than the task's worktree — the registry
+    watches project repo roots, so a file left in a worktree would not become a
+    workflow until the branch merged.
 - **Global:** `{config_dir}/workflows/*.yaml` — available to every project.
 - **Project:** `{repo}/.vincent/workflows/*.yaml` — available to that project only,
   git-versioned and shareable with a team. A project workflow **shadows** a global

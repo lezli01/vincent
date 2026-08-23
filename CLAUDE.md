@@ -19,7 +19,9 @@ how to use it. It is derived from the source, not from planning records: the
 config reference tracks `internal/config`, the CLI page the cobra tree, the API
 page `internal/api/server.go`'s route table, the TUI key tables
 `internal/tui/bindings.go`, and the block reasons the `Reason*` constants. A
-change to any of those is a change to its page.
+change to any of those is a change to its page. The same rule covers the
+pictures: every `docs/assets/tui-*.png` is a capture of the running TUI produced
+by `scripts/screenshots.sh` (below), never a drawing of one.
 
 Implementation work also uses these maintainer records. They are **not**
 optional when a change touches the behavior or decision they describe:
@@ -42,6 +44,15 @@ optional when a change touches the behavior or decision they describe:
   ("phase 2 decision", "T1.5/T1.6 decision", "PR L decision").
 - `docs/gates/` — the manual walkthroughs behind the scripted acceptance gates,
   and the record of when each was last walked.
+
+`skills/vincent-workflows/SKILL.md` is **runtime text, not just documentation**:
+`skills/embed.go` embeds it and `internal/workflow/builtin.go` splices it into
+the built-in `create-workflow` workflow's prompt at build time (task 024). An
+edit to that file changes what the daemon tells an agent to do. It reaches the
+prompt escaped for `text/template` and re-indented into a YAML block scalar, so
+it may contain anything — but the three standing corrections the prompt applies
+to it (what asking costs, destination, missing `references/`) live in
+`createWorkflowHeader`, never in the skill.
 
 Phase decisions ("phase 2 decision", "PR G decision", "T1.5/T1.6 decision") recorded
 inline in comments and in tasks.md are binding — they are the outcome of design
@@ -101,6 +112,26 @@ New gate scripts must be committed **executable** (`git update-index
 --chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the
 bit, so a non-executable gate passes on Windows and fails both POSIX legs with
 exit 126 before running an assertion.
+
+`scripts/screenshots.sh` is the other seeding script, and the **only** source of
+the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
+its own config and data dirs, seven git repos, a daemon, thirteen tasks covering
+every state — and photographs the running TUI with VHS (`brew install vhs`).
+Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
+"example" frames. If a panel changed, re-run the script:
+
+```sh
+./scripts/screenshots.sh            # seed, capture every shot, clean up
+./scripts/screenshots.sh seed       # leave the daemon up to iterate on tapes
+VINCENT_SHOTS_ONLY=tui-diff ./scripts/screenshots.sh capture
+```
+
+It is macOS/Linux-only and CI does not run it (VHS needs ttyd and ffmpeg, and
+its workflows use a POSIX shell rather than the sh∩pwsh intersection the gates
+are held to). Two VHS traps are already worked around in it and will bite again
+in any new tape: a `Screenshot` is written on the *next* captured frame, so a
+tape that ends on one records nothing, and keys pressed inside a `Hide` block
+never reach a screenshot at all — only the launch is hidden.
 
 A gate's *workflow* `run:` bodies run under the daemon's shell — `/bin/sh` on
 POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be
@@ -245,7 +276,14 @@ Tests isolate state via `VINCENT_CONFIG_DIR` / `VINCENT_DATA_DIR` (see
 - **Git flow:** everything lands via PR to `master`, merged with merge commits (no
   squash — branch history becomes `master`'s history). Conventional Commits
   (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`), branches named
-  `type/short-description`. CI green on all three platforms is required.
+  `type/short-description`. Conventional prefixes belong on commits, not human PR
+  titles: use a plain-language title such as `Add workflow fields`, never
+  `feat: add workflow fields`. GitHub copies the PR title into the merge commit
+  body, so a conventional title makes Release Please record both the merge and
+  the matching inner commit in `CHANGELOG.md`. The `PR title` workflow enforces
+  this; Release Please and Dependabot PRs are narrowly exempt because those tools
+  couple their PR titles to their generated commit messages. CI green on all
+  three platforms is required.
 - **Never** add co-author to commits.
 
 ## Security posture

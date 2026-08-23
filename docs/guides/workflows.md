@@ -97,7 +97,7 @@ schema follows from them:
 |---|---|---|
 | **Project** | `.vincent/workflows/*.yaml` inside the repo | Highest — shadows global |
 | **Global** | `{config_dir}/workflows/*.yaml` | Shadows built-in |
-| **Built-in** | `adhoc` — one agent step, always present | Lowest |
+| **Built-in** | `adhoc` and `create-workflow` — one agent step each, always present | Lowest |
 
 `{config_dir}` is `%APPDATA%\vincent` on Windows, `~/Library/Application
 Support/vincent` on macOS and `~/.config/vincent` on Linux; the full table is in
@@ -112,6 +112,18 @@ Details that matter in practice:
   Keeping the two the same is a convention worth following, not a rule.
 - **Shadowing is per name.** A project file named `adhoc` replaces the built-in
   for that project only.
+- **`create-workflow` writes the other kind of file.** It is the second built-in:
+  one agent step that designs a workflow from the task's description and installs
+  it under the name its required `workflow_name` field gives, guided by the
+  [`vincent-workflows`](https://github.com/lezli01/vincent/tree/master/skills/vincent-workflows)
+  skill, which is built into its prompt. It may **stop and ask** a design
+  question it cannot settle from the repository — the task parks in
+  `awaiting_input` until you answer, so check on it rather than queueing it and
+  walking away. Its boolean task field `global` picks the registry — unset or `false` writes
+  `{repo}/.vincent/workflows` for the task's own project, `true` writes
+  `{config_dir}/workflows`. Either way the file lands in the live registry rather
+  than in the task's worktree, so the daemon reloads it immediately and it is
+  **not** part of the task's diff.
 - Two files in **one scope** declaring the same `name:` is an error, resolved
   deterministically: the first in filename order keeps the name, and the loser
   is listed as invalid rather than silently dropped.
