@@ -19,7 +19,9 @@ how to use it. It is derived from the source, not from planning records: the
 config reference tracks `internal/config`, the CLI page the cobra tree, the API
 page `internal/api/server.go`'s route table, the TUI key tables
 `internal/tui/bindings.go`, and the block reasons the `Reason*` constants. A
-change to any of those is a change to its page.
+change to any of those is a change to its page. The same rule covers the
+pictures: every `docs/assets/tui-*.png` is a capture of the running TUI produced
+by `scripts/screenshots.sh` (below), never a drawing of one.
 
 Implementation work also uses these maintainer records. They are **not**
 optional when a change touches the behavior or decision they describe:
@@ -101,6 +103,26 @@ New gate scripts must be committed **executable** (`git update-index
 --chmod=+x`): `chmod` on Windows never reaches the index, Git Bash ignores the
 bit, so a non-executable gate passes on Windows and fails both POSIX legs with
 exit 126 before running an assertion.
+
+`scripts/screenshots.sh` is the other seeding script, and the **only** source of
+the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
+its own config and data dirs, seven git repos, a daemon, thirteen tasks covering
+every state — and photographs the running TUI with VHS (`brew install vhs`).
+Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
+"example" frames. If a panel changed, re-run the script:
+
+```sh
+./scripts/screenshots.sh            # seed, capture every shot, clean up
+./scripts/screenshots.sh seed       # leave the daemon up to iterate on tapes
+VINCENT_SHOTS_ONLY=tui-diff ./scripts/screenshots.sh capture
+```
+
+It is macOS/Linux-only and CI does not run it (VHS needs ttyd and ffmpeg, and
+its workflows use a POSIX shell rather than the sh∩pwsh intersection the gates
+are held to). Two VHS traps are already worked around in it and will bite again
+in any new tape: a `Screenshot` is written on the *next* captured frame, so a
+tape that ends on one records nothing, and keys pressed inside a `Hide` block
+never reach a screenshot at all — only the launch is hidden.
 
 A gate's *workflow* `run:` bodies run under the daemon's shell — `/bin/sh` on
 POSIX, `pwsh` on Windows (§8.3) — not under the gate's bash, so they must be

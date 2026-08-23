@@ -291,19 +291,6 @@ img { max-width: 100%; height: auto; }
   line-height: 1.62;
   tab-size: 2;
 }
-.prose pre::before {
-  content: 'lezliEdit';
-  display: block;
-  width: max-content;
-  margin: -15px -16px 12px;
-  padding: 5px 10px;
-  color: var(--accent);
-  background: #212121;
-  border-right: 1px solid var(--divider);
-  border-bottom: 3px solid var(--accent);
-  font: 700 10px/1.4 var(--font-mono);
-  letter-spacing: 0.05em;
-}
 .prose pre code { padding: 0; border: 0; background: transparent; color: inherit; }
 .prose kbd {
   padding: 2px 6px;
