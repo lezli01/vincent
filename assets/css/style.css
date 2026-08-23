@@ -34,6 +34,7 @@ body {
   letter-spacing: 0.35px;
   -webkit-font-smoothing: antialiased;
   overflow-wrap: anywhere;
+  isolation: isolate;
 }
 
 body::before {
@@ -41,10 +42,9 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-image:
-    linear-gradient(rgba(131, 165, 152, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(131, 165, 152, 0.035) 1px, transparent 1px);
-  background-size: 36px 36px;
+  background:
+    linear-gradient(rgba(8, 12, 18, 0.12), rgba(40, 40, 40, 0.48)),
+    url('../images/network-background.png') center top / cover no-repeat;
   pointer-events: none;
 }
 
@@ -56,7 +56,7 @@ body::before {
   background:
     radial-gradient(circle at 12% 12%, rgba(131, 165, 152, 0.12), transparent 28rem),
     radial-gradient(circle at 88% 30%, rgba(254, 128, 25, 0.06), transparent 25rem),
-    linear-gradient(to bottom, rgba(40, 40, 40, 0.24), rgba(40, 40, 40, 0.92));
+    linear-gradient(to bottom, rgba(40, 40, 40, 0.14), rgba(40, 40, 40, 0.72));
 }
 
 ::selection { background: var(--accent); color: var(--bg); }

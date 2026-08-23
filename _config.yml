@@ -1,6 +1,15 @@
 title: vincent
 description: Durable local orchestration for agentic development workloads.
 repository: lezli01/vincent
+url: "https://lezli01.is-a.dev"
+baseurl: "/vincent"
+lang: en
+locale: en_US
+author: László Szabó
+social_image: /docs/assets/logo.png
+social_image_alt: "vincent — durable local orchestration for agentic development"
+social_image_width: 1536
+social_image_height: 1024
 
 defaults:
   - scope:

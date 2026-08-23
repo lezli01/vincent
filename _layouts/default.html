@@ -5,8 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#282828">
   <meta name="color-scheme" content="dark">
-  <title>{% if page.title %}{{ page.title }} · {% endif %}vincent</title>
-  <meta name="description" content="{{ page.description | default: site.description | escape }}">
+  {% assign meta_description = page.description | default: site.description | strip_html | normalize_whitespace %}
+  {% assign social_image = page.image | default: site.social_image %}
+  {% assign social_image_alt = page.image_alt | default: site.social_image_alt %}
+  <title>{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}</title>
+  <meta name="description" content="{{ meta_description | escape }}">
+  <meta name="author" content="{{ site.author | escape }}">
+  <link rel="canonical" href="{{ page.url | absolute_url }}">
+
+  <meta property="og:type" content="{{ page.og_type | default: 'website' }}">
+  <meta property="og:site_name" content="{{ site.title | escape }}">
+  <meta property="og:locale" content="{{ site.locale }}">
+  <meta property="og:url" content="{{ page.url | absolute_url }}">
+  <meta property="og:title" content="{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}">
+  <meta property="og:description" content="{{ meta_description | escape }}">
+  <meta property="og:image" content="{{ social_image | absolute_url }}">
+  <meta property="og:image:secure_url" content="{{ social_image | absolute_url }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="{{ site.social_image_width }}">
+  <meta property="og:image:height" content="{{ site.social_image_height }}">
+  <meta property="og:image:alt" content="{{ social_image_alt | escape }}">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="{{ page.url | absolute_url }}">
+  <meta name="twitter:title" content="{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}">
+  <meta name="twitter:description" content="{{ meta_description | escape }}">
+  <meta name="twitter:image" content="{{ social_image | absolute_url }}">
+  <meta name="twitter:image:alt" content="{{ social_image_alt | escape }}">
+
+  <link rel="icon" href="{{ '/docs/assets/avatar-icon.png' | relative_url }}" type="image/png">
+  <link rel="apple-touch-icon" href="{{ '/docs/assets/avatar-icon.png' | relative_url }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto+Slab:wght@400;500;600;700&display=swap" rel="stylesheet">
