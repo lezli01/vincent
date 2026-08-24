@@ -72,6 +72,11 @@ Three behaviors matter:
   slot and needs nothing from you; the detail header names the reason in full
   (`queued · usage limit → 14:20`). See
   [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
+- **The header badges the agent, not just the task.** An adapter vincent has
+  watched run out reads `claude ⏳14:20` in place of `claude ✓`, and stays that
+  way until a step on that adapter succeeds — so a board full of `queued` rows
+  says which window they are all waiting on. The badge is a statement, not a
+  brake: admission is unchanged and nothing is withheld.
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it.
@@ -358,6 +363,12 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 | `R` | Re-probe the adapters (the list is otherwise cache-served) |
 | `ctrl+s` | Create the task |
 
+The agent row warns when the adapter the task would run on is out of quota —
+`· usage limit until 14:20`, from the same observation the board header badges.
+It **warns and nothing else**: the form submits, and the task waits its turn on
+the ordinary [`usage_limit` hold](troubleshooting.md#usage_limit--do-nothing) if
+the window is still shut when it is admitted.
+
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text. They are windowed and filterable — you
 type to narrow, which is what makes cursor's ~180-model catalog usable. Each
@@ -460,6 +471,15 @@ already under `enter`.
 Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
+
+Each adapter row carries what vincent knows about its usage window: `usage
+limit → 14:20` when the CLI stated that reset, `usage limit ≈ 14:20` when
+vincent estimated it from
+[`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval),
+and a trailing `quota unknown` for an adapter nothing has been observed for —
+which is the normal state, since no CLI can report remaining quota without
+actually running. This is the one view that says "unknown" out loud; its job is
+to list every fact about an adapter, including the ones nobody has.
 
 An **orphans** line appears in the identity block when the daemon has found
 directories under its data dir that no task claims, naming the count and

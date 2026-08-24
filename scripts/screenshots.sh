@@ -82,6 +82,16 @@ wait_state() { # wait_state ID STATE [TIMEOUT_S]
   fail "task $id never reached $want (last: ${state:-unknown})"
 }
 
+wait_hold() { # wait_hold ID [TIMEOUT_S] — queued on an agent's usage window
+  local id="$1" limit="${2:-90}" reason
+  for (( i = 0; i < limit * 2; i++ )); do
+    reason="$(api GET "/tasks/$id" | jq -r '.queued_reason // "null"')"
+    [[ "$reason" == "usage_limit" ]] && return 0
+    sleep 0.5
+  done
+  fail "task $id never parked on a usage-limit hold (last: ${reason:-unknown})"
+}
+
 daemon_up() {
   "$VINCENT" daemon start >/dev/null
   PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
@@ -178,6 +188,26 @@ agent_wrapper() {
   chmod +x "$BIN/$name"
 }
 
+# write_config CLAUDE_WRAPPER — the claude adapter is swapped mid-seed, from
+# the walled CLI that leaves an observed usage window behind to the one that
+# asks a question, because one process-wide FAKEAGENT_SCENARIO cannot be both.
+# The daemon hot-reloads config.yaml (§12.3), so this needs no restart.
+write_config() {
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+# Seeded by scripts/screenshots.sh. Each adapter points at a wrapper around
+# cmd/fakeagent so no real agent CLI — and no real spend — is involved.
+max_parallel_tasks: 4
+branch_template: "feat/{{.ID}}{{with .Slug}}-{{.}}{{end}}"
+agents:
+  claude:
+    path: "$BIN/$1"
+  codex:
+    path: "$BIN/agent-slow"
+  cursor:
+    path: "$BIN/agent-fast"
+EOF
+}
+
 do_seed() {
   command -v vhs >/dev/null 2>&1 || fail "vhs is not on PATH — brew install vhs"
   command -v jq >/dev/null 2>&1 || fail "jq is not on PATH"
@@ -198,21 +228,14 @@ do_seed() {
   agent_wrapper agent-slow FAKEAGENT_DIALECT=codex FAKEAGENT_SCENARIO_CODEX=success FAKEAGENT_DELAY_MS=3600000
   agent_wrapper agent-fast FAKEAGENT_DIALECT=cursor FAKEAGENT_SCENARIO_CURSOR=success FAKEAGENT_DELAY_MS=1500
   agent_wrapper agent-ask FAKEAGENT_SCENARIO=ask-question FAKEAGENT_ASK_MULTI=1
+  # A CLI whose account has run out, naming its own reset 90 minutes out. It
+  # is what leaves one adapter observed-spent for the board header badge and
+  # the daemon view's quota line (task 026) — without it those two shots
+  # photograph a state no seeded daemon is ever in.
+  agent_wrapper agent-walled FAKEAGENT_SCENARIO=usage-limit FAKEAGENT_USAGE_LIMIT_RESET=5400
 
   say "config"
-  cat > "$CONFIG_DIR/config.yaml" <<EOF
-# Seeded by scripts/screenshots.sh. Each adapter points at a wrapper around
-# cmd/fakeagent so no real agent CLI — and no real spend — is involved.
-max_parallel_tasks: 4
-branch_template: "feat/{{.ID}}{{with .Slug}}-{{.}}{{end}}"
-agents:
-  claude:
-    path: "$BIN/agent-ask"
-  codex:
-    path: "$BIN/agent-slow"
-  cursor:
-    path: "$BIN/agent-fast"
-EOF
+  write_config agent-walled
 
   say "workflows"
   cat > "$CONFIG_DIR/workflows/feature-pr.yaml" <<'EOF'
@@ -422,6 +445,16 @@ EOF
   wait_state "$T_DONE" awaiting_gate 120
   api POST "/tasks/$T_DONE/approve" >/dev/null
   wait_state "$T_DONE" done 120
+
+  # The usage window, before claude is swapped back to the asking CLI. The
+  # task parks on the §11 hold task 003 gives it, and the observation task 026
+  # records outlives that hold — which is what the board header badge and the
+  # daemon view's quota line are pictures of. The CLI names a 90-minute reset,
+  # so nothing re-admits this task during a capture run.
+  T_WALLED="$(add "$P_ADAPT" incident-response 'retune the planner prompts' '"agent":"claude"')"
+  wait_hold "$T_WALLED" 120
+  write_config agent-ask
+  sleep 3 # the config watcher, then the adapter's binary-identity re-probe
 
   T_ASK="$(add "$P_INFRA" incident-response 'restore the eu-west read replica' '"agent":"claude"')"
   wait_state "$T_ASK" awaiting_input 120

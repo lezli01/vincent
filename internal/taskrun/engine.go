@@ -292,6 +292,12 @@ type stepOutcome struct {
 	// CLI reported one (task 003). nil means it did not, and the hold falls
 	// back to `usage_limit_recheck_interval`.
 	retryAfter *time.Time
+	// agentName is the adapter an agent attempt ran on (task 026). It is what
+	// makes the quota observation per-adapter rather than per-task, so the
+	// hold can record *which* window closed. Empty for every non-agent step,
+	// and for an aggregated outcome (`parallel`, `loop`) whose collected
+	// attempt was not one.
+	agentName string
 }
 
 // execute runs one admission of a task: it walks the snapshot's steps from
@@ -432,7 +438,7 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			// slot released — but it must not be re-admitted immediately, or
 			// the task simply walks back into the same wall (task 003).
 			if outcome.reason == ReasonUsageLimit {
-				r.holdForUsageLimit(task, outcome.retryAfter, env.log)
+				r.holdForUsageLimit(task, outcome.agentName, outcome.retryAfter, env.log)
 				return
 			}
 			r.interrupt(task, log)
@@ -845,13 +851,20 @@ func (r *Runner) interrupt(task *store.Task, log *slog.Logger) {
 // decision, and the scheduler picks the task up within a tick of the hold
 // expiring — a sleeping actor would hold the slot for a whole quota window,
 // which with max_parallel_tasks slots held that way means nothing runs at all.
-func (r *Runner) holdForUsageLimit(task *store.Task, retryAfter *time.Time, log *slog.Logger) {
+func (r *Runner) holdForUsageLimit(
+	task *store.Task, agentName string, retryAfter *time.Time, log *slog.Logger,
+) {
 	// The interval is read now rather than cached, so a config hot-reload
 	// (§12.3) reaches the next hold rather than the next daemon restart.
 	until := r.now().Add(r.deps.Config().UsageLimitRecheckInterval.Std()).UTC()
 	if retryAfter != nil {
 		until = retryAfter.UTC()
 	}
+	// The same effective reset the hold acts on, recorded per adapter so it
+	// outlives this task's hold (task 026). It is written before the
+	// transition because the transition is what clears `admit_not_before`'s
+	// only other copy on the next move out of `queued`.
+	r.recordUsageLimit(agentName, until, retryAfter != nil, log)
 	reason := ReasonUsageLimit
 	ch := store.TaskChange{
 		AdmitNotBefore: &until,

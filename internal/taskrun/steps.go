@@ -300,6 +300,19 @@ loop:
 	run.InputWaitMS = inputWaitMS
 
 	outcome := classifyAgent(ctx, runCtx, r.interrupting(env.task.ID), &res, waitErr)
+	// Which adapter this ran on travels with the outcome so a quota stop can
+	// be recorded per agent rather than per task (task 026). collectGroup
+	// returns an interrupted lane's whole outcome, so a stop inside a
+	// `parallel` group keeps its attribution too.
+	outcome.agentName = sel.Agent
+	if outcome.state == store.StepSucceeded {
+		// First-hand evidence that this adapter's window is open. It retires
+		// an observation the daemon is still showing — most importantly one
+		// whose reset was never reported by the CLI and is therefore only an
+		// estimate. The body's success is enough: a `check` that fails
+		// afterwards says nothing about the quota.
+		r.clearUsageLimit(sel.Agent, r.now(), env.log)
+	}
 	outcome.exitCode = &res.ExitCode
 	outcome.result = res.ResultText
 	if outcome.result == "" {

@@ -31,6 +31,12 @@ type agentResponse struct {
 	DefaultEffort string         `json:"default_effort"`
 	ProbedAt      string         `json:"probed_at"`
 	ProbeError    *string        `json:"probe_error"`
+	// Quota is what the daemon has watched happen to this adapter's usage
+	// window (task 026); null when nothing has ever been observed for it.
+	// There is no probe behind it — no CLI vincent ships can report remaining
+	// quota without a real run (§9.2, §9.3, §9.7) — so this is the durable
+	// form of the `usage_limit` stops the engine already recognizes.
+	Quota *quotaResponse `json:"quota"`
 }
 
 // handleAgents serves GET /v1/agents from the binary-identity cache: a
@@ -44,6 +50,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	refresh := r.URL.Query().Has("refresh") &&
 		r.URL.Query().Get("refresh") != "false" && r.URL.Query().Get("refresh") != "0"
+	quotas := s.agentQuotas(r.Context())
 	out := make([]agentResponse, 0, len(s.deps.Catalog.Names()))
 	for _, name := range s.deps.Catalog.Names() {
 		e, ok := s.deps.Catalog.Entry(r.Context(), name, refresh)
@@ -64,6 +71,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			DefaultModel:  e.Options.DefaultModel,
 			DefaultEffort: e.Options.DefaultEffort,
 			ProbedAt:      e.ProbedAt.UTC().Format(time.RFC3339),
+			Quota:         quotas[name],
 		}
 		if resp.Models == nil {
 			resp.Models = []agent.Option{}

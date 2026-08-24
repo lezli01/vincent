@@ -19,7 +19,7 @@ func openTest(t *testing.T) *Store {
 
 // latestSchemaVersion tracks the newest migration file; bump alongside new
 // migrations.
-const latestSchemaVersion = 10
+const latestSchemaVersion = 11
 
 func schemaVersion(t *testing.T, s *Store) int {
 	t.Helper()
@@ -33,7 +33,9 @@ func schemaVersion(t *testing.T, s *Store) int {
 func TestOpenAppliesSchema(t *testing.T) {
 	s := openTest(t)
 
-	for _, table := range []string{"projects", "tasks", "step_runs", "events", "schema_migrations"} {
+	for _, table := range []string{
+		"projects", "tasks", "step_runs", "events", "agent_quota", "schema_migrations",
+	} {
 		var n int
 		err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n)
 		if err != nil {

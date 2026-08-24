@@ -95,6 +95,11 @@ type AgentStatus struct {
 	// every run (spec §9.5).
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
+	// Quota is this adapter's usage window as the daemon last observed it
+	// (task 026); null when nothing has been observed. It is the same block
+	// GET /v1/agents carries, and is served here so the board header — which
+	// reads /v1/info — needs no second fetch to render a badge.
+	Quota *quotaResponse `json:"quota"`
 }
 
 // Server is the vincent HTTP API server.
@@ -254,6 +259,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	// the next request, and the two endpoints can never disagree.
 	agents := []AgentStatus{}
 	if s.deps.Catalog != nil {
+		quotas := s.agentQuotas(r.Context())
 		for _, name := range s.deps.Catalog.Names() {
 			e, ok := s.deps.Catalog.Entry(r.Context(), name, false)
 			if !ok {
@@ -267,6 +273,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 				SupportsInput: e.Availability.SupportsInput,
 				LoggedIn:      e.Availability.LoggedIn,
 				Error:         e.Availability.Error,
+				Quota:         quotas[name],
 			})
 		}
 	}

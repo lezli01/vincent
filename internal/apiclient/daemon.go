@@ -17,7 +17,16 @@ type AgentStatus struct {
 	// claude and codex, while false means every run will fail at the API.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
+	// Quota is the adapter's usage window as last observed (task 026), or
+	// nil when nothing has been observed. It is the same block /v1/agents
+	// carries: the board header renders from /v1/info and must not need a
+	// second fetch to do it.
+	Quota *AgentQuota `json:"quota"`
 }
+
+// QuotaSpent reports an adapter whose usage window is still shut as of now.
+// Nothing observed answers false — see Agent.QuotaSpent.
+func (a AgentStatus) QuotaSpent(now time.Time) bool { return a.Quota.SpentAt(now) }
 
 // NotAuthenticated reports an adapter that is installed and probes cleanly
 // but will fail every run for lack of a login. It is deliberately false when

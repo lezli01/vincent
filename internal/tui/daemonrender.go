@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 )
 
@@ -137,6 +138,7 @@ func (d *daemonView) adapterLines() []string {
 	if len(d.info.Agents) == 0 {
 		return append(out, styleDim.Render("   no adapters configured"))
 	}
+	now := d.now()
 	for _, a := range d.info.Agents {
 		mark := styleOK.Render("✓")
 		switch {
@@ -146,6 +148,12 @@ func (d *daemonView) adapterLines() []string {
 			// A tick beside "not logged in" would contradict itself: the
 			// binary is there, the adapter still cannot run a step.
 			mark = styleWarn.Render("⚠")
+		case a.QuotaSpent(now):
+			// Same reasoning, temporary cause (task 026): the step would
+			// start and stop again on the same wall. The board header uses
+			// this glyph for it too, so one adapter reads the same way in
+			// both views.
+			mark = styleWarn.Render(quotaMark)
 		}
 		row := "   " + mark + " " + a.Name
 		switch {
@@ -161,6 +169,9 @@ func (d *daemonView) adapterLines() []string {
 			if a.NotAuthenticated() {
 				row += "  " + styleBad.Render("not logged in")
 			}
+			if a.QuotaSpent(now) {
+				row += "  " + styleWarn.Render("usage limit "+quotaReset(a.Quota))
+			}
 			if a.Version != "" {
 				row += "  " + styleDim.Render(a.Version)
 			}
@@ -170,10 +181,33 @@ func (d *daemonView) adapterLines() []string {
 			if !a.SupportsInput {
 				row += "  " + styleWarn.Render("no interactive input")
 			}
+			row += "  " + styleDim.Render(quotaNote(a.Quota, now))
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+// quotaNote is this view's trailing statement of what vincent knows about an
+// adapter's usage window (task 026). It is the one surface that says
+// "unknown" out loud: the daemon view exists to list every fact about an
+// adapter, and "nothing has been observed" is the honest answer for all three
+// CLIs, none of which can report remaining quota without a real run (§9.2,
+// §9.3, §9.7). The board header, which has no room to explain, says nothing
+// instead.
+//
+// It trails the row deliberately — it is context, not a blocking condition, so
+// it is the right thing to lose first on a narrow terminal. A window that is
+// currently shut has already said so ahead of the version and path.
+func quotaNote(q *apiclient.AgentQuota, now time.Time) string {
+	switch {
+	case q == nil:
+		return "quota unknown"
+	case q.SpentAt(now):
+		return "quota " + q.Source
+	default:
+		return "quota ok · last spent " + q.ObservedAt.Local().Format("15:04")
+	}
 }
 
 // onOff renders a boolean setting. "on"/"off" rather than "true"/"false":

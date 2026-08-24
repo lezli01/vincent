@@ -116,7 +116,7 @@ func (r *Runner) runRepair(
 		// next admission runs a repair again rather than silently turning it
 		// into a plain retry of the blocked step (§12.4, task 025).
 		if outcome.reason == ReasonUsageLimit {
-			r.holdForUsageLimit(task, outcome.retryAfter, log)
+			r.holdForUsageLimit(task, outcome.agentName, outcome.retryAfter, log)
 			return
 		}
 		r.interrupt(task, log)
