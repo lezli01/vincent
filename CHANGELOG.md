@@ -20,6 +20,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Workflow loading is bounded and refuses non-regular files.** A `*.yaml`
+  entry in a workflow directory that is a symlink, named pipe, socket or device
+  is no longer opened or followed, and a source is capped at 1 MiB. Previously a
+  named pipe in a registered repository's `.vincent/workflows/` parked the loader
+  in `open()` forever — enough to stop the daemon from starting, hang
+  `POST /v1/projects`, or kill hot reload for every scope — and a symlink was
+  followed out of the repository into whatever it pointed at. Rejected files are
+  listed as invalid entries naming the reason, so the valid workflows in the same
+  directory keep working. ([#136](https://github.com/lezli01/vincent/issues/136))
+
 ### Added
 
 - **Workflow-declared task fields.** Workflows can publish ordered task inputs

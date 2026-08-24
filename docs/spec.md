@@ -205,6 +205,22 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
 The daemon watches both locations (fsnotify) and reloads on change. Invalid files are
 surfaced as registry errors (visible in TUI/API) without breaking valid ones.
 
+*Amended 2026-08-23 (issue #136).* What a scope may source is bounded, because a
+project scope is whatever a registered repository contains and it is read while the
+scope is **catalogued** — at daemon start, at project registration, and on every
+reload — before any human picks or runs a workflow:
+
+- Only **regular files** are sourced. A symlink, FIFO, socket, device or directory
+  whose name ends in `.yaml`/`.yml` is never opened or followed. The type is checked
+  on the directory entry and again on the opened handle, so replacing a checked file
+  between the two does not smuggle one in.
+- A source is at most **1 MiB**. A file of exactly that size still parses; a larger
+  one is rejected without being read whole. Fixed, not configurable.
+
+A file rejected by either bound becomes an **invalid registry entry** naming the path
+and the violated type or bound — the same treatment as a file that fails to parse, so
+its valid siblings in the scope stay available.
+
 ### 5.3 Task
 
 A unit of work delivered by running a workflow against a project.

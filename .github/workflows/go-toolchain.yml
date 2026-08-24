@@ -45,11 +45,18 @@ jobs:
       # keeps older minors visible after a new one ships; the `stable` filter
       # drops release candidates. Versions sort with `sort -V` because 1.26.0
       # is published as plain "go1.26" and would otherwise outrank "go1.26.10".
+      #
+      # `.Go` is trimmed to its minor series because the directive itself is not
+      # always spelled that way: `go mod tidy` records the highest `go` version
+      # any dependency declares, verbatim, so a dependency written against
+      # "go 1.26.0" rewrites ours to "1.26.0" too. Matching go.dev against that
+      # literal finds nothing — 1.26.0 is published as plain "go1.26" — and the
+      # job would then resolve an empty version and edit the toolchain to "go".
       - id: resolve
         shell: bash
         run: |
           set -euo pipefail
-          minor=$(go mod edit -json | jq -r '.Go')
+          minor=$(go mod edit -json | jq -r '.Go' | cut -d. -f1,2)
           current=$(go mod edit -json | jq -r '.Toolchain // empty')
           latest=go$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' \
             | jq -r --arg m "go${minor}" \

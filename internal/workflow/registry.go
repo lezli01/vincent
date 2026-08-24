@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -269,28 +270,49 @@ func (r *Registry) notify() {
 // (most repos have no .vincent/workflows) and yields no entries. Files are
 // processed in name order so a duplicate `name:` deterministically keeps the
 // first file and reports each later one.
+//
+// Only regular files under maxSourceBytes are sourced (§5.2): the directory is
+// daemon-owned, but its entries are whatever a registered repository contains.
+// A file that fails either bound is catalogued as an invalid entry.
 func (r *Registry) loadDir(dir string, scope Scope, projectID int64) scopeEntries {
 	entries := scopeEntries{byName: map[string]Entry{}}
 	if dir == "" {
 		return entries
 	}
-	names, err := yamlFiles(dir)
+	files, err := yamlFiles(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			r.log.Warn("workflow directory unreadable", "dir", dir, "scope", scope, "error", err)
 		}
 		return entries
 	}
-	for _, path := range names {
-		src, err := os.ReadFile(path) //nolint:gosec // registry paths are daemon-owned
+	for _, f := range files {
+		path := f.path
+		src, reject, err := readSource(f)
 		if err != nil {
 			r.log.Warn("workflow file unreadable", "file", path, "error", err)
 			continue
 		}
-		entry := Entry{Scope: scope, ProjectID: projectID, File: path, Source: string(src)}
-		wf, warns, perr := Parse(src, r.opts)
-		entry.Warnings = warns
+		entry := Entry{Scope: scope, ProjectID: projectID, File: path}
+		var (
+			wf    *Workflow
+			warns Errors
+			perr  error
+		)
+		if reject == "" {
+			entry.Source = string(src)
+			wf, warns, perr = Parse(src, r.opts)
+			entry.Warnings = warns
+		}
 		switch {
+		case reject != "":
+			// A file the scope must not source (§5.2, issue #136) becomes an
+			// invalid entry rather than a silent skip, so the reason is
+			// visible in the TUI and the API and its siblings stay valid.
+			// The name can only come from the path: nothing was read.
+			entry.Errors = Errors{{Message: reject}}
+			entry.Name = fallbackName(nil, path)
+			r.log.Warn("workflow file rejected", "file", path, "error", reject)
 		case perr != nil:
 			var errs Errors
 			if !asErrors(perr, &errs) {
@@ -383,24 +405,115 @@ func (r *Registry) Lookup(projectID int64, name string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// yamlFiles lists the YAML files directly inside dir, sorted by name.
-func yamlFiles(dir string) ([]string, error) {
+// maxSourceBytes bounds one workflow file (§5.2). A workflow is a
+// human-written definition and a megabyte is far past any real one; the bound
+// exists because a project scope is whatever a registered repository happens
+// to contain, and loading it must not be able to exhaust the daemon.
+const maxSourceBytes = 1 << 20
+
+// yamlFile is one candidate found in a scope directory. reject is empty for a
+// regular file, and otherwise says why the file cannot be a workflow source.
+type yamlFile struct {
+	path   string
+	reject string
+}
+
+// yamlFiles lists the YAML files directly inside dir, sorted by name. An entry
+// that is not a regular file — a directory, a symlink, a FIFO, a socket or a
+// device — is returned carrying a reject reason rather than dropped: DirEntry
+// type bits are Lstat-shaped, so this is where the difference can be seen
+// before anything opens the file, and §5.2 wants an unusable file surfaced
+// rather than silently skipped.
+func yamlFiles(dir string) ([]yamlFile, error) {
 	des, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // caller inspects os.IsNotExist
 	}
-	var out []string
+	var out []yamlFile
 	for _, de := range des {
-		if de.IsDir() {
-			continue
-		}
 		switch strings.ToLower(filepath.Ext(de.Name())) {
 		case ".yaml", ".yml":
-			out = append(out, filepath.Join(dir, de.Name()))
+		default:
+			continue
 		}
+		f := yamlFile{path: filepath.Join(dir, de.Name())}
+		if mode := de.Type(); !mode.IsRegular() {
+			// The directory read may carry no type at all; Info re-asks the
+			// OS, still without following a symlink.
+			if info, ierr := de.Info(); ierr != nil || !info.Mode().IsRegular() {
+				f.reject = rejectType(f.path, mode)
+			}
+		}
+		out = append(out, f)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
 	return out, nil
+}
+
+// readSource reads one discovered workflow file. A non-empty reject is a file
+// the registry must not source — the wrong type, or more than maxSourceBytes —
+// leaving err for a genuine I/O failure.
+//
+// The type is checked twice: once on the directory entry, and once on the
+// *opened handle*, so a file swapped for a symlink or a FIFO between the two
+// cannot smuggle itself in. The open itself refuses to follow a final symlink
+// and never blocks (sourceOpenFlags), which is what keeps a FIFO in a scope
+// from parking the loader forever.
+func readSource(f yamlFile) ([]byte, string, error) {
+	if f.reject != "" {
+		return nil, f.reject, nil
+	}
+	file, err := os.OpenFile(f.path, sourceOpenFlags, 0)
+	if err != nil {
+		// It was a regular file a moment ago, so a failure here may mean it
+		// has been replaced since: a no-follow open fails on a symlink.
+		if info, lerr := os.Lstat(f.path); lerr == nil && !info.Mode().IsRegular() {
+			return nil, rejectType(f.path, info.Mode()), nil
+		}
+		return nil, "", err
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, "", err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, rejectType(f.path, info.Mode()), nil
+	}
+	// One byte past the limit: enough to know the file is over it, without
+	// allocating it, and a file of exactly the limit still parses.
+	src, err := io.ReadAll(io.LimitReader(file, maxSourceBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(src) > maxSourceBytes {
+		return nil, fmt.Sprintf("%s: a workflow file must be at most %d bytes", f.path, maxSourceBytes), nil
+	}
+	return src, "", nil
+}
+
+// rejectType is the catalog message for a file of the wrong type. It names the
+// path and the type and nothing else: for a symlink, what is behind it is
+// somebody else's file and must not be read, let alone reported.
+func rejectType(path string, mode os.FileMode) string {
+	return fmt.Sprintf("%s: a workflow file must be a regular file, not %s", path, typeName(mode))
+}
+
+func typeName(mode os.FileMode) string {
+	switch {
+	case mode&os.ModeSymlink != 0:
+		return "a symbolic link"
+	case mode.IsDir():
+		return "a directory"
+	case mode&os.ModeNamedPipe != 0:
+		return "a named pipe"
+	case mode&os.ModeSocket != 0:
+		return "a socket"
+	case mode&os.ModeDevice != 0:
+		return "a device"
+	default:
+		return "a special file"
+	}
 }
 
 // fallbackName names a broken file so it can still be listed: its declared
