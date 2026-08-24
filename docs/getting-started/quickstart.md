@@ -109,10 +109,11 @@ succeeded, because an agent reporting success is a claim and a build is a fact;
 a failed check retries the step with the failure appended to the prompt. Then a
 human gate, and only after approval does anything get pushed.
 
-The other three examples are
+The other four examples are
 [`fix-and-test`](../../examples/fix-and-test.yaml) (write a failing test, then
 fix it), [`docs-update`](../../examples/docs-update.yaml) (runs `restricted`),
-and [`cursor-review`](../../examples/cursor-review.yaml).
+[`converge`](../../examples/converge.yaml) (loops a repair step until the test
+suite is green), and [`cursor-review`](../../examples/cursor-review.yaml).
 
 `feature-pr` is written for a Go repository — its check is
 `go build ./... && go test ./...`. Open the file and change that line to
@@ -162,13 +163,18 @@ live agent output on the right, with a **Diff** tab beside it.
 | `?` | Every key, in context |
 | `q` | Quit (the daemon and any running task keep going) |
 
-The full tour is in [Using the TUI](../guides/tui.md). Everything the TUI can
-do is also a subcommand:
+The full tour is in [Using the TUI](../guides/tui.md). The data commands are
+subcommands too:
 
 ```sh
 vincent task show 1
 vincent task ls --state running
 ```
+
+The human actions on a running task — approve, reject, retry, skip, pause,
+resume, answer, archive — are TUI and API operations for now
+([#89](https://github.com/lezli01/vincent/issues/89)). The
+[CLI reference](../reference/cli.md) is the full tree.
 
 ## 5. Approve the gate
 

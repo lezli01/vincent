@@ -44,9 +44,21 @@ stash are untouched.
 
 ### Does it delete my branches?
 
-Never. Archiving a task removes its **worktree** and keeps the branch and the
-record. To find what to clean up, ask vincent rather than git — with configurable
-names a glob no longer finds them all:
+Only an empty one. Archiving a task removes its **worktree** and keeps the
+record. It keeps the branch too, unless that branch has no commits past the base
+it was cut from — a workflow that never wrote to the repository leaves nothing
+on its branch, and archiving deletes it rather than leaving an empty ref behind.
+**A branch carrying any commit is never deleted.** Turn the cleanup off with
+[`delete_empty_branch_on_archive: false`](reference/configuration.md#delete_empty_branch_on_archive).
+
+The remote counterpart is left alone unless you also set
+[`delete_remote_branch_on_archive: true`](reference/configuration.md#delete_remote_branch_on_archive)
+— off by default, and even then it runs only after the local delete succeeded,
+only for a branch with a configured upstream, and only when you archive the task
+yourself.
+
+To find what to clean up, ask vincent rather than git — with configurable names a
+glob no longer finds them all:
 
 ```sh
 vincent task ls --archived      # the branch column lists every branch vincent made

@@ -1,9 +1,15 @@
 # Scripting vincent
 
-Everything the TUI does is a subcommand, and everything either does is the same
-localhost API. That makes vincent scriptable three ways, in increasing order of
-control: the CLI with `--json`, the API with `curl`, and the SSE streams for
-anything that needs to react rather than poll.
+Everything the TUI does goes through the same localhost API, and its data
+commands are subcommands too — `task add/ls/show/cancel`, `project`, `workflow`,
+`daemon`. The human actions that act on a running task (approve, reject, retry,
+skip, pause, resume, answer, archive) have no subcommand yet
+([#89](https://github.com/lezli01/vincent/issues/89)), so a script reaches those
+over the API; the [CLI reference](../reference/cli.md) is the full tree.
+
+That makes vincent scriptable three ways, in increasing order of control: the
+CLI with `--json`, the API with `curl`, and the SSE streams for anything that
+needs to react rather than poll.
 
 - [Exit codes](#exit-codes)
 - [JSON output](#json-output)

@@ -262,9 +262,14 @@ vincent task ls [--project ID] [--state STATE] [--archived] [--limit N] [--json]
                 [--include-children] [--parent ID]
 ```
 
-Lists tasks. Archived tasks are excluded unless `--archived` is passed. Rows
-carry the board fields — project name, step progress, and cost and token totals
-rolled up across every attempt.
+Lists tasks. Archived tasks are excluded unless `--archived` is passed. The
+table carries `ID`, `STATE`, `PROJECT`, `WORKFLOW`, `STEP` (the k/n cursor),
+`BRANCH` and `TITLE`; `--json` adds the rest of the board fields, including the
+cost and token totals rolled up across every attempt.
+
+`BRANCH` is the task's own branch, which is how you find what vincent made once
+[`branch_template`](configuration.md#branch_template) has moved branch names off
+the `vincent/` prefix a glob would look for.
 
 Fan-out lanes are excluded too: the list is the work you asked for, and a
 64-task tree would bury it. `--parent ID` lists one fan-out task's lanes in

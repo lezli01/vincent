@@ -62,6 +62,19 @@ list with the user-facing context a commit subject cannot carry.
   to hit this; a blocked lane left the parent waiting in `awaiting_children`.
   Creation in *different* projects stays parallel. ([#126](https://github.com/lezli01/vincent/issues/126))
 
+- **`vincent task ls` reports each task's branch.** The list row carries
+  `BRANCH` in the table and `branch_name` in `--json`, so the documented
+  cleanup path — `vincent task ls --archived` — actually names the branches
+  vincent made. Branch names are configurable, so a `vincent/*` glob is not
+  guaranteed to find them. ([#137](https://github.com/lezli01/vincent/issues/137))
+- **Corrected documentation that promised branches are never deleted.** The FAQ
+  said archiving always keeps the branch; archiving deletes a branch that has no
+  commits past its base, and has since `delete_empty_branch_on_archive` shipped
+  defaulting to true. A branch carrying any commit is still never deleted. The
+  README, quickstart and scripting guide also claimed full TUI/CLI parity, which
+  does not hold for the human actions on a running task.
+  ([#137](https://github.com/lezli01/vincent/issues/137))
+
 ## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
 
 ### Fixed

@@ -168,11 +168,14 @@ func newTaskLsCmd() *cobra.Command {
 				for _, t := range tasks {
 					rows = append(rows, []string{
 						strconv.FormatInt(t.ID, 10), t.State, t.ProjectName,
-						t.Workflow, progress(t), t.Title,
+						t.Workflow, progress(t), t.BranchName, t.Title,
 					})
 				}
+				// BRANCH is what the cleanup guidance reads off `--archived`
+				// (task 001): configurable names mean a `vincent/*` glob no
+				// longer finds every branch vincent made.
 				return table(cmd.OutOrStdout(),
-					[]string{"ID", "STATE", "PROJECT", "WORKFLOW", "STEP", "TITLE"}, rows)
+					[]string{"ID", "STATE", "PROJECT", "WORKFLOW", "STEP", "BRANCH", "TITLE"}, rows)
 			})
 		},
 	}
