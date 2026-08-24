@@ -225,9 +225,9 @@ func (t *transcript) Close() {
 // matters is bytes.
 const outputTailBytes = 256 * 1024
 
-// outputTail keeps the last n lines of a process's output, bounded by
-// outputTailBytes, for the step's result summary (§8.4 `.Steps`) and for the
-// retry failure block (§8.4).
+// outputTail keeps the last n lines of a process's output, bounded by a byte
+// ceiling, for the step's result summary (§8.4 `.Steps`) and for the retry
+// failure block (§8.4).
 type outputTail struct {
 	limit    int
 	maxBytes int
@@ -235,8 +235,15 @@ type outputTail struct {
 	bytes    int
 }
 
+// newOutputTail bounds by outputTailBytes. A caller that already reads from a
+// bound of its own — the repair prompt's transcript excerpt (task 025) — uses
+// newOutputTailBytes so this one does not silently narrow it.
 func newOutputTail(limit int) *outputTail {
-	return &outputTail{limit: limit, maxBytes: outputTailBytes}
+	return newOutputTailBytes(limit, outputTailBytes)
+}
+
+func newOutputTailBytes(limit, maxBytes int) *outputTail {
+	return &outputTail{limit: limit, maxBytes: maxBytes}
 }
 
 func (o *outputTail) add(line string) {

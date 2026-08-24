@@ -519,8 +519,9 @@ stdout/stderr are captured to the step transcript.
   more: "the disk filled up" is not a test result either, and a guard that
   reads a row whose evidence is missing is reading nothing. Both run this
   section's budget in full — a new attempt writes a new transcript, which is
-  exactly what clears a transient one. `usage_limit` and `interrupted` are untouched for a different
-  reason: this section already says they are not failures.
+  exactly what clears a transient one. `usage_limit` and `interrupted` are
+  untouched for a different reason: this section already says they are not
+  failures.
 
   It is orthogonal to the retry budget, which runs first and in full. A probe
   that should not retry says `max_retries: 0`. There is no
