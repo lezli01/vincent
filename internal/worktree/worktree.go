@@ -115,11 +115,55 @@ type Manager struct {
 	// scan takes it exclusively. An mtime/age heuristic was rejected: a
 	// timing guess has no place in the package whose subject is ownership.
 	claims sync.RWMutex
+
+	// repos serializes the operations that mutate one project repository's
+	// shared `.git/worktrees` bookkeeping — create (its prune *and* its
+	// `git worktree add`) and Remove — one mutex per project path (#126).
+	//
+	// git does not lock that state for us. `git worktree add` creates
+	// `.git/worktrees/{id}` and only *then* writes the `locked` file that
+	// would fend off a peer's prune, and it enumerates the whole directory
+	// before it starts, so it equally dies reading a peer entry that already
+	// has a `gitdir` but not yet a `commondir`. Two admissions into one
+	// project — routine for a fan_out step (§7.6), whose lanes all live in
+	// the parent's repository — then fail each other with git_error (§18)
+	// for tasks that had nothing wrong with them.
+	//
+	// The daemon is the only thing that runs git here (ownership invariant),
+	// so a process-local lock covers it. It is deliberately not m.claims:
+	// that lock is task 005's, about gc versus create/claim, and taking it
+	// exclusively would serialize creation daemon-wide across unrelated
+	// projects. Ordering is claims-then-repo everywhere; nothing takes them
+	// in the other order.
+	reposMu sync.Mutex
+	repos   map[string]*sync.Mutex
 }
 
 // NewManager returns a Manager storing worktrees under dataDir.
 func NewManager(git *gitx.Git, dataDir string) *Manager {
-	return &Manager{git: git, root: filepath.Join(dataDir, "worktrees")}
+	return &Manager{
+		git:   git,
+		root:  filepath.Join(dataDir, "worktrees"),
+		repos: make(map[string]*sync.Mutex),
+	}
+}
+
+// lockRepo blocks until nothing else in this process is mutating
+// projectPath's `.git/worktrees`, and returns the release func.
+//
+// Entries are never dropped: there is one per project the daemon has touched,
+// which is bounded by the project list, and a mutex nobody holds is two words.
+func (m *Manager) lockRepo(projectPath string) func() {
+	key := filepath.Clean(projectPath)
+	m.reposMu.Lock()
+	repo, ok := m.repos[key]
+	if !ok {
+		repo = new(sync.Mutex)
+		m.repos[key] = repo
+	}
+	m.reposMu.Unlock()
+	repo.Lock()
+	return repo.Unlock
 }
 
 // Root is the directory every worktree lives under, and the only directory
@@ -194,6 +238,11 @@ func (m *Manager) WithReclaimLock(fn func() error) error {
 }
 
 func (m *Manager) create(ctx context.Context, projectPath string, taskID int64, branch, base string) (string, error) {
+	// Whole of create, not just the prune: the add is as unsafe against a
+	// peer add as it is against a peer prune (#126, see Manager.repos).
+	unlock := m.lockRepo(projectPath)
+	defer unlock()
+
 	if _, err := os.Stat(projectPath); err != nil {
 		return "", &Error{
 			Reason:  ReasonProjectPathMissing,
@@ -315,6 +364,11 @@ func (m *Manager) IsDirty(ctx context.Context, worktreePath string) (bool, error
 // after this returns (spec §10). Ordering matters — the branch is checked out
 // in the worktree until the worktree is gone.
 func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, force bool) error {
+	// Same repository bookkeeping as create, from the other side: an archive
+	// prunes the project repo while an admission may be adding to it (#126).
+	unlock := m.lockRepo(projectPath)
+	defer unlock()
+
 	projectMissing := false
 	if _, err := os.Stat(projectPath); err != nil {
 		projectMissing = true

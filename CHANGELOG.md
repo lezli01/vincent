@@ -40,6 +40,17 @@ list with the user-facing context a commit subject cannot carry.
   validates declared values for every client, and additional undeclared fields
   remain accepted and recorded on the task.
 
+### Fixed
+
+- **Simultaneous worktree creation in one project.** Tasks admitted at the same
+  moment in the same project no longer fail each other's `git worktree add`
+  with a `git_error` block — the daemon now serializes worktree creation and
+  cleanup per project, since git leaves its own `.git/worktrees` bookkeeping
+  unprotected while an entry is half-built. A `fan_out` step, whose lanes all
+  live in the parent's repository and all start together, was the reliable way
+  to hit this; a blocked lane left the parent waiting in `awaiting_children`.
+  Creation in *different* projects stays parallel. ([#126](https://github.com/lezli01/vincent/issues/126))
+
 ## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
 
 ### Fixed
