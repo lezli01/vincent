@@ -53,6 +53,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A human action racing scheduler admission no longer fails with a state
+  conflict.** Cancelling or pausing a queued task at the moment the scheduler
+  started it returned `409` (`task 3 is running, not queued`) — in the TUI, a
+  keypress that appeared to do nothing until pressed again — even though both
+  actions are valid from `running` too. An action that loses its compare-and-swap
+  is now re-applied once from the state it lost to, when the lifecycle allows it
+  from there. Fan-out lanes, which are cancelled the moment their rows appear,
+  hit this most. ([#127](https://github.com/lezli01/vincent/issues/127))
+
 - **Simultaneous worktree creation in one project.** Tasks admitted at the same
   moment in the same project no longer fail each other's `git worktree add`
   with a `git_error` block — the daemon now serializes worktree creation and

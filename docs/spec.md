@@ -407,6 +407,31 @@ state-shaped one for no behavioral gain.
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived` |
 
+**Amended 2026-08-24 (issue #127): an action that loses a race re-applies itself
+once, when the state it lost to still allows it.** Every action in this table is
+applied as a compare-and-swap on the state the request read. If a concurrent
+transition takes that swap first, the task is re-read and the action applied once
+more — but only when this table allows the action from the state actually found.
+Otherwise the conflict stands and the client gets its `409` with `details.state`
+(§13.1). Once, never in a loop: a second conflict is returned as it stands.
+
+The producer this exists for is scheduler admission (§11). `queued → running` is
+bookkeeping, not intent, and `cancel` and `pause` — the two actions valid from
+`queued` **and** from a slot-holding state — were legal before the admission and
+legal after it, so the human lost a race they could neither see nor influence and
+whose only remedy was to issue the identical request again. Races against another
+human are unaffected: a winning human transition almost always lands somewhere the
+loser's action is invalid, and a cancelled task cannot be cancelled again. A
+deferred row stays deferred across the retry — a `pause` that re-reads `running`
+holds at the next step boundary, it does not park a task whose process is live.
+
+This **supersedes the PR C decision** of 2026-08-07 (`docs/history/v0-tasks.md`,
+the frozen v0 ledger) that a cancel losing the race to admission returns `409` and
+takes no internal retry. That decision was protecting a human's informed consent
+before "kill a live process", but a `409` does not deliver it: `cancel` is one row
+here with one effect whose process-killing half is conditional on state, and the
+remedy the clients document is the same keypress, which performs exactly that kill.
+
 Tasks are `queued` immediately upon creation (no draft state in v1).
 
 ## 7. Step execution semantics
