@@ -100,25 +100,22 @@ func (r *Runner) Cancel(ctx context.Context, id int64) (*store.Task, error) {
 
 // Pause holds a task at its next step boundary (§6). A queued task pauses
 // at once; a running one finishes its current step first, and the request is
-// persisted so a crash — which re-queues the task — cannot discard it.
+// persisted so a crash — which re-queues the task — cannot discard it. Which
+// of the two it is comes from §6's Deferred flag and is decided in applyAction,
+// so a pause that re-reads its state after losing a race decides again.
 func (r *Runner) Pause(ctx context.Context, id int64) (*store.Task, error) {
-	task, err := r.deps.Store.GetTask(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	tr, ok := taskstate.Next(task.State, taskstate.Pause)
-	if !ok {
-		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Pause, State: task.State}
-	}
-	if !tr.Deferred {
-		return r.transitionFrom(ctx, task, taskstate.Pause, store.TaskChange{})
-	}
+	return r.humanAction(ctx, id, taskstate.Pause, store.TaskChange{})
+}
+
+// requestPause records a deferred pause on a task whose step is still running
+// (§6): the flag is persisted, so a crash — which re-queues the task — cannot
+// discard it, and mirrored onto the live actor, which is what actually reads
+// it at its next step boundary.
+func (r *Runner) requestPause(ctx context.Context, id int64) (*store.Task, error) {
 	updated, err := r.deps.Store.RequestPause(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	// The persisted flag covers the crash path; the live flag is what the
-	// actor actually reads at its next step boundary.
 	if lr, ok := r.lookupRun(id); ok {
 		lr.mu.Lock()
 		lr.pauseRequested = true
@@ -386,15 +383,61 @@ func (r *Runner) humanAction(
 	return r.transitionFrom(ctx, task, action, ch)
 }
 
-// transitionFrom applies an action to a task already loaded and validated.
-// Every human action but `pause` clears a pending pause: each of them is a
-// human saying "go" (§6).
+// transitionFrom applies an action to a task already loaded and validated,
+// and is the one compare-and-swap every §6 human action goes through.
+//
+// The swap is on the state the caller read, so a concurrent writer can take
+// it. Losing it is not by itself a refusal: when the state the task actually
+// reached still allows this action, the action is applied once more from that
+// state (issue #127). The scheduler is why — `queued → running` is
+// bookkeeping, not intent, and a human who asked for something §6 allows from
+// both states learns nothing from a conflict about a race they cannot see or
+// influence. This supersedes the PR C decision that a lost cancel takes no
+// internal retry; see the §6 amendment of 2026-08-24.
+//
+// It stays a no-op for the human-vs-human races `Runner.transition` protects,
+// because a winning human transition almost always lands somewhere the loser's
+// action is invalid — a cancelled task cannot be cancelled again.
+//
+// Three properties of the shape here, each load-bearing:
+//
+//   - The retry re-enters §6 rather than re-issuing the same swap, so a `pause`
+//     that lands on `running` defers at the step boundary instead of parking a
+//     task whose process is still live.
+//   - It resumes at the swap, never at the caller, so pre-CAS work — Archive's
+//     worktree removal, Retry's snapshot rewrite — is never repeated.
+//   - Once, not in a loop: a second conflict is returned as it stands, so no
+//     interleave can spin here.
 func (r *Runner) transitionFrom(
+	ctx context.Context, task *store.Task, action taskstate.Action, ch store.TaskChange,
+) (*store.Task, error) {
+	updated, err := r.applyAction(ctx, task, action, ch)
+	conflict, lost := store.AsStateConflict(err)
+	if !lost || !taskstate.Can(conflict.Got, action) {
+		return updated, err
+	}
+	fresh, err := r.deps.Store.GetTask(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	return r.applyAction(ctx, fresh, action, ch)
+}
+
+// applyAction is one attempt at an action, from the state the task it is
+// given carries. Every human action but `pause` clears a pending pause: each
+// of them is a human saying "go" (§6).
+func (r *Runner) applyAction(
 	ctx context.Context, task *store.Task, action taskstate.Action, ch store.TaskChange,
 ) (*store.Task, error) {
 	tr, ok := taskstate.Next(task.State, action)
 	if !ok {
 		return nil, &InvalidActionError{TaskID: task.ID, Action: action, State: task.State}
+	}
+	// A deferred action is accepted now and applied by the engine later, so
+	// it is not a swap at all. §6 has exactly one — `pause` from `running`,
+	// which reaches `paused` through Park at the next step boundary.
+	if tr.Deferred {
+		return r.requestPause(ctx, task.ID)
 	}
 	if ch.PauseRequested == nil && action != taskstate.Pause {
 		noPause := false

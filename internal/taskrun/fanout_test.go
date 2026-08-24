@@ -69,39 +69,6 @@ func (h *engineHarness) waitForChildren(t *testing.T, parentID int64, want int) 
 	return nil
 }
 
-// cancelRacingAdmission cancels a task, tolerating the one race any test that
-// cancels a freshly spawned lane has.
-//
-// waitForChildren returns as soon as the lane rows exist, and a lane is
-// `queued` for a moment before the scheduler admits it. Cancel reads the task,
-// checks the action against the state it read, and then transitions with a
-// compare-and-swap on that state — so an admission landing in between fails
-// the swap with "task N is running, not queued", even though `cancel` is
-// perfectly legal from `running` too. It failed about one CI run in ten.
-//
-// Retrying is the right fix *for the test*, which asserts nothing about that
-// race: it wants the lane cancelled, from whichever state it has reached by
-// then. Whether a human action that loses a CAS to the scheduler should retry
-// itself is a §6 question about the product, and is deliberately not answered
-// here.
-func (h *engineHarness) cancelRacingAdmission(t *testing.T, id int64) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		_, err := h.runner.Cancel(t.Context(), id)
-		if err == nil {
-			return
-		}
-		if _, conflict := store.AsStateConflict(err); !conflict {
-			t.Fatalf("cancel task %d: %v", id, err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("cancel task %d: still losing the transition race after 10s: %v", id, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // TestFanOutSpawnsLanesAndMerges is the whole of phase 2 in one pass: the
 // parent spawns real child tasks, parks without holding a slot, and — once
 // they finish — merges both branches into its own.
@@ -213,7 +180,9 @@ func TestFanOutBlocksWhenALaneDidNotFinish(t *testing.T) {
 	lanes := h.waitForChildren(t, task.ID, 2)
 	for _, lane := range lanes {
 		if lane.LaneID == "slow" {
-			h.cancelRacingAdmission(t, lane.ID)
+			if _, err := h.runner.Cancel(t.Context(), lane.ID); err != nil {
+				t.Fatalf("cancel lane %d: %v", lane.ID, err)
+			}
 		}
 	}
 

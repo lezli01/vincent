@@ -139,6 +139,14 @@ An action the current state does not allow returns `409` with `details.state`
 set to the state actually found — so a client branches on a value rather than
 parsing prose.
 
+An action the state *does* allow never fails on a race. Each one is a
+compare-and-swap on the state the request read, and the task can move under it
+— the scheduler admitting a queued task is the usual way. When it does, the
+action is re-applied once from the state actually found, provided the table
+above allows it from there: `cancel` on a task the scheduler admits at that
+instant aborts the now-running task rather than reporting a conflict, and
+`pause` becomes the deferred kind that holds at the next step boundary.
+
 ## Step outcomes
 
 Each attempt of each step is a **step run** row, and every attempt is kept —
