@@ -20,6 +20,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A step whose output vincent could not capture is no longer reported as a
+  success.** Command output was read a line at a time with a one-mebibyte
+  ceiling; a longer line — minified JSON, a base64 blob, a `git diff` of a
+  generated file — stopped capture dead, sent the rest of the stream to
+  `/dev/null`, and left the step `succeeded` on its exit code alone, with a
+  megabyte of evidence gone and nothing a client could query saying so.
+  Over-long lines are now captured in bounded `partial` pieces that rejoin in
+  order, so an ordinary big-output command stays a success *with* its output.
+  Genuine evidence loss now fails the attempt instead: transcript write, encode
+  and close errors (a full disk, a revoked permission, a short write — `Close`
+  is checked, because that is where a buffered filesystem reports ENOSPC) fail
+  it with the new `transcript_io_error` reason, and a stream an agent adapter
+  could not read to the end fails it with `agent_protocol_error` rather than
+  blaming the CLI. Both retry normally and neither can be swallowed by
+  `allow_failure:`. `transcript_max_bytes` is unchanged and remains the only
+  size-based failure. ([#139](https://github.com/lezli01/vincent/issues/139))
+
 ### Added
 
 - **Workflow-declared task fields.** Workflows can publish ordered task inputs

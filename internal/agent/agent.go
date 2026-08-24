@@ -314,6 +314,15 @@ const (
 	// logged in. Waiting cannot fix it — re-authenticating is a human action —
 	// so it stays an ordinary failure under the §7.2 budget (§18).
 	FailureUnauthenticated FailureKind = "unauthenticated"
+	// FailureStreamError is a run whose stream the adapter could not read to
+	// the end: its line reader stopped on an error, so normalization ended
+	// early and the transcript is missing lines the CLI wrote (#139).
+	//
+	// It is the adapter naming its *own* reader, which is why it is not
+	// folded into the generic agent_error bucket: the CLI may have behaved
+	// perfectly, and sending a user to look at it wastes their time. The
+	// engine maps it to `agent_protocol_error` (§18).
+	FailureStreamError FailureKind = "stream_error"
 )
 
 // Failure is an adapter's verdict about a stopped run (task 003, §9.1).

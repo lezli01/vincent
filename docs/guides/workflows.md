@@ -1046,8 +1046,10 @@ row is what the next guard reads.
 **It only swallows failures the step itself produced:** a nonzero exit, a failed
 `check`, an agent error, a timeout, a transcript-cap kill. It never swallows
 vincent failing to *run* the step — a missing CLI, an expired login, a template
-error, an unavailable shell. Branching on "the agent is not installed" as though
-it were a test result is not something a workflow should be able to do.
+error, an unavailable shell — nor vincent failing to *record* it
+(`transcript_io_error`, `agent_protocol_error`). Branching on "the agent is not
+installed", or on "the disk filled up", as though either were a test result is
+not something a workflow should be able to do.
 
 It is valid on `agent` and `command` steps only, sub-steps of a group included,
 and it is not available in `defaults:`.

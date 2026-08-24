@@ -447,6 +447,8 @@ The block reason names what happened:
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
+| `transcript_io_error` | The attempt's transcript could not be written or closed (see below) |
+| `agent_protocol_error` | vincent could not read the agent's stream to the end (see below) |
 | `rejected` | You rejected a manual gate |
 | `shell_unavailable` | The requested shell is not installed |
 | `interrupted` | The daemon stopped mid-step — **not** a failure; the step re-runs and does not consume a retry |
@@ -497,6 +499,27 @@ One attempt produced more output than `transcript_max_bytes` (default 512MB).
 vincent kills the process rather than filling your disk, and writes the tripping
 annotation into the file so it records *why* it ends. Usually this means an agent
 or command is in a loop; fix that rather than raising the cap.
+
+### `transcript_io_error` — check the disk
+
+vincent could not write, encode or close the attempt's transcript, so the record
+of the run is incomplete. The step **fails** rather than reporting a success it
+cannot evidence: the usual cause is a full disk or a data directory whose
+permissions changed under the daemon. `df` the data directory (`vincent doctor`
+prints it), fix the cause, and retry — a new attempt writes a new file, so this
+clears on its own once there is room.
+
+It is **not** what a very long line of output produces. Those are captured in
+`partial` pieces and the step succeeds normally; only `transcript_limit` fails a
+step for size.
+
+### `agent_protocol_error` — vincent's reader, not the CLI's fault
+
+vincent could not read the agent's event stream to the end, so its transcript is
+missing lines the CLI wrote. The reason is named separately from `agent_error`
+on purpose: the agent may have completed its work perfectly, and there is
+usually nothing to fix in the CLI. Retry the task; if it repeats on the same
+step, the transcript up to the cut is the thing to attach to a bug report.
 
 ### A task is stuck in `awaiting_input`
 

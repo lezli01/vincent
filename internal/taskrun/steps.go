@@ -1,7 +1,6 @@
 package taskrun
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -169,6 +168,14 @@ func (r *Runner) runAgentStep(
 			env.log.Warn("transcript limit exceeded", "task", env.task.ID, "step", env.step.ID)
 			cancelCause(errTranscriptLimit)
 		}
+		// A transcript that stopped landing is polled in the same place and
+		// kills for the same reason: the record this run is being kept for
+		// is no longer being kept, so running on produces nothing (§12.2,
+		// #139). classifyAgent turns the cause into transcript_io_error.
+		if err := tr.Err(); err != nil {
+			env.log.Error("transcript i/o error", "task", env.task.ID, "step", env.step.ID, "error", err)
+			cancelCause(errTranscriptIO)
+		}
 	}
 	// protocolError fails the attempt rather than wait on a request vincent
 	// cannot render (§18): kill the tree, let the stream drain.
@@ -331,6 +338,8 @@ func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *ag
 		return stepOutcome{state: store.StepFailed, reason: ReasonInputProtocolError}
 	case causeIs(runCtx, errTranscriptLimit):
 		return stepOutcome{state: store.StepFailed, reason: ReasonTranscriptLimit}
+	case causeIs(runCtx, errTranscriptIO):
+		return stepOutcome{state: store.StepFailed, reason: ReasonTranscriptIOError}
 	case interrupting && (waitErr != nil || res.ExitCode != 0 || res.IsError):
 		return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 	case waitErr != nil:
@@ -346,6 +355,12 @@ func classifyAgent(daemonCtx, runCtx context.Context, interrupting bool, res *ag
 		}
 	case res.Failure != nil && res.Failure.Kind == agent.FailureUnauthenticated:
 		return stepOutcome{state: store.StepFailed, reason: ReasonAgentUnauthenticated}
+	case res.Failure != nil && res.Failure.Kind == agent.FailureStreamError:
+		// vincent's own reader stopped before the stream did, so the
+		// transcript is missing lines the CLI wrote (§9.1, #139). Named
+		// separately from agent_error, which would blame a CLI that did
+		// nothing wrong.
+		return stepOutcome{state: store.StepFailed, reason: ReasonAgentProtocolError}
 	case res.ExitCode != 0:
 		return stepOutcome{state: store.StepFailed, reason: ReasonNonzeroExit}
 	case res.IsError:
@@ -500,23 +515,29 @@ func (r *Runner) runShellCommand(
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	// limitOnce keeps the cap's annotation and kill to one, though both
-	// stream goroutines can observe the overflow.
-	var limitOnce sync.Once
+	// stream goroutines can observe the overflow. ioOnce does the same for a
+	// transcript that stopped landing.
+	var limitOnce, ioOnce sync.Once
+	// captureErr latches a stream vincent could not read to the end. Output
+	// the process wrote and vincent never saw is evidence loss, exactly like
+	// a transcript write that failed, and the classification below refuses to
+	// call it a success (#139).
+	var captureErr error
 	stream := func(rd io.Reader, name string) {
 		defer wg.Done()
-		scanner := bufio.NewScanner(rd)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			offset := tr.Output(sc.phase, name, line)
-			r.publishOutput(env.task.ID, run.ID, offset, "command.output", map[string]any{
-				"phase": sc.phase, "stream": name, "text": line,
-			})
+		err := scanOutput(rd, func(text string, more bool) {
+			// more marks a piece of a line longer than outputChunkBytes:
+			// the next record on this stream continues it (#139). Marked
+			// rather than joined silently, so a reader can tell one long
+			// line from several short ones.
+			fields := outputFields(sc.phase, name, text, more)
+			offset := tr.Note("output", fields)
+			r.publishOutput(env.task.ID, run.ID, offset, "command.output", fields)
 			mu.Lock()
-			tail.add(line)
+			tail.add(text)
 			mu.Unlock()
 			// A command that floods stdout is capped like a runaway agent
-			// (§12.3, §18). Cancelling here rather than after the scanner
+			// (§12.3, §18). Cancelling here rather than after the reader
 			// finishes is the point: the whole failure mode is a process that
 			// never stops producing, so waiting for it to stop is waiting
 			// forever. Cancelling runCtx wakes the tree-killer above.
@@ -529,15 +550,32 @@ func (r *Runner) runShellCommand(
 					cancel()
 				})
 			}
-		}
-		if err := scanner.Err(); err != nil {
-			// A single line past the buffer cap stops the scanner but not the
-			// process. Keep draining the pipe: left full, it would block the
-			// child until the timeout kill and misreport the attempt.
+			// A transcript that stopped landing kills the run for a related
+			// reason: the attempt is already doomed (the classification below
+			// fails it either way), and every further minute of a 15-minute
+			// command produces work that nothing records and a retry redoes.
+			// The agent path does the same at its own Exceeded poll.
+			if err := tr.Err(); err != nil {
+				ioOnce.Do(func() {
+					env.log.Error("transcript i/o error",
+						"task", env.task.ID, "step", env.step.ID, "error", err)
+					cancel()
+				})
+			}
+		})
+		if err != nil {
+			// The pipe itself failed. Draining it cannot help — a reader that
+			// errored will error again — and the process is about to be
+			// waited on, so record the loss and let the classification below
+			// terminalize the attempt.
 			tr.Note("error", map[string]any{
 				"error": "output capture stopped for " + name + ": " + err.Error(),
 			})
-			_, _ = io.Copy(io.Discard, rd)
+			mu.Lock()
+			if captureErr == nil {
+				captureErr = err
+			}
+			mu.Unlock()
 		}
 	}
 	wg.Add(2)
@@ -555,6 +593,15 @@ func (r *Runner) runShellCommand(
 	// cap, so its nonzero exit is a consequence, not the diagnosis (§18).
 	case tr.Exceeded():
 		outcome.state, outcome.reason = store.StepFailed, ReasonTranscriptLimit
+	// Below the cap, above the exit code: an attempt whose output was not
+	// captured or not persisted cannot be judged from its exit status alone
+	// (§7.1, §12.2, #139). It sits under transcript_limit because a run the
+	// cap killed may well break its pipe on the way out, and the cap is the
+	// diagnosis there.
+	case captureErr != nil || tr.Err() != nil:
+		outcome.state, outcome.reason = store.StepFailed, ReasonTranscriptIOError
+		env.log.Error("step output incomplete", "task", env.task.ID, "step", env.step.ID,
+			"capture_error", captureErr, "transcript_error", tr.Err())
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		outcome.state, outcome.reason = store.StepFailed, ReasonTimeout
 	case exitCode != 0 && r.interrupting(env.task.ID):

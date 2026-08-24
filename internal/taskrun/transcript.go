@@ -3,12 +3,14 @@ package taskrun
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // transcript is one attempt's transcript file (spec §12.2:
@@ -30,6 +32,13 @@ type transcript struct {
 	// the attempt (§18 transcript_limit).
 	max      int64
 	exceeded bool
+	// err is the first write, encode or close failure. A transcript that
+	// could not record what happened is not the lossless record §12.2
+	// promises, and the step executors turn it into transcript_io_error
+	// rather than let an attempt claim success over evidence that is not
+	// there (§7.1, §18).
+	err    error
+	closed bool
 }
 
 // openTranscript creates the transcript file for one attempt.
@@ -86,6 +95,26 @@ func (t *transcript) Exceeded() bool {
 	return t.exceeded
 }
 
+// Err reports the first write, encode or close failure, or nil.
+//
+// Like Exceeded it latches, and for a stronger reason: a line that failed to
+// land is gone, and a later successful write does not put it back. Disk-full,
+// permission and short-write faults all arrive here, and ENOSPC on a buffered
+// filesystem usually arrives at Close and nowhere else — which is why Close
+// feeds this latch too.
+func (t *transcript) Err() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.err
+}
+
+// fail latches the first error. The caller holds t.mu.
+func (t *transcript) fail(err error) {
+	if t.err == nil {
+		t.err = err
+	}
+}
+
 // Raw appends a verbatim stream line and reports the file offset just past
 // it. A short or failed write still advances by what landed, so the offset
 // never claims more of the file than exists.
@@ -105,8 +134,18 @@ func (t *transcript) write(line []byte, force bool) int64 {
 	if t.exceeded && !force {
 		return t.size
 	}
-	n, _ := t.f.Write(append(line, '\n'))
+	want := len(line) + 1
+	n, err := t.f.Write(append(line, '\n'))
 	t.size += int64(n)
+	switch {
+	case err != nil:
+		t.fail(err)
+	case n < want:
+		// io.Writer's contract says a short write reports an error, and
+		// os.File honours it; checking anyway costs a comparison and is the
+		// difference between trusting the contract and having checked.
+		t.fail(io.ErrShortWrite)
+	}
 	if t.max > 0 && t.size > t.max {
 		t.exceeded = true
 	}
@@ -136,39 +175,98 @@ func (t *transcript) note(kind string, fields map[string]any, force bool) int64 
 	if err != nil {
 		t.mu.Lock()
 		defer t.mu.Unlock()
+		t.fail(err)
 		return t.size
 	}
 	return t.write(b, force)
 }
 
-// Output appends one line of process output, tagged with its stream and the
-// phase that produced it (the step's own command, or its check), and reports
-// the offset past it.
-func (t *transcript) Output(phase, stream, text string) int64 {
-	return t.Note("output", map[string]any{"phase": phase, "stream": stream, "text": text})
+// outputFields is one record of process output, tagged with its stream and
+// the phase that produced it (the step's own command, or its check).
+//
+// partial marks a piece of a line too long to record whole: the next output
+// record on the same phase and stream continues it (#139, §12.2). It is
+// absent rather than false on an ordinary line, so the common record keeps
+// the shape every reader already knows.
+//
+// One map serves the transcript record and the §13.3 live chunk, which is
+// what keeps the durable and live shapes from drifting.
+func outputFields(phase, stream, text string, partial bool) map[string]any {
+	f := map[string]any{"phase": phase, "stream": stream, "text": text}
+	if partial {
+		f["partial"] = true
+	}
+	return f
 }
 
-// Close closes the file.
+// Close closes the file, latching a close failure into Err.
+//
+// It is idempotent, because runAttempt closes explicitly — before it judges
+// the attempt, so a close-time ENOSPC still reaches the outcome — while the
+// deferred close stays as the guard for every early return.
 func (t *transcript) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_ = t.f.Close()
+	if t.closed {
+		return
+	}
+	t.closed = true
+	if err := t.f.Close(); err != nil {
+		t.fail(err)
+	}
 }
 
-// outputTail keeps the last n lines of a process's output for the step's
-// result summary (§8.4 `.Steps`) and for the retry failure block (§8.4).
+// outputTailBytes bounds the tail by size as well as by line count.
+//
+// A line count alone stopped being a bound once capture kept over-long lines
+// instead of dropping them (#139): 200 chunks of `outputChunkBytes`, or 200
+// agent events each carrying a megabyte of text, is not a tail. What this
+// feeds is a template field and a prompt block (§8.4), so the size that
+// matters is bytes.
+const outputTailBytes = 256 * 1024
+
+// outputTail keeps the last n lines of a process's output, bounded by
+// outputTailBytes, for the step's result summary (§8.4 `.Steps`) and for the
+// retry failure block (§8.4).
 type outputTail struct {
-	limit int
-	lines []string
+	limit    int
+	maxBytes int
+	lines    []string
+	bytes    int
 }
 
-func newOutputTail(limit int) *outputTail { return &outputTail{limit: limit} }
+func newOutputTail(limit int) *outputTail {
+	return &outputTail{limit: limit, maxBytes: outputTailBytes}
+}
 
 func (o *outputTail) add(line string) {
 	o.lines = append(o.lines, line)
-	if len(o.lines) > o.limit {
-		o.lines = o.lines[len(o.lines)-o.limit:]
+	o.bytes += len(line) + 1
+	for len(o.lines) > 1 && (len(o.lines) > o.limit || o.bytes > o.maxBytes) {
+		o.bytes -= len(o.lines[0]) + 1
+		o.lines = o.lines[1:]
 	}
+	// One line over the bound on its own is cut to its own tail rather than
+	// dropped: dropping it would leave the tail empty, which says less than
+	// its last kilobytes do.
+	if len(o.lines) == 1 && len(o.lines[0]) > o.maxBytes {
+		o.lines[0] = tailBytes(o.lines[0], o.maxBytes)
+		o.bytes = len(o.lines[0]) + 1
+	}
+}
+
+// tailBytes returns the last n bytes of s, moved forward to a rune boundary
+// so the result is still valid UTF-8 — it lands in JSON and in a SQLite TEXT
+// column, and half a rune is not text.
+func tailBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := len(s) - n
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	return s[cut:]
 }
 
 func (o *outputTail) String() string { return strings.Join(o.lines, "\n") }

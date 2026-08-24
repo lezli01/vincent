@@ -363,6 +363,17 @@ A step **succeeds** iff:
 2. **`command` step:** the command exits 0; **and** any declared `check` exits 0.
 3. **`manual` step:** the engineer approves the gate.
 
+**…and in every case its output was captured and persisted.** *Added 2026-08-24
+(#139).* Success is a claim about the run *and* about the record of it. An
+attempt whose stream vincent could not read to the end, or whose transcript
+could not be written or closed, fails with `transcript_io_error` (§12.2, §18)
+rather than being judged from its exit status alone. The original wording made
+exit 0 sufficient, which let a step whose megabyte-long output was thrown away
+land as `succeeded` with nothing a client could query saying the record was
+incomplete. Note the limit this is *not*: an over-long line is captured in
+bounded pieces, not failed — `transcript_max_bytes` (§12.3) remains the only
+size-based failure.
+
 Checks run in the worktree with the same environment as command steps (§8.5). Check
 stdout/stderr are captured to the step transcript.
 
@@ -401,9 +412,15 @@ stdout/stderr are captured to the step transcript.
   Everything else is vincent failing to **run** the step —
   `agent_unavailable`, `agent_unauthenticated`, `restricted_unsupported`,
   `input_unsupported`, `platform_unsupported`, `invalid_snapshot`,
-  `template_error`, `condition_error` — and is never swallowed: a workflow must
-  not be able to branch on "the CLI is not installed" as though that were a
-  test result. `usage_limit` and `interrupted` are untouched for a different
+  `template_error`, `condition_error`, and (*added 2026-08-24, #139*)
+  `transcript_io_error` and `agent_protocol_error` — and is never swallowed: a
+  workflow must not be able to branch on "the CLI is not installed" as though
+  that were a test result. The two added reasons are vincent failing to
+  **record** the step rather than to run it, which is the same rule read once
+  more: "the disk filled up" is not a test result either, and a guard that
+  reads a row whose evidence is missing is reading nothing. Both run this
+  section's budget in full — a new attempt writes a new transcript, which is
+  exactly what clears a transient one. `usage_limit` and `interrupted` are untouched for a different
   reason: this section already says they are not failures.
 
   It is orthogonal to the retry budget, which runs first and in full. A probe
@@ -2213,6 +2230,32 @@ platform the standing answer to an agent that will not resolve is the §12.3
   logs/daemon.log            # rotated, size-capped
 ```
 
+**What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
+transcript is the complete record of one attempt: agent stream lines verbatim,
+command and check output, and vincent's own `vincent.*` annotations. Three
+limits are stated rather than assumed:
+
+- **A line is not a unit of capture.** Command output longer than one record
+  is written as a run of `vincent.output` records marked `partial`, in order,
+  on one stream. Rejoining them in order reproduces the line. Nothing is
+  dropped and nothing is truncated to make a line fit.
+- **Incompleteness is never silent.** A failed write, encode or close latches
+  on the transcript, and the attempt fails `transcript_io_error` (§7.1, §18)
+  instead of reporting a success over a record that is missing the run it
+  describes. `Close` is checked, because a buffered filesystem reports ENOSPC
+  there and nowhere else.
+- **Persisted, not fsynced.** vincent writes and closes, and checks both. It
+  does not fsync per line; a transcript can therefore lose its tail to a host
+  that loses power, and an audit-grade durability mode is a separate decision.
+
+The one size-based exception stays §12.3's `transcript_max_bytes`: past the cap
+the run is killed and the attempt fails `transcript_limit`, with the partial
+transcript kept.
+
+Live-output offsets (§13.3) never over-claim: an append advances the published
+offset by the bytes the write actually returned, so an offset always names a
+position the file has reached.
+
 ### 12.3 Configuration (`config.yaml`)
 
 ```yaml
@@ -3324,6 +3367,9 @@ currently true to show (§15 view 6).
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
+| A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
+| A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
+| An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |
 | Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |

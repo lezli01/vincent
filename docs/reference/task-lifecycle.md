@@ -164,6 +164,8 @@ same thing wherever it originated.
 | `loop_limit` | A `loop` step cannot run within `max_iterations`: a `for_each` list longer than the ceiling, or a `count:` the ceiling moved under. It blocks rather than truncating or advancing — running out of tries is not a decision the workflow made, and advancing would tell every later guard the work is finished. Raise `max_iterations:` on the step or `loop.max_iterations` in config, or narrow the list at its source |
 | `restricted_unsupported` | The adapter cannot restrict on this platform (cursor on Windows) |
 | `transcript_limit` | The attempt hit `transcript_max_bytes` |
+| `transcript_io_error` | The attempt's transcript could not be written, encoded or closed — a full disk, a revoked permission, a short write. The step fails rather than reporting a success over a record that is missing the run it describes. Retries as usual (a new attempt writes a new file), then blocks. **Not** what an over-long line produces: those are captured in `partial` pieces |
+| `agent_protocol_error` | vincent could not read the agent's stream to the end, so the transcript is missing lines the CLI wrote. Not `agent_error` — the CLI may have behaved perfectly; the reader that failed is vincent's |
 | `shell_unavailable` | The requested shell is not installed |
 | `rejected` | You rejected a manual gate |
 | `canceled` | You cancelled the task |

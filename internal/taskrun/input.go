@@ -29,6 +29,7 @@ var (
 	errInputTimeout    = errors.New("input timeout")
 	errInputProtocol   = errors.New("input protocol error")
 	errTranscriptLimit = errors.New("transcript limit")
+	errTranscriptIO    = errors.New("transcript i/o error")
 )
 
 // PendingInput is the normalized input request as persisted in
