@@ -363,6 +363,11 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	if isTaskEvent(ev.Event.Type) {
 		cmds = append(cmds, b.scheduleRefresh())
 	}
+	if ev.Event.Type == eventAgentQuotaChanged {
+		// The header's agent badges come from /v1/info, not from the task
+		// list, so this refetches that rather than the rows (task 026).
+		cmds = append(cmds, b.infoCmd())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -886,6 +891,7 @@ func (b *board) agentsSummary() string {
 	if len(b.info.Agents) == 0 {
 		return styleDim.Render("no adapters")
 	}
+	now := b.now()
 	parts := make([]string, 0, len(b.info.Agents))
 	for _, a := range b.info.Agents {
 		switch {
@@ -895,6 +901,13 @@ func (b *board) agentsSummary() string {
 			// Present but unable to run a step (§9.5) — the board's one-glance
 			// summary must not read as healthy.
 			parts = append(parts, styleWarn.Render(a.Name+" ⚠"))
+		case a.QuotaSpent(now):
+			// Installed, authenticated, and out of quota until a stated time
+			// (task 026). It ranks below the other two because it is
+			// temporary and self-clearing, and it ranks above ✓ because a
+			// tick here is the answer to "why is nothing running" being wrong.
+			// Admission is untouched: this warns, it does not withhold.
+			parts = append(parts, styleWarn.Render(a.Name+" "+quotaBadge(a.Quota, now)))
 		default:
 			parts = append(parts, styleOK.Render(a.Name+" ✓"))
 		}

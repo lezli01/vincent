@@ -5,8 +5,8 @@
 # awaiting_input → answer → resume (scenario 1), that kill -9 mid-step
 # recovers correctly (scenario 2), and that both concurrency caps hold under
 # load (scenario 3), that branch naming and its recovery path hold (scenario
-# 4), that an agent usage limit re-queues rather than blocks and recovers
-# unattended (scenario 5), and that archiving deletes a branch that carries no
+# 4), that an agent usage limit re-queues rather than blocks, is reported per
+# adapter on /v1/agents, and recovers unattended (scenario 5), and that archiving deletes a branch that carries no
 # commits past its base while keeping every branch that does (scenario 6), and
 # that a workflow restricted to other platforms is listed but never offered here
 # (scenario 7), and that a step requiring mid-run interaction refuses an agent
@@ -642,6 +642,28 @@ EOF
   [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
     || fail "a quota-held task must not carry a block_reason: $task"
 
+  # Captured here rather than after the step assertions: the recheck interval
+  # is two seconds, so the successful re-run that clears the observation is
+  # already on its way. Task 026's claim is that the fact *outlives the hold*,
+  # and the hold is what was just detected.
+  echo "== the daemon reports the spent window per adapter (task 026)"
+  local quota
+  quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+  [[ "$quota" != "null" && -n "$quota" ]] \
+    || fail "GET /v1/agents carries no quota block while a task is held on one"
+  [[ "$(jq -r .source <<<"$quota")" == "observed" ]] \
+    || fail "quota.source = $(jq -r .source <<<"$quota"), want observed: $quota"
+  # This scenario sets no FAKEAGENT_USAGE_LIMIT_RESET, so the reset is the
+  # recheck interval's estimate and must not claim the CLI stated it.
+  [[ "$(jq -r .resets_at_reported <<<"$quota")" == "false" ]] \
+    || fail "quota.resets_at_reported is true for a reset the CLI never named: $quota"
+  # Declared, permanently unfillable: no CLI has a non-interactive quota
+  # surface, and a zero here would read as "empty" (§9.2/§9.3/§9.7).
+  [[ "$(jq -r .used_percent <<<"$quota")" == "null" ]] \
+    || fail "quota.used_percent is not null: $quota"
+  [[ "$(jq -r .window <<<"$quota")" == "null" ]] \
+    || fail "quota.window is not null: $quota"
+
   echo "== assert the attempt is recorded interrupted and spent no retry"
   local steps
   steps="$(api GET "/tasks/$walled/steps")"
@@ -660,6 +682,12 @@ EOF
   [[ "$(jq -r '.[1].state' <<<"$steps")" == "succeeded" ]] || fail "the re-run did not succeed: $steps"
   [[ "$(api GET "/tasks/$walled" | jq -r '.queued_reason // "null"')" == "null" ]] \
     || fail "the hold outlived the queued period it belonged to"
+
+  # And the observation goes with it. A successful run on that adapter is
+  # first-hand evidence the window reopened, which matters most here: this
+  # reset was an estimate, so nothing else would ever retire it (task 026).
+  [[ "$(api GET /agents | jq -r '.agents[] | select(.name == "claude") | .quota')" == "null" ]] \
+    || fail "the observed window outlived the successful re-run"
 
   "$VINCENT" daemon stop
   unset FAKEAGENT_SCENARIO FAKEAGENT_USAGE_LIMIT_MARKER

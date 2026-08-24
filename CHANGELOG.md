@@ -51,6 +51,24 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Each agent's usage window is reported in the daemon and TUI.** When an agent
+  CLI stops because the account's quota for the window is spent, vincent now
+  remembers *which adapter* it was and when it resets, instead of losing that
+  the moment the held task moves on. The board header badges the agent
+  (`claude ⏳14:20` in place of `claude ✓`), the daemon view names the reset
+  beside path, version and login state, and the new-task form warns before you
+  queue more work against a spent window. `→` marks a reset the CLI stated and
+  `≈` one vincent estimated from `usage_limit_recheck_interval`, so an estimate
+  is never presented as a fact. The warning is advisory only: nothing is
+  refused, admission and both concurrency caps are unchanged, and the next
+  successful step on that adapter clears the badge. `GET /v1/agents` and
+  `GET /v1/info` carry it as a nullable `quota` block, and `agent.quota_changed`
+  announces every change on the event stream. There is no probe and no
+  percentage: no CLI vincent supports can report remaining quota without
+  actually running, and vincent reports what it has watched rather than a
+  number it would have to invent.
+  ([#179](https://github.com/lezli01/vincent/issues/179))
+
 - **Ad-hoc repair agents for a blocked task.** A blocked task now offers a
   `repair` action (`R` in the TUI, `POST /v1/tasks/{id}/repair`) that runs one
   throwaway agent in the task's existing worktree and branch, with the prompt
@@ -69,6 +87,16 @@ list with the user-facing context a commit subject cannot carry.
   remain accepted and recorded on the task.
 
 ### Fixed
+
+- **Logging in to an agent CLI is noticed within five minutes.** Adapter probe
+  results are cached by binary identity, which is exact for the model and effort
+  catalogs but only a floor for authentication — nothing about the binary
+  changes when you log in, so `logged_in: false` survived on the board, the
+  detail view and the new-task form until the CLI was upgraded or
+  `?refresh=true` was passed. `vincent doctor` was the only surface that told
+  the truth. That one field now has a five-minute freshness window of its own;
+  the option catalog is untouched, and a refresh that fails keeps the previous
+  answer rather than downgrading a logged-in account to "not authenticated".
 
 - **A human action racing scheduler admission no longer fails with a state
   conflict.** Cancelling or pausing a queued task at the moment the scheduler

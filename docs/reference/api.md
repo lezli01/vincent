@@ -70,7 +70,8 @@ parse out of prose — an invalid state transition is always `409` with
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
     "default_model": "", "default_effort": "",
-    "probed_at": "2026-08-07T10:00:00Z", "probe_error": null } ] }
+    "probed_at": "2026-08-07T10:00:00Z", "probe_error": null,
+    "quota": null } ] }
 ```
 
 `source` is provenance: `cli` was discovered from the installed binary,
@@ -82,6 +83,48 @@ surface) and a definite boolean where it does (**codex** via `login status`,
 **cursor** via `status`) — because an installed-but-unauthenticated CLI probes
 as healthy and then fails every run. It is never guessed: a probe that times out
 or cannot be spawned reports `null`, not `false`.
+
+### Usage quota
+
+`quota` is what the daemon has **watched happen** to that adapter's usage
+window. It is an observation, not a measurement: none of `claude`, `codex` or
+`cursor` can report remaining quota from a non-interactive invocation, so
+vincent reports the `usage_limit` stops it has seen for itself rather than a
+number nothing can produce.
+
+```json
+"quota": {
+  "spent": true,
+  "used_percent": null,
+  "window": null,
+  "observed_at": "2026-08-24T14:05:00Z",
+  "resets_at": "2026-08-24T14:20:00Z",
+  "resets_at_reported": true,
+  "source": "observed"
+}
+```
+
+- `null` — never a zeroed block — means nothing has ever been observed for that
+  adapter, which is the normal state. A zero would read as "empty quota".
+- `spent` is derived per request (`now < resets_at`). A window that has reset
+  does **not** delete the observation: `spent: false` with `observed_at` and
+  `resets_at` intact is how "this adapter ran out at 14:05 and has since
+  recovered" is said.
+- `resets_at_reported` separates a fact from an estimate. `true` means the CLI
+  named the reset; `false` means
+  [`usage_limit_recheck_interval`](configuration.md) supplied it, and a client
+  must not render a computed guess as something the CLI stated.
+- `used_percent` and `window` are permanently `null`. They are declared so a
+  client written against this shape keeps working the day a vendor ships a
+  quota surface, at which point they fill in and `source` changes.
+- `source` is `observed` for everything written today.
+- An observation is **retired by evidence**: the next successful agent step on
+  that adapter deletes it. Nothing sweeps it on a timer.
+
+The same block rides `GET /v1/info` per adapter, so a client rendering a badge
+from `/v1/info` needs no second fetch. Both are served from one read, so the two
+endpoints can never disagree. Changes are announced by the
+[`agent.quota_changed`](#events-sse) event.
 
 ## Doctor
 
@@ -514,7 +557,7 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 ```
 task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.children_changed   project.*
-workflow.registry_changed                       daemon.shutting_down
+workflow.registry_changed  agent.quota_changed  daemon.shutting_down
 ```
 
 Payloads carry ids and the new state, not full objects — clients re-fetch what
@@ -535,6 +578,12 @@ they need.
   transitions — re-fetch the `children` rollup when you see one. It exists
   because the per-task stream filters on `task_id` alone, so a root's stream
   would otherwise never see a depth-2 transition.
+- `agent.quota_changed` carries `{ agent, spent, resets_at, source }` and no
+  `task_id`: the fact is about an adapter, not about any one task. It is
+  emitted when a `usage_limit` stop is observed and when a successful run
+  retires an observation — never on a re-observation identical to what is
+  already stored, and never merely because a window lapsed. Re-fetch
+  [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
 
 ### Live output — ephemeral
 

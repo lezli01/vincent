@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -385,10 +386,65 @@ func (n *newTask) overrideSummary(v string, field func(apiclient.ResolvedStep) *
 // because an unresolved agent still names a value — §8.6 level 4 is the
 // daemon's default adapter, not "nothing".
 func (n *newTask) agentSummary() string {
+	out := styleDim.Render("(workflow default" + n.resolvedAgents() + ")")
 	if n.agent != "" {
-		return n.agent
+		out = n.agent
 	}
-	return styleDim.Render("(workflow default" + n.resolvedAgents() + ")")
+	if note := n.quotaAdvisory(time.Now()); note != "" {
+		out += "  " + styleWarn.Render(note)
+	}
+	return out
+}
+
+// quotaAdvisory warns, at the moment of choice, that the adapter this task
+// would run on is out of quota until a stated time (task 026).
+//
+// It **warns and nothing more**: the form still submits, the daemon still
+// admits, and the task will park on the same `usage_limit` hold task 003
+// already handles. That is task 003's recorded decision 4 (no pre-flight
+// refusal) unchanged — the point here is that the user finds out before
+// queueing a batch rather than by watching it park.
+//
+// A window that has already reset says nothing: this row is a decision aid,
+// and "ran out an hour ago, fine now" is not a reason to hesitate.
+func (n *newTask) quotaAdvisory(now time.Time) string {
+	var names, spent []string
+	for _, name := range n.effectiveAgents() {
+		ag, ok := n.agents.Find(name)
+		if !ok || !ag.QuotaSpent(now) {
+			continue
+		}
+		until := "until " + ag.Quota.ResetsAt.Local().Format("15:04")
+		names = append(names, name)
+		spent = append(spent, name+" "+until)
+	}
+	switch len(spent) {
+	case 0:
+		return ""
+	case 1:
+		// One adapter reads as a sentence about the row it is on, which is the
+		// shape the workflow row's `· needs an interactive agent` already
+		// uses; the row already names the adapter, so this does not repeat it.
+		return "· usage limit " + strings.TrimPrefix(spent[0], names[0]+" ")
+	default:
+		return "· usage limit: " + strings.Join(spent, ", ")
+	}
+}
+
+// effectiveAgents names the adapters this draft would actually run on: the
+// override when one is set, and otherwise whatever the daemon's own §8.6
+// resolution says the workflow's agent steps resolve to. Before that
+// resolution lands there is nothing to warn about — guessing at level 4 here
+// is exactly what T4.7 moved to the daemon.
+func (n *newTask) effectiveAgents() []string {
+	if n.agent != "" {
+		return []string{n.agent}
+	}
+	res, ok := n.resolved()
+	if !ok {
+		return nil
+	}
+	return res.Agents()
 }
 
 // resolvedAgents renders the distinct agents the draft's agent steps resolve

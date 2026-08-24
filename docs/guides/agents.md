@@ -33,6 +33,7 @@ silently drops.
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **fails on Windows** |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
+| Reports **remaining** quota without running | — | — | — |
 
 `vincent daemon status`, the TUI's daemon view, and `GET /v1/agents` all report
 what vincent actually resolved on your machine — path, version, and the model
@@ -238,6 +239,42 @@ cache.
 If a service-installed daemon reports agents as missing while the same daemon
 started by hand finds them, that is a `PATH` capture problem — see
 [Running at login](running-at-login.md#path-too-on-macos-and-linux).
+
+`logged_in` gets its own five-minute freshness window inside that cache. Binary
+identity is exact for `--help` output and only a floor for auth state — nothing
+about the binary changes when you log in — so past five minutes vincent re-asks
+that one question and leaves the option catalog alone. A re-ask that fails keeps
+the previous answer rather than downgrading it, for the same reason the probe
+never guesses.
+
+### Nobody can tell you how much quota is left
+
+No CLI vincent supports answers "how much quota do I have?" from a
+non-interactive invocation. `claude` has no `usage` or `limits` command,
+`codex` has neither, and `cursor-agent about --format json` reports a plan tier
+and no numbers. vincent does not emulate what an adapter cannot do, so there is
+no probe and no percentage.
+
+What it does instead is remember. When an agent stops on a spent window, the
+daemon records that per adapter — when it was seen, when it resets, and whether
+the CLI named that reset or vincent estimated it from
+[`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval).
+That observation outlives the task's own wait, so:
+
+- the board header badges the adapter — `claude ⏳14:20` instead of `claude ✓`;
+- the daemon view spells it out beside path, version and login state, with `→`
+  for a reset the CLI stated and `≈` for one vincent estimated, and says
+  `quota unknown` for an adapter nothing has been observed for;
+- the new-task form warns under the agent row — `· usage limit until 14:20`.
+
+The warning is advisory. The form still submits, admission is unchanged, and a
+task queued against a spent window simply parks on the ordinary
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing). The next
+successful step on that adapter retires the observation, so an estimate is never
+left standing over a CLI that is visibly working.
+
+`GET /v1/agents` and `GET /v1/info` carry it as
+[`quota`](../reference/api.md#usage-quota).
 
 ## Choosing models and effort
 

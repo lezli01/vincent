@@ -1689,6 +1689,16 @@ every consumer that assumed two adapters.
   the adapter cannot parse fails the attempt with `input_protocol_error`, never
   hangs; an inbound `control_cancel_request` withdrawing the pending request
   resumes the run (`input_closed`).
+- **No non-interactive quota surface** (*added 2026-08-24, task 026*). Against
+  claude 2.1.241 the subcommands are `agents auth auto-mode doctor gateway
+  import install mcp plugin project setup-token ultrareview update` — there is
+  no `usage` and no `limits`. "How much quota is left" is therefore not a
+  question this adapter can answer, and per the standing rule a capability an
+  adapter lacks is stated here and **not emulated**: `AgentAdapter` gains no
+  quota method and this adapter grows no quota parser. What vincent reports
+  instead is what it has watched happen — the `usage_limit` stops this adapter
+  already classifies, recorded per adapter and served as `quota` on §9.6
+  (task 026).
 
 ### 9.3 Codex adapter
 
@@ -1722,6 +1732,13 @@ every consumer that assumed two adapters.
   `true`, timeout or spawn failure `null`. The logged-out wording is not
   fixture-verified, which is why the unknown leg is load-bearing rather than
   defensive.
+- **No non-interactive quota surface** (*added 2026-08-24, task 026*). codex
+  0.149.0 has no `usage` and no `limits` subcommand; `login status` and
+  `doctor` are the whole diagnostic surface. Same conclusion as §9.2: stated
+  here, not emulated. codex additionally does not classify a quota stop at all
+  (§18) — it surfaces as `agent_error` or `nonzero_exit` — so this adapter
+  contributes no observations either, and its `quota` is `null` on §9.6 until
+  that changes.
 
 ### 9.4 Permission modes
 
@@ -1793,7 +1810,8 @@ defaults:
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
     "default_model": "", "default_effort": "",
-    "probed_at": "2026-08-07T10:00:00Z", "probe_error": null } ] }
+    "probed_at": "2026-08-07T10:00:00Z", "probe_error": null,
+    "quota": null } ] }
 ```
 
 - **`input_verdict`** (added 2026-08-17, task 013) is the daemon's answer to
@@ -1852,6 +1870,76 @@ defaults:
   every surface rather than one and is the better follow-up if the board's
   staleness becomes a complaint of its own; it was beaten here because it
   splits a cache line that is currently one clean rule.
+
+  *Amended 2026-08-24 (task 026): `logged_in` now has that per-field TTL, and
+  this decision is superseded rather than relitigated.* The follow-up the note
+  named is implemented: an entry that is otherwise a cache hit but whose
+  `logged_in` is older than **`authTTL` = 5 minutes** re-runs **`Detect` only**.
+  The option catalog keeps binary identity as its key, which is exact for it —
+  help output really is a pure function of the binary — so the cache line is
+  split along the seam that was already there rather than abandoned. The
+  trigger for doing it now is that the board grew a second per-adapter fact
+  (`quota`, below) and a staleness rule that fixed one surface and not the
+  others stopped being defensible. Only adapters that *can* answer are
+  re-asked: an adapter whose `logged_in` is nil has no auth state to go stale,
+  and spawning a subprocess every five minutes to be told nothing again is pure
+  cost. Five minutes is chosen the way `failureTTL`'s minute was — long enough
+  that a board, a detail view and a new-task form asking in the same second
+  cost one probe between them, short enough that a user who logs in and looks
+  again is told the truth. **A failed re-`Detect` keeps the previous
+  availability, including its `logged_in`, and records the error**: that is
+  T4.22's rule applied to the field the TTL exists for, since a Windows
+  deadline is `TerminateProcess(pid, 1)` and reading that as "not
+  authenticated" is a false accusation against a logged-in account. The clock
+  is stamped either way, so a persistently failing probe costs one subprocess
+  per `authTTL`, not one per request. `GET /v1/doctor` keeps forcing refresh
+  unconditionally — a command the user ran deliberately does not wait out a TTL.
+
+- **`quota`: the observed usage window** (*added 2026-08-24, task 026*). Each
+  adapter carries a nullable block describing what the daemon has **watched
+  happen** to its usage window:
+
+  ```json
+  "quota": { "spent": true, "used_percent": null, "window": null,
+             "observed_at": "2026-08-24T14:05:00Z",
+             "resets_at": "2026-08-24T14:20:00Z",
+             "resets_at_reported": true, "source": "observed" }
+  ```
+
+  It is an observation, never a probe. No supported CLI can report remaining
+  quota from a non-interactive invocation (§9.2, §9.3, §9.7), so there is no
+  quota capability on `AgentAdapter`, no caller in `agent.Probe`, and no quota
+  parser in any adapter — shipping the seam with three null implementations
+  would cost an interface change and three "cannot report" paragraphs in
+  exchange for four permanently-unknown renders. What exists instead is the
+  `usage_limit` stop task 003 already recognizes (§18), made durable per
+  adapter (§14) and published on change (§13.3).
+
+  - `null`, never a zeroed block, means nothing has been observed for that
+    adapter. A zero would read as "empty quota", which is the opposite.
+  - `spent` is derived per request (`now < resets_at`). A lapsed reset does
+    **not** delete the row: `spent: false` with the timestamps intact is how
+    "ran out at 14:05, has since recovered" is said. There is no sweeper and no
+    timer.
+  - `resets_at_reported` separates a fact from an estimate — `true` when the
+    CLI named the reset, `false` when `usage_limit_recheck_interval` (§12.3)
+    supplied it. §15 renders `→` for the first and `≈` for the second; a
+    computed 15-minute guess must never be shown as something the CLI stated.
+  - `used_percent` and `window` are permanently null. They are on the wire so a
+    client is written once against the final shape, and fill in the day a
+    vendor ships a surface, at which point `source` changes from `observed`.
+  - An observation is **retired by evidence**: the next successful agent step
+    on that adapter deletes it, because a hold with no reported reset is only
+    an estimate and a step that completes proves the window reopened.
+  - The same block rides `GET /v1/info` per adapter, from the same read, so the
+    board header (which fetches /v1/info) needs no second request and the two
+    endpoints cannot disagree.
+  - **Probe-failure degradation is untouched.** Nothing here can fail a probe,
+    and `probe_error` keeps meaning exactly "the option probe failed and you
+    are reading the curated catalog".
+  - **§11 is unchanged.** This is display. Admission ordering, both concurrency
+    caps and the walk's pause→hold→caps sequence are as they were; a
+    near-exhausted agent is shown, never withheld.
 
 ### 9.7 Cursor adapter (M5)
 
@@ -1979,6 +2067,14 @@ would invalidate every one of them.
   (§9.5). *Note (2026-08-15, task 005):* codex has since gained the same
   ability through `codex login status`, built as a copy of this probe's
   layering. "First" is history, not an exclusive.
+- **A plan tier, not a quota** (*added 2026-08-24, task 026*).
+  `cursor-agent about --format json` (2026.08.11-e8db854) reports
+  `{cliVersion, model, subscriptionTier, osPlatform, osArch, userEmail,
+  terminalProgram, shell, lastRequestId}` — the closest thing any supported CLI
+  has to a quota surface, and it carries no numbers: no remaining requests, no
+  window, no reset. It cannot answer "how much is left", so per §9.2's rule it
+  is stated and not emulated. Like codex, cursor does not classify a quota stop
+  (§18), so it contributes no observations to §9.6's `quota` either.
 
 ## 10. Worktree management
 
@@ -2831,7 +2927,18 @@ Two kinds of streams:
    nothing. Types:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.children_changed`, `project.*`, `workflow.registry_changed`,
-   `daemon.shutting_down`.
+   `agent.quota_changed`, `daemon.shutting_down`.
+   (`agent.quota_changed` — *added 2026-08-24, task 026* — carries
+   `{agent, spent, resets_at, source}` and, like `workflow.registry_changed`,
+   no `task_id` and no `project_id`: the fact is about an adapter, not about
+   any one task. It is appended when the §14 `agent_quota` upsert actually
+   changed a value or the clear actually deleted one — **never** on a
+   re-observation identical to what is stored, so a client that refetches on it
+   is not woken by news it already has, and never merely because a window
+   lapsed. Reusing `task.state_changed` was beaten because it makes every
+   client re-derive "a task hold implies an agent-level fact", which is the
+   kind of inference the daemon publishes rather than delegates.
+   `scheduler.WakeOn` is **false** for it: nothing about admission changes.)
    (`task.children_changed` — *added 2026-08-17, task 014* — carries
    `{task_id, child_id, to_state}` and is emitted on **every** fan-out ancestor
    when a descendant is created or transitions, so a client re-fetches the
@@ -2982,6 +3089,21 @@ CREATE TABLE events (
 );
 CREATE INDEX idx_events_task ON events(task_id, id);
 
+-- The daemon's last first-hand observation of an adapter's usage window
+-- (task 026, added 2026-08-24, migration 0011). One row per adapter, not per
+-- stop: this is current state, and current state is what every §15 surface
+-- wants. History on step_runs was beaten because every read would then be a
+-- scan-and-pick-latest per adapter; deriving it from held task rows with no
+-- schema at all was beaten because the signal vanishes the instant the last
+-- held task is admitted, which is exactly when the window is still shut.
+CREATE TABLE agent_quota (
+  agent              TEXT PRIMARY KEY,   -- adapter name, not a binary path
+  observed_at        TEXT NOT NULL,      -- when the stop was seen
+  resets_at          TEXT NOT NULL,      -- the effective reset the engine acted on
+  resets_at_reported INTEGER NOT NULL,   -- 1 = the CLI named it; 0 = usage_limit_recheck_interval supplied it
+  source             TEXT NOT NULL       -- 'observed'; the seam a probe would fill
+);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -2996,6 +3118,17 @@ makes "`pending_input_json` non-null iff `awaiting_input`" hold. `block_reason` 
 deliberately not overloaded for this: §14 says it is set while `state='blocked'`,
 clients key off it to mean exactly that, and a queued task carrying one would break
 them.
+
+*Added 2026-08-24 (task 026).* `agent_quota` carries no `used_percent` and no
+`window` column. Both exist on the §9.6 wire as permanent nulls so clients are
+written once against the final shape, but nothing can fill either, and a column
+with no writer is dead schema in an append-only migration set. The upsert is
+**monotonic** — an observation older than the stored one is discarded — so two
+actors hitting the same wall in the same second cannot make the state go
+backwards. The row is written by `internal/taskrun` alongside the §11 hold and
+deleted by the next successful agent step on that adapter; the daemon remains
+the single writer and the row is agent-scoped rather than task-scoped, so no
+taskrun or scheduler ownership invariant moves.
 
 ## 15. TUI
 
@@ -3158,6 +3291,37 @@ widening it for a rare state would cost every board the columns that get shed
 first. The **detail header**, which has the room, renders the full
 `queued · usage limit → 14:20`. Band ordering is unchanged: a held task stays in
 the queued band, in normal §11 order, because that is where it will run from.
+
+**The agent's window, not just the task's (task 026, added 2026-08-24).** The
+observation behind that hold is recorded per adapter (§14) and published on
+change (§13.3), which gives three surfaces something the task rows cannot say:
+
+- **Board header.** The per-agent summary grows a third badge beside `✓ / ⚠ /
+  ✗`: `claude ⏳14:20` for an adapter that is installed, authenticated, and out
+  of quota until a stated time. It ranks below `✗` (missing) and `⚠` (not
+  logged in) because it is temporary and self-clearing, and above `✓` because a
+  tick there is the wrong answer to "why is nothing running". The state column
+  is untouched — the constraint above still holds; this is the header line,
+  which already carries a per-agent summary. The board refetches `/v1/info` on
+  `agent.quota_changed`, and derives "still shut" from `resets_at` against its
+  own clock rather than from the wire's `spent`, because nothing is emitted
+  when a window merely lapses.
+- **Daemon view, agents panel.** The reset beside path, version and login
+  state, with the §9.6 provenance made visible: `usage limit → 14:20` for a
+  reset the CLI stated, `usage limit ≈ 14:20` for one
+  `usage_limit_recheck_interval` supplied. This is the one surface that renders
+  **"unknown" out loud** — a trailing `quota unknown` for an adapter nothing
+  has been observed for — because listing every fact about an adapter,
+  including the ones nobody has, is what this view is for. The board, which has
+  no room to explain, says nothing instead.
+- **New-task form.** An advisory under the agent row, in the shape the workflow
+  row already uses for `· needs an interactive agent`: `· usage limit until
+  14:20`, naming the adapter only when the draft resolves to more than one. It
+  **warns and submits** — task 003's decision 4 (no pre-flight refusal) stands,
+  and admission is untouched.
+
+The task detail header needs nothing: task 003's amendment above already gives
+it `queued · usage limit → 14:20`.
 
 **Grouping (task 009, added 2026-08-16).** The task table nests its rows under
 group headers, `[project, workflow]` by default: a board with more than one
@@ -3538,7 +3702,7 @@ currently true to show (§15 view 6).
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
-| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before |
+| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |

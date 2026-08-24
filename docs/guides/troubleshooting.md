@@ -484,6 +484,15 @@ know your plan's window, set that knob to match it.
 If you would rather not wait, cancel the task, or pause and resume it to try
 again immediately — any human action drops the wait.
 
+**The daemon remembers which adapter it was.** A human action drops the task's
+own wait, but the observation is per adapter and outlives it: the board header
+badges that agent (`claude ⏳14:20`), the daemon view names the reset beside its
+path and version, and the new-task form warns before you queue more work against
+the same window. `→` means the CLI stated that time; `≈` means vincent estimated
+it from the recheck interval. It clears itself the next time a step on that
+adapter succeeds — so if the badge is still up, nothing has proved otherwise yet.
+See [Agents › Nobody can tell you how much quota is left](agents.md#nobody-can-tell-you-how-much-quota-is-left).
+
 Only the claude adapter recognizes usage-limit wording today. On codex and
 cursor a quota stop still surfaces as `agent_error` or `nonzero_exit`, because
 their wordings have not been captured from a real run and vincent will not guess

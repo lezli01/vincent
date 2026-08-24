@@ -39,6 +39,7 @@ the living engineering specification records implementation contracts.
 | [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware Vincent workflow authoring skill | ✅ done (10/10) |
 | [024](024-create-workflow-builtin.md) | `create-workflow`, a built-in that writes workflows | ✅ done (7/7) |
 | [025](025-ad-hoc-repair-agent.md) | An ad-hoc repair agent for a blocked step | ✅ done (8/8) |
+| [026](026-agent-quota-visibility.md) | Reporting each agent's usage-quota state in the daemon and TUI | ✅ done (7/7) |
 
 ## How to add and update a task document
 

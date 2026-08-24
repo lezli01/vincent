@@ -69,22 +69,23 @@ func TestCatalogsCheck(t *testing.T) {
 // stubAdapter is a probe-counting Adapter for cache tests; its binary is a
 // plain temp file so identity checks exercise real stat calls.
 type stubAdapter struct {
-	name    string
-	path    string
-	pathErr error
-	av      Availability
-	opts    Options
-	optsErr error
-	curated Options
-	detects int
-	options int
+	name      string
+	path      string
+	pathErr   error
+	av        Availability
+	detectErr error
+	opts      Options
+	optsErr   error
+	curated   Options
+	detects   int
+	options   int
 }
 
 func (s *stubAdapter) Name() string { return s.name }
 
 func (s *stubAdapter) Detect(context.Context) (Availability, error) {
 	s.detects++
-	return s.av, nil
+	return s.av, s.detectErr
 }
 
 func (s *stubAdapter) Options(context.Context) (Options, error) {

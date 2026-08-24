@@ -49,7 +49,59 @@ type Agent struct {
 	// to the curated catalog. The entry is still usable; the options are just
 	// not first-hand.
 	ProbeError *string `json:"probe_error"`
+	// Quota is the adapter's usage window as the daemon last observed it
+	// (task 026), or nil when nothing has ever been observed for it — which
+	// is the normal state and must render as "unknown", never as "empty".
+	Quota *AgentQuota `json:"quota"`
 }
+
+// AgentQuota is what the daemon knows about one adapter's usage window
+// (task 026, §9.6). It is an *observation*, not a measurement: no CLI vincent
+// ships can report remaining quota without a real run, so this is the durable
+// record of the `usage_limit` stops the daemon has watched happen.
+type AgentQuota struct {
+	// Spent is the daemon's answer as of the response: the observed window
+	// has not reset yet. False with the rest of the block populated means
+	// "this adapter last ran out at ObservedAt and has since recovered".
+	Spent bool `json:"spent"`
+	// UsedPercent and Window are permanently null today — nothing can fill
+	// them (§9.2, §9.3, §9.7). They are declared so a client written now
+	// against this shape keeps working the day a CLI ships a quota surface.
+	UsedPercent *float64  `json:"used_percent"`
+	Window      *string   `json:"window"`
+	ObservedAt  time.Time `json:"observed_at"`
+	ResetsAt    time.Time `json:"resets_at"`
+	// ResetsAtReported separates a fact from an estimate: true when the CLI
+	// named the reset time, false when the daemon's
+	// `usage_limit_recheck_interval` supplied it. A renderer must not show a
+	// computed 15-minute guess as something the CLI stated.
+	ResetsAtReported bool `json:"resets_at_reported"`
+	// Source is "observed" for everything written today.
+	Source string `json:"source"`
+}
+
+// QuotaSourceObserved is a window the daemon watched close, as opposed to one
+// a probe reported. It is the only source anything sends today.
+const QuotaSourceObserved = "observed"
+
+// SpentAt reports whether the observed window is still shut as of now.
+//
+// It re-derives the answer from ResetsAt rather than trusting the wire's
+// Spent, which is the daemon's answer *at fetch time*. Nothing is emitted when
+// a window merely lapses — there is no sweeper and no timer on the daemon side
+// (task 026) — so a client that trusted Spent would keep a badge on screen
+// long after the window reopened. Spent stays on the wire because a
+// non-subscribing client (curl, a script) wants the daemon's reading, not a
+// clock comparison it has to write itself.
+func (q *AgentQuota) SpentAt(now time.Time) bool {
+	return q != nil && now.Before(q.ResetsAt)
+}
+
+// QuotaSpent reports an adapter whose usage window is still shut as of now. An
+// adapter with no observation answers false: never having run out is not the
+// same as being fine, but it is the only honest default, and a badge on it
+// would be a fabrication.
+func (a Agent) QuotaSpent(now time.Time) bool { return a.Quota.SpentAt(now) }
 
 // Agents is the adapter catalog indexed by name, in the daemon's
 // registration order.

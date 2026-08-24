@@ -19,6 +19,18 @@ const (
 	EventProjectDeleted          = "project.deleted"
 	EventWorkflowRegistryChanged = "workflow.registry_changed"
 	EventDaemonShuttingDown      = "daemon.shutting_down"
+	// EventAgentQuotaChanged announces that what the daemon knows about an
+	// adapter's usage window changed (task 026): a quota stop was observed,
+	// or a successful run proved the window reopened. Payload
+	// `{agent, spent, resets_at, source}`; it carries no task_id, like
+	// workflow.registry_changed, because the fact is about an adapter rather
+	// than about any one task.
+	//
+	// It is emitted only on a real change — never on a re-observation
+	// identical to what is stored — and `scheduler.WakeOn` is false for it:
+	// nothing about admission changes when an agent is near-spent. The
+	// near-exhausted agent is displayed, never withheld.
+	EventAgentQuotaChanged = "agent.quota_changed"
 )
 
 // SetEventHook registers fn to run after an event's transaction commits.

@@ -337,6 +337,12 @@ func TestWakeOnFiltersEvents(t *testing.T) {
 		{store.EventTaskPriorityChanged, true},
 		{"step.started", false},
 		{"gate.waiting", false},
+		// Task 026: an agent running out of quota is a *display* fact. It
+		// changes nothing about admission — both caps, the ordering and the
+		// walk's pause→hold→caps sequence are untouched, and the
+		// near-exhausted agent is shown, never withheld. Waking the loop on
+		// it would spin it for nothing.
+		{store.EventAgentQuotaChanged, false},
 	}
 	for _, c := range cases {
 		if got := WakeOn(&store.Event{Type: c.evType}); got != c.want {

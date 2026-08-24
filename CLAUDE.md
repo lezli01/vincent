@@ -115,7 +115,7 @@ exit 126 before running an assertion.
 
 `scripts/screenshots.sh` is the other seeding script, and the **only** source of
 the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
-its own config and data dirs, seven git repos, a daemon, thirteen tasks covering
+its own config and data dirs, seven git repos, a daemon, fourteen tasks covering
 every state — and photographs the running TUI with VHS (`brew install vhs`).
 Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
 "example" frames. If a panel changed, re-run the script:

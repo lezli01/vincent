@@ -129,6 +129,18 @@ type CatalogEntry struct {
 	Options      Options
 	ProbedAt     time.Time
 	ProbeError   string // "" = clean probe
+	// AuthCheckedAt is when Detect last ran for this entry — the full probe,
+	// or a Detect-only auth refresh (task 026). It is what authTTL is measured
+	// from, and is deliberately separate from ProbedAt, which dates the
+	// *catalog*: the options are still exactly as fresh as the binary.
+	AuthCheckedAt time.Time
+	// AuthError records a Detect-only auth refresh that failed. The entry
+	// keeps its previous availability when that happens, including its
+	// `logged_in` — see redetect. It is not served on the wire: §9.6's
+	// `probe_error` means "the option probe failed and you are reading the
+	// curated catalog", and widening it to cover a freshness check would
+	// change what every existing client thinks it is being told.
+	AuthError string
 }
 
 // InputVerdict is this entry's answer to "can this adapter be asked a
@@ -184,6 +196,23 @@ type catalogSlot struct {
 // spawns anything.
 const failureTTL = time.Minute
 
+// authTTL is how long a *clean* entry's `logged_in` is trusted before Detect
+// is re-run for it alone (task 026, amending §9.6).
+//
+// Binary identity is exact for help output and only a *floor* for auth state:
+// nothing about the binary changes when a user logs in, so a cached `false`
+// otherwise survives until the CLI is upgraded or `?refresh=true` arrives.
+// §9.6 already records that gap and names the per-field TTL as the better fix
+// than doctor's unconditional refresh, which only repairs one surface.
+//
+// Five minutes is chosen the way failureTTL was: long enough that a board, a
+// detail view and a new-task form asking in the same second cost one probe,
+// short enough that a user who logs in and looks again is told the truth. Only
+// the entries that can answer are re-checked — an adapter whose `logged_in` is
+// nil has no auth state to go stale (§9.5) — and only Detect re-runs, because
+// the option catalog genuinely is a pure function of the binary.
+const authTTL = 5 * time.Minute
+
 // CatalogCache caches Detect+Options per adapter, keyed by binary identity.
 // Only Entry probes (and only when the identity changed, the last probe failed
 // more than failureTTL ago, or refresh is set); validation paths read Catalogs,
@@ -225,6 +254,15 @@ func (c *CatalogCache) Entry(ctx context.Context, name string, refresh bool) (Ca
 	entry := slot.entry
 	slot.dataMu.RUnlock()
 	if hit {
+		if !staleAuth(entry, now) {
+			return entry, true
+		}
+		// The catalog is still exact — the binary has not changed — so only
+		// the half binary identity cannot vouch for is asked again (task 026).
+		entry = redetect(ctx, a, entry, now)
+		slot.dataMu.Lock()
+		slot.entry = entry
+		slot.dataMu.Unlock()
 		return entry, true
 	}
 	entry = probe(ctx, a, now)
@@ -265,6 +303,44 @@ func staleFailure(e CatalogEntry, now time.Time) bool {
 	return now.Sub(e.ProbedAt) >= failureTTL
 }
 
+// staleAuth reports whether a clean entry's `logged_in` is old enough to be
+// worth asking again (task 026). Only an entry that *has* an answer qualifies:
+// an adapter that cannot cheaply tell (§9.5) returns nil forever, and spawning
+// a subprocess every five minutes to be told nothing again is pure cost.
+func staleAuth(e CatalogEntry, now time.Time) bool {
+	if !e.Availability.Found || e.Availability.LoggedIn == nil {
+		return false
+	}
+	return now.Sub(e.AuthCheckedAt) >= authTTL
+}
+
+// redetect re-runs Detect alone against an entry whose catalog is still exact.
+//
+// A failure keeps the previous availability untouched and records the error.
+// That is the T4.22 rule applied to the field this TTL exists for: a Windows
+// deadline is `TerminateProcess(pid, 1)`, and turning that into "not
+// authenticated" is a false accusation against a logged-in account — worse
+// than the stale value the refresh was trying to improve on. The clock is
+// stamped either way, so a persistently failing probe costs one subprocess per
+// authTTL rather than one per request.
+func redetect(ctx context.Context, a Adapter, prev CatalogEntry, now time.Time) CatalogEntry {
+	e := prev
+	e.AuthCheckedAt = now
+	av, err := a.Detect(ctx)
+	if err != nil {
+		e.AuthError = err.Error()
+		return e
+	}
+	e.AuthError = ""
+	if av.LoggedIn == nil {
+		// Detect answered but declined to say. Same rule, softer failure:
+		// keep the answer we had rather than downgrade it to "unknown".
+		av.LoggedIn = prev.Availability.LoggedIn
+	}
+	e.Availability = av
+	return e
+}
+
 // identity resolves the binary identity without spawning it.
 func identity(a Adapter) catalogKey {
 	p, err := a.Path()
@@ -282,7 +358,7 @@ func identity(a Adapter) catalogKey {
 // carries its own error, and an Options error lands in ProbeError while the
 // returned catalog is still served (curated fallback, §9.6).
 func probe(ctx context.Context, a Adapter, now time.Time) CatalogEntry {
-	e := CatalogEntry{ProbedAt: now}
+	e := CatalogEntry{ProbedAt: now, AuthCheckedAt: now}
 	av, err := a.Detect(ctx)
 	if err != nil {
 		av = Availability{Error: err.Error()}
