@@ -23,6 +23,13 @@ type Task struct {
 	State       string            `json:"state"`
 	Priority    int               `json:"priority"`
 
+	// BranchName is the task's branch (§5.3). It belongs on the list row and
+	// not on TaskDetail alone: with configurable names (task 001) a
+	// `vincent/*` glob no longer finds every branch vincent made, so the
+	// cleanup guidance sends a reader to `vincent task ls --archived` for
+	// them. GET /v1/tasks has always served it; only this struct dropped it.
+	BranchName string `json:"branch_name"`
+
 	// CurrentStep is zero-based; StepTotal is the snapshot's step count.
 	// A board renders them as k/n with k = CurrentStep+1, clamped, because
 	// a finished task's cursor sits one past the last step.
@@ -294,7 +301,6 @@ func (r *ChildrenRollup) Summary() string {
 type TaskDetail struct {
 	Task
 	Description  string          `json:"description"`
-	BranchName   string          `json:"branch_name"`
 	WorktreePath *string         `json:"worktree_path"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	Steps        []StepRun       `json:"steps"`

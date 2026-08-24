@@ -431,9 +431,13 @@ The task appears on the board, runs in its own worktree on branch
 TUI, press `a` to approve, and the publish step pushes the branch. `q` quits
 the TUI — the daemon and any running task keep going without it.
 
-Everything the TUI does is also a subcommand (`vincent task show 1`,
-`vincent task cancel 1`), and everything either does is the same localhost
-API. To keep the daemon running across reboots, `vincent service install`.
+The data commands the TUI runs are subcommands too (`vincent task show 1`,
+`vincent task cancel 1`, plus `project`, `workflow` and `daemon`), and
+everything either does is the same localhost API. The remaining human actions —
+approve, reject, retry, skip, pause, resume, answer, archive — are TUI and API
+operations for now ([#89](https://github.com/lezli01/vincent/issues/89)); the
+[CLI reference](docs/reference/cli.md) is the full tree. To keep the daemon
+running across reboots, `vincent service install`.
 
 **Next:** [writing your own workflows](docs/guides/workflows.md), or the
 [longer quickstart](docs/getting-started/quickstart.md).
