@@ -329,7 +329,9 @@ func tailLines(path string, n int, maxBytes int64) string {
 	// A JSONL transcript line can be long (a whole agent message); the
 	// default 64 KiB token bound would stop the scan at the first one.
 	sc.Buffer(make([]byte, 0, 64<<10), int(maxBytes))
-	lines := newOutputTail(n)
+	// maxBytes, not §8.4's own tail bound: this reader has already narrowed
+	// the file to the window the repair prompt asked for.
+	lines := newOutputTailBytes(n, int(maxBytes))
 	for sc.Scan() {
 		if partial {
 			partial = false

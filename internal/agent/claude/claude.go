@@ -208,7 +208,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		}
 	}
 	go r.mux()
-	go r.readLoop(bufio.NewScanner(stdout))
+	go r.readLoop(stdout)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -245,7 +245,12 @@ type run struct {
 
 	mu       sync.Mutex
 	terminal *agent.RunResult // parsed result event, if any
-	pending  *pendingRequest  // the one the engine is answering; guarded by mu
+	// streamErr is readLoop's own reader failing, latched for Wait. It is
+	// vincent losing the stream, not the CLI failing, and Wait says so with
+	// agent.FailureStreamError rather than letting the exit code speak for a
+	// transcript that is missing lines (#139).
+	streamErr error
+	pending   *pendingRequest // the one the engine is answering; guarded by mu
 	// queue holds requests that arrived while another was pending. The real
 	// CLI does issue concurrent control requests — it batches parallel tool
 	// calls, so a restricted run can ask about several at once — and failing
@@ -292,10 +297,11 @@ func (r *run) mux() {
 	}
 }
 
-func (r *run) readLoop(sc *bufio.Scanner) {
+func (r *run) readLoop(rd io.Reader) {
 	defer close(r.readerDone)
 	defer close(r.raw)
 	defer r.closeStdin()
+	sc := bufio.NewScanner(rd)
 	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
 	for sc.Scan() {
 		line := make([]byte, len(sc.Bytes()))
@@ -315,8 +321,16 @@ func (r *run) readLoop(sc *bufio.Scanner) {
 		}
 		r.raw <- ev
 	}
-	// A scanner error (over-long line, pipe error) ends normalization; the
-	// process itself is still waited on and its exit code judged.
+	// A reader that stopped before the stream did leaves the CLI writing into
+	// a pipe nobody empties, which would hang it until the step timeout.
+	// Drain it, then let Wait name the failure — normalization ended early,
+	// so the transcript is missing lines the CLI wrote (#139).
+	if err := sc.Err(); err != nil {
+		r.mu.Lock()
+		r.streamErr = err
+		r.mu.Unlock()
+		_, _ = io.Copy(io.Discard, rd)
+	}
 }
 
 // parseStreamLine handles the control-protocol lines that need run state
@@ -443,7 +457,7 @@ func (r *run) Wait() (agent.RunResult, error) {
 		}
 		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
 		r.mu.Lock()
-		terminal := r.terminal
+		terminal, streamErr := r.terminal, r.streamErr
 		r.mu.Unlock()
 		if terminal != nil {
 			res.IsError = terminal.IsError
@@ -463,6 +477,17 @@ func (r *run) Wait() (agent.RunResult, error) {
 		// It happens here because this is the one place that holds both the
 		// terminal result and the stderr tail; the engine sees neither.
 		res.Failure = classify(res, r.stderr.String())
+		// A stream vincent could not read to the end outranks whatever the
+		// exit code says: the run may well have finished cleanly, but the
+		// record of it is missing lines, and §7.1 success is a claim about
+		// both (#139). It is set last so it wins over `classify`'s verdict —
+		// a usage limit whose transcript is broken is still a broken
+		// transcript, and the retry that follows rewrites the file.
+		if streamErr != nil {
+			res.IsError = true
+			res.ErrorMessage = "agent stream capture failed: " + streamErr.Error()
+			res.Failure = &agent.Failure{Kind: agent.FailureStreamError}
+		}
 		r.waitRes = res
 	})
 	return r.waitRes, r.waitErr

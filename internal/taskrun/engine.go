@@ -47,6 +47,35 @@ const (
 	// allowed to fill the disk; the partial transcript is kept, because the
 	// lines that got there are exactly what explains the runaway.
 	ReasonTranscriptLimit = "transcript_limit"
+	// ReasonTranscriptIOError is an attempt whose evidence did not land: a
+	// transcript write, JSON encode or close that failed (§12.2, §18, #139).
+	// Disk-full, a revoked permission and a short write all arrive as this.
+	//
+	// It exists because the alternative is worse than a failure. Judging a
+	// `command` step from its exit code alone reports success over a record
+	// that is missing the run it claims to describe, and "everything is
+	// transcripted" (docs/security-model.md) is then false with nothing
+	// saying so. It runs the ordinary §7.2 budget — the next attempt writes a
+	// new file, and a transient ENOSPC is exactly the kind of thing a retry
+	// clears — and it is absent from allowFailure's set on §7.2's own rule:
+	// vincent failing to record the step is not an outcome the step produced,
+	// so a workflow must not be able to branch on "the disk filled up" as
+	// though it were a test result (task 015 decision 5).
+	//
+	// It is not the reason for an over-long line. Capture keeps those, in
+	// bounded chunks; `transcript_max_bytes` stays the single size-based
+	// failure (§12.3).
+	ReasonTranscriptIOError = "transcript_io_error"
+	// ReasonAgentProtocolError is an agent run whose stream vincent could not
+	// read to the end: the adapter's line reader stopped on an error (§9.1,
+	// §18, #139).
+	//
+	// Deliberately not `agent_error`, which means "the CLI reported a
+	// failure" and would send the reader to a CLI that did nothing wrong —
+	// the reader that failed is vincent's. Deliberately not
+	// `input_protocol_error` either: that names a control message vincent
+	// could not render, which is a message that arrived intact.
+	ReasonAgentProtocolError = "agent_protocol_error"
 	// ReasonUsageLimit is an agent run the CLI stopped because the account's
 	// usage quota is spent (task 003, §7.2, §18). It is the one reason in this
 	// vocabulary that is *not* a failure: the attempt is recorded
@@ -626,11 +655,27 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		outcome.reason = ReasonCanceled
 	}
 
-	r.finishStepRun(run, outcome, env.log)
 	tr.Note("step_finished", map[string]any{
 		"state": string(outcome.state), "failure_reason": outcome.reason,
 		"exit_code": outcome.exitCode, "check_exit_code": outcome.checkExitCode,
 	})
+	// Close before the attempt is judged, not after it. A buffered filesystem
+	// reports ENOSPC at close and nowhere else, so a close error is part of
+	// the answer to "did the evidence land" — and a discarded one is the
+	// difference between a transcript that is short and one that is *known*
+	// to be short (§12.2, #139). The deferred Close above stays as the guard
+	// for the early returns; this one is idempotent with it.
+	tr.Close()
+	// Only a success is overridden. A failure already names something that
+	// went wrong, and replacing `nonzero_exit` with the reason the record of
+	// it could not be written would hide the more useful fact.
+	if err := tr.Err(); err != nil && outcome.state == store.StepSucceeded {
+		env.log.Error("transcript incomplete; attempt cannot be called a success",
+			"step", env.step.ID, "attempt", attempt, "path", tr.Path(), "error", err)
+		outcome.state, outcome.reason = store.StepFailed, ReasonTranscriptIOError
+		outcome.result = "transcript incomplete: " + err.Error()
+	}
+	r.finishStepRun(run, outcome, env.log)
 	r.emit(env.task, eventStepFinished, map[string]any{
 		"step_id": env.step.ID, "step_index": env.index, "attempt": attempt,
 		"run_id": run.ID, "state": string(outcome.state), "failure_reason": outcome.reason,

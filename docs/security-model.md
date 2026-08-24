@@ -54,10 +54,21 @@ What limits the damage, and what does not:
 | Mitigation | Real |
 |---|---|
 | Nothing is pushed, merged or deployed unless a **workflow step does it** | ✅ — put a `manual` gate in front of any such step |
-| Everything is transcripted: every prompt, tool call and command | ✅ |
+| Everything is transcripted: every prompt, tool call and command | ✅ — and when it cannot be, the step **fails** rather than passing (see below) |
 | Any step can run `permission_mode: restricted` | ✅ — see below |
 | The git worktree | ⚠️ collision isolation, **not** security isolation |
 | Running under a service | ❌ changes nothing — it is still you |
+
+**"Everything is transcripted" is a promise about completeness, not about
+durability.** A transcript vincent could not finish writing does not quietly
+become a shorter transcript: a failed write, encode or close fails the attempt
+with `transcript_io_error`, and a stream an adapter could not read to the end
+fails it with `agent_protocol_error`. Output too long for one record is split
+across `partial` records rather than dropped, so length alone never costs you
+evidence; only `transcript_max_bytes` deliberately stops a runaway, and it says
+so in the file. What is *not* promised: vincent writes and closes the file and
+checks both, but does not fsync per line, so a host that loses power can still
+lose the tail of a transcript. See [spec §12.2](spec.md#122-directories-platform-native).
 
 The TUI shows this warning **once**, on first run. The acknowledgment persists in
 `{data_dir}/tui.json` and is written when the notice is *dismissed*, never when
