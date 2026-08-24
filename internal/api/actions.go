@@ -3,11 +3,14 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -97,6 +100,111 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 		}
 		return t, err
 	})
+}
+
+// repairRequest is the §13.2 body of POST /v1/tasks/{id}/repair (§6, task
+// 025). The prompt is required and literal — it is prose typed at a form, not
+// a `text/template` source — and the optional triple stands in for the step
+// level of §8.6's resolution chain for this one run.
+type repairRequest struct {
+	Prompt string  `json:"prompt"`
+	Agent  *string `json:"agent"`
+	Model  *string `json:"model"`
+	Effort *string `json:"effort"`
+}
+
+// handleTaskRepair runs one ad-hoc repair agent in a blocked task's existing
+// worktree (§13.2, task 025). Like archive it cannot go through runAction:
+// the response carries the §8.2 catalog warnings a repair's own agent
+// selection can raise, which taskAction has no room for.
+func (s *Server) handleTaskRepair(w http.ResponseWriter, r *http.Request) {
+	var req repairRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"prompt is required: a repair agent needs something to be told")
+		return
+	}
+	if s.deps.Runner == nil {
+		s.internalError(w, "task actions", errors.New("no task runner is configured"))
+		return
+	}
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
+		return
+	}
+	task, err := s.deps.Store.GetTask(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		s.internalError(w, "get task", err)
+		return
+	}
+	sel := store.RepairRequest{
+		Prompt: req.Prompt,
+		Agent:  strings.TrimSpace(ptrValue(req.Agent)),
+		Model:  strings.TrimSpace(ptrValue(req.Model)),
+		Effort: strings.TrimSpace(ptrValue(req.Effort)),
+	}
+	// The same §8.2 gate task creation applies, over the one step this run
+	// will have: an unregistered agent and a known-invalid model or effort
+	// are 400s, and a value no catalog knows rides back as a warning.
+	warnings, cerr := s.checkRepairSelection(task, sel)
+	if cerr != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
+		return
+	}
+	updated, err := s.deps.Runner.Repair(r.Context(), id, sel)
+	if err != nil {
+		s.writeActionError(w, err)
+		return
+	}
+	resp := toTaskResponse(updated, s.snaps.get(updated.ID, updated.WorkflowSnapshot))
+	resp.Warnings = warnings
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// checkRepairSelection validates a repair's agent/model/effort the way task
+// creation validates a task's (§8.2, §8.6). The repair's own triple stands in
+// for the step level, so the resolved selection is
+// request > task override > the snapshot's `defaults:` > adapter default.
+func (s *Server) checkRepairSelection(
+	t *store.Task, req store.RepairRequest,
+) (warnings []string, errMsg string) {
+	if req.Agent != "" && s.deps.Agents != nil {
+		if _, ok := s.deps.Agents.Get(req.Agent); !ok {
+			return nil, fmt.Sprintf("unknown agent %q (available: %s)", req.Agent,
+				strings.Join(s.deps.Agents.Names(), ", "))
+		}
+	}
+	if s.deps.Catalog == nil {
+		return nil, ""
+	}
+	var defaults agent.Level
+	// A snapshot that no longer parses costs the `defaults:` level and
+	// nothing else: a repair is a rescue, and refusing to launch one because
+	// the snapshot rotted would take the rescue away exactly when it is
+	// needed.
+	if wf, _, perr := workflow.Parse([]byte(t.WorkflowSnapshot), workflow.Options{}); perr == nil {
+		defaults = agent.Level{Agent: wf.Defaults.Agent, Model: wf.Defaults.Model, Effort: wf.Defaults.Effort}
+	}
+	sel := agent.Resolve(
+		agent.Level{Agent: req.Agent, Model: req.Model, Effort: req.Effort},
+		agent.Level{Agent: t.AgentOverride, Model: t.ModelOverride, Effort: t.EffortOverride},
+		defaults,
+	)
+	cerrs, cwarns := s.deps.Catalog.Catalogs().Check(sel)
+	if len(cerrs) > 0 {
+		return nil, "repair: " + cerrs[0].Message
+	}
+	for _, f := range cwarns {
+		warnings = append(warnings, "repair: "+f.Message)
+	}
+	return warnings, ""
 }
 
 // archiveRequest is the §13.2 body of POST /v1/tasks/{id}/archive. `force`
@@ -283,6 +391,13 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 		e, _ := taskrun.AsOverrideMismatch(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
 
+	// A repair with nothing to say (task 025). The handler catches an empty
+	// prompt in front of the runner; this covers the one that arrives as
+	// whitespace the runner trims away.
+	case isRepairPrompt(err):
+		e, _ := taskrun.AsRepairPrompt(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
 	// A structurally mismatched answer is untranslatable to the live agent
 	// session; the request never reaches the task (§7.4, §13.2).
 	case isAnswerValidation(err):
@@ -313,6 +428,11 @@ func isStateConflict(err error) bool {
 
 func isOverrideMismatch(err error) bool {
 	_, ok := taskrun.AsOverrideMismatch(err)
+	return ok
+}
+
+func isRepairPrompt(err error) bool {
+	_, ok := taskrun.AsRepairPrompt(err)
 	return ok
 }
 

@@ -82,6 +82,11 @@ func diffTabDetail(t *testing.T) *detail {
 	return d
 }
 
+// repairFormFixture is a repair popup as `R` on a blocked task opens it.
+func repairFormFixture() *repairForm {
+	return newRepairForm(7, "check_failed", "build")
+}
+
 // panelKeyProbes proves one panel-scoped binding each. A probe drives the
 // real view with the key the registry publishes and asserts the effect the
 // label promises — not that the key was merely swallowed, which is what `[`
@@ -499,6 +504,40 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.updateKey(registryKey(t, "down"))
 			if !d.following {
 				t.Fatal("down did not reach the log pane's scroll path (follow was never re-synced)")
+			}
+		},
+	},
+
+	ctxRepairForm: {
+		"enter": func(t *testing.T) {
+			f := repairFormFixture()
+			f.update(registryKey(t, "enter"), nil)
+			if !f.editing {
+				t.Fatal("enter did not open the prompt field")
+			}
+		},
+		"e": func(t *testing.T) {
+			f := repairFormFixture()
+			opened := false
+			f.openEditor = func(string) tea.Cmd { opened = true; return nil }
+			f.update(registryKey(t, "e"), nil)
+			if !opened {
+				t.Fatal("e did not hand the prompt to $EDITOR")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			f := repairFormFixture()
+			f.update(registryKey(t, "ctrl+s"), nil)
+			// With no prompt typed, submitting is refused — with a reason,
+			// which is what proves the key was handled.
+			if f.err == "" {
+				t.Fatal("ctrl+s neither started the repair nor said why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := repairFormFixture()
+			if _, exit := f.update(registryKey(t, "esc"), nil); !exit {
+				t.Fatal("esc did not close the repair form")
 			}
 		},
 	},

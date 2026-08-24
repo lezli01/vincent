@@ -425,8 +425,14 @@ codex step, and it is a real mistake.
 ## Tasks that block
 
 A step that exhausts its retries blocks the task and waits for a human. Nothing
-is ever silently abandoned. From `blocked` you can retry, edit-and-retry, skip
-the step, or cancel the task.
+is ever silently abandoned. From `blocked` you can retry, edit-and-retry, repair
+with a one-off agent, skip the step, or cancel the task.
+
+Repair is the one that can change files: it runs a throwaway agent, prompted by
+you and handed the blocked step's failure context, in the task's existing
+worktree and branch. It always returns the task to `blocked` at the same step
+with the same reason, so you look at what it did before deciding to retry. See
+[repairing a blocked task](tui.md#repairing-a-blocked-task).
 
 The block reason names what happened:
 

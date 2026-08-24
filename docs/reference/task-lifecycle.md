@@ -92,6 +92,28 @@ session the answer belongs to. So a forgotten question does occupy a slot, until
 a step that exhausts its retries stops and waits for a person, and the task keeps
 its worktree, its branch and its transcripts while it does.
 
+**Repair when the worktree is what is wrong.** `retry` re-runs an unchanged
+step, `edit + retry` can rewrite only that step's own prompt or command, and
+`skip` advances past an unsatisfied check — none of them changes a file. When
+the fix is in the worktree, `repair` runs one throwaway agent there: you write
+what it should do, the daemon hands it the task's context and the blocked step's
+failure (its rendered prompt or command, the reason and exit codes, the tail of
+the failed attempt's transcript and where to read the rest), and it works on the
+task's own branch in the task's own worktree.
+
+It decides nothing. However the repair agent exits, the task comes back to
+`blocked` at the same step with the same reason, so you read the diff and then
+choose — retry, repair again, skip or cancel. It is recorded as a step run of
+its own under the reserved step id `__repair` at the blocked step's index, which
+is why the timeline shows it as its own entry and why it does not eat the
+blocked step's retries: after any number of repairs, a `retry` gets exactly the
+attempts it would have had with none.
+
+Repair is offered from `blocked` whatever the reason. A task blocked before its
+worktree existed re-blocks on the same reason without starting an agent, and one
+blocked because its agent CLI is missing has its repair fail the same way — both
+honest outcomes rather than a hidden filter.
+
 ## Human actions
 
 | Action | Valid from | Effect |
@@ -101,6 +123,7 @@ its worktree, its branch and its transcripts while it does.
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued` |
 | `edit + retry` | blocked | Overrides the step's prompt or command **in this task's snapshot only**, then retries. The override is recorded on the step run |
+| `repair` | blocked | Runs one ad-hoc agent, prompted by you, in the task's existing worktree and branch → `queued`, and back to `blocked` at the same step with the same reason when it exits. It does not consume the blocked step's retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped` and advances → `queued`. A step skipped this way carries no `skip_reason`, which is how it stays distinguishable from one an `if:` guard skipped |
 | `answer` | awaiting_input | Delivers the answer into the live agent session → `running`, and the step clock resumes |
 | `approve` | awaiting_gate | Gate `approved`, advance → `queued` |
@@ -108,8 +131,8 @@ its worktree, its branch and its transcripts while it does.
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
 
-In the TUI these are the action bar keys (`a`, `x`, `r`, `E`, `s`, `p`, `c`,
-`A`); over the API they are `POST /v1/tasks/{id}/{action}`; from the CLI,
+In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
+`c`, `A`); over the API they are `POST /v1/tasks/{id}/{action}`; from the CLI,
 `vincent task cancel`.
 
 An action the current state does not allow returns `409` with `details.state`

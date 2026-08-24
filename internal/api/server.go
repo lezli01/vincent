@@ -177,6 +177,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/pause", s.handleTaskPause)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/resume", s.handleTaskResume)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/retry", s.handleTaskRetry)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/repair", s.handleTaskRepair)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/skip", s.handleTaskSkip)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/approve", s.handleTaskApprove)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/reject", s.handleTaskReject)

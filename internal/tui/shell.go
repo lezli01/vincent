@@ -43,9 +43,10 @@ type shell struct {
 	bar *actionBar
 
 	focus panelID
-	// popup shows the §7.4 answer form over the panels. It never opens
-	// itself — `enter` on the awaiting task does (§15: the form announces
-	// itself and the human opens it).
+	// popup shows a form over the panels: the §7.4 answer form, or the §6
+	// repair form (task 025). Neither ever opens itself — `enter` on the
+	// awaiting task opens one and `R` on a blocked task opens the other
+	// (§15: a form announces itself and the human opens it).
 	popup bool
 	// connected mirrors the root's connection state: false renders the
 	// panels marked stale behind a banner instead of hiding them (§15
@@ -114,11 +115,17 @@ func (s *shell) capturesInput() bool {
 	return s.focusedCaptures()
 }
 
-// paste hands pasted text to the surface that owns the keyboard: the answer
-// popup's free-text field, or the task filter while it is being typed.
+// paste hands pasted text to the surface that owns the keyboard: whichever
+// popup is open — the answer form's free-text field or the repair form's
+// prompt — or the task filter while it is being typed.
 func (s *shell) paste(text string) tea.Cmd {
-	if s.popup && s.detail.form != nil {
-		return s.detail.form.paste(text)
+	if s.popup {
+		if f := s.detail.repair; f != nil {
+			return f.paste(text)
+		}
+		if f := s.detail.form; f != nil {
+			return f.paste(text)
+		}
 	}
 	if s.focus == panelTasks {
 		return s.board.paste(text)
@@ -192,13 +199,23 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 func (s *shell) forward(msg tea.Msg) tea.Cmd {
 	_, bc := s.board.update(msg)
 	dc := s.detail.update(msg)
-	if s.popup && s.detail.form == nil {
+	if s.popup && s.detail.form == nil && s.detail.repair == nil {
 		s.popup = false
 	}
 	return tea.Batch(bc, dc)
 }
 
 func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	if s.popup && s.detail.repair != nil {
+		cmd, exit := s.detail.repair.update(msg, s.detail.client)
+		if exit {
+			// Leaving the form throws the draft away with it: a repair is one
+			// prompt for one block, and half a prompt kept behind a popup
+			// nobody can see is worse than retyping it.
+			s.detail.repair, s.popup = nil, false
+		}
+		return s, cmd
+	}
 	if s.popup && s.detail.form != nil {
 		cmd, exit := s.detail.form.update(msg, s.detail.client, s.detail.taskID)
 		if exit {
@@ -261,6 +278,16 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// the key acts on the task, so it works from any panel.
 		s.syncDetailFocus()
 		return s, s.detail.update(msg)
+	case "R":
+		// Repair, for the same reason: detail holds the blocked step and the
+		// form posts from there. Opening it raises the popup, which then owns
+		// the keyboard.
+		s.syncDetailFocus()
+		cmd := s.detail.update(msg)
+		if s.detail.repair != nil {
+			s.popup = true
+		}
+		return s, cmd
 	}
 	return s, tea.Batch(s.routeKey(msg), s.checkSelection())
 }
@@ -550,7 +577,7 @@ func (s *shell) render(width, height int) string {
 				s.renderBox(boxes[1]), s.renderBox(boxes[2])))
 	}
 	out := strings.Join(parts, "\n")
-	if s.popup && s.detail.form != nil {
+	if s.popup && (s.detail.form != nil || s.detail.repair != nil) {
 		out = s.overlayPopup(out)
 	}
 	return out
@@ -630,7 +657,6 @@ func (s *shell) detailPlaceholder() (string, bool) {
 // (§15), and the panels stay visible around it — the tail underneath is
 // what says why the agent is asking.
 func (s *shell) overlayPopup(bg string) string {
-	form := s.detail.form
 	// Take nearly the whole body: a §7.4 question is prose and its options are
 	// sentences, so every column the popup gives back to the panels behind it
 	// is another wrapped line to read. The cap is a reading measure, not a
@@ -642,9 +668,21 @@ func (s *shell) overlayPopup(bg string) string {
 	// The form lays itself out at the width it will be drawn at, so a long
 	// question wraps inside the popup instead of losing its tail to frame.
 	inner := pw - 2
-	ph := min(form.height(inner)+2, max(s.bodyH-4, 6))
-	title := fmt.Sprintf("Answer — #%d", s.detail.taskID)
-	popup := frame(title, form.render(inner, ph-2), pw, ph, true)
+	var (
+		height func(int) int
+		render func(int, int) string
+		title  string
+	)
+	if f := s.detail.repair; f != nil {
+		height, render = f.height, f.render
+		title = fmt.Sprintf("Repair — #%d", s.detail.taskID)
+	} else {
+		f := s.detail.form
+		height, render = f.height, f.render
+		title = fmt.Sprintf("Answer — #%d", s.detail.taskID)
+	}
+	ph := min(height(inner)+2, max(s.bodyH-4, 6))
+	popup := frame(title, render(inner, ph-2), pw, ph, true)
 	x := max((s.bodyW-pw)/2, 0)
 	y := max((s.bodyH-ph)/3, 1)
 	return overlay(bg, popup, x, y)

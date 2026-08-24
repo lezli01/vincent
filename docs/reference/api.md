@@ -344,6 +344,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/pause` | queued, running | |
 | `/resume` | paused | |
 | `/retry` | blocked | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered |
+| `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
 | `/reject` | awaiting_gate | |
@@ -352,6 +353,32 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
+
+`/repair` runs one throwaway agent against a blocked task's worktree — the
+escape hatch for a block that `retry` cannot clear because the worktree itself
+is wrong. `prompt` is required and is **literal text**, not a template: it is
+prose, and the daemon assembles the failure context around it (the task, the
+blocked step's rendered prompt or command, the reason and exit codes, the last
+200 lines of the failed attempt's transcript and the path to the rest). An empty
+or whitespace-only prompt is `400 validation_failed`.
+
+The optional `agent` / `model` / `effort` apply to that one run and take
+precedence over the task's overrides and the workflow's `defaults:`; they are
+validated exactly as `POST /v1/tasks` validates a task's, so an unregistered
+agent or a known-invalid model is a `400` and a value no catalog recognizes
+comes back in `warnings`:
+
+```json
+{ "id": 7, "state": "queued", "…": "…", "warnings": [] }
+```
+
+The repair decides nothing about the blocked step. Whatever the agent exits
+with, the task goes back to `blocked` at the same step with the same
+`block_reason`, and you retry, repair again, skip or cancel. Its attempt is
+recorded as an ordinary step run under the reserved step id `__repair` at the
+blocked step's index, so `GET /v1/tasks/{id}/steps` returns it with its own
+transcript, tokens and cost — and the blocked step's retry budget is untouched
+by it.
 
 `/archive` is the one action whose response is not just the task. When it looks
 at the branch, it adds a `branch` object beside the task fields:

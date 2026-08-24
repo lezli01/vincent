@@ -34,6 +34,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Ad-hoc repair agents for a blocked task.** A blocked task now offers a
+  `repair` action (`R` in the TUI, `POST /v1/tasks/{id}/repair`) that runs one
+  throwaway agent in the task's existing worktree and branch, with the prompt
+  you write and the blocked step's failure context around it. It is the escape
+  hatch for a block that `retry`, `edit + retry` and `skip` cannot clear because
+  the worktree itself is what is wrong. The repair decides nothing: whatever the
+  agent exits with, the task returns to `blocked` at the same step with the same
+  reason, so you read the diff and then choose. It is recorded as its own step
+  run with its own transcript, tokens and cost, shown as its own timeline entry,
+  and it does not consume the blocked step's retry budget.
+
 - **Workflow-declared task fields.** Workflows can publish ordered task inputs
   with labels, descriptions, required flags, string/integer/number/boolean
   types and Go RE2 patterns. The TUI pre-renders those inputs, the daemon

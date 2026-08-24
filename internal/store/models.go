@@ -101,6 +101,12 @@ type Task struct {
 	// PendingOverride is edit+retry text waiting for the next attempt's
 	// step run; the actor drains and clears it (§6).
 	PendingOverride *Override
+	// PendingRepair is an ad-hoc repair the human asked for while the task
+	// was blocked (§6, task 025). The actor runs it on the admission it
+	// produced and drains it with the transition that returns the task to
+	// `blocked`; leaving `blocked` any other way drops it, so a request can
+	// never outlive the block it was made about.
+	PendingRepair *RepairRequest
 	// PendingInputJSON is the normalized InputRequest while the task is
 	// awaiting_input (§7.4); "" otherwise. TransitionTask clears it on any
 	// transition out of awaiting_input.
@@ -216,6 +222,29 @@ type Override struct {
 
 // Empty reports whether the override carries nothing.
 func (o Override) Empty() bool { return o.Prompt == "" && o.Run == "" }
+
+// RepairRequest is one ad-hoc repair a human asked for from `blocked` (§6,
+// task 025): what to tell the agent, and optionally which agent to tell.
+//
+// Prompt is literal text, never a `text/template` source. It is prose typed
+// at a form, and §8.4 renders with `missingkey=error` — a stray `{{` in prose
+// would fail the repair before the process started. The surrounding failure
+// context is assembled by the daemon, not templated by the user.
+//
+// BlockReason is the reason the task carried when the repair was launched.
+// It rides the request because `applyChange` clears `block_reason` on any
+// move off `blocked`, and the repair has to put the *same* reason back when
+// it returns the task there: a repair decides nothing about the blocked step.
+type RepairRequest struct {
+	Prompt      string `json:"prompt"`
+	Agent       string `json:"agent,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Effort      string `json:"effort,omitempty"`
+	BlockReason string `json:"block_reason,omitempty"`
+}
+
+// Empty reports whether the request carries no work to do.
+func (r RepairRequest) Empty() bool { return r.Prompt == "" }
 
 // Candidate is one queued task considered for admission, carrying the cap
 // context the scheduler needs to decide (spec §11). The slot counts are as

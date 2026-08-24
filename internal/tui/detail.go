@@ -108,7 +108,11 @@ type detail struct {
 	// while the task is parked on a request.
 	actions *actionBar
 	form    *answerForm
-	diff    diffPane
+	// repair is the §6 repair form (task 025). Unlike form it is never
+	// synthesized from task state: a human opens it with a key, and it closes
+	// when they submit or escape.
+	repair *repairForm
+	diff   diffPane
 	// exec runs $EDITOR for edit+retry, injected so the path is testable
 	// without a terminal.
 	exec execFunc
@@ -224,6 +228,16 @@ func (d *detail) update(msg tea.Msg) tea.Cmd {
 		return d.applyAction(msg)
 	case editRetryMsg:
 		return d.applyEdit(msg)
+	case repairAgentsLoadedMsg:
+		if d.repair != nil {
+			d.repair.applyAgents(msg)
+		}
+		return nil
+	case repairEditMsg:
+		if d.repair != nil {
+			d.repair.applyEdit(msg)
+		}
+		return nil
 	case transcriptOpenedMsg:
 		// Nothing to apply — the file was only read. A failed viewer is worth
 		// saying, since the terminal handover leaves no other trace of it.
@@ -245,6 +259,16 @@ func (d *detail) applyAction(msg actionResultMsg) tea.Cmd {
 		return nil
 	}
 	d.actions.applyResult(msg)
+	if msg.action == apiclient.ActionRepair && d.repair != nil {
+		if msg.err != nil {
+			// Same reasoning as the answer form: keep what was typed on
+			// screen rather than making the human write it again.
+			d.repair.submitting = false
+			d.repair.err = errString(msg.err)
+		} else {
+			d.repair = nil
+		}
+	}
 	if msg.action == apiclient.ActionAnswer && msg.err != nil && d.form != nil {
 		// The daemon refused the answer: keep the form and its typed values on
 		// screen, since re-entering them is the last thing a human wants.
@@ -272,7 +296,7 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.focus = focusTimeline
 	d.tab = tabOutput
 	d.actions.clear()
-	d.form = nil
+	d.form, d.repair = nil, nil
 	d.diff.openTask(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
@@ -290,7 +314,7 @@ func (d *detail) deselect() {
 	d.resetOutput()
 	d.buffer = nil
 	d.actions.clear()
-	d.form = nil
+	d.form, d.repair = nil, nil
 	d.syncStream()
 }
 
@@ -628,6 +652,11 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return d.editRetry()
 		}
 		return nil
+	case "R":
+		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
+		// `R` is free in the home shell, where the takeover screens that use
+		// it for re-probing never are.
+		return d.openRepair()
 	case "f":
 		d.setFollowing(true)
 		return nil
@@ -796,6 +825,32 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 // shell's popup routing before keys reach here.)
 func (d *detail) capturesInput() bool {
 	return d.actions.capturing()
+}
+
+// openRepair opens the repair form for a blocked task, fetching the adapter
+// catalog its pickers render. It offers nothing the daemon does not: the
+// action has to be on the task's available_actions (§6).
+func (d *detail) openRepair() tea.Cmd {
+	if !d.target().has(apiclient.ActionRepair) {
+		return nil
+	}
+	reason := ""
+	if d.task.BlockReason != nil {
+		reason = *d.task.BlockReason
+	}
+	d.repair = newRepairForm(d.taskID, reason, d.currentStepName())
+	d.repair.openEditor = d.editRepairPrompt
+	return d.repair.loadAgents(d.client)
+}
+
+// currentStepName names the step the task is blocked at, for the form's
+// subject line; "" when the snapshot has not arrived.
+func (d *detail) currentStepName() string {
+	step, ok := d.task.Step(d.task.CurrentStep)
+	if !ok {
+		return ""
+	}
+	return step.ID
 }
 
 // target is the slice of the task the action bar works from.

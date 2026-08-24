@@ -37,6 +37,12 @@ const (
 	ctxWorkflowGraph bindingContext = "workflow graph"
 	ctxDaemon        bindingContext = "daemon"
 	ctxForm          bindingContext = "answer form"
+	// ctxRepairForm is the §6 repair popup (task 025). Its own context
+	// rather than more ctxForm rows: the two popups share a shape and
+	// nothing else — one picks from what an agent asked, the other types a
+	// prompt and chooses an adapter — so a single row could only describe
+	// one of them.
+	ctxRepairForm bindingContext = "repair form"
 )
 
 // binding is one registry row.
@@ -99,6 +105,7 @@ var bindings = []binding{
 	{key: "x", label: "reject the gate", scope: scopeTaskAction, action: apiclient.ActionReject, priority: 2},
 	{key: "r", label: "retry the blocked step", scope: scopeTaskAction, action: apiclient.ActionRetry, priority: 4},
 	{key: "E", label: "edit the step's prompt or command in $EDITOR, then retry", scope: scopeTaskAction, action: apiclient.ActionRetry, priority: 5},
+	{key: "R", label: "repair with an agent — a one-off run in this task's worktree; the task stays blocked afterwards", scope: scopeTaskAction, action: apiclient.ActionRepair, priority: 5},
 	{key: "s", label: "skip the current step", scope: scopeTaskAction, action: apiclient.ActionSkip, priority: 6},
 	{key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
 	{key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8},
@@ -172,6 +179,13 @@ var bindings = []binding{
 	{key: "e", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "enter", label: "submit the answer; the run resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "esc", label: "close the popup without answering (what you picked is kept)", scope: scopePanel, context: ctxForm, noPalette: true},
+
+	// Repair form: as with the answer form, these exist only while the popup
+	// owns the keyboard and it prints them itself.
+	{key: "enter", label: "edit the row under the cursor — the prompt, or the agent/model/effort list", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+	{key: "e", label: "write the repair prompt in $EDITOR", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+	{key: "ctrl+s", label: "start the repair agent", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+	{key: "esc", label: "close the popup without repairing (the draft is discarded)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 }
 
 // isHomeContext reports whether a context is one of the home shell's panels —

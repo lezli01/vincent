@@ -15,7 +15,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
-	pending_input_json, admit_not_before, queued_reason,
+	pending_repair_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
@@ -767,6 +767,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		worktree, blockReason       sql.NullString
 		agentOv, modelOv, effortOv  sql.NullString
 		retryCursor, pendingOv      sql.NullString
+		pendingRepair               sql.NullString
 		pendingInput                sql.NullString
 		admitNotBefore, queuedWhy   sql.NullString
 		parentID, parentStep        sql.NullInt64
@@ -780,7 +781,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
-		&pendingInput, &admitNotBefore, &queuedWhy,
+		&pendingRepair, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
@@ -808,6 +809,13 @@ func scanTask(r rowScanner) (*Task, error) {
 			return nil, fmt.Errorf("pending_override_json: %w", err)
 		}
 		t.PendingOverride = &ov
+	}
+	if pendingRepair.Valid && pendingRepair.String != "" {
+		var req RepairRequest
+		if err := json.Unmarshal([]byte(pendingRepair.String), &req); err != nil {
+			return nil, fmt.Errorf("pending_repair_json: %w", err)
+		}
+		t.PendingRepair = &req
 	}
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)

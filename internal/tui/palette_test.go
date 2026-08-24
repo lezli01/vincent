@@ -14,14 +14,14 @@ import (
 // hide an entry from the reachability sweep.
 var everyAction = taskActions{id: 9, state: stateRunning, actions: []string{
 	apiclient.ActionPause, apiclient.ActionResume, apiclient.ActionApprove,
-	apiclient.ActionReject, apiclient.ActionRetry, apiclient.ActionSkip,
-	apiclient.ActionCancel, apiclient.ActionArchive,
+	apiclient.ActionReject, apiclient.ActionRetry, apiclient.ActionRepair,
+	apiclient.ActionSkip, apiclient.ActionCancel, apiclient.ActionArchive,
 }}
 
 // TestPaletteReachesEveryRegistryEntry is the T3.11 done-when: every
 // registry row surfaces in the palette in its owning context. The palette's
-// own controls and the answer form's keys are exempt by construction
-// (noPalette) — the form prints its keys inside the popup that owns the
+// own controls and the two popups' keys are exempt by construction
+// (noPalette) — a form prints its keys inside the popup that owns the
 // keyboard.
 func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 	contexts := []bindingContext{

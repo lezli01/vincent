@@ -19,7 +19,7 @@ func openTest(t *testing.T) *Store {
 
 // latestSchemaVersion tracks the newest migration file; bump alongside new
 // migrations.
-const latestSchemaVersion = 9
+const latestSchemaVersion = 10
 
 func schemaVersion(t *testing.T, s *Store) int {
 	t.Helper()

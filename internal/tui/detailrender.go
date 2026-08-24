@@ -179,6 +179,11 @@ func (d *detail) detailHints() []string {
 	if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
 		hints = append(hints, styleKey.Render("E")+" edit+retry")
 	}
+	// `repair` has no row in actionOrder — it is a form, not a key that acts
+	// (task 025) — so its hint is the view's, the way `answer`'s is.
+	if d.target().has(apiclient.ActionRepair) {
+		hints = append(hints, styleKey.Render("R")+" repair")
+	}
 	return hints
 }
 
@@ -297,7 +302,20 @@ func (d *detail) renderTimeline(height int) string {
 			// iteration cannot happen, because it never entered ids.
 			continue
 		}
-		if (grouped || looped) && r.StepID != lastSub {
+		// A repair is not an attempt of the blocked step and must never read
+		// as one (task 025): it gets a tier of its own under the step header,
+		// whatever shape that index otherwise has.
+		repair := isRepairRun(r)
+		if repair && lastSub != r.StepID {
+			lastSub = r.StepID
+			indent := "    · "
+			if looped {
+				indent = "      · "
+			}
+			lines = append(lines, styleDim.Render(indent+"repair (ad-hoc agent)"))
+			ids = append(ids, 0)
+		}
+		if !repair && (grouped || looped) && r.StepID != lastSub {
 			lastSub = r.StepID
 			indent := "    · "
 			if looped {
@@ -306,7 +324,7 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, styleDim.Render(indent+stepLabel(r)))
 			ids = append(ids, 0)
 		}
-		line := d.attemptLine(r, grouped || looped)
+		line := d.attemptLine(r, grouped || looped || repair)
 		if r.ID == d.selectedRun {
 			cursorLine = len(lines)
 			line = styleSelected.Render(line)
@@ -324,6 +342,10 @@ func (d *detail) renderTimeline(height int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+// isRepairRun reports whether a row is an ad-hoc repair rather than an
+// attempt of the step at its index (§5.4, task 025).
+func isRepairRun(r apiclient.StepRun) bool { return r.StepID == apiclient.RepairStepID }
+
 // groupedIndexes reports which step indexes hold more than one distinct step
 // id — which is exactly the `parallel` groups, since every other step type
 // owns its index alone.
@@ -334,6 +356,12 @@ func (d *detail) renderTimeline(height int) string {
 func groupedIndexes(runs []apiclient.StepRun) map[int]bool {
 	seen := map[int]map[string]bool{}
 	for _, r := range runs {
+		if isRepairRun(r) {
+			// A repair sits at the blocked step's index under a reserved id
+			// (task 025), so counting it would make every repaired step read
+			// as a `parallel` group of itself.
+			continue
+		}
 		if seen[r.StepIndex] == nil {
 			seen[r.StepIndex] = map[string]bool{}
 		}

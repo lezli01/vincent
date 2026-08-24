@@ -245,6 +245,7 @@ selected on the board it acts on all of them; see
 | `a` | Approve the gate | `awaiting_gate` |
 | `x` | Reject the gate | `awaiting_gate` |
 | `r` | Retry the blocked step | `blocked` |
+| `R` | Repair with an agent — a one-off run in this task's worktree | `blocked` |
 | `E` | Edit the step's prompt or command in `$EDITOR`, then retry | `blocked` |
 | `s` | Skip the current step | `blocked`, `awaiting_gate` |
 | `p` | Pause / resume | `queued`, `running` / `paused` |
@@ -254,8 +255,45 @@ selected on the board it acts on all of them; see
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched.
 
+`R` opens the repair form instead of acting straight away; it is the only task
+action that needs something written, which is also why it is not offered for a
+bulk selection.
+
 What each action means in full is in
 [Task lifecycle](../reference/task-lifecycle.md).
+
+## Repairing a blocked task
+
+`r`, `E` and `s` all leave the worktree exactly as the failed step left it —
+they re-run a step, rewrite its text, or walk past it. When what is wrong is a
+*file*, press `R` on a `blocked` task and a one-off agent goes and fixes it, in
+this task's worktree, on this task's branch.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between the prompt and the agent / model / effort rows |
+| `enter` | Open the row under the cursor — the prompt field, or that row's picker |
+| `e` | Write the prompt in `$EDITOR` instead |
+| `ctrl+s` | Start the repair |
+| `esc` | Close without repairing — the draft is discarded |
+
+The prompt is the only required row, and it is prose: write what you want done,
+not a template. The daemon puts the context around it — the task, the blocked
+step's rendered prompt or command, the failure reason and exit codes, the last
+200 lines of the failed attempt's transcript and the path to the whole file, so
+the agent can read further itself.
+
+Inside the prompt field `enter` is a newline (a repair prompt usually wants
+more than one line), `ctrl+s` keeps the text, and `esc` discards it. Agent,
+model and effort are optional; set they apply to this run only and win over the
+task's overrides and the workflow's defaults.
+
+When the repair agent finishes the task returns to `blocked` — same step, same
+reason — whatever it exited with. That is the point: you look at the diff and
+*then* decide whether to `r`. The repair appears in the timeline as its own
+entry under the blocked step, labelled `repair (ad-hoc agent)`, with its own
+transcript, tokens and cost; it is not an attempt of that step and does not use
+up its retries.
 
 ## Answering a question
 

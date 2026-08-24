@@ -13,7 +13,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
-| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry |
+| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks |
@@ -76,6 +76,14 @@ Timeouts are enforced, retry counts are bounded, and exhausted steps become
 `blocked` instead of being silently skipped. From there a person can retry,
 edit the step for this task and retry, skip it, or cancel the task.
 
+When the problem is in the worktree rather than in the step, a blocked task can
+also be **repaired**: one throwaway agent, prompted by you and handed the
+blocked step's failure context, runs in that task's existing worktree and
+branch. It changes files and nothing else — the task returns to `blocked` at the
+same step with the same reason, so you read the diff and then decide. The repair
+is recorded as its own step run with its own transcript and cost, and does not
+consume the blocked step's retries.
+
 Every state transition is persisted before execution. If the daemon dies
 mid-step, restart recovery finalizes the interrupted attempt, verifies and
 stops orphan processes, and reruns the step without charging it as a failed
@@ -96,6 +104,8 @@ Human oversight is part of the workflow instead of an informal terminal habit:
   alive, or require that capability when the workflow depends on it.
 - Pause active work at a step boundary, change task priority, and recover a
   blocked step without discarding its branch or transcript.
+- Send a one-off repair agent into a blocked task's worktree when the fix is a
+  file change, and still decide yourself whether the step then re-runs.
 - Use bulk selection to act on several eligible tasks while refusals remain
   selected for follow-up.
 

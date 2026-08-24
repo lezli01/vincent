@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
@@ -35,6 +36,17 @@ type OverrideMismatchError struct {
 
 func (e *OverrideMismatchError) Error() string {
 	return fmt.Sprintf("%s is not valid for a %s step", e.Field, e.StepType)
+}
+
+// RepairPromptError reports a repair asked for with nothing to say. The API
+// answers 400: an agent launched with no instructions is spend with no
+// question attached (task 025).
+type RepairPromptError struct {
+	TaskID int64
+}
+
+func (e *RepairPromptError) Error() string {
+	return fmt.Sprintf("task %d: a repair needs a prompt", e.TaskID)
 }
 
 // Cancel aborts a task and stops any process it is running (§6). The task
@@ -147,6 +159,35 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 		ch.PendingOverride = &ov
 	}
 	return r.transitionFrom(ctx, task, taskstate.Retry, ch)
+}
+
+// Repair launches a one-off agent in the blocked task's existing worktree
+// (§6, task 025). The request is persisted on the task and the task is
+// re-queued; the scheduler admits it exactly like anything else, so both §11
+// caps apply and internal/scheduler stays the only producer of
+// `queued → running`. The actor that admission starts runs the agent and
+// returns the task to `blocked` at the same step with the same reason.
+//
+// Unlike Retry it must not stamp `retry_cursor_at`: a repair is not a retry,
+// and moving the cursor would silently hand the blocked step a fresh budget
+// the human did not ask for (§7.2).
+func (r *Runner) Repair(ctx context.Context, id int64, req store.RepairRequest) (*store.Task, error) {
+	req.Prompt = strings.TrimSpace(req.Prompt)
+	if req.Prompt == "" {
+		return nil, &RepairPromptError{TaskID: id}
+	}
+	task, err := r.deps.Store.GetTask(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !taskstate.Can(task.State, taskstate.Repair) {
+		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Repair, State: task.State}
+	}
+	// The reason rides the request because the transition about to happen
+	// clears `block_reason`, and the re-block afterwards has to put the same
+	// one back: a repair decides nothing about the blocked step.
+	req.BlockReason = task.BlockReason
+	return r.transitionFrom(ctx, task, taskstate.Repair, store.TaskChange{PendingRepair: &req})
 }
 
 // Skip marks the current step skipped and advances (§6). From a gate the
@@ -512,6 +553,14 @@ func AsInvalidAction(err error) (*InvalidActionError, bool) {
 // what it is.
 func AsOverrideMismatch(err error) (*OverrideMismatchError, bool) {
 	var e *OverrideMismatchError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
+// AsRepairPrompt extracts a *RepairPromptError from err, if that is what it
+// is.
+func AsRepairPrompt(err error) (*RepairPromptError, bool) {
+	var e *RepairPromptError
 	ok := errors.As(err, &e)
 	return e, ok
 }

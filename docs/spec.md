@@ -269,6 +269,26 @@ its answer was "stop". `skip_reason` says why a `skipped` row is skipped:
 `condition` for a false guard, empty for the human `skip` action (§6), which
 share one state.
 
+*Amended 2026-08-24 (task 025).* An ad-hoc **repair** run (§6) is a StepRun like
+any other — same table, same states, same transcript, same token and cost
+accounting — recorded under the **reserved step id `__repair`** at the *blocked
+step's* `step_index`. `attempt` numbers repairs of that step independently, so a
+second repair is attempt 2 of the repair rather than attempt N+1 of the step.
+
+The reserved id is the whole mechanism. Attempts are counted per
+`(task_id, step_index, step_id, iteration)`, so a row under a different step id
+is invisible to the blocked step's retry budget with no query changing at all
+(§7.2). It begins with an underscore, which no workflow step id may (§8.1), so
+it cannot collide with an id somebody wrote. A `kind` column and a separate
+repair ledger were both considered and rejected: they pay a migration and a
+second history for a separation this composite key already gives.
+
+Clients must tell a `__repair` row apart from an attempt of the step at its
+index and render it as its own entry (§15) — displaying it as an attempt of that
+step would say the opposite of what happened. For the same reason a repair row
+is not visible in `.Steps` (§8.4) to any later step's prompt or guard: it is not
+a step of the workflow, and no workflow author wrote that key.
+
 ## 6. Task lifecycle
 
 ```
@@ -318,6 +338,43 @@ rather than fixed: pausing a held task and resuming it re-admits it at once and 
 re-discovers the wall. That costs one process spawn and buys the rule this section
 already applies to every other pending flag — a human action means go.
 
+**Amended 2026-08-24 (task 025): `blocked → queued` has a second producer.** It
+used to mean only "the human decided — retry or skip". It now also means "the
+human asked for an ad-hoc **repair**": a one-off agent run, prompted by the
+operator, in the task's *existing* worktree and branch (§7.2, §13.2). The
+repair is an ordinary admission in every mechanical respect — the scheduler
+admits it, both §11 caps apply, `internal/scheduler` stays the only producer of
+`queued → running` — and it runs exactly one agent, which is not a step of the
+workflow. When that agent exits, whatever it exited with, the task returns to
+`blocked` at the **same** `current_step` carrying the **same** `block_reason`,
+and the human retries, repairs again, skips or cancels as before.
+
+There is no `repairing` state. A repair is a human action, not a lifecycle
+state: a state of its own would cost an FSM row, a board legend, slot rules and
+a recovery path — what task 014 paid for `awaiting_children` — to buy one nicer
+`cancel`, and `cancel` keeps its present meaning throughout a repair (it kills
+the process and aborts the task) because `available_actions` cannot express
+"this cancel means something else right now".
+
+The request is persisted on the task (`pending_repair_json`, §14) and is drained
+by the transition that returns the task to `blocked`, **not** by the insert of
+the row it produced. That is load-bearing for §12.4: recovery finalizes a
+running row as `interrupted` and re-queues the task, and the actor then walks
+from `current_step`. A request already drained would make a crash mid-repair
+silently become a plain *retry* of the blocked step — consuming its budget and
+possibly unblocking the task without the operator asking. Leaving it set means
+an interrupted repair re-runs as a repair. Every other way out of `blocked`
+drops the request, because it describes exactly the block it was made about.
+
+Repair is offered from `blocked` whatever the block reason — no filtering. A
+task blocked before its worktree existed (`branch_exists`, `base_branch_missing`)
+re-enters worktree preparation on the repair admission and re-blocks on the same
+reason without spawning an agent, which is the right outcome reached by the code
+that already handles it; a task blocked on `agent_unavailable` has its repair
+fail with `agent_unavailable`, which is honest. Filtering `available_actions` by
+block reason would put a second, reason-shaped policy beside this section's
+state-shaped one for no behavioral gain.
+
 ### States
 
 | State | Meaning | Consumes a concurrency slot? |
@@ -342,6 +399,7 @@ already applies to every other pending flag — a human action means go.
 | `resume` | paused | → `queued` |
 | `retry` | blocked | Re-runs the failed step (fresh attempt, retry counter reset); → `queued` |
 | `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun |
+| `repair` | blocked | *Added 2026-08-24 (task 025).* Runs one ad-hoc agent, prompted by the operator, in the task's existing worktree and branch (§7.2, §8.6, §13.2); → `queued`, and back to `blocked` at the same step with the same reason when it exits. It decides nothing about the blocked step and does not consume its retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped`, advances to the next step; → `queued` |
 | `answer` | awaiting_input | Delivers the answer to the pending input request into the live agent session (§7.4); → `running` (step clock resumes) |
 | `approve` | awaiting_gate | Gate step → `approved`; advances; → `queued` |
@@ -435,6 +493,33 @@ stdout/stderr are captured to the step transcript.
   cannot fix it, and short-circuiting the budget would make it the only reason in
   vincent that bypasses this section — to save one process spawn at the default
   `max_retries: 1`. Its value is that the reason names the fix.
+- **An ad-hoc repair does not consume the blocked step's budget.** *Added
+  2026-08-24 (task 025).* From `blocked`, `retry` re-runs an unchanged step,
+  `edit + retry` can rewrite only that step's own prompt or command, and `skip`
+  advances past an unsatisfied check — none of them can change the worktree. A
+  `repair` (§6) runs one operator-prompted agent that can, in the task's
+  existing worktree and branch. Its row sits at the blocked step's index under
+  the reserved step id `__repair` (§5.4), and attempts are counted per
+  `(task_id, step_index, step_id, iteration)` — so the blocked step's budget is
+  untouched by construction, not by a special case. After any number of repairs
+  a `retry` gets exactly the attempts it would have got with none.
+
+  The repair itself carries `max_retries: 0`: a failed repair fails fast rather
+  than silently paying for a second agent run, which is the built-in `adhoc`
+  workflow's reasoning applied to the same shape of one-off run.
+
+  A repair decides **nothing** about the blocked step. Whatever the agent exits
+  with, the task returns to `blocked` at the same step with the same reason and
+  a human chooses. Auto-retrying on a repair's success was considered and
+  rejected: the operator would never see the repair's diff before the step
+  re-ran, and a repair agent's exit code is not the right thing to authorize
+  more agent spend with — this section's posture is that a human decides what a
+  machine could not.
+
+  This does not reopen task 018's declined `on_failure:` / try-catch. That
+  decision is about what a workflow author can declare ahead of time; the whole
+  point of a repair is that nothing was declared ahead of time. It adds a human
+  action, not a workflow field.
 
 ### 7.3 Fresh session per step
 
@@ -1331,6 +1416,17 @@ reach codex.
 
 The resolved triple is recorded on every StepRun (§5.4, §14) and passed to the
 adapter via `RunSpec` (§9.1).
+
+*Amended 2026-08-24 (task 025).* An ad-hoc **repair** run (§6) has no step in a
+workflow file to carry level 1, so the **repair request itself** stands in for
+it: `agent` / `model` / `effort` on `POST /v1/tasks/{id}/repair` (§13.2) resolve
+ahead of the task override, the workflow `defaults` and the adapter default,
+with agent-scoped inheritance applying unchanged. The blocked step's own
+selection is deliberately **not** the base — a `command` step has none, and a
+repair is a different job from the step it is repairing. Everything else the
+run needs (permission mode, `on_input`, timeout) resolves exactly as it does for
+a workflow `agent` step, so the workflow's `defaults:` govern it and full-auto,
+`wait` and the agent timeout are the fallbacks.
 
 ## 9. Agent adapters
 
@@ -2585,6 +2681,22 @@ POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch
                                         branch_exists block (§10, task 001); it is validated
                                         and collision-checked exactly as creation is, and
                                         unlike the other two it does not touch the snapshot
+POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
+                                        (blocked only; added 2026-08-24, task 025). Runs one
+                                        ad-hoc agent in the task's existing worktree and
+                                        branch (§6, §7.2). `prompt` is required and is
+                                        **literal text**, never a text/template source — it is
+                                        prose typed at a form, and the failure context around
+                                        it is assembled by the daemon; an empty or
+                                        whitespace-only prompt is a 400. The optional triple
+                                        stands in for the step level of §8.6's chain for this
+                                        one run and is validated exactly as creation validates
+                                        a task's: an unregistered agent or a known-invalid
+                                        model/effort is a 400, a value no catalog knows rides
+                                        back in `warnings[]`. The response is the task (now
+                                        queued) plus `warnings`. The repair returns the task
+                                        to `blocked` at the same step with the same
+                                        `block_reason` whatever the agent exits with
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -2730,6 +2842,9 @@ CREATE TABLE tasks (
   pause_requested     INTEGER NOT NULL DEFAULT 0, -- §6 pause accepted, not yet taken effect
   retry_cursor_at     TEXT,                   -- last human `retry`; the retry budget counts failures after it (§7.2)
   pending_override_json TEXT,                 -- edit+retry text awaiting the next attempt's step_run
+  pending_repair_json TEXT,                   -- ad-hoc repair request awaiting its admission (§6, task 025, migration 0010);
+                                              -- drained by the transition that returns the task to blocked, not by the
+                                              -- step_run insert — an interrupted repair must re-run as a repair (§12.4)
   pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
   admit_not_before    TEXT,                   -- §11 admission hold; NULL = admissible now (task 003)
   queued_reason       TEXT,                   -- why a queued task waits on more than a slot; NULL = the ordinary queue
@@ -2866,6 +2981,23 @@ stream for the live tail.
    the board pins those tasks and rings the bell. It **never steals focus**:
    auto-opening under a keystroke is how an answer gets lost, so it announces
    itself with a badge on the row and a footer hint, and the human opens it.
+
+   **Repair popup (task 025, added 2026-08-24).** On a `blocked` task, `R` opens
+   a second popup that owns the keyboard the way the answer form does: a
+   required free-text prompt (`enter` edits it inline, `e` opens it in
+   `$EDITOR`) and optional agent/model/effort rows fed by the same
+   `GET /v1/agents` pickers the new-task flow uses (§8.6, with the request
+   standing in for the step level). `ctrl+s` starts the repair, `esc` closes it
+   and discards the draft. It is a popup and not an action key because a repair
+   needs prose written for this one task — which is also why it is excluded from
+   bulk actions.
+
+   The detail timeline must render a repair's StepRun as **its own labeled
+   entry** under the blocked step, never as another attempt of that step (§5.4):
+   its row sits at that step's index under the reserved id `__repair`, and
+   showing it as an attempt would tell the operator the opposite of what
+   happened. It also does not make its index read as a `parallel` group, which
+   is otherwise what more than one distinct step id at one index means.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
    `$EDITOR`) → fields → base branch (default prefilled) →
@@ -3183,9 +3315,12 @@ focus between panels · `M` toggle mouse.
 Task actions act on the selected task — or on the whole bulk selection when there
 is one (task 011) — and are offered only when the daemon reports them in
 `available_actions`: `p` pause/resume · `a` approve · `x` reject · `r`
-retry · `s` skip · `E` edit+retry in `$EDITOR` · `c` cancel · `A` archive. `x`
+retry · `R` repair · `s` skip · `E` edit+retry in `$EDITOR` · `c` cancel · `A`
+archive. `x`
 rejects because `r` is taken; `r` doubles as *retry connecting* while disconnected,
-where no task is reachable anyway. Destructive actions confirm inline: `c` kills a
+where no task is reachable anyway. `R` (*added 2026-08-24, task 025*) opens the
+repair popup rather than acting immediately, and is excluded from bulk actions
+(task 011) — a repair needs a prompt written for one task. Destructive actions confirm inline: `c` kills a
 live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 `set priority` (§6) has no key — priority is chosen in the new-task flow.
 
