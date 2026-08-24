@@ -237,6 +237,14 @@ func (e *stepEnv) blindTo(run *store.StepRun) bool {
 	if run.StepType == workflow.StepLoop {
 		return true
 	}
+	// The third rule, and the plainest: a repair is not a step of the
+	// workflow (task 025). Its row sits at the blocked step's index under a
+	// reserved id, and letting it through would put `__repair` in `.Steps`
+	// for every step after it — a key no workflow author wrote, present
+	// exactly when somebody happened to press a key.
+	if run.StepID == RepairStepID {
+		return true
+	}
 	if !e.inGroup || e.loop != nil {
 		return false
 	}
@@ -286,6 +294,19 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 	}
 	if err := r.ensureWorktree(ctx, task, project, log); err != nil {
 		return // ensureWorktree already blocked or re-queued the task
+	}
+	// An ad-hoc repair the human asked for while the task was blocked (§6,
+	// task 025). It is a whole admission of its own: one agent runs in this
+	// worktree and the task goes back to `blocked` at the same step, so the
+	// step walk below never starts.
+	//
+	// It sits after ensureWorktree deliberately. A task blocked before its
+	// worktree existed (`branch_exists`, `base_branch_missing`) re-blocks on
+	// the same reason above without spawning an agent, which is the right
+	// outcome reached by code that already existed.
+	if req := task.PendingRepair; req != nil && !req.Empty() {
+		r.runRepair(ctx, task, project, wf, *req, log)
+		return
 	}
 
 	for index := task.CurrentStep; index < len(wf.Steps); index++ {
@@ -561,7 +582,14 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	// insert drains it in the same transaction — it marks the attempt the
 	// human edited, not the automatic retries that may follow, and a crash
 	// cannot clear it without recording it.
-	if err := r.deps.Store.CreateStepRunTakingOverride(r.persistCtx(), run); err != nil {
+	create := r.deps.Store.CreateStepRunTakingOverride
+	if env.step.ID == RepairStepID {
+		// A repair is not the attempt the human edited (task 025): draining
+		// their override onto it would record the edit against a row that is
+		// not the step, and take it away from the retry that is.
+		create = r.deps.Store.CreateStepRun
+	}
+	if err := create(r.persistCtx(), run); err != nil {
 		env.log.Error("create step run", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
 	}

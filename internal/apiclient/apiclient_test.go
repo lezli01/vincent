@@ -123,6 +123,17 @@ func (h *harness) setState(t *testing.T, id int64, to store.TaskState) {
 	}
 }
 
+// block puts the harness task into `blocked` with a reason — the one state a
+// §6 repair may be asked for from (task 025).
+func (h *harness) block(t *testing.T, reason string) {
+	t.Helper()
+	h.setState(t, h.taskID, store.TaskRunning)
+	if _, _, err := h.st.TransitionTask(t.Context(), h.taskID,
+		store.TaskRunning, store.TaskBlocked, store.TaskChange{BlockReason: &reason}); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+}
+
 // snapshotWorkflow is a three-step snapshot covering every step type that
 // carries editable text, plus the manual gate that carries none.
 const snapshotWorkflow = `name: three

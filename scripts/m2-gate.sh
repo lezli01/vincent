@@ -954,6 +954,126 @@ EOF
   echo "=== scenario 8 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 9 — an ad-hoc repair agent unblocks a step nothing else could
+# (§6, §7.2, §13.2, task 025).
+#
+# The blocked step is a `command` step on purpose. It has no agent selection of
+# its own, which is exactly why a repair's agent/model/effort stand in for the
+# step level of §8.6's chain rather than inheriting from the step being
+# repaired — and it means the only agent process this scenario runs is the
+# repair itself, so "the repair is what changed the worktree" needs no
+# inference.
+#
+# The step's check greps a tracked file for a line only the fake agent writes
+# (`FAKEAGENT_EDIT_FILE`, which appends to an existing tracked file). So the
+# task blocks on check_failed, the repair puts the line there, the task returns
+# to blocked with the *same* reason, and only then does a retry pass.
+# ---------------------------------------------------------------------------
+scenario9() {
+  echo "=== scenario 9: an ad-hoc repair agent unblocks a failing check"
+  scenario_dirs s9
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  # Both run: bodies are one git command each — the sh∩pwsh intersection the
+  # daemon's shell holds every workflow to (§8.3). `git grep -q` exits 1 when
+  # the pattern is absent, which is the whole failing condition.
+  cat > "$CONFIG_DIR/workflows/m2-repair.yaml" <<'EOF'
+name: m2-repair
+description: M2 gate — a check only a repair can satisfy.
+defaults:
+  agent: claude
+  max_retries: 0
+steps:
+  - id: work
+    type: command
+    run: 'git commit --allow-empty -m "m2 gate: the work"'
+    check: 'git grep -q "fakeagent was here" -- fixture.txt'
+  - id: land
+    type: command
+    run: 'git commit --allow-empty -m "m2 gate: the repair held"'
+EOF
+
+  export FAKEAGENT_SCENARIO=success
+  export FAKEAGENT_EDIT_FILE=fixture.txt
+  daemon_up
+
+  local repo="$TMP/s9/repo" proj task_id task steps
+  make_repo "$repo"
+  printf 'pending\n' > "$repo/fixture.txt"
+  git -C "$repo" add fixture.txt
+  git -C "$repo" commit -qm fixture
+  proj="$(register_project "$repo")"
+
+  task_id="$(api POST /tasks \
+    "{\"project_id\":$proj,\"workflow\":\"m2-repair\",\"title\":\"Repair me\"}" | jq -r .id)"
+
+  echo "== the check fails and the task blocks"
+  wait_for_state "$task_id" blocked 90
+  task="$(api GET "/tasks/$task_id")"
+  [[ "$(jq -r .block_reason <<<"$task")" == "check_failed" ]] \
+    || fail "expected a check_failed block: $task"
+  jq -e '.available_actions | index("repair")' <<<"$task" >/dev/null \
+    || fail "available_actions misses repair while blocked: $task"
+  local blocked_at
+  blocked_at="$(jq -r .current_step <<<"$task")"
+
+  echo "== a repair with no prompt is refused"
+  local status
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"prompt":"   "}' "$BASE/tasks/$task_id/repair")"
+  [[ "$status" == "400" ]] || fail "an empty repair prompt should be 400, got $status"
+
+  echo "== repair: one agent run in this task's existing worktree"
+  api POST "/tasks/$task_id/repair" \
+    '{"prompt":"Put the line the check is looking for into fixture.txt."}' >/dev/null
+
+  echo "== it comes back to the same step with the same reason"
+  wait_for_state "$task_id" blocked 90
+  task="$(api GET "/tasks/$task_id")"
+  [[ "$(jq -r .block_reason <<<"$task")" == "check_failed" ]] \
+    || fail "the repair changed the block reason: $task"
+  [[ "$(jq -r .current_step <<<"$task")" == "$blocked_at" ]] \
+    || fail "the repair moved the cursor off step $blocked_at: $task"
+
+  echo "== the repair is its own row, not an attempt of the blocked step"
+  steps="$(api GET "/tasks/$task_id/steps")"
+  jq -e --argjson i "$blocked_at" \
+    '[.[] | select(.step_id == "__repair" and .step_index == $i and .state == "succeeded")] | length == 1' \
+    <<<"$steps" >/dev/null || fail "no succeeded __repair row at step $blocked_at: $steps"
+  jq -e '[.[] | select(.step_id == "work")] | length == 1' <<<"$steps" >/dev/null \
+    || fail "the repair was counted as an attempt of the blocked step: $steps"
+
+  echo "== only now does a retry pass, and the workflow finishes"
+  api POST "/tasks/$task_id/retry" >/dev/null
+  wait_for_state "$task_id" done 90
+  steps="$(api GET "/tasks/$task_id/steps")"
+  jq -e '[.[] | select(.step_id == "land" and .state == "succeeded")] | length == 1' \
+    <<<"$steps" >/dev/null || fail "the workflow did not reach the step after the repair: $steps"
+
+  echo "== repair is refused outside blocked, with the state in the envelope"
+  local out body
+  out="$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" -d '{"prompt":"too late"}' \
+    -w $'\n%{http_code}' "$BASE/tasks/$task_id/repair")"
+  status="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  [[ "$status" == "409" ]] || fail "repair from done should be 409, got $status: $body"
+  [[ "$(jq -r .error.details.state <<<"$body")" == "done" ]] \
+    || fail "the 409 does not carry details.state: $body"
+
+  unset FAKEAGENT_SCENARIO FAKEAGENT_EDIT_FILE
+  "$VINCENT" daemon stop
+  echo "=== scenario 9 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -968,7 +1088,9 @@ case "$WHICH" in
   6) scenario6 ;;
   7) scenario7 ;;
   8) scenario8 ;;
-  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8 ;;
+  9) scenario9 ;;
+  all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
+     scenario9 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

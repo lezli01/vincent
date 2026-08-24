@@ -1,0 +1,24 @@
+-- 0010_repair: the pending ad-hoc repair request (task 025, spec §6/§14).
+--
+-- It mirrors `pending_override_json`'s role exactly: a bridge from a handler
+-- that runs while the task is `blocked` — and therefore has no step_runs row
+-- to write to — across the transition, to the actor that is the sole writer
+-- of this task's rows (phase 2 decision). The API validates and persists; the
+-- admitted actor reads it and runs the repair.
+--
+-- Where it differs from the override is *when* it drains. An override is
+-- drained by the insert of the attempt it belongs to; a repair request is
+-- drained by the transition that returns the task to `blocked` afterwards.
+-- Draining at insert would make a crash mid-repair silently become a plain
+-- retry of the blocked step on the next admission — §12.4 finalizes the
+-- running row as `interrupted` and re-queues the task, and the actor then
+-- walks from `current_step`. Leaving the request set means an interrupted
+-- repair re-runs as a repair, which is what §12.4 already promises for an
+-- interrupted step.
+--
+-- No `kind` column on step_runs accompanies this, and no second ledger. A
+-- repair's row sits at the blocked step's index under the reserved step id
+-- `__repair`, and `CountStepAttempts` keys on (task_id, step_index, step_id,
+-- iteration) — so the row is invisible to the blocked step's retry budget
+-- with no query changing at all (task 025).
+ALTER TABLE tasks ADD COLUMN pending_repair_json TEXT; -- NULL = no repair requested

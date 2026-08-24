@@ -88,6 +88,17 @@ const (
 	Approve Action = "approve"
 	Reject  Action = "reject"
 	Archive Action = "archive"
+	// Repair is an ad-hoc repair agent a human launches from `blocked`
+	// (task 025). It is a second producer of `blocked → queued`, and the
+	// admission it produces runs one agent in the task's existing worktree
+	// and returns the task to `blocked` at the same step with the same
+	// reason — the repair decides nothing about the blocked step.
+	//
+	// It is a human action rather than a lifecycle state of its own: a
+	// `repairing` state would cost an FSM row, a board legend, slot rules
+	// and a recovery path (what task 014 paid for `awaiting_children`) to
+	// buy one nicer `cancel`, which keeps its present meaning throughout.
+	Repair Action = "repair"
 )
 
 // Engine events. They are transitions the daemon performs while running a
@@ -123,7 +134,9 @@ const (
 
 // humanActions is the set of actions a client may invoke, in the order §6
 // lists them.
-var humanActions = []Action{Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive}
+var humanActions = []Action{
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive,
+}
 
 // Human reports whether a is a human action rather than an engine event.
 func Human(a Action) bool {
@@ -164,6 +177,7 @@ var table = map[Action]map[State]Transition{
 	},
 	Resume:  {Paused: {To: Queued}},
 	Retry:   {Blocked: {To: Queued}},
+	Repair:  {Blocked: {To: Queued}},
 	Skip:    {Blocked: {To: Queued}, AwaitingGate: {To: Queued}},
 	Answer:  {AwaitingInput: {To: Running}},
 	Approve: {AwaitingGate: {To: Queued}},

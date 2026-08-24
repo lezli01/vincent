@@ -9,6 +9,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
@@ -149,5 +150,66 @@ func TestDiffWithoutWorktree(t *testing.T) {
 	}
 	if apiErr.Status != http.StatusConflict {
 		t.Errorf("status = %d, want 409", apiErr.Status)
+	}
+}
+
+// TestRepairAgainstRealHandlers drives POST /v1/tasks/{id}/repair through the
+// real handler: a blocked task re-queues, and the daemon's own view of it
+// comes back (§6, task 025).
+func TestRepairAgainstRealHandlers(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.block(t, "check_failed")
+
+	got, warnings, err := h.client().Repair(ctx, h.taskID,
+		apiclient.RepairInput{Prompt: "fix the failing check"})
+	if err != nil {
+		t.Fatalf("Repair: %v", err)
+	}
+	if got.State != string(store.TaskQueued) {
+		t.Errorf("state = %q, want queued", got.State)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for a repair with no selection", warnings)
+	}
+}
+
+// TestRepairRejectsAnEmptyPrompt: the daemon answers 400 and the client hands
+// the §13.1 envelope back intact.
+func TestRepairRejectsAnEmptyPrompt(t *testing.T) {
+	h := newHarness(t)
+	h.block(t, "check_failed")
+
+	_, _, err := h.client().Repair(context.Background(), h.taskID, apiclient.RepairInput{})
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		t.Fatalf("Repair with no prompt = %v, want a 400", err)
+	}
+}
+
+// TestRepairOutsideBlockedCarriesState: a repair is valid from `blocked`
+// alone, and the 409 says what it found.
+func TestRepairOutsideBlockedCarriesState(t *testing.T) {
+	h := newHarness(t)
+
+	_, _, err := h.client().Repair(context.Background(), h.taskID,
+		apiclient.RepairInput{Prompt: "fix it"})
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict {
+		t.Fatalf("Repair from queued = %v, want a 409", err)
+	}
+	if apiErr.Details["state"] != string(store.TaskQueued) {
+		t.Errorf("details.state = %q, want queued", apiErr.Details["state"])
+	}
+}
+
+// TestRepairStepIDMatchesTheEngine pins the client's copy of the reserved
+// step id (§5.4) to the engine's. The client owns its wire types, the same
+// way it owns the action names above — and a copy that drifted would make
+// every repair row render as an attempt of the step it sits beside.
+func TestRepairStepIDMatchesTheEngine(t *testing.T) {
+	if apiclient.RepairStepID != taskrun.RepairStepID {
+		t.Errorf("apiclient.RepairStepID = %q, engine says %q",
+			apiclient.RepairStepID, taskrun.RepairStepID)
 	}
 }

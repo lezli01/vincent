@@ -715,7 +715,7 @@ func TestCreateWorkflowSkillSplicingIsTemplateSafe(t *testing.T) {
 		t.Fatalf("front matter survived: %q", body)
 	}
 
-	indented := indentBlock(escapeTemplate(body), promptIndent)
+	indented := indentBlock(EscapeTemplate(body), promptIndent)
 	for _, line := range strings.Split(indented, "\n") {
 		if line != "" && !strings.HasPrefix(line, promptIndent) {
 			t.Errorf("line %q is not indented into the block scalar", line)

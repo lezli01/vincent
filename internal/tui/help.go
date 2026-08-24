@@ -63,15 +63,21 @@ func helpText(ctx bindingContext) string {
 	if ctx != "" {
 		writeSection(string(ctx), bindingsFor(ctx))
 	}
-	// The answer form's keys ride along with the panels it pops up over —
-	// it has no focus of its own to be the context.
-	if isHomeContext(ctx) {
-		writeSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
-	}
 	if isHomeContext(ctx) {
 		writeSection("task actions (on the selected task, offered only when valid)", actions)
 	}
 	writeSection("global keys", global)
+	// The two popups' keys ride along with the panels they pop up over —
+	// neither has a focus of its own to be the context — and they come after
+	// the keys that work *now* rather than before them. Both popups print
+	// their own keys inside themselves while they own the keyboard, so these
+	// rows are here for completeness; the sheet has no scroll, and what it
+	// drops off the bottom should be the hypothetical rather than `esc`
+	// (task 025 — a second popup section is what made the difference visible).
+	if isHomeContext(ctx) {
+		writeSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
+		writeSection("repair form (R on a blocked task)", bindingsFor(ctxRepairForm))
+	}
 	writeSection("go to (from the : palette)", nav)
 	return b.String()
 }

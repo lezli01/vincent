@@ -125,6 +125,8 @@ func (h *actionHarness) invoke(
 		return h.runner.Resume(ctx, id)
 	case taskstate.Retry:
 		return h.runner.Retry(ctx, id, store.Override{})
+	case taskstate.Repair:
+		return h.runner.Repair(ctx, id, store.RepairRequest{Prompt: "fix it"})
 	case taskstate.Skip:
 		return h.runner.Skip(ctx, id)
 	case taskstate.Approve:
@@ -173,7 +175,8 @@ func TestActionsFromEveryValidState(t *testing.T) {
 func TestActionsFromInvalidStateConflict(t *testing.T) {
 	actions := []taskstate.Action{
 		taskstate.Cancel, taskstate.Pause, taskstate.Resume, taskstate.Retry,
-		taskstate.Skip, taskstate.Approve, taskstate.Reject, taskstate.Archive,
+		taskstate.Repair, taskstate.Skip, taskstate.Approve, taskstate.Reject,
+		taskstate.Archive,
 	}
 	for _, action := range actions {
 		// Find a state this action is not valid from.

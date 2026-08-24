@@ -187,7 +187,7 @@ const createWorkflowFooter = `
 // It is a var rather than a const because the skill is spliced in at init.
 // Nothing may reassign it; the built-in scope parses it once.
 var CreateWorkflowSource = createWorkflowHeader +
-	indentBlock(escapeTemplate(skillInstructions(skills.VincentWorkflows)), promptIndent) +
+	indentBlock(EscapeTemplate(skillInstructions(skills.VincentWorkflows)), promptIndent) +
 	createWorkflowFooter
 
 // skillInstructions drops an Agent Skill's YAML front matter, keeping the
@@ -204,15 +204,6 @@ func skillInstructions(src string) string {
 		return src
 	}
 	return strings.TrimLeft(rest[end+len("\n"+fence):], "\n")
-}
-
-// escapeTemplate neutralizes the one sequence that would make embedded prose
-// execute as part of the step's template. Only "{{" opens an action, so a
-// lone "}}" needs nothing. The replacement is itself an action rendering the
-// two literal characters, which is why this must run before the text reaches
-// Render and not after.
-func escapeTemplate(s string) string {
-	return strings.ReplaceAll(s, "{{", `{{"{{"}}`)
 }
 
 // indentBlock prefixes every non-empty line so the text sits inside a YAML

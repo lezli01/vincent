@@ -158,6 +158,22 @@ func Render(name, text string, rc RenderContext) (string, error) {
 	return sb.String(), nil
 }
 
+// EscapeTemplate neutralizes the one sequence that would make embedded prose
+// execute as part of a step's template. Only "{{" opens an action, so a lone
+// "}}" needs nothing. The replacement is itself an action rendering the two
+// literal characters, which is why this must run before the text reaches
+// Render and not after.
+//
+// Two callers need it, for the same reason: text that was written as prose
+// reaches a field Render will parse. The built-in `create-workflow` prompt
+// splices in an embedded skill (task 024), and a `repair` prompt is what an
+// operator typed at a form (task 025). Neither is a workflow-authoring
+// surface, and §8.4 renders with `missingkey=error` — so an unescaped `{{`
+// would fail the step before anything ran.
+func EscapeTemplate(s string) string {
+	return strings.ReplaceAll(s, "{{", `{{"{{"}}`)
+}
+
 // Env returns the vincent variables added to the environment of command and
 // check steps (spec §8.5). They are appended to the daemon's own environment
 // by the caller, along with any step-declared `env`.

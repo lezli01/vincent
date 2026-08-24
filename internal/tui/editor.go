@@ -99,6 +99,40 @@ func (d *detail) editRetry() tea.Cmd {
 	})
 }
 
+// editRepairPrompt opens the repair prompt in $EDITOR (§6, task 025). A
+// repair prompt is prose of a length nobody chose, and the popup's field is
+// three lines — the same argument edit+retry already makes for its own text.
+//
+// Unlike edit+retry it posts nothing: what the editor leaves goes back into
+// the form, and the human still has to start the repair.
+func (d *detail) editRepairPrompt(text string) tea.Cmd {
+	path, err := writeEditorFile(fmt.Sprintf("task%d-repair", d.taskID), ".md", text)
+	if err != nil {
+		if d.repair != nil {
+			d.repair.err = errString(err)
+		}
+		return nil
+	}
+	argv := append(editorCommand(), path)
+	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
+	taskID := d.taskID
+	return d.exec(cmd, func(runErr error) tea.Msg {
+		defer func() { _ = os.Remove(path) }()
+		msg := repairEditMsg{taskID: taskID}
+		if runErr != nil {
+			msg.err = runErr
+			return msg
+		}
+		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
+		if readErr != nil {
+			msg.err = readErr
+			return msg
+		}
+		msg.text = string(edited)
+		return msg
+	})
+}
+
 // writeEditorFile seeds a temp file with the text an editing session starts
 // from. The caller supplies the extension so the editor picks sensible
 // highlighting, and the name so two concurrent sessions cannot collide. It

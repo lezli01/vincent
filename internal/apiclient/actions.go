@@ -18,12 +18,23 @@ const (
 	ActionPause   = "pause"
 	ActionResume  = "resume"
 	ActionRetry   = "retry"
+	ActionRepair  = "repair"
 	ActionSkip    = "skip"
 	ActionAnswer  = "answer"
 	ActionApprove = "approve"
 	ActionReject  = "reject"
 	ActionArchive = "archive"
 )
+
+// RepairStepID is the reserved step id the daemon records an ad-hoc repair
+// run under (§5.4, task 025). A repair's row sits at the *blocked step's*
+// index, so this is what tells the two apart — a client that rendered it as
+// an attempt of that step would say the opposite of what happened.
+//
+// It is declared here for the reason the action names above are: the client
+// owns its wire types, and a string the daemon sends is keyed onto rather
+// than imported from the engine. A test pins the two together.
+const RepairStepID = "__repair"
 
 // Override is the body of POST /v1/tasks/{id}/retry (§6). Prompt and Run are
 // edit+retry: the text replaces the failing step's prompt or command in this
@@ -60,6 +71,42 @@ func (c *Client) Retry(ctx context.Context, id int64, ov Override) (Task, error)
 		return c.action(ctx, id, ActionRetry, nil)
 	}
 	return c.action(ctx, id, ActionRetry, ov)
+}
+
+// RepairInput is the body of POST /v1/tasks/{id}/repair (§6, task 025).
+// Prompt is required and literal — it is prose, not a template — and the
+// optional triple stands in for the step level of §8.6's chain for that one
+// run: request > task override > the workflow's `defaults:` > adapter
+// default.
+type RepairInput struct {
+	Prompt string `json:"prompt"`
+	Agent  string `json:"agent,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+// Repair launches a one-off agent in the blocked task's existing worktree
+// (§6, task 025). The task re-queues, runs the agent, and returns to
+// `blocked` at the same step with the same reason whatever the agent did —
+// the repair changes the worktree, and a human still decides whether to
+// retry.
+//
+// The second return carries the §8.2 catalog warnings the selection raised,
+// the way task creation reports them; an empty prompt is a 400.
+func (c *Client) Repair(ctx context.Context, id int64, in RepairInput) (Task, []string, error) {
+	var out repairResponse
+	path := fmt.Sprintf("/v1/tasks/%d/%s", id, ActionRepair)
+	if err := c.post(ctx, path, in, &out); err != nil {
+		return Task{}, nil, err
+	}
+	return out.Task, out.Warnings, nil
+}
+
+// repairResponse decodes the repair body, whose task fields sit at the top
+// level beside `warnings` — the shape archive's response uses for `branch`.
+type repairResponse struct {
+	Task
+	Warnings []string `json:"warnings"`
 }
 
 // Skip marks the current step skipped and advances (§6).

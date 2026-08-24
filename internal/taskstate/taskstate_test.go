@@ -7,7 +7,7 @@ import (
 
 // allActions is every action the table may contain, human and engine.
 var allActions = []Action{
-	Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive,
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive,
 	Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
 	FanOut, ChildrenSettled,
 }
@@ -54,9 +54,12 @@ var wantTransitions = map[State]map[Action]State{
 		Cancel:          Aborted,
 		ChildrenSettled: Queued,
 	},
+	// Blocked is the only state `repair` is valid from (task 025): it is a
+	// second producer of blocked → queued, beside retry and skip.
 	Blocked: {
 		Cancel: Aborted,
 		Retry:  Queued,
+		Repair: Queued,
 		Skip:   Queued,
 	},
 	Paused: {
@@ -158,7 +161,7 @@ func TestHumanActionsFrom(t *testing.T) {
 		Running:       {Cancel, Pause},
 		AwaitingGate:  {Approve, Cancel, Reject, Skip},
 		AwaitingInput: {Answer, Cancel},
-		Blocked:       {Cancel, Retry, Skip},
+		Blocked:       {Cancel, Repair, Retry, Skip},
 		Paused:        {Cancel, Resume},
 		Done:          {Archive},
 		Aborted:       {Archive},
@@ -178,7 +181,7 @@ func TestHumanActionsFrom(t *testing.T) {
 // TestHumanClassification pins which actions clients may invoke: an engine
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
-	human := []Action{Cancel, Pause, Resume, Retry, Skip, Answer, Approve, Reject, Archive}
+	human := []Action{Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive}
 	engine := []Action{
 		Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
 		FanOut, ChildrenSettled,

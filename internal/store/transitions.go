@@ -71,6 +71,16 @@ type TaskChange struct {
 	// PendingOverride hands edit+retry text to the actor that will create
 	// the next attempt's step run; it clears when drained.
 	PendingOverride *Override
+	// PendingRepair hands an ad-hoc repair request to the actor the
+	// admission it produces will start (§6, task 025). An empty request
+	// clears the column, which is how the re-block drains it.
+	//
+	// Clearing is otherwise not the caller's job: TransitionTask NULLs the
+	// column on any transition *out of* blocked that does not set one, so
+	// `retry`, `skip` and `cancel` can never hand a stale request to a later
+	// admission. The carve-out is the repair action itself, which is exactly
+	// the blocked → queued transition that writes one.
+	PendingRepair *RepairRequest
 	// PendingInput stores the normalized InputRequest JSON with the
 	// transition into awaiting_input (§7.4). Clearing is not the caller's
 	// job: TransitionTask NULLs the column on any transition out of
@@ -131,6 +141,14 @@ func (s *Store) TransitionTask(
 			// awaiting_input always discards the pending request.
 			t.PendingInputJSON = ""
 		}
+		if from == TaskBlocked && ch.PendingRepair == nil {
+			// A repair request describes *this* block, so any other way out
+			// of blocked drops it — retry means retry, and skip must not
+			// hand a repair aimed at one step to the step after it. The one
+			// transition that sets a request is the repair action itself,
+			// and it is carved out by having supplied one (task 025).
+			t.PendingRepair = nil
+		}
 		if from == TaskQueued {
 			// The §11 admission-hold invariant, same construction: a hold
 			// describes *this* queued period, so leaving queued always drops
@@ -164,15 +182,20 @@ func (s *Store) TransitionTask(
 		if err != nil {
 			return err
 		}
+		pendingRepair, err := marshalRepair(t.PendingRepair)
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
 				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
-				pending_override_json = ?, pending_input_json = ?,
+				pending_override_json = ?, pending_repair_json = ?, pending_input_json = ?,
 				admit_not_before = ?, queued_reason = ?,
 				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 			WHERE id = ? AND state = ?`,
 			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
 			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+			pendingRepair,
 			nullString(t.PendingInputJSON),
 			formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 			formatTime(t.UpdatedAt),
@@ -359,6 +382,13 @@ func applyChange(t *Task, ch TaskChange) {
 			t.PendingOverride = ch.PendingOverride
 		}
 	}
+	if ch.PendingRepair != nil {
+		if ch.PendingRepair.Empty() {
+			t.PendingRepair = nil
+		} else {
+			t.PendingRepair = ch.PendingRepair
+		}
+	}
 	if ch.PendingInput != nil {
 		t.PendingInputJSON = *ch.PendingInput
 	}
@@ -378,6 +408,19 @@ func marshalOverride(o *Override) (any, error) {
 	b, err := json.Marshal(o)
 	if err != nil {
 		return nil, fmt.Errorf("marshal pending override: %w", err)
+	}
+	return string(b), nil
+}
+
+// marshalRepair renders a pending repair request for storage; none is SQL
+// NULL.
+func marshalRepair(r *RepairRequest) (any, error) {
+	if r == nil || r.Empty() {
+		return nil, nil
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("marshal pending repair: %w", err)
 	}
 	return string(b), nil
 }

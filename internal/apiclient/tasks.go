@@ -300,6 +300,8 @@ type TaskDetail struct {
 	Steps        []StepRun       `json:"steps"`
 	// Warnings is set on the POST /v1/tasks 201 only: advisory findings that
 	// did not block creation, such as a model the catalog does not know.
+	// POST /v1/tasks/{id}/repair reports the same findings about its own
+	// selection, in its own body (task 025).
 	Warnings []string `json:"warnings,omitempty"`
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.

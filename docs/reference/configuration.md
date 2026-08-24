@@ -599,7 +599,7 @@ vincent project add /path/to/repo --name api --default-branch develop \
 | `VINCENT_CONFIG_DIR` | Override the config directory outright |
 | `VINCENT_DATA_DIR` | Override the data directory outright |
 | `XDG_CONFIG_HOME` / `XDG_DATA_HOME` | Honored on Linux in the normal way |
-| `EDITOR` | Used by the TUI for edit-and-retry and description editing |
+| `EDITOR` | Used by the TUI for edit-and-retry, repair prompts, and description editing |
 
 The two `VINCENT_*` overrides are how the test suite isolates state, and they
 are equally useful for running a second, throwaway instance:
