@@ -23,9 +23,11 @@
 #   triage (stop on reject / needs-info)
 #     └─ confirm-red (bug only)  prove the test fails on the unfixed code
 #   implement (write it, commit it, draft the PR)
-#   verify    (the expensive cross-platform legs)
+#   verify    (the expensive cross-platform legs, repaired in a bounded loop)
 #   gate      (a human reads the diff)
 #   publish → report
+#   gate-merge (a human reads the pull request)
+#   rebase → resolve? → repush → wait-checks → merge → merged
 #
 # ## How the branch is expressed
 #
@@ -70,6 +72,55 @@
 # amendment rule, the scratch-directory rule, the two PR artifacts — is written
 # once, which is the point of merging.
 #
+# ## When the cross-platform legs fail
+#
+# `verify` is a bounded repair loop rather than a single command: probe →
+# break → repair, four iterations, so the expensive legs get up to **three**
+# agent repair passes and every one of them is re-probed. `repair` carries
+# `if: not .Loop.IsLast` for exactly that reason — a repair on the last pass
+# would never be probed again, so its work would reach the human gate
+# unverified while costing a full session.
+#
+# A loop that runs out of iterations **succeeds** (§7.8: only exceeding
+# `max_iterations` blocks), so the loop itself cannot be the assertion.
+# `verify-final` is: it reads the last probe's exit code back out of `.Steps` —
+# an id under repetition resolves to its latest iteration — and fails the task
+# if the legs are still red. Without it, a branch whose race detector never
+# passed would arrive at the gate looking verified.
+#
+# The loop declares its own `timeout:` because `defaults.timeout` (30m) bounds
+# the *whole* loop rather than one iteration, and four probes plus three
+# 45-minute repairs do not fit inside it.
+#
+# ## After the PR: the merge tail
+#
+# Opening the pull request is not the end of the run. `gate-merge` is a second
+# manual gate, and it authorizes a different thing than the first: `gate` says
+# "make this branch public", `gate-merge` says "put it in the base branch".
+# Everything after it is deterministic except a conflict resolver:
+#
+#   rebase       fetch the base and rebase onto it, under `allow_failure` so a
+#                conflict is data rather than a blocked task
+#   resolve      an agent, and only if the rebase stopped on a conflict
+#   repush       assert the branch really sits on top of the base, force-push
+#   wait-checks  poll the *required* checks until they pass
+#   merge        `gh pr merge --merge`
+#   merged       read the PR back, confirm MERGED, clear the scratch directory
+#
+# `--merge` is not a preference: this repository has squash and rebase merges
+# disabled and merges everything with a merge commit, because a branch's
+# history becomes master's history (CLAUDE.md).
+#
+# The wait is a poll rather than `gh pr checks --watch`: `--required` narrows
+# it to the protected checks, exit code 8 means "pending" and is the one code
+# worth sleeping on, and a force-push opens a window in which GitHub has not
+# created the runs yet and answers "no checks reported" — which is pending too,
+# but only for the first few minutes.
+#
+# Nothing in the tail retries. A `gh pr merge` whose response was lost is not a
+# call to repeat, and neither is a force-push. `merged` is what says whether it
+# landed, and it asks GitHub rather than trusting an exit code.
+#
 # ## Why the brief and the implementation are two steps
 #
 # `diagnose`/`digest` run with `on_input: wait`, so they park the task in
@@ -110,7 +161,7 @@
 # (verbatim), the project's template, `branch_template` in config.yaml, then the
 # built-in (task 001, internal/worktree/branch.go).
 name: github-resolve-issue
-description: Read a GitHub bug or enhancement issue, clarify it with the author, deliver the fix or feature, and open the PR.
+description: Read a GitHub bug or enhancement issue, clarify it with the author, deliver the fix or feature, open the PR, then rebase and merge it once you approve.
 
 defaults:
   agent: claude
@@ -624,31 +675,135 @@ steps:
 
   - id: verify
     name: Verify across platforms
+    type: loop
+    # Four probes and three repairs. `defaults.timeout` bounds the *whole* loop
+    # (§7.8), not an iteration, so it has to be stated here or the loop is
+    # killed 30 minutes in, mid-repair.
+    count: 4
+    timeout: 5h
+    steps:
+      - id: verify-probe
+        name: Run the cross-platform legs
+        type: command
+        shell: sh
+        timeout: 20m
+        # A probe never retries — a second identical run is the same run — and
+        # `allow_failure` is what turns a red leg into something the `break`
+        # guard and the repair prompt can read instead of a blocked task.
+        max_retries: 0
+        allow_failure: true
+        # These are the legs CLAUDE.md requires before pushing but that are too
+        # slow to put in `implement`'s check. `testrace` needs cgo and a C
+        # compiler; on a machine without one this fails, and that is the honest
+        # answer rather than a silently skipped race detector — which matters
+        # more for a bug fix than for a feature, since "intermittent" is how
+        # half of them are reported. That failure is also not one an agent can
+        # repair, which is what `verify-final` exists to stop.
+        #
+        # The GOOS loop is not decorative: `go tool golangci-lint` cross-*builds*
+        # the linter and then cannot run it, so the linter is built for the host
+        # once and re-run per target. A host-only lint hides every finding in a
+        # build-tagged file — exactly where a platform-specific bug fix lands.
+        run: |
+          set -e
+          go run mage.go testrace
+          LINT=$(go tool -n golangci-lint)
+          for os in windows darwin linux; do
+            echo "--- golangci-lint GOOS=$os ---"
+            GOOS=$os "$LINT" run ./...
+          done
+
+      - id: verify-ok
+        name: Stop once the legs are green
+        type: break
+        if: '{{ eq (index .Steps "verify-probe").ExitCode 0 }}'
+
+      - id: repair
+        name: Repair the failing legs
+        type: agent
+        # Never on the last pass: nothing would probe it, so its work would
+        # reach the gate unverified while costing a whole session.
+        if: '{{ not .Loop.IsLast }}'
+        timeout: 45m
+        # An iteration *is* the retry here, and the next probe is a better
+        # judge than a retry of this step's own budget would be. One session
+        # per iteration, three at most.
+        max_retries: 0
+        prompt: |
+          The cross-platform verification legs are red on this branch. This is
+          the command that ran, and it failed:
+
+              go run mage.go testrace
+              LINT=$(go tool -n golangci-lint)
+              for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
+
+          Its output (this is pass {{.Loop.Index}} of the repair loop):
+
+          {{ (index .Steps "verify-probe").Result }}
+
+          You are on branch {{.Task.BranchName}}, based on
+          {{.Task.BaseBranch}}, in a dedicated worktree at
+          {{.Worktree.Path}}. The change under repair is the one described in
+          `.vincent-issue/brief.md`; the original issue is in
+          `.vincent-issue/issue.json`.
+
+          Fix the underlying cause:
+
+          - **Do not weaken, skip, delete or `t.Skip` a test**, and do not
+            relax a lint rule or add a `//nolint` to silence a finding. If a
+            finding is genuinely a false positive, `nolintlint` requires the
+            directive to carry a reason — write the reason, and say so in
+            `.vincent-issue/pr.md` too.
+          - A **race** the detector found is a real bug in the change, not
+            noise. Fix the synchronisation, do not serialise the test to hide
+            it.
+          - A finding under `GOOS=windows` or `GOOS=darwin` is usually a
+            build-tagged file the host lint never compiled. Cross-platform is
+            a hard requirement (`CLAUDE.md`): platform-specific code belongs in
+            `_unix.go` / `_windows.go` / `_darwin.go` / `_linux.go`.
+          - Stay inside the scope the brief agreed. If the legs are red for a
+            reason that predates this branch, say so plainly and fix only what
+            this branch broke.
+
+          **Commit your fix.** The next pass re-runs the legs against what is
+          committed, and the pull request body in `.vincent-issue/pr.md` should
+          still be true afterwards — update it if this repair changed what the
+          change does.
+
+          Never stage or commit `.vincent-issue/`.
+        # Cheap, and deliberately not a re-run of the legs — that is the next
+        # iteration's job, and paying for it twice is what makes a repair loop
+        # expensive. This only asserts the repair left the worktree in a state
+        # the probe can judge: committed, scratch untracked, and still building.
+        check: >
+          ! git ls-files .vincent-issue | grep -q . &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+          go build ./...
+        check_timeout: 5m
+
+  - id: verify-final
+    name: Refuse an unverified branch
     type: command
     shell: sh
-    timeout: 20m
-    # `max_retries: 0`: nothing here is flaky in a way a second identical run
-    # fixes, and each attempt is expensive. A failure blocks the task for you to
-    # read rather than silently buying another 45-minute agent attempt.
+    timeout: 1m
     max_retries: 0
-    # These are the legs CLAUDE.md requires before pushing but that are too slow
-    # to put in `implement`'s check. `testrace` needs cgo and a C compiler; on a
-    # machine without one this step fails, and that is the honest answer rather
-    # than a silently skipped race detector — which matters more for a bug fix
-    # than for a feature, since "intermittent" is how half of them are reported.
+    # A loop that runs out of iterations *succeeds* — only exceeding
+    # `max_iterations` blocks (§7.8) — so the loop cannot be the assertion.
+    # This is. `.Steps` resolves a repeated id to its latest iteration, so the
+    # guard reads the fourth probe, the one no repair ran after.
     #
-    # The GOOS loop is not decorative: `go tool golangci-lint` cross-*builds*
-    # the linter and then cannot run it, so the linter is built for the host
-    # once and re-run per target. A host-only lint hides every finding in a
-    # build-tagged file — exactly where a platform-specific bug fix lands.
+    # False guard ⇒ skipped ⇒ the workflow carries on, which is the green path.
+    if: '{{ ne (index .Steps "verify-probe").ExitCode 0 }}'
+    # The probe's output is not interpolated here on purpose: it is compiler and
+    # linter text, full of quotes and backticks, and rendering it into a shell
+    # script is how a diagnostic becomes a syntax error. It is already in the
+    # transcript under `verify-probe`, which is where you read it.
     run: |
-      set -e
-      go run mage.go testrace
-      LINT=$(go tool -n golangci-lint)
-      for os in windows darwin linux; do
-        echo "--- golangci-lint GOOS=$os ---"
-        GOOS=$os "$LINT" run ./...
-      done
+      echo "the cross-platform legs are still red after three repair passes." >&2
+      echo "read the last 'verify-probe' run in this task's transcript for the failure." >&2
+      exit 1
 
   - id: gate
     name: Approve the pull request
@@ -691,6 +846,10 @@ steps:
       Approve to push and open the PR. Reject if the change is wrong, out of
       scope, or not worth shipping.
 
+      This is the first of two gates. Approving here publishes the branch; it
+      does not merge anything. A second gate, after the PR exists, is what
+      authorizes rebasing it onto {{.Task.BaseBranch}} and merging it.
+
   - id: publish
     name: Push and open the PR
     type: command
@@ -717,13 +876,233 @@ steps:
     type: command
     shell: sh
     timeout: 2m
+    max_retries: 0
     # stdout becomes this step's Result and lands in the transcript — that is
-    # where you read the PR url. Clearing the scratch directory afterwards
-    # leaves the worktree clean, so archiving the task does not warn about a
-    # dirty tree.
+    # where you read the PR url, and it is also what `gate-merge` puts in front
+    # of you.
     #
-    # `&&`, not two lines: sh reports the last command's status, so an unchained
-    # `rm` would mask a failed `view` and leave the step green. It also means
-    # the drafts survive for inspection when the report fails — which is the
-    # same reason nothing deletes them if `publish` fails.
-    run: gh pr view "$(cat .vincent-issue/url.txt)" && rm -rf .vincent-issue
+    # It no longer deletes `.vincent-issue/`: the merge tail below still needs
+    # `url.txt`, so the scratch directory now lives until `merged`.
+    run: gh pr view "$(cat .vincent-issue/url.txt)"
+
+  - id: gate-merge
+    name: Approve the merge
+    type: manual
+    # The second authority boundary. `gate` said "make this branch public";
+    # this one says "put it in the base branch". Everything after it is
+    # deterministic — a rebase, a force-push, a wait, one merge call — so this
+    # is the last point at which a person decides anything.
+    instructions: |
+      The pull request for task #{{.Task.ID}} is open:
+
+      {{ (index .Steps "report").Result }}
+
+      Approving here rebases {{.Task.BranchName}} onto the current
+      {{.Task.BaseBranch}}, **force-pushes it** — rewriting the branch anyone
+      else may have pulled — waits for the required checks to pass, and then
+      merges the pull request with a merge commit. Merging closes the issue,
+      because the body says `Closes #…`, and GitHub deletes the remote branch.
+
+      Read the PR itself, not just the diff you already approved: the review
+      thread, and whether the base branch has moved under it in a way that
+      makes this change wrong rather than merely conflicted.
+
+      Reject to leave the pull request open and unmerged. Nothing is undone by
+      rejecting — the branch stays pushed and the PR stays up.
+
+  - id: rebase
+    name: Rebase onto the base branch
+    type: command
+    shell: sh
+    timeout: 10m
+    max_retries: 0
+    # `allow_failure` because a conflict is the expected other outcome, not an
+    # error: `resolve` reads this exit code. A failed row here is normal.
+    #
+    # A failure leaves the worktree mid-rebase, which is exactly the state
+    # `resolve` needs to finish the job — so nothing aborts it here.
+    allow_failure: true
+    run: |
+      set -e
+      git fetch origin {{.Task.BaseBranch}}
+      git rebase origin/{{.Task.BaseBranch}}
+
+  - id: resolve
+    name: Resolve the rebase conflicts
+    type: agent
+    if: '{{ ne (index .Steps "rebase").ExitCode 0 }}'
+    timeout: 45m
+    # One session, no retry: a second attempt inherits whatever state the first
+    # left behind, which is not the state this prompt describes. If it cannot
+    # finish, the task blocks and you finish the rebase by hand.
+    max_retries: 0
+    prompt: |
+      The rebase of {{.Task.BranchName}} onto `origin/{{.Task.BaseBranch}}`
+      stopped. It said:
+
+      {{ (index .Steps "rebase").Result }}
+
+      You are in the worktree at {{.Worktree.Path}}, most likely mid-rebase.
+      Run `git status` first and find out what is actually true before you
+      change anything — it may be a conflict, or it may be that the fetch
+      itself failed, in which case there is nothing here to resolve and you
+      should say so rather than inventing a fix.
+
+      If it is a conflict, resolve it:
+
+      - The change being rebased is described in `.vincent-issue/brief.md`, and
+        the pull request body is in `.vincent-issue/pr.md`. Both say what this
+        branch is *for*; that is what decides how a conflict resolves.
+      - Keep both sides' intent. Do not resolve a conflict by discarding the
+        base branch's side because it is in the way — someone else's change
+        landed there on purpose. If the two are genuinely incompatible, stop
+        and leave the rebase in place rather than picking a winner.
+      - `git add` the resolved files and `git rebase --continue` for each
+        conflicted commit until the rebase is finished. Do not `git rebase
+        --skip` a commit of this branch.
+      - Never `git rebase --abort` and never `git merge` the base branch
+        instead: the next step asserts that the base is an ancestor of HEAD.
+      - Do not push. A later step does that.
+
+      When the rebase is finished, run `go run mage.go test` and
+      `go run mage.go lint` and fix what the rebase broke — a conflict resolved
+      so that it compiles is not the same thing as one resolved correctly.
+
+      Never stage or commit `.vincent-issue/`.
+    # Asserts the rebase is actually finished (no rebase state directory in
+    # this worktree — `--git-path` resolves the linked worktree's own, not the
+    # main repo's), that nothing was left half-resolved, that the branch really
+    # does sit on top of the base rather than having been merged or aborted,
+    # and that the tree still passes the bar.
+    check: >
+      test ! -d "$(git rev-parse --git-path rebase-merge)" &&
+      test ! -d "$(git rev-parse --git-path rebase-apply)" &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      ! git ls-files .vincent-issue | grep -q . &&
+      git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
+      go run mage.go test &&
+      go run mage.go lint
+    check_timeout: 20m
+
+  - id: repush
+    name: Force-push the rebased branch
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing and not repeatable in any meaningful sense: if the push
+    # succeeded and the response was lost, a second one is either a no-op or a
+    # lease failure, and neither is worth automating.
+    max_retries: 0
+    # The ancestor test is the postcondition of the whole rebase leg, checked
+    # once here whether `resolve` ran or not: if the base is not an ancestor of
+    # HEAD, the branch was not rebased and there is nothing to force-push.
+    #
+    # `--force-with-lease` rather than `--force`: it refuses if `origin`'s copy
+    # of this branch is not the commit `publish` left there — which is the case
+    # exactly when someone else pushed to it while the gate was open.
+    #
+    # A rebase that changed nothing makes this a no-op push, which is fine.
+    run: |
+      set -e
+      if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
+        echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
+        echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
+        git status --short --branch >&2
+        exit 1
+      fi
+      git push --force-with-lease origin {{.Task.BranchName}}
+
+  - id: wait-checks
+    name: Wait for the required checks
+    type: command
+    shell: sh
+    # 120 polls at 30s is an hour of CI, plus the initial settle. The step's
+    # own timeout is the outer bound; the loop's is what produces a legible
+    # message instead of a `timeout` block reason.
+    timeout: 90m
+    max_retries: 0
+    # `--required` narrows this to the checks that actually gate a merge, so a
+    # non-required job neither blocks the wait nor fails it. The exit codes are
+    # the API here: 0 all passed, 8 still pending, anything else a real answer
+    # to stop on (`gh help exit-codes`).
+    #
+    # The "no checks reported" window is the one exception: for the first few
+    # minutes after a force-push GitHub has not created the workflow runs yet,
+    # and that is pending too. Bounded to five minutes so a branch that truly
+    # has no required checks fails rather than sleeping for an hour.
+    run: |
+      set -e
+      url=$(cat .vincent-issue/url.txt)
+      echo "waiting for the required checks on $url"
+
+      i=0
+      while :; do
+        i=$((i + 1))
+        if [ "$i" -gt 120 ]; then
+          echo "required checks still pending after an hour; not merging." >&2
+          exit 1
+        fi
+
+        set +e
+        gh pr checks "$url" --required > .vincent-issue/checks.txt 2>&1
+        code=$?
+        set -e
+
+        if [ "$code" -eq 0 ]; then
+          cat .vincent-issue/checks.txt
+          echo "--- all required checks passed ---"
+          break
+        fi
+
+        if [ "$code" -ne 8 ]; then
+          if [ "$i" -le 10 ] && grep -qi 'no checks reported' .vincent-issue/checks.txt; then
+            :
+          else
+            echo "a required check did not pass; not merging:" >&2
+            cat .vincent-issue/checks.txt >&2
+            exit 1
+          fi
+        fi
+
+        sleep 30
+      done
+
+  - id: merge
+    name: Merge the pull request
+    type: command
+    shell: sh
+    timeout: 10m
+    # The one irreversible step in the tail, and the reason nothing above it
+    # retries either. A retried merge is a merge attempted against a state this
+    # workflow no longer knows; `merged` reads the real answer back instead.
+    max_retries: 0
+    # `--merge` is the repository's rule, not a preference: squash and rebase
+    # merges are disabled on this repo because a branch's history becomes
+    # master's history (CLAUDE.md). No `--delete-branch`: the repository
+    # deletes the remote branch itself, and gh's flag would also delete the
+    # local branch this worktree is sitting on.
+    run: gh pr merge "$(cat .vincent-issue/url.txt)" --merge
+
+  - id: merged
+    name: Confirm the merge
+    type: command
+    shell: sh
+    timeout: 3m
+    max_retries: 0
+    # The read-only postcondition: `gh pr merge` exiting 0 is a claim, and this
+    # is the check of it. Clearing the scratch directory last leaves the
+    # worktree clean, so archiving the task does not warn about a dirty tree —
+    # and leaves the drafts in place for inspection if anything above failed,
+    # which is the same reason nothing deletes them when `publish` fails.
+    run: |
+      set -e
+      url=$(cat .vincent-issue/url.txt)
+      gh pr view "$url" --json state,mergedAt,mergeCommit,url \
+        --jq '"state:   \(.state)\nmerged:  \(.mergedAt)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"'
+      state=$(gh pr view "$url" --json state --jq .state)
+      if [ "$state" != "MERGED" ]; then
+        echo "the pull request is $state, not MERGED; the scratch directory is left in place." >&2
+        exit 1
+      fi
+      rm -rf .vincent-issue
