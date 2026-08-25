@@ -618,6 +618,14 @@ stdout/stderr are captured to the step transcript.
   section already says they are not failures — and `condition_error` is
   untouched because a guard never becomes an attempt.
 
+  One attempt is exempt by construction and one by pin. `repair` (§6) runs
+  with `max_retries: 0`, so it never reaches the retry branch. The
+  `on_conflict: agent` merge resolver (§7.6) is pinned to zero: its attempts are
+  the join's own, and a resolver that does not resolve leaves the conflict for a
+  human, so there is no failure there for the engine to hold and re-admit.
+  Pinned rather than left alone, because `defaults.retry_backoff` would
+  otherwise reach it and spend half its budget on a wait nothing would honour.
+
   The delay is fixed, not exponential: a growth curve is per-task state the row
   would have to carry, which §12.3 rejected for `usage_limit_recheck_interval`
   and which is not reopened here. There is deliberately **no** `config.yaml`

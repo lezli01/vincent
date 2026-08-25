@@ -429,7 +429,11 @@ re-queued forever.
 **The join gets one attempt** unless the step declares `max_retries` itself. The
 two ways a join fails — a conflict, and a lane that did not finish — are both
 "a human decides", and an automatic second merge would abort the first, hit the
-same conflict and block anyway.
+same conflict and block anyway. The `on_conflict: agent` resolver below is
+pinned to `retry_backoff: 0` for the same reason, so a workflow-wide
+`defaults.retry_backoff` does not reach it: its attempts are the join's own, and
+a resolver that does not resolve leaves the conflict for a human rather than
+something a wait could fix.
 
 #### `merge` and conflicts
 

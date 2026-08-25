@@ -20,8 +20,13 @@ The wait primitive was already built. Task 003's migration `0006` added
 `admit_not_before` and `queued_reason` to `tasks` as a deliberately *generic*
 pair — 003 decision 1 names "a git backoff" as the intended next consumer — and
 `holdForUsageLimit` is the working example. This task connects the retry loop to
-it, and does nothing else: no migration, no new column, no store change, no API
-change, no TUI change.
+it, and does nothing else: no migration, no new column, no store change, and
+nothing new on the task wire — `admit_not_before` and `queued_reason` already
+ship and already render generically, so no client had to learn the new reason.
+The only client-visible addition is the field itself: `retry_backoff` joins the
+workflow-definition DTO (`internal/api/workflowdef.go`,
+`internal/apiclient/workflowdef.go`) and the workflow graph's step detail, the
+way every other step field does.
 
 ## Decisions
 
@@ -156,9 +161,11 @@ queueing. Documented in §7.2, not engineered around: a timer per hold is what
   mid-loop, `collectGroup`'s tier order, `usage_limit` unaffected, and zero
   behaving as today. ✓ 2026-08-25
 - [x] **028.5** `scripts/m2-gate.sh` scenario 11 over curl; §7.2, §8.1, §8.2,
-  §11, §12.3 and §18 amended, dated; `workflow-schema.md`,
-  `task-lifecycle.md`, `troubleshooting.md`, `api.md`, `tui.md` and the
-  workflow-authoring skill's schema reference updated. ✓ 2026-08-25
+  §11, §12.3 and §18 amended, dated; `features.md`, `workflow-schema.md`,
+  `task-lifecycle.md`, `troubleshooting.md`, `api.md`, `tui.md`,
+  `guides/workflows.md` (§3.2's `defaults` table, §4's sub-step fields and
+  §8.2) and the workflow-authoring skill's schema reference updated.
+  ✓ 2026-08-25
 
 ## Noted, deliberately not folded in
 
