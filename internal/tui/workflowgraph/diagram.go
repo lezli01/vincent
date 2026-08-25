@@ -469,6 +469,9 @@ func stepDetail(st apiclient.WorkflowStepDef) []DetailField {
 	if st.MaxRetries != nil {
 		add("max_retries", strconv.Itoa(*st.MaxRetries))
 	}
+	if st.RetryBackoff != nil {
+		add("retry_backoff", *st.RetryBackoff)
+	}
 	if st.Timeout != nil {
 		add("timeout", *st.Timeout)
 	}

@@ -129,7 +129,17 @@ const (
 	// succeeds when it genuinely has nothing more to do — that is a decision
 	// the workflow made. Running out of tries is not a decision, it is a
 	// wall.
-	ReasonLoopLimit     = "loop_limit"
+	ReasonLoopLimit = "loop_limit"
+	// ReasonRetryBackoff is a step whose next attempt is paced by
+	// `retry_backoff` (§7.2, task 028). Like usage_limit it is a
+	// `queued_reason` and never a `block_reason` — it names why a task is
+	// waiting, not why it stopped.
+	//
+	// Unlike usage_limit it is *not* the attempt's failure reason: the
+	// attempt keeps whatever it actually failed with, its row stays `failed`,
+	// and it consumes a retry. This reason belongs to the task's wait alone,
+	// which is why nothing ever writes it to a step_runs row.
+	ReasonRetryBackoff  = "retry_backoff"
 	ReasonInternalError = "internal_error"
 )
 
@@ -320,6 +330,17 @@ type stepOutcome struct {
 	// and for an aggregated outcome (`parallel`, `loop`) whose collected
 	// attempt was not one.
 	agentName string
+	// backoffUntil is set on a `failed` outcome that has retry budget left
+	// and a non-zero `retry_backoff` (task 028): the instant the next attempt
+	// may start. It is the signal to re-queue the task with a §11 admission
+	// hold rather than to block it.
+	//
+	// Every branch that turns a failure into something else — `allow_failure`
+	// in the step loop, in a group and in a loop body — must test this
+	// *first*. A failure with budget remaining is not the step's verdict yet,
+	// and advancing on it would spend an `allow_failure` step's first failure
+	// as though the budget were gone.
+	backoffUntil *time.Time
 }
 
 // execute runs one admission of a task: it walks the snapshot's steps from
@@ -546,6 +567,14 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			// `failed` state and its reason — the failure happened, it just
 			// did not stop the workflow — and that row is what a later
 			// guard reads through `.Steps`.
+			// Before allow_failure, deliberately: a paced retry is a failure
+			// with budget *remaining*, and advancing on it would spend an
+			// allow_failure step's first failure as though it were its last
+			// (§7.2, task 028).
+			if outcome.state == store.StepFailed && outcome.backoffUntil != nil {
+				r.holdForRetry(task, *outcome.backoffUntil, outcome.reason, env.log)
+				return
+			}
 			if outcome.state == store.StepFailed && allowFailure(env.step, outcome.reason) {
 				env.log.Info("step failed; advancing on allow_failure", "reason", outcome.reason)
 				w.persist(ctx, pos+1, env.log)
@@ -646,11 +675,33 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 		if ctx.Err() != nil || r.interrupting(env.task.ID) {
 			return stepOutcome{state: store.StepInterrupted, reason: ReasonInterrupted}
 		}
-		env.log.Info("retrying step", "reason", last.reason, "next_attempt", attempts.Last+1)
-		r.emit(env.task, eventStepRetrying, map[string]any{
+		// The retry is due; `retry_backoff` decides whether it happens now or
+		// after a wait (§7.2, task 028). The event is emitted at the same
+		// point either way, carrying the delay, so the timeline reads the
+		// same as an immediate retry.
+		backoff := resolveRetryBackoff(env.step, env.wf.Defaults)
+		payload := map[string]any{
 			"step_id": env.step.ID, "step_index": env.index,
 			"attempt": attempts.Last, "reason": last.reason,
-		})
+		}
+		if backoff <= 0 {
+			env.log.Info("retrying step", "reason", last.reason, "next_attempt", attempts.Last+1)
+			r.emit(env.task, eventStepRetrying, payload)
+			continue
+		}
+		until := r.now().Add(backoff).UTC()
+		payload["backoff"] = backoff.String()
+		payload["admit_not_before"] = until.Format(time.RFC3339)
+		env.log.Info("retrying step after a backoff",
+			"reason", last.reason, "next_attempt", attempts.Last+1,
+			"backoff", backoff, "admit_not_before", until.Format(time.RFC3339))
+		r.emit(env.task, eventStepRetrying, payload)
+		// The failed attempt keeps its row and its reason; only the task's
+		// wait is new. The caller re-queues, this goroutine ends with the
+		// admission (phase 2 decision), and the recount at the top of the
+		// next one resumes with the budget this attempt already spent.
+		last.backoffUntil = &until
+		return last
 	}
 }
 
@@ -984,6 +1035,38 @@ func (r *Runner) holdForUsageLimit(
 		log.Info("agent usage limit reached; task re-queued until it resets",
 			"admit_not_before", until.Format(time.RFC3339),
 			"reported_by_cli", retryAfter != nil)
+	}
+}
+
+// holdForRetry re-queues a task whose failed step is due a paced retry
+// (§7.2, task 028, §11). It is holdForUsageLimit's sibling and differs from it
+// in exactly two ways, both deliberate:
+//
+//   - The attempt row is `failed`, not `interrupted`, and it consumes a retry.
+//     The row's state is what decides that, not the action — finishStepRun
+//     writes the row and this writes the task, and they are independent.
+//   - No usage-limit observation is recorded. A quota window closing is a
+//     per-adapter fact (task 026); a flaky step is not, and has nothing to say
+//     about any adapter's quota.
+//
+// taskstate.Interrupt is reused rather than given a truthfully-named sibling:
+// it is the only Running → Queued edge, and a second action for the identical
+// edge would buy a name at the cost of a new arm in every exhaustive action
+// list.
+func (r *Runner) holdForRetry(task *store.Task, until time.Time, failureReason string, log *slog.Logger) {
+	reason := ReasonRetryBackoff
+	ch := store.TaskChange{
+		AdmitNotBefore: &until,
+		QueuedReason:   &reason,
+		EventPayload: map[string]any{
+			"queued_reason":    reason,
+			"admit_not_before": until.Format(time.RFC3339),
+			"failure_reason":   failureReason,
+		},
+	}
+	if r.transition(task, taskstate.Interrupt, ch, log) {
+		log.Info("step failed; next attempt paced by retry_backoff",
+			"reason", failureReason, "admit_not_before", until.Format(time.RFC3339))
 	}
 }
 

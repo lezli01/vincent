@@ -67,11 +67,13 @@ Three behaviors matter:
 - **The terminal bell rings when a task enters `awaiting_input`**, so most
   terminals flash or badge the window even when it is not focused.
 - **A task waiting on a clock says when it resumes.** A task whose agent hit a
-  usage limit is `queued` like any other, but its state cell reads
-  `queued → 14:20` — the time vincent will try it again, on its own. It holds no
+  usage limit — or whose failed step is pacing its next attempt with
+  `retry_backoff` — is `queued` like any other, but its state cell reads
+  `queued → 14:20`, the time vincent will try it again, on its own. It holds no
   slot and needs nothing from you; the detail header names the reason in full
-  (`queued · usage limit → 14:20`). See
-  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
+  (`queued · usage limit → 14:20`, `queued · retry backoff → 14:20`). See
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing) and
+  [`retry_backoff`](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason).
 - **The header badges the agent, not just the task.** An adapter vincent has
   watched run out reads `claude ⏳14:20` in place of `claude ✓`, and stays that
   way until a step on that adapter succeeds — so a board full of `queued` rows

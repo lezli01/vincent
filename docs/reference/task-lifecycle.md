@@ -66,14 +66,25 @@ task's existing worktree, and returns it to the state it came from. See
 Three of these are worth dwelling on.
 
 **`queued` covers two different waits.** Usually it means "waiting for a free
-slot". But a task whose agent hit a usage limit is also `queued` — waiting on a
-clock rather than on the queue — and says so through two fields: `queued_reason`
-(`usage_limit`) and `admit_not_before`, the instant vincent will try again. It
-holds no slot while it waits, keeps its place in the queue, and needs nothing
-from you: when the window reopens, the step re-runs on its own. The board shows
-the resume time on the row (`queued → 14:20`) and the detail header names the
-reason. Cancelling, pausing or otherwise acting on the task drops the wait
-immediately — a human action always means go.
+slot". But a task can also be `queued` waiting on a *clock* rather than on the
+queue, and it says so through two fields: `queued_reason` and
+`admit_not_before`, the instant vincent will try again. Either way it holds no
+slot while it waits, keeps its place in the queue, and needs nothing from you —
+when the wait is over the step runs on its own. The board shows the resume time
+on the row (`queued → 14:20`) and the detail header names the reason.
+Cancelling, pausing or otherwise acting on the task drops the wait immediately
+— a human action always means go.
+
+Two reasons produce that wait, and they are worth telling apart:
+
+| `queued_reason` | What it means |
+|---|---|
+| `usage_limit` | The agent's usage quota for the window is spent. The attempt is recorded `interrupted` and costs **no** retry; the wait ends at the reset the CLI named, or after [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) when it named none |
+| `retry_backoff` | The step failed and its next attempt is being paced by [`retry_backoff`](workflow-schema.md#step-fields). The attempt is recorded `failed` with its own reason and **does** consume a retry; the wait is the configured duration. When the budget runs out the task blocks with the step's own reason, with no wait first |
+
+Both are `queued_reason` values only. Neither is ever a `block_reason`, and
+`retry_backoff` is never a step's failure reason either — the step's row keeps
+whatever actually failed.
 
 **`awaiting_children` holds no slot, and offers only `cancel`.** A fan-out
 parent waiting on its lanes owns no process, so keeping a slot would starve
@@ -205,6 +216,12 @@ attempts). For agent steps the previous failure is appended to the retried promp
 as a structured block, so the agent is told exactly what went wrong rather than
 asked to guess.
 
+The re-run is immediate unless the step sets
+[`retry_backoff`](workflow-schema.md#step-fields), in which case the task waits
+that long in `queued` — holding no slot — and the step re-runs when the wait is
+over. The budget is unchanged either way: the backoff decides *when* an attempt
+happens, never *whether*.
+
 ## Failure reasons
 
 The reason is recorded on the step run and on the task when it blocks. The
@@ -219,6 +236,7 @@ same thing wherever it originated.
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
 | `agent_unauthenticated` | The agent CLI is installed but not logged in. Retries as usual, then blocks — log in and retry |
 | `usage_limit` | The agent's usage quota for the window is spent. **Not a failure:** no retry is consumed, and the task waits `queued` until the window reopens |
+| `retry_backoff` | Not a failure reason at all, and never appears on a step run — it is the `queued_reason` of a task waiting out a step's [`retry_backoff`](workflow-schema.md#step-fields) between two attempts. The attempt that triggered it keeps its own reason |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `input_protocol_error` | A control message the adapter could not parse — it fails, it never hangs |

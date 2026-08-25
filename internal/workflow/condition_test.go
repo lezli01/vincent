@@ -93,6 +93,13 @@ func TestParseConditionValidation(t *testing.T) {
 			wantPath: "steps[0].max_retries",
 		},
 		{
+			name: "condition carrying a retry backoff",
+			src: "name: x\nsteps:\n  - {id: a, type: condition, if: \"{{ true }}\", retry_backoff: 30s}\n" +
+				"  - {id: b, type: manual, instructions: hi}\n",
+			wantSub:  "retry_backoff is not valid on a condition step",
+			wantPath: "steps[0].retry_backoff",
+		},
+		{
 			name:     "allow_failure on a manual gate",
 			src:      "name: x\nsteps:\n  - {id: a, type: manual, instructions: hi, allow_failure: true}\n",
 			wantSub:  "allow_failure is not valid on a manual step",

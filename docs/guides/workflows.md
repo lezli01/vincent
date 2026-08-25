@@ -312,6 +312,7 @@ step, where the step wins.
 | `on_input` | agent steps | `wait` |
 | `input_timeout` | agent steps | `defaults.input_timeout` in config — 24h |
 | `max_retries` | all steps | `1` |
+| `retry_backoff` | all steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
 
 Durations are Go duration strings: `90s`, `45m`, `1h30m`. A bare number is a
@@ -494,8 +495,8 @@ timeline, one thing to retry.
   test suite is not re-run because the linter was unhappy.
 
 Sub-steps are ordinary `agent` and `command` steps with their own `check`,
-`timeout`, `max_retries`, `if:` and agent selection, resolved exactly as at the
-top level. They may not be any other type — see
+`timeout`, `max_retries`, `retry_backoff`, `if:` and agent selection, resolved
+exactly as at the top level. They may not be any other type — see
 [§4.11](#411-where-each-type-may-appear).
 
 > **Sub-steps share one working tree.** Two of them writing the same file is a
@@ -1364,6 +1365,38 @@ Retries are for failures a retry can plausibly fix. `condition_error` is
 excluded by construction, and an `interrupted` attempt does **not** consume
 budget. `parallel` groups and `loop` steps carry no retry budget of their own —
 their members do.
+
+**`retry_backoff:` paces them.** By default a retry is immediate, which is right
+for a compile error the agent can see and fix, and wrong for anything transient
+— a flaky network call, a `git index.lock` held by another process — where two
+guaranteed failures inside a few seconds spend the budget on nothing:
+
+```yaml
+  - id: smoke
+    type: command
+    run: ./scripts/smoke.sh
+    max_retries: 2
+    retry_backoff: 30s   # wait before each retry; 0s (the default) is immediate
+```
+
+A non-zero value does **not** sleep. The task goes back to `queued` with the
+resume time attached, **gives up its concurrency slot** so other work keeps
+running, and re-runs the step by itself when the wait is over — the same
+mechanism a usage limit uses, and it needs nothing from you. The board shows
+`queued → 14:20` and the detail header `queued · retry backoff → 14:20`.
+
+The wait decides *when* an attempt happens, never *whether* there is one. The
+attempt still counts against `max_retries`, and a step out of budget blocks at
+once however long its backoff. So a task that keeps reappearing on a backoff is
+on its way to blocking; see
+[Troubleshooting](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason)
+for telling it apart from a quota wall.
+
+It is settable in `defaults:` and per step, where the step wins — including
+`retry_backoff: 0` on one step to opt it out of a workflow-wide default. It is
+refused on `condition`, `break`, `loop` and `include` steps, exactly as
+`max_retries` is, and the [`on_conflict: agent`](#merge-and-conflicts) merge
+resolver never waits: its attempts belong to the join.
 
 ### 8.3 Timeouts
 

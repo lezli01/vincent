@@ -75,13 +75,19 @@ validation. Read an optional value defensively:
 ## Defaults and common fields
 
 Workflow `defaults` may set `agent`, `model`, `effort`, `permission_mode`,
-`on_input`, `input_timeout`, `max_retries`, and `timeout`. Step values win.
-`max_retries` counts attempts after the first: `0` means one attempt and `1`
-means at most two. Durations use Go syntax such as `90s`, `45m`, or `1h30m`.
+`on_input`, `input_timeout`, `max_retries`, `retry_backoff`, and `timeout`.
+Step values win. `max_retries` counts attempts after the first: `0` means one
+attempt and `1` means at most two. `retry_backoff` is how long to wait before
+each retry, default `0s` — an immediate retry. Use it for steps that fail on
+something transient (a network call, a lock held elsewhere); leave it at zero
+where a second attempt would fail the same way immediately. It never grants an
+extra attempt, only delays one `max_retries` already allows, and the waiting
+task holds no concurrency slot. Durations use Go syntax such as `90s`, `45m`,
+or `1h30m`.
 
 Every runtime step has a unique `id` and a `type`; `name`, `max_retries`,
-`timeout`, and `if` are common optional fields where the step type permits
-them. `allow_failure` is limited to `agent` and `command`. Some structural
+`retry_backoff`, `timeout`, and `if` are common optional fields where the step
+type permits them. `allow_failure` is limited to `agent` and `command`. Some structural
 types deliberately reject timeout or retry fields; see the table below.
 
 ## Step selection and fields

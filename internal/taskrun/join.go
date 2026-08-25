@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -219,6 +220,14 @@ func (r *Runner) handleConflict(
 	env.log.Info("merge conflict; trying the agent resolver", "lane", lane.LaneID, "files", len(paths))
 	resolver := *env.step.Merge.Agent
 	resolver.Type = workflow.StepAgent
+	// No paced retry for the resolver (§7.2, task 028). Its attempts are the
+	// join's own: a resolver that does not resolve leaves the conflict for a
+	// human, so there is no failure here for the engine to hold and re-admit.
+	// Pinned rather than left alone because `defaults.retry_backoff` would
+	// otherwise reach it and silently spend half its budget on a wait nothing
+	// would honour.
+	noBackoff := config.Duration(0)
+	resolver.RetryBackoff = &noBackoff
 	// The resolver is an ordinary agent step, run by the ordinary executor in
 	// the parent's worktree, with the conflicted files in its context
 	// (decision 24).

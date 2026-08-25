@@ -74,6 +74,21 @@ list with the user-facing context a commit subject cannot carry.
   `vincent task follow-up <id> --prompt/--run/--workflow`.
   ([#181](https://github.com/lezli01/vincent/issues/181))
 
+- **`retry_backoff`: workflow steps can pace their retries.** Retries were
+  immediate and nothing could make them wait, so the default `max_retries: 1`
+  meant a step hitting a transient problem — a flaky network call, a
+  `git index.lock` held by another process — burned both of its attempts inside
+  a few seconds and blocked, needing a human even though nothing was wrong with
+  the work. A step (or a workflow's `defaults:`) may now carry
+  `retry_backoff: 30s`, and the wait costs nothing: the task returns to `queued`
+  showing `queued · retry backoff → 14:20`, **gives up its concurrency slot** so
+  other work keeps running, and re-runs the step by itself when the wait is
+  over. Nothing sleeps and no slot is held. The default is `0s` — an immediate
+  retry — so every existing workflow behaves exactly as it did. The wait only
+  decides *when* an attempt happens, never *whether*: the attempt still counts
+  against `max_retries`, and a step out of budget blocks at once however long
+  its backoff.
+
 - **Each agent's usage window is reported in the daemon and TUI.** When an agent
   CLI stops because the account's quota for the window is spent, vincent now
   remembers *which adapter* it was and when it resets, instead of losing that

@@ -184,12 +184,23 @@ Every key here is also settable per step, where it wins.
 | `on_input` | `wait` \| `deny` \| `require` | `wait` | agent steps; `require` also gates which agents may run the step |
 | `input_timeout` | duration | `24h` (config) | agent steps |
 | `max_retries` | int | `1` | all steps |
+| `retry_backoff` | duration | `0s` | all steps |
 | `timeout` | duration | `60m` agent / `15m` command (config) | all steps |
 
 Durations are Go duration strings: `45m`, `1h30m`, `90s`.
 
 `max_retries` counts attempts **after** the first, so the default of 1 means up
 to two attempts.
+
+`retry_backoff` is how long to wait before each of them. The default of `0s` is
+an immediate retry — which is right for a compile error the agent can see and
+fix, and wrong for a flaky network call or a `git index.lock` held by another
+process, where two guaranteed failures inside a few seconds spend the budget on
+nothing. A non-zero value does **not** sleep: the task returns to `queued` with
+a wait attached and gives up its slot, so a paced task never stops other work
+from running. See [States](task-lifecycle.md#states) in the lifecycle reference for
+what that looks like from outside. Neither field has a
+`config.yaml` key: retry policy belongs to a workflow.
 
 ## Step fields
 
@@ -201,6 +212,7 @@ Common to every step:
 | `name` | string | | Display name; defaults to `id` |
 | `type` | `agent` \| `command` \| `manual` \| `parallel` \| `fan_out` \| `condition` \| `loop` \| `break` \| `include` | ✅ | `check` is a *field*, not a type |
 | `max_retries` | int | | Overrides `defaults` |
+| `retry_backoff` | duration | | Wait before each retry; overrides `defaults`. `0s` means retry at once, which is the default. Not valid on `condition`, `break`, `loop` or `include` steps, which own no attempt |
 | `timeout` | duration | | Per attempt; overrides `defaults`. On a `parallel` group or a `loop`, bounds the whole thing |
 | `if` | template | | Guard: skip this step unless it renders `true`. See [Conditions](#conditions) |
 
@@ -322,8 +334,10 @@ Runs its sub-steps at the same time, in the task's one worktree.
 ```
 
 Sub-steps are ordinary `agent` and `command` steps: each has its own `check`,
-`timeout`, `max_retries`, `if:` and agent selection, resolved exactly as at the
-top level. Those two types are the whole list — see
+`timeout`, `max_retries`, `retry_backoff`, `if:` and agent selection, resolved
+exactly as at the top level. A sub-step that backs off takes the whole group
+with it — the group waits for its in-flight siblings, then the task waits, and
+the re-admitted group re-runs only what is left. Those two types are the whole list — see
 [Nesting rules](#nesting-rules) for what is refused and why:
 
 - `manual` — a gate releases the task's slot, and there is no such thing as
@@ -415,7 +429,11 @@ re-queued forever.
 **The join gets one attempt** unless the step declares `max_retries` itself. The
 two ways a join fails — a conflict, and a lane that did not finish — are both
 "a human decides", and an automatic second merge would abort the first, hit the
-same conflict and block anyway.
+same conflict and block anyway. The `on_conflict: agent` resolver below is
+pinned to `retry_backoff: 0` for the same reason, so a workflow-wide
+`defaults.retry_backoff` does not reach it: its attempts are the join's own, and
+a resolver that does not resolve leaves the conflict for a human rather than
+something a wait could fix.
 
 #### `merge` and conflicts
 

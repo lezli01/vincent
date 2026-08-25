@@ -42,6 +42,30 @@ func TestResolveStepSettings(t *testing.T) {
 		t.Errorf("fallback max_retries = %d, want %d", got, defaultMaxRetries)
 	}
 
+	// retry_backoff: step, then defaults, then zero — which is an immediate
+	// retry, i.e. every workflow written before task 028.
+	thirtySec := config.Duration(30 * time.Second)
+	twoMin := config.Duration(2 * time.Minute)
+	if got := resolveRetryBackoff(
+		workflow.Step{RetryBackoff: &thirtySec}, workflow.Defaults{RetryBackoff: &twoMin},
+	); got != 30*time.Second {
+		t.Errorf("step retry_backoff = %s, want 30s", got)
+	}
+	if got := resolveRetryBackoff(workflow.Step{}, workflow.Defaults{RetryBackoff: &twoMin}); got != 2*time.Minute {
+		t.Errorf("defaults retry_backoff = %s, want 2m", got)
+	}
+	if got := resolveRetryBackoff(workflow.Step{}, workflow.Defaults{}); got != 0 {
+		t.Errorf("fallback retry_backoff = %s, want 0", got)
+	}
+	// An explicit zero on the step beats a workflow-wide default: that is how
+	// one step asks for an immediate second shot at its own compile error.
+	zeroBackoff := config.Duration(0)
+	if got := resolveRetryBackoff(
+		workflow.Step{RetryBackoff: &zeroBackoff}, workflow.Defaults{RetryBackoff: &twoMin},
+	); got != 0 {
+		t.Errorf("explicit zero retry_backoff = %s, want 0", got)
+	}
+
 	// timeout: step, then defaults, then the per-type daemon default.
 	agentStep := workflow.Step{Type: workflow.StepAgent}
 	commandStep := workflow.Step{Type: workflow.StepCommand}

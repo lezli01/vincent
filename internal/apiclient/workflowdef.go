@@ -52,6 +52,7 @@ type WorkflowDefaults struct {
 	OnInput        string  `json:"on_input,omitempty"`
 	InputTimeout   *string `json:"input_timeout,omitempty"`
 	MaxRetries     *int    `json:"max_retries,omitempty"`
+	RetryBackoff   *string `json:"retry_backoff,omitempty"`
 	Timeout        *string `json:"timeout,omitempty"`
 }
 
@@ -64,6 +65,7 @@ type WorkflowStepDef struct {
 	Type string `json:"type"`
 
 	MaxRetries   *int    `json:"max_retries,omitempty"`
+	RetryBackoff *string `json:"retry_backoff,omitempty"`
 	Timeout      *string `json:"timeout,omitempty"`
 	If           string  `json:"if,omitempty"`
 	AllowFailure bool    `json:"allow_failure,omitempty"`

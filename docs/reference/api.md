@@ -495,10 +495,14 @@ Four details worth knowing:
 
 - **A `queued` task may be waiting on a clock, not a slot.** Every task
   representation carries `queued_reason` and `admit_not_before` (RFC3339, or
-  `null`). Both are `null` for an ordinarily queued task; `usage_limit` with a
-  timestamp means the agent's usage window is spent and vincent will try again
-  then, unattended. They are separate from `block_reason`, which still means
-  only "stopped, needs a human" — the task is not blocked.
+  `null`). Both are `null` for an ordinarily queued task. Two reasons set them,
+  and vincent tries again at that timestamp unattended in both cases:
+  `usage_limit`, the agent's usage window being spent, and `retry_backoff`, a
+  step's failed attempt being paced by its
+  [`retry_backoff`](workflow-schema.md#step-fields). They are separate from
+  `block_reason`, which still means only "stopped, needs a human" — the task is
+  not blocked. Treat the set as open: a client should render whatever string it
+  is given rather than switching on the two it knows.
 
 - **List rows carry the board fields** — `project_name`, `step_total`,
   `step_name`, and `cost_usd` / `input_tokens` / `output_tokens` rolled up across

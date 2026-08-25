@@ -592,6 +592,47 @@ stdout/stderr are captured to the step transcript.
   between attempts a walled step would otherwise spend its whole budget in
   seconds. `usage_limit` is therefore a `queued_reason`, never a `block_reason`.
   Recovery needs no human: the scheduler re-admits the task when the hold expires.
+- **`retry_backoff` paces the retries.** *Added 2026-08-25 (task 028).* A step
+  may carry `retry_backoff`, a duration, settable per step and in
+  `defaults:`. Its default is **zero**, which is an immediate retry — every
+  workflow written before this behaves byte-identically. A non-zero value is
+  spent the way the `usage_limit` hold above is spent: instead of retrying in
+  place, the task returns to `queued` carrying `admit_not_before = now +
+  retry_backoff` and `queued_reason: retry_backoff`, releasing its concurrency
+  slot (§11). Nothing sleeps — a sleeping actor holds its slot for the whole
+  wait, and with `max_parallel_tasks` slots held that way nothing runs at all.
+
+  What separates it from the bullet above is the attempt: it is recorded
+  `failed` with whatever it actually failed with, and it **consumes a retry**.
+  The budget still bounds the work; the backoff only decides *when* an attempt
+  the budget already allows happens. A step out of budget blocks at once,
+  however long its backoff. `retry_backoff` is therefore a `queued_reason` and
+  never a `block_reason` — and never a step's `failure_reason` either.
+
+  It applies to every failure that would be retried, with no per-reason policy:
+  an agent that hits a transient upstream error and one that leaves a compile
+  error both exit non-zero and both classify `nonzero_exit`, so exempting that
+  reason would remove the knob's reach from the failure it exists for. A step
+  that wants an immediate second shot at its own output writes
+  `retry_backoff: 0`. `usage_limit` and `interrupted` are untouched — this
+  section already says they are not failures — and `condition_error` is
+  untouched because a guard never becomes an attempt.
+
+  One attempt is exempt by construction and one by pin. `repair` (§6) runs
+  with `max_retries: 0`, so it never reaches the retry branch. The
+  `on_conflict: agent` merge resolver (§7.6) is pinned to zero: its attempts are
+  the join's own, and a resolver that does not resolve leaves the conflict for a
+  human, so there is no failure there for the engine to hold and re-admit.
+  Pinned rather than left alone, because `defaults.retry_backoff` would
+  otherwise reach it and spend half its budget on a wait nothing would honour.
+
+  The delay is fixed, not exponential: a growth curve is per-task state the row
+  would have to carry, which §12.3 rejected for `usage_limit_recheck_interval`
+  and which is not reopened here. There is deliberately **no** `config.yaml`
+  key, mirroring `max_retries`: retry policy is a workflow's business, and
+  `config.Defaults` is timeouts. And the wait is a *minimum* — re-admission
+  competes for slots under the §11 caps and is noticed within the scheduler's
+  5 s tick, so the observed wait is `retry_backoff` plus queueing.
 - **`allow_failure: true` advances instead of blocking.** *Added 2026-08-18
   (task 015).* On an `agent` or `command` step, the failures **the step itself
   produced** — `nonzero_exit`, `check_failed`, `agent_error`, `timeout`,
@@ -1277,6 +1318,7 @@ defaults:                             # optional; per-step values override
   on_input: wait                      # wait | deny | require — agent input requests (§7.4)
   input_timeout: 24h                  # max wait in awaiting_input (§7.4)
   max_retries: 1
+  retry_backoff: 0s                   # wait between attempts (§7.2); 0 retries at once
   timeout: 60m
 
 steps:
@@ -1400,8 +1442,9 @@ fields:
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
-`timeout`, and — *added 2026-08-18 (task 015)* — `if` (§7.7). A `condition`
-step is the exception: it takes `id`, `name` and `if` only.
+`timeout`, — *added 2026-08-18 (task 015)* — `if` (§7.7), and — *added
+2026-08-25 (task 028)* — `retry_backoff` (§7.2). A `condition` step is the
+exception: it takes `id`, `name` and `if` only.
 
 | Type | Required | Optional |
 |---|---|---|
@@ -1417,15 +1460,15 @@ step is the exception: it takes `id`, `name` and `if` only.
 
 *`include` added 2026-08-19 (task 019); see §7.9. It takes `id`, `name`,
 `type` and `workflow` and nothing else — not `if`, `timeout`, `max_retries`,
-`allow_failure` or `check` — because it is resolved away at task creation and
-owns no attempt for any of them to bind to. It is the third exception to this
+`retry_backoff`, `allow_failure` or `check` — because it is resolved away at
+task creation and owns no attempt for any of them to bind to. It is the third exception to this
 table's common fields, after `condition` and `break`.*
 
 *`parallel` and `fan_out` added 2026-08-17 (task 014); see §7.5 and §7.6.
 `condition`, `if` and `allow_failure` added 2026-08-18 (task 015); see §7.7.
 `loop` and `break` added 2026-08-18 (task 016); see §7.8. A `loop` also takes
-the common `if` and `timeout`, and rejects `max_retries` and `allow_failure`:
-it has no attempt of its own. A `break` is the exception a `condition` is —
+the common `if` and `timeout`, and rejects `max_retries`, `retry_backoff`
+(*2026-08-25, task 028*) and `allow_failure`: it has no attempt of its own. A `break` is the exception a `condition` is —
 `id`, `name` and `if` only.*
 
 A lane carries `id` plus exactly one of `workflow` (a registry name) or
@@ -1450,8 +1493,8 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
   own id namespace because each lane becomes a separate task. `merge.agent`
   is required by, and only valid with, `on_conflict: agent`.
 - *Added 2026-08-18 (task 015).* A `condition` step requires `if` and rejects
-  every other field, `timeout`, `max_retries` and `allow_failure` included: it
-  starts no process. `allow_failure` is valid only on `agent` and `command`
+  every other field, `timeout`, `max_retries`, `retry_backoff` (*2026-08-25,
+  task 028*) and `allow_failure` included: it starts no process. `allow_failure` is valid only on `agent` and `command`
   steps, sub-steps of a group included. Every `if` — a step's, a sub-step's and
   a lane's — must parse as a template at load, like every other template field.
   A `condition` step in **last** position is a **warning**, not an error: the
@@ -2374,9 +2417,11 @@ would invalidate every one of them.
   crash, which re-queues the task without clearing the request.
 - **Admission holds** (*added 2026-08-14, task 003*). A queued task may carry
   `admit_not_before` — an instant before which it is not admissible — and a
-  `queued_reason` naming what it is waiting for. `usage_limit` is the only
-  producer today (§7.2); the pair is generic so the next wait-shaped case costs
-  no second mechanism. The walk applies the three checks **in this order**:
+  `queued_reason` naming what it is waiting for. There are two producers, both
+  §7.2's: `usage_limit`, and — *added 2026-08-25 (task 028)* — `retry_backoff`,
+  the wait between two attempts of a step that asked for one. The pair of
+  columns is generic, which is why the second producer cost no migration, no
+  second branch in this walk and no client change. The walk applies the three checks **in this order**:
   1. **pause** — a pending pause parks the task, held or not. This runs first
      because a human asked for `paused`, and a task showing `queued` until a hold
      expired would be the same lie the cap check already avoids. It is also why
@@ -2650,7 +2695,12 @@ respawn loop the hold exists to stop. 15 m bounds a five-hour window at roughly
 twenty wasted spawns, and a user who knows their plan can tighten or widen it.
 There is deliberately **no** exponential backoff: that would be per-task state the
 row has to carry and a second retry-ish concept beside §7.2's. Read per hold, so a
-hot reload reaches the next one.
+hot reload reaches the next one. *Amended 2026-08-25 (task 028):* §7.2's own
+`retry_backoff` does not reopen that. It is a **fixed** delay computed from
+resolved configuration at the moment of the wait, so it carries no per-task
+state either, and it is §7.2's concept rather than a second one beside it. It
+has no key in this file for the same reason `max_retries` has none: retry
+policy is a workflow's business, and `defaults:` here is timeouts.
 
 **`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
 added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
@@ -3901,6 +3951,7 @@ currently true to show (§15 view 6).
 | A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered. *Amended 2026-08-18 (task 016):* inside a `loop` body the same step ends **that iteration** and the loop carries on — the sequence it ends is the body's (§7.8) |
 | A `loop` cannot run within `max_iterations` | *Added 2026-08-18 (task 016).* The task blocks with `loop_limit`: a `for_each` list longer than the ceiling blocks before iteration 1 naming the count, and a `count:` the ceiling moved under (config lowered while the task was queued) blocks too. It does not truncate and does not advance — running out of tries is not a decision, and advancing would hand every downstream guard a `.Steps` that says the work is finished (§7.8) |
 | A `break` step's guard is true | *Added 2026-08-18 (task 016).* The loop ends there and **succeeds**: one `stopped` row, the cursor advances past the loop step. A false guard records `succeeded` and the body carries on |
+| A step's retry is paced by `retry_backoff` | *Added 2026-08-25 (task 028).* The attempt is recorded `failed` with its own reason and consumes a retry, and the task returns to `queued` with `queued_reason: retry_backoff` and an `admit_not_before` of `now + retry_backoff` (§7.2, §11) — releasing its slot, so other work keeps running. Recovery is unattended: the scheduler re-admits and the same step re-runs with the budget the recount says is left. Distinct from `usage_limit`, whose attempt is `interrupted` and costs nothing, so a reader can tell a quota wall from a flaky step. It never becomes a `block_reason`: when the budget *is* spent the task blocks with the step's own failure reason, with no wait first |
 | A loop body step exhausts its retry budget | *Added 2026-08-18 (task 016).* The iteration fails and the task blocks with **that step's own** reason, not `loop_limit`. `allow_failure:` (§7.2) is how a probe's red result becomes data a `break` can read instead |
 | The daemon dies mid-iteration | *Added 2026-08-18 (task 016).* §12.4 finalizes the running row as `interrupted`, and the re-admitted loop derives its position from the rows: body steps whose latest attempt succeeded are skipped, and it continues **mid-iteration**. Iterations that already have rows keep the `for_each` item those rows recorded; only new iterations draw from a re-derived list (§7.8) |
 | Every lane of a `fan_out` is guarded off | *Added 2026-08-18 (task 015).* A no-op success: the step records a row saying no lane was selected and advances. It must not park — a parent in `awaiting_children` with no children would be re-queued, spawn nothing and park again (§7.6) |

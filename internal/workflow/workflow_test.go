@@ -187,6 +187,20 @@ func TestParseValidation(t *testing.T) {
 			wantPath: "steps[0].max_retries",
 		},
 		{
+			// Zero is legal and is the default: it means an immediate retry.
+			// Negative is the only thing there is to refuse (task 028).
+			name:     "negative retry_backoff",
+			src:      "name: x\nsteps:\n  - {id: a, type: command, run: \"true\", retry_backoff: -30s}\n",
+			wantSub:  "retry_backoff must not be negative",
+			wantPath: "steps[0].retry_backoff",
+		},
+		{
+			name:     "negative retry_backoff in defaults",
+			src:      "name: x\ndefaults: {retry_backoff: -1s}\nsteps:\n  - {id: a, type: command, run: \"true\"}\n",
+			wantSub:  "retry_backoff must not be negative",
+			wantPath: "defaults.retry_backoff",
+		},
+		{
 			name:     "template does not parse",
 			src:      "name: x\nsteps:\n  - {id: a, type: agent, prompt: \"{{.Task.Title\"}\n",
 			wantSub:  "template does not parse",
