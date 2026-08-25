@@ -74,7 +74,7 @@ One report answering "why is nothing running?". Seven groups:
 
 | Group | Rows |
 |---|---|
-| Paths | config dir, data dir, config file, and whether it parses |
+| Paths | config dir, data dir, config file, whether it parses, and any config path readable beyond its owner |
 | Daemon | running / not running / unresponsive, pid, port, version, uptime |
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, applied schema version, `PRAGMA integrity_check` |
@@ -92,6 +92,12 @@ are present. A missing or logged-out agent CLI is reported and deliberately does
 *not* set the exit code — most machines have one of three adapters installed,
 and a doctor that exits `1` almost everywhere is no use in a script. Neither do
 task counts: twelve blocked tasks is information, not a defect.
+
+A `permissions` row names a config path whose mode grants group or other
+access, the mode it should have, and the exact `chmod`. It is a warning: the
+daemon tightens both paths on every start, so a row means no daemon has started
+on this config or something widened it since — not a reason to exit `1`. There
+are no such rows on Windows, where modes carry no access control.
 
 **Without a daemon** the report is still printed in full — paths, whether the
 config parses, adapter detection, the log tail, disk free and the worktree

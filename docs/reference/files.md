@@ -26,16 +26,30 @@ platform where data nests inside config's directory.
 ## The config directory
 
 ```
-{config_dir}/
-  config.yaml          # daemon configuration — you edit this
+{config_dir}/          # created 0700
+  config.yaml          # daemon configuration — you edit this, created 0600
   workflows/*.yaml     # global workflows, available to every project
 ```
 
 Both are watched. Editing `config.yaml` hot-reloads valid changes; saving a
 workflow file reloads the registry. Neither needs a restart.
 
+**The directory and `config.yaml` are owner-only**, because
+[`environment.set`](configuration.md#environment) values are literal and people
+put tokens in them. On POSIX every daemon start drops group and other access
+from both — the same re-tightening the `token` file gets — and logs the path
+and the mode it found; `vincent doctor` reports the same as a warning with the
+exact `chmod`. Your file's *contents* are never rewritten, and if you widened
+those modes on purpose, the next start will narrow them again. On Windows the
+modes carry no access control and the per-user ACL of `%APPDATA%` applies
+instead.
+
 Everything here is yours: it is safe to put under version control, sync between
-machines, or hand-edit. Nothing in this directory is generated after first start.
+machines, or hand-edit — with one caveat from the modes above: a literal
+[`environment.set`](configuration.md#environment) value travels with the file,
+so prefer inheriting the name. Nothing in this directory is generated after
+first start — the modes above are the one thing a later start touches, and it
+touches no content.
 
 Project-scoped workflows live in the repository instead, at
 `.vincent/workflows/*.yaml`, and shadow a global file of the same name.

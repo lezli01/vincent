@@ -75,6 +75,24 @@ type Paths struct {
 	// is for.
 	ConfigParses bool   `json:"config_parses"`
 	ConfigError  string `json:"config_error,omitempty"`
+	// ConfigPermissions lists config paths that grant group or other access,
+	// which config.yaml must not: environment.set values are literal and can
+	// be credentials (§12.2, §12.3). Always empty on Windows, where the mode
+	// bits carry no access control. It is a warning and not a Problem — the
+	// daemon tightens what it owns on every start, so a row here means either
+	// no daemon has started on this config or something widened it since, and
+	// neither is worth changing the exit code the closed unhealthy set defines
+	// (task 005 decision 7).
+	ConfigPermissions []PermissionWarning `json:"config_permissions"`
+}
+
+// PermissionWarning is one config path whose mode is broader than §12.2 asks
+// for, carrying the exact command that fixes it.
+type PermissionWarning struct {
+	Path         string `json:"path"`
+	Mode         string `json:"mode"`
+	ExpectedMode string `json:"expected_mode"`
+	Remediation  string `json:"remediation"`
 }
 
 // Daemon is the liveness picture. It is supplied by the caller rather than
@@ -258,8 +276,25 @@ func Compose(ctx context.Context, opts Options) *Report {
 // re-reading the file would be a second chance to disagree with this row.
 func inspectPaths(dirs config.Dirs) (config.Config, Paths) {
 	file := filepath.Join(dirs.Config, config.FileName)
-	p := Paths{ConfigDir: dirs.Config, DataDir: dirs.Data, ConfigFile: file}
+	p := Paths{
+		ConfigDir: dirs.Config, DataDir: dirs.Data, ConfigFile: file,
+		ConfigPermissions: []PermissionWarning{},
+	}
 	cfg := config.Default()
+	// Answered before the parse question and independently of it: a mode is
+	// worth reporting on a config that does not parse, and on a directory
+	// whose config.yaml is not there yet. A stat that fails here is not
+	// reported twice — the rows below carry it.
+	if issues, err := config.CheckPermissions(dirs.Config); err == nil {
+		for _, issue := range issues {
+			p.ConfigPermissions = append(p.ConfigPermissions, PermissionWarning{
+				Path:         issue.Path,
+				Mode:         fmt.Sprintf("%04o", issue.Mode.Perm()),
+				ExpectedMode: fmt.Sprintf("%04o", issue.Want.Perm()),
+				Remediation:  issue.Remediation(),
+			})
+		}
+	}
 	if _, err := os.Stat(file); err != nil {
 		// Absent is not a fault: the daemon writes the commented default on
 		// first start, and until then the defaults are what is in force.

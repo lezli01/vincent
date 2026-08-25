@@ -109,19 +109,27 @@ tui:
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when
-// none exists, creating dir if needed. It reports whether the file was
-// created. An existing file is never touched.
+// none exists, creating dir if needed, both owner-only (§12.2). It reports
+// whether the file was created. An existing file's *contents* are never
+// touched, but its mode is re-tightened on every call the way
+// daemon.EnsureToken re-tightens {data_dir}/token: an installation created
+// before the modes were tightened would otherwise keep a group- and
+// world-readable config.yaml forever, and that file can hold literal
+// environment.set values (§12.3). The daemon logs what it changed — see
+// CheckPermissions — rather than reshaping a user's file in silence.
 func EnsureDefaultFile(dir string) (created bool, err error) {
 	path := filepath.Join(dir, FileName)
 	if _, err := os.Stat(path); err == nil {
-		return false, nil
+		return false, tightenPermissions(dir)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("stat %s: %w", path, err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// MkdirAll leaves an existing directory's mode alone, so a config dir that
+	// predates this and has lost only its config.yaml is tightened below.
+	if err := os.MkdirAll(dir, DirPerm); err != nil {
 		return false, fmt.Errorf("create config dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, FilePerm)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return false, nil // lost a create race; the existing file wins
@@ -135,5 +143,5 @@ func EnsureDefaultFile(dir string) (created bool, err error) {
 	if err := f.Close(); err != nil {
 		return false, fmt.Errorf("write default config: %w", err)
 	}
-	return true, nil
+	return true, tightenPermissions(dir)
 }

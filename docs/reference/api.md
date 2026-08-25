@@ -183,7 +183,8 @@ endpoints can never disagree. Changes are announced by the
 {
   "generated_at": "2026-08-15T10:00:00Z",
   "paths":    { "config_dir": "…", "data_dir": "…", "config_file": "…",
-                "config_file_exists": true, "config_parses": true },
+                "config_file_exists": true, "config_parses": true,
+                "config_permissions": [] },
   "daemon":   { "status": "running", "pid": 4021, "port": 51234,
                 "started_at": "2026-08-15T09:00:00Z", "uptime_seconds": 3600,
                 "version": "0.1.1" },
@@ -209,6 +210,13 @@ endpoints can never disagree. Changes are announced by the
   an unresponsive daemon, a failed `integrity_check`, a schema newer than the
   binary, or orphaned worktrees). A missing or logged-out agent CLI and any
   number of blocked tasks are reported and never appear here.
+- **`paths.config_permissions[]` is a warning, not a verdict.** Each entry is a
+  config path whose mode grants group or other access — `{ "path", "mode",
+  "expected_mode", "remediation" }`, where `remediation` is the exact `chmod`.
+  It never reaches `problems[]` and never changes the CLI's exit code: the
+  daemon re-tightens both paths on every start, so an entry means no daemon has
+  started on this config or something widened it since. Always empty on Windows,
+  where modes carry no access control.
 - **Agent availability is re-probed unconditionally**, unlike `GET /v1/agents`.
   Authentication is not a function of the binary, so a cached `logged_in: false`
   would survive the user logging in — which would break the endpoint in the loop

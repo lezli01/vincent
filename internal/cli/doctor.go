@@ -232,12 +232,19 @@ func doctorPathRows(p apiclient.DoctorPaths) [][]string {
 	case p.ConfigError != "":
 		state = p.ConfigError
 	}
-	return [][]string{
+	rows := [][]string{
 		{"config dir", p.ConfigDir},
 		{"data dir", p.DataDir},
 		{"config file", p.ConfigFile},
 		{"config", state},
 	}
+	// A config.yaml readable by other local accounts, with the chmod that
+	// fixes it: the file can hold literal environment.set values (§12.3).
+	for _, w := range p.ConfigPermissions {
+		rows = append(rows, []string{"permissions", fmt.Sprintf(
+			"%s is %s, want %s — run: %s", w.Path, w.Mode, w.ExpectedMode, w.Remediation)})
+	}
+	return rows
 }
 
 func doctorDaemonRows(d apiclient.DoctorDaemon) [][]string {

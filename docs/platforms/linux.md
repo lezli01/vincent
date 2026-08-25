@@ -63,7 +63,7 @@ XDG, with the standard fallbacks:
 | Data | `~/.local/share/vincent/` | `XDG_DATA_HOME` |
 
 ```
-~/.config/vincent/config.yaml
+~/.config/vincent/config.yaml            # 0600, in a 0700 directory
 ~/.config/vincent/workflows/*.yaml
 ~/.local/share/vincent/vincent.db
 ~/.local/share/vincent/token             # 0600
