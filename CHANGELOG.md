@@ -9,6 +9,46 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
+
+
+### Features
+
+* **agents:** report each agent's observed usage window ([83a4887](https://github.com/lezli01/vincent/commit/83a4887b7b9fa07cf9f6e4e5422e3b823f1d6e52))
+* **daemon:** back up and restore daemon state ([9e2bfb6](https://github.com/lezli01/vincent/commit/9e2bfb68e7b0f0c932f3c0021269672bf57fa0f3))
+* **doctor:** measure the database's footprint, rows and span ([3ed2e66](https://github.com/lezli01/vincent/commit/3ed2e6622d9b78d78a860c01323e146ad5efc661))
+* run an ad-hoc repair agent on a blocked task ([06f03b5](https://github.com/lezli01/vincent/commit/06f03b5977f2e3ecf6a75fd4cc295ecfce6063ef))
+* **taskrun:** run follow-ups on a done or aborted task ([5a86315](https://github.com/lezli01/vincent/commit/5a86315a3054a9da6ea4b92970f0260290cf7fea))
+* **workflow:** add the create-workflow built-in ([4f02aac](https://github.com/lezli01/vincent/commit/4f02aac83e254febf69981f062c5e10044a6ddfd))
+* **workflow:** pace step retries with retry_backoff ([e5ee29c](https://github.com/lezli01/vincent/commit/e5ee29ce7478cdcbeb41336c0d53195e41f7cec5))
+* **workflow:** pace step retries with retry_backoff ([adf9e34](https://github.com/lezli01/vincent/commit/adf9e345e678f37ef7853d39d5e28862edc76f27))
+
+
+### Bug Fixes
+
+* **api:** page the SSE Last-Event-ID replay ([c25789d](https://github.com/lezli01/vincent/commit/c25789dbabd6145496040a76cf500aa5ba07f720)), closes [#138](https://github.com/lezli01/vincent/issues/138)
+* **api:** require one JSON document per request and bound the body ([2b969f5](https://github.com/lezli01/vincent/commit/2b969f5f851afde39cf94ceb72cded1d35df7b23)), closes [#140](https://github.com/lezli01/vincent/issues/140)
+* **config:** create and keep config.yaml owner-only ([e3a79bd](https://github.com/lezli01/vincent/commit/e3a79bd3edca3be91c33b4c26eaa4562151dd42d)), closes [#141](https://github.com/lezli01/vincent/issues/141)
+* **docs:** avoid case-colliding page names ([4aac2d2](https://github.com/lezli01/vincent/commit/4aac2d2868c57c8635188d7180eb5cc1c1831f0a))
+* **pages:** exclude internal docs from Jekyll ([c394b8f](https://github.com/lezli01/vincent/commit/c394b8f8de850a4510503efb60c874363d30cf8b))
+* **pages:** keep workflow skill page published ([f54b1b8](https://github.com/lezli01/vincent/commit/f54b1b8a1764dbde7a424f846efbfc78df5dc638))
+* **pages:** link rendered changelog and contributing pages ([29dab39](https://github.com/lezli01/vincent/commit/29dab393feef13dac2757b67fc96d46677266942))
+* **pages:** protect concepts templates from Liquid ([bf665a2](https://github.com/lezli01/vincent/commit/bf665a258714f4aa855a3c992683153b8c451364))
+* **pages:** protect troubleshooting templates from Liquid ([e08d62a](https://github.com/lezli01/vincent/commit/e08d62aa77557fb02137975dcc2ca6bffd1908ad))
+* **pages:** protect workflow guide templates from Liquid ([9a28617](https://github.com/lezli01/vincent/commit/9a286171977992ea93717db580cd0541263413fe))
+* **pages:** protect workflow schema templates from Liquid ([c20dbf3](https://github.com/lezli01/vincent/commit/c20dbf3a9ec363352675ec24c25f1d331a7dccd9))
+* **pages:** publish contributing guide ([201942c](https://github.com/lezli01/vincent/commit/201942c71a019c2585f506b793cd84f92a4edb5c))
+* **pages:** repair contributing and changelog pages ([f530c69](https://github.com/lezli01/vincent/commit/f530c69134c7cea3b6ae9878fce8574b7de5a0db))
+* **pages:** stop Liquid parsing Vincent templates ([9e63c32](https://github.com/lezli01/vincent/commit/9e63c32cc57ef9b9669db6ea73b3d003d605ee2d))
+* **pages:** wrap the template-carrying reference pages in raw blocks ([4085141](https://github.com/lezli01/vincent/commit/408514172f6ed6370b43b9e6ddda8e709609ec7a))
+* report each task's branch and correct branch-deletion docs ([0bfc520](https://github.com/lezli01/vincent/commit/0bfc520d245a6bee32ddc02cc89060a0ef4d39aa))
+* **taskrun:** fail closed when output capture or persistence is incomplete ([7cfa8c7](https://github.com/lezli01/vincent/commit/7cfa8c7606893e41f6e9af4a3479c8f8576c49a8)), closes [#139](https://github.com/lezli01/vincent/issues/139)
+* **taskrun:** keep the repair prompt's transcript window at its own bound ([4de3636](https://github.com/lezli01/vincent/commit/4de3636950778504544991fafaadda614b7f6cb0))
+* **taskrun:** make crash recovery atomic per task and fail closed ([4554488](https://github.com/lezli01/vincent/commit/45544885feef098ee06cc7a7515e0d7de4dc3d20)), closes [#142](https://github.com/lezli01/vincent/issues/142)
+* **taskrun:** re-apply a human action that loses its CAS to admission ([51159b8](https://github.com/lezli01/vincent/commit/51159b826ade798d248643987801ea8c99f4e77d)), closes [#127](https://github.com/lezli01/vincent/issues/127)
+* **workflow:** source only regular files, bounded to 1 MiB ([053a960](https://github.com/lezli01/vincent/commit/053a960dee3f807a48f6f5622b748f9561d31b97))
+* **worktree:** serialize create and remove per project ([201af74](https://github.com/lezli01/vincent/commit/201af74fac53c42a6193698f55f6c8cb2abbc7c3)), closes [#126](https://github.com/lezli01/vincent/issues/126)
+
 ## [0.5.0](https://github.com/lezli01/vincent/compare/v0.4.2...v0.5.0) (2026-08-22)
 
 
