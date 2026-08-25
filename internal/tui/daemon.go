@@ -33,6 +33,13 @@ type (
 		config apiclient.Config
 		err    error
 	}
+	// daemonDoctorMsg carries GET /v1/doctor?probe=false — the row counts and
+	// the retention span behind the database block (task 029). It lands
+	// separately for the same reason the other two do.
+	daemonDoctorMsg struct {
+		report *apiclient.DoctorReport
+		err    error
+	}
 	// daemonLogMsg carries one tail read. err is the log being absent or
 	// unreadable, which is a different fact from a log with nothing in it.
 	daemonLogMsg struct {
@@ -60,6 +67,10 @@ type daemonView struct {
 	configOK  bool
 	configErr error
 	configAt  time.Time
+	doctor    *apiclient.DoctorReport
+	doctorOK  bool
+	doctorErr error
+	doctorAt  time.Time
 
 	logLines []string
 	logErr   error
@@ -97,7 +108,7 @@ func (d *daemonView) setClient(c *apiclient.Client) tea.Cmd {
 	if !d.visible {
 		return nil
 	}
-	return tea.Batch(d.infoCmd(), d.configCmd())
+	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd())
 }
 
 // setDataDir hands the view the resolved data dir. It arrives from the shell
@@ -140,6 +151,26 @@ func (d *daemonView) configCmd() tea.Cmd {
 	}
 }
 
+// doctorCmd fetches the diagnostic report for its database group.
+//
+// probe=false is the point: the default forces a re-probe of every adapter,
+// which is right for `vincent doctor` — a command a human ran, in the loop
+// task 005 decision 2 is about — and wrong for a panel that opens on a
+// keypress. This view already has adapter availability from /v1/info; what it
+// wants here is the row counts and the span (task 029 decision 4).
+func (d *daemonView) doctorCmd() tea.Cmd {
+	client := d.client
+	if client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		rep, err := client.Doctor(ctx, false)
+		return daemonDoctorMsg{report: rep, err: err}
+	}
+}
+
 // logCmd reads the tail off disk. It needs no client, which is the point:
 // this is the one pane that still works when the daemon does not.
 func (d *daemonView) logCmd() tea.Cmd {
@@ -158,10 +189,10 @@ func (d *daemonView) tickCmd() tea.Cmd {
 	return tea.Tick(logPollInterval, func(time.Time) tea.Msg { return daemonTickMsg{} })
 }
 
-// refreshCmd re-reads all three sources. It is what R does, and what
-// activation does.
+// refreshCmd re-reads every source. It is what R does, and what activation
+// does.
 func (d *daemonView) refreshCmd() tea.Cmd {
-	return tea.Batch(d.infoCmd(), d.configCmd(), d.logCmd())
+	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd(), d.logCmd())
 }
 
 func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
@@ -191,6 +222,9 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return d, nil
 	case daemonConfigMsg:
 		d.applyConfig(msg)
+		return d, nil
+	case daemonDoctorMsg:
+		d.applyDoctor(msg)
 		return d, nil
 	case daemonLogMsg:
 		d.applyLog(msg)
@@ -223,6 +257,20 @@ func (d *daemonView) applyConfig(msg daemonConfigMsg) {
 	d.configOK = true
 	d.config = msg.config
 	d.configAt = d.now()
+}
+
+// applyDoctor keeps the last-good report behind a failed refresh, the way the
+// other two blocks do: figures that were true about a database a minute ago
+// are more use than a blank panel, as long as the block says so.
+func (d *daemonView) applyDoctor(msg daemonDoctorMsg) {
+	if msg.err != nil {
+		d.doctorErr = msg.err
+		return
+	}
+	d.doctorErr = nil
+	d.doctorOK = true
+	d.doctor = msg.report
+	d.doctorAt = d.now()
 }
 
 // applyLog replaces the buffer wholesale — the read is a tail, not a delta —

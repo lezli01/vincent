@@ -77,7 +77,7 @@ One report answering "why is nothing running?". Seven groups:
 | Paths | config dir, data dir, config file, whether it parses, and any config path readable beyond its owner |
 | Daemon | running / not running / unresponsive, pid, port, version, uptime |
 | Log | daemon log path, size, mtime, and the last 20 lines |
-| Database | path, size, applied schema version, `PRAGMA integrity_check` |
+| Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, and `logged_in` |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -103,10 +103,24 @@ daemon tightens both paths on every start, so a row means no daemon has started
 on this config or something widened it since — not a reason to exit `1`. There
 are no such rows on Windows, where modes carry no access control.
 
+The database rows **measure and change nothing**. `total on disk` is the file
+plus its WAL and SHM sidecars, which is the honest figure — the store runs in WAL
+mode, so the file alone understates the footprint between checkpoints. `rows`
+lists every table in the schema, biggest first, so whichever one is growing is
+the first thing you read; the set comes from the database itself, so a table a
+later version adds appears without this command being taught about it.
+`workflow snapshots` totals the per-task workflow YAML, the second growth driver
+beside `events`. `oldest event` is how far back history reaches, which is what
+makes a row count extrapolable. There is no threshold, no warning and no
+retention window: rows are kept indefinitely, and `--fix` is the only thing that
+touches the file at all.
+
 **Without a daemon** the report is still printed in full — paths, whether the
 config parses, adapter detection, the log tail, disk free and the worktree
 count — and the database and task rows read `unknown — daemon not running`.
-They are not read from a second process: only the daemon opens the database.
+They are not read from a second process: only the daemon opens the database. The
+byte figures, the row counts and the span are unknown together, for that reason
+and no other.
 
 `--json` emits the whole report for scripting and for pasting into a bug report.
 

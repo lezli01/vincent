@@ -127,15 +127,41 @@ type Log struct {
 
 // Database is the §14 store as seen from outside. Known is false when no
 // daemon answered: only the daemon opens SQLite, and a diagnostic does not
-// change that.
+// change that — every figure below stays at its zero value and renders as
+// unknown rather than as an empty database.
 type Database struct {
-	Path            string `json:"path"`
-	Known           bool   `json:"known"`
-	SizeBytes       int64  `json:"size_bytes"`
+	Path      string `json:"path"`
+	Known     bool   `json:"known"`
+	SizeBytes int64  `json:"size_bytes"`
+	// WALBytes, SHMBytes and TotalBytes are the rest of the footprint (task
+	// 029). The store runs in WAL mode, so the main file alone understates it
+	// between checkpoints; the total is the figure worth quoting. A missing
+	// sidecar is a zero, which is the normal state after a clean checkpoint.
+	WALBytes   int64 `json:"wal_bytes"`
+	SHMBytes   int64 `json:"shm_bytes"`
+	TotalBytes int64 `json:"total_bytes"`
+
 	SchemaVersion   int    `json:"schema_version"`
 	NewestMigration int    `json:"newest_migration"`
 	IntegrityCheck  string `json:"integrity_check,omitempty"`
-	Error           string `json:"error,omitempty"`
+
+	// TableRows is every table in the schema with its row count, enumerated
+	// from sqlite_master rather than from a list in code (task 029): the key
+	// set describes this binary's database, so a table a later migration adds
+	// is counted without an edit. A byte total says the database is big; this
+	// says which table made it so.
+	TableRows map[string]int64 `json:"table_rows,omitempty"`
+	// OldestEventAt is the span the database covers — nil on an install with
+	// no events yet, which is a fact rather than an error. §17 keeps rows
+	// indefinitely; this is what would let someone argue with that from
+	// evidence rather than from a guess.
+	OldestEventAt *time.Time `json:"oldest_event_at"`
+	// WorkflowSnapshotBytes totals the per-task workflow YAML (§14), the
+	// second growth driver beside events. Separately reported because "412 MB
+	// of events" and "412 MB of snapshots" point at different decisions.
+	WorkflowSnapshotBytes int64 `json:"workflow_snapshot_bytes"`
+
+	Error string `json:"error,omitempty"`
 }
 
 // Agent is one adapter's §9.5 availability, trimmed to what a diagnostic

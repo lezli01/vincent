@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -23,15 +22,36 @@ import (
 // It is strictly read-only. Repair is POST /v1/doctor/fix (task 005 decision
 // 5): the router allow-lists methods per route, and a GET that deletes
 // directories would be wrong in a table clients read as a contract.
+//
+// `?probe=false` serves adapter availability from the §9.6 binary-identity
+// cache instead of forcing a re-probe (task 029 decision 4).
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.doctorReport(r.Context()))
+	writeJSON(w, http.StatusOK, s.doctorReport(r.Context(), wantsProbe(r)))
+}
+
+// wantsProbe reads `?probe`, defaulting to true.
+//
+// The default is what task 005 decision 2 decided and is unchanged for every
+// caller that decision was written about: `vincent doctor` is a command a
+// human ran deliberately, and a cached `logged_in: false` would break the loop
+// — run doctor, log in, run doctor again, still told you are logged out. What
+// the flag adds is the caller that decision was *not* about: a TUI panel that
+// opens on a keypress has no such loop, and spawning three subprocesses every
+// time someone presses `6` would be a regression in a view that is cheap today
+// (task 029 decision 4).
+func wantsProbe(r *http.Request) bool {
+	if !r.URL.Query().Has("probe") {
+		return true
+	}
+	v := r.URL.Query().Get("probe")
+	return v != "false" && v != "0"
 }
 
 // doctorReport composes the full report. Every daemon-only group degrades to
 // its own error string rather than failing the request: a diagnostic that
 // answers 500 because one of its seven questions could not be answered is
 // exactly the tool that is no use on the day it is needed.
-func (s *Server) doctorReport(ctx context.Context) *doctor.Report {
+func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	// Nil, not a method value, when there is no reclaimer: internal/doctor
 	// reads a nil scan as "nobody could answer the orphan question", which is
 	// the same state a client gets when no daemon answered at all.
@@ -44,7 +64,7 @@ func (s *Server) doctorReport(ctx context.Context) *doctor.Report {
 		LogPath:     s.deps.LogPath,
 		TailLog:     s.deps.TailLog,
 		Daemon:      s.doctorDaemon(),
-		Agents:      s.doctorAgents(ctx),
+		Agents:      s.doctorAgents(ctx, probe),
 		ScanOrphans: scan,
 	})
 	s.fillDatabase(ctx, rep)
@@ -73,8 +93,9 @@ func (s *Server) doctorDaemon() doctor.Daemon {
 	return d
 }
 
-// doctorAgents reads §9.5 availability from the §9.6 cache with refresh
-// forced (decision 2).
+// doctorAgents reads §9.5 availability from the §9.6 cache, with refresh
+// forced unless the caller asked otherwise (decision 2, narrowed by task 029
+// decision 4).
 //
 // Auth state is not a pure function of the binary, so the binary-identity key
 // is a floor for it, not a guarantee: a cached `logged_in: false` would
@@ -82,14 +103,15 @@ func (s *Server) doctorDaemon() doctor.Daemon {
 // doctor in the exact loop it exists for — run doctor, log in, run doctor
 // again, still told you are logged out. The cost is one probe per adapter per
 // invocation of a command the user ran deliberately, bounded by the adapters'
-// own probe timeouts.
-func (s *Server) doctorAgents(ctx context.Context) []doctor.Agent {
+// own probe timeouts. probe=false is for the caller with no such loop, and it
+// is never the default.
+func (s *Server) doctorAgents(ctx context.Context, probe bool) []doctor.Agent {
 	out := []doctor.Agent{}
 	if s.deps.Catalog == nil {
 		return out
 	}
 	for _, name := range s.deps.Catalog.Names() {
-		e, ok := s.deps.Catalog.Entry(ctx, name, true)
+		e, ok := s.deps.Catalog.Entry(ctx, name, probe)
 		if !ok {
 			continue
 		}
@@ -139,6 +161,11 @@ func doctorOrphans(rep taskrun.Report) []doctor.Orphan {
 	return out
 }
 
+// fillDatabase fills the §14 group, including task 029's footprint, row counts
+// and retention span. The scans live here rather than on /v1/info because this
+// endpoint is the deliberately cold one: it already forces three adapter
+// probes, an integrity_check and a worktree walk, so a COUNT(*) per table
+// costs it nothing new (task 029 decision 1).
 func (s *Server) fillDatabase(ctx context.Context, rep *doctor.Report) {
 	if s.deps.Store == nil {
 		return
@@ -147,9 +174,11 @@ func (s *Server) fillDatabase(ctx context.Context, rep *doctor.Report) {
 	db.Known = true
 	db.Path = s.deps.Store.Path()
 	db.NewestMigration = store.NewestMigration()
-	if fi, err := os.Stat(db.Path); err == nil {
-		db.SizeBytes = fi.Size()
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if sizes, err := s.deps.Store.FileSizes(); err == nil {
+		db.SizeBytes = sizes.MainBytes
+		db.WALBytes, db.SHMBytes = sizes.WALBytes, sizes.SHMBytes
+		db.TotalBytes = sizes.TotalBytes
+	} else {
 		db.Error = err.Error()
 	}
 	v, err := s.deps.Store.SchemaVersion(ctx)
@@ -164,6 +193,24 @@ func (s *Server) fillDatabase(ctx context.Context, rep *doctor.Report) {
 		return
 	}
 	db.IntegrityCheck = check
+	rows, err := s.deps.Store.TableRows(ctx)
+	if err != nil {
+		db.Error = err.Error()
+		return
+	}
+	db.TableRows = rows
+	oldest, err := s.deps.Store.OldestEventAt(ctx)
+	if err != nil {
+		db.Error = err.Error()
+		return
+	}
+	db.OldestEventAt = oldest
+	snapshots, err := s.deps.Store.WorkflowSnapshotBytes(ctx)
+	if err != nil {
+		db.Error = err.Error()
+		return
+	}
+	db.WorkflowSnapshotBytes = snapshots
 }
 
 func (s *Server) fillTasks(ctx context.Context, rep *doctor.Report) {
@@ -216,12 +263,14 @@ func (s *Server) handleDoctorFix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	force := req.Force || hasForce(r)
-	before := s.doctorReport(r.Context())
+	// Both reports force the re-probe: repair is the deliberate-command path
+	// decision 2 was written about, so `?probe` is a GET-only flag.
+	before := s.doctorReport(r.Context(), true)
 	actions := s.reclaimOrphans(r.Context(), force)
 	actions = append(actions, s.compactDatabase(r.Context(), before))
 	writeJSON(w, http.StatusOK, doctor.FixResult{
 		Actions: actions,
-		Report:  s.doctorReport(r.Context()),
+		Report:  s.doctorReport(r.Context(), true),
 	})
 }
 

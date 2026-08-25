@@ -80,7 +80,7 @@ func TestDoctorRoundTripsEveryGroup(t *testing.T) {
 		t.Fatalf("write log: %v", err)
 	}
 
-	rep, err := c.Doctor(t.Context())
+	rep, err := c.Doctor(t.Context(), true)
 	if err != nil {
 		t.Fatalf("Doctor: %v", err)
 	}
@@ -121,6 +121,55 @@ func TestDoctorRoundTripsEveryGroup(t *testing.T) {
 	}
 	if !rep.Healthy() {
 		t.Errorf("healthy harness reported problems: %v", rep.Problems)
+	}
+}
+
+// TestDatabaseFiguresRoundTrip is task 029's half of the same guarantee: the
+// widened Database group and the new database object on /v1/info have to
+// survive the daemon's encoder and this client's decoder in both directions.
+// A map, a *time.Time and five int64s are exactly the fields a `json:"-"` or
+// an unexported name would silently drop while still compiling.
+func TestDatabaseFiguresRoundTrip(t *testing.T) {
+	c, _ := newDoctorClient(t)
+
+	rep, err := c.Doctor(t.Context(), true)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	db := rep.Database
+	if !db.Known {
+		t.Fatalf("database = %+v, want known", db)
+	}
+	if db.SizeBytes <= 0 || db.TotalBytes < db.SizeBytes {
+		t.Errorf("footprint did not survive the wire: %+v", db)
+	}
+	if db.TotalBytes != db.SizeBytes+db.WALBytes+db.SHMBytes {
+		t.Errorf("total %d is not the sum of its parts: %+v", db.TotalBytes, db)
+	}
+	if len(db.TableRows) == 0 {
+		t.Error("table_rows arrived empty; the schema always has tables")
+	}
+	if _, ok := db.TableRows["events"]; !ok {
+		t.Errorf("table_rows has no events entry: %v", db.TableRows)
+	}
+	// No events yet on this harness, so the span is a real null rather than a
+	// zero time — the distinction the pointer exists for.
+	if db.OldestEventAt != nil {
+		t.Errorf("oldest_event_at = %v on a fresh database, want null", *db.OldestEventAt)
+	}
+	if db.WorkflowSnapshotBytes != 0 {
+		t.Errorf("workflow_snapshot_bytes = %d with no tasks, want 0", db.WorkflowSnapshotBytes)
+	}
+
+	info, err := c.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Database.Path != db.Path {
+		t.Errorf("info database path = %q, doctor says %q", info.Database.Path, db.Path)
+	}
+	if info.Database.SizeBytes <= 0 || info.Database.TotalBytes < info.Database.SizeBytes {
+		t.Errorf("info database footprint did not survive the wire: %+v", info.Database)
 	}
 }
 
@@ -165,7 +214,7 @@ func TestDoctorFixRoundTrips(t *testing.T) {
 func TestDoctorNeedsAuth(t *testing.T) {
 	c, _ := newDoctorClient(t)
 	unauth := apiclient.New(c.BaseURL(), "wrong-token")
-	if _, err := unauth.Doctor(t.Context()); err == nil {
+	if _, err := unauth.Doctor(t.Context(), true); err == nil {
 		t.Fatal("Doctor succeeded without a valid token")
 	}
 	if _, err := unauth.DoctorFix(t.Context(), false); err == nil {

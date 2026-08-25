@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +83,9 @@ func runDoctor(cmd *cobra.Command, fix, force bool) error {
 		}
 		actions, rep = res.Actions, res.Report
 	} else {
-		rep, err = c.Doctor(cmd.Context())
+		// True: this is the deliberate-command path task 005 decision 2 is
+		// about, so the adapter re-probe is forced (task 029 decision 4).
+		rep, err = c.Doctor(cmd.Context(), true)
 		if err != nil {
 			return fmt.Errorf("%s", apiMessage(err))
 		}
@@ -298,12 +301,60 @@ func doctorDatabaseRows(d apiclient.DoctorDatabase) [][]string {
 	}
 	rows = append(rows,
 		[]string{"size", humanBytes(d.SizeBytes)},
+		// The total leads on WAL/SHM because the main file understates the
+		// footprint between checkpoints (task 029). The sidecars are named
+		// rather than folded in silently: a `-wal` larger than the database
+		// is a checkpoint that has not run, which is a different story from a
+		// database that is simply big.
+		[]string{"total on disk", fmt.Sprintf("%s (wal %s, shm %s)",
+			humanBytes(d.TotalBytes), humanBytes(d.WALBytes), humanBytes(d.SHMBytes))},
 		[]string{"schema version", fmt.Sprintf("%d (binary embeds %d)", d.SchemaVersion, d.NewestMigration)},
-		[]string{"integrity_check", dash(d.IntegrityCheck)})
+		[]string{"integrity_check", dash(d.IntegrityCheck)},
+		[]string{"rows", doctorTableRowSummary(d.TableRows)},
+		[]string{"workflow snapshots", humanBytes(d.WorkflowSnapshotBytes)},
+		[]string{"oldest event", doctorSpan(d.OldestEventAt)})
 	if d.Error != "" {
 		rows = append(rows, []string{"error", d.Error})
 	}
 	return rows
+}
+
+// doctorTableRowSummary renders the per-table counts on one line, biggest
+// first, so the table driving the growth is the first thing read. The key set
+// is the daemon's enumeration of its own schema (task 029), not a list this
+// command keeps in step — a table a later migration adds appears here with no
+// edit.
+func doctorTableRowSummary(rows map[string]int64) string {
+	if len(rows) == 0 {
+		return "-"
+	}
+	names := make([]string, 0, len(rows))
+	for name := range rows {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if rows[names[i]] != rows[names[j]] {
+			return rows[names[i]] > rows[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s %d", name, rows[name]))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// doctorSpan renders how far back the events table reaches. §17 keeps rows
+// indefinitely, so this is the figure that makes a row count extrapolable; an
+// install with no events has no span, which is stated rather than shown as a
+// zero time.
+func doctorSpan(at *time.Time) string {
+	if at == nil {
+		return "none yet"
+	}
+	days := int(time.Since(*at).Hours() / 24)
+	return fmt.Sprintf("%s (%d days)", at.Local().Format(time.RFC3339), days)
 }
 
 func doctorAgentRows(agents []apiclient.DoctorAgent) [][]string {

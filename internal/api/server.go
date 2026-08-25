@@ -264,6 +264,27 @@ type infoResponse struct {
 	// Computed per request from a readdir and the id queries, with no size
 	// walk, so it is never stale after a gc run.
 	Orphans int `json:"orphans"`
+	// Database is the store's on-disk footprint (task 029, §17).
+	Database infoDatabase `json:"database"`
+}
+
+// infoDatabase is the byte half of §17's database figures: the file plus the
+// two sidecars WAL mode keeps beside it.
+//
+// **Only** the byte figures ride here. Row counts, the retention span and the
+// workflow-snapshot total are scans, and this endpoint is polled by the board,
+// the projects view and the daemon view on every debounced refresh — the same
+// rule that admitted `orphans` ("a readdir plus the id queries — no size walk,
+// no git — so it is cheap") is what keeps a COUNT(*) over a multi-million-row
+// events table off it. Three os.Stat calls are cheap in that sense; a scan is
+// not. The scans live on GET /v1/doctor, which is deliberately cold and needs
+// no cache anywhere (task 029 decision 1).
+type infoDatabase struct {
+	Path       string `json:"path"`
+	SizeBytes  int64  `json:"size_bytes"`
+	WALBytes   int64  `json:"wal_bytes"`
+	SHMBytes   int64  `json:"shm_bytes"`
+	TotalBytes int64  `json:"total_bytes"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +335,27 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		MaxParallelTasks: cfg.MaxParallelTasks,
 		Agents:           agents,
 		Orphans:          orphans,
+		Database:         s.infoDatabase(),
 	})
+}
+
+// infoDatabase stats the store's files. A failed stat degrades to zeros with a
+// log line, for the same reason the orphan count does: identity is what every
+// client polls this endpoint for, and a stat problem must not take the payload
+// down with it.
+func (s *Server) infoDatabase() infoDatabase {
+	if s.deps.Store == nil {
+		return infoDatabase{}
+	}
+	out := infoDatabase{Path: s.deps.Store.Path()}
+	sizes, err := s.deps.Store.FileSizes()
+	if err != nil {
+		s.deps.Logger.Warn("stat database", "error", err)
+		return out
+	}
+	out.SizeBytes, out.WALBytes = sizes.MainBytes, sizes.WALBytes
+	out.SHMBytes, out.TotalBytes = sizes.SHMBytes, sizes.TotalBytes
+	return out
 }
 
 // configResponse mirrors config.yaml as snake_case JSON; durations render as

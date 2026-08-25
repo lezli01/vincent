@@ -51,6 +51,21 @@ type Info struct {
 	// It is a pointer to a leak a human clears with `vincent gc`, not
 	// something a client acts on by itself.
 	Orphans int `json:"orphans"`
+	// Database is the store's on-disk footprint (task 029). Byte figures
+	// only: the row counts and the retention span are scans and ride
+	// GET /v1/doctor instead, which is the cold path.
+	Database InfoDatabase `json:"database"`
+}
+
+// InfoDatabase is the database footprint carried on GET /v1/info: the main
+// file, the two WAL-mode sidecars, and their total. The total is the figure
+// worth rendering — between checkpoints the main file alone understates it.
+type InfoDatabase struct {
+	Path       string `json:"path"`
+	SizeBytes  int64  `json:"size_bytes"`
+	WALBytes   int64  `json:"wal_bytes"`
+	SHMBytes   int64  `json:"shm_bytes"`
+	TotalBytes int64  `json:"total_bytes"`
 }
 
 // Uptime is how long the daemon has been up as of now. It is derived from

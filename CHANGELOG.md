@@ -118,6 +118,24 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The database now reports its own size, row counts and history span.**
+  vincent keeps database rows forever — one `events` row per state change, plus
+  the whole workflow YAML on every task — and that is a deliberate decision, but
+  nothing measured what it cost, so "rows are small" was untestable on your own
+  machine after six months of use. `vincent doctor` now prints the footprint
+  *including* the WAL and SHM sidecars (the file size alone understates it
+  between checkpoints), the row count for every table biggest-first so the one
+  that is growing names itself, the total bytes of stored workflow snapshots,
+  and how far back the event history reaches. The TUI's daemon view shows the
+  same block, and `GET /v1/info` carries the byte figures for anything else that
+  wants them. The counts are read from the schema itself, so a table a later
+  version adds is counted without a client change. Purely informational: nothing
+  prunes, nothing warns, no threshold exists and no exit code moved — the
+  measurement comes first, and any argument about retention now has evidence
+  behind it. `GET /v1/doctor` also accepts `?probe=false` to skip the forced
+  agent re-probe; the default is unchanged and `vincent doctor` still forces it.
+  ([#98](https://github.com/lezli01/vincent/issues/98))
+
 - **Follow-up runs on a finished task, before it is archived.** A `done` or
   `aborted` task still owns its worktree, its branch and its commits until
   `archive` tears them down, and until now vincent could do nothing in that
