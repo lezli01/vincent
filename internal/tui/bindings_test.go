@@ -87,6 +87,10 @@ func repairFormFixture() *repairForm {
 	return newRepairForm(7, "check_failed", "build")
 }
 
+func followUpFormFixture() *followUpForm {
+	return newFollowUpForm(7, 1, "done")
+}
+
 // panelKeyProbes proves one panel-scoped binding each. A probe drives the
 // real view with the key the registry publishes and asserts the effect the
 // label promises — not that the key was merely swallowed, which is what `[`
@@ -538,6 +542,49 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			f := repairFormFixture()
 			if _, exit := f.update(registryKey(t, "esc"), nil); !exit {
 				t.Fatal("esc did not close the repair form")
+			}
+		},
+	},
+
+	ctxFollowUpForm: {
+		"enter": func(t *testing.T) {
+			f := followUpFormFixture()
+			// The cursor starts on the run-form chooser, so enter opens its
+			// list; one row down it opens the prompt field instead.
+			f.update(registryKey(t, "enter"), nil)
+			if f.picker == nil {
+				t.Fatal("enter did not open the run-form list")
+			}
+			f.picker = nil
+			f.cursor = fuBody
+			f.update(registryKey(t, "enter"), nil)
+			if !f.editing {
+				t.Fatal("enter did not open the prompt field")
+			}
+		},
+		"e": func(t *testing.T) {
+			f := followUpFormFixture()
+			f.cursor = fuBody
+			opened := false
+			f.openEditor = func(string) tea.Cmd { opened = true; return nil }
+			f.update(registryKey(t, "e"), nil)
+			if !opened {
+				t.Fatal("e did not hand the prompt to $EDITOR")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			f := followUpFormFixture()
+			f.update(registryKey(t, "ctrl+s"), nil)
+			// With nothing typed, submitting is refused — with a reason,
+			// which is what proves the key was handled.
+			if f.err == "" {
+				t.Fatal("ctrl+s neither started the follow-up nor said why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := followUpFormFixture()
+			if _, exit := f.update(registryKey(t, "esc"), nil); !exit {
+				t.Fatal("esc did not close the follow-up form")
 			}
 		},
 	},

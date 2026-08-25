@@ -256,12 +256,13 @@ selected on the board it acts on all of them; see
 | `p` | Pause / resume | `queued`, `running` / `paused` |
 | `c` | Cancel the task (asks first — a running step is killed) | most states |
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
+| `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched.
 
-`R` opens the repair form instead of acting straight away; it is the only task
-action that needs something written, which is also why it is not offered for a
+`R` and `F` open a form instead of acting straight away; they are the two task
+actions that need something written, which is also why neither is offered for a
 bulk selection.
 
 What each action means in full is in
@@ -299,6 +300,53 @@ reason — whatever it exited with. That is the point: you look at the diff and
 entry under the blocked step, labelled `repair (ad-hoc agent)`, with its own
 transcript, tokens and cost; it is not an attempt of that step and does not use
 up its retries.
+
+## Following up on a finished task
+
+A `done` or `aborted` task still owns everything it made — its worktree, its
+branch, its commits — until you archive it. `F` is how you do one more thing in
+there without leaving vincent: rebase the branch onto a `main` that moved, add
+the commit a reviewer asked for, drop the stray file the agent left.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between the run form, what to run, and the agent / model / effort rows |
+| `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker |
+| `e` | Write the prompt or command in `$EDITOR` instead |
+| `ctrl+s` | Start the follow-up |
+| `esc` | Close without running anything — the draft is discarded |
+
+The top row picks what kind of run this is, and it decides what the row under it
+means:
+
+| Run form | The row below it is |
+|---|---|
+| `agent` | a prompt — prose, not a template |
+| `command` | a shell command, run under the daemon's shell (`/bin/sh`, or `pwsh` on Windows) |
+| `workflow` | a name picked from the registry, run against this task's worktree instead of a new one |
+
+Switching between the three keeps what you typed in each, so you can look at the
+command form and come back to your prompt.
+
+When the run finishes, the task returns to the state it came from — `done` to
+`done`, `aborted` to `aborted` — whatever it exited with. A follow-up never
+changes a task's verdict; if a successful one could promote an aborted task to
+`done`, any command that exits 0 could undo an abort you made on purpose.
+
+Follow-ups are repeatable, and each one is a **round**. The timeline heads them
+`↳ follow-up 1`, `↳ follow-up 2` under the workflow's own steps, with each step
+of the round named beneath — they are not steps of the workflow, and the
+workflow's `k/n` does not move.
+
+If a follow-up step fails the task blocks at that round, and the usual keys
+mean the usual things there: `r` re-runs the follow-up where it stopped, `R`
+repairs against *that* failure, `s` abandons the follow-up and puts the task
+back where it came from, `c` aborts. `E` is refused — edit-and-retry rewrites a
+step in the task's snapshot, and a follow-up is deliberately not in it.
+
+For more than one task at a time, use the command line:
+`vincent task follow-up <id> --run 'git rebase origin/main'`
+([CLI reference](../reference/cli.md#vincent-task-follow-up)).
 
 ## Answering a question
 

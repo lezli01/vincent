@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -207,6 +208,241 @@ func (s *Server) checkRepairSelection(
 	return warnings, ""
 }
 
+// followUpRequest is the §13.2 body of POST /v1/tasks/{id}/follow_up (§6,
+// task 027). Exactly one of the three run forms is required; the optional
+// triple stands in for the step level of §8.6's chain, exactly as a repair's
+// does.
+//
+// `prompt` and `run` are literal text — prose and a command line typed at a
+// form, not `text/template` sources — and the daemon escapes them when it
+// compiles the one-step workflow it runs. An operator who wants a template
+// writes a workflow and names it in `workflow`.
+type followUpRequest struct {
+	Prompt   *string `json:"prompt"`
+	Run      *string `json:"run"`
+	Workflow *string `json:"workflow"`
+	Agent    *string `json:"agent"`
+	Model    *string `json:"model"`
+	Effort   *string `json:"effort"`
+}
+
+// handleTaskFollowUp runs one more piece of work in a finished task's
+// existing worktree and branch, before it is archived (§13.2, task 027).
+//
+// Like repair and archive it cannot go through runAction: the response
+// carries the §8.2 catalog warnings the run's own agent selection can raise,
+// which taskAction has no room for. Everything the handler rejects is
+// something the person asking can act on — an empty form, an unknown
+// workflow, a follow-up workflow that does not validate here, a model no
+// catalog admits — and every one of them is a 400 rather than a task that
+// blocks six seconds later.
+func (s *Server) handleTaskFollowUp(w http.ResponseWriter, r *http.Request) {
+	var req followUpRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if s.deps.Runner == nil {
+		s.internalError(w, "task actions", errors.New("no task runner is configured"))
+		return
+	}
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	task, err := s.deps.Store.GetTask(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
+		return
+	}
+	if err != nil {
+		s.internalError(w, "get task", err)
+		return
+	}
+	sel, msg := followUpForm(req)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return
+	}
+	if sel.Agent != "" && s.deps.Agents != nil {
+		if _, known := s.deps.Agents.Get(sel.Agent); !known {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("unknown agent %q (available: %s)", sel.Agent,
+					strings.Join(s.deps.Agents.Names(), ", ")))
+			return
+		}
+	}
+	wf, msg := s.compileFollowUp(ctx, task, &sel)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return
+	}
+	// §8.2 over the compiled document, step by step, exactly as task creation
+	// checks a snapshot: an unregistered agent and a known-invalid model or
+	// effort are 400s, and a value no catalog knows rides back as a warning.
+	warnings, cerr := s.checkTaskCatalog(wf, task)
+	if cerr != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, "follow-up: "+cerr)
+		return
+	}
+	// The `on_input: require` gate (§7.4, task 013) over the same document. A
+	// follow-up workflow may declare it, and a run that could only block on
+	// `input_unsupported` is refused in front of the person asking.
+	if mismatch := s.inputMismatch(ctx, wf, task); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, "follow-up: "+mismatch)
+		return
+	}
+	updated, err := s.deps.Runner.FollowUp(ctx, id, sel)
+	if err != nil {
+		s.writeActionError(w, err)
+		return
+	}
+	resp := toTaskResponse(updated, s.snaps.get(updated.ID, updated.WorkflowSnapshot))
+	resp.Warnings = prefixEach(warnings, "follow-up: ")
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// followUpForm reads which of the three §6 run forms was asked for. Exactly
+// one is required: a request with none says nothing to run, and one with two
+// says two different things with no rule for which wins.
+func followUpForm(req followUpRequest) (store.FollowUpRequest, string) {
+	var (
+		out    store.FollowUpRequest
+		chosen []string
+	)
+	if v := strings.TrimSpace(ptrValue(req.Prompt)); v != "" {
+		out.Form, out.Prompt = store.FollowUpAgent, v
+		chosen = append(chosen, "prompt")
+	}
+	if v := strings.TrimSpace(ptrValue(req.Run)); v != "" {
+		out.Form, out.Run = store.FollowUpCommand, v
+		chosen = append(chosen, "run")
+	}
+	if v := strings.TrimSpace(ptrValue(req.Workflow)); v != "" {
+		out.Form, out.WorkflowName = store.FollowUpWorkflow, v
+		chosen = append(chosen, "workflow")
+	}
+	switch len(chosen) {
+	case 1:
+		out.Agent = strings.TrimSpace(ptrValue(req.Agent))
+		out.Model = strings.TrimSpace(ptrValue(req.Model))
+		out.Effort = strings.TrimSpace(ptrValue(req.Effort))
+		return out, ""
+	case 0:
+		return out, "a follow-up needs something to run: one of prompt, run or workflow"
+	default:
+		return out, fmt.Sprintf(
+			"a follow-up runs one thing: %s were all given", strings.Join(chosen, ", "))
+	}
+}
+
+// compileFollowUp turns a validated request into the document the engine will
+// run, and writes it into sel.Workflow.
+//
+// The workflow form goes through exactly what task creation puts a snapshot
+// through — include expansion (§7.9), fan-out tree resolution (§7.6) and a
+// re-parse against the daemon's real options — for the same reason: §5.3 says
+// execution uses a captured document precisely so that later edits to a
+// workflow file cannot mutate a run in flight, and a follow-up is a run.
+//
+// The one difference is the fan-out depth budget. A follow-up on a task that
+// is already a lane three levels down has three of `fan_out.max_depth`
+// already spent, so the budget is re-derived from the task's own depth rather
+// than taken whole (§7.6).
+func (s *Server) compileFollowUp(
+	ctx context.Context, task *store.Task, sel *store.FollowUpRequest,
+) (*workflow.Workflow, string) {
+	var (
+		wf  *workflow.Workflow
+		err error
+	)
+	if sel.Form == store.FollowUpWorkflow {
+		entry, found := s.deps.Workflows.Lookup(task.ProjectID, sel.WorkflowName)
+		if !found {
+			return nil, fmt.Sprintf("workflow %q not found for project %d",
+				sel.WorkflowName, task.ProjectID)
+		}
+		if !entry.Valid() {
+			return nil, fmt.Sprintf("workflow %q is invalid: %s",
+				sel.WorkflowName, entry.Errors.Error())
+		}
+		if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
+			return nil, fmt.Sprintf("workflow %q cannot run here: %s", sel.WorkflowName, mismatch)
+		}
+		wf = entry.Workflow
+	} else {
+		wf, err = taskrun.CompileFollowUp(*sel)
+		if err != nil {
+			return nil, err.Error()
+		}
+	}
+	if workflow.HasInclude(wf) {
+		expanded, xerr := workflow.Expand(wf, workflow.ExpandOptions{
+			Lookup:   s.laneLookup(task.ProjectID),
+			Limits:   workflow.IncludeLimits{MaxDepth: s.deps.Config().Include.MaxDepth},
+			Override: agent.Level{Agent: sel.Agent, Model: sel.Model, Effort: sel.Effort},
+		})
+		if xerr != nil {
+			return nil, xerr.Error()
+		}
+		wf = expanded
+	}
+	if workflow.HasFanOut(wf) {
+		cfg := s.deps.Config()
+		depth, derr := s.taskDepth(ctx, task.ID)
+		if derr != nil {
+			return nil, derr.Error()
+		}
+		resolved, _, terr := workflow.ResolveTree(wf, s.laneLookup(task.ProjectID),
+			workflow.Limits{MaxDepth: cfg.FanOut.MaxDepth - depth, MaxTasks: cfg.FanOut.MaxTasks})
+		if terr != nil {
+			return nil, terr.Error()
+		}
+		wf = resolved
+	}
+	// The request stands in for the step level of §8.6's chain (decision 12),
+	// so it is written into the steps that declare nothing of their own —
+	// before the re-parse, so what validates is what runs.
+	taskrun.ApplyFollowUpSelection(wf.Steps, *sel)
+	out, merr := workflow.Marshal(wf)
+	if merr != nil {
+		return nil, merr.Error()
+	}
+	// Re-validate the finished document against the daemon's real options,
+	// not just its shape: the nesting rules an include can break are decidable
+	// only once the steps are in place, and the §8.1.1 platform list and
+	// §8.1 id rules are checked here rather than at run time.
+	revalidated, _, verr := workflow.Parse(out, s.deps.Workflows.Options())
+	if verr != nil {
+		return nil, fmt.Sprintf("the follow-up does not validate: %s", verr.Error())
+	}
+	sel.Workflow = string(out)
+	return revalidated, ""
+}
+
+// taskDepth is how many fan-out levels sit above a task: 0 for a root, 1 for
+// a lane of a root's fan_out step, and so on.
+func (s *Server) taskDepth(ctx context.Context, id int64) (int, error) {
+	ancestors, err := s.deps.Store.FanOutAncestors(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	return len(ancestors), nil
+}
+
+// prefixEach tags a list of warnings with where they came from, the way
+// checkRepairSelection tags its own.
+func prefixEach(in []string, prefix string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		out = append(out, prefix+v)
+	}
+	return out
+}
+
 // archiveRequest is the §13.2 body of POST /v1/tasks/{id}/archive. `force`
 // is also accepted as a query parameter, matching DELETE /v1/projects/{id}.
 type archiveRequest struct {
@@ -398,6 +634,17 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 		e, _ := taskrun.AsRepairPrompt(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
 
+	// A follow-up that describes nothing to run, or an `edit + retry` aimed
+	// at a follow-up step, which is not part of the snapshot there is
+	// anything to edit in (task 027).
+	case isFollowUpRequest(err):
+		e, _ := taskrun.AsFollowUpRequest(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
+	case isFollowUpOverride(err):
+		e, _ := taskrun.AsFollowUpOverride(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
 	// A structurally mismatched answer is untranslatable to the live agent
 	// session; the request never reaches the task (§7.4, §13.2).
 	case isAnswerValidation(err):
@@ -428,6 +675,16 @@ func isStateConflict(err error) bool {
 
 func isOverrideMismatch(err error) bool {
 	_, ok := taskrun.AsOverrideMismatch(err)
+	return ok
+}
+
+func isFollowUpRequest(err error) bool {
+	_, ok := taskrun.AsFollowUpRequest(err)
+	return ok
+}
+
+func isFollowUpOverride(err error) bool {
+	_, ok := taskrun.AsFollowUpOverride(err)
 	return ok
 }
 

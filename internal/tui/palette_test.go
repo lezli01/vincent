@@ -16,6 +16,7 @@ var everyAction = taskActions{id: 9, state: stateRunning, actions: []string{
 	apiclient.ActionPause, apiclient.ActionResume, apiclient.ActionApprove,
 	apiclient.ActionReject, apiclient.ActionRetry, apiclient.ActionRepair,
 	apiclient.ActionSkip, apiclient.ActionCancel, apiclient.ActionArchive,
+	apiclient.ActionFollowUp,
 }}
 
 // TestPaletteReachesEveryRegistryEntry is the T3.11 done-when: every

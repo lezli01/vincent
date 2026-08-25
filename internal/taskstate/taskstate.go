@@ -99,6 +99,18 @@ const (
 	// and a recovery path (what task 014 paid for `awaiting_children`) to
 	// buy one nicer `cancel`, which keeps its present meaning throughout.
 	Repair Action = "repair"
+	// FollowUp is a run a human launches from `done` or `aborted`, before the
+	// task is archived (task 027). It is the third producer of `→ queued`
+	// after retry and repair, and the admission it produces runs an agent
+	// prompt, a shell command or a whole registry workflow in the task's
+	// *existing* worktree and branch, then returns the task to the state it
+	// came from — `done → done`, `aborted → aborted`.
+	//
+	// It is scoped to exactly the pair `archive` is scoped to: the two states
+	// where the work still exists and is still reachable. A follow-up decides
+	// nothing about the task's verdict (decision 5), which is why there is no
+	// `aborted → done` edge behind it.
+	FollowUp Action = "follow_up"
 )
 
 // Engine events. They are transitions the daemon performs while running a
@@ -130,12 +142,20 @@ const (
 	// ChildrenSettled is every descendant of a parked parent having settled,
 	// which returns it to the queue to run its join.
 	ChildrenSettled Action = "children_settled"
+	// Restore returns a task whose follow-up run has ended to the state the
+	// follow-up was launched from (task 027 decision 7). It exists for the
+	// `aborted` origin alone: a done-origin follow-up ends with Complete,
+	// which already means "the run finished", while returning an aborted task
+	// had no edge behind it at all. `cancel` would have been the only
+	// candidate and it is a human action — using it here would report a
+	// human decision that nobody made.
+	Restore Action = "restore"
 )
 
 // humanActions is the set of actions a client may invoke, in the order §6
 // lists them.
 var humanActions = []Action{
-	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive,
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
 }
 
 // Human reports whether a is a human action rather than an engine event.
@@ -183,6 +203,11 @@ var table = map[Action]map[State]Transition{
 	Approve: {AwaitingGate: {To: Queued}},
 	Reject:  {AwaitingGate: {To: Blocked}},
 	Archive: {Done: {To: Archived}, Aborted: {To: Archived}},
+	// A follow-up is offered from exactly the states archive is (task 027):
+	// the two where the task is finished but its worktree and branch are
+	// still there. Both re-queue, so internal/scheduler stays the only
+	// producer of `queued → running` and both §11 caps apply.
+	FollowUp: {Done: {To: Queued}, Aborted: {To: Queued}},
 
 	Admit:        {Queued: {To: Running}},
 	Gate:         {Running: {To: AwaitingGate}},
@@ -203,6 +228,12 @@ var table = map[Action]map[State]Transition{
 	// Its children are ordinary tasks and pause individually.
 	FanOut:          {Running: {To: AwaitingChildren}},
 	ChildrenSettled: {AwaitingChildren: {To: Queued}},
+
+	// Follow-up (task 027). A done-origin follow-up ends through Complete,
+	// which this row is the aborted-origin mirror of. There is no other user
+	// of Restore, and deliberately no `Aborted → Done` anywhere: a follow-up
+	// never changes a task's verdict (decision 5).
+	Restore: {Running: {To: Aborted}},
 }
 
 // Next returns the transition for applying a to a task in state from. ok is

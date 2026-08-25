@@ -13,7 +13,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
-| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents |
+| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks |
@@ -84,6 +84,17 @@ same step with the same reason, so you read the diff and then decide. The repair
 is recorded as its own step run with its own transcript and cost, and does not
 consume the blocked step's retries.
 
+A finished task keeps its worktree, its branch and its commits until you archive
+it, and that window is where the last mile of real work lives — a branch that
+needs rebasing onto a `main` that moved, one more commit a review asked for, a
+stray file to drop. A **follow-up run** does that work inside vincent: give a
+`done` or `aborted` task an agent prompt, a shell command, or the name of a
+workflow, and it runs on that task's own branch in that task's own worktree,
+recorded in its own ledger with a transcript and cost accounting. It is
+repeatable, and it never changes the task's verdict — a done task comes back
+`done` and an aborted one comes back `aborted`. It is the one human action with
+a command line, because "rebase these six finished branches" is a batch.
+
 Every state transition is persisted before execution. If the daemon dies
 mid-step, restart recovery finalizes the interrupted attempt, verifies and
 stops orphan processes, and reruns the step without charging it as a failed
@@ -106,6 +117,8 @@ Human oversight is part of the workflow instead of an informal terminal habit:
   blocked step without discarding its branch or transcript.
 - Send a one-off repair agent into a blocked task's worktree when the fix is a
   file change, and still decide yourself whether the step then re-runs.
+- Follow a finished task up with one more agent run, shell command or workflow
+  in its existing worktree, as many times as it takes, before archiving it.
 - Use bulk selection to act on several eligible tasks while refusals remain
   selected for follow-up.
 

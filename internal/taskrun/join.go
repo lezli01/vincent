@@ -226,6 +226,7 @@ func (r *Runner) handleConflict(
 		task: env.task, project: env.project, wf: env.wf,
 		step: resolver, index: env.index, inGroup: true,
 		conflicts: paths,
+		followUp:  env.followUp,
 		log:       env.log.With("merge_resolver", resolver.ID),
 	}
 	attempt := r.runStepWithRetries(ctx, resolverEnv)

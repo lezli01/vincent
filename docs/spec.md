@@ -242,6 +242,7 @@ A unit of work delivered by running a workflow against a project.
 | `state` | §6 |
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
+| `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
 
 
 *Amended 2026-08-17 (task 014).* A snapshot may carry a whole fan-out tree: a
@@ -250,6 +251,21 @@ written in, so later edits to a lane's workflow file never reach a task that
 already exists. Nesting lives only at authoring time — each lane's steps become
 a **child task's own flat snapshot** when it is spawned, so `edit + retry`,
 `Marshal` and the locator never meet a nested workflow.
+
+*Amended 2026-08-25 (task 027).* A **follow-up run** (§6) never touches
+`workflow_snapshot`. The snapshot is the workflow as authored, and the only
+thing that rewrites it is `edit + retry`'s in-place override of a step that is
+already in it. A follow-up's steps live in `pending_follow_up` and its rows live
+past the snapshot's last index (§5.4), so `step_total`, "step k of n" and the
+task 017 graph go on describing the workflow somebody wrote rather than
+whatever an operator ran afterwards.
+
+`current_step` is left where the finished run put it — one past the last step —
+for the whole of a follow-up, and a follow-up is walked by the cursor inside
+`pending_follow_up` instead. Two cursors rather than one is what lets a `manual`
+gate or a `fan_out` inside a follow-up park the task and be resumed: the gate's
+`approve` advances the follow-up's cursor, and nothing has to decide which of
+two meanings `current_step` carries at that moment.
 
 ### 5.4 StepRun
 
@@ -288,6 +304,33 @@ index and render it as its own entry (§15) — displaying it as an attempt of t
 step would say the opposite of what happened. For the same reason a repair row
 is not visible in `.Steps` (§8.4) to any later step's prompt or guard: it is not
 a step of the workflow, and no workflow author wrote that key.
+
+*Amended 2026-08-25 (task 027).* A **follow-up run** (§6) is likewise a StepRun
+like any other, and is told apart by **position** rather than by a reserved id.
+Round *n* of a task whose snapshot has *k* steps writes every row it produces at
+`step_index = k + n - 1`. That cursor space is unused, so a row at or past *k*
+is unambiguously a follow-up row and its round is legible from the index alone.
+
+The consequences are all things that then need no new mechanism. Distinct rounds
+occupy distinct indices, so the same `(task_id, step_index, step_id, iteration)`
+key that keeps a repair out of a step's retry budget keeps round 2 out of round
+1's — a second follow-up is round 2, not attempt 2. `iteration` keeps its §7.8
+meaning, so a `loop` inside a follow-up numbers its passes normally. And the
+step ids are the ones the follow-up's author wrote, never rewritten, so `if:`
+guards and `.Steps` references *inside* a follow-up workflow keep working. The
+rows of a multi-step round share one index the way a `parallel` group's
+sub-steps do, and are told apart by step id.
+
+Clients must tell a follow-up row apart from an attempt of a workflow step —
+`step_index >= step_total` is the whole test — and render it as its own round
+(§15), never as step *k+1* of a workflow that did not grow.
+
+For `.Steps` (§8.4) a follow-up step sees the **original workflow's** rows and
+its **own round's**, and nothing else. Reading the finished run's results is the
+point of a follow-up; rows from *earlier* rounds are hidden for the reason a
+`__repair` row is, because nobody wrote them into the workflow being run. Where
+a follow-up workflow reuses an id from the original workflow, the round's own
+row shadows it.
 
 ## 6. Task lifecycle
 
@@ -375,6 +418,55 @@ fail with `agent_unavailable`, which is honest. Filtering `available_actions` by
 block reason would put a second, reason-shaped policy beside this section's
 state-shaped one for no behavioral gain.
 
+**Amended 2026-08-25 (task 027): `done` and `aborted` are no longer dead ends
+until `archive`.** A new human action, **`follow_up`**, is valid from those two
+states — the pair `archive` is already scoped to, and the two where the task's
+worktree, branch and commits still exist. It runs one more piece of work in that
+worktree: an agent prompt, a shell command, or a named workflow from the
+registry, chosen at the point of asking. Like a repair it is an ordinary
+admission — the scheduler admits it, both §11 caps apply — and the run lands in
+the task's own ledger with step runs, transcripts, events and token and cost
+accounting.
+
+**A follow-up decides nothing about the task's verdict.** `done` returns to
+`done` and `aborted` returns to `aborted`, whatever the run did. Promoting a
+successful follow-up on an aborted task to `done` was considered and rejected:
+it makes a human's abort reversible by any command that exits 0, and it buys
+nothing — an operator who wants the verdict changed already has the task where
+they can archive it. Returning an aborted-origin task is the engine action
+**`restore`** (`running → aborted`); a done-origin one uses the existing
+`complete`. `restore` exists for this and nothing else, because `cancel` is a
+human action and using it here would report a decision nobody made.
+
+**A failed follow-up step blocks the task**, at the follow-up's own row index,
+carrying that step's `block_reason`. The resolution set is the existing one, and
+the request is what tells the four apart: `retry` re-admits and re-runs the
+follow-up from its persisted cursor (the request survives the block *and* the
+retry — the one place `blocked → queued` keeps it); `repair` runs an ad-hoc
+agent against the follow-up's failure (§7.2); `skip` marks the request abandoned
+and the next admission restores `done` or `aborted` without running anything;
+`cancel` aborts and drains. `edit + retry` is refused with a 400: an override
+rewrites a step **in the snapshot** (§5.3), and a follow-up is deliberately not
+in the snapshot, so there is nothing there to rewrite.
+
+**`done → aborted` is therefore reachable**, which it was not before. `cancel`
+during a running follow-up kills the live process and aborts the task, because
+that is what `cancel` always means and `available_actions` cannot express "this
+one means something else right now" (the same reasoning that refused a
+`repairing` state above). A client author reading the older table would not
+expect that edge, which is why it is called out here.
+
+A follow-up is offered from `done` and `aborted` whatever the origin — no
+filtering, for the reason repair is unfiltered. An `aborted` task that never got
+a worktree has one created on the follow-up admission, or re-blocks on the same
+reason it would have. The one carve-out is a follow-up already abandoned with
+`skip`: it restores the origin state *before* worktree preparation runs, because
+a run with nothing left to do must not be able to block on creating a worktree it
+will never use.
+
+A follow-up is repeatable: a finished task can be followed up any number of
+times before it is archived, and each is a **round** with its own rows (§5.4).
+
 ### States
 
 | State | Meaning | Consumes a concurrency slot? |
@@ -406,6 +498,7 @@ state-shaped one for no behavioral gain.
 | `reject` | awaiting_gate | Gate step → `rejected`; → `blocked` (from which: retry earlier via edit, skip, or abort) |
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived` |
+| `follow_up` | done, aborted | *Added 2026-08-25 (task 027).* Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch (§7.2, §8.3, §8.6, §13.2); → `queued`, and back to the state it came from when the run ends. Repeatable; it decides nothing about the task's verdict and spends none of the workflow's retry budgets |
 
 **Amended 2026-08-24 (issue #127): an action that loses a race re-applies itself
 once, when the state it lost to still allows it.** Every action in this table is
@@ -563,6 +656,26 @@ stdout/stderr are captured to the step transcript.
   decision is about what a workflow author can declare ahead of time; the whole
   point of a repair is that nothing was declared ahead of time. It adds a human
   action, not a workflow field.
+- **A follow-up run spends none of the workflow's budgets, and blocks at its
+  own index.** *Added 2026-08-25 (task 027).* A `follow_up` (§6) on a finished
+  task writes its rows past the snapshot's last step index (§5.4), so the same
+  `(task_id, step_index, step_id, iteration)` count that keeps a repair out of a
+  step's budget keeps a follow-up out of every step's. After any number of
+  follow-ups, the original steps count exactly the attempts they would have
+  counted with none.
+
+  A follow-up step that fails with its budget spent blocks the task **at the
+  follow-up's row index**, carrying that step's reason. The resolution set is
+  this section's existing one: `retry` re-runs the follow-up from its own
+  cursor, `repair` runs an ad-hoc agent against the follow-up's failure —
+  reading that row as its failure context rather than the snapshot's — `skip`
+  abandons the follow-up and restores the task's origin state, and `cancel`
+  aborts. `edit + retry` is refused (§6): the follow-up is not in the snapshot
+  an override rewrites.
+
+  The agent and command forms carry `max_retries: 0`, the repair's reasoning
+  applied to the same shape of one-off run. A workflow-form follow-up uses the
+  budgets its own steps declare, because those are steps somebody wrote.
 
 ### 7.3 Fresh session per step
 
@@ -2289,7 +2402,7 @@ One Go binary, `vincent`:
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
-| `vincent task add / ls / show <id> / cancel <id>` | Thin API clients for scripting |
+| `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2) |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered |
 | `vincent version` | Build info |
@@ -2298,6 +2411,14 @@ One Go binary, `vincent`:
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
 scope spans two directory trees — worktrees and transcripts — so a `worktree` noun
 would have been wrong on the day it shipped.
+
+*Added 2026-08-25 (task 027).* `follow_up` is the one §6 human action with a
+command line. `retry`, `repair`, `skip` and `approve` are deliberately
+TUI-and-API only, and stay that way; the reason to break with them here is that
+"rebase these six finished branches onto current master" is a batch, and a batch
+wants a shell loop rather than six visits to a form. The unevenness that leaves
+is accepted rather than papered over — giving every human action a command line
+is separate work.
 
 *Added 2026-08-15 (task 006).* `vincent doctor` is the one data subcommand that
 still produces a **full report when no daemon answers**, the way
@@ -2862,6 +2983,31 @@ POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         queued) plus `warnings`. The repair returns the task
                                         to `blocked` at the same step with the same
                                         `block_reason` whatever the agent exits with
+POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, model?, effort? }
+                                        (done/aborted only; added 2026-08-25, task 027). Runs
+                                        one more piece of work in the task's existing worktree
+                                        and branch (§6, §7.2). **Exactly one** of `prompt`
+                                        (an agent run), `run` (a shell command, §8.3) and
+                                        `workflow` (a name from the registry) is required:
+                                        none says nothing to run, and two say two things with
+                                        no rule for which wins — both are 400s. `prompt` and
+                                        `run` are **literal text**, never text/template
+                                        sources; the daemon escapes them when it compiles the
+                                        one-step workflow it runs. A `workflow` name is
+                                        resolved, §8.1.1 platform-checked, include-expanded
+                                        (§7.9) and fan-out-resolved (§7.6, with the depth
+                                        budget re-derived from this task's own depth) now, and
+                                        stored as it will run — an unknown name, a workflow
+                                        that does not validate here, or a tree past its bounds
+                                        is a 400. The optional triple stands in for the step
+                                        level of §8.6's chain for this run and is validated
+                                        exactly as creation validates a task's: an
+                                        unregistered agent or a known-invalid model/effort is
+                                        a 400, a value no catalog knows rides back in
+                                        `warnings[]`. The response is the task (now queued)
+                                        plus `warnings`. The run returns the task to the state
+                                        it came from — done to done, aborted to aborted —
+                                        whatever it exits with
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -3021,6 +3167,10 @@ CREATE TABLE tasks (
   pending_repair_json TEXT,                   -- ad-hoc repair request awaiting its admission (§6, task 025, migration 0010);
                                               -- drained by the transition that returns the task to blocked, not by the
                                               -- step_run insert — an interrupted repair must re-run as a repair (§12.4)
+  pending_follow_up_json TEXT,                -- follow-up run awaiting or in flight (§6, task 027, migration 0012);
+                                              -- carries the compiled workflow, the origin state, the round and the run's
+                                              -- own step cursor. Survives the fail that blocks a follow-up step and the
+                                              -- retry that re-runs it; dropped by any transition into a settled state
   pending_input_json  TEXT,                   -- normalized InputRequest while state='awaiting_input' (§7.4)
   admit_not_before    TEXT,                   -- §11 admission hold; NULL = admissible now (task 003)
   queued_reason       TEXT,                   -- why a queued task waits on more than a slot; NULL = the ordinary queue
@@ -3200,6 +3350,24 @@ stream for the live tail.
    showing it as an attempt would tell the operator the opposite of what
    happened. It also does not make its index read as a `parallel` group, which
    is otherwise what more than one distinct step id at one index means.
+
+   **Follow-up popup (task 027, added 2026-08-25).** On a `done` or `aborted`
+   task, `F` opens a third popup of the same shape, with one row the others do
+   not have: a **run-form chooser** above the text, because the three forms of
+   §13.2's `follow_up` need choosing between and a key that had to guess between
+   "prompt" and "shell command" would guess wrong half the time. The chooser
+   decides what the row under it means — a prompt, a command, or a workflow
+   picked from `GET /v1/workflows` — and the same agent/model/effort pickers
+   follow. `ctrl+s` starts the run, `esc` closes and discards the draft. Like
+   repair it is excluded from bulk actions (task 011): the input is written for
+   one task, and the batch case is `vincent task follow-up` (§12.1).
+
+   The detail timeline must render a follow-up round as **its own tier**, headed
+   as a round rather than numbered as a step: its rows sit at
+   `step_index >= step_total` (§5.4), and numbering round 1 of a four-step
+   workflow "step 5" would say the workflow grew, which it did not (§5.3). A
+   round's steps share one index and are named individually beneath that header,
+   the way a `parallel` group's members are.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → title → description (inline or
    `$EDITOR`) → fields → base branch (default prefilled) →
@@ -3549,11 +3717,14 @@ Task actions act on the selected task — or on the whole bulk selection when th
 is one (task 011) — and are offered only when the daemon reports them in
 `available_actions`: `p` pause/resume · `a` approve · `x` reject · `r`
 retry · `R` repair · `s` skip · `E` edit+retry in `$EDITOR` · `c` cancel · `A`
-archive. `x`
+archive · `F` follow up. `x`
 rejects because `r` is taken; `r` doubles as *retry connecting* while disconnected,
 where no task is reachable anyway. `R` (*added 2026-08-24, task 025*) opens the
 repair popup rather than acting immediately, and is excluded from bulk actions
-(task 011) — a repair needs a prompt written for one task. Destructive actions confirm inline: `c` kills a
+(task 011) — a repair needs a prompt written for one task. `F` (*added
+2026-08-25, task 027*) opens the follow-up popup on the same terms and for the
+same reason, and is likewise not a bulk action; the capital is free because `f`
+is the panel-scoped follow-output key. Destructive actions confirm inline: `c` kills a
 live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 `set priority` (§6) has no key — priority is chosen in the new-task flow.
 

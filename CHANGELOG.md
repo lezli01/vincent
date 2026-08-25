@@ -51,6 +51,29 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Follow-up runs on a finished task, before it is archived.** A `done` or
+  `aborted` task still owns its worktree, its branch and its commits until
+  `archive` tears them down, and until now vincent could do nothing in that
+  window — a branch that needed rebasing onto a `main` that had moved, one more
+  commit a review asked for, or a stray file to drop all meant leaving vincent,
+  finding the worktree by hand, and coming back only to press archive. The new
+  `follow_up` action runs that work inside the daemon's own ledger: give the
+  task an agent prompt, a shell command, or the name of a workflow from the
+  registry, and it runs on that task's own branch in that task's own worktree,
+  with a step run, a transcript, events and token and cost accounting like any
+  other step. It is repeatable — each run is a *round* — and it never changes
+  the task's verdict: a done task returns to `done` and an aborted one to
+  `aborted`, whatever the run did. A follow-up round's rows are recorded past
+  the workflow's last step index, so the workflow snapshot does not grow and
+  `step k of n` still describes the workflow somebody wrote. A follow-up step
+  that fails blocks the task at its own index, where `retry` re-runs the
+  follow-up, `repair` sends an ad-hoc agent at *that* failure, `skip` abandons
+  it and restores the task's original state, and `cancel` aborts. It is
+  available as `POST /v1/tasks/{id}/follow_up`, as `F` in the TUI, and — alone
+  among the human actions, because batches want a command line — as
+  `vincent task follow-up <id> --prompt/--run/--workflow`.
+  ([#181](https://github.com/lezli01/vincent/issues/181))
+
 - **Each agent's usage window is reported in the daemon and TUI.** When an agent
   CLI stops because the account's quota for the window is spent, vincent now
   remembers *which adapter* it was and when it resets, instead of losing that

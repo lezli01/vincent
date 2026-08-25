@@ -15,7 +15,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
-	pending_repair_json, pending_input_json, admit_not_before, queued_reason,
+	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
@@ -762,26 +762,26 @@ func (s *Store) queryTasks(ctx context.Context, q string, args ...any) ([]Task, 
 
 func scanTask(r rowScanner) (*Task, error) {
 	var (
-		t                           Task
-		fields                      string
-		worktree, blockReason       sql.NullString
-		agentOv, modelOv, effortOv  sql.NullString
-		retryCursor, pendingOv      sql.NullString
-		pendingRepair               sql.NullString
-		pendingInput                sql.NullString
-		admitNotBefore, queuedWhy   sql.NullString
-		parentID, parentStep        sql.NullInt64
-		laneID                      sql.NullString
-		laneOrder                   sql.NullInt64
-		created, updated            string
-		started, finished, archived sql.NullString
+		t                              Task
+		fields                         string
+		worktree, blockReason          sql.NullString
+		agentOv, modelOv, effortOv     sql.NullString
+		retryCursor, pendingOv         sql.NullString
+		pendingRepair, pendingFollowUp sql.NullString
+		pendingInput                   sql.NullString
+		admitNotBefore, queuedWhy      sql.NullString
+		parentID, parentStep           sql.NullInt64
+		laneID                         sql.NullString
+		laneOrder                      sql.NullInt64
+		created, updated               string
+		started, finished, archived    sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
-		&pendingRepair, &pendingInput, &admitNotBefore, &queuedWhy,
+		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
@@ -816,6 +816,13 @@ func scanTask(r rowScanner) (*Task, error) {
 			return nil, fmt.Errorf("pending_repair_json: %w", err)
 		}
 		t.PendingRepair = &req
+	}
+	if pendingFollowUp.Valid && pendingFollowUp.String != "" {
+		var req FollowUpRequest
+		if err := json.Unmarshal([]byte(pendingFollowUp.String), &req); err != nil {
+			return nil, fmt.Errorf("pending_follow_up_json: %w", err)
+		}
+		t.PendingFollowUp = &req
 	}
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)

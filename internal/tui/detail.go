@@ -112,7 +112,11 @@ type detail struct {
 	// synthesized from task state: a human opens it with a key, and it closes
 	// when they submit or escape.
 	repair *repairForm
-	diff   diffPane
+	// followUp is the §6 follow-up form (task 027), opened the same way and
+	// on the same terms as the repair form — by a human pressing a key on a
+	// task the daemon offers the action on.
+	followUp *followUpForm
+	diff     diffPane
 	// exec runs $EDITOR for edit+retry, injected so the path is testable
 	// without a terminal.
 	exec execFunc
@@ -238,6 +242,16 @@ func (d *detail) update(msg tea.Msg) tea.Cmd {
 			d.repair.applyEdit(msg)
 		}
 		return nil
+	case followUpLoadedMsg:
+		if d.followUp != nil {
+			d.followUp.applyLoaded(msg)
+		}
+		return nil
+	case followUpEditMsg:
+		if d.followUp != nil {
+			d.followUp.applyEdit(msg)
+		}
+		return nil
 	case transcriptOpenedMsg:
 		// Nothing to apply — the file was only read. A failed viewer is worth
 		// saying, since the terminal handover leaves no other trace of it.
@@ -269,6 +283,16 @@ func (d *detail) applyAction(msg actionResultMsg) tea.Cmd {
 			d.repair = nil
 		}
 	}
+	if msg.action == apiclient.ActionFollowUp && d.followUp != nil {
+		if msg.err != nil {
+			// Same reasoning as the repair form: keep what was typed on
+			// screen rather than making the human write it again.
+			d.followUp.submitting = false
+			d.followUp.err = errString(msg.err)
+		} else {
+			d.followUp = nil
+		}
+	}
 	if msg.action == apiclient.ActionAnswer && msg.err != nil && d.form != nil {
 		// The daemon refused the answer: keep the form and its typed values on
 		// screen, since re-entering them is the last thing a human wants.
@@ -296,7 +320,7 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.focus = focusTimeline
 	d.tab = tabOutput
 	d.actions.clear()
-	d.form, d.repair = nil, nil
+	d.form, d.repair, d.followUp = nil, nil, nil
 	d.diff.openTask(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
@@ -314,7 +338,7 @@ func (d *detail) deselect() {
 	d.resetOutput()
 	d.buffer = nil
 	d.actions.clear()
-	d.form, d.repair = nil, nil
+	d.form, d.repair, d.followUp = nil, nil, nil
 	d.syncStream()
 }
 
@@ -657,6 +681,10 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// `R` is free in the home shell, where the takeover screens that use
 		// it for re-probing never are.
 		return d.openRepair()
+	case "F":
+		// The follow-up form (§6, task 027). `f` is follow-output and is
+		// panel-scoped, so the capital is free in the task-action scope.
+		return d.openFollowUp()
 	case "f":
 		d.setFollowing(true)
 		return nil
@@ -841,6 +869,19 @@ func (d *detail) openRepair() tea.Cmd {
 	d.repair = newRepairForm(d.taskID, reason, d.currentStepName())
 	d.repair.openEditor = d.editRepairPrompt
 	return d.repair.loadAgents(d.client)
+}
+
+// openFollowUp opens the follow-up form for a finished task, fetching the
+// adapter and workflow catalogs its pickers render. It offers nothing the
+// daemon does not: the action has to be on the task's available_actions (§6),
+// which is `done` and `aborted` and no other state.
+func (d *detail) openFollowUp() tea.Cmd {
+	if !d.target().has(apiclient.ActionFollowUp) {
+		return nil
+	}
+	d.followUp = newFollowUpForm(d.taskID, d.task.ProjectID, d.task.State)
+	d.followUp.openEditor = d.editFollowUpBody
+	return d.followUp.load(d.client)
 }
 
 // currentStepName names the step the task is blocked at, for the form's

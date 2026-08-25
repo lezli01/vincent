@@ -284,7 +284,11 @@ func TestRepairPromptCarriesTheFailureContext(t *testing.T) {
 		Prompt: "the operator's own words", BlockReason: blocked.BlockReason,
 	}
 
-	prompt := h.runner.repairPrompt(t.Context(), blocked, project, wf, blocked.CurrentStep, req)
+	target, ok := h.runner.repairTargetOf(blocked, wf)
+	if !ok {
+		t.Fatal("no repair target for a task blocked on a workflow step")
+	}
+	prompt := h.runner.repairPrompt(t.Context(), blocked, project, target, req)
 	for _, want := range []string{
 		"engine test",              // the task title
 		"a task",                   // its description

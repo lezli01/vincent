@@ -24,6 +24,10 @@ const (
 	ActionApprove = "approve"
 	ActionReject  = "reject"
 	ActionArchive = "archive"
+	// ActionFollowUp is a run a human launches on a finished task, before it
+	// is archived (task 027). The daemon offers it from `done` and `aborted`
+	// — the two states `archive` is offered from.
+	ActionFollowUp = "follow_up"
 )
 
 // RepairStepID is the reserved step id the daemon records an ad-hoc repair
@@ -105,6 +109,60 @@ func (c *Client) Repair(ctx context.Context, id int64, in RepairInput) (Task, []
 // repairResponse decodes the repair body, whose task fields sit at the top
 // level beside `warnings` — the shape archive's response uses for `branch`.
 type repairResponse struct {
+	Task
+	Warnings []string `json:"warnings"`
+}
+
+// Follow-up run forms (task 027 decision 3). Exactly one is set on a
+// FollowUpInput; the daemon compiles all three into one workflow.
+const (
+	FollowUpFormAgent    = "agent"
+	FollowUpFormCommand  = "command"
+	FollowUpFormWorkflow = "workflow"
+)
+
+// FollowUpInput is the body of POST /v1/tasks/{id}/follow_up (§6, task 027).
+// Exactly one of Prompt, Run and Workflow is required, and the optional
+// triple stands in for the step level of §8.6's chain for that run:
+// request > task override > the workflow's `defaults:` > adapter default.
+//
+// Prompt and Run are literal text, not templates: the daemon escapes them
+// when it compiles the one-step workflow it runs.
+type FollowUpInput struct {
+	Prompt   string `json:"prompt,omitempty"`
+	Run      string `json:"run,omitempty"`
+	Workflow string `json:"workflow,omitempty"`
+	Agent    string `json:"agent,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+}
+
+// FollowUp runs one more piece of work in a finished task's existing worktree
+// and branch, before it is archived (§6, task 027). The task re-queues, runs
+// what was asked for, and returns to the state it came from — `done` to
+// `done`, `aborted` to `aborted`, whatever the run did. A follow-up decides
+// nothing about a task's verdict.
+//
+// Its rows land past the workflow's last step index rather than inside the
+// snapshot, so a client tells a follow-up row from a workflow step by
+// `step_index >= step_total`.
+//
+// The second return carries the §8.2 catalog warnings the selection raised,
+// the way task creation reports them. A request naming none of the three run
+// forms, or more than one, is a 400; so is an unknown workflow name and a
+// follow-up workflow that does not validate.
+func (c *Client) FollowUp(ctx context.Context, id int64, in FollowUpInput) (Task, []string, error) {
+	var out followUpResponse
+	path := fmt.Sprintf("/v1/tasks/%d/%s", id, ActionFollowUp)
+	if err := c.post(ctx, path, in, &out); err != nil {
+		return Task{}, nil, err
+	}
+	return out.Task, out.Warnings, nil
+}
+
+// followUpResponse decodes the follow-up body, whose task fields sit at the
+// top level beside `warnings` — the shape repair's and archive's use.
+type followUpResponse struct {
 	Task
 	Warnings []string `json:"warnings"`
 }

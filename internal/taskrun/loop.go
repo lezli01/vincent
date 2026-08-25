@@ -175,7 +175,8 @@ func (r *Runner) runIteration(
 				pos:       pos,
 				order:     order,
 			},
-			log: env.log.With("body_step", body.ID, "iteration", iteration),
+			followUp: env.followUp,
+			log:      env.log.With("body_step", body.ID, "iteration", iteration),
 		}
 		outcome, stop := r.runBodyStep(ctx, bodyEnv)
 		if stop {

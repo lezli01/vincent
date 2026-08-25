@@ -39,6 +39,29 @@ const repairTranscriptLines = 200
 // the end of it is wanted.
 const repairTranscriptTailBytes = 512 << 10
 
+// The two openings a repair prompt can have. They differ because a follow-up
+// block has no workflow left to re-run (task 027): telling the agent not to
+// re-run one, and that a human will decide whether to retry "the step", would
+// describe a situation that is not the one it is in.
+const (
+	workflowRepairIntro = "A workflow step failed and the task is waiting for a human. " +
+		"Investigate and change the worktree so that step can succeed on its next run. " +
+		"You are working in the task's existing worktree, on its branch: the files are " +
+		"as the failed step left them.\n\n" +
+		"Do not re-run the workflow and do not try to mark the step passed. " +
+		"When you are done, the task returns to its blocked state and a human decides " +
+		"whether to retry the step.\n\n"
+
+	followUpRepairIntro = "A step of a follow-up run failed and the task is waiting for a " +
+		"human. The task's own workflow already finished; this run is extra work somebody " +
+		"asked for in the task's existing worktree, on its branch. Investigate and change " +
+		"the worktree so that step can succeed on its next run: the files are as the failed " +
+		"step left them.\n\n" +
+		"Do not re-run the follow-up and do not try to mark the step passed. When you are " +
+		"done, the task returns to its blocked state and a human decides whether to retry " +
+		"the follow-up, abandon it, or cancel the task.\n\n"
+)
+
 // runRepair executes one ad-hoc repair admission (§6, task 025) and returns
 // the task to `blocked`.
 //
@@ -67,23 +90,22 @@ func (r *Runner) runRepair(
 		r.interrupt(task, log)
 		return
 	}
-	index := task.CurrentStep
-	if index < 0 {
-		index = 0
-	}
-	if index >= len(wf.Steps) {
-		// The cursor is past the end: nothing failed here, so there is no
-		// failure context to gather and nothing sensible to repair.
-		log.Warn("repair requested at a step that does not exist", "step_index", index)
+	target, ok := r.repairTargetOf(task, wf)
+	if !ok {
+		// The cursor is past the end and no follow-up run is in flight:
+		// nothing failed here, so there is no failure context to gather and
+		// nothing sensible to repair.
+		log.Warn("repair requested at a step that does not exist", "step_index", task.CurrentStep)
 		r.finishRepair(task, req, log)
 		return
 	}
-	log = log.With("repair_step_index", index)
+	index := target.index
+	log = log.With("repair_step_index", index, "repair_follow_up", target.followUp)
 
-	prompt := r.repairPrompt(ctx, task, project, wf, index, req)
+	prompt := r.repairPrompt(ctx, task, project, target, req)
 	noRetries := 0
 	env := &stepEnv{
-		task: task, project: project, wf: wf,
+		task: task, project: project, wf: target.wf,
 		index: index,
 		// inGroup is what gives the row and its transcript a name of their
 		// own at an index another step already owns, exactly as a `parallel`
@@ -142,6 +164,46 @@ func (r *Runner) finishRepair(task *store.Task, req store.RepairRequest, log *sl
 	}
 }
 
+// repairTarget is the step a repair is about: which one, where its rows sit,
+// and which workflow it belongs to.
+//
+// There are two (task 027 decision 6). Ordinarily it is the snapshot's step
+// at `current_step`, which is what blocked the task. When a follow-up run is
+// in flight it is that run's own step at its own row index — a finished
+// task's `current_step` is past the end of its snapshot, and before this a
+// repair there simply warned and no-oped, taking the rescue away from the one
+// kind of block a follow-up can produce.
+type repairTarget struct {
+	// wf is the workflow the step belongs to, whose `defaults:` the repair
+	// agent's own selection resolves through and whose name reaches §8.4.
+	wf    *workflow.Workflow
+	index int
+	step  workflow.Step
+	// followUp says the blocked step is a follow-up's rather than the task's
+	// workflow's, which is what the prompt tells the agent it is looking at.
+	followUp bool
+}
+
+// repairTargetOf resolves the step a repair on this task is about, and false
+// when there is none.
+func (r *Runner) repairTargetOf(task *store.Task, wf *workflow.Workflow) (repairTarget, bool) {
+	if at, inFollowUp := r.followUpOf(task); inFollowUp && at.hasStep {
+		fu, err := followUpWorkflow(at.req)
+		if err != nil {
+			return repairTarget{}, false
+		}
+		return repairTarget{wf: fu, index: at.index, step: at.step, followUp: true}, true
+	}
+	index := task.CurrentStep
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(wf.Steps) {
+		return repairTarget{}, false
+	}
+	return repairTarget{wf: wf, index: index, step: wf.Steps[index]}, true
+}
+
 // repairPrompt assembles what the repair agent is told: the task's own
 // context, the blocked step's definition and failure, the tail of the failed
 // attempt's transcript and where the rest of it is, then the operator's
@@ -154,18 +216,16 @@ func (r *Runner) finishRepair(task *store.Task, req store.RepairRequest, log *sl
 // snapshot.
 func (r *Runner) repairPrompt(
 	ctx context.Context, task *store.Task, project *store.Project,
-	wf *workflow.Workflow, index int, req store.RepairRequest,
+	target repairTarget, req store.RepairRequest,
 ) string {
-	step := wf.Steps[index]
+	wf, index, step := target.wf, target.index, target.step
 	var sb strings.Builder
 	sb.WriteString("You are repairing a blocked task in a git worktree.\n\n")
-	sb.WriteString("A workflow step failed and the task is waiting for a human. " +
-		"Investigate and change the worktree so that step can succeed on its next run. " +
-		"You are working in the task's existing worktree, on its branch: the files are " +
-		"as the failed step left them.\n\n")
-	sb.WriteString("Do not re-run the workflow and do not try to mark the step passed. " +
-		"When you are done, the task returns to its blocked state and a human decides " +
-		"whether to retry the step.\n\n")
+	if target.followUp {
+		sb.WriteString(followUpRepairIntro)
+	} else {
+		sb.WriteString(workflowRepairIntro)
+	}
 
 	fmt.Fprintf(&sb, "<task id=%q>\n", fmt.Sprint(task.ID))
 	fmt.Fprintf(&sb, "title: %s\n", task.Title)
@@ -188,8 +248,12 @@ func (r *Runner) repairPrompt(
 	fmt.Fprintf(&sb, "worktree: %s\n", task.WorktreePath)
 	sb.WriteString("</task>\n\n")
 
-	fmt.Fprintf(&sb, "<blocked-step index=%q id=%q type=%q>\n",
-		fmt.Sprint(index+1), step.ID, step.Type)
+	element := "blocked-step"
+	if target.followUp {
+		element = "blocked-follow-up-step"
+	}
+	fmt.Fprintf(&sb, "<%s index=%q id=%q type=%q>\n",
+		element, fmt.Sprint(index+1), step.ID, step.Type)
 	if req.BlockReason != "" {
 		fmt.Fprintf(&sb, "block reason: %s\n", req.BlockReason)
 	}
@@ -205,7 +269,7 @@ func (r *Runner) repairPrompt(
 			fmt.Fprintf(&sb, "check exit code: %d\n", *run.CheckExitCode)
 		}
 	}
-	if body, field := r.renderBlockedStep(ctx, task, project, wf, index); body != "" {
+	if body, field := r.renderBlockedStep(ctx, task, project, target); body != "" {
 		fmt.Fprintf(&sb, "--- %s ---\n", field)
 		sb.WriteString(strings.TrimSuffix(body, "\n"))
 		sb.WriteString("\n")
@@ -225,7 +289,7 @@ func (r *Runner) repairPrompt(
 			sb.WriteString(tail + "\n")
 		}
 	}
-	sb.WriteString("</blocked-step>\n\n")
+	fmt.Fprintf(&sb, "</%s>\n\n", element)
 
 	sb.WriteString("<repair-instructions>\n")
 	sb.WriteString(strings.TrimSuffix(req.Prompt, "\n"))
@@ -239,10 +303,9 @@ func (r *Runner) repairPrompt(
 // back to the raw text: the point is to show the agent what it is looking at,
 // and a render failure is itself worth seeing.
 func (r *Runner) renderBlockedStep(
-	ctx context.Context, task *store.Task, project *store.Project,
-	wf *workflow.Workflow, index int,
+	ctx context.Context, task *store.Task, project *store.Project, target repairTarget,
 ) (body, field string) {
-	step := wf.Steps[index]
+	step := target.step
 	switch step.Type {
 	case workflow.StepAgent:
 		body, field = step.Prompt, "prompt"
@@ -257,7 +320,7 @@ func (r *Runner) renderBlockedStep(
 		return "", field
 	}
 	env := &stepEnv{
-		task: task, project: project, wf: wf, step: step, index: index,
+		task: task, project: project, wf: target.wf, step: step, index: target.index,
 		log: r.deps.Logger,
 	}
 	rc, err := r.renderContext(ctx, env, 1, stepOutcome{})

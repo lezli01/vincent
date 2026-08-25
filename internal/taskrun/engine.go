@@ -182,7 +182,12 @@ type stepEnv struct {
 	// from — a shared template can therefore tell whether it is in a loop
 	// without the engine keeping a second flag (decision 9).
 	loop *loopEnv
-	log  *slog.Logger
+	// followUp is where this step sits inside a follow-up run, and nil for
+	// every step of an ordinary admission (§6, task 027 decision 4). It is
+	// what makes a round's rows legible to each other and blind to the rows
+	// of earlier rounds — see blindTo and precedes.
+	followUp *followUpEnv
+	log      *slog.Logger
 }
 
 // iteration is the 1-based pass of the enclosing loop, 0 outside one.
@@ -220,14 +225,22 @@ func (e *stepEnv) precedes(run *store.StepRun) bool {
 	if run.StepIndex != e.index {
 		return run.StepIndex < e.index
 	}
-	if e.loop == nil {
-		return false // a group sibling, or this step's own earlier attempt
+	if e.loop != nil {
+		if run.Iteration != e.loop.iteration {
+			return run.Iteration < e.loop.iteration
+		}
+		pos, ok := e.loop.order[run.StepID]
+		return ok && pos < e.loop.pos
 	}
-	if run.Iteration != e.loop.iteration {
-		return run.Iteration < e.loop.iteration
+	if e.followUp != nil {
+		// A follow-up round's steps share one index for the reason a loop
+		// body's do, and are ordered by position for the same reason
+		// (task 027 decision 2). A round is a *sequence*, not a set, so an
+		// earlier step's `allow_failure` row is readable by a later one.
+		pos, ok := e.followUp.order[run.StepID]
+		return ok && pos < e.followUp.pos
 	}
-	pos, ok := e.loop.order[run.StepID]
-	return ok && pos < e.loop.pos
+	return false // a group sibling, or this step's own earlier attempt
 }
 
 // blindTo reports whether run is a row this step's context may not see. Two
@@ -272,6 +285,15 @@ func (e *stepEnv) blindTo(run *store.StepRun) bool {
 	// for every step after it — a key no workflow author wrote, present
 	// exactly when somebody happened to press a key.
 	if run.StepID == RepairStepID {
+		return true
+	}
+	// The fourth: an *earlier* follow-up round's rows (task 027 decision 9).
+	// Rows below the snapshot's length are the original workflow's and stay
+	// visible — a follow-up agent reading `.Steps.review.Output` is the point
+	// — and this round's own rows are its own. Everything else past that line
+	// belongs to a round nobody wrote into the workflow being run, exactly as
+	// a `__repair` row does.
+	if e.followUp != nil && run.StepIndex >= e.followUp.base && run.StepIndex != e.index {
 		return true
 	}
 	if !e.inGroup || e.loop != nil {
@@ -327,6 +349,15 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			errors.New(mismatch))
 		return
 	}
+	// A follow-up a human abandoned with `skip` from the block one of its
+	// steps produced (task 027 decision 6). It restores the origin state and
+	// runs nothing — before ensureWorktree, deliberately: a task with nothing
+	// left to run must not be able to block on creating a worktree it will
+	// never use.
+	if req := task.PendingFollowUp; req != nil && !req.Empty() && req.Abandoned {
+		r.finishFollowUp(task, *req, log)
+		return
+	}
 	if err := r.ensureWorktree(ctx, task, project, log); err != nil {
 		return // ensureWorktree already blocked or re-queued the task
 	}
@@ -343,8 +374,75 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		r.runRepair(ctx, task, project, wf, *req, log)
 		return
 	}
+	// A follow-up run the human asked for from `done` or `aborted` (§6, task
+	// 027). Like a repair it is a whole admission of its own — the snapshot's
+	// steps are finished and are not walked again — and unlike a repair it
+	// walks a workflow of its own, with a cursor of its own, before returning
+	// the task to the state it came from (decisions 4, 5).
+	//
+	// It sits after PendingRepair because a follow-up that blocked and was
+	// then repaired carries both: the repair runs, re-blocks, and leaves the
+	// follow-up request for the retry that comes after it.
+	if req := task.PendingFollowUp; req != nil && !req.Empty() {
+		r.runFollowUp(ctx, task, project, wf, *req, log)
+		return
+	}
 
-	for index := task.CurrentStep; index < len(wf.Steps); index++ {
+	r.runSteps(ctx, project, &stepWalk{
+		task:     task,
+		wf:       wf,
+		steps:    wf.Steps,
+		from:     task.CurrentStep,
+		rowIndex: func(pos int) int { return pos },
+		persist: func(ctx context.Context, pos int, log *slog.Logger) {
+			task.CurrentStep = pos
+			r.persistStepCursor(ctx, task, log)
+		},
+		finish: func() { r.complete(task, log) },
+		log:    log,
+	})
+}
+
+// stepWalk is one pass over a list of steps: where it starts, where its rows
+// go, how its cursor is persisted, and what ending it reaches when it runs
+// off the end.
+//
+// There are exactly two (task 027 decision 4). An ordinary admission walks
+// the task's snapshot from `current_step`, writes a row per step at that
+// step's own index, and ends in `complete`. A follow-up walks its own
+// workflow from the request's cursor, writes every row of the round at one
+// index past the snapshot's end (decision 2), and ends by restoring the state
+// the follow-up came from. Everything between those two ends — guards,
+// gates, groups, loops, fan-outs, retries, pause and interruption — is
+// identical, which is why it is written once here rather than twice.
+type stepWalk struct {
+	task *store.Task
+	// wf is the workflow the steps belong to: its `defaults:` feed §8.6 and
+	// §7.2 resolution, and its name reaches `.Workflow` in §8.4's context.
+	wf    *workflow.Workflow
+	steps []workflow.Step
+	// from is the position in steps to resume at.
+	from int
+	// rowIndex maps a position in steps to the `step_index` its rows are
+	// written at. Identity for an ordinary walk; constant for a follow-up.
+	rowIndex func(pos int) int
+	// persist records the cursor after a step is finished with.
+	persist func(ctx context.Context, pos int, log *slog.Logger)
+	// finish ends the walk: the last step succeeded, or a `condition` stopped
+	// it early (§7.7).
+	finish func()
+	// followUp marks this walk as a follow-up round and carries what its
+	// steps need to know about it; nil for an ordinary admission.
+	followUp *followUpEnv
+	log      *slog.Logger
+}
+
+// runSteps walks a step list until it finishes, parks, or fails. It is the
+// body of one admission for an ordinary run and of one for a follow-up; the
+// two differ only in the stepWalk they are handed.
+func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWalk) {
+	task, wf, log := w.task, w.wf, w.log
+	for pos := w.from; pos < len(w.steps); pos++ {
 		// A cancel or shutdown sets its flag before it terminates the process,
 		// and the run context is only canceled after the grace (§6, §12.4) —
 		// the flag is what stops the actor from starting new work for a task
@@ -357,10 +455,12 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			r.park(task, log)
 			return
 		}
+		index := w.rowIndex(pos)
 		env := &stepEnv{
 			task: task, project: project, wf: wf,
-			step: wf.Steps[index], index: index,
-			log: log.With("step", wf.Steps[index].ID, "step_index", index),
+			step: w.steps[pos], index: index,
+			followUp: w.stepFollowUp(pos),
+			log:      log.With("step", w.steps[pos].ID, "step_index", index),
 		}
 		// Guards run before the dispatch below, so every step type is
 		// guarded by the same code — including the three that never reach
@@ -380,23 +480,20 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 				// finished task runs and no client reads a done task as
 				// mid-run.
 				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
-				task.CurrentStep = len(wf.Steps)
-				r.persistStepCursor(ctx, task, env.log)
+				w.persist(ctx, len(w.steps), env.log)
 				env.log.Info("workflow stopped early by a condition step")
-				r.complete(task, log)
+				w.finish()
 				return
 			case env.step.Type == workflow.StepCondition:
 				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
-				task.CurrentStep = index + 1
-				r.persistStepCursor(ctx, task, env.log)
+				w.persist(ctx, pos+1, env.log)
 				continue
 			case !pass:
 				// Skip and carry on: the step did not run, the workflow did
 				// not stop, and the row says which of the two kinds of skip
 				// this was (decision 9).
 				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "")
-				task.CurrentStep = index + 1
-				r.persistStepCursor(ctx, task, env.log)
+				w.persist(ctx, pos+1, env.log)
 				env.log.Info("step skipped by its guard")
 				continue
 			}
@@ -431,8 +528,7 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 		}
 		switch outcome.state {
 		case store.StepSucceeded:
-			task.CurrentStep = index + 1
-			r.persistStepCursor(ctx, task, env.log)
+			w.persist(ctx, pos+1, env.log)
 		case store.StepInterrupted:
 			// A quota stop is interruption-shaped — no retry consumed, the
 			// slot released — but it must not be re-admitted immediately, or
@@ -452,15 +548,25 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 			// guard reads through `.Steps`.
 			if outcome.state == store.StepFailed && allowFailure(env.step, outcome.reason) {
 				env.log.Info("step failed; advancing on allow_failure", "reason", outcome.reason)
-				task.CurrentStep = index + 1
-				r.persistStepCursor(ctx, task, env.log)
+				w.persist(ctx, pos+1, env.log)
 				continue
 			}
 			r.fail(task, outcome.reason, env.log, "step failed", nil)
 			return
 		}
 	}
-	r.complete(task, log)
+	w.finish()
+}
+
+// stepFollowUp is the follow-up position of the step at pos, or nil when this
+// walk is not a follow-up round.
+func (w *stepWalk) stepFollowUp(pos int) *followUpEnv {
+	if w.followUp == nil {
+		return nil
+	}
+	at := *w.followUp
+	at.pos = pos
+	return &at
 }
 
 // ensureWorktree creates the task's worktree on first admission (§10); a

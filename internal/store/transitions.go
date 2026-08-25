@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lezli01/vincent/internal/taskstate"
 )
 
 // Durable task events written outside the engine (spec §13.3).
@@ -81,6 +83,19 @@ type TaskChange struct {
 	// admission. The carve-out is the repair action itself, which is exactly
 	// the blocked → queued transition that writes one.
 	PendingRepair *RepairRequest
+	// PendingFollowUp hands a follow-up run request to the actor the
+	// admission it produces will start, and later records that run's own step
+	// cursor (§6, task 027). An empty request clears the column.
+	//
+	// Its drain rule is neither the override's nor the repair's. A follow-up
+	// survives the `fail` that blocks one of its steps and the `retry` that
+	// re-runs it — the request is what makes the retry a follow-up retry
+	// rather than a plain one — and TransitionTask drops it on any transition
+	// into a settled state, which is exactly the Complete or Restore that
+	// returns the task to its origin and the `cancel` that ends it
+	// (decision 6). `skip` sets `abandoned` on the request instead, so the
+	// next admission restores the origin without running anything.
+	PendingFollowUp *FollowUpRequest
 	// PendingInput stores the normalized InputRequest JSON with the
 	// transition into awaiting_input (§7.4). Clearing is not the caller's
 	// job: TransitionTask NULLs the column on any transition out of
@@ -149,6 +164,16 @@ func (s *Store) TransitionTask(
 			// and it is carved out by having supplied one (task 025).
 			t.PendingRepair = nil
 		}
+		if taskstate.Settled(to) {
+			// A follow-up request describes a *run*, and reaching done,
+			// aborted or archived is that run ending however it ended (task
+			// 027 decision 6). One rule covers all three ways out: the
+			// Complete that returns a done-origin follow-up, the Restore that
+			// returns an aborted-origin one, and the cancel that abandons
+			// either. Nothing else can leave a request behind on a finished
+			// task for the next follow-up to inherit.
+			t.PendingFollowUp = nil
+		}
 		if from == TaskQueued {
 			// The §11 admission-hold invariant, same construction: a hold
 			// describes *this* queued period, so leaving queued always drops
@@ -186,16 +211,21 @@ func (s *Store) TransitionTask(
 		if err != nil {
 			return err
 		}
+		pendingFollowUp, err := marshalFollowUp(t.PendingFollowUp)
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
 				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
-				pending_override_json = ?, pending_repair_json = ?, pending_input_json = ?,
+				pending_override_json = ?, pending_repair_json = ?,
+				pending_follow_up_json = ?, pending_input_json = ?,
 				admit_not_before = ?, queued_reason = ?,
 				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 			WHERE id = ? AND state = ?`,
 			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
 			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
-			pendingRepair,
+			pendingRepair, pendingFollowUp,
 			nullString(t.PendingInputJSON),
 			formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 			formatTime(t.UpdatedAt),
@@ -389,6 +419,13 @@ func applyChange(t *Task, ch TaskChange) {
 			t.PendingRepair = ch.PendingRepair
 		}
 	}
+	if ch.PendingFollowUp != nil {
+		if ch.PendingFollowUp.Empty() {
+			t.PendingFollowUp = nil
+		} else {
+			t.PendingFollowUp = ch.PendingFollowUp
+		}
+	}
 	if ch.PendingInput != nil {
 		t.PendingInputJSON = *ch.PendingInput
 	}
@@ -421,6 +458,19 @@ func marshalRepair(r *RepairRequest) (any, error) {
 	b, err := json.Marshal(r)
 	if err != nil {
 		return nil, fmt.Errorf("marshal pending repair: %w", err)
+	}
+	return string(b), nil
+}
+
+// marshalFollowUp renders a pending follow-up request for storage; none is
+// SQL NULL.
+func marshalFollowUp(r *FollowUpRequest) (any, error) {
+	if r == nil || r.Empty() {
+		return nil, nil
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("marshal pending follow-up: %w", err)
 	}
 	return string(b), nil
 }

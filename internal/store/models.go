@@ -107,6 +107,14 @@ type Task struct {
 	// `blocked`; leaving `blocked` any other way drops it, so a request can
 	// never outlive the block it was made about.
 	PendingRepair *RepairRequest
+	// PendingFollowUp is a follow-up run a human asked for from `done` or
+	// `aborted` (§6, task 027). Unlike a repair request it carries a cursor
+	// into its own workflow, because a follow-up may be a whole multi-step
+	// workflow and `current_step` stays where the finished run left it
+	// (decision 4). It survives the block a failed follow-up step produces
+	// and the retry that re-runs it, and is dropped by whatever returns the
+	// task to a settled state.
+	PendingFollowUp *FollowUpRequest
 	// PendingInputJSON is the normalized InputRequest while the task is
 	// awaiting_input (§7.4); "" otherwise. TransitionTask clears it on any
 	// transition out of awaiting_input.
@@ -245,6 +253,75 @@ type RepairRequest struct {
 
 // Empty reports whether the request carries no work to do.
 func (r RepairRequest) Empty() bool { return r.Prompt == "" }
+
+// Follow-up run forms (§6, task 027 decision 3). The form says what the
+// operator asked for; the daemon compiles all three into one workflow, so
+// the engine has exactly one shape to execute.
+const (
+	// FollowUpAgent is a free-form agent prompt.
+	FollowUpAgent = "agent"
+	// FollowUpCommand is a shell command, run under the daemon's shell
+	// (§8.3).
+	FollowUpCommand = "command"
+	// FollowUpWorkflow is a named workflow from the registry, run against the
+	// finished task's worktree instead of a new one.
+	FollowUpWorkflow = "workflow"
+)
+
+// FollowUpRequest is one follow-up run a human asked for from `done` or
+// `aborted` (§6, task 027): what to run, how to select an agent for it, where
+// the task must be returned to, and how far through it the daemon has got.
+//
+// Prompt and Run are literal text, never `text/template` sources, for the
+// reason RepairRequest.Prompt is: they are typed at a form, and §8.4 renders
+// with `missingkey=error`. The daemon escapes them when it compiles Workflow.
+//
+// Workflow is the *spliced* follow-up workflow — includes expanded and
+// fan-out lanes resolved, exactly as a task's snapshot is at creation (§7.9,
+// §7.6). It is stored rather than re-derived so a registry edit mid-follow-up
+// cannot mutate a run in flight, which is §5.3's rule applied to this second
+// cursor.
+type FollowUpRequest struct {
+	// Form is one of FollowUpAgent, FollowUpCommand or FollowUpWorkflow. It
+	// is what the operator asked for, kept for clients to render; execution
+	// reads Workflow alone.
+	Form string `json:"form"`
+	// Prompt, Run and WorkflowName are what was typed, one per form.
+	Prompt       string `json:"prompt,omitempty"`
+	Run          string `json:"run,omitempty"`
+	WorkflowName string `json:"workflow_name,omitempty"`
+	// Workflow is the compiled, spliced follow-up workflow's YAML.
+	Workflow string `json:"workflow"`
+	// Agent, Model and Effort stand in for the step level of §8.6's chain,
+	// exactly as a repair's do — except that an explicit field on a step of a
+	// workflow-form follow-up still outranks them, because that is what §8.6
+	// already says about a step field (decision 12).
+	Agent  string `json:"agent,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	// Origin is the state the follow-up was launched from, and the state the
+	// task is returned to when it ends (decision 5). A follow-up decides
+	// nothing about the task's verdict.
+	Origin TaskState `json:"origin"`
+	// Round is 1-based and is what places this run's rows in the cursor space
+	// past the snapshot's last step: they sit at
+	// `len(snapshot.Steps) + Round - 1` (decision 2).
+	Round int `json:"round"`
+	// Cursor is how many steps of Workflow have finished — the follow-up's
+	// own step cursor (decision 4). `current_step` is left where the finished
+	// run put it and is never walked by a follow-up.
+	Cursor int `json:"cursor"`
+	// Abandoned marks a follow-up a human ended with `skip` from the block a
+	// failed step produced (decision 6). The record is kept rather than
+	// dropped because Origin is still needed: the next admission restores
+	// `done` or `aborted` without running anything.
+	Abandoned bool `json:"abandoned,omitempty"`
+}
+
+// Empty reports whether the request carries no work to do. A request with no
+// compiled workflow can neither run nor say where to return the task, which
+// is the same thing.
+func (r FollowUpRequest) Empty() bool { return r.Workflow == "" }
 
 // Candidate is one queued task considered for admission, carrying the cap
 // context the scheduler needs to decide (spec §11). The slot counts are as
