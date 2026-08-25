@@ -264,6 +264,26 @@ EOF
     || fail "doctor database group is wrong: $(jq -c .database <<<"$doctor")"
   jq -e '.tasks.known and .tasks.counts.done == 1' <<<"$doctor" >/dev/null \
     || fail "doctor task counts are wrong: $(jq -c .tasks <<<"$doctor")"
+  # Task 029: the footprint, the per-table counts and the retention span. The
+  # counts are enumerated from the schema, so `events` is present on any
+  # binary; the total includes the WAL, so it can never be under the main
+  # file; and this scenario has produced state changes, so there is a span.
+  jq -e '.database.table_rows.events > 0
+         and .database.table_rows.tasks > 0
+         and .database.total_bytes >= .database.size_bytes
+         and .database.oldest_event_at != null' <<<"$doctor" >/dev/null \
+    || fail "doctor database figures are wrong: $(jq -c .database <<<"$doctor")"
+  # The byte figures ride /v1/info; the scans deliberately do not (decision 1).
+  local info
+  info="$(api GET /info)"
+  jq -e '.database.total_bytes >= .database.size_bytes and .database.size_bytes > 0' \
+    <<<"$info" >/dev/null \
+    || fail "/v1/info carries no database footprint: $(jq -c .database <<<"$info")"
+  jq -e '.database | has("table_rows") | not' <<<"$info" >/dev/null \
+    || fail "/v1/info carries row counts; scans belong on /v1/doctor"
+  # And nothing of the sort reaches the one unauthenticated route (§13.1).
+  curl -sS "$BASE/health" | jq -e '. | keys == ["status", "version"]' >/dev/null \
+    || fail "/v1/health is no longer exactly {status, version}"
   jq -e '.storage.orphans_known and (.storage.orphans | length) == 0' <<<"$doctor" >/dev/null \
     || fail "a live task's worktree was called an orphan: $(jq -c .storage <<<"$doctor")"
   jq -e '.paths.config_parses and (.log.exists) and (.agents | length) > 0' <<<"$doctor" >/dev/null \

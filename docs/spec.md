@@ -2051,6 +2051,17 @@ defaults:
   per `authTTL`, not one per request. `GET /v1/doctor` keeps forcing refresh
   unconditionally — a command the user ran deliberately does not wait out a TTL.
 
+  *Amended 2026-08-25 (task 029): "unconditionally" narrows to "by default".*
+  `GET /v1/doctor?probe=false` serves availability from the cache instead. The
+  decision above is **not** relitigated — it is about a human running
+  `vincent doctor`, and that path still forces, so its loop is intact. What
+  changed is that the report acquired a second caller the decision was not
+  written about: the TUI's daemon panel now reads the database group from this
+  endpoint, and it opens on a keypress. Making `6` spawn three subprocesses
+  every time would be a real regression in a view that is otherwise cheap. The
+  flag defaults to forcing, so every caller the original decision covers is
+  unaffected.
+
 - **`quota`: the observed usage window** (*added 2026-08-24, task 026*). Each
   adapter carries a nullable block describing what the daemon has **watched
   happen** to its usage window:
@@ -2932,7 +2943,17 @@ GET    /v1/info                         daemon version, uptime, agent availabili
                                         so it is cheap and never stale after a gc run. It is here
                                         and not on /v1/health deliberately: health is
                                         {status, version} and is the one unauthenticated endpoint
-                                        (§13.1); the shape of a user's disk does not belong on it
+                                        (§13.1); the shape of a user's disk does not belong on it.
+                                        *Added 2026-08-25 (task 029):* a `database` object —
+                                        { path, size_bytes, wal_bytes, shm_bytes, total_bytes }.
+                                        Byte figures only, by the same cheapness rule that admits
+                                        `orphans`: three os.Stat calls per request. The row counts,
+                                        the retention span and the workflow-snapshot total are
+                                        scans and ride /v1/doctor instead — this endpoint is
+                                        polled by the board, the projects view and the daemon view
+                                        on every debounced refresh, and a COUNT(*) over a
+                                        multi-million-row events table on the daemon's single
+                                        SQLite connection is not that. Nothing here is cached
 GET    /v1/config                       effective global config (read-only)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
                                         ?refresh=true forces a re-probe
@@ -2943,7 +2964,20 @@ GET    /v1/doctor                       the whole §17 diagnostic in one body: p
                                         `problems[]` — the closed set that makes
                                         `vincent doctor` exit 1. Read-only. Agent availability
                                         is re-probed unconditionally (§9.6): auth state is not
-                                        a function of the binary
+                                        a function of the binary.
+                                        *Amended 2026-08-25 (task 029):* the database group also
+                                        carries `wal_bytes`, `shm_bytes`, `total_bytes`,
+                                        `table_rows` (every table in the schema with its row
+                                        count, enumerated from sqlite_master so a later
+                                        migration's table appears with no code change),
+                                        `oldest_event_at` (null on an install with no events) and
+                                        `workflow_snapshot_bytes`. The scans live here because
+                                        this endpoint is the cold path. `?probe=false` serves
+                                        agent availability from the §9.6 cache instead of forcing
+                                        the re-probe; the default is unchanged, and the forcing
+                                        rule still holds for `vincent doctor`, which is the
+                                        deliberate-command loop it was written about. The TUI's
+                                        daemon panel opens on a keypress and passes probe=false
 POST   /v1/doctor/fix                   { force? } or ?force — runs gc's reclaim (§10) and
                                         compacts the database, then answers
                                         { actions[], report } with a report taken afterwards.
@@ -3556,6 +3590,16 @@ stream for the live tail.
    log, and — *added 2026-08-15 (task 005)* — the `orphans` count from `/v1/info`
    beside the words `vincent gc`, shown only when it is non-zero. It offers no way to
    run gc, for exactly the reason it offers no way to stop the daemon.
+   **A database block (task 029, added 2026-08-25):** the footprint including WAL
+   and SHM, the per-table row counts, the workflow-snapshot total and how far back
+   the events table reaches (§17). The bytes come from the `/v1/info` this view
+   already fetches; the counts and the span come from `GET /v1/doctor?probe=false`,
+   fetched on activation and on `R` alongside the other two. It reports and offers
+   nothing to press, like the orphans line beside it — §17 keeps rows indefinitely
+   and this block is the measurement, not a policy. Its three empty states are
+   named separately: a failed fetch keeps the last-good counts behind the dim stale
+   line, a disconnected daemon says unavailable, and a report with `known: false`
+   says unknown rather than zero.
    The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
    at launch has no business killing it. The log tail is read straight from
@@ -4012,6 +4056,36 @@ currently true to show (§15 view 6).
   (§10), under the same claim rule as a worktree and with no dirty check — a transcript
   is vincent's own output, not a working tree. While the row exists, its transcripts
   stay the pruner's, archived or not.
+
+  *Amended 2026-08-25 (task 029): the database is now measured.* "Rows are small,
+  history is valuable" was an assumption nobody could check on their own machine
+  after six months of use. Four figures now answer it, and **the retention decision
+  above is unchanged** — rows are still kept indefinitely, nothing prunes them,
+  nothing warns, no threshold exists and no exit code moves. A later decision to
+  prune would be the amendment; this is the evidence such a decision would need.
+
+  - **Footprint.** `size_bytes`, `wal_bytes`, `shm_bytes` and `total_bytes`, on
+    both `GET /v1/info` and `GET /v1/doctor`. The store runs in WAL mode, so the
+    main file alone understates the footprint between checkpoints; the total is the
+    figure to quote.
+  - **Per-table row counts** (`table_rows`), on `/v1/doctor` only. Enumerated from
+    `sqlite_master`, never listed in code, so a table a later migration adds is
+    counted with no edit and this binary's database is described rather than a
+    fixed contract. A byte total says the database is big; this says which table
+    made it so — `events` gets one row per state change and is the growth driver
+    the retention decision is really about.
+  - **`workflow_snapshot_bytes`**, on `/v1/doctor` only: the second growth driver
+    (§14 — every task stores the workflow YAML as it stood at creation). It is
+    separate because "412 MB of events" and "412 MB of snapshots" point at
+    different decisions, and a single byte count cannot tell them apart.
+  - **`oldest_event_at`**, on `/v1/doctor` only, null on an install with no events.
+    A count without a span is not extrapolable.
+
+  The split is by cost, not preference: the byte figures are three `os.Stat` calls
+  and ride the endpoint every TUI refresh polls, while the counts and the span are
+  scans and ride the deliberately cold one (§13.2). Every figure is the daemon's —
+  only it opens SQLite (§4), so a client with no daemon reports them **unknown**
+  rather than opening the file itself, exactly as the existing database rows do.
 
 ## 18. Edge cases and errors
 

@@ -28,6 +28,8 @@ func (d *daemonView) render(width, height int) string {
 	out = append(out, "")
 	out = append(out, d.configLines()...)
 	out = append(out, "")
+	out = append(out, d.databaseLines()...)
+	out = append(out, "")
 	out = append(out, d.adapterLines()...)
 	out = append(out, "")
 
@@ -128,6 +130,106 @@ func (d *daemonView) configLines() []string {
 	return out
 }
 
+// databaseLines is §17's footprint (task 029): how big the database is, which
+// table is driving that, and how far back it reaches.
+//
+// §17 keeps rows indefinitely because "rows are small, history is valuable".
+// This block does not argue with that — it reports, like everything else on
+// this view, and offers no way to prune. It is what would let someone argue
+// with the decision from evidence after six months of real use.
+//
+// The two halves come from two endpoints on purpose: the bytes ride the
+// /v1/info this view already polls, and the counts and span ride /v1/doctor,
+// which is the cold path (task 029 decision 1). So the block has two sources
+// that can fail independently, and says which one did.
+func (d *daemonView) databaseLines() []string {
+	out := []string{" " + styleTitle.Render("database")}
+	if !d.infoOK && !d.doctorOK {
+		err := d.infoErr
+		if err == nil {
+			err = d.doctorErr
+		}
+		return append(out, "  "+d.unavailable(err, "database"))
+	}
+	if d.infoOK {
+		db := d.info.Database
+		out = append(out, field("size", byteSize(db.TotalBytes)+
+			styleDim.Render("   file "+byteSize(db.SizeBytes)+
+				"   wal "+byteSize(db.WALBytes)+"   shm "+byteSize(db.SHMBytes))))
+		if db.Path != "" {
+			out = append(out, field("file", db.Path))
+		}
+	}
+	out = append(out, d.databaseReportLines()...)
+	return out
+}
+
+// databaseReportLines is the /v1/doctor half. `known: false` means no daemon
+// opened the database — clients never do (§4) — so the block says unknown
+// rather than showing zero rows, which would read as an empty database.
+func (d *daemonView) databaseReportLines() []string {
+	if !d.doctorOK {
+		if d.doctorErr != nil {
+			return []string{styleBad.Render("   ⚠ row counts unavailable: " + errString(d.doctorErr))}
+		}
+		return []string{styleDim.Render("   counting rows…")}
+	}
+	db := d.doctor.Database
+	if !db.Known {
+		return []string{field("rows", styleDim.Render("unknown — the daemon did not open the database"))}
+	}
+	out := []string{
+		field("rows", dbRowSummary(db.TableRows)),
+		field("workflow snapshots", byteSize(db.WorkflowSnapshotBytes)),
+		field("history", dbSpan(db.OldestEventAt, d.now())),
+	}
+	if line, ok := d.staleLine(d.doctorErr, d.doctorAt); ok {
+		out = append(out, line)
+	}
+	return out
+}
+
+// dbRowSummary lists the tables biggest-first, so whichever one is growing is
+// the first thing read. The key set is the daemon's own enumeration of its
+// schema, not a list the TUI keeps in step (task 029).
+func dbRowSummary(rows map[string]int64) string {
+	if len(rows) == 0 {
+		return styleDim.Render("none")
+	}
+	names := make([]string, 0, len(rows))
+	for name := range rows {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if rows[names[i]] != rows[names[j]] {
+			return rows[names[i]] > rows[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s %d", name, rows[name]))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// dbSpan is how far back the events table reaches. A count without a span is
+// not extrapolable — "1.2M events" says nothing that "1.2M events over 14
+// months" does not say better — and an install with no events has no span,
+// which is a fact rather than a zero.
+func dbSpan(oldest *time.Time, now time.Time) string {
+	if oldest == nil {
+		return styleDim.Render("no events yet")
+	}
+	days := int(now.Sub(*oldest).Hours() / 24)
+	noun := "days"
+	if days == 1 {
+		noun = "day"
+	}
+	return fmt.Sprintf("%d %s", days, noun) +
+		styleDim.Render("   since "+oldest.Local().Format("2006-01-02 15:04"))
+}
+
 // adapterLines is what the daemon can actually run right now, which is a
 // different question from what the config names.
 func (d *daemonView) adapterLines() []string {
@@ -217,6 +319,22 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// byteSize renders a measured byte count. It is deliberately not humanBytes:
+// that one reads a zero as "unlimited", which is the right word for a
+// configured cap and exactly the wrong one for a file that is empty.
+func byteSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return strconv.FormatInt(n, 10) + "B"
+	}
+	div, exp := int64(unit), 0
+	for n/div >= unit && exp < 3 {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%s", float64(n)/float64(div), [...]string{"KB", "MB", "GB", "TB"}[exp])
 }
 
 // humanBytes renders a byte count the way the config file spells it, so the

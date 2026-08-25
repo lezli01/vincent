@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
 	"net/url"
@@ -60,6 +61,13 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 	broker := events.New()
 	t.Cleanup(broker.Close)
 	st.SetEventHook(broker.Publish)
+	// A handful of rows, so the database block has counts and a span to
+	// render rather than an empty schema (task 029).
+	for range 5 {
+		if err := st.AppendEvent(t.Context(), &store.Event{Type: "daemon.started"}); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+	}
 
 	// One adapter that resolves, one that does not, and one that resolves but
 	// is logged out — so the availability column is exercised in all three
@@ -109,7 +117,9 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 		out := content(m)
 		return strings.Contains(out, "config in effect") &&
 			strings.Contains(out, "adapters") &&
-			!strings.Contains(out, "loading…")
+			strings.Contains(out, "database") &&
+			!strings.Contains(out, "loading…") &&
+			!strings.Contains(out, "counting rows…")
 	})
 
 	// What the endpoints actually say, fetched independently of the view.
@@ -178,6 +188,36 @@ func TestDaemonViewReflectsLiveDaemon(t *testing.T) {
 		if !a.NotAuthenticated() {
 			t.Errorf("cursor status = %+v, want available with logged_in=false", a)
 		}
+	}
+
+	// The database block, end to end (task 029): the byte figures come off
+	// /v1/info, the counts and the span off /v1/doctor, and both are the
+	// daemon's own answers rather than anything the client computed.
+	rep, err := client.Doctor(t.Context(), false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if !rep.Database.Known {
+		t.Fatalf("database = %+v, want known over a live daemon", rep.Database)
+	}
+	if info.Database.TotalBytes < info.Database.SizeBytes || info.Database.SizeBytes == 0 {
+		t.Fatalf("info database footprint = %+v", info.Database)
+	}
+	for _, want := range []string{
+		byteSize(info.Database.TotalBytes),
+		fmt.Sprintf("events %d", rep.Database.TableRows["events"]),
+		fmt.Sprintf("schema_migrations %d", rep.Database.TableRows["schema_migrations"]),
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the database block does not show %q:\n%s", want, out)
+		}
+	}
+	if rep.Database.TableRows["events"] < 5 {
+		t.Errorf("the daemon counted %d events, want at least the five seeded",
+			rep.Database.TableRows["events"])
+	}
+	if rep.Database.OldestEventAt == nil {
+		t.Error("oldest_event_at is null after five events")
 	}
 
 	// The log pane: lines this very server wrote, read back off disk with no

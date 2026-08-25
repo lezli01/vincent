@@ -74,13 +74,21 @@ const (
 
 // Doctor fetches the daemon's diagnostic report (§17, §13.2).
 //
-// The daemon always re-probes agent authentication for this endpoint (§9.6):
-// auth state is not a pure function of the binary, so a cached answer would
-// tell a user who has just logged in that they are still logged out — the
-// exact loop doctor exists for.
-func (c *Client) Doctor(ctx context.Context) (*DoctorReport, error) {
+// probe decides whether the daemon re-probes agent authentication (§9.6).
+// `vincent doctor` passes true, which is the endpoint's default and the
+// behaviour task 005 decision 2 settled: auth state is not a pure function of
+// the binary, so a cached answer would tell a user who has just logged in that
+// they are still logged out — the exact loop the command exists for. A caller
+// that is not that loop — the TUI's daemon panel, which opens on a keypress —
+// passes false and is served from the cache rather than spawning a subprocess
+// per adapter each time (task 029 decision 4).
+func (c *Client) Doctor(ctx context.Context, probe bool) (*DoctorReport, error) {
+	path := "/v1/doctor"
+	if !probe {
+		path += "?probe=false"
+	}
 	var rep DoctorReport
-	if err := c.get(ctx, "/v1/doctor", &rep); err != nil {
+	if err := c.get(ctx, path, &rep); err != nil {
 		return nil, err
 	}
 	return &rep, nil

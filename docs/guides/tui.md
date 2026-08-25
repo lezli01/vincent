@@ -537,9 +537,18 @@ directories under its data dir that no task claims, naming the count and
 not stop the daemon, it does not delete anything either. Nothing shows when the
 count is zero.
 
+A **database** block sits between the config and the adapters: how big the
+database is on disk — including the WAL, which the file size alone leaves out —
+what each table holds, how many bytes of workflow snapshots the tasks are
+carrying, and how far back the event history goes. vincent keeps database rows
+forever, so this is the block that tells you what that has cost so far. Like
+everything else here it reports and offers nothing to press; `vincent doctor`
+prints the same figures in pasteable form, and `vincent doctor --fix` is what
+compacts the file. `R` re-reads it along with the rest of the view.
+
 | Key | Does |
 |---|---|
-| `R` | Re-read the daemon info, the config and the log |
+| `R` | Re-read the daemon info, the config, the database figures and the log |
 | `f` or `G` | Follow the end of the log again |
 | `↑`/`↓` | Scroll the log |
 

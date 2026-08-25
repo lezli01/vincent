@@ -100,10 +100,10 @@ are long-lived by contract and no write deadline is set.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
-| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, and `orphans` |
+| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, and the database's byte footprint |
 | `GET` | `/v1/config` | The effective global config, read-only — including the `tui` section the daemon only relays |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
-| `GET` | `/v1/doctor` | The whole diagnostic report. Read-only — see [Doctor](#doctor) |
+| `GET` | `/v1/doctor` | The whole diagnostic report. Read-only. `?probe=false` skips the forced adapter re-probe — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
 | `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
@@ -191,8 +191,15 @@ endpoints can never disagree. Changes are announced by the
   "log":      { "path": "…", "exists": true, "size_bytes": 18244,
                 "mod_time": "…", "tail": ["…"] },
   "database": { "path": "…", "known": true, "size_bytes": 262144,
+                "wal_bytes": 4136960, "shm_bytes": 32768,
+                "total_bytes": 4431872,
                 "schema_version": 6, "newest_migration": 6,
-                "integrity_check": "ok" },
+                "integrity_check": "ok",
+                "table_rows": { "events": 91234, "step_runs": 812, "tasks": 140,
+                                "projects": 7, "agent_quota": 0,
+                                "schema_migrations": 6 },
+                "oldest_event_at": "2025-06-02T09:11:04Z",
+                "workflow_snapshot_bytes": 2179072 },
   "agents":   [ { "name": "codex", "available": true, "path": "…",
                   "version": "0.147.0", "logged_in": true } ],
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
@@ -225,10 +232,25 @@ endpoints can never disagree. Changes are announced by the
   run until crash recovery reconciles it, so it also raises a `tasks` problem.
   The waiting states are deliberately absent: an open run is correct under
   `awaiting_input` and `awaiting_gate`.
-- **Agent availability is re-probed unconditionally**, unlike `GET /v1/agents`.
+- **Agent availability is re-probed by default**, unlike `GET /v1/agents`.
   Authentication is not a function of the binary, so a cached `logged_in: false`
   would survive the user logging in — which would break the endpoint in the loop
-  it exists for.
+  it exists for. Pass **`?probe=false`** to be served from the same cache
+  `/v1/agents` uses instead: it is for a caller that is not in that loop and
+  wants the rest of the report cheaply — the TUI's daemon panel, which opens on
+  a keypress, is the one in the tree. `vincent doctor` always forces.
+- **The database group measures growth** and changes nothing about it.
+  `total_bytes` is the file plus its WAL and SHM sidecars, which is the honest
+  figure: the store runs in WAL mode, so `size_bytes` alone understates the
+  footprint between checkpoints, and a missing sidecar counts as zero.
+  `table_rows` is enumerated from the schema itself rather than from a fixed
+  list, so its key set describes the database this binary is talking to and a
+  later migration's table appears with no client change. `oldest_event_at` is
+  `null` on an install that has not recorded an event yet.
+  `workflow_snapshot_bytes` totals the per-task workflow YAML — the second
+  growth driver beside `events`, reported separately because one byte total
+  cannot tell "many small events" from "a few enormous snapshots". Nothing here
+  prunes, warns, or moves the exit code.
 - `known: false` on `database` or `tasks` means the report was composed without
   a daemon (the CLI's degraded path); over this endpoint they are always `true`.
 - An **orphan** is an entry under a data root that no task row claims — the same
@@ -259,6 +281,22 @@ directories is a different promise from a report.
 a readdir and one id query — no size walk, no git — so it is cheap and drops the
 moment `gc` runs. It is deliberately **not** on `/v1/health`, which stays
 `{ status, version }` and is the one unauthenticated endpoint.
+
+`database` on `GET /v1/info` carries the byte figures and **only** those:
+
+```json
+{ "database": { "path": "…/vincent.db", "size_bytes": 262144,
+                "wal_bytes": 4136960, "shm_bytes": 32768,
+                "total_bytes": 4431872 } }
+```
+
+Three `os.Stat` calls per request, which is the same cheapness rule that admits
+`orphans` here. The row counts, the retention span and the workflow-snapshot
+total are scans and are on `GET /v1/doctor` instead — this endpoint is polled by
+the board, the projects view and the daemon view on every debounced refresh, and
+a `COUNT(*)` over a multi-million-row `events` table does not belong on that
+path. Nothing is cached, so nothing is stale. Like `orphans`, none of it goes on
+`/v1/health`.
 
 The two maintenance endpoints share one body, so a dry run and a real run are
 compared field by field:
