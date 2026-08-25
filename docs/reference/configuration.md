@@ -1,3 +1,5 @@
+{% raw %}
+
 # Configuration
 
 The daemon reads one file, `{config_dir}/config.yaml`. It is written with
@@ -649,3 +651,5 @@ the log tail.
 - [Workflow schema](workflow-schema.md) — the per-step overrides for these
   defaults.
 - [Agent CLIs](../guides/agents.md).
+
+{% endraw %}
