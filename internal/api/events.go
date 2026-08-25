@@ -28,6 +28,12 @@ const (
 	// outputSubBuffer is the live-output channel depth; overflow drops
 	// chunks (the transcript is the durable copy).
 	outputSubBuffer = 1024
+	// replayPageSize is how many events one Last-Event-ID catch-up query
+	// reads. It caps what a replay holds and how long it keeps the single
+	// SQLite connection, whatever the backlog behind the cursor is; small
+	// enough that a page is a few hundred KiB of envelopes, large enough
+	// that a realistic catch-up is a handful of queries.
+	replayPageSize = 512
 )
 
 // eventJSON is the SSE `data:` body of a durable event: the full envelope,
@@ -196,17 +202,40 @@ func (s *Server) handleTaskEvents(w http.ResponseWriter, r *http.Request) {
 // replay from the events table, and the first flush. Returns the response
 // controller and the last event id written. Validation must be complete —
 // nothing can be unwritten past this point.
+//
+// The replay is paged: event rows are kept indefinitely (§17), so the
+// backlog behind a cursor has no ceiling and reading it in one query would
+// hold all of it in memory and occupy the daemon's single SQLite connection
+// (phase 1 decision) until the last row was scanned. Paging bounds both to
+// one page and hands the connection back between pages. §13.3's "miss
+// nothing" is untouched — every event behind the cursor is still delivered,
+// in id order, just not all at once.
 func (s *Server) startStream(
 	w http.ResponseWriter, r *http.Request, replay store.EventFilter, cursor int64,
 ) (*http.ResponseController, int64, bool) {
-	var backlog []store.Event
+	// The walk stops at the largest id committed when the stream opened.
+	// Without that bound a replay on a busy daemon could page after its own
+	// tail indefinitely and never reach the live loop. Events committed past
+	// it arrive through the subscription — registered before this call
+	// (phase 2 decision) and deduped by the last id returned here — so the
+	// seam still delivers each one exactly once.
+	var (
+		highWater int64
+		page      []store.Event
+		err       error
+	)
 	if cursor > 0 {
-		evs, err := s.deps.Store.ListEvents(r.Context(), replay)
-		if err != nil {
+		if highWater, err = s.deps.Store.MaxEventID(r.Context()); err != nil {
+			s.internalError(w, "max event id", err)
+			return nil, 0, false
+		}
+		// The first page is read before the headers so a store failure can
+		// still be answered with an error envelope rather than a half-open
+		// stream; later pages have nowhere to report to but the connection.
+		if page, err = s.replayPage(r, replay, cursor); err != nil {
 			s.internalError(w, "list events", err)
 			return nil, 0, false
 		}
-		backlog = evs
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -215,16 +244,40 @@ func (s *Server) startStream(
 	rc := http.NewResponseController(w)
 
 	lastID := cursor
-	for i := range backlog {
-		if !writeSSEEvent(w, &backlog[i]) {
+	for {
+		for i := range page {
+			if !writeSSEEvent(w, &page[i]) {
+				return nil, 0, false
+			}
+			lastID = page[i].ID
+		}
+		if err := rc.Flush(); err != nil {
 			return nil, 0, false
 		}
-		lastID = backlog[i].ID
+		// A short page means the filtered backlog is exhausted (LIMIT applies
+		// after the WHERE), and lastID past the mark means the rest is the
+		// subscription's to deliver.
+		if len(page) < replayPageSize || lastID >= highWater {
+			return rc, lastID, true
+		}
+		// A client that has gone away stops the walk rather than paging
+		// through the remaining backlog for nobody.
+		if r.Context().Err() != nil {
+			return nil, 0, false
+		}
+		if page, err = s.replayPage(r, replay, lastID); err != nil {
+			s.deps.Logger.Error("list events", "error", err)
+			return nil, 0, false
+		}
 	}
-	if err := rc.Flush(); err != nil {
-		return nil, 0, false
-	}
-	return rc, lastID, true
+}
+
+// replayPage reads one page of the Last-Event-ID backlog: the events after
+// `after` that match the stream's filter, at most replayPageSize of them.
+func (s *Server) replayPage(r *http.Request, f store.EventFilter, after int64) ([]store.Event, error) {
+	f.AfterID = after
+	f.Limit = replayPageSize
+	return s.deps.Store.ListEvents(r.Context(), f)
 }
 
 // lastEventID reads the SSE resume cursor. Absent means live-only; our ids

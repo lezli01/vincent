@@ -119,3 +119,34 @@ func liveHeap() uint64 {
 }
 
 func mib(b uint64) float64 { return float64(b) / (1 << 20) }
+
+// TestEventReplayPagesDeliverEveryEvent holds §13.3's "miss nothing" over a
+// backlog that spans several replay pages. Paging is an implementation
+// detail of the catch-up query, never a reason for a resuming client to be
+// handed a short or reordered history — and the walk still has to hand over
+// to the live loop cleanly, which is the seam a paged replay could drop an
+// event through or deliver one twice.
+func TestEventReplayPagesDeliverEveryEvent(t *testing.T) {
+	h := newSSEHarness(t)
+	// Not a multiple of the page size: the last page must be a short one,
+	// which is how the walk learns the backlog is exhausted.
+	backlog := replayPageSize*2 + 7
+	want := make([]int64, 0, backlog)
+	for range backlog {
+		want = append(want, h.append(t, "task.state_changed").ID)
+	}
+
+	// Resume from the first event, so everything after it is replayed.
+	c := openSSE(t, h.ts.URL+"/v1/events", fmt.Sprint(want[0]))
+	for i, id := range want[1:] {
+		if f := c.next(t); f.id != fmt.Sprint(id) {
+			t.Fatalf("replay frame %d id = %s, want %d", i, f.id, id)
+		}
+	}
+
+	live := h.append(t, "task.state_changed")
+	if f := c.next(t); f.id != fmt.Sprint(live.ID) {
+		t.Fatalf("first frame past the replay = %s, want the live event %d "+
+			"(a replayed event was repeated across the seam)", f.id, live.ID)
+	}
+}
