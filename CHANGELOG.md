@@ -136,6 +136,28 @@ list with the user-facing context a commit subject cannot carry.
   agent re-probe; the default is unchanged and `vincent doctor` still forces it.
   ([#98](https://github.com/lezli01/vincent/issues/98))
 
+- **`vincent daemon backup` and `vincent daemon restore` — a supported way to
+  copy daemon state.** `vincent.db` holds every project, task, step run, cost
+  record and transcript pointer, and until now nothing documented how to copy
+  it and no command did. The obvious workaround was actively unsafe: under WAL
+  a committed row lives in `vincent.db-wal` until a checkpoint, so `cp
+  vincent.db` while the daemon runs produces a file missing recent work, and
+  copying the three files separately produces a set that can restore into a
+  torn database — a backup that looks fine until the day you need it.
+  `vincent daemon backup <path.tar.gz>` writes one archive holding a
+  `VACUUM INTO` copy of the database, every transcript, `config.yaml`, your
+  global workflows and a manifest. The daemon takes it, so it is consistent
+  **while tasks are running**, and it prints the bytes it wrote broken down by
+  database and transcripts rather than pretending the artifact is small.
+  `vincent daemon restore <path.tar.gz>` is the reverse and runs against a
+  **stopped** daemon; it refuses a running one, an archive whose schema is
+  newer than your binary, and a destination that already holds state unless
+  `--force` — which moves the old state aside as `<name>.bak-<timestamp>` and
+  deletes nothing. Worktrees are not in the archive (the branches they held are
+  in your repositories) and neither is the API token, so a restored
+  installation mints a fresh one at next start.
+  ([#99](https://github.com/lezli01/vincent/issues/99))
+
 - **Follow-up runs on a finished task, before it is archived.** A `done` or
   `aborted` task still owns its worktree, its branch and its commits until
   `archive` tears them down, and until now vincent could do nothing in that

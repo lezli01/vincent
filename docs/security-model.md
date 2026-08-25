@@ -144,6 +144,13 @@ review, a summarization step. See
   authenticator. There is nothing on the wire that does not already require local
   account access to reach.
 - `GET /v1/health` is the single unauthenticated endpoint.
+- **`POST /v1/daemon/backup` writes a file at a path the caller names**, as the
+  daemon's user, anywhere that user can write. That is stated here rather than
+  left to be discovered — but it is not an *additional* grant: the same token
+  already starts agents that run full-auto as that user (above), which is a
+  strictly larger capability. The endpoint refuses a relative path, refuses to
+  overwrite an existing file, and refuses a destination inside
+  `{data_dir}/transcripts`.
 
 Anyone who can read your token file can drive your daemon — which, on a machine
 where they are already you, is not an additional grant. On a shared machine, it
@@ -195,7 +202,13 @@ overwrites the model you last picked in an interactive `cursor-agent` session.
 
 Everything else vincent writes lives in its
 [config and data directories](reference/files.md), plus the git branches and
-worktrees it creates in your repositories.
+worktrees it creates in your repositories — and the one file you name yourself
+when you run [`vincent daemon backup`](reference/files.md#backup-and-restore).
+
+**A backup archive is sensitive.** It carries every transcript, which means
+every rendered prompt and everything the agents did, plus your `config.yaml`.
+It does *not* carry the API token. Treat the file the way you would treat the
+data directory it came from.
 
 ## Tightening it
 
