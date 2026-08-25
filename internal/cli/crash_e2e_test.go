@@ -121,7 +121,7 @@ func TestCrashRecoveryE2E(t *testing.T) {
 
 	// Daemon #2 goes down gracefully.
 	c2.post(t, "/v1/daemon/stop", nil, http.StatusAccepted, nil)
-	waitExit(t, second, 30*time.Second)
+	waitExit(t, second)
 }
 
 // startDaemonProcess runs `vincent daemon` (foreground) as a real child
@@ -147,15 +147,19 @@ func startDaemonProcess(t *testing.T, dataDir, cfgDir, scenario string) *exec.Cm
 	return cmd
 }
 
-func waitExit(t *testing.T, cmd *exec.Cmd, timeout time.Duration) {
+// daemonExitTimeout bounds a graceful shutdown in the e2e tests: §12.4's 15 s
+// process grace plus the HTTP drain has to fit inside it.
+const daemonExitTimeout = 30 * time.Second
+
+func waitExit(t *testing.T, cmd *exec.Cmd) {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case <-done:
-	case <-time.After(timeout):
+	case <-time.After(daemonExitTimeout):
 		_ = cmd.Process.Kill()
-		t.Fatalf("daemon did not exit within %s", timeout)
+		t.Fatalf("daemon did not exit within %s", daemonExitTimeout)
 	}
 }
 

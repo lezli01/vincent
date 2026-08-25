@@ -176,6 +176,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
 	rt.handle(http.MethodPost, "/v1/doctor/fix", s.handleDoctorFix)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
+	rt.handle(http.MethodPost, "/v1/daemon/backup", s.handleBackup)
 	rt.handle(http.MethodGet, "/v1/maintenance/orphans", s.handleOrphans)
 	rt.handle(http.MethodPost, "/v1/maintenance/gc", s.handleGC)
 	rt.handle(http.MethodGet, "/v1/projects", s.handleProjectList)

@@ -76,7 +76,8 @@ func newDaemonCmd() *cobra.Command {
 	// fails to start at logon, to fix a word.
 	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
 		"detach from the console the OS allocated for this process (Windows only; no-op elsewhere)")
-	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd())
+	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd(),
+		newDaemonBackupCmd(), newDaemonRestoreCmd())
 	return cmd
 }
 
