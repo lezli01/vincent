@@ -23,6 +23,7 @@
 #   triage (stop on reject / needs-info)
 #     └─ confirm-red (bug only)  prove the test fails on the unfixed code
 #   implement (write it, commit it, draft the PR)
+#   docs-sync (audit what the source derives: pages, spec, the embedded skill)
 #   verify    (the expensive cross-platform legs, repaired in a bounded loop)
 #   gate      (a human reads the diff)
 #   publish → report
@@ -71,6 +72,51 @@
 # The shared 80% — commit conventions, the PR template's four claims, the spec
 # amendment rule, the scratch-directory rule, the two PR artifacts — is written
 # once, which is the point of merging.
+#
+# ## Documentation is a step, not a checkbox
+#
+# `implement` is told to update the affected page, and a step doing something
+# else does that badly: the page is the last thing it touches, it is judged by
+# a checklist it ticked itself, and it never sees the finished change — only
+# the one it is partway through writing. `docs-sync` is the audit, and it has
+# exactly one job.
+#
+# What it audits is not "the docs" in general. `CLAUDE.md` says public
+# documentation is **derived from the source**, and each derivation is a
+# checkable claim: the config reference tracks `internal/config`, the CLI page
+# the cobra tree, the API page `internal/api/server.go`'s route table, the TUI
+# key tables `internal/tui/bindings.go`, the block reasons the `Reason*`
+# constants. Alongside those sit the records that are derived from nothing and
+# are amended by hand: `docs/spec.md` in place with a dated note in this same
+# PR, `docs/tasks/` with its index row in the same edit, `docs/gates/` when the
+# behaviour a walkthrough walks through has changed.
+#
+# `skills/vincent-workflows/SKILL.md` is in scope and is **not documentation**:
+# `skills/embed.go` embeds it and `internal/workflow/builtin.go` splices it into
+# the built-in `create-workflow` prompt at build time (task 024), so a schema
+# change that does not reach it leaves the daemon telling agents something
+# false. That is also why this step runs *before* `verify` rather than after:
+# what it may edit includes Go, and the cross-platform legs have to see it.
+#
+# `docs-scope` in front of it is a data step first and a guard second. Its
+# stdout is the changed-file list the prompt reads; its exit code skips the
+# audit only for a change that touched nothing but tests — the one kind that
+# cannot make a documented claim false. That is a narrow saving, and it is
+# honest about being narrow.
+#
+# The check is what keeps an audit from becoming a rewrite: this step's own
+# commits (everything after `pre-docs.sha`) may touch only `docs/`, `skills/`,
+# `CHANGELOG.md`, `README.md` and `internal/workflow/builtin.go`, the repo's own
+# `.vincent/workflows/*.yaml` must still validate against the schema, and the
+# four packages whose tests assert what the published pages and the embedded
+# skill say must still pass. `docs: none needed` is a first-class outcome —
+# what it may not be is empty.
+#
+# Screenshots are the one thing it may not fix. Every `docs/assets/tui-*.png`
+# is a capture from `scripts/screenshots.sh`, which needs VHS, ttyd and ffmpeg
+# and seeds a throwaway daemon; documentation never *draws* a screen. So a
+# stale panel is reported into `docs.md` and into the PR body, and a person
+# re-runs the script.
 #
 # ## When the cross-platform legs fail
 #
@@ -673,6 +719,168 @@ steps:
       go run mage.go lint
     check_timeout: 15m
 
+  - id: docs-scope
+    name: List what the change touched
+    type: command
+    shell: sh
+    timeout: 2m
+    max_retries: 0
+    # This is a data step first and a guard second. Its stdout is the list of
+    # behaviour-bearing files the audit prompt reads, and its exit code is what
+    # skips the audit for a change that touched nothing but tests — the only
+    # kind that cannot make a documented claim false.
+    #
+    # `pre-docs.sha` is taken here rather than derived later: the audit's check
+    # needs to know which commits are *its own*, and `implement` may well have
+    # left several.
+    allow_failure: true
+    run: |
+      set -e
+      git rev-parse HEAD > .vincent-issue/pre-docs.sha
+      git diff --name-only {{.Task.BaseBranch}}..HEAD > .vincent-issue/changed.txt
+      # grep's exit code is the step's: 1 means nothing outside tests changed.
+      grep -vE '(_test\.go$|(^|/)testdata/)' .vincent-issue/changed.txt
+
+  - id: docs-sync
+    name: Bring the documentation up to date
+    type: agent
+    if: '{{ eq (index .Steps "docs-scope").ExitCode 0 }}'
+    timeout: 30m
+    max_retries: 1
+    # `implement` is already told to update the affected page, and this step
+    # exists because a step that is doing something else does that badly. This
+    # one has one job, sees the finished change rather than the one it is
+    # partway through writing, and is checked against the derived-source rules
+    # in CLAUDE.md rather than against a checklist it wrote itself.
+    #
+    # It runs *before* `verify` on purpose: it may edit
+    # `skills/vincent-workflows/SKILL.md`, which `skills/embed.go` embeds into
+    # the built-in `create-workflow` workflow at build time, or the header in
+    # `internal/workflow/builtin.go`. Those are code. Putting the audit after
+    # the cross-platform legs would mean the legs never saw them.
+    prompt: |
+      The change for this issue is written, committed and passing
+      `go run mage.go test` and `go run mage.go lint`. Your job is the
+      documentation, and nothing else.
+
+      This is an **audit**. "Nothing needed changing" is a normal and frequent
+      outcome — say so and stop. Do not rewrite prose that is still true, do
+      not restructure a page you happen to be reading, and do not add a
+      paragraph about the change to a page that never mentioned that area.
+
+      What the change touched:
+
+      {{ (index .Steps "docs-scope").Result }}
+
+      The plan it was written against is `.vincent-issue/brief.md`, the drafted
+      pull request body is `.vincent-issue/pr.md`, and the original issue is
+      `.vincent-issue/issue.json`.
+
+      Read `CLAUDE.md` first. Public documentation there is **derived from the
+      source, not from planning records**, and each derivation is a rule you
+      check one at a time:
+
+      - `internal/config` → `docs/reference/configuration.md`
+      - the cobra tree → `docs/reference/cli.md`
+      - the route table in `internal/api/server.go` → `docs/reference/api.md`
+      - `internal/tui/bindings.go` → the key tables in `docs/guides/tui.md`
+      - the `Reason*` constants in `internal/worktree` and
+        `internal/taskrun/engine.go` → the block-reason tables
+      - `internal/workflow` and `internal/taskrun`'s step types →
+        `docs/reference/workflow-schema.md` and `docs/reference/task-lifecycle.md`
+      - `internal/agent/*` → `docs/guides/agents.md` and spec §9.x. A capability
+        an adapter lacks is **stated, never emulated** — if this change altered
+        what an adapter can do, the page says so plainly.
+      - anything a user can see → `docs/features.md`, the relevant
+        `docs/guides/` page, and `## [Unreleased]` in `CHANGELOG.md`
+
+      Then the records that are not derived from anything:
+
+      - **`docs/spec.md`** is the only spec, is deliberately unversioned, and is
+        amended **in place with a dated note, in the same PR as the code that
+        makes the amendment true**. If this change made a sentence in it false,
+        that is a hard rule of this repository, not a nicety. Its section
+        numbers are cited from code comments, so never renumber one.
+      - **`docs/tasks/`** — if this change completes or advances a task, update
+        its status marker and the index row in `docs/tasks/README.md` **in the
+        same edit**. Never delete a task.
+      - **`docs/gates/`** — if the behaviour a gate walks through changed, the
+        walkthrough changed.
+      - `docs/history/v0-tasks.md` is **closed and frozen**. Read it, never
+        edit it.
+
+      One file is not documentation at all:
+
+      - **`skills/vincent-workflows/SKILL.md` is runtime text.**
+        `skills/embed.go` embeds it and `internal/workflow/builtin.go` splices
+        it into the built-in `create-workflow` workflow's prompt at build time
+        (task 024). Editing it changes what the daemon tells an agent to do. If
+        this change altered the workflow schema — a step type, a field, a
+        validation rule, a template variable, a human-interaction mechanism —
+        that file is out of date and is part of this pull request. The three
+        standing corrections the prompt applies to it live in
+        `createWorkflowHeader` in `internal/workflow/builtin.go` and **never in
+        the skill**; if one of those needs to change, change it there.
+
+      Two things you must **not** do:
+
+      - **Never draw a screen.** No ASCII mock-up of a panel, no hand-written
+        "example" frame. Every `docs/assets/tui-*.png` is a capture of the
+        running TUI produced by `scripts/screenshots.sh`, and that script needs
+        VHS, ttyd and ffmpeg and seeds a throwaway daemon. Do not run it. If a
+        panel in the pictures no longer matches the code, write that down in
+        the report below and in `.vincent-issue/pr.md`, and leave the images
+        alone — a person re-runs the script.
+      - **Do not touch anything outside** `docs/`, `skills/`, `CHANGELOG.md`,
+        `README.md` and `internal/workflow/builtin.go`. If you find a bug in
+        the change itself, report it rather than fixing it here; this step's
+        commits are documentation commits.
+
+      This repository's own `.vincent/workflows/*.yaml` are consumers of the
+      schema too. If the schema changed under them, fix them — they are
+      validated after this step.
+
+      Then:
+
+      1. **Commit** whatever you changed, `docs:` (or `chore:` for the skill),
+         separately from the implementation commits.
+      2. Update `.vincent-issue/pr.md` so its checklist tells the truth about
+         the documentation and CHANGELOG boxes, and so anything you found but
+         did not fix — a stale screenshot, a bug in the change — is written in
+         the body where the reviewer will see it.
+      3. Write `.vincent-issue/docs.md`. Its **first line** must be exactly one
+         of:
+
+             docs: updated
+             docs: none needed
+
+         Below it, list every page you changed and what claim was stale, or —
+         on `none needed` — name the derivations you checked and why each was
+         already true. A `none needed` that names nothing is not an audit.
+
+      Never stage or commit `.vincent-issue/`.
+    # Four assertions. The report exists and is machine-readable, because the
+    # gate step reads it. The worktree is committed and the scratch directory
+    # is still untracked. The step stayed inside its lane — the offenders
+    # clause names the paths on stderr rather than exiting silently, because
+    # §8.4 hands the retry this output and "check failed" tells an agent
+    # nothing. And the tree still builds, the repo's own workflow files still
+    # parse against the schema, and the packages whose tests assert what the
+    # published pages and the embedded skill say still pass.
+    #
+    # It deliberately does not re-run the full suite: `verify` is next.
+    check: >
+      test -s .vincent-issue/docs.md &&
+      head -n 1 .vincent-issue/docs.md | grep -Eq '^docs: (updated|none needed)$' &&
+      ! git ls-files .vincent-issue | grep -q . &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      { offenders=$(git diff --name-only "$(cat .vincent-issue/pre-docs.sha)"..HEAD | grep -vE '^(docs/|skills/|CHANGELOG\.md$|README\.md$|internal/workflow/builtin\.go$)'); test -z "$offenders" || { echo 'docs-sync changed files outside docs/, skills/, CHANGELOG.md, README.md and internal/workflow/builtin.go:' >&2; echo "$offenders" >&2; false; }; } &&
+      go build -o .vincent-issue/vincent ./cmd/vincent &&
+      { for f in .vincent/workflows/*.yaml; do .vincent-issue/vincent workflow validate "$f" || exit 1; done; } &&
+      go test ./internal/config ./internal/cli ./internal/workflow ./internal/api
+    check_timeout: 15m
+
   - id: verify
     name: Verify across platforms
     type: loop
@@ -766,9 +974,11 @@ steps:
             this branch broke.
 
           **Commit your fix.** The next pass re-runs the legs against what is
-          committed, and the pull request body in `.vincent-issue/pr.md` should
-          still be true afterwards — update it if this repair changed what the
-          change does.
+          committed, and two files should still be true afterwards: update
+          `.vincent-issue/pr.md` if this repair changed what the change does,
+          and the affected page under `docs/` if it changed a documented claim.
+          A documentation audit already ran on the code you are repairing, so
+          anything you make stale here is stale for good.
 
           Never stage or commit `.vincent-issue/`.
         # Cheap, and deliberately not a re-run of the legs — that is the next
@@ -842,6 +1052,20 @@ steps:
       The implementation reported:
 
       {{ (index .Steps "implement").Result }}
+
+      {{ if eq (index .Steps "docs-sync").Status "skipped" -}}
+      The documentation audit was skipped: the change touched nothing but
+      tests, so no documented claim can have gone stale.
+      {{- else -}}
+      The documentation audit reported:
+
+      {{ (index .Steps "docs-sync").Result }}
+
+      `.vincent-issue/docs.md` has the long form. If it says a screenshot under
+      `docs/assets/` is now stale, nothing automated will fix that —
+      `./scripts/screenshots.sh` is a person's job, and this is the moment to
+      notice.
+      {{- end }}
 
       Approve to push and open the PR. Reject if the change is wrong, out of
       scope, or not worth shipping.
