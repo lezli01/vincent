@@ -25,9 +25,10 @@ below you are in, run one command:
 vincent doctor          # 0 healthy · 1 problems found · 2 no daemon answered
 ```
 
-It prints, in one pass: the config and data directories and whether
-`config.yaml` parses; the daemon's status, pid, port, uptime and version; the
-daemon log's size and last lines; the database's size, schema version and
+It prints, in one pass: the config and data directories, whether `config.yaml`
+parses and whether either is readable beyond its owner (with the `chmod` that
+fixes it); the daemon's status, pid, port, uptime and version; the daemon log's
+size and last lines; the database's size, schema version and
 `PRAGMA integrity_check`; every agent CLI with its path, version and
 [`logged_in`](agents.md#found-is-not-usable); free disk, worktree count and
 bytes, and any orphaned worktrees; and task counts by state — so "12 blocked" is

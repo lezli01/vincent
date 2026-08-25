@@ -75,8 +75,11 @@ So, concretely:
 %LOCALAPPDATA%\vincent\transcripts\{task_id}\
 ```
 
-The API token is protected by the per-user ACL that `%LOCALAPPDATA%` inherits;
-vincent writes no DACL of its own. On POSIX the equivalent is an explicit `0600`.
+The API token is protected by the per-user ACL that `%LOCALAPPDATA%` inherits,
+and `config.yaml` by the one `%APPDATA%` inherits; vincent writes no DACL of its
+own. On POSIX the equivalent is an explicit `0600` on both, re-tightened on every
+daemon start — which is also why `vincent doctor` never prints a `permissions`
+row here: a mode carries no access control on Windows.
 
 Both can be overridden with `VINCENT_CONFIG_DIR` and `VINCENT_DATA_DIR` — see
 [Files and directories](../reference/files.md).

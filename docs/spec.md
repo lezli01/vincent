@@ -3931,9 +3931,10 @@ currently true to show (§15 view 6).
   its directory are therefore owner-only on POSIX and re-tightened on every
   daemon start (§12.2). `environment.set` is still not a secret store: it is
   plaintext on disk, and inheriting a name from the surrounding environment is
-  the better answer. A secret-provider design is out of scope here and tracked
-  separately. Transcripts are the other place user-supplied sensitive data
-  lands, and are `0600` for the same reason.
+  the better answer. A secret-provider design — a keychain or an external
+  provider — is out of scope here and is not what this amendment provides.
+  Transcripts are the other place user-supplied sensitive data lands, and are
+  `0600` for the same reason.
 - Command steps and checks execute user-authored workflow content — same trust level
   as the user's own shell; no additional sandboxing is attempted or implied.
 - **Adapter full-auto switches are all equivalent in blast radius**:

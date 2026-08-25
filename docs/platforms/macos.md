@@ -59,7 +59,7 @@ macOS is the one platform where config and data are nested under the same root:
 | Data | `~/Library/Application Support/vincent/data/` |
 
 ```
-~/Library/Application Support/vincent/config.yaml
+~/Library/Application Support/vincent/config.yaml         # 0600, dir 0700
 ~/Library/Application Support/vincent/workflows/*.yaml
 ~/Library/Application Support/vincent/data/vincent.db
 ~/Library/Application Support/vincent/data/token          # 0600

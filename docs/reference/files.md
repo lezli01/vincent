@@ -45,9 +45,11 @@ modes carry no access control and the per-user ACL of `%APPDATA%` applies
 instead.
 
 Everything here is yours: it is safe to put under version control, sync between
-machines, or hand-edit. Nothing in this directory is generated after first start
-— the modes above are the one thing a later start touches, and it touches no
-content.
+machines, or hand-edit — with one caveat from the modes above: a literal
+[`environment.set`](configuration.md#environment) value travels with the file,
+so prefer inheriting the name. Nothing in this directory is generated after
+first start — the modes above are the one thing a later start touches, and it
+touches no content.
 
 Project-scoped workflows live in the repository instead, at
 `.vincent/workflows/*.yaml`, and shadow a global file of the same name.
