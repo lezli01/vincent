@@ -92,6 +92,20 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 	defer func() { _ = lock.Unlock() }()
 
+	// Observed before EnsureDefaultFile, because that is what tightens them and
+	// afterwards there is nothing left to report. Never silent: the mode of a
+	// config file is something a user could have widened deliberately, so the
+	// change says which path it touched and what it found (§12.2).
+	if issues, err := config.CheckPermissions(dirs.Config); err != nil {
+		logger.Warn("cannot inspect config permissions", "error", err)
+	} else {
+		for _, issue := range issues {
+			logger.Warn("config permissions tightened to owner-only",
+				"path", issue.Path,
+				"mode", fmt.Sprintf("%04o", issue.Mode.Perm()),
+				"want", fmt.Sprintf("%04o", issue.Want.Perm()))
+		}
+	}
 	if _, err := config.EnsureDefaultFile(dirs.Config); err != nil {
 		logger.Error("startup failed", "error", err)
 		return err

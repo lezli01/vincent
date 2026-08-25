@@ -42,7 +42,23 @@ list with the user-facing context a commit subject cannot carry.
   longer holds a connection indefinitely; SSE streams are unaffected and keep
   their unbounded response lifetime.
   ([#140](https://github.com/lezli01/vincent/issues/140))
-
+- **`config.yaml` is no longer created world-readable.** On Linux and macOS the
+  daemon created `{config_dir}/` `0755` and `config.yaml` `0644`, so any other
+  local account could read the one file vincent creates that can hold your
+  secrets — `environment.set` values are literal, which is where an API token or
+  a license key ends up. Both are now created `0700`/`0600`, subject only to a
+  stricter umask, and **every daemon start re-tightens an existing installation**
+  the way it already re-tightens `{data_dir}/token`: group and other access is
+  dropped, owner bits are kept and the file's contents are never rewritten. The
+  change is announced rather than silent — the daemon logs the path and the mode
+  it found, and `vincent doctor` grows a `permissions` warning row carrying the
+  path, the observed mode, the expected mode and the exact `chmod`. That warning
+  is not part of the closed set that makes `vincent doctor` exit `1`. Windows is
+  unaffected: modes carry no access control there and access comes from the
+  per-user ACL `%APPDATA%` inherits. The docs now also say plainly that
+  "vincent stores no credentials" is about *vendor* credentials, and that
+  `environment.set` is not a secret store.
+  ([#141](https://github.com/lezli01/vincent/issues/141))
 - **A step whose output vincent could not capture is no longer reported as a
   success.** Command output was read a line at a time with a one-mebibyte
   ceiling; a longer line — minified JSON, a base64 blob, a `git diff` of a

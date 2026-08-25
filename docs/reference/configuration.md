@@ -468,6 +468,15 @@ ask it to.
 expanded, so `PATH: "${PATH}:/opt/bin"` sets that string verbatim rather than
 appending.
 
+**`set` is not a secret store.** A literal value is exactly where an API token
+would go, and nothing here encrypts one: it is plaintext in a file you may hand
+to version control or sync between machines. vincent creates `config.yaml`
+`0600` inside a `0700` directory and re-tightens both on every daemon start on
+POSIX — see [Files and directories](files.md#the-config-directory) — but that
+only keeps other local accounts out. Prefer naming the variable under `inherit`
+and letting the value come from the environment that starts the daemon; see
+[Security model](../security-model.md#credentials).
+
 Command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#55-environment-variables)
 and then their own `env:` on top. Neither `unset` nor `set` can touch those —
 they are facts about the run, not inherited state — and a step's `env:` still

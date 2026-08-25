@@ -2614,8 +2614,8 @@ platform the standing answer to an agent that will not resolve is the §12.3
 | Data | `~/.local/share/vincent/` | `~/Library/Application Support/vincent/data/` | `%LOCALAPPDATA%\vincent\` |
 
 ```
-{config_dir}/
-  config.yaml                # §12.3
+{config_dir}/                # created 0700 (§12.2 amendment below)
+  config.yaml                # §12.3, created 0600
   workflows/*.yaml           # global workflows
 {data_dir}/
   vincent.db                 # SQLite, WAL mode
@@ -2629,6 +2629,31 @@ platform the standing answer to an agent that will not resolve is the §12.3
   transcripts/{task_id}/{step_index}-i{iteration}-{step_id}-{attempt}.jsonl  # loop body step (§7.8)
   logs/daemon.log            # rotated, size-capped
 ```
+
+**The config directory and `config.yaml` are owner-only.** *Added 2026-08-25
+(#141).* On POSIX the daemon creates `{config_dir}/` `0700` and
+`{config_dir}/config.yaml` `0600`, subject only to a stricter umask. This
+section was previously silent on both, and the code created them `0755`/`0644`.
+`config.yaml` is the one file vincent creates that can hold user-supplied
+secrets — values under `environment.set` are literal (§12.3), which is where an
+API token or a license key ends up — so it matches `{data_dir}/token` rather
+than being the outlier.
+
+- **Existing installations are re-tightened, not warned about.** Every daemon
+  start drops group and other access from both paths, the way the token file is
+  chmodded back to `0600` on every start. Owner bits are kept and *contents are
+  never rewritten*. Because this can undo a mode a user set deliberately, it is
+  never silent: the daemon logs the path, the mode it found and the mode §12.2
+  asks for, and `vincent doctor` reports the same as a warning row carrying the
+  exact `chmod` (§13.2). The warning is **not** part of the closed unhealthy set
+  and does not change `vincent doctor`'s exit code.
+- **Windows is unchanged and stays that way.** The mode argument is ignored
+  there; access comes from the per-user ACL `%APPDATA%` inherits, which is the
+  story already recorded for the token file (T1.3). No DACL code, and no
+  mode-based warning a reader has no `chmod` to act on.
+- **Scope is the config directory and `config.yaml`.** `{data_dir}` is already
+  `0700` in practice — the daemon creates `{data_dir}/logs` `0700` before the
+  store opens — and `vincent.db` keeps the driver's mode.
 
 **What a transcript promises, exactly.** *Added 2026-08-24 (#139).* A
 transcript is the complete record of one attempt: agent stream lines verbatim,
@@ -3899,6 +3924,16 @@ currently true to show (§15 view 6).
 - Worktrees provide *collision* isolation, not *security* isolation.
 - The daemon stores no secrets; agent CLIs use their own auth (keychain/config). The
   token file gates only the vincent API itself.
+- **"Stores no secrets" is about vendor credentials, not about the user's own.**
+  *Amended 2026-08-25 (#141).* vincent has no key store and no vendor
+  credentials of its own, but `config.yaml` takes literal `environment.set`
+  values (§12.3) and a user can reasonably put an API token there. That file and
+  its directory are therefore owner-only on POSIX and re-tightened on every
+  daemon start (§12.2). `environment.set` is still not a secret store: it is
+  plaintext on disk, and inheriting a name from the surrounding environment is
+  the better answer. A secret-provider design is out of scope here and tracked
+  separately. Transcripts are the other place user-supplied sensitive data
+  lands, and are `0600` for the same reason.
 - Command steps and checks execute user-authored workflow content — same trust level
   as the user's own shell; no additional sandboxing is attempted or implied.
 - **Adapter full-auto switches are all equivalent in blast radius**:

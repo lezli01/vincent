@@ -151,9 +151,27 @@ is the boundary that matters.
 
 ## Credentials
 
-vincent stores **none**. It has no vendor API keys, no OAuth flow and no
-keychain entries of its own. An agent step spawns the CLI you installed, which
+**vincent has no credential store of its own.** No vendor API keys, no OAuth
+flow, no keychain entries. An agent step spawns the CLI you installed, which
 authenticates however it already does.
+
+That is a statement about *vincent's* credentials, not about yours. Two files
+vincent owns can hold sensitive data because you put it there:
+
+- **`{config_dir}/config.yaml`**, through
+  [`environment.set`](reference/configuration.md#environment), whose values are
+  literal — an API token, a proxy credential or a license key written there is
+  plaintext on disk. The file is created `0600` inside a `0700` directory, and
+  every daemon start re-tightens both on POSIX (contents untouched) and says in
+  the log what it changed. `vincent doctor` reports a broad mode with the exact
+  `chmod`. On Windows the per-user ACL of `%APPDATA%` applies instead.
+- **Transcripts**, which record what your agent and commands actually printed.
+  They are `0600` for the same reason.
+
+`environment.set` is **not a secret store** — nothing is encrypted, and the file
+is one you may sync between machines. Prefer naming a variable under
+`environment.inherit` and letting the value come from the environment that
+starts the daemon.
 
 The token file gates only vincent's own API. It is not an agent credential and
 grants no model access.
