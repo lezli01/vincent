@@ -75,6 +75,7 @@ type workflowDefaults struct {
 	OnInput        string  `json:"on_input,omitempty"`
 	InputTimeout   *string `json:"input_timeout,omitempty"`
 	MaxRetries     *int    `json:"max_retries,omitempty"`
+	RetryBackoff   *string `json:"retry_backoff,omitempty"`
 	Timeout        *string `json:"timeout,omitempty"`
 }
 
@@ -92,6 +93,7 @@ type workflowStepDef struct {
 	Type string `json:"type"`
 
 	MaxRetries   *int    `json:"max_retries,omitempty"`
+	RetryBackoff *string `json:"retry_backoff,omitempty"`
 	Timeout      *string `json:"timeout,omitempty"`
 	If           string  `json:"if,omitempty"`
 	AllowFailure bool    `json:"allow_failure,omitempty"`
@@ -231,6 +233,7 @@ func toWorkflowDefinition(wf *workflow.Workflow) *workflowDefinition {
 			OnInput:        wf.Defaults.OnInput,
 			InputTimeout:   durationString(wf.Defaults.InputTimeout),
 			MaxRetries:     wf.Defaults.MaxRetries,
+			RetryBackoff:   durationString(wf.Defaults.RetryBackoff),
 			Timeout:        durationString(wf.Defaults.Timeout),
 		},
 		Steps: toWorkflowStepDefs(wf.Steps),
@@ -251,6 +254,7 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 		Name:           st.Name,
 		Type:           st.Type,
 		MaxRetries:     st.MaxRetries,
+		RetryBackoff:   durationString(st.RetryBackoff),
 		Timeout:        durationString(st.Timeout),
 		If:             st.If,
 		AllowFailure:   st.AllowFailure,

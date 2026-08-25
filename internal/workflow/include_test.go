@@ -3,6 +3,7 @@ package workflow
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -202,13 +203,13 @@ func TestExpandRejectsUnsupportedPlatform(t *testing.T) {
 // caller's.
 func TestExpandMaterialisesCalleeDefaults(t *testing.T) {
 	lookup := registry(t, map[string]string{
-		"strict": "name: strict\ndefaults: {max_retries: 0, timeout: 30m}\n" +
+		"strict": "name: strict\ndefaults: {max_retries: 0, timeout: 30m, retry_backoff: 45s}\n" +
 			"steps:\n  - {id: once, type: command, run: make}\n" +
-			"  - {id: pinned, type: command, run: make two, timeout: 5m}\n",
+			"  - {id: pinned, type: command, run: make two, timeout: 5m, retry_backoff: 5s}\n",
 	})
 	got, err := Expand(mustParse(t, `
 name: root
-defaults: {max_retries: 3}
+defaults: {max_retries: 3, retry_backoff: 10m}
 steps:
   - {id: c, type: include, workflow: strict}
 `), expandOpts(lookup))
@@ -222,10 +223,19 @@ steps:
 	if once.Timeout == nil || once.Timeout.Std() != 30*60*1e9 {
 		t.Errorf("timeout = %v, want the callee's 30m", once.Timeout)
 	}
+	// `retry_backoff` is an inheritable field like every other one (task 028):
+	// the callee's pacing travels with its steps rather than the caller's.
+	if once.RetryBackoff == nil || once.RetryBackoff.Std() != 45*time.Second {
+		t.Errorf("retry_backoff = %v, want the callee's 45s rather than the caller's 10m", once.RetryBackoff)
+	}
 	// A step that set the field itself outranks the defaults that would have
 	// filled it, which is §8.6's order and not a special case.
-	if pinned := got.Steps[1]; pinned.Timeout == nil || pinned.Timeout.Std() != 5*60*1e9 {
+	pinned := got.Steps[1]
+	if pinned.Timeout == nil || pinned.Timeout.Std() != 5*60*1e9 {
 		t.Errorf("pinned timeout = %v, want its own 5m", pinned.Timeout)
+	}
+	if pinned.RetryBackoff == nil || pinned.RetryBackoff.Std() != 5*time.Second {
+		t.Errorf("pinned retry_backoff = %v, want its own 5s", pinned.RetryBackoff)
 	}
 }
 
@@ -452,6 +462,11 @@ func TestIncludeStepFieldValidation(t *testing.T) {
 			"timeout rejected",
 			"name: n\nsteps:\n  - {id: c, type: include, workflow: x, timeout: 5m}\n",
 			"timeout is not valid on a include step",
+		},
+		{
+			"retry_backoff rejected",
+			"name: n\nsteps:\n  - {id: c, type: include, workflow: x, retry_backoff: 30s}\n",
+			"retry_backoff is not valid on a include step",
 		},
 		{
 			"workflow rejected elsewhere",

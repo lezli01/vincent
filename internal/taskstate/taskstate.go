@@ -126,8 +126,16 @@ const (
 	Complete Action = "complete"
 	// Fail is a step failing with retries exhausted (§7.2).
 	Fail Action = "fail"
-	// Interrupt is a crash or graceful stop mid-step: the attempt does not
-	// consume a retry and the task is re-queued (§12.4).
+	// Interrupt returns a running task to the queue (§12.4). A crash or a
+	// graceful stop mid-step is the original caller; a usage-limit hold
+	// (task 003) and a paced retry (`retry_backoff`, task 028) are the
+	// others, each adding an admission hold to the same edge.
+	//
+	// Whether the attempt consumed a retry is **not** decided here. The
+	// attempt's own row says so: `interrupted` consumes none, `failed`
+	// consumes one. finishStepRun writes the row and this moves the task, and
+	// the two are independent — which is what lets a paced retry keep a
+	// `failed` attempt while the task goes back to `queued`.
 	Interrupt Action = "interrupt"
 	// InputClosed is a pending input request ending without an answer while
 	// execution continues — input_timeout expiry or agent process death with

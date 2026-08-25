@@ -136,6 +136,7 @@ type Defaults struct {
 	OnInput        string           `yaml:"on_input"`
 	InputTimeout   *config.Duration `yaml:"input_timeout"`
 	MaxRetries     *int             `yaml:"max_retries"`
+	RetryBackoff   *config.Duration `yaml:"retry_backoff"`
 	Timeout        *config.Duration `yaml:"timeout"`
 }
 
@@ -143,11 +144,22 @@ type Defaults struct {
 // fields that do not belong to a step's type are rejected by validation
 // (spec §8.2), which keeps the YAML shape and its errors simple.
 type Step struct {
-	ID         string           `yaml:"id"`
-	Name       string           `yaml:"name"`
-	Type       string           `yaml:"type"`
-	MaxRetries *int             `yaml:"max_retries"`
-	Timeout    *config.Duration `yaml:"timeout"`
+	ID         string `yaml:"id"`
+	Name       string `yaml:"name"`
+	Type       string `yaml:"type"`
+	MaxRetries *int   `yaml:"max_retries"`
+	// RetryBackoff paces this step's retries (§7.2, task 028): how long to
+	// wait after a failed attempt before the next one. Unset and zero both
+	// mean today's behaviour, an immediate retry.
+	//
+	// The wait is spent by re-queueing the task with a §11 admission hold,
+	// never by sleeping in the actor — a sleeping actor holds its
+	// concurrency slot for the whole wait, and with max_parallel_tasks slots
+	// held that way nothing runs at all (task 003's reasoning, applied to the
+	// general case). The attempt is still `failed` and still consumes a
+	// retry, which is what separates it from a `usage_limit` hold.
+	RetryBackoff *config.Duration `yaml:"retry_backoff"`
+	Timeout      *config.Duration `yaml:"timeout"`
 
 	// If guards the step (§7.7, task 015). It renders against the §8.4
 	// context and must produce exactly `true` or `false`. On an ordinary
@@ -591,6 +603,11 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 	if d.MaxRetries != nil && *d.MaxRetries < 0 {
 		add("defaults.max_retries", "max_retries must not be negative, got %d", *d.MaxRetries)
 	}
+	// Zero is legal and is the default: it means an immediate retry, which is
+	// what every workflow written before task 028 gets.
+	if d.RetryBackoff != nil && *d.RetryBackoff < 0 {
+		add("defaults.retry_backoff", "retry_backoff must not be negative, got %s", d.RetryBackoff)
+	}
 	if d.Timeout != nil && *d.Timeout <= 0 {
 		add("defaults.timeout", "timeout must be positive, got %s", d.Timeout)
 	}
@@ -675,7 +692,7 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
-			"lanes", "merge", "allow_failure", "max_retries", "timeout")
+			"lanes", "merge", "allow_failure", "max_retries", "retry_backoff", "timeout")
 	case StepCondition:
 		// The guard *is* the body. `if:` may not also act as a skip-guard
 		// here: "skip the check that decides whether to continue" has two
@@ -683,21 +700,22 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		if step.If == "" {
 			add(base+".if", "condition steps require an if expression")
 		}
-		// Everything else goes, `timeout`, `max_retries` and `allow_failure`
-		// included: a condition step starts no process, so it cannot time
-		// out, has nothing to retry and has no failure of its own to allow.
+		// Everything else goes, `timeout`, `max_retries`, `retry_backoff` and
+		// `allow_failure` included: a condition step starts no process, so it
+		// cannot time out, has nothing to retry, nothing to pace a retry of,
+		// and no failure of its own to allow.
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
-			"lanes", "merge", "allow_failure", "max_retries", "timeout")
+			"lanes", "merge", "allow_failure", "max_retries", "retry_backoff", "timeout")
 	case StepInclude:
 		if step.Workflow == "" {
 			add(base+".workflow", "include steps require the name of the workflow to include")
 		}
 		// An include is resolved away at task creation, so it owns no
 		// step_runs row, no attempt and no process — which is what rejects
-		// `timeout`, `max_retries`, `allow_failure` and `check`: there is
-		// nothing for them to bind to (decision 11).
+		// `timeout`, `max_retries`, `retry_backoff`, `allow_failure` and
+		// `check`: there is nothing for them to bind to (decision 11).
 		//
 		// `if` goes with them, and that one had a real alternative. Honouring
 		// a guard here would mean distributing it onto every spliced step,
@@ -709,7 +727,8 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "steps", "max_parallel",
-			"lanes", "merge", "if", "allow_failure", "max_retries", "timeout")
+			"lanes", "merge", "if", "allow_failure", "max_retries", "retry_backoff",
+			"timeout")
 	default:
 		add(base+".type", "unknown step type %q (one of %s)", step.Type, stepTypeList)
 	}
@@ -734,6 +753,9 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 
 	if step.MaxRetries != nil && *step.MaxRetries < 0 {
 		add(base+".max_retries", "max_retries must not be negative, got %d", *step.MaxRetries)
+	}
+	if step.RetryBackoff != nil && *step.RetryBackoff < 0 {
+		add(base+".retry_backoff", "retry_backoff must not be negative, got %s", step.RetryBackoff)
 	}
 	if step.Timeout != nil && *step.Timeout <= 0 {
 		add(base+".timeout", "timeout must be positive, got %s", step.Timeout)
@@ -851,15 +873,15 @@ func validateLoop(step Step, base string, add func(string, string, ...any), opts
 			add(fmt.Sprintf("%s.for_each[%d]", base, i), "template does not parse: %v", err)
 		}
 	}
-	// No `max_retries` and no `allow_failure` (decision 11): a loop has no
-	// attempt of its own to retry, and "allow" on a loop could only mean "a
-	// loop_limit block advances anyway", which is the silent success
-	// decision 5 refused. Both live on the body steps, where they already do
-	// the useful thing.
+	// No `max_retries`, no `retry_backoff` and no `allow_failure`
+	// (decision 11): a loop has no attempt of its own to retry or to pace,
+	// and "allow" on a loop could only mean "a loop_limit block advances
+	// anyway", which is the silent success decision 5 refused. All three live
+	// on the body steps, where they already do the useful thing.
 	rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 		"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 		"run", "shell", "env", "instructions", "lanes", "merge", "max_parallel",
-		"allow_failure", "max_retries")
+		"allow_failure", "max_retries", "retry_backoff")
 }
 
 // validateBodyStep checks one member of a `loop` body. Four step types cannot
@@ -1095,7 +1117,8 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
 		"if": step.If != "", "allow_failure": step.AllowFailure,
 		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
-		"count": step.Count != nil, "for_each": len(step.ForEach) > 0,
+		"retry_backoff": step.RetryBackoff != nil,
+		"count":         step.Count != nil, "for_each": len(step.ForEach) > 0,
 		"max_iterations": step.MaxIterations != nil,
 		"workflow":       step.Workflow != "",
 	}

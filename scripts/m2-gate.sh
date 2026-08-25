@@ -10,10 +10,16 @@
 # commits past its base while keeping every branch that does (scenario 6), and
 # that a workflow restricted to other platforms is listed but never offered here
 # (scenario 7), and that a step requiring mid-run interaction refuses an agent
-# that cannot provide it (scenario 8). Runs against the committed fakeagent so CI never calls a real
+# that cannot provide it (scenario 8), that an ad-hoc repair runs in the blocked
+# task's own worktree and leaves it at the same step (scenario 9), that a
+# follow-up run works on a finished task's own branch before it is archived
+# (scenario 10), and that a step carrying `retry_backoff` paces its retry
+# through the same admission hold — releasing its slot and recovering
+# unattended (scenario 11).
+# Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7|8|9|10 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1..11 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -1232,6 +1238,101 @@ EOF
   echo "=== scenario 10 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 11 — paced retries (task 028, spec §7.2/§11).
+#
+# Scenario 5's shape for a failure rather than a quota wall: a step that fails
+# its first attempt with a 2 s `retry_backoff` returns the task to `queued`
+# carrying `queued_reason: retry_backoff` and an `admit_not_before`, releases
+# the only slot so the queue keeps moving, and comes back on its own. The
+# attempt row is the difference from a quota wall — `failed`, not
+# `interrupted`, because a paced retry costs a retry and a quota wall does not.
+#
+# The step body is one command whose own exit code says everything: pwsh parses
+# `... && exit 0` as a command named `exit`, so the template picks the command
+# rather than composing one (§8.3).
+# ---------------------------------------------------------------------------
+scenario11() {
+  echo "=== scenario 11: retry_backoff — paced retry, slot released, unattended recovery"
+  scenario_dirs s11
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+max_parallel_tasks: 1
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-backoff.yaml" <<'YAML'
+name: m2-backoff
+description: M2 gate — a step that fails once and is retried after a wait.
+steps:
+  - id: flaky
+    type: command
+    max_retries: 1
+    retry_backoff: 2s
+    run: '{{ if eq .Step.Attempt 1 }}exit 1{{ else }}exit 0{{ end }}'
+YAML
+  # Long enough that the hold expiring is not what ends the wait: the paced
+  # task stays queued while this one owns the only slot, which is what gives
+  # the poll below something to see.
+  cat > "$CONFIG_DIR/workflows/m2-sleeper11.yaml" <<'YAML'
+name: m2-sleeper11
+description: M2 gate — occupies the only slot while the paced task waits.
+steps:
+  - id: nap
+    type: command
+    run: sleep 5
+YAML
+
+  daemon_up
+
+  local repo="$TMP/s11/repo" proj paced sleeper
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  # The paced task is created first, so §11 offers it the only slot first.
+  paced="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-backoff\",\"title\":\"Paced retry\"}" | jq -r .id)"
+  sleeper="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-sleeper11\",\"title\":\"Sleeper\"}" | jq -r .id)"
+
+  echo "== wait for the failed attempt to park the task on an admission hold"
+  local task="" ok=0
+  for _ in $(seq 1 90); do
+    task="$(api GET "/tasks/$paced")"
+    if [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "retry_backoff" ]]; then ok=1; break; fi
+    [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { jq . <<<"$task" >&2; fail "task $paced blocked instead of pacing its retry"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $paced never picked up queued_reason=retry_backoff"; }
+  [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "paced task is $(jq -r .state <<<"$task"), want queued"
+  [[ "$(jq -r '.admit_not_before // "null"' <<<"$task")" != "null" ]] \
+    || fail "paced task carries no admit_not_before: $task"
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
+    || fail "a paced task must not carry a block_reason: $task"
+
+  echo "== assert the attempt is recorded failed, and spent its retry"
+  local steps
+  steps="$(api GET "/tasks/$paced/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
+  [[ "$(jq -r '.[0].state' <<<"$steps")" == "failed" ]] \
+    || fail "attempt is $(jq -r '.[0].state' <<<"$steps"), want failed — a paced retry is still a failure: $steps"
+  [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "nonzero_exit" ]] \
+    || fail "attempt reason is $(jq -r '.[0].failure_reason' <<<"$steps"), want nonzero_exit"
+
+  echo "== the released slot lets the next task run"
+  wait_for_state "$sleeper" done 120
+
+  echo "== the paced task recovers with no human action"
+  wait_for_state "$paced" done 120
+  steps="$(api GET "/tasks/$paced/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "2" ]] \
+    || fail "attempts = $(jq 'length' <<<"$steps"), want exactly 2 (max_retries: 1): $steps"
+  [[ "$(jq -r '.[1].state' <<<"$steps")" == "succeeded" ]] || fail "the paced retry did not succeed: $steps"
+  [[ "$(api GET "/tasks/$paced" | jq -r '.queued_reason // "null"')" == "null" ]] \
+    || fail "the hold outlived the queued period it belonged to"
+
+  "$VINCENT" daemon stop
+  echo "=== scenario 11 PASS (task $paced retried after a paced wait)"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -1248,8 +1349,9 @@ case "$WHICH" in
   8) scenario8 ;;
   9) scenario9 ;;
   10) scenario10 ;;
+  11) scenario11 ;;
   all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
-     scenario9; scenario10 ;;
+     scenario9; scenario10; scenario11 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

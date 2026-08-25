@@ -247,6 +247,17 @@ func TestValidateLoop(t *testing.T) {
 			want: "max_retries is not valid on a loop step",
 		},
 		{
+			name: "a loop has no attempt to pace either",
+			src: `
+  - id: spin
+    type: loop
+    count: 2
+    retry_backoff: 30s
+    steps:
+      - {id: work, type: command, run: "true"}`,
+			want: "retry_backoff is not valid on a loop step",
+		},
+		{
 			name: "allow_failure on a loop would be a silent loop_limit",
 			src: `
   - id: spin
@@ -405,6 +416,16 @@ func TestValidateBreak(t *testing.T) {
     steps:
       - {id: stop, type: break, if: '{{ true }}', timeout: 5m, run: "true"}`,
 			want: "is not valid on a break step",
+		},
+		{
+			name: "break carries no retry backoff",
+			src: `
+  - id: spin
+    type: loop
+    count: 2
+    steps:
+      - {id: stop, type: break, if: '{{ true }}', retry_backoff: 30s}`,
+			want: "retry_backoff is not valid on a break step",
 		},
 		{
 			name: "break at the top level",

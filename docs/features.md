@@ -104,6 +104,13 @@ When Claude Code reports a usage limit, vincent treats it as a temporary wait
 instead of a failure: the task returns to the queue without consuming a retry or
 slot, shows its next admission time, and starts again when the window reopens.
 
+A step that fails on something transient can borrow the same wait. Give it
+`retry_backoff: 30s` and its retry is paced rather than immediate: the task
+returns to the queue, gives up its slot so other work carries on, shows when it
+will resume, and re-runs the step by itself. Unlike a usage limit the attempt
+still counts against `max_retries` — the wait decides when a retry happens, not
+whether there is one.
+
 ## Keep people in the loop
 
 Human oversight is part of the workflow instead of an informal terminal habit:

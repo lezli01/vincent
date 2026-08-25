@@ -475,9 +475,10 @@ func materialise(step Step, callee Defaults, override agent.Level) Step {
 		step.Merge = &merge
 	}
 
-	// `timeout` and `max_retries` bind to an attempt, which a `condition` and
-	// a `break` do not have — writing either onto one would produce a
-	// snapshot §8.2 rejects. A `loop` has a timeout but no attempt of its own.
+	// `timeout`, `max_retries` and `retry_backoff` bind to an attempt, which a
+	// `condition` and a `break` do not have — writing any of them onto one
+	// would produce a snapshot §8.2 rejects. A `loop` has a timeout but no
+	// attempt of its own.
 	switch step.Type {
 	case StepCondition, StepBreak:
 	case StepLoop:
@@ -487,6 +488,7 @@ func materialise(step Step, callee Defaults, override agent.Level) Step {
 		if step.MaxRetries == nil {
 			step.MaxRetries = callee.MaxRetries
 		}
+		step.RetryBackoff = firstDuration(step.RetryBackoff, callee.RetryBackoff)
 	}
 
 	// The rest of `defaults:` is agent vocabulary, which §8.2 allows only on

@@ -61,6 +61,23 @@ func resolveMaxRetries(step workflow.Step, defaults workflow.Defaults) int {
 	return defaultMaxRetries
 }
 
+// resolveRetryBackoff resolves the wait between a step's attempts (§7.2,
+// task 028): step field, then workflow defaults, then zero.
+//
+// Two levels, not three: there is no `config.yaml` key, exactly as there is
+// none for `max_retries`. Retry policy is a workflow's business, and
+// `config.Defaults` is timeouts (PR V decision). Zero is the default and
+// means today's behaviour — an immediate retry.
+func resolveRetryBackoff(step workflow.Step, defaults workflow.Defaults) time.Duration {
+	if step.RetryBackoff != nil {
+		return step.RetryBackoff.Std()
+	}
+	if defaults.RetryBackoff != nil {
+		return defaults.RetryBackoff.Std()
+	}
+	return 0
+}
+
 // resolveTimeout resolves a step's timeout (§7.2): step field, then workflow
 // defaults, then the daemon default for the step type.
 func resolveTimeout(step workflow.Step, defaults workflow.Defaults, cfg config.Config) time.Duration {

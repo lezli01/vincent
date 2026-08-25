@@ -101,7 +101,12 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			// `allow_failure` on a sub-step keeps its `failed` row and its
 			// reason — the failure happened — while taking it out of the
 			// group's own verdict (§7.2, task 015 decision 5).
-			if out.state == store.StepFailed && allowFailure(sub, out.reason) {
+			//
+			// A sub-step owed a paced retry is excluded: its budget is not
+			// spent, so this is not its verdict yet, and swallowing it here
+			// would turn `retry_backoff` off for every allow_failure sub-step
+			// (task 028).
+			if out.state == store.StepFailed && out.backoffUntil == nil && allowFailure(sub, out.reason) {
 				subEnv.log.Info("sub-step failed; allowed by allow_failure", "reason", out.reason)
 				out = stepOutcome{state: store.StepSucceeded}
 			}
@@ -215,17 +220,29 @@ func (r *Runner) groupLimit(step workflow.Step) int {
 // declaration order so the same set of failures always reports the same
 // reason.
 //
-// Precedence is interruption, then failure, then success. An interruption
-// means the daemon is stopping or a quota is spent: that attempt consumed no
-// retry and the task will be re-admitted, so reporting a sibling's failure
-// instead would block a task that is only paused.
+// Precedence is interruption, then a failure with its budget spent, then a
+// failure owed a paced retry, then success. An interruption means the daemon
+// is stopping or a quota is spent: that attempt consumed no retry and the task
+// will be re-admitted, so reporting a sibling's failure instead would block a
+// task that is only paused.
+//
+// A spent failure outranks a backoff-pending one (task 028) for the same
+// reason: waiting on a sibling whose budget is *already* gone only delays the
+// block. The task would be held, re-admitted, and blocked anyway — one hold
+// later, with nothing learned.
 func collectGroup(outcomes []stepOutcome) stepOutcome {
-	var failure *stepOutcome
+	var failure, backoff *stepOutcome
 	for i := range outcomes {
 		switch outcomes[i].state {
 		case store.StepInterrupted:
 			return outcomes[i]
 		case store.StepFailed:
+			if outcomes[i].backoffUntil != nil {
+				if backoff == nil {
+					backoff = &outcomes[i]
+				}
+				continue
+			}
 			if failure == nil {
 				failure = &outcomes[i]
 			}
@@ -235,6 +252,9 @@ func collectGroup(outcomes []stepOutcome) stepOutcome {
 	}
 	if failure != nil {
 		return *failure
+	}
+	if backoff != nil {
+		return *backoff
 	}
 	// Every sub-step succeeded, so the group did: that is the whole of its
 	// success condition (014.2).

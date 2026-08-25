@@ -444,6 +444,7 @@ The block reason names what happened:
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
 | `agent_unauthenticated` | The agent CLI is installed but not logged in (see below) |
 | `usage_limit` | The agent's usage quota for the window is spent — **not** a failure; the task waits and re-runs itself (see below) |
+| `retry_backoff` | Not a block reason: it is what a task shows while a step's [`retry_backoff`](../reference/workflow-schema.md#step-fields) paces the next attempt (see below). The failure itself keeps its own reason |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
 | `template_error` | A template failed to render (see above) |
@@ -497,6 +498,30 @@ Only the claude adapter recognizes usage-limit wording today. On codex and
 cursor a quota stop still surfaces as `agent_error` or `nonzero_exit`, because
 their wordings have not been captured from a real run and vincent will not guess
 at one: a wrong guess would park a genuinely failed task forever.
+
+### `retry_backoff` — also do nothing, but for a different reason
+
+A task showing `queued · retry backoff → 14:20` in the detail header (and
+`queued → 14:20` on the board) is not walled by a quota. Its
+step *failed*, it has retries left, and the workflow asked for a pause between
+attempts with [`retry_backoff`](../reference/workflow-schema.md#step-fields).
+Like a quota hold it gives up its concurrency slot and comes back on its own.
+
+The difference is the cost, and it is the thing to read the row for:
+
+|  | `usage_limit` | `retry_backoff` |
+|---|---|---|
+| The attempt | `interrupted` | `failed`, with the reason it actually failed with |
+| Retry budget | untouched | one spent |
+| What ends the wait | the quota window reopening | the configured duration elapsing |
+| If it keeps happening | it waits again, indefinitely | the budget runs out and the task **blocks** with the step's own reason |
+
+So a task that keeps reappearing on `retry_backoff` is a task on its way to
+being blocked — the transcripts of the attempts already made are what say why.
+A quota hold is not: it will sit there until the window returns.
+
+If you would rather not wait out a paced retry, any human action drops it —
+cancel, or pause and resume.
 
 ### `agent_unauthenticated`
 

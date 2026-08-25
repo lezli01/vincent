@@ -238,7 +238,13 @@ func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome
 	case store.StepSucceeded:
 		return stepOutcome{}, false
 	case store.StepFailed:
-		if allowFailure(env.step, outcome.reason) {
+		// The backoff test comes first: a body step owed a paced retry has
+		// budget left, so this is not its verdict yet and `allow_failure`
+		// must not advance past it (§7.2, task 028). Ending the loop is how
+		// the wait reaches the task — the engine's step loop re-queues, and
+		// the re-admitted loop resumes at this iteration and this position,
+		// which it derives from the rows (decision 7).
+		if outcome.backoffUntil == nil && allowFailure(env.step, outcome.reason) {
 			// The row keeps its `failed` state and its reason — the failure
 			// happened — and that row is what the `break` guard two lines
 			// below reads (§7.2, task 015 decision 5).
