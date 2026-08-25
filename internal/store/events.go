@@ -82,6 +82,19 @@ type EventFilter struct {
 	Limit     int      // 0 = unlimited
 }
 
+// MaxEventID returns the largest committed event id, or 0 when no event has
+// been written yet. It is the high-water mark an SSE replay pages up to
+// (§13.3): a resume walks only to the id that existed when the stream opened
+// and lets the subscription carry everything after it, so a replay on a busy
+// daemon cannot chase a tail that keeps moving.
+func (s *Store) MaxEventID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM events`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("max event id: %w", err)
+	}
+	return id, nil
+}
+
 // ListEvents returns events matching f in id order — the catch-up query
 // behind SSE Last-Event-ID resume (spec §13.3).
 func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {

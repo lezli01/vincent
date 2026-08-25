@@ -121,3 +121,34 @@ func TestListEventsFilters(t *testing.T) {
 		})
 	}
 }
+
+// TestMaxEventID pins the high-water mark an SSE replay pages up to: zero on
+// an empty table, so a resume on a fresh daemon walks nowhere, and the last
+// assigned id once events exist.
+func TestMaxEventID(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	got, err := s.MaxEventID(ctx)
+	if err != nil {
+		t.Fatalf("MaxEventID: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("MaxEventID on an empty table = %d, want 0", got)
+	}
+
+	var last int64
+	for range 3 {
+		e := &Event{Type: "daemon.shutting_down"}
+		if err := s.AppendEvent(ctx, e); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		last = e.ID
+	}
+	if got, err = s.MaxEventID(ctx); err != nil {
+		t.Fatalf("MaxEventID: %v", err)
+	}
+	if got != last {
+		t.Errorf("MaxEventID = %d, want the last appended id %d", got, last)
+	}
+}

@@ -22,6 +22,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Reconnecting to the event stream no longer stalls the daemon.** A client
+  resuming `GET /v1/events` or `GET /v1/tasks/{id}/events` with a
+  `Last-Event-ID` had its whole backlog read into memory in one query, and
+  written in full, before the stream went live. Event rows are kept
+  indefinitely, so that backlog only grows: on a long-lived installation a
+  single reconnect could allocate tens of mebibytes and hold the daemon's one
+  SQLite connection for the length of the scan, delaying task transitions and
+  every other write behind it. The catch-up now reads in fixed pages up to the
+  newest event id at the moment the stream opened, so the memory and the
+  connection are held for one page no matter how far behind the cursor is.
+  Nothing about what a client receives changed: every event after the cursor
+  is still delivered, in id order, exactly once across the hand-off to live
+  events. ([#138](https://github.com/lezli01/vincent/issues/138))
 - **A request body is now exactly one JSON document, and it is bounded.** The
   daemon read the *first* JSON value in a request body and discarded everything
   after it unread, so a client that framed two documents into one request — a
