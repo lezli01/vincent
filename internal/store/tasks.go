@@ -415,7 +415,7 @@ func (s *Store) CountSlotHoldersByProject(ctx context.Context, projectID int64) 
 
 // ListAdmissible returns every queued task in admission order — priority
 // DESC, created_at ASC, id ASC (spec §11) — each carrying its project's
-// current slot count and cap.
+// current slot count and cap, plus how many step runs it still has open.
 //
 // Ordering and both caps come from SQL, but the walk itself is the caller's:
 // admitting a task changes the tallies, and a single statement cannot see
@@ -424,11 +424,12 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 	q := `SELECT ` + prefixed("t", taskColumns) + `,
 			(SELECT COUNT(*) FROM tasks o
 			  WHERE o.project_id = t.project_id AND o.state IN ` + slotPlaceholders + `),
-			p.max_parallel_tasks
+			p.max_parallel_tasks,
+			(SELECT COUNT(*) FROM step_runs r WHERE r.task_id = t.id AND r.state = ?)
 		FROM tasks t JOIN projects p ON p.id = t.project_id
 		WHERE t.state = ?
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
-	args := append(append([]any{}, slotStates...), string(TaskQueued))
+	args := append(append([]any{}, slotStates...), string(StepRunning), string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)
@@ -440,7 +441,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			c     Candidate
 			limit sql.NullInt64
 		)
-		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit))
+		t, err := scanTask(scannerWithTail(rows, &c.ProjectSlots, &limit, &c.OpenStepRuns))
 		if err != nil {
 			return nil, fmt.Errorf("scan admissible: %w", err)
 		}
@@ -453,6 +454,57 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)
+	}
+	return out, nil
+}
+
+// unreconcilableStates is the set of task states in which no step run can be
+// live, so a `running` one is a contradiction rather than a race (§12.4).
+//
+// It is deliberately narrow. `queued` is the shape issue #142 produced —
+// recovery re-queueing a task whose previous attempt it could not finalize —
+// and the three settled states are the same contradiction after the fact.
+// The waiting states are left out because a `running` row is *correct* in
+// them: `awaiting_input` has a live process waiting for an answer (§7.4), and
+// an `awaiting_gate` task's manual row is written open by an actor that then
+// exits (§6). Reporting those would be reporting normal operation.
+var unreconcilableStates, unreconcilablePlaceholders = func() ([]any, string) {
+	args := []any{
+		string(TaskQueued), string(TaskDone), string(TaskAborted), string(TaskArchived),
+	}
+	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
+}()
+
+// UnreconciledTasks returns every task whose state and step runs contradict
+// each other, ordered by id. It is `GET /v1/doctor`'s view of the §12.4
+// invariant (§17): the combination is impossible, so any row here means a
+// task was never reconciled and the scheduler is refusing to admit it.
+func (s *Store) UnreconciledTasks(ctx context.Context) ([]Unreconciled, error) {
+	args := append([]any{string(StepRunning)}, unreconcilableStates...)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.id, t.state, COUNT(r.id)
+		FROM tasks t JOIN step_runs r ON r.task_id = t.id AND r.state = ?
+		WHERE t.state IN `+unreconcilablePlaceholders+`
+		GROUP BY t.id, t.state
+		ORDER BY t.id ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list unreconciled tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Unreconciled
+	for rows.Next() {
+		var (
+			u     Unreconciled
+			state string
+		)
+		if err := rows.Scan(&u.TaskID, &state, &u.OpenStepRuns); err != nil {
+			return nil, fmt.Errorf("scan unreconciled task: %w", err)
+		}
+		u.State = TaskState(state)
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unreconciled tasks: %w", err)
 	}
 	return out, nil
 }

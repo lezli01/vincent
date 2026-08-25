@@ -261,8 +261,15 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// belongs to neither the scheduler nor the runner. Orphans are killed
 	// only when PID and start time both match the journal; the owning tasks
 	// re-queue through the FSM, consuming no retries.
+	//
+	// A failure here stops the daemon (issue #142). Recovery reconciles each
+	// task atomically or not at all, so what it leaves behind on failure is
+	// the recoverable state a later start can retry — and starting the
+	// scheduler over rows it could not reconcile is how a second attempt
+	// gets admitted against a first one the database still calls `running`.
 	if n, err := taskrun.Recover(ctx, st, logger); err != nil {
-		logger.Error("startup crash recovery failed", "error", err)
+		logger.Error("startup failed: crash recovery", "error", err)
+		return fmt.Errorf("crash recovery: %w", err)
 	} else if n > 0 {
 		logger.Warn("recovered tasks from a previous run", "tasks", n)
 	}

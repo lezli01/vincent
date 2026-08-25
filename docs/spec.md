@@ -2433,6 +2433,17 @@ would invalidate every one of them.
   expired hold, since nothing commits a state change when one lapses. That is the
   tick's second reason to exist — otherwise it normally finds nothing to do.
 
+  *Amended 2026-08-25 (issue #142).* A fourth check now sits **between the pause
+  and the hold**: a `queued` task that still has a `running` StepRun is refused,
+  left queued, and logged once per daemon process. Its previous attempt was
+  never finalized, so admitting it would start a second attempt against a first
+  the database still calls live — the §12.4 contradiction that recovery now
+  fails startup rather than produce. This is the guard for a row that predates
+  that fix or arrives by a route nobody has thought of. Nothing in the scheduler
+  reconciles such a task, which is why the refusal is permanent for the life of
+  the process, why it is logged once rather than every tick, and why
+  `GET /v1/doctor` reports the same finding (§17).
+
 ## 12. The daemon
 
 ### 12.1 Binary and commands
@@ -2822,6 +2833,30 @@ edited via `PATCH /v1/projects/{id}`.
   reports (§10): it logs one warning per orphan and raises the `orphans` count on
   `GET /v1/info`, and it deletes nothing — `vincent gc` does that, with a human behind
   it.
+
+*Amended 2026-08-25 (issue #142).* Recovery is **fail-closed and atomic per
+task**. Finalizing a task's `running` StepRuns and re-queueing the task are one
+store transaction (`store.InterruptTask`), so the order above can never come
+apart: the daemon cannot hand the scheduler a `queued` task whose previous
+attempt the database still calls `running`. A task whose transaction will not
+commit is left exactly as found — recoverable, not re-queued — and the failure
+**stops daemon startup** rather than being logged and walked past; continuing
+past a storage failure is least defensible when storage is what is failing.
+Re-running recovery converges: the second pass finds the same open rows and the
+same `from` state, and the compare-and-swap refuses a task already reconciled,
+so no duplicate StepRun, event or retry consumption is possible. Killing an
+orphan stays outside the transaction and before it — a kill cannot be rolled
+back, and killing then failing to commit is the already-tolerated case, since
+the next recovery finds a dead PID.
+
+Two surfaces guard the same invariant from the other side. Admission (§11)
+refuses a `queued` task that still has a `running` StepRun, leaving it queued
+and logging why once per daemon process; and `GET /v1/doctor`'s `problems[]`
+(§17) reports the impossible combination — a `running` StepRun under a task
+that is `queued`, `done`, `aborted` or `archived` — naming the task. The
+waiting states are excluded deliberately: a `running` row is *correct* under
+`awaiting_input`, where a live process waits for an answer (§7.4), and under
+`awaiting_gate`, whose manual row its actor writes open before exiting (§6).
 
 *Amended 2026-08-17 (task 014).* A `fan_out` join interrupted mid-merge is
 recovered the same way any step is — the attempt is `interrupted` and re-runs

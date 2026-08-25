@@ -200,7 +200,8 @@ endpoints can never disagree. Changes are announced by the
                 "worktree_count": 3, "worktree_bytes": 8412736,
                 "orphans_known": true, "orphans": [] },
   "tasks":    { "known": true, "total": 14,
-                "counts": { "queued": 1, "running": 1, "blocked": 12, "…": 0 } },
+                "counts": { "queued": 1, "running": 1, "blocked": 12, "…": 0 },
+                "unreconciled": [] },
   "problems": []
 }
 ```
@@ -208,8 +209,8 @@ endpoints can never disagree. Changes are announced by the
 - **`problems[]` is the daemon's verdict**, not something a client re-derives:
   it is the closed set that makes the CLI exit `1` (config that does not parse,
   an unresponsive daemon, a failed `integrity_check`, a schema newer than the
-  binary, or orphaned worktrees). A missing or logged-out agent CLI and any
-  number of blocked tasks are reported and never appear here.
+  binary, orphaned worktrees, or an unreconciled task). A missing or logged-out
+  agent CLI and any number of blocked tasks are reported and never appear here.
 - **`paths.config_permissions[]` is a warning, not a verdict.** Each entry is a
   config path whose mode grants group or other access — `{ "path", "mode",
   "expected_mode", "remediation" }`, where `remediation` is the exact `chmod`.
@@ -217,6 +218,13 @@ endpoints can never disagree. Changes are announced by the
   daemon re-tightens both paths on every start, so an entry means no daemon has
   started on this config or something widened it since. Always empty on Windows,
   where modes carry no access control.
+- **`tasks.unreconciled[]`** is the §12.4 contradiction: a task holding a step
+  run still marked `running` while sitting in a state that cannot be executing
+  one — `queued`, `done`, `aborted` or `archived`. Each entry carries `task_id`,
+  `state` and `open_step_runs`. Such a task is refused by admission and will not
+  run until crash recovery reconciles it, so it also raises a `tasks` problem.
+  The waiting states are deliberately absent: an open run is correct under
+  `awaiting_input` and `awaiting_gate`.
 - **Agent availability is re-probed unconditionally**, unlike `GET /v1/agents`.
   Authentication is not a function of the binary, so a cached `logged_in: false`
   would survive the user logging in — which would break the endpoint in the loop

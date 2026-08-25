@@ -231,6 +231,54 @@ func TestDoctorTaskCountsMatchSeededRows(t *testing.T) {
 	}
 }
 
+// A queued task holding a step run the database still calls `running` is the
+// §12.4 contradiction: it cannot be admitted and it will never move on its
+// own, so doctor names it rather than letting it sit invisible on the board
+// (issue #142).
+func TestDoctorReportsUnreconciledTasks(t *testing.T) {
+	h := newDoctorHarness(t)
+	projectID, _ := h.seedProject(t)
+	stuck := h.seedTask(t, projectID, store.TaskQueued, "stuck")
+	h.seedTask(t, projectID, store.TaskRunning, "healthy")
+	run := &store.StepRun{
+		TaskID: stuck.ID, StepIndex: 0, StepID: "s", StepType: "agent",
+		Attempt: 1, State: store.StepRunning,
+	}
+	if err := h.store.CreateStepRun(t.Context(), run); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+
+	rep := h.report(t)
+	if len(rep.Tasks.Unreconciled) != 1 {
+		t.Fatalf("unreconciled = %+v, want the one queued task", rep.Tasks.Unreconciled)
+	}
+	got := rep.Tasks.Unreconciled[0]
+	if got.TaskID != stuck.ID || got.State != string(store.TaskQueued) || got.OpenStepRuns != 1 {
+		t.Errorf("unreconciled = %+v, want task %d queued with 1 open run", got, stuck.ID)
+	}
+	if rep.Healthy() {
+		t.Error("an unreconciled task did not set the exit code")
+	}
+	var found bool
+	for _, p := range rep.Problems {
+		if p.Group == doctor.GroupTasks {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no tasks-group problem: %+v", rep.Problems)
+	}
+
+	// A `running` task with an open run is normal operation, not a defect.
+	if _, err := h.store.TerminalizeOpenStepRuns(
+		t.Context(), stuck.ID, store.StepInterrupted, "interrupted"); err != nil {
+		t.Fatalf("TerminalizeOpenStepRuns: %v", err)
+	}
+	if rep := h.report(t); !rep.Healthy() {
+		t.Errorf("still unhealthy once reconciled: %v", rep.Problems)
+	}
+}
+
 func TestDoctorRequiresAuthAndTheRightMethod(t *testing.T) {
 	h := newDoctorHarness(t)
 

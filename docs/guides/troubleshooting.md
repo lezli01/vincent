@@ -41,10 +41,18 @@ rather than opening SQLite behind the daemon's back.
 
 The bottom of the report is a `PROBLEMS` table — the closed set that makes it
 exit `1`: a `config.yaml` that does not parse, a daemon alive but unresponsive,
-a failed `integrity_check`, a database written by a newer vincent, or orphaned
-worktrees. A missing or logged-out agent CLI is printed plainly and deliberately
-does **not** set the exit code, so doctor stays usable in a script on a machine
-that only ever installs one of the three adapters.
+a failed `integrity_check`, a database written by a newer vincent, orphaned
+worktrees, or an unreconciled task. A missing or logged-out agent CLI is printed
+plainly and deliberately does **not** set the exit code, so doctor stays usable
+in a script on a machine that only ever installs one of the three adapters.
+
+An **unreconciled** task is one whose state and step runs contradict each
+other — it is `queued` (or finished) while one of its step runs is still marked
+`running`. Crash recovery finalizes the old attempt before the task returns to
+the queue, so this means recovery could not complete: the task is refused by
+admission and will sit at `queued` forever. Recovery runs at startup, so
+restarting the daemon retries it; the daemon log says why it failed the first
+time.
 
 ```sh
 vincent doctor --json > doctor.json   # the whole report, for a bug report
@@ -103,6 +111,12 @@ write one.
 Read `{data_dir}/logs/daemon.log`. An invalid `config.yaml` at startup is fatal
 and says which key and line. (An invalid config on *hot reload* is not fatal —
 the last good config keeps running and the rejection is logged.)
+
+**Crash recovery is fatal too.** If it cannot close a previous run's open step
+runs, the daemon refuses to start — `startup failed: crash recovery`, with the
+underlying error beside it, a storage failure nearly every time. Nothing is
+half-done: each task is reconciled whole or left exactly as it was found, so
+starting the daemon again simply retries it.
 
 ## Agent CLIs
 

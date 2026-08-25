@@ -22,6 +22,23 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Crash recovery no longer re-queues a task whose previous attempt it could
+  not close.** Startup recovery ran as two independent sweeps — finalize every
+  open step run, then re-queue every live task — with nothing carrying a failed
+  finalize forward into the re-queue decision. A storage failure at that one
+  write was logged and walked past, and the owning task went back to `queued`
+  anyway: a `queued` task with a step run the database still called `running`,
+  which the scheduler then admitted, starting a second attempt against a first
+  one that was, durably, still open. Recovery is now atomic per task — the step
+  runs, the task transition and its durable event commit together — and
+  fail-closed: a task that cannot be reconciled is left exactly as found, and
+  the daemon refuses to start rather than running the scheduler over rows it
+  knows are contradictory. Restarting the daemon retries recovery, and nothing
+  is duplicated if it runs twice. Two guards back it up: admission refuses a
+  `queued` task that still has a `running` step run, and `vincent doctor`
+  reports the combination under a new `tasks` problem and a
+  `tasks.unreconciled[]` list.
+  ([#142](https://github.com/lezli01/vincent/issues/142))
 - **Reconnecting to the event stream no longer stalls the daemon.** A client
   resuming `GET /v1/events` or `GET /v1/tasks/{id}/events` with a
   `Last-Event-ID` had its whole backlog read into memory in one query, and

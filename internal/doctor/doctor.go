@@ -39,6 +39,7 @@ const (
 	GroupDaemon   = "daemon"
 	GroupDatabase = "database"
 	GroupStorage  = "storage"
+	GroupTasks    = "tasks"
 )
 
 // Report is one complete diagnostic. Every group is always present: a row
@@ -201,7 +202,20 @@ type Tasks struct {
 	// populated.
 	Counts map[string]int `json:"counts"`
 	Total  int            `json:"total"`
-	Error  string         `json:"error,omitempty"`
+	// Unreconciled is the §12.4 contradiction: a task holding a step run
+	// still marked `running` while sitting in a state that cannot be
+	// executing one. It is a defect, not a tally, which is why it appears in
+	// `problems[]` as well as here (issue #142).
+	Unreconciled []UnreconciledTask `json:"unreconciled"`
+	Error        string             `json:"error,omitempty"`
+}
+
+// UnreconciledTask is one such contradiction, named so an operator can go
+// straight to the task rather than hunting for it.
+type UnreconciledTask struct {
+	TaskID       int64  `json:"task_id"`
+	State        string `json:"state"`
+	OpenStepRuns int    `json:"open_step_runs"`
 }
 
 // Problem is one finding from the closed unhealthy set (decision 7). A
@@ -398,7 +412,7 @@ func zeroStateCounts() map[string]int {
 // half of the report; the map it is given may omit empty states, and the
 // §6 vocabulary is filled in around it.
 func (r *Report) SetTaskCounts(counts map[string]int) {
-	r.Tasks = Tasks{Known: true, Counts: zeroStateCounts()}
+	r.Tasks = Tasks{Known: true, Counts: zeroStateCounts(), Unreconciled: r.Tasks.Unreconciled}
 	for state, n := range counts {
 		r.Tasks.Counts[state] += n
 		r.Tasks.Total += n
@@ -445,6 +459,17 @@ func (r *Report) Evaluate() {
 					r.Database.SchemaVersion, r.Database.NewestMigration),
 			})
 		}
+	}
+	if len(r.Tasks.Unreconciled) > 0 {
+		u := r.Tasks.Unreconciled[0]
+		r.Problems = append(r.Problems, Problem{
+			Group: GroupTasks,
+			Message: fmt.Sprintf(
+				"%d task(s) contradict their own step runs — task %d is %s with %d step run(s) still "+
+					"marked running (§12.4). They will not be admitted; restart the daemon to retry "+
+					"crash recovery, and check the daemon log for why it could not reconcile them",
+				len(r.Tasks.Unreconciled), u.TaskID, u.State, u.OpenStepRuns),
+		})
 	}
 	if r.Storage.OrphansKnown && len(r.Storage.Orphans) > 0 {
 		r.Problems = append(r.Problems, Problem{

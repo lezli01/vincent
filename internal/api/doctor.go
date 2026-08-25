@@ -180,6 +180,21 @@ func (s *Server) fillTasks(ctx context.Context, rep *doctor.Report) {
 		byName[string(state)] = n
 	}
 	rep.SetTaskCounts(byName)
+	// The §12.4 contradiction (issue #142). It is asked for separately from
+	// the tally because it is not one: a count of `queued` tasks is
+	// information, and a `queued` task whose previous attempt is still open
+	// is a defect that stops that task running.
+	bad, err := s.deps.Store.UnreconciledTasks(ctx)
+	if err != nil {
+		rep.Tasks.Error = err.Error()
+		return
+	}
+	rep.Tasks.Unreconciled = make([]doctor.UnreconciledTask, 0, len(bad))
+	for _, u := range bad {
+		rep.Tasks.Unreconciled = append(rep.Tasks.Unreconciled, doctor.UnreconciledTask{
+			TaskID: u.TaskID, State: string(u.State), OpenStepRuns: u.OpenStepRuns,
+		})
+	}
 }
 
 // doctorFixRequest is the POST /v1/doctor/fix body. `?force` is accepted too,

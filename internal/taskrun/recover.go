@@ -3,6 +3,7 @@ package taskrun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -28,6 +29,16 @@ const startTimeTolerance = 5 * time.Second
 // the retry budget is untouched (§7.2), and tasks found in `awaiting_input`
 // are treated identically (§7.4). Returns how many tasks were re-queued.
 //
+// It works one task at a time, and that is the whole point (issue #142).
+// Finalizing a task's runs and re-queueing it is a single store transaction
+// (store.InterruptTask), so the two halves of §12.4's order can never come
+// apart: recovery cannot hand the scheduler a `queued` task whose previous
+// attempt is still, durably, `running`. A task whose transaction will not
+// commit is left exactly as found — recoverable, not re-queued, not counted —
+// and the failure is returned so the daemon fails startup on it. Continuing
+// past a storage failure is least defensible precisely when storage is
+// failing.
+//
 // This replaces T1.8's blocking sweep, whose bulk UPDATE also bypassed the
 // TransitionTask compare-and-swap — the invariant that no transition skips
 // the FSM holds here too.
@@ -36,17 +47,17 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 	if err != nil {
 		return 0, err
 	}
+	// The open runs, grouped by the task that owns them, so recovery is driven
+	// per task rather than as two independent sweeps whose outcomes nothing
+	// connects. owners preserves the id ASC order the query returned.
+	open := make(map[int64][]*store.StepRun, len(runs))
+	var owners []int64
 	for i := range runs {
 		run := &runs[i]
-		killOrphan(run, log.With("task", run.TaskID, "run", run.ID))
-		now := time.Now()
-		run.State = store.StepInterrupted
-		run.FailureReason = ReasonInterrupted
-		run.PID = nil
-		run.FinishedAt = &now
-		if err := st.UpdateStepRun(ctx, run); err != nil {
-			log.Error("recovery: finalize step run", "run", run.ID, "error", err)
+		if _, seen := open[run.TaskID]; !seen {
+			owners = append(owners, run.TaskID)
 		}
+		open[run.TaskID] = append(open[run.TaskID], run)
 	}
 
 	requeued := 0
@@ -64,16 +75,44 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 			return requeued, err
 		}
 		for i := range tasks {
-			if _, _, err := st.TransitionTask(ctx, tasks[i].ID, state, tr.To, store.TaskChange{}); err != nil {
-				log.Error("recovery: re-queue task", "task", tasks[i].ID, "error", err)
-				continue
+			id := tasks[i].ID
+			// Killing happens before the transaction and outside it: a kill
+			// cannot be rolled back, and killing then failing to commit is
+			// the already-tolerated case — the row stays `running` and the
+			// next recovery finds a dead PID.
+			killOwned(open[id], id, log)
+			delete(open, id)
+			if _, _, err := st.InterruptTask(ctx, id, state, tr.To, ReasonInterrupted); err != nil {
+				return requeued, fmt.Errorf("recover task %d from %s: %w", id, state, err)
 			}
 			log.Warn("recovered task from a previous run; re-queued",
-				"task", tasks[i].ID, "was", string(state), "step", tasks[i].CurrentStep)
+				"task", id, "was", string(state), "step", tasks[i].CurrentStep)
 			requeued++
 		}
 	}
+
+	// What is left owns a `running` step run while sitting in a state that
+	// re-queues through no Interrupt transition — an `awaiting_gate` task's
+	// manual row, whose actor wrote it before exiting (§6). There is no task
+	// move to pair the write with, so the rows are finalized on their own.
+	for _, id := range owners {
+		runs, ok := open[id]
+		if !ok {
+			continue // already reconciled, with its task, above
+		}
+		killOwned(runs, id, log)
+		if _, err := st.TerminalizeOpenStepRuns(ctx, id, store.StepInterrupted, ReasonInterrupted); err != nil {
+			return requeued, fmt.Errorf("recover task %d: finalize open step runs: %w", id, err)
+		}
+	}
 	return requeued, nil
+}
+
+// killOwned tree-kills the journaled process of each of one task's open runs.
+func killOwned(runs []*store.StepRun, taskID int64, log *slog.Logger) {
+	for _, run := range runs {
+		killOrphan(run, log.With("task", taskID, "run", run.ID))
+	}
 }
 
 // killOrphan tree-kills the process a running step run journaled, when it is

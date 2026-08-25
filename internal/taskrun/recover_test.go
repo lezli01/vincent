@@ -2,6 +2,7 @@ package taskrun
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"os/exec"
@@ -13,6 +14,8 @@ import (
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/worktree"
+
+	_ "modernc.org/sqlite" // registers the "sqlite" driver for the injection connection
 )
 
 func recoverStore(t *testing.T) (*store.Store, int64) {
@@ -208,5 +211,155 @@ func TestRecoverToleratesDeadPID(t *testing.T) {
 	}
 	if tk, _ := st.GetTask(context.Background(), task.ID); tk.State != store.TaskQueued {
 		t.Errorf("task = %s, want queued", tk.State)
+	}
+}
+
+// failStepRunFinalize installs a trigger that aborts exactly the write
+// recovery uses to terminalize a `running` step run. It goes in over a second
+// connection so the store's own single connection (phase 1 decision) is
+// untouched, and it is the hermetic stand-in for the storage failure §12.4
+// does not discuss: the row cannot be moved out of `running`.
+func failStepRunFinalize(t *testing.T, st *store.Store) {
+	t.Helper()
+	db, err := sql.Open("sqlite", st.Path())
+	if err != nil {
+		t.Fatalf("open second connection: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TRIGGER vincent_test_block_interrupt
+		BEFORE UPDATE OF state ON step_runs
+		WHEN NEW.state = 'interrupted'
+		BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END`); err != nil {
+		t.Fatalf("install failure trigger: %v", err)
+	}
+}
+
+// A step run that could not be finalized leaves its task recoverable — it
+// must not be re-queued on top of a row that is still durably `running`.
+// §12.4 orders the two: the run is finalized as `interrupted`, *then* the
+// owning task returns to `queued`. Re-queueing anyway lets the scheduler
+// admit a second attempt while the first is still open in the database,
+// which breaks the one-active-attempt invariant precisely during a storage
+// failure.
+func TestRecoverDoesNotRequeuePastAFinalizeFailure(t *testing.T) {
+	st, projectID := recoverStore(t)
+	ctx := context.Background()
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	run := journalRun(t, st, task.ID, nil, nil) // crashed before the PID write
+
+	failStepRunFinalize(t, st)
+
+	_, _ = Recover(ctx, st, discardLog())
+
+	got, err := st.GetStepRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetStepRun: %v", err)
+	}
+	if got.State != store.StepRunning {
+		t.Fatalf("injection did not hold: step run = %s, want it stuck at running", got.State)
+	}
+	tk, err := st.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if tk.State == store.TaskQueued {
+		t.Errorf("task %d re-queued while step run %d is still durably running: "+
+			"recovery must not requeue a task whose running step run could not be terminalized (§12.4)",
+			task.ID, run.ID)
+	}
+}
+
+// Not re-queueing is only half of fail-closed. The other half is that the
+// daemon hears about it: startup aborts on a recovery it could not complete,
+// rather than starting the scheduler over rows it knows are contradictory
+// (§12.4, issue #142).
+func TestRecoverReturnsTheFinalizeFailure(t *testing.T) {
+	st, projectID := recoverStore(t)
+	ctx := context.Background()
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	journalRun(t, st, task.ID, nil, nil)
+
+	failStepRunFinalize(t, st)
+
+	n, err := Recover(ctx, st, discardLog())
+	if err == nil {
+		t.Fatal("Recover returned nil; the daemon would start over unreconciled rows")
+	}
+	if n != 0 {
+		t.Errorf("requeued = %d, want 0 — nothing was reconciled", n)
+	}
+}
+
+// An `awaiting_input` task's process is alive with its step run open (§7.4).
+// Recovery closes the run and re-queues the task in the same commit, exactly
+// as it does for `running` — the two travel the same path.
+func TestRecoverInterruptsAwaitingInputTogetherWithItsRun(t *testing.T) {
+	st, projectID := recoverStore(t)
+	ctx := context.Background()
+	task := recoverTask(t, st, projectID, store.TaskAwaitingInput)
+	run := journalRun(t, st, task.ID, nil, nil)
+
+	if _, err := Recover(ctx, st, discardLog()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	got, err := st.GetStepRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetStepRun: %v", err)
+	}
+	if got.State != store.StepInterrupted {
+		t.Errorf("step run = %s, want interrupted", got.State)
+	}
+	tk, err := st.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if tk.State != store.TaskQueued {
+		t.Errorf("task = %s, want queued", tk.State)
+	}
+	// Leaving awaiting_input discards the pending request with the process
+	// that would have answered it (§7.4).
+	if tk.PendingInputJSON != "" {
+		t.Errorf("pending input survived recovery: %q", tk.PendingInputJSON)
+	}
+}
+
+// A fan-out lane is a task like any other and is recovered like one — the
+// filter default that hides lanes from the board must not hide them here
+// (task 014, §7.6). The parent is left alone: `awaiting_children` re-queues
+// through ChildrenSettled, not through Interrupt.
+func TestRecoverReconcilesFanOutLanes(t *testing.T) {
+	st, projectID := recoverStore(t)
+	ctx := context.Background()
+	parent := recoverTask(t, st, projectID, store.TaskAwaitingChildren)
+	lane := recoverTask(t, st, projectID, store.TaskRunning)
+	stepIndex := 0
+	lane.ParentTaskID, lane.ParentStepIndex = &parent.ID, &stepIndex
+	lane.LaneID, lane.LaneOrder = "lane-a", 0
+	if err := st.UpdateTask(ctx, lane); err != nil {
+		t.Fatalf("UpdateTask: %v", err)
+	}
+	run := journalRun(t, st, lane.ID, nil, nil)
+
+	if _, err := Recover(ctx, st, discardLog()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	got, err := st.GetStepRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetStepRun: %v", err)
+	}
+	if got.State != store.StepInterrupted {
+		t.Errorf("lane step run = %s, want interrupted", got.State)
+	}
+	tk, err := st.GetTask(ctx, lane.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if tk.State != store.TaskQueued {
+		t.Errorf("lane = %s, want queued", tk.State)
+	}
+	if pt, _ := st.GetTask(ctx, parent.ID); pt.State != store.TaskAwaitingChildren {
+		t.Errorf("parent = %s, want it left awaiting_children", pt.State)
 	}
 }
