@@ -333,6 +333,22 @@ type Candidate struct {
 	ProjectSlots int
 	// ProjectCap is the project's max_parallel_tasks; nil = unlimited.
 	ProjectCap *int
+	// OpenStepRuns is how many of the task's step runs are still marked
+	// `running`. A queued task must have none: §12.4 finalizes the previous
+	// attempt before the task returns to the queue. Any other number means
+	// the task was never reconciled, and admitting it would start a second
+	// attempt against a first one the database still calls live (issue #142).
+	OpenStepRuns int
+}
+
+// Unreconciled is one task whose state and its step runs contradict each
+// other — a step run still marked `running` under a task that cannot possibly
+// be executing (§12.4). See UnreconciledTasks for what "cannot possibly" means
+// here.
+type Unreconciled struct {
+	TaskID       int64
+	State        TaskState
+	OpenStepRuns int
 }
 
 // Event is a durable state event (spec §13.3). ID doubles as the SSE

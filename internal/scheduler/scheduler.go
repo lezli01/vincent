@@ -64,11 +64,18 @@ type Scheduler struct {
 	// persist is detached from shutdown: returning a task that could not be
 	// admitted must still reach the database.
 	persist context.Context //nolint:containedctx // deliberately outlives the run
+
+	// reported remembers which unreconciled tasks have already been logged.
+	// The refusal below is permanent for the life of the process — nothing
+	// here reconciles a task — and the tick is 5 s, so without this the one
+	// line an operator needs would arrive 720 times an hour. Touched only
+	// from the admit walk, which is the single scheduler goroutine.
+	reported map[int64]struct{}
 }
 
 // New returns a stopped scheduler.
 func New(deps Deps) *Scheduler {
-	return &Scheduler{deps: deps, wake: make(chan struct{}, 1)}
+	return &Scheduler{deps: deps, wake: make(chan struct{}, 1), reported: map[int64]struct{}{}}
 }
 
 // Start begins admitting until ctx is canceled or Stop is called.
@@ -155,6 +162,18 @@ func (s *Scheduler) admit(ctx context.Context) {
 			s.park(&c.Task, log)
 			continue
 		}
+		// A queued task with a step run still marked `running` was never
+		// reconciled: §12.4 finalizes the previous attempt *before* the task
+		// returns to the queue, so admitting this one would start a second
+		// attempt against a first the database still calls live (issue #142).
+		// Recovery now fails startup rather than producing such a row; this
+		// is the guard for one that predates the fix or arrived by some route
+		// nobody has thought of. Refusing is safe — the task stays queued —
+		// and the reason has to reach a human, because nothing else will.
+		if c.OpenStepRuns > 0 {
+			s.refuseUnreconciled(&c.Task, c.OpenStepRuns, log)
+			continue
+		}
 		// An admission hold (§11, task 003): the task is queued and waiting on
 		// something other than a slot — an agent's usage window, today.
 		//
@@ -207,6 +226,19 @@ func (s *Scheduler) start(ctx context.Context, task *store.Task, log *slog.Logge
 		return false
 	}
 	return true
+}
+
+// refuseUnreconciled declines to admit a task whose previous attempt is still
+// open, and says so once per task per daemon process.
+func (s *Scheduler) refuseUnreconciled(task *store.Task, open int, log *slog.Logger) {
+	if _, seen := s.reported[task.ID]; seen {
+		return
+	}
+	s.reported[task.ID] = struct{}{}
+	log.Error("admission refused: task is queued but its previous attempt was never finalized; "+
+		"crash recovery (§12.4) could not reconcile it. It will not run until it is. "+
+		"Restart the daemon to retry recovery; `vincent doctor` reports the same finding",
+		"open_step_runs", open, "step", task.CurrentStep)
 }
 
 // park applies a pause that was requested while the task was running and

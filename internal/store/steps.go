@@ -24,7 +24,16 @@ const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, it
 func (s *Store) TerminalizeOpenStepRuns(
 	ctx context.Context, taskID int64, state StepRunState, reason string,
 ) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
+	return terminalizeOpenStepRuns(ctx, s.db, taskID, state, reason)
+}
+
+// terminalizeOpenStepRuns is the statement behind it, taking an execer so the
+// same write composes into a wider transaction: §12.4 recovery closes a task's
+// open runs and moves the task itself in one commit (see InterruptTask).
+func terminalizeOpenStepRuns(
+	ctx context.Context, db execer, taskID int64, state StepRunState, reason string,
+) (int64, error) {
+	res, err := db.ExecContext(ctx, `
 		UPDATE step_runs SET state = ?, failure_reason = ?, pid = NULL, finished_at = ?
 		WHERE task_id = ? AND state = ?`,
 		string(state), nullString(reason), formatTime(time.Now()), taskID, string(StepRunning))

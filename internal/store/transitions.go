@@ -135,134 +135,184 @@ func (s *Store) TransitionTask(
 		ev   *Event
 	)
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		row := tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id)
-		t, err := scanTask(row)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("task %d: %w", id, ErrNotFound)
-		}
-		if err != nil {
-			return fmt.Errorf("get task %d: %w", id, err)
-		}
-		if t.State != from {
-			return &StateConflictError{TaskID: id, Want: from, Got: t.State}
-		}
-
-		now := time.Now()
-		t.State = to
-		t.UpdatedAt = now
-		applyChange(t, ch)
-		if from == TaskAwaitingInput {
-			// The §7.4 invariant, enforced in one place: leaving
-			// awaiting_input always discards the pending request.
-			t.PendingInputJSON = ""
-		}
-		if from == TaskBlocked && ch.PendingRepair == nil {
-			// A repair request describes *this* block, so any other way out
-			// of blocked drops it — retry means retry, and skip must not
-			// hand a repair aimed at one step to the step after it. The one
-			// transition that sets a request is the repair action itself,
-			// and it is carved out by having supplied one (task 025).
-			t.PendingRepair = nil
-		}
-		if taskstate.Settled(to) {
-			// A follow-up request describes a *run*, and reaching done,
-			// aborted or archived is that run ending however it ended (task
-			// 027 decision 6). One rule covers all three ways out: the
-			// Complete that returns a done-origin follow-up, the Restore that
-			// returns an aborted-origin one, and the cancel that abandons
-			// either. Nothing else can leave a request behind on a finished
-			// task for the next follow-up to inherit.
-			t.PendingFollowUp = nil
-		}
-		if from == TaskQueued {
-			// The §11 admission-hold invariant, same construction: a hold
-			// describes *this* queued period, so leaving queued always drops
-			// it. Admission, parking and cancel are all covered by the one
-			// rule, and a caller cannot forget it.
-			//
-			// One consequence, recorded rather than fixed (task 003): pausing
-			// a held task and resuming it re-admits at once and re-discovers
-			// the wall. That costs one process spawn, and buys the rule §6
-			// already applies to every other pending flag — a human action
-			// means go.
-			t.AdmitNotBefore, t.QueuedReason = nil, ""
-		}
-		switch to {
-		case TaskRunning:
-			if t.StartedAt == nil {
-				t.StartedAt = &now
-			}
-		case TaskDone, TaskAborted:
-			t.FinishedAt = &now
-		case TaskArchived:
-			t.ArchivedAt = &now
-		case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskAwaitingChildren, TaskBlocked, TaskPaused:
-			// No timestamp of their own; updated_at covers them.
-		}
-		if to != TaskBlocked {
-			t.BlockReason = ""
-		}
-
-		pendingOverride, err := marshalOverride(t.PendingOverride)
-		if err != nil {
-			return err
-		}
-		pendingRepair, err := marshalRepair(t.PendingRepair)
-		if err != nil {
-			return err
-		}
-		pendingFollowUp, err := marshalFollowUp(t.PendingFollowUp)
-		if err != nil {
-			return err
-		}
-		res, err := tx.ExecContext(ctx, `
-			UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
-				workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
-				pending_override_json = ?, pending_repair_json = ?,
-				pending_follow_up_json = ?, pending_input_json = ?,
-				admit_not_before = ?, queued_reason = ?,
-				updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
-			WHERE id = ? AND state = ?`,
-			string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
-			t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
-			pendingRepair, pendingFollowUp,
-			nullString(t.PendingInputJSON),
-			formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
-			formatTime(t.UpdatedAt),
-			formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
-			id, string(from))
-		if err != nil {
-			return fmt.Errorf("transition task %d: %w", id, err)
-		}
-		if err := oneRowAffected(res, fmt.Sprintf("task %d", id)); err != nil {
-			return err
-		}
-
-		payload, err := statePayload(from, to, t, ch.EventPayload)
-		if err != nil {
-			return err
-		}
-		// Copied, not aliased: t is handed back to the caller as the updated
-		// task, and this event outlives that hand-off inside the broker.
-		taskID, projectID := t.ID, t.ProjectID
-		e := &Event{
-			TS:        now,
-			Type:      EventTaskStateChanged,
-			TaskID:    &taskID,
-			ProjectID: &projectID,
-			Payload:   payload,
-		}
-		if err := appendEventTx(ctx, tx, e); err != nil {
-			return err
-		}
-		task, ev = t, e
-		return nil
+		var err error
+		task, ev, err = transitionTaskTx(ctx, tx, id, from, to, ch)
+		return err
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	s.notify(ev)
 	return task, ev, nil
+}
+
+// InterruptTask is §12.4 crash recovery for one task, and the reason it is a
+// store method at all: finalizing that task's step runs and re-queueing the
+// task have to be one commit. Every run the task left `running` is
+// terminalized with the given reason and its journaled PID cleared, the task
+// moves from -> to under the same compare-and-swap TransitionTask uses, and
+// the durable state event is appended — all inside one transaction.
+//
+// When any part of that fails the whole thing rolls back and the task is left
+// exactly as it was found: still recoverable, and never re-queued on top of a
+// step run the database still calls `running` (issue #142). Recovery fails
+// startup on that rather than letting the scheduler admit a second attempt
+// against a first one that is, durably, still open.
+//
+// Re-running it is safe: a second pass finds the same open runs and the same
+// `from` state, and a task already reconciled fails the compare-and-swap with
+// a *StateConflictError instead of transitioning — so no duplicate event,
+// step run or retry consumption is possible.
+func (s *Store) InterruptTask(
+	ctx context.Context, id int64, from, to TaskState, reason string,
+) (*Task, *Event, error) {
+	var (
+		task *Task
+		ev   *Event
+	)
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		if _, err := terminalizeOpenStepRuns(ctx, tx, id, StepInterrupted, reason); err != nil {
+			return err
+		}
+		var err error
+		task, ev, err = transitionTaskTx(ctx, tx, id, from, to, TaskChange{})
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	s.notify(ev)
+	return task, ev, nil
+}
+
+// transitionTaskTx is TransitionTask's body without the transaction or the
+// post-commit notify, so a caller that needs further writes in the same commit
+// can compose it. The caller owns the notify — an event is published only
+// after the commit that produced it (the §13.3 post-commit rule).
+func transitionTaskTx(
+	ctx context.Context, tx *sql.Tx, id int64, from, to TaskState, ch TaskChange,
+) (*Task, *Event, error) {
+	row := tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id)
+	t, err := scanTask(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, fmt.Errorf("task %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("get task %d: %w", id, err)
+	}
+	if t.State != from {
+		return nil, nil, &StateConflictError{TaskID: id, Want: from, Got: t.State}
+	}
+
+	now := time.Now()
+	t.State = to
+	t.UpdatedAt = now
+	applyChange(t, ch)
+	if from == TaskAwaitingInput {
+		// The §7.4 invariant, enforced in one place: leaving
+		// awaiting_input always discards the pending request.
+		t.PendingInputJSON = ""
+	}
+	if from == TaskBlocked && ch.PendingRepair == nil {
+		// A repair request describes *this* block, so any other way out
+		// of blocked drops it — retry means retry, and skip must not
+		// hand a repair aimed at one step to the step after it. The one
+		// transition that sets a request is the repair action itself,
+		// and it is carved out by having supplied one (task 025).
+		t.PendingRepair = nil
+	}
+	if taskstate.Settled(to) {
+		// A follow-up request describes a *run*, and reaching done,
+		// aborted or archived is that run ending however it ended (task
+		// 027 decision 6). One rule covers all three ways out: the
+		// Complete that returns a done-origin follow-up, the Restore that
+		// returns an aborted-origin one, and the cancel that abandons
+		// either. Nothing else can leave a request behind on a finished
+		// task for the next follow-up to inherit.
+		t.PendingFollowUp = nil
+	}
+	if from == TaskQueued {
+		// The §11 admission-hold invariant, same construction: a hold
+		// describes *this* queued period, so leaving queued always drops
+		// it. Admission, parking and cancel are all covered by the one
+		// rule, and a caller cannot forget it.
+		//
+		// One consequence, recorded rather than fixed (task 003): pausing
+		// a held task and resuming it re-admits at once and re-discovers
+		// the wall. That costs one process spawn, and buys the rule §6
+		// already applies to every other pending flag — a human action
+		// means go.
+		t.AdmitNotBefore, t.QueuedReason = nil, ""
+	}
+	switch to {
+	case TaskRunning:
+		if t.StartedAt == nil {
+			t.StartedAt = &now
+		}
+	case TaskDone, TaskAborted:
+		t.FinishedAt = &now
+	case TaskArchived:
+		t.ArchivedAt = &now
+	case TaskQueued, TaskAwaitingGate, TaskAwaitingInput, TaskAwaitingChildren, TaskBlocked, TaskPaused:
+		// No timestamp of their own; updated_at covers them.
+	}
+	if to != TaskBlocked {
+		t.BlockReason = ""
+	}
+
+	pendingOverride, err := marshalOverride(t.PendingOverride)
+	if err != nil {
+		return nil, nil, err
+	}
+	pendingRepair, err := marshalRepair(t.PendingRepair)
+	if err != nil {
+		return nil, nil, err
+	}
+	pendingFollowUp, err := marshalFollowUp(t.PendingFollowUp)
+	if err != nil {
+		return nil, nil, err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, worktree_path = ?,
+			workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
+			pending_override_json = ?, pending_repair_json = ?,
+			pending_follow_up_json = ?, pending_input_json = ?,
+			admit_not_before = ?, queued_reason = ?,
+			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
+		WHERE id = ? AND state = ?`,
+		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
+		t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+		pendingRepair, pendingFollowUp,
+		nullString(t.PendingInputJSON),
+		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
+		formatTime(t.UpdatedAt),
+		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
+		id, string(from))
+	if err != nil {
+		return nil, nil, fmt.Errorf("transition task %d: %w", id, err)
+	}
+	if err := oneRowAffected(res, fmt.Sprintf("task %d", id)); err != nil {
+		return nil, nil, err
+	}
+
+	payload, err := statePayload(from, to, t, ch.EventPayload)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Copied, not aliased: t is handed back to the caller as the updated
+	// task, and this event outlives that hand-off inside the broker.
+	taskID, projectID := t.ID, t.ProjectID
+	e := &Event{
+		TS:        now,
+		Type:      EventTaskStateChanged,
+		TaskID:    &taskID,
+		ProjectID: &projectID,
+		Payload:   payload,
+	}
+	if err := appendEventTx(ctx, tx, e); err != nil {
+		return nil, nil, err
+	}
+	return t, e, nil
 }
 
 // SetTaskProgress writes the step cursor and worktree path without changing

@@ -391,6 +391,13 @@ func doctorTaskRows(t apiclient.DoctorTasks) [][]string {
 		rows = append(rows, []string{string(s), strconv.Itoa(t.Counts[string(s)])})
 	}
 	rows = append(rows, []string{"total", strconv.Itoa(t.Total)})
+	for _, u := range t.Unreconciled {
+		rows = append(rows, []string{
+			"unreconciled",
+			fmt.Sprintf("task %d is %s with %d step run(s) still running",
+				u.TaskID, u.State, u.OpenStepRuns),
+		})
+	}
 	if t.Error != "" {
 		rows = append(rows, []string{"error", t.Error})
 	}
