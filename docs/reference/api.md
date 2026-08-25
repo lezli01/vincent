@@ -1,3 +1,5 @@
+{% raw %}
+
 # HTTP API
 
 The daemon serves REST + SSE on loopback. Every client — the TUI, the
@@ -802,3 +804,5 @@ store publishes after the database has recorded the event.
 - [Scripting vincent](../guides/scripting.md) — worked examples.
 - [Task lifecycle](task-lifecycle.md) — what the action endpoints do.
 - Spec [§13](../spec.md) — the normative definition.
+
+{% endraw %}
