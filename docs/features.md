@@ -185,8 +185,8 @@ Start with [Scripting vincent](guides/scripting.md), then use the complete
 ## Diagnose and maintain it
 
 `vincent doctor` produces one report covering paths, configuration, daemon
-health, the recent log tail, SQLite integrity, agent availability and login
-state, disk use, worktrees, and task counts. It supports JSON output for bug
+health, the recent log tail, the database's footprint, row counts and integrity,
+agent availability and login state, disk use, worktrees, and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.
 
