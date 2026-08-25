@@ -2466,6 +2466,7 @@ One Go binary, `vincent`:
 | `vincent` | Launches the TUI; auto-starts the daemon in the background if unreachable |
 | `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers). `--config-dir`/`--data-dir` pin the §12.2 directories for a manager with no per-process environment |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
+| `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file]` | Registry listing / YAML validation |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
@@ -2486,6 +2487,23 @@ TUI-and-API only, and stay that way; the reason to break with them here is that
 wants a shell loop rather than six visits to a form. The unevenness that leaves
 is accepted rather than papered over — giving every human action a command line
 is separate work.
+
+*Added 2026-08-25 (task 030).* `daemon restore` is a **stated exception** to
+"clients never touch the DB" (§4), and is written down here rather than left to
+be noticed. The invariant is that only the daemon *opens* SQLite; restore opens
+nothing. It probes the single-instance lock, refuses unless the daemon is down,
+reads the archive's `manifest.json` for the schema version — never the database
+— and then moves files. It cannot be an endpoint for the same reason: the
+daemon whose files it replaces has to be gone before it is safe to run.
+
+`daemon backup` takes the opposite side of the same rule and refuses without a
+daemon, in `doctor --fix`'s words: only the daemon opens the database, so only
+the daemon can copy it. There is no `--cold` flag. That is not a hardship in
+§18's corrupt-database case — what rescues a corrupt database is an *earlier*
+good copy, not a fresh copy of the damage — and the documentation keeps "stop
+the daemon, then copy `vincent.db`, `vincent.db-wal` and `vincent.db-shm`
+together" as the no-binary fallback, which is also the honest answer for a
+daemon that will not start.
 
 *Added 2026-08-15 (task 006).* `vincent doctor` is the one data subcommand that
 still produces a **full report when no daemon answers**, the way
@@ -2990,6 +3008,19 @@ POST   /v1/doctor/fix                   { force? } or ?force — runs gc's recla
                                         report (task 005)
 POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
                                         `vincent daemon stop` calls this and waits for exit
+POST   /v1/daemon/backup                { path } → { path, bytes, database_bytes,
+                                        transcript_bytes, schema_version, created_at }.
+                                        Writes one .tar.gz holding a `VACUUM INTO` copy of the
+                                        database (§14), `transcripts/`, `config/config.yaml`,
+                                        `config/workflows/` and `manifest.json`. `path` must be
+                                        absolute, must not exist, and must not sit under
+                                        `{data_dir}/transcripts` — each a 400. The daemon
+                                        assembles the whole archive, so exactly one process
+                                        walks daemon-owned state; taking it needs no quiet
+                                        moment, but it holds the store's single connection for
+                                        the duration of the copy. There is no restore endpoint:
+                                        restore runs client-side, against a stopped daemon
+                                        (§12.1, task 030)
 
 GET    /v1/maintenance/orphans          what gc would consider, with sizes; removes nothing
                                         (§10, task 005) → { orphans[], mismatches[], bytes,
@@ -3243,6 +3274,15 @@ GET    /v1/events                       SSE stream (§13.3)
 GET    /v1/tasks/{id}/events            SSE, single task incl. live output
 ```
 
+*Added 2026-08-25 (task 030).* `/v1/daemon/*` is no longer only process
+lifecycle: it now holds `backup` beside `stop`. That is accepted knowingly and
+recorded here rather than left for a reader to notice. `/v1/maintenance/*` was
+the alternative and was rejected — maintenance is the family that reconciles
+what is on disk against what the rows say (§10), while a backup is the daemon
+copying its own state out, which reads correctly beside `daemon stop` and
+spells the same way on the command line (`vincent daemon backup`). The
+grouping's meaning widens from "the daemon process" to "the daemon itself".
+
 ### 13.3 Events (SSE)
 
 Two kinds of streams:
@@ -3438,6 +3478,21 @@ CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
+
+*Added 2026-08-25 (task 030).* A **backup is a `VACUUM INTO` copy, never a file
+copy.** Under WAL a committed row lives in `vincent.db-wal` until a checkpoint,
+so copying `vincent.db` while the daemon runs yields a file missing recent
+commits, and copying the three files separately yields a non-atomic set that can
+restore into a torn database. `VACUUM INTO` runs in a read transaction and emits
+one self-contained file with no `-wal`/`-shm` sidecar. It is also the only
+mechanism available: the driver is `modernc.org/sqlite`, which does not expose
+SQLite's C online-backup API through `database/sql`. It refuses an existing
+destination, so the copy is staged under a fresh name. Unlike `VACUUM` — which
+task 005 decision 4 skips while work is in flight because it rewrites the live
+file under an exclusive lock — this takes no such lock and needs no quiet
+moment; its cost is that the store's single connection is held for the duration
+of the copy, so every other daemon query queues behind it, bounded by the size
+of the database.
 
 *Added 2026-08-14 (task 003).* `admit_not_before` / `queued_reason` carry no index:
 `ListAdmissible` already returns the whole queued set in §11 order and the hold is
@@ -4123,7 +4178,8 @@ currently true to show (§15 view 6).
 | Dirtiness of an orphan cannot be determined | *Added 2026-08-15 (task 005).* An orphan's `.git` file points at `{repo}/.git/worktrees/{n}`, so a deleted or pruned repository makes `git status --porcelain` fail outright. Reported as `dirty_unknown` — distinct from `worktree_dirty`, because "git says you have local changes" and "nobody can tell what is in here" are different facts — and skipped until `vincent gc --force`. This is the *common* case where the projects really are gone, so a default run there reclaims little; that is the deliberate trade for never deleting work nobody can vouch for |
 | Project path missing | New/step-starting tasks in that project → blocked with `project_path_missing` |
 | Daemon port taken | Ephemeral port by default makes this nearly impossible; pinned-port conflict fails startup with a clear message |
-| DB corruption | Startup fails loudly, points at the file, never auto-deletes |
+| User wants a copy of daemon state | *Added 2026-08-25 (task 030).* `vincent daemon backup <path.tar.gz>` — one archive holding a `VACUUM INTO` copy of the database (§14), `transcripts/`, `config.yaml`, `workflows/` and a manifest. It needs a **running** daemon and refuses without one, in `doctor --fix`'s words: only the daemon opens the database. It needs no quiet daemon, so a backup may be taken while tasks run. `vincent daemon restore` is the reverse and needs a **stopped** daemon; it refuses a manifest whose schema version exceeds the binary's, and an occupied destination without `--force`, which moves the displaced state aside as `<name>.bak-<ts>` rather than deleting it — the same posture as the row below |
+| DB corruption | Startup fails loudly, points at the file, never auto-deletes. *Amended 2026-08-25 (task 030):* what rescues this case is an **earlier** good copy, which is what `vincent daemon backup` is for; a fresh copy of the damage is not a remedy, and taking one is not offered as a cold-copy mode |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
 | Template references missing field | Step fails at render time (before any process starts) with the template error |
 | A step's `if:` does not render, or renders something that is not `true`/`false` | *Added 2026-08-18 (task 015).* The step blocks with `condition_error` and records one `failed` row naming it. The only reason in this table that does **not** run the §7.2 retry budget: a guard is evaluated before the step becomes an attempt, so there is no attempt to retry, and re-rendering an unchanged template cannot answer differently (§7.7). A human `retry` re-evaluates it |

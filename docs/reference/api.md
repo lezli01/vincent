@@ -106,6 +106,7 @@ are long-lived by contract and no write deadline is set.
 | `GET` | `/v1/doctor` | The whole diagnostic report. Read-only. `?probe=false` skips the forced adapter re-probe — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
+| `POST` | `/v1/daemon/backup` | `{ path }` — writes a `.tar.gz` of daemon state to `path`. See [Backup](#backup) |
 | `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
 | `POST` | `/v1/maintenance/gc` | `{ force?, dry_run? }` — reclaims them. Same body shape as the list |
 
@@ -131,6 +132,37 @@ surface) and a definite boolean where it does (**codex** via `login status`,
 **cursor** via `status`) — because an installed-but-unauthenticated CLI probes
 as healthy and then fails every run. It is never guessed: a probe that times out
 or cannot be spawned reports `null`, not `false`.
+
+### Backup
+
+`POST /v1/daemon/backup` writes one archive of everything the daemon owns and
+answers with what it wrote:
+
+```json
+{ "path": "/home/you/vincent-2026-08-25.tar.gz",
+  "bytes": 1503238553,
+  "database_bytes": 8601600,
+  "transcript_bytes": 1494360064,
+  "schema_version": 12,
+  "created_at": "2026-08-25T14:05:00.000000000Z" }
+```
+
+- `path` must be **absolute** and must not exist. The daemon resolves it
+  against its own working directory, not the caller's, and it never overwrites
+  a file that is by construction somebody's backup. A path inside
+  `{data_dir}/transcripts` is refused too — the archive would read itself.
+  Every one of these is a `400 validation_failed`.
+- The **daemon** assembles the whole archive: the database copy *and* the two
+  directory trees. That keeps exactly one process walking daemon-owned state,
+  and it is why there is no cold-copy mode — only the daemon opens SQLite.
+- The database copy is `VACUUM INTO`, which runs in a read transaction, so a
+  backup may be taken **while tasks are running**. It costs the store's single
+  connection for the duration of the copy: other queries queue behind it,
+  bounded by the size of the database.
+- The archive layout, what it excludes, and the restore rules are in
+  [Files](files.md#backup-and-restore). There is no restore endpoint —
+  `vincent daemon restore` runs client-side, because the daemon it would
+  overwrite has to be down.
 
 ### Usage quota
 

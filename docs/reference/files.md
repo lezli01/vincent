@@ -10,6 +10,7 @@ it owns). Both are platform-native, and both can be overridden.
 - [Transcripts](#transcripts)
 - [Overriding the locations](#overriding-the-locations)
 - [What is safe to delete](#what-is-safe-to-delete)
+- [Backup and restore](#backup-and-restore)
 
 ---
 
@@ -180,8 +181,66 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 | `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |
 | `token` | Recreated at next start, and every existing client must re-read it |
-| `vincent.db` | **Everything is gone** — projects, tasks, history. Branches in your repositories survive |
+| `vincent.db` | **Everything is gone** — projects, tasks, history. Branches in your repositories survive. This is the row [Backup and restore](#backup-and-restore) exists for |
 | `{config_dir}/` | Your config and global workflows; defaults are rewritten at next start |
+
+## Backup and restore
+
+```sh
+vincent daemon backup ~/vincent-2026-08-25.tar.gz     # needs a running daemon
+vincent daemon restore ~/vincent-2026-08-25.tar.gz    # needs a stopped one
+```
+
+One `.tar.gz`, four things in it:
+
+| Entry | What it is |
+|---|---|
+| `vincent.db` | A consistent copy of the database, taken with SQLite's own `VACUUM INTO` |
+| `transcripts/` | `{data_dir}/transcripts/`, in full |
+| `config/config.yaml`, `config/workflows/` | Your config and global workflows |
+| `manifest.json` | The vincent version, the schema version, and when it was taken |
+
+**Do not copy `vincent.db` by hand while the daemon runs.** Under WAL a
+committed row lives in `vincent.db-wal` until a checkpoint, so a copy of
+`vincent.db` alone is missing recent work, and copying the three files
+separately gives a set that can restore into a torn database. The backup
+command exists because the obvious thing is the wrong thing. If you have no
+vincent binary to hand, the honest fallback is to **stop the daemon first**,
+then copy `vincent.db`, `vincent.db-wal` and `vincent.db-shm` together.
+
+**Backup needs a running daemon and refuses without one.** Only the daemon
+opens the database, so only the daemon can copy it — the same rule
+[`vincent doctor --fix`](cli.md#vincent-doctor---fix) follows. It does not
+need a *quiet* daemon: `VACUUM INTO` writes elsewhere under a read
+transaction, so a backup may be taken while tasks are running.
+
+**The archive is as large as your history is.** Transcripts are included in
+full and are not opt-out; the per-attempt cap alone is 512 MB
+([`transcript_max_bytes`](configuration.md)). The command prints the bytes it
+wrote, broken down by database and transcripts, rather than pretending the
+artifact is small.
+
+**Not in the archive, and recoverable without it:** `worktrees/` (disposable —
+the branches they held are in your repositories), `token`, `daemon.json`,
+`daemon.lock`, `logs/` and `tui.json`. A restored installation mints a **fresh
+API token** at next start, so every client re-reads it.
+
+**Restore is the only vincent command that touches the data directory
+directly**, because the daemon it would overwrite has to be down for it to be
+safe. It refuses:
+
+- while a daemon is running — stop it first;
+- when the manifest's schema version is newer than the binary you are running,
+  since migrations are up-only and cannot be stepped back;
+- when the destination already holds `vincent.db` (or a leftover `-wal`/`-shm`),
+  `transcripts/`, `config.yaml` or `workflows/` — unless `--force`.
+
+With `--force` each of those is **moved aside** as `<name>.bak-<timestamp>`.
+Nothing is deleted on any path, and the command prints where everything went.
+
+To move an installation to another machine, restore into an empty pair of
+directories and start the daemon; your repositories and their branches are the
+other half, and vincent recreates worktrees as tasks need them.
 
 To remove vincent entirely: `vincent service uninstall`, `vincent daemon stop`,
 delete the binary, delete both directories, then clean up any branches left in

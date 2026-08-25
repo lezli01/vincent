@@ -195,6 +195,59 @@ vincent daemon status [--json]
 Reports whether the daemon is running, its identity, and which agent CLIs it
 resolved. Exit `0` healthy, `1` not running, `2` unresponsive.
 
+### `vincent daemon backup`
+
+```sh
+vincent daemon backup <path.tar.gz> [--json]
+```
+
+Writes one `.tar.gz` holding the database, every transcript, `config.yaml` and
+the global workflows. The database copy is taken with SQLite's own
+`VACUUM INTO`, so it is consistent even while tasks are running — unlike
+copying `vincent.db`, which under WAL is missing whatever has not been
+checkpointed.
+
+**Needs a running daemon**, and exits `2` without one: only the daemon opens
+the database, the same rule [`doctor --fix`](#vincent-doctor---fix) follows.
+The destination must be a path that does not exist yet; vincent never
+overwrites a backup.
+
+Transcripts are included in full, so the archive is as large as your history
+is. The command prints the bytes it wrote:
+
+```
+wrote /home/you/vincent-2026-08-25.tar.gz (1.4GB: database 8.2MB, transcripts 1.4GB)
+```
+
+What the archive does **not** carry, and why, is in
+[Files](files.md#backup-and-restore).
+
+### `vincent daemon restore`
+
+```sh
+vincent daemon restore <path.tar.gz> [--force] [--json]
+```
+
+Unpacks an archive into the config and data directories in effect. This is the
+one command that touches the data directory directly rather than through the
+API — the daemon it would overwrite has to be down for the restore to be safe.
+
+Refused, exit `1`, when:
+
+| Situation | Why |
+|---|---|
+| The daemon is running | Restore replaces the files it has open. Stop it first |
+| The manifest's schema version is newer than this binary's | Migrations are up-only; a newer database cannot be stepped back |
+| The destination already holds `vincent.db` (or a stray `-wal`/`-shm`), `transcripts/`, `config.yaml` or `workflows/` | Use `--force` |
+
+`--force` **moves** each of those aside as `<name>.bak-<timestamp>` and
+restores over the gap. Nothing is deleted on any path, and the command prints
+where everything went.
+
+Worktrees are not in a backup and are not restored; the branches they held are
+in your repositories. A fresh API token is minted at next start, so every
+client re-reads it.
+
 ## `vincent service`
 
 Registers the daemon with the OS so it starts at login. Always as the invoking
@@ -395,7 +448,9 @@ vincent workflow validate <file> [--json]
 
 Validates a workflow file. **This is the one command that needs no daemon** — no
 network, no agent CLI installed — which makes it usable from a pre-commit hook or
-a CI job.
+a CI job. ([`vincent daemon restore`](#vincent-daemon-restore) also runs without
+one, but it *refuses* to run while a daemon is up rather than merely tolerating
+its absence.)
 
 Exit `0` valid, `1` invalid. Warnings (a model in no catalog) print but do not
 fail the command.
