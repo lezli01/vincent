@@ -2,7 +2,7 @@ package apiclient
 
 import "context"
 
-// BackupResult is the body of POST /v1/daemon/backup (task 029).
+// BackupResult is the body of POST /v1/daemon/backup (task 030).
 //
 // The sizes are reported rather than trimmed: the archive carries transcripts
 // in full, so it is as large as the installation is, and a command that

@@ -1,5 +1,5 @@
 // Package backup builds and unpacks the `.tar.gz` artifact behind
-// `vincent daemon backup` / `restore` (spec §12.1, §13.2; task 029).
+// `vincent daemon backup` / `restore` (spec §12.1, §13.2; task 030).
 //
 // It is deliberately a leaf: it imports nothing internal, because its two
 // callers sit on opposite sides of the ownership boundary. The daemon writes

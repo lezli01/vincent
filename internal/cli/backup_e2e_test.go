@@ -28,7 +28,7 @@ type e2eTask struct {
 	OutputTokens int64    `json:"output_tokens"`
 }
 
-// TestBackupRestoreRoundTripE2E is task 029's acceptance, driven through the
+// TestBackupRestoreRoundTripE2E is task 030's acceptance, driven through the
 // real binary: a backup taken **while a task is running**, restored into a
 // clean pair of directories, and a daemon started on the result that reports
 // the same tasks, step runs and costs.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// BackupTo writes a consistent copy of the database to dst (task 029).
+// BackupTo writes a consistent copy of the database to dst (task 030).
 //
 // `VACUUM INTO` is the mechanism rather than a file copy, and the difference
 // matters: under WAL a committed row lives in `vincent.db-wal` until a

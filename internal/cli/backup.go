@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// newDaemonBackupCmd is `vincent daemon backup <path.tar.gz>` (task 029).
+// newDaemonBackupCmd is `vincent daemon backup <path.tar.gz>` (task 030).
 //
 // A thin API client like the rest of §12.1: the daemon assembles the archive,
 // this resolves the destination and prints what came back.
@@ -96,7 +96,7 @@ type displacedReport struct {
 	To   string `json:"to"`
 }
 
-// newDaemonRestoreCmd is `vincent daemon restore <path.tar.gz>` (task 029).
+// newDaemonRestoreCmd is `vincent daemon restore <path.tar.gz>` (task 030).
 //
 // This one is **not** an API client, and cannot be: the daemon whose files it
 // replaces has to be down for the restore to be safe. §4's "clients never

@@ -35,7 +35,7 @@ type backupResponse struct {
 	CreatedAt       string `json:"created_at"`
 }
 
-// handleBackup serves POST /v1/daemon/backup (task 029).
+// handleBackup serves POST /v1/daemon/backup (task 030).
 //
 // The daemon assembles the whole archive — the database copy *and* the two
 // directory trees — rather than copying the database and letting the client
