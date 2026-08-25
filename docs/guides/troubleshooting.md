@@ -264,7 +264,8 @@ Two ways out. Give the task a different name and let it re-admit, which keeps it
 history and transcripts:
 
 ```sh
-curl -X POST .../v1/tasks/7/retry -d '{"branch_override":"feat/second-attempt"}'
+curl -X POST .../v1/tasks/7/retry -H 'Content-Type: application/json' \
+  -d '{"branch_override":"feat/second-attempt"}'
 ```
 
 Or delete the leftover branch yourself, then retry:

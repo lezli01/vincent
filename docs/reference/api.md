@@ -5,6 +5,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 
 - [Transport and auth](#transport-and-auth)
 - [Errors](#errors)
+- [Request bodies](#request-bodies)
 - [Daemon](#daemon)
 - [Doctor](#doctor)
 - [Projects](#projects)

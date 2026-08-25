@@ -2837,8 +2837,8 @@ in §13.2 sees the body:
   stopped at the end of the first value and the request was answered `2xx`.)
 - **Bounded.** A body is read up to a fixed limit and no further: **64 KiB** for an
   ordinary request, and **4 MiB** for the routes that legitimately carry a workflow
-  source or an agent prompt (`POST /v1/tasks`, `PATCH`/`retry`/`repair`/`answer` on
-  a task, `POST /v1/resolve`, `POST /v1/workflows/validate`). Over the bound is
+  source or an agent prompt (`POST /v1/tasks`, `retry`/`repair`/`answer` on a task,
+  `POST /v1/resolve`, `POST /v1/workflows/validate`). Over the bound is
   `413` `payload_too_large`, naming the limit and never echoing the body. Fixed, not
   configurable — the same treatment §5.2 gives a workflow source, and for the same
   reason. Individual fields are bounded too (title, description, `fields` and
