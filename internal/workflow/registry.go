@@ -271,7 +271,7 @@ func (r *Registry) notify() {
 // processed in name order so a duplicate `name:` deterministically keeps the
 // first file and reports each later one.
 //
-// Only regular files under maxSourceBytes are sourced (§5.2): the directory is
+// Only regular files under MaxSourceBytes are sourced (§5.2): the directory is
 // daemon-owned, but its entries are whatever a registered repository contains.
 // A file that fails either bound is catalogued as an invalid entry.
 func (r *Registry) loadDir(dir string, scope Scope, projectID int64) scopeEntries {
@@ -405,11 +405,15 @@ func (r *Registry) Lookup(projectID int64, name string) (Entry, bool) {
 	return Entry{}, false
 }
 
-// maxSourceBytes bounds one workflow file (§5.2). A workflow is a
+// MaxSourceBytes bounds one workflow source (§5.2). A workflow is a
 // human-written definition and a megabyte is far past any real one; the bound
 // exists because a project scope is whatever a registered repository happens
 // to contain, and loading it must not be able to exhaust the daemon.
-const maxSourceBytes = 1 << 20
+//
+// It is exported because the same artifact reaches the daemon by a second
+// route: POST /v1/workflows/validate parses a source out of a request body, and
+// a bound the API did not share would be a way around this one (issue #140).
+const MaxSourceBytes = 1 << 20
 
 // yamlFile is one candidate found in a scope directory. reject is empty for a
 // regular file, and otherwise says why the file cannot be a workflow source.
@@ -451,7 +455,7 @@ func yamlFiles(dir string) ([]yamlFile, error) {
 }
 
 // readSource reads one discovered workflow file. A non-empty reject is a file
-// the registry must not source — the wrong type, or more than maxSourceBytes —
+// the registry must not source — the wrong type, or more than MaxSourceBytes —
 // leaving err for a genuine I/O failure.
 //
 // The type is checked twice: once on the directory entry, and once on the
@@ -482,12 +486,12 @@ func readSource(f yamlFile) ([]byte, string, error) {
 	}
 	// One byte past the limit: enough to know the file is over it, without
 	// allocating it, and a file of exactly the limit still parses.
-	src, err := io.ReadAll(io.LimitReader(file, maxSourceBytes+1))
+	src, err := io.ReadAll(io.LimitReader(file, MaxSourceBytes+1))
 	if err != nil {
 		return nil, "", err
 	}
-	if len(src) > maxSourceBytes {
-		return nil, fmt.Sprintf("%s: a workflow file must be at most %d bytes", f.path, maxSourceBytes), nil
+	if len(src) > MaxSourceBytes {
+		return nil, fmt.Sprintf("%s: a workflow file must be at most %d bytes", f.path, MaxSourceBytes), nil
 	}
 	return src, "", nil
 }

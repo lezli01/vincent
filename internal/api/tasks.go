@@ -332,8 +332,21 @@ type taskCreateRequest struct {
 // catalog-unknown value passes with a warning on the 201 body (T2.11).
 func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	var req taskCreateRequest
-	if !decodeJSON(w, r, &req) {
+	// The large bound: a task's description and fields are what the workflow
+	// templates into an agent's prompt, so this body legitimately carries prose
+	// (§13.1, amended 2026-08-25).
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
+	}
+	for _, b := range []string{
+		boundTaskFields(req.Title, ptrValue(req.Description), req.Fields),
+		boundString("base_branch", ptrValue(req.BaseBranch), maxNameBytes),
+		boundString("branch_name", ptrValue(req.BranchName), maxNameBytes),
+	} {
+		if b != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
+			return
+		}
 	}
 	ctx := r.Context()
 	project, err := s.deps.Store.GetProject(ctx, req.ProjectID)

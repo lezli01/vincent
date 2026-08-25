@@ -15,6 +15,12 @@ const (
 	CodeValidationFailed = "validation_failed"
 	CodeInvalidState     = "invalid_state"
 	CodeInternal         = "internal"
+	// CodePayloadTooLarge accompanies 413: the request body, or one artifact
+	// inside it, is over a fixed bound (§13.1, amended 2026-08-25).
+	CodePayloadTooLarge = "payload_too_large"
+	// CodeUnsupportedMediaType accompanies 415: a non-empty body is labelled a
+	// Content-Type that is not JSON.
+	CodeUnsupportedMediaType = "unsupported_media_type"
 )
 
 // errorBody is the §13.1 error envelope:

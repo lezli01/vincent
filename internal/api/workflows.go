@@ -188,11 +188,21 @@ type validateResponse struct {
 // catalog warnings.
 func (s *Server) handleWorkflowValidate(w http.ResponseWriter, r *http.Request) {
 	var req validateRequest
-	if !decodeJSON(w, r, &req) {
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
 	}
 	if req.YAML == "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "yaml is required")
+		return
+	}
+	// The same artifact, the same bound. §5.2 fixes a workflow source at 1 MiB
+	// where the registry catalogues it; a source too large to be catalogued
+	// must not validate cleanly through the endpoint the authoring flow uses
+	// (issue #140).
+	if len(req.YAML) > workflow.MaxSourceBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, CodePayloadTooLarge,
+			fmt.Sprintf("a workflow source must be at most %d bytes (got %d)",
+				workflow.MaxSourceBytes, len(req.YAML)))
 		return
 	}
 	wf, warns, err := workflow.Parse([]byte(req.YAML), s.deps.Workflows.Options())

@@ -22,6 +22,27 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A request body is now exactly one JSON document, and it is bounded.** The
+  daemon read the *first* JSON value in a request body and discarded everything
+  after it unread, so a client that framed two documents into one request — a
+  retry that re-wrote the body, a `jq -c` loop piped into a single `curl -d @-`,
+  a buggy generator — got a `201` for work vincent never saw, with nothing in the
+  response to distinguish it from the single-document call. Trailing content is
+  now `400 invalid_json`; trailing whitespace stays valid. Bodies are also read
+  under a fixed bound instead of into memory whole (64 KiB, or 4 MiB on the
+  routes that carry a prompt or a workflow source), over which is a new
+  `413 payload_too_large` naming the limit and never echoing the body, and long
+  strings, big maps and prompt or run overrides are bounded field by field with a
+  `400` naming the field. `POST /v1/workflows/validate` now honours the same
+  1 MiB workflow-source limit the registry applies to a file, so a source too
+  large to be catalogued no longer validates cleanly. A body labelled a clearly
+  non-JSON `Content-Type` — what a plain `curl -d` sends — is `415`; an absent
+  header and any `*/json` are still accepted. The daemon additionally sets read
+  and idle timeouts, so a client that sends headers and then dribbles a body no
+  longer holds a connection indefinitely; SSE streams are unaffected and keep
+  their unbounded response lifetime.
+  ([#140](https://github.com/lezli01/vincent/issues/140))
+
 - **A step whose output vincent could not capture is no longer reported as a
   success.** Command output was read a line at a time with a one-mebibyte
   ceiling; a longer line — minified JSON, a base64 blob, a `git diff` of a

@@ -42,15 +42,15 @@ func TestLoadDirRejectsOversizedFile(t *testing.T) {
 }
 
 // TestLoadDirAcceptsFileAtSizeLimit pins the other side of that bound: the
-// limit is inclusive, so a file of exactly maxSourceBytes still parses. It is
+// limit is inclusive, so a file of exactly MaxSourceBytes still parses. It is
 // what stops the read from being one byte short of what the docs promise.
 func TestLoadDirAcceptsFileAtSizeLimit(t *testing.T) {
 	reg, globalDir := newTestRegistry(t)
 
 	src := manualWorkflow("exact", "at-the-limit") + "# "
-	src += strings.Repeat("x", maxSourceBytes-len(src))
-	if len(src) != maxSourceBytes {
-		t.Fatalf("padded source is %d bytes, want %d", len(src), maxSourceBytes)
+	src += strings.Repeat("x", MaxSourceBytes-len(src))
+	if len(src) != MaxSourceBytes {
+		t.Fatalf("padded source is %d bytes, want %d", len(src), MaxSourceBytes)
 	}
 	path := filepath.Join(globalDir, "exact.yaml")
 	if err := os.MkdirAll(globalDir, 0o700); err != nil {
@@ -66,7 +66,7 @@ func TestLoadDirAcceptsFileAtSizeLimit(t *testing.T) {
 	if !ok || !e.Valid() {
 		t.Fatalf(`Lookup("exact") = %+v, %v; a file of exactly the limit must parse`, e, ok)
 	}
-	if len(e.Source) != maxSourceBytes {
-		t.Errorf("entry source is %d bytes, want the whole %d-byte file", len(e.Source), maxSourceBytes)
+	if len(e.Source) != MaxSourceBytes {
+		t.Errorf("entry source is %d bytes, want the whole %d-byte file", len(e.Source), MaxSourceBytes)
 	}
 }

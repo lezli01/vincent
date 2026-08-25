@@ -496,6 +496,9 @@ func validateName(existing []store.Project, name string, selfID int64) string {
 	if name == "" {
 		return "name cannot be empty"
 	}
+	if msg := boundString("name", name, maxNameBytes); msg != "" {
+		return msg
+	}
 	for _, p := range existing {
 		if p.ID != selfID && p.Name == name {
 			return fmt.Sprintf("project name %q is already in use; pass a different name", name)
@@ -569,21 +572,70 @@ func (o *opt[T]) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// decodeJSON decodes the request body strictly (unknown fields rejected),
-// writing the error response itself on failure.
+// decodeJSON decodes the request body strictly (unknown fields rejected) under
+// the ordinary body bound, writing the error response itself on failure.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	return decodeJSONLimit(w, r, v, maxRequestBytes)
+}
+
+// decodeJSONLimit decodes exactly one JSON document from at most limit bytes of
+// the request body (§13.1, amended 2026-08-25 for issue #140). It is the single
+// decode path for the whole API, so each rule it applies is API-wide:
+//
+//   - The body is labelled JSON, or not labelled at all (checkContentType).
+//   - The body is bounded. r.Body is wrapped in an http.MaxBytesReader, so an
+//     oversized body stops the read *at* the bound instead of being buffered
+//     whole and then measured; over it is 413.
+//   - The body is exactly one JSON document. json.Decoder.Decode is a streaming
+//     API: it decodes the next value and leaves the reader positioned after it,
+//     so a lone Decode cannot see anything that follows and silently discards
+//     it. A second Decode that must report io.EOF is what makes trailing
+//     content observable — a client framing two documents into one request used
+//     to get a 2xx for work the daemon never saw. Trailing whitespace is still
+//     a well-formed body: the decoder skips it and reports EOF.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	if !checkContentType(w, r) {
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		var syn *json.SyntaxError
-		if errors.As(err, &syn) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			writeError(w, http.StatusBadRequest, CodeInvalidJSON, "request body is not valid JSON")
-			return false
-		}
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "invalid request body: "+err.Error())
+		return decodeFailed(w, err, limit)
+	}
+	err := dec.Decode(new(json.RawMessage))
+	switch {
+	case errors.Is(err, io.EOF):
+		return true
+	case err == nil:
+		writeError(w, http.StatusBadRequest, CodeInvalidJSON,
+			"request body must contain exactly one JSON document")
+		return false
+	default:
+		return decodeFailed(w, err, limit)
+	}
+}
+
+// decodeFailed maps a decode error onto the §13.1 envelope. It always returns
+// false, so callers can `return decodeFailed(...)` from the decode path.
+//
+// The 413 message names the bound and never echoes the body: what broke it is
+// by definition too large to quote, and quoting a caller's payload back is not
+// this API's job.
+func decodeFailed(w http.ResponseWriter, err error, limit int64) bool {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, CodePayloadTooLarge,
+			fmt.Sprintf("request body must be at most %d bytes", limit))
 		return false
 	}
-	return true
+	var syn *json.SyntaxError
+	if errors.As(err, &syn) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		writeError(w, http.StatusBadRequest, CodeInvalidJSON, "request body is not valid JSON")
+		return false
+	}
+	writeError(w, http.StatusBadRequest, CodeValidationFailed, "invalid request body: "+err.Error())
+	return false
 }
 
 func (s *Server) internalError(w http.ResponseWriter, what string, err error) {

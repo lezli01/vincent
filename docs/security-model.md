@@ -98,8 +98,10 @@ anybody picks a workflow. Cataloguing is therefore bounded (spec §5.2): only
 **regular files** are sourced, so a symlink, FIFO, socket or device named `*.yaml`
 is rejected without being opened or followed, and a source is capped at **1 MiB**.
 A rejected file is listed as an invalid entry naming the path and the reason; its
-valid siblings stay available. What the parsed content is then allowed to *do* is
-unchanged — a `command` step is still a shell command.
+valid siblings stay available. The same 1 MiB bound applies to a source posted to
+`POST /v1/workflows/validate`, so the API is not a way around it. What the parsed
+content is then allowed to *do* is unchanged — a `command` step is still a shell
+command.
 
 ## Restricted mode
 
