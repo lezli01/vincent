@@ -112,6 +112,12 @@ Read `{data_dir}/logs/daemon.log`. An invalid `config.yaml` at startup is fatal
 and says which key and line. (An invalid config on *hot reload* is not fatal —
 the last good config keeps running and the rejection is logged.)
 
+**Crash recovery is fatal too.** If it cannot close a previous run's open step
+runs, the daemon refuses to start — `startup failed: crash recovery`, with the
+underlying error beside it, a storage failure nearly every time. Nothing is
+half-done: each task is reconciled whole or left exactly as it was found, so
+starting the daemon again simply retries it.
+
 ## Agent CLIs
 
 ### An agent CLI is not found

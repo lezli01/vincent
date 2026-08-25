@@ -78,11 +78,14 @@ esac
 
 What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
 the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
-database is at a schema version this binary does not understand, or orphaned
-worktrees are present. A missing or logged-out agent CLI is reported and does
-*not* set the exit code — most machines have one of three adapters installed, so
-a doctor that exited `1` almost everywhere would be no use here. Neither do task
-counts: twelve blocked tasks is information, not a defect.
+database is at a schema version this binary does not understand, orphaned
+worktrees are present, or a task is unreconciled — `queued` (or finished) while
+one of its step runs is still marked `running`, which is crash recovery having
+failed to close the previous attempt. A missing or logged-out agent CLI is
+reported and does *not* set the exit code — most machines have one of three
+adapters installed, so a doctor that exited `1` almost everywhere would be no
+use here. Neither do task *counts*: twelve blocked tasks is information, not a
+defect.
 
 ## JSON output
 

@@ -2433,6 +2433,17 @@ would invalidate every one of them.
   expired hold, since nothing commits a state change when one lapses. That is the
   tick's second reason to exist — otherwise it normally finds nothing to do.
 
+  *Amended 2026-08-25 (issue #142).* A fourth check now sits **between the pause
+  and the hold**: a `queued` task that still has a `running` StepRun is refused,
+  left queued, and logged once per daemon process. Its previous attempt was
+  never finalized, so admitting it would start a second attempt against a first
+  the database still calls live — the §12.4 contradiction that recovery now
+  fails startup rather than produce. This is the guard for a row that predates
+  that fix or arrives by a route nobody has thought of. Nothing in the scheduler
+  reconciles such a task, which is why the refusal is permanent for the life of
+  the process, why it is logged once rather than every tick, and why
+  `GET /v1/doctor` reports the same finding (§17).
+
 ## 12. The daemon
 
 ### 12.1 Binary and commands

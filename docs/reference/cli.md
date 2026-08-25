@@ -80,18 +80,22 @@ One report answering "why is nothing running?". Seven groups:
 | Database | path, size, applied schema version, `PRAGMA integrity_check` |
 | Agents | per adapter: found, path, version, and `logged_in` |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
-| Tasks | counts by state, so "12 blocked" is visible without opening the board |
+| Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
 
 Exit `0` when everything checked is healthy, `1` when problems were found (they
 are listed under `PROBLEMS`), `2` when no daemon answered.
 
 **Unhealthy is a closed set**: `config.yaml` exists and does not parse, the
 daemon is alive but not answering, `integrity_check` is not `ok`, the database
-is at a schema version newer than this binary understands, or orphaned worktrees
-are present. A missing or logged-out agent CLI is reported and deliberately does
+is at a schema version newer than this binary understands, orphaned worktrees
+are present, or a task is **unreconciled** — `queued` (or finished) while one of
+its step runs is still marked `running`, which means crash recovery could not
+close the previous attempt and admission will not run that task until it does
+([Troubleshooting](../guides/troubleshooting.md#start-here-vincent-doctor)).
+A missing or logged-out agent CLI is reported and deliberately does
 *not* set the exit code — most machines have one of three adapters installed,
 and a doctor that exits `1` almost everywhere is no use in a script. Neither do
-task counts: twelve blocked tasks is information, not a defect.
+task *counts*: twelve blocked tasks is information, not a defect.
 
 A `permissions` row names a config path whose mode grants group or other
 access, the mode it should have, and the exact `chmod`. It is a warning: the
