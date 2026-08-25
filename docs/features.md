@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
-| Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks |
+| Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, WinGet, Scoop, mise, deb/rpm, and archives |
 
 ## Orchestrate work instead of terminals
@@ -195,8 +195,19 @@ run, refuses to remove dirty or unknown work without an explicit force, and
 never deletes a branch or anything outside vincent's data roots. The daemon
 also reports orphaned paths at startup.
 
-See [Troubleshooting](guides/troubleshooting.md) for the diagnostic workflow and
-the [CLI reference](reference/cli.md) for exact flags and exit codes.
+`vincent daemon backup` writes one `.tar.gz` holding a consistent copy of the
+database, every transcript, your `config.yaml` and your global workflows. The
+daemon takes the copy with SQLite's own `VACUUM INTO`, so it can be taken
+**while tasks are running** — unlike copying `vincent.db` by hand, which under
+WAL is missing whatever has not been checkpointed. `vincent daemon restore` is
+the reverse, runs against a stopped daemon, and deletes nothing: a destination
+that already holds state needs `--force`, which moves the old state aside as
+`<name>.bak-<timestamp>`.
+
+See [Troubleshooting](guides/troubleshooting.md) for the diagnostic workflow,
+[Files](reference/files.md#backup-and-restore) for what an archive holds and
+what it leaves out, and the [CLI reference](reference/cli.md) for exact flags
+and exit codes.
 
 ## Run it on your platform
 
