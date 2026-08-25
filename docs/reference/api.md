@@ -393,6 +393,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/reject` | awaiting_gate | |
 | `/answer` | awaiting_input | `{ answers?, allow? }` |
 | `/archive` | done, aborted | `{ force? }` or `?force` |
+| `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort? }` — exactly one of the three; runs it in the task's existing worktree, then returns the task to the state it came from |
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
@@ -422,6 +423,48 @@ recorded as an ordinary step run under the reserved step id `__repair` at the
 blocked step's index, so `GET /v1/tasks/{id}/steps` returns it with its own
 transcript, tokens and cost — and the blocked step's retry budget is untouched
 by it.
+
+`/follow_up` runs one more piece of work in a **finished** task's worktree and
+branch, before you archive it. Exactly one of three fields says what to run:
+
+| Field | Runs |
+|---|---|
+| `prompt` | an agent, with this as its instructions |
+| `run` | a shell command, under the daemon's shell (`/bin/sh`, or `pwsh` on Windows) |
+| `workflow` | a workflow from the registry, against this task's worktree instead of a new one |
+
+Naming none of them, or more than one, is `400 validation_failed`. `prompt` and
+`run` are **literal text**, not templates — the daemon escapes them when it
+compiles the one-step workflow it runs, so a `{{` you type is two characters. If
+you want templating, put it in a workflow and name that.
+
+A `workflow` name is resolved through the registry now, not at admission: an
+unknown name, a workflow that cannot run on this host, one that fails validation
+once its `include`s are expanded, or a fan-out tree past `fan_out.max_depth`
+from this task's own depth are all `400`s. What validates is stored on the task
+and is what runs, so editing the file afterwards does not change the run in
+flight.
+
+The optional `agent` / `model` / `effort` behave exactly as `/repair`'s do,
+except that an explicit agent field on a step of a named workflow still wins —
+that is what a step field means. The response is the task, now `queued`, plus
+`warnings`.
+
+The run returns the task to the state it came from: `done` to `done`, `aborted`
+to `aborted`, whatever it exits with. A follow-up never changes a task's
+verdict. It is repeatable, and each run is a **round**: round *n* of a task
+whose workflow has *k* steps records its rows at `step_index = k + n - 1`, so
+`GET /v1/tasks/{id}/steps` returns them past the workflow's last index and
+`step_total` does not change. A row with `step_index >= step_total` is a
+follow-up row; render it as its own round rather than as a step of the workflow.
+
+A follow-up step that fails blocks the task at that index. `/retry` there
+re-runs the follow-up where it stopped, `/repair` runs an ad-hoc agent against
+that failure, `/skip` abandons the follow-up and restores the task's original
+state, and `/cancel` aborts — which means `done → aborted` is reachable while a
+follow-up is running. `/retry` with `prompt_override` or `run_override` is
+`400`: an override rewrites a step in the task's snapshot, and a follow-up is
+not in it.
 
 `/archive` is the one action whose response is not just the task. When it looks
 at the branch, it adds a `branch` object beside the task fields:

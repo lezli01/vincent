@@ -299,8 +299,46 @@ after 10 seconds). Valid from `queued`, `running`, `awaiting_input`,
 `awaiting_gate`, `blocked` and `paused`; anything else exits 1 with the state it
 actually found.
 
-The remaining human actions — approve, reject, retry, skip, pause, resume,
-answer, archive — are TUI and API operations; see
+### `vincent task follow-up`
+
+```sh
+vincent task follow-up <id> (--prompt TEXT | --run CMD | --workflow NAME)
+                            [--agent NAME] [--model M] [--effort E] [--json]
+```
+
+Runs one more piece of work in a **finished** task's existing worktree and
+branch, before it is archived — recorded in that task's own ledger, with a step
+run, a transcript and cost accounting. Valid from `done` and `aborted` only;
+anything else exits 1 with the state it actually found.
+
+Exactly one of the three run flags is required, and they are mutually exclusive:
+
+| Flag | Runs |
+|---|---|
+| `--prompt` | an agent, with this text as its instructions |
+| `--run` | a shell command, under the daemon's shell (`/bin/sh`, or `pwsh` on Windows) |
+| `--workflow` | a workflow from the registry, against this task's worktree instead of a new one |
+
+`--agent`, `--model` and `--effort` apply to this run and outrank the task's own
+overrides and the workflow's `defaults:`; a value no catalog recognizes is a
+warning on stderr, not a failure.
+
+The command returns as soon as the run is queued — the scheduler admits it like
+anything else. When it ends the task returns to the state it came from: `done`
+to `done`, `aborted` to `aborted`, whatever the run did. A follow-up never
+changes a task's verdict, and it is repeatable.
+
+This is the one human action with a command line, and it has one because
+batches want one:
+
+```sh
+for id in 41 42 43 44 45 46; do
+  vincent task follow-up "$id" --run 'git rebase origin/main'
+done
+```
+
+The remaining human actions — approve, reject, retry, repair, skip, pause,
+resume, answer, archive — are TUI and API operations; see
 [the API reference](api.md#tasks).
 
 ## `vincent workflow`

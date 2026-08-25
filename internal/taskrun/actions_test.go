@@ -136,6 +136,12 @@ func (h *actionHarness) invoke(
 	case taskstate.Archive:
 		task, _, err := h.runner.Archive(ctx, id, false)
 		return task, err
+	case taskstate.FollowUp:
+		return h.runner.FollowUp(ctx, id, store.FollowUpRequest{
+			Form:     store.FollowUpCommand,
+			Run:      "git status",
+			Workflow: followUpTestWorkflow,
+		})
 	default:
 		t := &InvalidActionError{TaskID: id, Action: action}
 		return nil, t
@@ -176,7 +182,7 @@ func TestActionsFromInvalidStateConflict(t *testing.T) {
 	actions := []taskstate.Action{
 		taskstate.Cancel, taskstate.Pause, taskstate.Resume, taskstate.Retry,
 		taskstate.Repair, taskstate.Skip, taskstate.Approve, taskstate.Reject,
-		taskstate.Archive,
+		taskstate.Archive, taskstate.FollowUp,
 	}
 	for _, action := range actions {
 		// Find a state this action is not valid from.

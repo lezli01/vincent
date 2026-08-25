@@ -1,0 +1,31 @@
+-- 0012_follow_up: the pending follow-up run request (task 027, spec §6/§14).
+--
+-- Third of the "a handler wrote this while the task held no step_runs row"
+-- columns, after pending_override_json and pending_repair_json, and it works
+-- the same way: the API validates and persists, the actor the admission
+-- produces reads it and runs the work (phase 2 decision).
+--
+-- What it carries beyond the repair request is a **cursor**. A follow-up may
+-- be a whole workflow — gates, loops, fan-outs and all — and decision 4 gives
+-- it a step cursor of its own rather than commandeering `current_step`, which
+-- stays where the finished run left it. The cursor is persisted as each step
+-- succeeds, so §12.4 recovery re-runs an interrupted follow-up step as a
+-- follow-up step rather than silently completing the task.
+--
+-- No step_runs change accompanies this either. A follow-up round writes its
+-- rows at `step_index = len(snapshot.steps) + round - 1` (decision 2): the
+-- cursor space past the end of the snapshot is unused, so a row there is
+-- unambiguously a follow-up row, distinct rounds occupy distinct indices, and
+-- CountStepAttempts' existing (task_id, step_index, step_id, iteration) key
+-- separates the rounds for free — leaving `iteration` its §7.8 loop meaning
+-- and preserving the authored step ids that `if:` guards and `.Steps` refer
+-- to.
+--
+-- Draining differs from the repair request's again. A repair is drained by
+-- the re-block that ends it; a follow-up survives `fail` (which blocks it)
+-- and `retry` (which re-runs it), and is dropped by any transition into a
+-- settled state — the Complete or Restore that returns the task to its
+-- origin, and the `cancel` that ends it (decision 6). `skip` neither keeps it
+-- running nor drops it: it sets `abandoned`, so the next admission restores
+-- the origin state without running anything.
+ALTER TABLE tasks ADD COLUMN pending_follow_up_json TEXT; -- NULL = no follow-up requested

@@ -143,6 +143,66 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		}
 	})
 
+	// `task follow-up` is the one §6 human action with a command line (task
+	// 027 decision 11), and the task cancelled just above is `aborted` — one
+	// of the two states it is valid from.
+	t.Run("task follow-up", func(t *testing.T) {
+		// Exactly one run form. Cobra refuses the other combinations locally,
+		// so the daemon never sees a request that says two things at once.
+		for _, args := range [][]string{
+			{"task", "follow-up", taskID},
+			{"task", "follow-up", taskID, "--prompt", "do it", "--run", "git --version"},
+			{"task", "follow-up", taskID, "--run", "git --version", "--workflow", "adhoc"},
+			{"task", "follow-up", taskID, "--prompt", "do it", "--workflow", "adhoc"},
+		} {
+			out, code := runVincent(t, dataDir, cfgDir, args...)
+			if code == 0 {
+				t.Errorf("%v: code 0, want a refusal (out %q)", args[2:], out)
+			}
+		}
+
+		// A workflow name the registry does not have is a rejected request,
+		// not a broken command: the daemon answered and said no.
+		out, code := runVincent(t, dataDir, cfgDir,
+			"task", "follow-up", taskID, "--workflow", "no-such-workflow")
+		if code != 1 {
+			t.Errorf("task follow-up with an unknown workflow: code %d, want 1 (out %q)", code, out)
+		}
+		if !strings.Contains(out, "no-such-workflow") {
+			t.Errorf("the refusal does not name the workflow: %q", out)
+		}
+
+		// --prompt reaches the daemon too, and carries the §8.6 triple with
+		// it. An agent the registry does not have is the cheapest proof of
+		// both that does not depend on the task's state — the selection is
+		// validated in front of the state check, so this says nothing about
+		// where the task happens to be by now.
+		out, code = runVincent(t, dataDir, cfgDir,
+			"task", "follow-up", taskID, "--prompt", "do it", "--agent", "no-such-agent")
+		if code != 1 {
+			t.Errorf("task follow-up with an unknown agent: code %d, want 1 (out %q)", code, out)
+		}
+		if !strings.Contains(out, "no-such-agent") {
+			t.Errorf("the refusal does not name the agent: %q", out)
+		}
+
+		out, code = runVincent(t, dataDir, cfgDir,
+			"task", "follow-up", taskID, "--run", "git --version", "--json")
+		if code != 0 {
+			t.Fatalf("task follow-up --run: code %d, out %q", code, out)
+		}
+		var queued struct {
+			ID    int64  `json:"id"`
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal([]byte(out), &queued); err != nil {
+			t.Fatalf("task follow-up --json is not JSON: %v (%q)", err, out)
+		}
+		if queued.ID == 0 {
+			t.Errorf("follow-up response = %+v, want the task", queued)
+		}
+	})
+
 	t.Run("a rejected request exits 1", func(t *testing.T) {
 		// The daemon answered and said no. That is exit 1 — distinct from
 		// exit 2, which means nothing answered at all.

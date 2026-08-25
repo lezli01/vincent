@@ -43,9 +43,10 @@ type shell struct {
 	bar *actionBar
 
 	focus panelID
-	// popup shows a form over the panels: the §7.4 answer form, or the §6
-	// repair form (task 025). Neither ever opens itself — `enter` on the
-	// awaiting task opens one and `R` on a blocked task opens the other
+	// popup shows a form over the panels: the §7.4 answer form, the §6 repair
+	// form (task 025), or the §6 follow-up form (task 027). None of the three
+	// ever opens itself — `enter` on the awaiting task opens the first, `R`
+	// on a blocked task the second and `F` on a finished one the third
 	// (§15: a form announces itself and the human opens it).
 	popup bool
 	// connected mirrors the root's connection state: false renders the
@@ -120,6 +121,9 @@ func (s *shell) capturesInput() bool {
 // prompt — or the task filter while it is being typed.
 func (s *shell) paste(text string) tea.Cmd {
 	if s.popup {
+		if f := s.detail.followUp; f != nil {
+			return f.paste(text)
+		}
 		if f := s.detail.repair; f != nil {
 			return f.paste(text)
 		}
@@ -199,13 +203,23 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 func (s *shell) forward(msg tea.Msg) tea.Cmd {
 	_, bc := s.board.update(msg)
 	dc := s.detail.update(msg)
-	if s.popup && s.detail.form == nil && s.detail.repair == nil {
+	if s.popup && s.detail.form == nil && s.detail.repair == nil && s.detail.followUp == nil {
 		s.popup = false
 	}
 	return tea.Batch(bc, dc)
 }
 
 func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	if s.popup && s.detail.followUp != nil {
+		cmd, exit := s.detail.followUp.update(msg, s.detail.client)
+		if exit {
+			// Leaving throws the draft away with it, for the reason the
+			// repair form's does: half a prompt kept behind a popup nobody
+			// can see is worse than retyping it.
+			s.detail.followUp, s.popup = nil, false
+		}
+		return s, cmd
+	}
 	if s.popup && s.detail.repair != nil {
 		cmd, exit := s.detail.repair.update(msg, s.detail.client)
 		if exit {
@@ -285,6 +299,18 @@ func (s *shell) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		s.syncDetailFocus()
 		cmd := s.detail.update(msg)
 		if s.detail.repair != nil {
+			s.popup = true
+		}
+		return s, cmd
+	case "F":
+		// Follow-up (task 027), same shape as repair. It is deliberately not
+		// a bulk action: the three run forms are written for one task, and
+		// "run this prompt against nine finished branches" is a shell loop
+		// over `vincent task follow-up`, which is what decision 11 shipped
+		// the command for.
+		s.syncDetailFocus()
+		cmd := s.detail.update(msg)
+		if s.detail.followUp != nil {
 			s.popup = true
 		}
 		return s, cmd
@@ -577,7 +603,7 @@ func (s *shell) render(width, height int) string {
 				s.renderBox(boxes[1]), s.renderBox(boxes[2])))
 	}
 	out := strings.Join(parts, "\n")
-	if s.popup && (s.detail.form != nil || s.detail.repair != nil) {
+	if s.popup && (s.detail.form != nil || s.detail.repair != nil || s.detail.followUp != nil) {
 		out = s.overlayPopup(out)
 	}
 	return out
@@ -673,7 +699,10 @@ func (s *shell) overlayPopup(bg string) string {
 		render func(int, int) string
 		title  string
 	)
-	if f := s.detail.repair; f != nil {
+	if f := s.detail.followUp; f != nil {
+		height, render = f.height, f.render
+		title = fmt.Sprintf("Follow-up — #%d", s.detail.taskID)
+	} else if f := s.detail.repair; f != nil {
 		height, render = f.height, f.render
 		title = fmt.Sprintf("Repair — #%d", s.detail.taskID)
 	} else {

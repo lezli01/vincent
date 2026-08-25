@@ -7,9 +7,9 @@ import (
 
 // allActions is every action the table may contain, human and engine.
 var allActions = []Action{
-	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive,
+	Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
 	Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
-	FanOut, ChildrenSettled,
+	FanOut, ChildrenSettled, Restore,
 }
 
 // wantTransitions is the §6 transition table restated independently of the
@@ -31,6 +31,9 @@ var wantTransitions = map[State]map[Action]State{
 		Fail:         Blocked,
 		Interrupt:    Queued,
 		Park:         Paused,
+		// The aborted-origin end of a follow-up run (task 027 decision 7).
+		// Its done-origin twin is Complete, one line above.
+		Restore: Aborted,
 	},
 	AwaitingGate: {
 		Cancel:  Aborted,
@@ -66,11 +69,16 @@ var wantTransitions = map[State]map[Action]State{
 		Cancel: Aborted,
 		Resume: Queued,
 	},
+	// The two unarchived non-terminal states, and the only two a follow-up
+	// may be asked for from (task 027). Both re-queue; neither gains any
+	// other action.
 	Done: {
-		Archive: Archived,
+		Archive:  Archived,
+		FollowUp: Queued,
 	},
 	Aborted: {
-		Archive: Archived,
+		Archive:  Archived,
+		FollowUp: Queued,
 	},
 	Archived: {},
 }
@@ -163,8 +171,8 @@ func TestHumanActionsFrom(t *testing.T) {
 		AwaitingInput: {Answer, Cancel},
 		Blocked:       {Cancel, Repair, Retry, Skip},
 		Paused:        {Cancel, Resume},
-		Done:          {Archive},
-		Aborted:       {Archive},
+		Done:          {Archive, FollowUp},
+		Aborted:       {Archive, FollowUp},
 		Archived:      nil,
 	}
 	for state, want := range tests {
@@ -181,10 +189,12 @@ func TestHumanActionsFrom(t *testing.T) {
 // TestHumanClassification pins which actions clients may invoke: an engine
 // event must never be reachable through the API.
 func TestHumanClassification(t *testing.T) {
-	human := []Action{Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive}
+	human := []Action{
+		Cancel, Pause, Resume, Retry, Repair, Skip, Answer, Approve, Reject, Archive, FollowUp,
+	}
 	engine := []Action{
 		Admit, Gate, RequestInput, Complete, Fail, Interrupt, InputClosed, Park,
-		FanOut, ChildrenSettled,
+		FanOut, ChildrenSettled, Restore,
 	}
 	for _, a := range human {
 		if !Human(a) {

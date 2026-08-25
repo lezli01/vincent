@@ -1,11 +1,24 @@
 # Scripting vincent
 
 Everything the TUI does goes through the same localhost API, and its data
-commands are subcommands too — `task add/ls/show/cancel`, `project`, `workflow`,
-`daemon`. The human actions that act on a running task (approve, reject, retry,
-skip, pause, resume, answer, archive) have no subcommand yet
-([#89](https://github.com/lezli01/vincent/issues/89)), so a script reaches those
-over the API; the [CLI reference](../reference/cli.md) is the full tree.
+commands are subcommands too — `task add/ls/show/cancel/follow-up`, `project`,
+`workflow`, `daemon`. The human actions that act on a running task (approve,
+reject, retry, repair, skip, pause, resume, answer, archive) have no subcommand
+yet ([#89](https://github.com/lezli01/vincent/issues/89)), so a script reaches
+those over the API; the [CLI reference](../reference/cli.md) is the full tree.
+
+[`task follow-up`](../reference/cli.md#vincent-task-follow-up) is the exception,
+and it is one because the thing it is for is a batch — running one more agent
+prompt, shell command or workflow in each of several finished tasks' own
+worktrees, before they are archived:
+
+```sh
+vincent task ls --state done --json |
+  jq -r '.[].id' |
+  while read -r id; do
+    vincent task follow-up "$id" --run 'git rebase origin/main'
+  done
+```
 
 That makes vincent scriptable three ways, in increasing order of control: the
 CLI with `--json`, the API with `curl`, and the SSE streams for anything that

@@ -13,7 +13,7 @@
 # that cannot provide it (scenario 8). Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7|8 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1|2|3|4|5|6|7|8|9|10 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -1102,6 +1102,136 @@ EOF
   echo "=== scenario 9 PASS"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 10 — a follow-up run on a finished task (§6, §13.2, task 027).
+#
+# The task 027 brief calls this "scenario 9"; that number was already the
+# ad-hoc repair's by the time this landed, so it is 10.
+#
+# Everything here is a `command` follow-up: no agent process is involved, so
+# "the follow-up ran in the finished task's own worktree" is proved by a commit
+# on that task's branch rather than inferred from an agent's output. Both `run:`
+# bodies are one git command each — the sh∩pwsh intersection the daemon's shell
+# holds every workflow to (§8.3).
+#
+# What it pins is decision 2's placement: a round's rows sit past the
+# snapshot's last index, `step_total` does not grow, and a second follow-up is
+# round 2 rather than attempt 2 of round 1.
+# ---------------------------------------------------------------------------
+scenario10() {
+  echo "=== scenario 10: a follow-up run on a finished task"
+  scenario_dirs s10
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-followup.yaml" <<'EOF'
+name: m2-followup
+description: M2 gate — two steps that pass, so the task reaches done.
+defaults:
+  max_retries: 0
+steps:
+  - id: work
+    type: command
+    run: 'git commit --allow-empty -m "m2 gate: the work"'
+  - id: land
+    type: command
+    run: 'git commit --allow-empty -m "m2 gate: landed"'
+EOF
+  cat > "$CONFIG_DIR/workflows/m2-followup-blocked.yaml" <<'EOF'
+name: m2-followup-blocked
+description: M2 gate — one step that fails, for the 409 half.
+defaults:
+  max_retries: 0
+steps:
+  - id: nope
+    type: command
+    run: 'exit 7'
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s10/repo" proj task_id task steps branch total status
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+
+  task_id="$(api POST /tasks \
+    "{\"project_id\":$proj,\"workflow\":\"m2-followup\",\"title\":\"Follow me up\"}" | jq -r .id)"
+
+  echo "== the workflow finishes"
+  wait_for_state "$task_id" done 90
+  task="$(api GET "/tasks/$task_id")"
+  total="$(jq -r .step_total <<<"$task")"
+  branch="$(jq -r .branch_name <<<"$task")"
+  [[ "$total" == "2" ]] || fail "step_total = $total, want 2: $task"
+  jq -e '.available_actions | index("follow_up")' <<<"$task" >/dev/null \
+    || fail "available_actions misses follow_up on a done task: $task"
+
+  echo "== a follow-up that names nothing to run is refused"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{}' "$BASE/tasks/$task_id/follow_up")"
+  [[ "$status" == "400" ]] || fail "an empty follow-up should be 400, got $status"
+
+  echo "== a follow-up that names two things to run is refused"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d '{"prompt":"do it","run":"git --version"}' "$BASE/tasks/$task_id/follow_up")"
+  [[ "$status" == "400" ]] || fail "a two-form follow-up should be 400, got $status"
+
+  echo "== round 1: a command runs in the finished task's own worktree"
+  api POST "/tasks/$task_id/follow_up" \
+    '{"run":"git commit --allow-empty -m \"m2 gate: follow-up one\""}' >/dev/null
+  wait_for_state "$task_id" done 90
+
+  task="$(api GET "/tasks/$task_id")"
+  [[ "$(jq -r .step_total <<<"$task")" == "2" ]] \
+    || fail "the follow-up grew the workflow snapshot: $task"
+  steps="$(api GET "/tasks/$task_id/steps")"
+  jq -e --argjson i "$total" \
+    '[.[] | select(.step_index == $i and .state == "succeeded")] | length == 1' \
+    <<<"$steps" >/dev/null || fail "no succeeded follow-up row at index $total: $steps"
+  # A here-string, not a pipe: `grep -q` exits at the first match and closes
+  # the pipe under it, so `git log | grep -q` fails the whole pipeline under
+  # `set -o pipefail` on a *successful* match.
+  grep -q "m2 gate: follow-up one" <<<"$(git -C "$repo" log --format=%s "$branch")" \
+    || fail "the follow-up did not commit on the task's branch"
+
+  echo "== round 2 is a round, not a second attempt of round 1"
+  api POST "/tasks/$task_id/follow_up" \
+    '{"run":"git commit --allow-empty -m \"m2 gate: follow-up two\""}' >/dev/null
+  wait_for_state "$task_id" done 90
+  steps="$(api GET "/tasks/$task_id/steps")"
+  jq -e --argjson i "$((total + 1))" \
+    '[.[] | select(.step_index == $i and .attempt == 1 and .state == "succeeded")] | length == 1' \
+    <<<"$steps" >/dev/null || fail "round 2 is not attempt 1 at index $((total + 1)): $steps"
+  jq -e --argjson i "$total" '[.[] | select(.step_index == $i)] | length == 1' \
+    <<<"$steps" >/dev/null || fail "round 2 was recorded against round 1's index: $steps"
+  grep -q "m2 gate: follow-up two" <<<"$(git -C "$repo" log --format=%s "$branch")" \
+    || fail "the second follow-up did not commit on the task's branch"
+
+  echo "== follow_up is refused outside done and aborted, with the state in the envelope"
+  local other out body
+  other="$(api POST /tasks \
+    "{\"project_id\":$proj,\"workflow\":\"m2-followup-blocked\",\"title\":\"Blocked\"}" | jq -r .id)"
+  wait_for_state "$other" blocked 90
+  out="$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" -d '{"run":"git --version"}' \
+    -w $'\n%{http_code}' "$BASE/tasks/$other/follow_up")"
+  status="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  [[ "$status" == "409" ]] || fail "follow_up from blocked should be 409, got $status: $body"
+  [[ "$(jq -r .error.details.state <<<"$body")" == "blocked" ]] \
+    || fail "the 409 does not carry details.state: $body"
+
+  "$VINCENT" daemon stop
+  echo "=== scenario 10 PASS"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -1117,8 +1247,9 @@ case "$WHICH" in
   7) scenario7 ;;
   8) scenario8 ;;
   9) scenario9 ;;
+  10) scenario10 ;;
   all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
-     scenario9 ;;
+     scenario9; scenario10 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 

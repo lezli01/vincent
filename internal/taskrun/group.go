@@ -94,7 +94,8 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			subEnv := &stepEnv{
 				task: env.task, project: env.project, wf: env.wf,
 				step: sub, index: env.index, inGroup: true,
-				log: env.log.With("sub_step", sub.ID),
+				followUp: env.followUp,
+				log:      env.log.With("sub_step", sub.ID),
 			}
 			out := r.runStepWithRetries(groupCtx, subEnv)
 			// `allow_failure` on a sub-step keeps its `failed` row and its
@@ -164,7 +165,8 @@ func (r *Runner) applySubStepGuards(
 		subEnv := &stepEnv{
 			task: env.task, project: env.project, wf: env.wf,
 			step: sub, index: env.index, inGroup: true,
-			log: env.log.With("sub_step", sub.ID),
+			followUp: env.followUp,
+			log:      env.log.With("sub_step", sub.ID),
 		}
 		pass, evalErr := r.evaluateGuard(ctx, subEnv)
 		if evalErr != nil {
@@ -187,7 +189,10 @@ func (r *Runner) applySubStepGuards(
 // or a loop body, whose siblings share that index (task 014 decision 16,
 // task 016 decision 13).
 func subStepIDOf(env *stepEnv) string {
-	if env.inGroup || env.loop != nil {
+	// A follow-up round is the third case (task 027 decision 2): every step
+	// of the round shares the round's index, so the id is what keeps two of
+	// them from writing the same transcript file.
+	if env.inGroup || env.loop != nil || env.followUp != nil {
 		return env.step.ID
 	}
 	return ""

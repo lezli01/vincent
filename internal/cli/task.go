@@ -16,7 +16,8 @@ func newTaskCmd() *cobra.Command {
 		Use:   "task",
 		Short: "Create, inspect and cancel tasks",
 	}
-	cmd.AddCommand(newTaskAddCmd(), newTaskLsCmd(), newTaskShowCmd(), newTaskCancelCmd())
+	cmd.AddCommand(newTaskAddCmd(), newTaskLsCmd(), newTaskShowCmd(), newTaskCancelCmd(),
+		newTaskFollowUpCmd())
 	return cmd
 }
 
@@ -287,6 +288,75 @@ func newTaskShowCmd() *cobra.Command {
 			})
 		},
 	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+// newTaskFollowUpCmd is the one human action of §6 with a command line
+// (task 027 decision 11). Retry, repair, skip and approve are deliberately
+// TUI-and-API only (task 025 decision 12) and stay that way; this one breaks
+// with them because "rebase these six finished branches onto current master"
+// is a batch, and a batch wants a shell loop rather than six visits to a
+// form. The unevenness that leaves is accepted rather than papered over.
+func newTaskFollowUpCmd() *cobra.Command {
+	var (
+		prompt   string
+		run      string
+		workflow string
+		agent    string
+		model    string
+		effort   string
+	)
+	cmd := &cobra.Command{
+		Use:   "follow-up <id>",
+		Short: "Run more work in a finished task's worktree, before it is archived",
+		Long: "Run one more piece of work in a done or aborted task's existing worktree and " +
+			"branch, recorded in that task's own ledger. Exactly one of --prompt, --run and " +
+			"--workflow says what to run. The task returns to the state it came from.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("task id must be a number: %q", args[0])
+			}
+			in := apiclient.FollowUpInput{
+				Prompt: prompt, Run: run, Workflow: workflow,
+				Agent: agent, Model: model, Effort: effort,
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				t, warnings, err := c.FollowUp(ctx, id, in)
+				if err != nil {
+					// A 409 here is the FSM refusing the action (§6) — the
+					// task is neither done nor aborted — which is a rejected
+					// request, not a broken one.
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), t)
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+					"task %d is now %s: the follow-up is queued\n", t.ID, t.State); err != nil {
+					return err
+				}
+				for _, w := range warnings {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&prompt, "prompt", "", "Run an agent with this prompt")
+	cmd.Flags().StringVar(&run, "run", "", "Run this shell command (§8.3: /bin/sh, or pwsh on Windows)")
+	cmd.Flags().StringVar(&workflow, "workflow", "", "Run this registry workflow")
+	cmd.Flags().StringVar(&agent, "agent", "", "Agent for the run (§8.6, request level)")
+	cmd.Flags().StringVar(&model, "model", "", "Model for the run (§8.6, request level)")
+	cmd.Flags().StringVar(&effort, "effort", "", "Effort for the run (§8.6, request level)")
+	// One thing runs. Cobra refuses the combination locally so the daemon
+	// never sees a request that says two things at once, and the message
+	// names the flags rather than the JSON fields behind them.
+	cmd.MarkFlagsMutuallyExclusive("prompt", "run", "workflow")
+	cmd.MarkFlagsOneRequired("prompt", "run", "workflow")
 	jsonFlag(cmd)
 	return cmd
 }

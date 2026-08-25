@@ -43,6 +43,11 @@ restates it.
 
 Tasks are `queued` immediately on creation. There is no draft state.
 
+`done` and `aborted` have one more edge out of them that the diagram leaves off
+to stay readable: `follow_up` re-queues either of them to run more work in the
+task's existing worktree, and returns it to the state it came from. See
+[human actions](#human-actions).
+
 ## States
 
 | State | Meaning | Holds a slot? |
@@ -54,8 +59,8 @@ Tasks are `queued` immediately on creation. There is no draft state.
 | `awaiting_children` | A `fan_out` step's lanes are running as child tasks; this task owns no process | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human | no |
 | `paused` | You asked it to hold; takes effect at the next step boundary | no |
-| `done` | Every step succeeded. Worktree and branch retained for inspection | no |
-| `aborted` | You cancelled, or rejected terminally. Worktree and branch retained | no |
+| `done` | Every step succeeded. Worktree and branch retained for inspection. `follow_up` runs more work in them; `archive` tears them down | no |
+| `aborted` | You cancelled, or rejected terminally. Worktree and branch retained, and open to `follow_up` on the same terms as `done` | no |
 | `archived` | Terminal. Worktree removed, record kept. The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
 
 Three of these are worth dwelling on.
@@ -114,6 +119,32 @@ worktree existed re-blocks on the same reason without starting an agent, and one
 blocked because its agent CLI is missing has its repair fail the same way — both
 honest outcomes rather than a hidden filter.
 
+**A finished task is not finished with until you archive it.** `done` and
+`aborted` both keep the worktree, the branch and the commits, and `follow_up`
+is how you do one more piece of work in them without leaving vincent. You supply
+one of three things — an agent prompt, a shell command, or the name of a
+workflow from the registry — and the daemon runs it on the task's own branch, in
+the task's own worktree, recorded in the task's own ledger with a step run, a
+transcript, events and cost accounting.
+
+It decides nothing about the verdict: a done task comes back `done` and an
+aborted one comes back `aborted`, whatever the run did. That is deliberate — a
+command that exits 0 should not be able to reverse an abort you made on purpose.
+Follow-ups are repeatable, and each is a **round**: round 1's rows sit one past
+the workflow's last step index, round 2's one past that, so the timeline shows
+`↳ follow-up 1`, `↳ follow-up 2` rather than pretending the workflow grew.
+
+A follow-up step that fails blocks the task at the follow-up's own index. From
+there `retry` re-runs the follow-up where it stopped, `repair` runs an ad-hoc
+agent against *that* failure, `skip` abandons the follow-up and puts the task
+back where it came from, and `cancel` aborts. Edit-and-retry is refused there:
+an override rewrites a step in the task's snapshot, and a follow-up is
+deliberately not in it.
+
+One edge worth knowing about: because a follow-up's process is live while it
+runs, `cancel` during one aborts the task — so `done → aborted` is reachable,
+which it was not before follow-ups existed.
+
 ## Human actions
 
 | Action | Valid from | Effect |
@@ -130,10 +161,11 @@ honest outcomes rather than a hidden filter.
 | `reject` | awaiting_gate | Gate `rejected` → `blocked`, from which you can edit-and-retry an earlier step, skip, or abort |
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
+| `follow_up` | done, aborted | Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch → `queued`, and back to the state it came from when it ends. Repeatable; it never changes the task's verdict and never spends the workflow's retry budgets |
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
-`c`, `A`); over the API they are `POST /v1/tasks/{id}/{action}`; from the CLI,
-`vincent task cancel`.
+`c`, `A`, `F`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
+CLI, `vincent task cancel` and `vincent task follow-up`.
 
 An action the current state does not allow returns `409` with `details.state`
 set to the state actually found — so a client branches on a value rather than

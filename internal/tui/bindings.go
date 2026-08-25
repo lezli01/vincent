@@ -43,6 +43,11 @@ const (
 	// prompt and chooses an adapter — so a single row could only describe
 	// one of them.
 	ctxRepairForm bindingContext = "repair form"
+	// ctxFollowUpForm is the §6 follow-up popup (task 027). Its own context
+	// for the same reason the repair form has one: it is the only popup with
+	// a chooser above its text, and a row shared with the others could only
+	// describe one of them.
+	ctxFollowUpForm bindingContext = "follow-up form"
 )
 
 // binding is one registry row.
@@ -109,6 +114,7 @@ var bindings = []binding{
 	{key: "s", label: "skip the current step", scope: scopeTaskAction, action: apiclient.ActionSkip, priority: 6},
 	{key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
 	{key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8},
+	{key: "F", label: "follow up — run an agent prompt, a shell command or a workflow in this finished task's worktree; it returns to the state it came from", scope: scopeTaskAction, action: apiclient.ActionFollowUp, priority: 9},
 
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
@@ -186,6 +192,13 @@ var bindings = []binding{
 	{key: "e", label: "write the repair prompt in $EDITOR", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "ctrl+s", label: "start the repair agent", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "esc", label: "close the popup without repairing (the draft is discarded)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+
+	// Follow-up form: same again — the popup owns the keyboard while it is
+	// open and prints its own key line.
+	{key: "enter", label: "edit the row under the cursor — the run form, what to run, or the agent/model/effort list", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "ctrl+s", label: "start the follow-up run", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 }
 
 // isHomeContext reports whether a context is one of the home shell's panels —

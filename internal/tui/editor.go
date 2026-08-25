@@ -133,6 +133,39 @@ func (d *detail) editRepairPrompt(text string) tea.Cmd {
 	})
 }
 
+// editFollowUpBody opens a follow-up's prompt or command in $EDITOR (§6,
+// task 027). Same argument as editRepairPrompt: the popup's field is three
+// lines and the text is of a length nobody chose. It posts nothing — what the
+// editor leaves goes back into the form, and the human still has to start the
+// run.
+func (d *detail) editFollowUpBody(text string) tea.Cmd {
+	path, err := writeEditorFile(fmt.Sprintf("task%d-follow-up", d.taskID), ".md", text)
+	if err != nil {
+		if d.followUp != nil {
+			d.followUp.err = errString(err)
+		}
+		return nil
+	}
+	argv := append(editorCommand(), path)
+	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
+	taskID := d.taskID
+	return d.exec(cmd, func(runErr error) tea.Msg {
+		defer func() { _ = os.Remove(path) }()
+		msg := followUpEditMsg{taskID: taskID}
+		if runErr != nil {
+			msg.err = runErr
+			return msg
+		}
+		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
+		if readErr != nil {
+			msg.err = readErr
+			return msg
+		}
+		msg.text = string(edited)
+		return msg
+	})
+}
+
 // writeEditorFile seeds a temp file with the text an editing session starts
 // from. The caller supplies the extension so the editor picks sensible
 // highlighting, and the name so two concurrent sessions cannot collide. It

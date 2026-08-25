@@ -49,6 +49,36 @@ func (e *RepairPromptError) Error() string {
 	return fmt.Sprintf("task %d: a repair needs a prompt", e.TaskID)
 }
 
+// FollowUpRequestError reports a follow-up the daemon cannot run: no
+// compiled workflow, or a form it does not know. The API answers 400 — the
+// handler compiles all three §6 forms, so reaching this means the request
+// never described any of them (task 027).
+type FollowUpRequestError struct {
+	TaskID  int64
+	Message string
+}
+
+func (e *FollowUpRequestError) Error() string {
+	return fmt.Sprintf("task %d: %s", e.TaskID, e.Message)
+}
+
+// FollowUpOverrideError reports an `edit + retry` aimed at a blocked
+// follow-up step. The API answers 400.
+//
+// An override rewrites the step it names *in the task's snapshot* (§5.3), and
+// a follow-up is deliberately not in the snapshot (task 027 decision 1) —
+// there is nothing there to rewrite. A plain `retry` re-runs the follow-up
+// from its cursor, which is the action that means what the human wants here.
+type FollowUpOverrideError struct {
+	TaskID int64
+}
+
+func (e *FollowUpOverrideError) Error() string {
+	return fmt.Sprintf(
+		"task %d is blocked in a follow-up run, which is not part of its workflow snapshot: "+
+			"retry without an override, or start another follow-up", e.TaskID)
+}
+
 // Cancel aborts a task and stops any process it is running (§6). The task
 // reaches `aborted` first, so a client that observes the state knows the
 // decision is final even while the process tree is still winding down.
@@ -144,6 +174,12 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 	now := time.Now()
 	ch := store.TaskChange{RetryCursorAt: &now}
 	if !ov.Empty() {
+		if _, inFollowUp := r.followUpOf(task); inFollowUp {
+			// The follow-up survives the retry (task 027 decision 6), so a
+			// plain retry re-runs it from its cursor. An override has nowhere
+			// to land: the follow-up is not a step of the snapshot.
+			return nil, &FollowUpOverrideError{TaskID: id}
+		}
 		target, err := r.overrideTarget(ctx, task)
 		if err != nil {
 			return nil, err
@@ -187,6 +223,44 @@ func (r *Runner) Repair(ctx context.Context, id int64, req store.RepairRequest) 
 	return r.transitionFrom(ctx, task, taskstate.Repair, store.TaskChange{PendingRepair: &req})
 }
 
+// FollowUp runs one more piece of work in a finished task's existing
+// worktree and branch, before it is archived (§6, task 027).
+//
+// It is `repair`'s shape at the other end of the lifecycle: the request is
+// persisted on the task, the task is re-queued, and the scheduler admits it
+// exactly like anything else — so both §11 caps apply and internal/scheduler
+// stays the only producer of `queued → running`. The actor that admission
+// starts walks the request's own workflow and returns the task to the state
+// it came from (decision 5).
+//
+// Like Repair, and unlike Retry, it must not stamp `retry_cursor_at`: the
+// original workflow's retry budgets are none of a follow-up's business, and
+// moving the cursor would hand every step of the finished run a fresh budget
+// nobody asked for (§7.2).
+func (r *Runner) FollowUp(ctx context.Context, id int64, req store.FollowUpRequest) (*store.Task, error) {
+	if req.Empty() {
+		return nil, &FollowUpRequestError{TaskID: id, Message: "a follow-up needs something to run"}
+	}
+	task, err := r.deps.Store.GetTask(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !taskstate.Can(task.State, taskstate.FollowUp) {
+		return nil, &InvalidActionError{TaskID: id, Action: taskstate.FollowUp, State: task.State}
+	}
+	// The origin rides the request because the transition about to happen
+	// leaves `done`/`aborted`, and the ending has to put the same one back: a
+	// follow-up decides nothing about the task's verdict (decision 5).
+	req.Origin = task.State
+	round, err := r.followUpRound(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	req.Round, req.Cursor, req.Abandoned = round, 0, false
+	return r.transitionFrom(ctx, task, taskstate.FollowUp,
+		store.TaskChange{PendingFollowUp: &req})
+}
+
 // Skip marks the current step skipped and advances (§6). From a gate the
 // open manual row is closed in place; from blocked the failed row stays and
 // a fresh `skipped` row records the decision, so every step index a task
@@ -199,12 +273,26 @@ func (r *Runner) Skip(ctx context.Context, id int64) (*store.Task, error) {
 	if !taskstate.Can(task.State, taskstate.Skip) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Skip, State: task.State}
 	}
+	at, inFollowUp := r.followUpOf(task)
 	if err := r.recordStepDecision(ctx, task, store.StepSkipped, ""); err != nil {
 		return nil, err
 	}
 	// Skipping moves past the step an edit+retry was aimed at; a surviving
 	// override must not drain onto some later step's attempt.
 	ch := advance(task)
+	switch {
+	case inFollowUp && task.State == store.TaskBlocked:
+		// The one place `skip` does not advance anything (task 027
+		// decision 6): a follow-up step failed, and the human is saying
+		// "stop". The request is marked abandoned and the next admission
+		// restores `done` or `aborted` without running a thing.
+		ch = abandonFollowUp(at)
+	case inFollowUp:
+		// A gate inside a follow-up. Skipping it advances the *follow-up's*
+		// cursor, never `current_step`, which names where the finished
+		// workflow run ended (decision 4).
+		ch = advanceFollowUp(at)
+	}
 	var noOverride store.Override
 	ch.PendingOverride = &noOverride
 	return r.transitionFrom(ctx, task, taskstate.Skip, ch)
@@ -219,10 +307,18 @@ func (r *Runner) Approve(ctx context.Context, id int64) (*store.Task, error) {
 	if !taskstate.Can(task.State, taskstate.Approve) {
 		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Approve, State: task.State}
 	}
+	at, inFollowUp := r.followUpOf(task)
 	if err := r.recordStepDecision(ctx, task, store.StepApproved, ""); err != nil {
 		return nil, err
 	}
-	return r.transitionFrom(ctx, task, taskstate.Approve, advance(task))
+	// A gate inside a follow-up advances the follow-up's own cursor
+	// (task 027 decision 4); `current_step` is left where the finished run
+	// put it.
+	ch := advance(task)
+	if inFollowUp {
+		ch = advanceFollowUp(at)
+	}
+	return r.transitionFrom(ctx, task, taskstate.Approve, ch)
 }
 
 // Reject fails a manual gate: the step is rejected and the task blocks, from
@@ -470,15 +566,15 @@ func (r *Runner) recordStepDecision(
 		// here would record a decision that is about to lose its CAS.
 		return nil
 	}
-	stepID, stepType := describeStep(task, task.CurrentStep)
+	index, stepID, stepType := r.decisionPosition(task)
 	attempts, err := r.deps.Store.CountStepAttempts(ctx,
-		store.StepRef{TaskID: task.ID, StepIndex: task.CurrentStep, StepID: stepID}, time.Time{})
+		store.StepRef{TaskID: task.ID, StepIndex: index, StepID: stepID}, time.Time{})
 	if err != nil {
 		return err
 	}
 	now := time.Now()
 	run := &store.StepRun{
-		TaskID: task.ID, StepIndex: task.CurrentStep, StepID: stepID, StepType: stepType,
+		TaskID: task.ID, StepIndex: index, StepID: stepID, StepType: stepType,
 		Attempt: attempts.Last + 1, State: state, FailureReason: reason,
 		StartedAt: now, FinishedAt: &now,
 	}
@@ -493,6 +589,24 @@ func (r *Runner) recordStepDecision(
 func advance(task *store.Task) store.TaskChange {
 	next := task.CurrentStep + 1
 	return store.TaskChange{CurrentStep: &next}
+}
+
+// decisionPosition names the row a human decision belongs to: the task's own
+// cursor, or — while a follow-up run is in flight — that round's index and
+// the step its cursor points at (task 027 decision 4).
+//
+// Without this a `skip` on a blocked follow-up would write its `skipped` row
+// against whatever the snapshot has at `current_step`, which for a finished
+// task is nothing at all.
+func (r *Runner) decisionPosition(task *store.Task) (index int, stepID, stepType string) {
+	if at, ok := r.followUpOf(task); ok {
+		if at.hasStep {
+			return at.index, at.step.ID, at.step.Type
+		}
+		return at.index, FollowUpStepID, workflow.StepManual
+	}
+	id, typ := describeStep(task, task.CurrentStep)
+	return task.CurrentStep, id, typ
 }
 
 // overrideTarget names the step an `edit + retry` rewrites: the current step,
@@ -604,6 +718,22 @@ func AsOverrideMismatch(err error) (*OverrideMismatchError, bool) {
 // is.
 func AsRepairPrompt(err error) (*RepairPromptError, bool) {
 	var e *RepairPromptError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
+// AsFollowUpRequest extracts a *FollowUpRequestError from err, if that is
+// what it is.
+func AsFollowUpRequest(err error) (*FollowUpRequestError, bool) {
+	var e *FollowUpRequestError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
+// AsFollowUpOverride extracts a *FollowUpOverrideError from err, if that is
+// what it is.
+func AsFollowUpOverride(err error) (*FollowUpOverrideError, bool) {
+	var e *FollowUpOverrideError
 	ok := errors.As(err, &e)
 	return e, ok
 }

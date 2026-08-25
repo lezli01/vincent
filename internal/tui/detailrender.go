@@ -184,6 +184,12 @@ func (d *detail) detailHints() []string {
 	if d.target().has(apiclient.ActionRepair) {
 		hints = append(hints, styleKey.Render("R")+" repair")
 	}
+	// `follow_up` has no row in actionOrder either, and for the same reason:
+	// three run forms need a chooser, so it is a form rather than a key that
+	// acts (task 027).
+	if d.target().has(apiclient.ActionFollowUp) {
+		hints = append(hints, styleKey.Render("F")+" follow-up")
+	}
 	return hints
 }
 
@@ -269,25 +275,16 @@ func (d *detail) renderTimeline(height int) string {
 	lastSub := ""
 	for _, r := range runs {
 		looped := loops[r.StepIndex]
-		grouped := groups[r.StepIndex] && !looped
+		// A follow-up round sits past the workflow's last index and is not a
+		// step of it (task 027). Its steps share the round's index, so they
+		// get the sub-tier a `parallel` group's members get — which is why it
+		// counts as grouped whatever groupedIndexes made of it.
+		round := d.followUpRound(r.StepIndex)
+		grouped := (groups[r.StepIndex] || round > 0) && !looped
 		if r.StepIndex != lastStep {
 			lastStep = r.StepIndex
 			lastSub, lastIteration = "", 0
-			label := stepLabel(r)
-			switch {
-			case looped:
-				label = d.structureLabel(r.StepIndex, "loop")
-			case grouped:
-				label = d.structureLabel(r.StepIndex, "parallel")
-			}
-			header := fmt.Sprintf("  %d %s", r.StepIndex+1, label)
-			if from := d.includedFrom(r.StepIndex); from != "" {
-				// A spliced step is an ordinary step in every other respect,
-				// so the only thing worth saying is where it was written
-				// (§7.9). The full chain is in the workflow graph's inspector.
-				header += styleDim.Render("  from " + from)
-			}
-			lines = append(lines, styleStepHeader.Render(header))
+			lines = append(lines, styleStepHeader.Render(d.timelineHeader(r, round, looped, grouped)))
 			ids = append(ids, 0)
 		}
 		if looped && r.Iteration != lastIteration {
@@ -342,9 +339,52 @@ func (d *detail) renderTimeline(height int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
+// timelineHeader is the line that opens one step index: its number and name
+// for a workflow step, and a tier of its own for a follow-up round.
+//
+// A round is numbered as a round, not as step `step_total+n`: numbering it
+// "5" on a four-step workflow would say the workflow grew, which is the one
+// thing task 027 decision 1 refused to do.
+func (d *detail) timelineHeader(r apiclient.StepRun, round int, looped, grouped bool) string {
+	if round > 0 {
+		return fmt.Sprintf("  ↳ follow-up %d", round)
+	}
+	label := stepLabel(r)
+	switch {
+	case looped:
+		label = d.structureLabel(r.StepIndex, "loop")
+	case grouped:
+		label = d.structureLabel(r.StepIndex, "parallel")
+	}
+	header := fmt.Sprintf("  %d %s", r.StepIndex+1, label)
+	if from := d.includedFrom(r.StepIndex); from != "" {
+		// A spliced step is an ordinary step in every other respect, so the
+		// only thing worth saying is where it was written (§7.9). The full
+		// chain is in the workflow graph's inspector.
+		header += styleDim.Render("  from " + from)
+	}
+	return header
+}
+
 // isRepairRun reports whether a row is an ad-hoc repair rather than an
 // attempt of the step at its index (§5.4, task 025).
 func isRepairRun(r apiclient.StepRun) bool { return r.StepID == apiclient.RepairStepID }
+
+// followUpRound is the 1-based follow-up round a step index belongs to, and 0
+// when the index is one of the workflow's own steps (§5.4, task 027).
+//
+// Where a repair is told apart by a reserved step id, a follow-up is told
+// apart by *position*: its rows sit at `step_total + round - 1`, and its step
+// ids are the ones its author wrote. A client with no step_total — a task
+// whose snapshot never arrived — reports 0 and renders the rows as ordinary
+// steps, which is the safe way to be wrong.
+func (d *detail) followUpRound(index int) int {
+	total := d.task.StepTotal
+	if total <= 0 || index < total {
+		return 0
+	}
+	return index - total + 1
+}
 
 // groupedIndexes reports which step indexes hold more than one distinct step
 // id — which is exactly the `parallel` groups, since every other step type
