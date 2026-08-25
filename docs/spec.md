@@ -2826,6 +2826,41 @@ attempt ended, read before the new attempt's row exists.
   "details": {"state": "running"}}}`. `details` is omitted when empty, so responses
   that carry no structured detail are unchanged.
 
+*Amended 2026-08-25 (issue #140).* A request body is **exactly one JSON document,
+bounded, and labelled JSON** — three rules the transport applies before any endpoint
+in §13.2 sees the body:
+
+- **One document.** The body carries one JSON value, followed only by whitespace.
+  Two concatenated documents, or a document followed by anything else, are `400`
+  `invalid_json`; the second document is never acted on and never silently
+  discarded. (Discarding it is what happened before this amendment: the decoder
+  stopped at the end of the first value and the request was answered `2xx`.)
+- **Bounded.** A body is read up to a fixed limit and no further: **64 KiB** for an
+  ordinary request, and **4 MiB** for the routes that legitimately carry a workflow
+  source or an agent prompt (`POST /v1/tasks`, `retry`/`repair`/`answer` on a task,
+  `POST /v1/resolve`, `POST /v1/workflows/validate`). Over the bound is
+  `413` `payload_too_large`, naming the limit and never echoing the body. Fixed, not
+  configurable — the same treatment §5.2 gives a workflow source, and for the same
+  reason. Individual fields are bounded too (title, description, `fields` and
+  `answers` keys, values and entry counts, prompt and run overrides, names and
+  branch names); over a field bound is `400` `validation_failed` naming the field
+  and the limit.
+- **Labelled JSON, leniently.** A body with no `Content-Type`, or any `*/json` or
+  `*+json` type with any parameters, is accepted. A non-empty body labelled a
+  clearly non-JSON type — `text/html`, or the `application/x-www-form-urlencoded`
+  a plain `curl -d` sends — is `415` `unsupported_media_type`.
+
+`POST /v1/workflows/validate` bounds its `yaml` at §5.2's 1 MiB source limit, the
+same artifact under the same bound wherever it enters the daemon; a source of
+exactly the limit still validates.
+
+The server also bounds how long a request may take to arrive: a read-header
+timeout, a whole-request read timeout, and an idle timeout on kept-alive
+connections. There is deliberately **no write timeout** — §13.3's streams are
+long-lived by contract and a server-wide write deadline would sever every one of
+them. The read deadline covers reading the *request*, so it does not shorten an
+SSE response.
+
 ### 13.2 Endpoints
 
 ```

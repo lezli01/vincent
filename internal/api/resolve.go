@@ -82,8 +82,20 @@ type resolvedBranch struct {
 // decision that resolution stays server-side is honored, not relitigated).
 func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 	var req resolveRequest
-	if !decodeJSON(w, r, &req) {
+	// The same bound as POST /v1/tasks: this body is that body's draft, and a
+	// draft the daemon refuses to read is one the form could still submit.
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
+	}
+	for _, b := range []string{
+		boundTaskFields(req.Title, "", req.Fields),
+		boundString("base_branch", req.BaseBranch, maxNameBytes),
+		boundString("branch_name", req.BranchName, maxNameBytes),
+	} {
+		if b != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
+			return
+		}
 	}
 	name := strings.TrimSpace(req.Workflow)
 	if name == "" {

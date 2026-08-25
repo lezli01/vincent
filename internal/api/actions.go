@@ -74,8 +74,18 @@ type retryRequest struct {
 
 func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 	var req retryRequest
-	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+	if r.ContentLength != 0 && !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
+	}
+	for _, b := range []string{
+		boundString("prompt_override", req.PromptOverride, maxPromptBytes),
+		boundString("run_override", req.RunOverride, maxCommandBytes),
+		boundString("branch_override", req.BranchOverride, maxNameBytes),
+	} {
+		if b != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
+			return
+		}
 	}
 	if branch := strings.TrimSpace(req.BranchOverride); branch != "" {
 		if !s.renameBranchForRetry(w, r, branch) {
@@ -120,12 +130,16 @@ type repairRequest struct {
 // selection can raise, which taskAction has no room for.
 func (s *Server) handleTaskRepair(w http.ResponseWriter, r *http.Request) {
 	var req repairRequest
-	if !decodeJSON(w, r, &req) {
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			"prompt is required: a repair agent needs something to be told")
+		return
+	}
+	if b := boundString("prompt", req.Prompt, maxPromptBytes); b != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
 		return
 	}
 	if s.deps.Runner == nil {
@@ -548,9 +562,38 @@ func (v *answerValues) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// boundAnswers bounds an answer map: §13.1's entry count on the map itself,
+// on the values of any one answer, and on each question and answer string. The
+// values are templated into a resumed step's prompt, so they are bounded like
+// any other prompt input.
+func boundAnswers(answers map[string]answerValues) string {
+	if msg := boundCount("answers", len(answers), maxFieldCount); msg != "" {
+		return msg
+	}
+	for text, vals := range answers {
+		if msg := boundString("answers key", text, maxFieldKeyBytes); msg != "" {
+			return msg
+		}
+		field := fmt.Sprintf("answers[%s]", truncKey(text))
+		if msg := boundCount(field, len(vals), maxValueCount); msg != "" {
+			return msg
+		}
+		for _, v := range vals {
+			if msg := boundString(field, v, maxFieldValueBytes); msg != "" {
+				return msg
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Server) handleTaskAnswer(w http.ResponseWriter, r *http.Request) {
 	var req answerRequest
-	if !decodeJSON(w, r, &req) {
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
+		return
+	}
+	if b := boundAnswers(req.Answers); b != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
 		return
 	}
 	in := taskrun.AnswerInput{Allow: req.Allow}

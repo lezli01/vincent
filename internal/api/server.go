@@ -130,6 +130,19 @@ func New(deps Deps) *Server {
 	s.httpSrv = &http.Server{
 		Handler:           s.handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		// ReadTimeout bounds reading a whole request, headers and body. Without
+		// it a client that sends headers and then dribbles a body holds a
+		// connection and a goroutine for as long as it likes (§13.1, amended
+		// 2026-08-25). It does not reach §13.3's streams: the deadline covers
+		// reading the *request*, and an SSE response outlives it — a client
+		// disconnect is still noticed, by the write that then fails.
+		ReadTimeout: 30 * time.Second,
+		// IdleTimeout closes a kept-alive connection nobody is using; without
+		// one an idle connection lives as long as the daemon.
+		IdleTimeout: 120 * time.Second,
+		// No WriteTimeout, deliberately. §13.3's state and per-task streams are
+		// long-lived by contract, and a server-wide write deadline would sever
+		// every one of them at the deadline.
 	}
 	return s
 }

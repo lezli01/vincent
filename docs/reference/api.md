@@ -5,6 +5,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 
 - [Transport and auth](#transport-and-auth)
 - [Errors](#errors)
+- [Request bodies](#request-bodies)
 - [Daemon](#daemon)
 - [Doctor](#doctor)
 - [Projects](#projects)
@@ -44,6 +45,53 @@ Codes are stable `snake_case` strings; HTTP status codes are used properly.
 `details` is optional and carries values a client should branch on rather than
 parse out of prose — an invalid state transition is always `409` with
 `details.state` set to the state actually found. It is omitted when empty.
+
+## Request bodies
+
+Three rules apply to every request body, before the endpoint sees it.
+
+**One JSON document.** A body is one JSON value followed only by whitespace.
+Two concatenated documents — a retry that rewrites the body, a `jq -c` loop
+piped into one `curl -d @-` — are `400 invalid_json`. Nothing after the first
+document is ever acted on, and nothing is silently discarded.
+
+**Bounded.** Bodies are read up to a fixed limit and no further. Over it is
+`413 payload_too_large` with a message naming the limit; the body is never
+echoed back.
+
+| Limit | Bytes | Applies to |
+|---|---|---|
+| Ordinary request body | 64 KiB | every route not listed below |
+| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate` — the bodies that carry a prompt or a workflow source |
+| `yaml` in `POST /v1/workflows/validate` | 1 MiB | the same bound a workflow file gets when the registry loads it |
+
+Individual fields are bounded too — over one is `400 validation_failed` naming
+the field and the limit:
+
+| Field | Bytes / count |
+|---|---|
+| `title` | 1 KiB |
+| `description` | 64 KiB |
+| project `name`, `branch_name`, `base_branch`, `branch_override` | 512 B |
+| `prompt`, `prompt_override` | 1 MiB |
+| `run_override` | 16 KiB |
+| one `fields` / `answers` key | 256 B |
+| one `fields` / `answers` value | 64 KiB |
+| `fields` / `answers` entries, values per answer | 100 |
+
+These are fixed constants, not configuration: a body larger than one of them is
+a buggy client rather than a workload to tune for.
+
+**Labelled JSON, leniently.** Send `Content-Type: application/json`. A body with
+*no* `Content-Type` is accepted (so `curl --data-binary @file.json` with no
+header still works), as is any `*/json` or `*+json` type with any parameters. A
+non-empty body labelled something clearly not JSON — `text/html`, or the
+`application/x-www-form-urlencoded` that a plain `curl -d` sends without `-H` —
+is `415 unsupported_media_type`.
+
+The server also bounds how long a request may take to arrive (read-header, whole
+request, and idle-connection timeouts). Responses are not bounded: SSE streams
+are long-lived by contract and no write deadline is set.
 
 ---
 
