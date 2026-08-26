@@ -43,6 +43,11 @@ type Task struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 
+	// StatusMessage is the newest step run's status message (§5.4, task
+	// 033), served on the list row so a board never fetches step rows for
+	// it. Nil when the newest attempt said nothing.
+	StatusMessage *string `json:"status_message"`
+
 	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
 	// 014); all nil for a root task.
 	ParentTaskID *int64  `json:"parent_task_id"`
@@ -205,6 +210,13 @@ type StepRun struct {
 	// carry State "skipped".
 	SkipReason    *string `json:"skip_reason"`
 	ResultSummary string  `json:"result_summary"`
+	// StatusMessage is what the step said about itself (§5.4, task 033):
+	// free text its own process set while it was running, and nil when it
+	// said nothing. It is never a failure cause — `failure_reason` is the
+	// daemon's verdict, and a killed step can be carrying a message it set
+	// long before — so a client renders it as the step's last status, not
+	// beside the reason.
+	StatusMessage *string `json:"status_message"`
 
 	// TranscriptPath is nil for a step that produced no transcript — a manual
 	// gate or a skipped step. The output pane renders such a row's metadata
