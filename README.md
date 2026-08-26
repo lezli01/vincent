@@ -193,7 +193,8 @@ vincent workflow validate .vincent/workflows/feature-pr.yaml
 ```
 
 Every subcommand takes `--json` for scripting. Exit codes are `0` success,
-`1` the daemon answered and rejected the request, and `2` no daemon answered
+`1` the request was rejected — by the daemon, or by a daemon-free command such as
+`workflow validate` on an invalid file — and `2` no daemon answered
 — so a script can tell "start the daemon" from "fix your request" without
 parsing stderr. The subcommands never auto-start a daemon; only the TUI does,
 because that is an interactive session you asked for.

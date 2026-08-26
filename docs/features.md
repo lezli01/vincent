@@ -248,6 +248,7 @@ installation, service, shell, and restricted-mode differences are documented in
 - **Repeatable maintenance:** replace prompt-heavy steps with commands where the
   operation is deterministic, reserving agent calls for reasoning and edits.
 
-Ready to try it? Follow the [Quickstart](getting-started/quickstart.md), copy one
-of the [example workflows](../examples), or install the
+Ready to try it? Follow the [Quickstart](getting-started/quickstart.md), write
+your first workflow with `vincent workflow init` (`--from` starts it from one of
+the [example workflows](../examples)), or install the
 [workflow-authoring skill](../skills/vincent-workflows/SKILL.md).

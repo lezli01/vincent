@@ -498,11 +498,12 @@ Needs a daemon: only the daemon knows which projects exist.
 vincent workflow validate <file> [--json]
 ```
 
-Validates a workflow file. **This is the one command that needs no daemon** — no
-network, no agent CLI installed — which makes it usable from a pre-commit hook or
-a CI job. ([`vincent daemon restore`](#vincent-daemon-restore) also runs without
-one, but it *refuses* to run while a daemon is up rather than merely tolerating
-its absence.)
+Validates a workflow file. **It needs no daemon** — no network, no agent CLI
+installed — which makes it usable from a pre-commit hook or a CI job.
+([`vincent workflow init`](#vincent-workflow-init) is daemon-free too, except for
+`--project`; [`vincent daemon restore`](#vincent-daemon-restore) also runs
+without one, but it *refuses* to run while a daemon is up rather than merely
+tolerating its absence.)
 
 Exit `0` valid, `1` invalid. Warnings (a model in no catalog) print but do not
 fail the command.
