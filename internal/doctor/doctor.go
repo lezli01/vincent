@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -53,8 +54,14 @@ type Report struct {
 	Log         Log       `json:"log"`
 	Database    Database  `json:"database"`
 	Agents      []Agent   `json:"agents"`
-	Storage     Storage   `json:"storage"`
-	Tasks       Tasks     `json:"tasks"`
+	// GitHub is the read-only issue integration's environment check (task
+	// 035): the config toggle, `gh`'s presence and login state, and whether a
+	// token was inherited instead. It is a **row, not a problem**: task
+	// creation without an issue is unaffected by every "no" it can report, so
+	// nothing here makes `vincent doctor` exit 1.
+	GitHub  GitHub  `json:"github"`
+	Storage Storage `json:"storage"`
+	Tasks   Tasks   `json:"tasks"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
 	// 1 (task 005 decision 7). It is computed by Evaluate, on the server as
 	// well as locally, so a client never re-derives the verdict.
@@ -175,6 +182,20 @@ type Agent struct {
 	// — claude today (§9.5). It is never a guess.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
+}
+
+// GitHub is the §12.1 row for the GitHub issue integration (task 035). It
+// answers the question the daemon log used to answer alone: why is the issue
+// picker not offered?
+type GitHub struct {
+	// Enabled is `github.enabled` from config.yaml (§12.3).
+	Enabled bool `json:"enabled"`
+	github.Detection
+	// Usable is Detection.Usable(), rendered so a JSON consumer need not
+	// re-derive it from Via.
+	Usable bool `json:"usable"`
+	// Message is Reason spelled for a human, empty when Usable.
+	Message string `json:"message,omitempty"`
 }
 
 // Storage is the data dir's footprint (§17) and the §10 residue.
@@ -305,6 +326,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 	} else {
 		r.Agents = DetectAgents(ctx, cfg)
 	}
+	r.GitHub = DetectGitHub(ctx, cfg)
 	r.Storage = inspectStorage(ctx, opts)
 	r.Evaluate()
 	return r
@@ -420,6 +442,27 @@ func DetectAgents(ctx context.Context, cfg config.Config) []Agent {
 			LoggedIn:  av.LoggedIn,
 			Error:     av.Error,
 		})
+	}
+	return out
+}
+
+// DetectGitHub reports how this process would read GitHub (task 035). It is
+// exported and composable without a daemon for the reason DetectAgents is:
+// `vincent doctor` answers from the machine it runs on, and the whole point of
+// this row is to be readable when no daemon is up to ask.
+//
+// A disabled integration is still probed for `gh`. The row then reads
+// "enabled: false" beside an accurate environment picture, which is what a
+// user who just turned it off and wants to turn it back on needs to see.
+func DetectGitHub(ctx context.Context, cfg config.Config) GitHub {
+	detection := github.New(github.Options{}).Detect(ctx)
+	out := GitHub{
+		Enabled:   cfg.GitHub.Enabled,
+		Detection: detection,
+		Usable:    detection.Usable(),
+	}
+	if !out.Usable {
+		out.Message = github.Message(detection.Reason)
 	}
 	return out
 }

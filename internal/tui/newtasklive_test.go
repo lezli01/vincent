@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
@@ -63,8 +65,31 @@ type newTaskLiveHarness struct {
 	projectID int64
 }
 
+// liveOptions are the seams a test varies. The zero value is the harness
+// every pre-task-035 test uses: no GitHub client, no remote on the repo, the
+// default configuration.
+type liveOptions struct {
+	// github is the daemon's issue reader; nil leaves the integration
+	// unusable, which is what a machine with no `gh` and no token looks like.
+	github *github.Client
+	// remote is the project repo's `origin`, unset for a repository that has
+	// none.
+	remote string
+	// config overrides the daemon configuration; nil means config.Default.
+	config func() config.Config
+}
+
 func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 	t.Helper()
+	return newNewTaskLiveHarnessWith(t, liveOptions{})
+}
+
+func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarness {
+	t.Helper()
+	cfg := opts.config
+	if cfg == nil {
+		cfg = config.Default
+	}
 	const token = "newtask-token"
 	fake := agenttest.BuildFakeAgent(t)
 
@@ -100,7 +125,7 @@ func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 
 	runner := taskrun.New(taskrun.Deps{
 		Store:     st,
-		Config:    config.Default,
+		Config:    cfg,
 		Worktrees: wt,
 		Agents:    agents,
 		DataDir:   dataDir,
@@ -109,7 +134,7 @@ func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 	})
 	sched := scheduler.New(scheduler.Deps{
 		Store:    st,
-		Config:   config.Default,
+		Config:   cfg,
 		Admitter: runner,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -122,7 +147,7 @@ func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 
 	s := api.New(api.Deps{
 		Token:       token,
-		Config:      config.Default,
+		Config:      cfg,
 		StartedAt:   time.Now(),
 		ListenAddr:  "127.0.0.1:0",
 		RequestStop: func() {},
@@ -136,6 +161,7 @@ func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 		Worktrees:   wt,
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
+		GitHub:      opts.github,
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -179,11 +205,23 @@ func newNewTaskLiveHarness(t *testing.T) *newTaskLiveHarness {
 	p.until(10*time.Second, "the event stream to go live", func() bool { return m.streamLive })
 
 	repo := testrepo.Init(t, "main")
+	if opts.remote != "" {
+		addLiveRemote(t, repo, opts.remote)
+	}
 	proj := &store.Project{Name: "live", Path: repo, DefaultBranch: "main"}
 	if err := st.CreateProject(context.Background(), proj); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	return &newTaskLiveHarness{st: st, m: m, p: p, projectID: proj.ID}
+}
+
+func addLiveRemote(t *testing.T, repo, remote string) {
+	t.Helper()
+	cmd := exec.Command("git", "remote", "add", "origin", remote)
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
 }
 
 // form is the new-task view as the shell holds it.

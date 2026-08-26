@@ -220,6 +220,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{"LOG", doctorLogRows(rep.Log)},
 		{"DATABASE", doctorDatabaseRows(rep.Database)},
 		{"AGENTS", doctorAgentRows(rep.Agents)},
+		{"GITHUB", doctorGitHubRows(rep.GitHub)},
 		{"STORAGE", doctorStorageRows(rep.Storage)},
 		{"TASKS", doctorTaskRows(rep.Tasks)},
 	}
@@ -379,6 +380,57 @@ func doctorAgentRows(agents []apiclient.DoctorAgent) [][]string {
 		rows = append(rows, []string{a.Name, strings.Join(parts, "  ")})
 	}
 	return rows
+}
+
+// doctorGitHubRows renders the GitHub issue integration row (task 035).
+//
+// It never accuses: every "no" here — the toggle off, `gh` missing, `gh`
+// logged out, no token — leaves task creation without an issue working
+// exactly as before, so the row states the facts and the consequence and
+// stops there. That is also why none of it is a Problem: `vincent doctor`
+// does not exit 1 over it.
+func doctorGitHubRows(gh apiclient.DoctorGitHub) [][]string {
+	rows := [][]string{{"enabled", boolWord(gh.Enabled)}}
+
+	ghParts := []string{"not found"}
+	if gh.GHFound {
+		ghParts = []string{"found"}
+		if gh.GHVersion != "" {
+			ghParts = append(ghParts, gh.GHVersion)
+		}
+		ghParts = append(ghParts, "auth "+boolWord(gh.GHAuthenticated))
+		if gh.GHPath != "" {
+			ghParts = append(ghParts, gh.GHPath)
+		}
+	}
+	rows = append(rows, []string{"gh cli", strings.Join(ghParts, "  ")})
+
+	token := "not set"
+	if gh.TokenVar != "" {
+		// The variable's name, never its value.
+		token = "set (" + gh.TokenVar + ")"
+	}
+	rows = append(rows, []string{"token", token})
+
+	switch {
+	case gh.Usable:
+		rows = append(rows, []string{"issues", "readable via " + gh.Via})
+	case !gh.Enabled:
+		rows = append(rows, []string{"issues", "not read (integration disabled)"})
+	default:
+		rows = append(rows, []string{"issues", "unavailable: " + gh.Message +
+			"; tasks can still be created without an issue"})
+	}
+	return rows
+}
+
+// boolWord is the plain yes/no this section needs; the agents section's
+// loggedInWord is a tri-state and cannot be reused for a definite boolean.
+func boolWord(v bool) string {
+	if v {
+		return "yes"
+	}
+	return "no"
 }
 
 // loggedInWord renders the §9.5 tri-state. "unknown" is a real answer, not a

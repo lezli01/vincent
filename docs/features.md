@@ -15,6 +15,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
+| GitHub | Create a task from an issue, prefilled and editable; issue details in templates; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a signed and notarized macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -187,11 +188,41 @@ localhost API.
 Start with [Scripting vincent](guides/scripting.md), then use the complete
 [HTTP API reference](reference/api.md) when you need direct integration.
 
+## Start from a GitHub issue
+
+On a project whose `origin` remote points at github.com, the new-task form
+offers an issue row above the title. It opens the same type-to-filter picker the
+project and workflow rows use, listing open issues newest first. Selecting one
+fills in the title, the body plus a `GitHub issue #N: <url>` link line, and any
+declared `fields:` named exactly `labels`, `assignee`, or `milestone`. Every
+value lands in an ordinary editable row, so a guess can be corrected or cleared
+before the task exists.
+
+Templates receive the issue as `.Issue` — number, title, body, URL, state,
+labels, author, assignee, and milestone — zero-valued when nothing is linked, so
+`{{ if .Issue.Number }}` lets one workflow serve both. The issue is fetched once
+at creation and stored on the task, so runs stay reproducible and no step render
+touches the network. Fan-out lanes inherit their parent's issue.
+
+`vincent task add --github-issue 200` takes the same path as the form, with
+explicit flags winning, and `vincent github issues` lists issues without the TUI.
+
+vincent stores no credential: it prefers your existing `gh` CLI and falls back to
+`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Access is read-only —
+nothing is ever written to GitHub. When it is unavailable the row does not
+appear, `vincent doctor` reports why, and everything else is unaffected. Set
+`github.enabled: false` in `config.yaml` to switch it off entirely.
+
+See the [new-task form](guides/tui.md), the
+[configuration reference](reference/configuration.md), and the
+[workflow schema](reference/workflow-schema.md) for `.Issue`.
+
 ## Diagnose and maintain it
 
 `vincent doctor` produces one report covering paths, configuration, daemon
 health, the recent log tail, the database's footprint, row counts and integrity,
-agent availability and login state, disk use, worktrees, and task counts. It supports JSON output for bug
+agent availability and login state, the GitHub integration, disk use, worktrees,
+and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.
 

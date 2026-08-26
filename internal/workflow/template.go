@@ -23,7 +23,17 @@ type RenderContext struct {
 	// Loop is where this step sits inside an enclosing `loop` (§7.8, task 016
 	// decision 9). Its zero value — `Index: 0` — is what every step outside a
 	// loop renders with, so a template shared between the two can tell.
-	Loop        LoopContext
+	Loop LoopContext
+	// Issue is the GitHub issue this task was created from (§8.4, task 035).
+	// Its zero value — `Number: 0` — is what every task created without one
+	// renders with, exactly the way `.Loop`'s `Index: 0` works, so
+	// `{{ if .Issue.Number }}` tells the two apart and a template shared
+	// between linked and unlinked tasks renders on both (decision 8).
+	//
+	// It is read from the task's snapshot, never from the network: rendering
+	// stays pure and offline, and an issue edited on GitHub after creation is
+	// deliberately not reflected.
+	Issue       IssueContext
 	Worktree    WorktreeContext
 	LastFailure Failure
 	// Host is the daemon's own platform (§8.4, task 015 decision 12). The
@@ -120,6 +130,34 @@ func (s Step) Driver() string {
 		return DriverForEach
 	}
 	return DriverCount
+}
+
+// IssueContext is `.Issue` — the GitHub issue snapshot a task carries (§8.4,
+// task 035).
+//
+// Labels is a real list, not a joined string: it is the one piece of issue
+// metadata a template genuinely wants to range over, and the comma-joined
+// spelling is what a declared `labels` task field gets instead (decision 7).
+// Everything else is a plain string for the reason `.Loop.Item` is one —
+// every other value in §8.4 is.
+//
+// This package does not import internal/github: the snapshot is mapped into
+// this shape by internal/taskrun, which keeps the render context free of the
+// fetching machinery and keeps `.Issue` renderable from a row alone.
+type IssueContext struct {
+	// Number is 0 when no issue is linked; it is the field a template tests.
+	Number int
+	// Repo is `owner/name`.
+	Repo            string
+	Title           string
+	Body            string
+	URL             string
+	State           string
+	Labels          []string
+	Author          string
+	Assignee        string
+	Milestone       string
+	MilestoneNumber int
 }
 
 // HostContext is `.Host` — the daemon's GOOS and GOARCH.

@@ -98,6 +98,18 @@ agents:
   cursor:
     path: ""
 
+# Reading GitHub issues, so a task can be created from one (task 035). It
+# applies only to a project whose "origin" remote is a github.com repository,
+# and the daemon makes no call at all until you open the issue picker or name
+# an issue on the command line.
+#
+# vincent stores no credential: it drives the "gh" CLI when it is installed
+# and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
+# environment the daemon inherited. Set enabled to false to stop the daemon
+# reading GitHub at all.
+github:
+  enabled: true
+
 # What clients render, not what the daemon does.
 tui:
   board:
@@ -583,6 +595,38 @@ the standing fix for a CLI the daemon cannot see.
 `cursor` resolves the **`cursor-agent`** binary, never `cursor` — that one is the
 editor launcher and would open a GUI.
 
+### `github`
+
+```yaml
+github:
+  enabled: true
+```
+
+Whether the daemon may read GitHub issues, so a task can be created from one.
+It is an **opt-out**: on by default, and it costs nothing until you use it.
+
+It governs **reading only**. Nothing under this key writes to GitHub, and no
+GitHub call happens while a step runs — the daemon calls when you open the issue
+picker and when it creates a task from an issue, and nowhere else. The issue is
+stored on the task at that moment and never re-read, which is why a step's
+`.Issue` renders offline and cannot fail because GitHub is down.
+
+It applies only to a project whose `origin` remote parses as a github.com
+repository. On every other project it does nothing at all — the issue row is not
+offered, and no `gh` process is started.
+
+Setting it to `false` stops the daemon reading GitHub entirely: the TUI's issue
+row disappears, `GET /v1/projects/{id}/github` reports `disabled`, and creating
+a task with `--github-issue` is refused. Read per use, so a
+[reload](#reload-semantics) governs the next call.
+
+**There is deliberately no token key here.** vincent stores no credential of its
+own. It uses the `gh` CLI when that is installed and logged in — which carries
+your own host, enterprise and SSO configuration — and otherwise reads
+`GITHUB_TOKEN` or `GH_TOKEN` from the environment the daemon inherited. Both are
+described under [environment variables](#environment-variables), and
+`vincent doctor` reports which one is in play.
+
 ### `tui`
 
 ```yaml
@@ -654,6 +698,7 @@ vincent project add /path/to/repo --name api --default-branch develop \
 | `VINCENT_DATA_DIR` | Override the data directory outright |
 | `XDG_CONFIG_HOME` / `XDG_DATA_HOME` | Honored on Linux in the normal way |
 | `EDITOR` | Used by the TUI for edit-and-retry, repair prompts, and description editing |
+| `GITHUB_TOKEN` / `GH_TOKEN` | Read by the [`github`](#github) integration when `gh` is absent or logged out. The daemon inherits whatever the process that started it had; vincent never stores a token of its own, and never reports its value — `vincent doctor` names the variable only |
 
 The two `VINCENT_*` overrides are how the test suite isolates state, and they
 are equally useful for running a second, throwaway instance:

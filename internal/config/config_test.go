@@ -104,7 +104,10 @@ agents:
 		FanOut:   FanOut{MaxDepth: 3, MaxTasks: 64},
 		Loop:     Loop{MaxIterations: 10},
 		Include:  Include{MaxDepth: 5},
-		TUI:      TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
+		// And once more for `github:` — the file names no key, so the task
+		// 035 opt-out default survives: enabled.
+		GitHub: GitHub{Enabled: true},
+		TUI:    TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)

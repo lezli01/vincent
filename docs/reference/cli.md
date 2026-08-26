@@ -70,7 +70,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Seven groups:
+One report answering "why is nothing running?". Eight groups:
 
 | Group | Rows |
 |---|---|
@@ -79,6 +79,7 @@ One report answering "why is nothing running?". Seven groups:
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, and `logged_in` |
+| GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
 
@@ -92,6 +93,13 @@ are present, or a task is **unreconciled** — `queued` (or finished) while one 
 its step runs is still marked `running`, which means crash recovery could not
 close the previous attempt and admission will not run that task until it does
 ([Troubleshooting](../guides/troubleshooting.md#start-here-vincent-doctor)).
+The **GitHub** rows never set the exit code either, and they say why: every "no"
+they can report — the toggle off, `gh` missing, `gh` logged out, no token —
+leaves task creation without an issue working exactly as before, so the row ends
+with *tasks can still be created without an issue*. The token row names the
+**variable** (`GITHUB_TOKEN` or `GH_TOKEN`), never its value: a diagnostic is
+something people paste into issues.
+
 A missing or logged-out agent CLI is reported and deliberately does
 *not* set the exit code — most machines have one of three adapters installed,
 and a doctor that exits `1` almost everywhere is no use in a script. Neither do
@@ -297,10 +305,10 @@ Lists registered projects with their ids, paths and defaults.
 ### `vincent task add`
 
 ```sh
-vincent task add --project ID --title TITLE
+vincent task add --project ID (--title TITLE | --github-issue N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
-                 [--effort E] [--field NAME=VALUE]... [--json]
+                 [--effort E] [--field NAME=VALUE]... [--github-issue N] [--json]
 ```
 
 Creates a task. It is `queued` immediately — there is no draft state.
@@ -308,13 +316,14 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | Flag | Notes |
 |---|---|
 | `--project` | **Required** |
-| `--title` | **Required**; also the source of the branch slug |
+| `--title` | Required unless `--github-issue` supplies one; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
 | `--priority` | Higher runs first; default 0 |
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
+| `--github-issue N` | Create the task from GitHub issue `N`. See below |
 
 Declared workflow fields are validated by the daemon, while additional names
 remain valid and are recorded on the same open field map:
@@ -331,6 +340,35 @@ leaking a claude alias onto a codex step.
 A value no catalog knows is accepted with a warning on stderr (the CLI is the
 final authority); a value belonging to a *different* adapter's catalog is
 rejected with exit 1.
+
+#### From a GitHub issue
+
+```sh
+vincent task add --project 1 --github-issue 200
+```
+
+```
+task 61 created: GitHub integration: select a GitHub issue when creating a task (adhoc, branch vincent/61-github-integration)
+  from lezli01/vincent#200: GitHub integration: select a GitHub issue when creating a task
+```
+
+The flag carries the **number and nothing else**. The daemon resolves the issue,
+so the command line and the TUI's issue picker go through one implementation and
+produce the same task from the same issue. It fills in the title, the
+description (the issue body plus a trailing `GitHub issue #N: <url>` line), and
+any of the workflow's declared `labels`, `assignee` or `milestone` fields whose
+declared type accepts the value.
+
+**Every explicit flag wins over what the issue would have filled in**, so
+`--title "Something else"` keeps your title and takes the rest from the issue.
+`--title` is therefore optional here, and giving neither it nor `--github-issue`
+is an error.
+
+The issue is read once and stored on the task; editing it on GitHub afterwards
+does not change what a later step renders. It needs the
+[`github` integration](configuration.md#github) on, a github.com `origin`, and a
+credential — run [`vincent github status`](#vincent-github-status) or
+[`vincent doctor`](#vincent-doctor) if the daemon refuses.
 
 ### `vincent task ls`
 
@@ -507,6 +545,51 @@ tolerating its absence.)
 
 Exit `0` valid, `1` invalid. Warnings (a model in no catalog) print but do not
 fail the command.
+
+## `vincent github`
+
+Read-only views of a project's GitHub issues. Nothing under this command writes
+to GitHub, and the daemon makes every call — a client never talks to GitHub.
+Both subcommands need a daemon.
+
+### `vincent github issues`
+
+```sh
+vincent github issues --project ID [--state open|closed|all] [--limit N] [--json]
+```
+
+Lists the project's issues, newest first. Pull requests are never included.
+
+```
+ISSUE  STATE  TITLE                                                     LABELS       ASSIGNEE
+#200   open   GitHub integration: select a GitHub issue when creating…  enhancement  -
+#199   open   Let a step report a custom status message                 enhancement  -
+```
+
+`--state` defaults to `open`, `--limit` to the daemon's own bound. Filter the
+output yourself — there is no `--query`.
+
+### `vincent github status`
+
+```sh
+vincent github status --project ID [--json]
+```
+
+Whether *this* project's issues can be read, and if not, why.
+
+```
+CHECK    VALUE
+enabled  yes
+repo     lezli01/vincent
+issues   readable via gh
+```
+
+It is the per-project half of [`vincent doctor`](#vincent-doctor)'s GitHub rows:
+doctor answers "can this machine read GitHub at all", this answers "and is this
+project one it would read". A project whose `origin` is not a github.com URL
+reports `unavailable: this project's origin remote is not a github.com
+repository` — which is not a fault, just a project the issue picker does not
+apply to.
 
 ## `vincent gc`
 

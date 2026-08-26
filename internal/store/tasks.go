@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
@@ -16,7 +17,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
-	parent_task_id, parent_step_index, lane_id, lane_order,
+	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -133,18 +134,22 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	issueJSON, err := marshalGitHubIssue(t.GitHubIssue)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 			state, current_step, block_reason,
-			parent_task_id, parent_step_index, lane_id, lane_order,
+			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
-		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder,
+		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -825,6 +830,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		parentID, parentStep           sql.NullInt64
 		laneID                         sql.NullString
 		laneOrder                      sql.NullInt64
+		githubIssue                    sql.NullString
 		created, updated               string
 		started, finished, archived    sql.NullString
 	)
@@ -834,7 +840,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
-		&parentID, &parentStep, &laneID, &laneOrder,
+		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -876,6 +882,13 @@ func scanTask(r rowScanner) (*Task, error) {
 		}
 		t.PendingFollowUp = &req
 	}
+	if githubIssue.Valid && githubIssue.String != "" {
+		var issue github.Issue
+		if err := json.Unmarshal([]byte(githubIssue.String), &issue); err != nil {
+			return nil, fmt.Errorf("github_issue_json: %w", err)
+		}
+		t.GitHubIssue = &issue
+	}
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)
 	}
@@ -905,6 +918,20 @@ func scanTask(r rowScanner) (*Task, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// marshalGitHubIssue renders a task's linked issue for storage; no issue is
+// SQL NULL, the same shape marshalFollowUp uses for its column (task 035
+// decision 3).
+func marshalGitHubIssue(issue *github.Issue) (any, error) {
+	if issue == nil || issue.Zero() {
+		return nil, nil
+	}
+	b, err := json.Marshal(issue)
+	if err != nil {
+		return nil, fmt.Errorf("marshal github issue: %w", err)
+	}
+	return string(b), nil
 }
 
 // marshalFields serializes the free-form key/value fields; nil or empty maps

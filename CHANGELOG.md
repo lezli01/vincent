@@ -11,6 +11,57 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Added
+
+- **Create a task from a GitHub issue.** Most work in a GitHub-hosted repository
+  starts life as an issue, and until now moving one into vincent meant opening it
+  in a browser and copying the title and body across by hand — the issue number
+  and URL survived only if you remembered to paste them, and the agent that
+  eventually ran the workflow never saw the issue at all. On a project whose
+  `origin` points at github.com, the new-task form now offers an **issue row**
+  above the title: it opens the same windowed, type-to-filter picker the project
+  and workflow rows use, listing open issues newest first. Picking one fills in
+  the title, the body plus a trailing `GitHub issue #N: <url>` link line so a task
+  read on its own still points back, and any of the workflow's declared `fields:`
+  named exactly `labels`, `assignee` or `milestone`. Every prefilled value lands in
+  an ordinary editable row — nothing is locked, and you can rewrite or clear all of
+  it before creating, which is the point of previewing a guess rather than applying
+  it silently at run time.
+
+  The issue also reaches your workflow templates as a new top-level **`.Issue`**
+  (`.Issue.Number`, `.Title`, `.Body`, `.URL`, `.State`, `.Labels`, `.Author`,
+  `.Assignee`, `.Milestone`), so a prompt can finally say "fix the bug described
+  below" and interpolate it. It is zero-valued when no issue is linked — the same
+  convention `.Loop.Index` already uses — so `{{ if .Issue.Number }}` tells the two
+  apart and one template renders on both. Fan-out lanes inherit the parent's issue,
+  the way they already inherit its fields.
+
+  The issue is fetched **once, at task creation, and persisted on the task**; every
+  later step renders from that snapshot. Editing the issue on GitHub afterwards
+  deliberately does not change what a step renders — the same reasoning that makes
+  vincent snapshot the workflow YAML, so a run stays reproducible and no network
+  call ever enters the step path.
+
+  Outside the TUI: `vincent task add --github-issue 200` resolves and prefills the
+  issue daemon-side, so it produces the same stored task the form does, with any
+  flag you pass explicitly winning over the issue-derived value; `vincent github
+  issues --project <id>` lists issues without opening the TUI (`--json` for
+  scripts); and `GET /v1/projects/{id}/github` and `.../github/issues` expose the
+  capability probe and the listing over the API.
+
+  vincent **stores no GitHub credential**. It prefers the `gh` CLI you have already
+  configured — which carries your own host, enterprise and SSO setup — and falls
+  back to `GITHUB_TOKEN`/`GH_TOKEN` if they happen to be in the daemon's
+  environment. The daemon makes every call; no client ever talks to GitHub. It is
+  read-only: nothing here pushes, opens a pull request, or writes anything to
+  GitHub. When the integration cannot be used — `gh` missing or logged out, no
+  token, rate-limited, offline — the issue row simply does not appear, `vincent
+  doctor` gains a **GitHub** row naming the concrete reason, and task creation
+  without an issue is entirely unaffected. `github: { enabled: true }` in
+  `config.yaml` is on by default and makes no call until you open the picker or
+  name an issue; set it to `false` to switch the whole thing off.
+  ([#200](https://github.com/lezli01/vincent/issues/200))
+
 ### Changed
 
 - **vincent is once again released under the MIT License.** The source,

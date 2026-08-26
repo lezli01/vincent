@@ -37,6 +37,9 @@ type DoctorDatabase = doctor.Database
 // DoctorAgent is one adapter's §9.5 availability in the report.
 type DoctorAgent = doctor.Agent
 
+// DoctorGitHub is the report's GitHub issue integration row (task 035).
+type DoctorGitHub = doctor.GitHub
+
 // DoctorStorage is the report's disk and worktree group.
 type DoctorStorage = doctor.Storage
 

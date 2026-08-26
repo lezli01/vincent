@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -48,6 +49,12 @@ type Deps struct {
 	Store *store.Store
 	// Git runs git commands for registration validation.
 	Git *gitx.Git
+	// GitHub reads GitHub issues for the §13.2 issue endpoints and the
+	// `github_issue` field on POST /v1/tasks (task 035). Nil is tolerated
+	// (tests without it, and any build that never wires one) — the capability
+	// probe then answers "no credential" and the issue endpoints refuse,
+	// which is exactly what a daemon with no reachable GitHub reports.
+	GitHub *github.Client
 	// Worktrees removes task worktrees during forced project deletion.
 	Worktrees *worktree.Manager
 	// Agents is the adapter registry, for task-override validation.
@@ -184,6 +191,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}", s.handleProjectGet)
 	rt.handle(http.MethodPatch, "/v1/projects/{id}", s.handleProjectPatch)
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
 	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
 	rt.handle(http.MethodGet, "/v1/workflows/definition", s.handleWorkflowDefinition)
