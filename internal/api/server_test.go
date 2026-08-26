@@ -167,13 +167,38 @@ func TestConfigView(t *testing.T) {
 			cfg.DeleteEmptyBranchOnArchive, cfg.DeleteRemoteBranchOnArchive,
 			want.DeleteEmptyBranchOnArchive, want.DeleteRemoteBranchOnArchive)
 	}
-	for _, key := range []string{"delete_empty_branch_on_archive", "delete_remote_branch_on_archive"} {
+	for _, key := range []string{
+		"delete_empty_branch_on_archive", "delete_remote_branch_on_archive", "max_task_cost_usd",
+	} {
 		if !strings.Contains(string(body), key) {
 			t.Errorf("%s missing from the config view", key)
 		}
 	}
 	if !strings.Contains(string(body), "max_parallel_tasks") {
 		t.Error("response keys are not snake_case")
+	}
+}
+
+// TestConfigViewServesTheTaskCostCap: the TUI reads no configuration from
+// disk (§15), so a cap the daemon is enforcing has to arrive over this
+// endpoint — including the zero that means it is off (task 033).
+func TestConfigViewServesTheTaskCostCap(t *testing.T) {
+	capped := func() config.Config {
+		c := config.Default()
+		c.MaxTaskCostUSD = 12.5
+		return c
+	}
+	ts, _ := newTestServer(t, capped)
+	resp, body := doRequest(t, ts, http.MethodGet, "/v1/config", testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	var cfg configResponse
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.MaxTaskCostUSD != 12.5 {
+		t.Errorf("max_task_cost_usd = %v, want 12.5", cfg.MaxTaskCostUSD)
 	}
 }
 

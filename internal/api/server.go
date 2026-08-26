@@ -368,13 +368,17 @@ type configResponse struct {
 	// The §10 branch-cleanup pair (task 008). Both are reported because the
 	// remote one is inert without the local one, and a client showing only the
 	// key that is on would describe a policy that cannot run.
-	DeleteEmptyBranchOnArchive  bool                 `json:"delete_empty_branch_on_archive"`
-	DeleteRemoteBranchOnArchive bool                 `json:"delete_remote_branch_on_archive"`
-	TranscriptRetentionDays     int                  `json:"transcript_retention_days"`
-	TranscriptMaxBytes          int64                `json:"transcript_max_bytes"`
-	UsageLimitRecheck           string               `json:"usage_limit_recheck_interval"`
-	LogLevel                    string               `json:"log_level"`
-	Agents                      map[string]agentPath `json:"agents"`
+	DeleteEmptyBranchOnArchive  bool  `json:"delete_empty_branch_on_archive"`
+	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
+	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
+	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
+	// MaxTaskCostUSD is the per-task spend ceiling; 0 is no cap (task 033).
+	// Served for the same reason every other key is: the TUI reads no
+	// configuration from disk (§15).
+	MaxTaskCostUSD    float64              `json:"max_task_cost_usd"`
+	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`
+	LogLevel          string               `json:"log_level"`
+	Agents            map[string]agentPath `json:"agents"`
 	// TUI is view preference the daemon only relays (§15): it is in the file
 	// the daemon owns and hot-reloads, so this endpoint is how the TUI — which
 	// reads no configuration of its own — gets it.
@@ -415,6 +419,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		DeleteRemoteBranchOnArchive: cfg.DeleteRemoteBranchOnArchive,
 		TranscriptRetentionDays:     cfg.TranscriptRetentionDays,
 		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
+		MaxTaskCostUSD:              cfg.MaxTaskCostUSD,
 		UsageLimitRecheck:           cfg.UsageLimitRecheckInterval.String(),
 		LogLevel:                    cfg.LogLevel,
 		Agents: map[string]agentPath{

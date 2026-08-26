@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,7 +38,29 @@ type engineHarness struct {
 	// cfg is the daemon config both the engine and the scheduler read, so a
 	// test that shrinks a cap or an interval shrinks it for the whole
 	// admission path rather than for the engine alone.
-	cfg config.Config
+	//
+	// It is guarded because config hot-reloads in production (§12.3): a test
+	// that raises a cap on a running daemon writes it from its own goroutine
+	// while the engine reads it from an admission's. Reach it through
+	// config() and reload(), never directly.
+	cfgMu sync.RWMutex
+	cfg   config.Config
+}
+
+// config is the Deps.Config hook every runner and scheduler in these tests is
+// wired with.
+func (h *engineHarness) config() config.Config {
+	h.cfgMu.RLock()
+	defer h.cfgMu.RUnlock()
+	return h.cfg
+}
+
+// reload edits the config a running daemon has loaded, which is what
+// internal/config's watcher does to it in production.
+func (h *engineHarness) reload(mutate func(*config.Config)) {
+	h.cfgMu.Lock()
+	defer h.cfgMu.Unlock()
+	mutate(&h.cfg)
 }
 
 func newEngineHarness(t *testing.T) *engineHarness { return newEngineHarnessWith(t, nil) }
@@ -67,14 +90,18 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 	if mutate != nil {
 		mutate(&cfg)
 	}
+	h := &engineHarness{
+		store: st, repo: repo,
+		dataDir: dataDir, projectID: project.ID, cfg: cfg,
+	}
 	agents := agent.NewRegistry(
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return fake }),
 		cursor.New(func() string { return fake }),
 	)
-	runner := New(Deps{
+	h.runner = New(Deps{
 		Store:     st,
-		Config:    func() config.Config { return cfg },
+		Config:    h.config,
 		Worktrees: worktree.NewManager(git, dataDir),
 		Agents:    agents,
 		// Wired as the daemon wires it, so the §7.4 `require` pre-flight is
@@ -84,10 +111,7 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 		DataDir: dataDir,
 		Logger:  log,
 	})
-	return &engineHarness{
-		store: st, runner: runner, repo: repo,
-		dataDir: dataDir, projectID: project.ID, cfg: cfg,
-	}
+	return h
 }
 
 // start runs the runner and a real scheduler for the test's lifetime, so
@@ -96,7 +120,7 @@ func (h *engineHarness) start(t *testing.T) {
 	t.Helper()
 	sched := scheduler.New(scheduler.Deps{
 		Store:    h.store,
-		Config:   func() config.Config { return h.cfg },
+		Config:   h.config,
 		Admitter: h.runner,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

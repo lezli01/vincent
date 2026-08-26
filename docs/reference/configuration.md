@@ -64,6 +64,9 @@ transcript_retention_days: 90
 # Per-attempt transcript cap.
 transcript_max_bytes: 512MB
 
+# Ceiling on what one task may spend, in US dollars. 0 disables it.
+max_task_cost_usd: 0
+
 # How long a quota-stopped task waits when the agent CLI named no reset time.
 usage_limit_recheck_interval: 15m
 
@@ -302,6 +305,44 @@ ends — a half-written line would turn a size failure into a parse failure for
 every later reader.
 
 `0` disables the cap.
+
+### `max_task_cost_usd`
+
+```yaml
+max_task_cost_usd: 5.00
+```
+
+A ceiling, in US dollars, on what **one task** may spend. `0` — the default —
+means no cap, so this changes nothing until you set it.
+
+The figure it compares against is the task's cost so far: the sum of every
+attempt of every step it has run, retries included. That is the same number the
+board and detail views show. When it goes over, the task is `blocked` with
+`cost_limit` and nothing further runs.
+
+It is a **block, not a step failure**. The step run that finished keeps its own
+state and its own reason — if it succeeded, it still reads `succeeded` — no
+retry is consumed, and a retry that was already due does not happen.
+
+**You will overshoot by up to one attempt.** The check runs after an attempt
+finishes, because that is when an agent reports what it spent; there is no
+running total to watch mid-run. An `agent_timeout` still bounds a single run.
+
+**It counts one task.** Every lane of a `fan_out` step is its own task with its
+own budget, so a cap of `$5.00` on a twenty-lane fan-out permits `$100` across
+the tree.
+
+**It is inert on codex and cursor.** Only claude reports cost. A task run
+entirely on an agent that reports none is never blocked by this, whatever you
+set — vincent will not estimate money from token counts. See
+[Agents](../guides/agents.md).
+
+The remedy when a task blocks is to raise this value and press `retry`; the file
+is hot-reloaded, so no restart is needed. Retrying *without* raising it makes
+one more attempt and blocks again. See
+[Troubleshooting](../guides/troubleshooting.md).
+
+Must not be negative.
 
 ### `usage_limit_recheck_interval`
 

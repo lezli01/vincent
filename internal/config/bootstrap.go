@@ -51,6 +51,17 @@ transcript_retention_days: 90
 # transcript_limit rather than filling the disk.
 transcript_max_bytes: 512MB
 
+# Ceiling on what one task may spend, in US dollars, summed over every attempt
+# of every step it runs. Past it the task blocks with cost_limit at the next
+# attempt boundary, so expect to overshoot by at most one attempt; raise this
+# and retry to carry on. 0 disables it, which is the default.
+#
+# It counts one task. Each fan_out lane is its own task and gets its own
+# budget, so a tree of twenty lanes may spend twenty times this. Only agents
+# that report cost are counted — codex and cursor report none, so the cap is
+# inert on them.
+max_task_cost_usd: 0
+
 # How long a task waits before trying again after its agent reported that the
 # usage quota for the window is spent, when the CLI named no reset time. When
 # it does name one, that wins and this is unused. The task keeps its place in

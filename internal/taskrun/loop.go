@@ -234,6 +234,14 @@ func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome
 		return stepOutcome{state: store.StepFailed, reason: ReasonInvalidSnapshot}, true
 	}
 	outcome := r.runStepWithRetries(ctx, env)
+	if outcome.costExceeded {
+		// The loop ends here, mid-iteration, whatever the body step itself
+		// did (task 033). This is the branch that makes the cap fire *inside*
+		// a loop rather than after it: a body step's success is otherwise
+		// discarded, and discarding it would let the remaining iterations run
+		// — the overshoot the boundary check exists to keep at one attempt.
+		return outcome, true
+	}
 	switch outcome.state {
 	case store.StepSucceeded:
 		return stepOutcome{}, false

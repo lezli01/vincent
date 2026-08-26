@@ -106,6 +106,7 @@ func (d *daemonView) configLines() []string {
 				"   input "+c.Defaults.InputTimeout),
 		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days")+
 			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
+		costCapLine(c.MaxTaskCostUSD),
 		// Both halves of the §10 pair on one line: the remote one is inert
 		// while the local one is off, so showing either alone would describe a
 		// policy that cannot run.
@@ -319,6 +320,26 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// costCapLine renders `max_task_cost_usd`, the ceiling on what one task may
+// spend before it blocks `cost_limit` (§12.3, task 033).
+//
+// An unset cap reads "off", never "$0.00": $0.00 is what a task run on an
+// adapter that reports no cost looks like, and the daemon is careful
+// everywhere else not to let those two read the same
+// (store.TaskRollup.HasCost, formatCost). The value is echoed at the
+// precision it was written rather than at two decimals — a $0.005 cap
+// rounded to "$0.01" would name a ceiling the daemon does not enforce.
+//
+// The suffix earns its space on a machine running fan-outs: the cap counts
+// one task, and every lane of a tree is its own task with its own budget.
+func costCapLine(v float64) string {
+	if v <= 0 {
+		return field("max task cost", "off")
+	}
+	return field("max task cost", "$"+strconv.FormatFloat(v, 'f', -1, 64)) +
+		styleDim.Render("   per task; fan-out lanes count separately")
 }
 
 // byteSize renders a measured byte count. It is deliberately not humanBytes:

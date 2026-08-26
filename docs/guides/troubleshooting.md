@@ -472,6 +472,7 @@ The block reason names what happened:
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
+| `cost_limit` | The task has spent past `max_task_cost_usd` (see below) |
 | `transcript_io_error` | The attempt's transcript could not be written or closed (see below) |
 | `agent_protocol_error` | vincent could not read the agent's stream to the end (see below) |
 | `rejected` | You rejected a manual gate |
@@ -557,6 +558,42 @@ One attempt produced more output than `transcript_max_bytes` (default 512MB).
 vincent kills the process rather than filling your disk, and writes the tripping
 annotation into the file so it records *why* it ends. Usually this means an agent
 or command is in a loop; fix that rather than raising the cap.
+
+### `cost_limit` — raise the cap and retry
+
+The task's cost so far — every attempt of every step, retries included — has
+passed [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd).
+vincent stopped it rather than letting it keep spending.
+
+It is a policy stop, not a broken step. The step run that just finished keeps
+its own state and reason — if it succeeded, it still reads `succeeded` — it
+consumed no retry, and a retry that was already due did not run.
+
+What to do:
+
+1. Look at what the money went on. The detail view shows cost per attempt, and
+   a task that spent more than you expected has usually been looping — an agent
+   redoing the same work every turn, or a step retrying into the same wall.
+2. If the work is worth it, raise `max_task_cost_usd` in `config.yaml` and press
+   `r` to retry. The file is hot-reloaded, so no restart is needed.
+3. If it is not, cancel the task, or skip the step and let the rest run.
+
+**Retrying without raising the cap makes exactly one more attempt, then blocks
+here again.** That is deliberate — the check runs after an attempt finishes, so
+a retry always buys one attempt of progress, and pressing retry is your decision
+to spend it. Nothing is lost either way, but nothing is free either.
+
+Two things that surprise people:
+
+- **You overshoot by up to one attempt.** An agent reports what it spent when it
+  finishes, so the attempt that crosses the line has already run. `agent_timeout`
+  is what bounds a single run.
+- **The cap counts one task.** Every lane of a `fan_out` step is its own task
+  with its own budget, so a tree can spend a multiple of it.
+
+If a runaway task on codex or cursor sailed past the cap, that is expected:
+neither CLI reports cost, so the cap cannot see them. See
+[Agents](agents.md).
 
 ### `transcript_io_error` — check the disk
 

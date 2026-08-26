@@ -108,6 +108,9 @@ type Config struct {
 	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
 	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
 	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
+	// MaxTaskCostUSD caps what one task may spend across every attempt of
+	// every step, in US dollars; 0 is no cap (§12.3, task 033).
+	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
 	// UsageLimitRecheck is how long a quota-held task waits before the
 	// scheduler tries again, when the agent CLI reported no reset time (§11).
 	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`
