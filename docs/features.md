@@ -76,6 +76,11 @@ Timeouts are enforced, retry counts are bounded, and exhausted steps become
 `blocked` instead of being silently skipped. From there a person can retry,
 edit the step for this task and retry, skip it, or cancel the task.
 
+Spend can be bounded as well. `max_task_cost_usd` blocks a task with
+`cost_limit` once its cost across every attempt passes a ceiling you set. It is
+off by default, it counts one task at a time, and it only sees the agents that
+report cost at all.
+
 When the problem is in the worktree rather than in the step, a blocked task can
 also be **repaired**: one throwaway agent, prompted by you and handed the
 blocked step's failure context, runs in that task's existing worktree and

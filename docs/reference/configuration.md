@@ -316,9 +316,11 @@ A ceiling, in US dollars, on what **one task** may spend. `0` — the default �
 means no cap, so this changes nothing until you set it.
 
 The figure it compares against is the task's cost so far: the sum of every
-attempt of every step it has run, retries included. That is the same number the
-board and detail views show. When it goes over, the task is `blocked` with
-`cost_limit` and nothing further runs.
+attempt of every step it has run, retries included — and repair runs and
+follow-up runs, which are step runs of that task like any other. It is a
+lifetime total and never resets. That is the same number the board and detail
+views show. When it goes over, the task is `blocked` with `cost_limit` and
+nothing further runs.
 
 It is a **block, not a step failure**. The step run that finished keeps its own
 state and its own reason — if it succeeded, it still reads `succeeded` — no

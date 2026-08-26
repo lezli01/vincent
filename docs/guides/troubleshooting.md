@@ -583,13 +583,18 @@ here again.** That is deliberate — the check runs after an attempt finishes, s
 a retry always buys one attempt of progress, and pressing retry is your decision
 to spend it. Nothing is lost either way, but nothing is free either.
 
-Two things that surprise people:
+Three things that surprise people:
 
 - **You overshoot by up to one attempt.** An agent reports what it spent when it
   finishes, so the attempt that crosses the line has already run. `agent_timeout`
   is what bounds a single run.
 - **The cap counts one task.** Every lane of a `fan_out` step is its own task
   with its own budget, so a tree can spend a multiple of it.
+- **The total is the task's whole life and never resets.** A repair run and a
+  follow-up run are step runs of that task, so their cost counts too — a
+  finished task already over the cap blocks here again on the first attempt of
+  its next follow-up. `skip` abandons that follow-up and returns the task to
+  `done`.
 
 If a runaway task on codex or cursor sailed past the cap, that is expected:
 neither CLI reports cost, so the cap cannot see them. See
