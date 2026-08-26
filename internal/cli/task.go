@@ -290,9 +290,16 @@ func newTaskShowCmd() *cobra.Command {
 					rows = append(rows, []string{
 						strconv.FormatInt(s.ID, 10), s.StepID, s.State,
 						dash(deref(s.Agent)), dash(deref(s.FailureReason)),
+						dash(deref(s.StatusMessage)),
 					})
 				}
-				if err := table(out, []string{"RUN", "STEP", "STATE", "AGENT", "REASON"}, rows); err != nil {
+				// STATUS sits after REASON rather than beside it, and is the
+				// last column, because they are different kinds of thing: the
+				// reason is the daemon's closed verdict and the status is what
+				// the step said about itself (§5.4). A tabwriter's last column
+				// is also the one free to be long.
+				if err := table(out,
+					[]string{"RUN", "STEP", "STATE", "AGENT", "REASON", "STATUS"}, rows); err != nil {
 					return err
 				}
 				// The transcript is the complete record of what the agent did
