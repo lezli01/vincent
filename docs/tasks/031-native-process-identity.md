@@ -118,8 +118,12 @@ end-to-end proof from a test that exists; nothing here needs a
   `store`'s round trip, terminalize-clears, and a 0012 database migrated with a
   legacy row reading back NULL. ✓ 2026-08-26
 - [x] **031.5** Docs: spec §12.4 amendment and the §14 column, the superseding
-  note on PR D in `docs/history/v0-tasks.md`, this document, `CHANGELOG.md`.
-  ✓ 2026-08-26
+  note on PR D in `docs/history/v0-tasks.md`, this document, and the two public
+  pages that stated the old "PID **and** start time must match" rule —
+  `docs/reference/task-lifecycle.md` and `docs/faq.md` — plus the crash-first
+  bullet in `CLAUDE.md`. No `CHANGELOG.md` edit: the file deliberately carries
+  no `Unreleased` section (RELEASING.md step 3), so this change's prose belongs
+  in the Release Please pull request. ✓ 2026-08-26
 
 ## Noted, deliberately not folded in
 
