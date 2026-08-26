@@ -260,6 +260,19 @@ defaults:
   agent: claude
   max_retries: 1
   timeout: 30m
+  # Every step that actually retries here is an agent, and 028 decision 1 is why
+  # they get a pause: an agent CLI that hit an overloaded upstream and one that
+  # left a compile error both exit non-zero and both classify `nonzero_exit`, so
+  # there is nothing for vincent to tell apart — the workflow has to pick. This
+  # picks the pause, because the two cases are not symmetric. A backed-off retry
+  # returns the task to `queued` and gives up its concurrency slot (§12.3), so on
+  # the compile-error case the minute costs wall-clock and nothing else, and
+  # other tasks keep running through it. On the transient case an immediate
+  # retry lands inside the same outage and spends the whole budget on it.
+  #
+  # A minute against steps budgeted 30-45m is noise. Steps that want their
+  # second attempt now say so with `retry_backoff: 0`.
+  retry_backoff: 60s
   # Only the brief steps override this. An implement step that stops to ask has
   # skipped the whole point of the brief/implement split.
   on_input: deny
@@ -1147,7 +1160,14 @@ steps:
     type: command
     shell: sh
     timeout: 2m
-    max_retries: 0
+    # Unlike `publish` above, this one may retry: it is a pure read, and it
+    # runs immediately after a push and a `gh pr create`, which is exactly when
+    # a secondary-rate-limit is most likely. Blocking the task on a lost read
+    # of a pull request that was just created successfully is the wrong
+    # outcome, and the pause is what keeps the retry from landing in the same
+    # window.
+    max_retries: 1
+    retry_backoff: 20s
     # stdout becomes this step's Result and lands in the transcript — that is
     # where you read the PR url, and it is also what `gate-merge` puts in front
     # of you.
@@ -1378,15 +1398,23 @@ steps:
     # already proved origin was at `prev` when this task pushed, so a third
     # value means someone pushed afterwards. That branch is not the one anyone
     # approved, so nothing merges it.
+    #
+    # The wait is paced rather than fixed. GitHub usually moves the head within
+    # a second or two of the push, so the first polls are close together and
+    # the interval then doubles to a 15s ceiling: the common case is detected
+    # in ~2s instead of 5, and an unusually slow one costs ~25 calls over five
+    # minutes rather than 60. The budget is counted in *seconds waited*, not in
+    # polls, so it stays the five minutes the failure message claims even
+    # though the polls are no longer evenly spaced.
     run: |
       set -e
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
       prev=$(cat .vincent-issue/prev-head.sha)
 
-      i=0
+      nap=2
+      waited=0
       while :; do
-        i=$((i + 1))
         # The exit status, not the captured text: a failed `gh` must read as
         # "no answer yet" and be waited out, never as a third sha.
         set +e
@@ -1409,12 +1437,18 @@ steps:
           exit 1
         fi
 
-        if [ "$i" -ge 60 ]; then
+        if [ "$waited" -ge 300 ]; then
           echo "five minutes after the force-push the pull request still reports $oid," >&2
           echo "not the pushed commit $head. nothing was merged." >&2
           exit 1
         fi
-        sleep 5
+
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 15 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 15 ]; then nap=15; fi
+        fi
       done
 
   - id: wait-checks
@@ -1447,9 +1481,24 @@ steps:
     # The head is re-asserted every poll: a push that lands during the hour
     # ends the wait rather than being merged by it.
     #
-    # 120 polls at 30s is an hour of CI. A transient API failure is not a
-    # verdict — five in a row are tolerated so one 502 does not throw away
-    # forty minutes of waiting.
+    # An hour of CI, budgeted in *seconds waited* rather than in polls, because
+    # the polls are no longer evenly spaced. The pending interval starts at 15s
+    # and doubles to a 60s ceiling: a three-platform matrix takes minutes, so a
+    # fixed 30s spent most of the hour asking a question whose answer had not
+    # changed. The ramp reaches the same hour in roughly 60 calls instead of
+    # 120, while answering a fast run sooner than the old first poll did.
+    #
+    # A transient API failure is not a verdict — five in a row are tolerated so
+    # one 502 does not throw away forty minutes of waiting. Those retries get
+    # their *own*, longer ramp (30s doubling to 120s): an outage that has
+    # already produced three failures is not one more 30s pause away from
+    # being over, and six failures crammed into two and a half minutes spends
+    # the whole tolerance on a single bad moment. The error interval resets the
+    # moment a poll answers, so a blip does not slow the rest of the wait.
+    #
+    # Both sleeps draw on the one budget, so an alternating error/pending
+    # pattern — which never reaches six errors in a row — is still bounded by
+    # the hour.
     run: |
       set -e
       url=$(cat .vincent-issue/url.txt)
@@ -1458,11 +1507,12 @@ steps:
       echo "waiting for the required checks on $head"
       echo "($url)"
 
-      i=0
+      budget=3600
+      waited=0
+      nap=15
+      enap=30
       errors=0
       while :; do
-        i=$((i + 1))
-
         set +e
         oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>.vincent-issue/api-err.txt)
         rc_head=$?
@@ -1493,10 +1543,21 @@ steps:
             cat .vincent-issue/api-err.txt >&2
             exit 1
           fi
-          sleep 30
+          if [ "$waited" -ge "$budget" ]; then
+            echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
+            cat .vincent-issue/api-err.txt >&2
+            exit 1
+          fi
+          sleep "$enap"
+          waited=$((waited + enap))
+          if [ "$enap" -lt 120 ]; then
+            enap=$((enap * 2))
+            if [ "$enap" -gt 120 ]; then enap=120; fi
+          fi
           continue
         fi
         errors=0
+        enap=30
 
         # Grades every expected context and prints the verdict on line 1.
         # SKIPPED and NEUTRAL count as passes because branch protection counts
@@ -1548,12 +1609,18 @@ steps:
             ;;
         esac
 
-        if [ "$i" -ge 120 ]; then
+        if [ "$waited" -ge "$budget" ]; then
           echo "required checks on $head still pending after an hour; not merging:" >&2
           sed -n '2,$p' .vincent-issue/checks.txt >&2
           exit 1
         fi
-        sleep 30
+
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 60 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 60 ]; then nap=60; fi
+        fi
       done
 
   - id: merge-ready
@@ -1576,14 +1643,21 @@ steps:
     # moved while CI ran, so the rebase is stale. That is a real answer, not
     # something to poll through — the fix is another rebase, which means
     # re-running this task from `gate-merge`.
+    #
+    # The wait is paced to what is being waited on: the verdict usually settles
+    # in a few seconds, so the first polls are 2s apart and the interval then
+    # doubles to a 15s ceiling. A fixed 15s spent a quarter of a minute on the
+    # overwhelmingly common case of "already clean by the time we asked". The
+    # five-minute budget is unchanged and now counted in seconds waited, so the
+    # failure message stays true.
     run: |
       set -e
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
 
-      i=0
+      nap=2
+      waited=0
       while :; do
-        i=$((i + 1))
         # Same rule as `await-head`: a failed call leaves an empty answer to be
         # waited out rather than a value to act on.
         if ! gh pr view "$url" --json headRefOid,mergeable,mergeStateStatus \
@@ -1622,12 +1696,18 @@ steps:
             ;;
         esac
 
-        if [ "$i" -ge 20 ]; then
+        if [ "$waited" -ge 300 ]; then
           echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
           echo "five minutes after every required check went green; not merging. read the PR." >&2
           exit 1
         fi
-        sleep 15
+
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 15 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 15 ]; then nap=15; fi
+        fi
       done
 
   - id: merge
@@ -1670,17 +1750,50 @@ steps:
     # archiving the task does not warn about a dirty tree — and leaves the
     # drafts in place for inspection if anything above failed, which is the
     # same reason nothing deletes them when `publish` fails.
+    #
+    # It gives the state a minute to settle before calling it. `gh pr merge`
+    # returning is the API accepting the merge, not GitHub having finished
+    # recording it: for a second or two afterwards the pull request can still
+    # read OPEN and `mergeCommit` can still be null. Asserting into that window
+    # turns a successful merge into a blocked task. So this polls — 2s doubling
+    # to a 10s ceiling, one minute of budget — and only a state that stays
+    # un-MERGED for the whole minute is reported as one. The assertion itself
+    # is unchanged: this waits for an answer, it does not accept a different
+    # one, and `max_retries: 0` still stands because a postcondition that keeps
+    # being re-attempted is not a postcondition.
     run: |
       set -e
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
-      gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url > .vincent-issue/merged.json
+
+      nap=2
+      waited=0
+      while :; do
+        # A failed read is "no answer yet", the same rule the waits above use:
+        # it must never be mistaken for a state.
+        if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+          > .vincent-issue/merged.json 2>/dev/null; then
+          printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+            > .vincent-issue/merged.json
+        fi
+        state=$(jq -r .state .vincent-issue/merged.json)
+        if [ "$state" = MERGED ]; then break; fi
+        if [ "$waited" -ge 60 ]; then break; fi
+
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 10 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 10 ]; then nap=10; fi
+        fi
+      done
+
       jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
         .vincent-issue/merged.json
 
-      state=$(jq -r .state .vincent-issue/merged.json)
       if [ "$state" != "MERGED" ]; then
-        echo "the pull request is $state, not MERGED; the scratch directory is left in place." >&2
+        echo "the pull request is ${state:-unreadable}, not MERGED, a minute after the merge call;" >&2
+        echo "the scratch directory is left in place." >&2
         exit 1
       fi
 

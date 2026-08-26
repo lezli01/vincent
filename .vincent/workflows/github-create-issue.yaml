@@ -34,6 +34,14 @@ defaults:
   agent: claude
   max_retries: 1
   timeout: 30m
+  # The pause before a retry, for the reason 028 decision 1 records: an agent
+  # that hit an overloaded upstream and one that produced a bad draft both exit
+  # non-zero and classify `nonzero_exit`, so the workflow has to choose. A
+  # backed-off retry returns the task to `queued` and releases its concurrency
+  # slot (§12.3), so the wait never blocks another task — which makes the
+  # deterministic case cost wall-clock alone, while the transient case gets the
+  # one thing that helps it. `report` shortens this; `create` never retries.
+  retry_backoff: 60s
 
 steps:
   - id: draft
@@ -135,6 +143,13 @@ steps:
     type: command
     shell: sh
     timeout: 2m
+    # The one step here whose only failure mode is the network: the issue is
+    # already filed by the time this runs, so a failure is a lost read, not a
+    # lost effect. `defaults.max_retries` (1) therefore stands — but an
+    # immediate second `gh issue view` during a rate-limit window or a 502
+    # spends the whole budget inside two seconds and reports the blip as the
+    # verdict. The pause is what makes the retry mean something.
+    retry_backoff: 20s
     # stdout becomes this step's Result and lands in the transcript, which is
     # where you read it. Clearing `.vincent-issue/` afterwards leaves the
     # worktree clean, so archiving the task does not warn about a dirty tree.

@@ -97,6 +97,28 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
    covers every user-visible change, and the base is `master`. Release Please
    updates the same PR as more Conventional Commits land.
 
+   **This PR is the only point at which the changelog gets written**, and it is
+   where both changelogs get written. Push two edits onto the bot's branch
+   before merging:
+
+   - **`CHANGELOG.md`** — replace Release Please's mechanical commit list for
+     the new version with the user-facing context a commit subject cannot
+     carry, as [the file's own preamble](CHANGELOG.md) says. Do not park that
+     prose under an `## [Unreleased]` heading: Release Please inserts each new
+     version directly beneath the preamble, so an `Unreleased` section is
+     pushed *below* the release it describes and the released entry keeps the
+     commit list. The file deliberately carries no `Unreleased` section for
+     that reason. Watch for the same subject appearing twice — GitHub copies a
+     PR title into the merge commit body, so a conventional PR title yields
+     both the merge and its inner commit (the `PR title` workflow guards
+     against this; a duplicate means one slipped through).
+
+   - **`site-changelog.md`** — the human-facing release history published at
+     `/changelog.html` and linked from the site navigation. Nothing generates
+     it: Release Please writes `CHANGELOG.md` only. Add a
+     `## X.Y.Z — <theme>` section with a `Released <date>.` line, deduplicated
+     and product-focused, linking the PR for each entry.
+
 4. **Dry-run the build** if anything in `.goreleaser.yaml`, the build tags or
    the archive contents changed since the last release. Actions → **Release** →
    *Run workflow*, leaving `dry_run` checked. That runs
@@ -193,9 +215,13 @@ metadata. The prerelease still carries its deb and rpm assets on GitHub.
 ## Automation boundary
 
 - **Release Please owns release metadata.** It maintains the release PR and
-  changelog, records its last version in `.release-please-manifest.json`, and
-  creates the tag and GitHub release. The tag remains the only version injected
-  into the binary; the manifest is automation state, not product state.
+  `CHANGELOG.md`, records its last version in `.release-please-manifest.json`,
+  and creates the tag and GitHub release. The tag remains the only version
+  injected into the binary; the manifest is automation state, not product state.
+- **`site-changelog.md` is maintained by hand.** The GitHub Pages changelog at
+  `/changelog.html` is a separate, edited-for-humans file at the repository
+  root; no workflow derives it from `CHANGELOG.md` or from the tags. It is
+  updated in the Release Please PR (step 3) or it does not get updated at all.
 - **GoReleaser owns distribution channels.** It attaches archives, signatures,
   checksums, deb/rpm packages and attestations to Release Please's existing
   GitHub release, then updates Homebrew and Scoop and prepares the WinGet
