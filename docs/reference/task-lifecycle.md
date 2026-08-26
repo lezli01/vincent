@@ -274,7 +274,9 @@ When the daemon starts, recovery:
 2. kills verified orphan processes — the recorded PID must still exist **and**
    still hold the very process the run spawned, checked against a
    platform-native identity recorded at spawn (start ticks plus boot id on
-   Linux, the kernel fork stamp on macOS, the creation time on Windows). That
+   Linux, the kernel fork stamp on macOS, the creation time on Windows, each
+   paired with the PID, because the operating system's stamp is a clock tick
+   wide and processes started inside one share it). That
    is the guard against PID reuse killing an innocent process: anything vincent
    cannot prove is the same process is left running. A run recorded before
    vincent kept that identity — by an earlier version, or on a machine where

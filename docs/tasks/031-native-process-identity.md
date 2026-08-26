@@ -124,7 +124,7 @@ end-to-end proof from a test that exists; nothing here needs a
   `identityStillHolds` and the legacy `startTimeStillHolds`; the
   `startTimeTolerance` comment says what it now is. ✓ 2026-08-26
 - [x] **031.4** Tests: `procx` identity stability, distinctness, self, gone,
-  and the Linux boot-id component; `recover_test.go`'s matching identity,
+  and the Linux boot-id and PID components; `recover_test.go`'s matching identity,
   same-PID-different-identity, foreign-boot token, dead PID with an identity,
   unreadable identity, and the two legacy-tolerance cases kept as they were;
   `store`'s round trip, terminalize-clears, and a 0012 database migrated with a
