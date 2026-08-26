@@ -200,6 +200,17 @@ type StepRun struct {
 	// for a false guard, empty for the human `skip` action (§6, §7.7).
 	SkipReason    string
 	ResultSummary string
+	// StatusMessage is what the step said about *itself* (§5.4, task 033):
+	// short free text its own process wrote through
+	// `POST /v1/tasks/{id}/steps/{step_id}/status`. Empty is the ordinary
+	// case — a step with nothing to say says nothing, and the step types that
+	// run no process never say anything.
+	//
+	// It is never written by UpdateStepRun, only by SetStepRunStatus. That is
+	// what makes the last live value survive onto the finished row: the
+	// actor's own final write does not carry the column, so it cannot clobber
+	// a status the step set from another goroutine seconds earlier.
+	StatusMessage string
 	// PromptOverride and RunOverride record the text a human supplied for
 	// this attempt via edit+retry (spec §6). Empty on every other attempt,
 	// including later automatic retries of the same step: the edit happened

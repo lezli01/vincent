@@ -343,6 +343,10 @@ func TestWakeOnFiltersEvents(t *testing.T) {
 		// near-exhausted agent is shown, never withheld. Waking the loop on
 		// it would spin it for nothing.
 		{store.EventAgentQuotaChanged, false},
+		// Task 033: a step describing itself is a display fact too. Nothing
+		// about admission changes when it does, so waking the loop on it
+		// would spin it once per status message.
+		{store.EventTaskStatusChanged, false},
 	}
 	for _, c := range cases {
 		if got := WakeOn(&store.Event{Type: c.evType}); got != c.want {
