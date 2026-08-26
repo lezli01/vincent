@@ -10,8 +10,9 @@
 # the tag will land on a green, buildable tree *before* the one-way door, then
 # opening that door once and watching what comes out.
 #
-#   preflight → audit → vuln → dry-run → verify-base → notes-review
-#            → review (the gate) → merge → publish → verify → winget → report
+#   preflight → audit → changelog → vuln → dry-run → verify-base
+#            → notes-review → review (the gate) → merge → publish → verify
+#            → winget → report
 #
 # The gate at `review` is the release decision. Everything before it is
 # read-only apart from dispatching a dry run; `merge` — the step right after
@@ -31,8 +32,11 @@
 # `gates` check names, the `Release` workflow file and its `dry_run` input, the
 # six build targets and `archives.files` from `.goreleaser.yaml`, the
 # `lezli01/homebrew-tap`, `lezli01/scoop-bucket` and `lezli01/winget-pkgs`
-# destinations, `go run mage.go vuln`, and the assertions release.yml's `smoke`
-# job makes about the binary.
+# destinations, `go run mage.go vuln`, the assertions release.yml's `smoke`
+# job makes about the binary, the shape of a Release Please changelog entry
+# against a curated one, `site-changelog.md` as the hand-maintained page
+# published at `/changelog.html`, and `_config.yml`'s exclude list as the
+# boundary of what GitHub Pages runs Liquid over.
 #
 # POSIX-only, and it says so: every command step pins `shell: sh`, and the
 # agent step's `check` runs under the platform default and is written in `sh`
@@ -131,16 +135,45 @@ steps:
       # Written once, called twice: advisory inside `audit`, blocking in
       # `verify-base`. One script, two callers, no drift.
       cat > .vincent-release/require-green.sh <<'GREEN'
-      # Usage: sh require-green.sh <sha>. Exit 0 iff every check run on the
-      # commit completed successfully and both required matrices are present.
-      # A commit with *no* checks yet passes the per-run rule trivially, which
-      # is why the count matters as much as the conclusions.
+      # Usage: sh require-green.sh <sha> [wait-minutes]. Exit 0 iff every check
+      # run on the commit completed successfully and both required matrices are
+      # present. A commit with *no* checks yet passes the per-run rule
+      # trivially, which is why the count matters as much as the conclusions.
+      #
+      # Pending is not failure. Task 52 spent three of its seven `verify-base`
+      # attempts, and two repair agents, on a base branch whose checks had
+      # simply not finished — Windows CI alone took 11m54s. So a run still in
+      # flight is waited on, up to the caller's bound, and only a *completed*
+      # non-success is reported. The bound is a number of minutes so a caller
+      # that wants a snapshot passes 0.
       set -e
       sha="$1"
-      runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" \
-        --jq '.check_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv')
-      printf '%s\n' "$runs"
-      bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && ($2 != "completed" || ($3 != "success" && $3 != "skipped")) { print $1 " " $3 }')
+      wait_min=${2:-0}
+      deadline=$(( $(date +%s) + wait_min * 60 ))
+
+      while :; do
+        runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" \
+          --jq '.check_runs[] | [.name, .status, (.conclusion // "pending"), (.html_url // "-")] | @tsv')
+        pending=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && $2 != "completed" { print $1 }')
+        [ -z "$pending" ] && break
+        now=$(date +%s)
+        if [ "$now" -ge "$deadline" ]; then break; fi
+        echo "waiting on $(printf '%s\n' "$pending" | wc -l | tr -d ' ') pending check(s) on $sha: $(printf '%s\n' "$pending" | tr '\n' ' ')" >&2
+        sleep 30
+      done
+
+      printf '%s\n' "$runs" | awk -F'\t' 'NF { print $1 "\t" $2 "\t" $3 }'
+
+      if [ -n "$pending" ]; then
+        echo "still pending on $sha after ${wait_min}m:" >&2
+        printf '%s\n' "$pending" >&2
+        exit 1
+      fi
+
+      # Report the URL alongside the name. A check called `build` says nothing
+      # about which workflow owns it — in task 52 that one word cost a repair
+      # agent to resolve to Jekyll's pages-build-deployment.
+      bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && $3 != "success" && $3 != "skipped" { print $1 " " $3 " " $4 }')
       if [ -n "$bad" ]; then
         echo "not green on $sha:" >&2
         printf '%s\n' "$bad" >&2
@@ -316,6 +349,70 @@ steps:
         fi
       done
 
+      section "Liquid safety of the published documentation"
+      # GitHub Pages runs Liquid over every included page *before* Markdown, so
+      # backticks protect nothing, and `jekyll-optional-front-matter` means
+      # every tracked .md outside _config.yml's exclude list is a page. Two
+      # distinct faults follow, and task 52 hit both: an unterminated open
+      # brace pair is a Liquid exception that fails pages-build-deployment, and
+      # a *balanced* Go template renders to nothing, silently blanking the cell
+      # it documents.
+      #
+      # The brace pair this looks for is assembled at run time rather than
+      # written out, because a step body is itself a Go template (§8.4) and a
+      # literal pair here would be parsed as an action rather than searched
+      # for. Same reason the messages below interpolate `$open`.
+      #
+      # This is here because the first one is a release problem. A red
+      # pages-build-deployment is a red base branch, and `verify-base` refuses
+      # to publish over it — in task 52 that surfaced 40 minutes in, as a check
+      # called only `build`, and cost two repair agents to trace back to a
+      # single brace in docs/reference/api.md. Catching it on this worktree
+      # costs a second.
+      open=$(printf '%s%s' '{' '{')
+      close=$(printf '%s%s' '}' '}')
+      awk 'f && /^[^ -]/ { f=0 } f && /^[[:space:]]*-[[:space:]]/ { sub(/^[[:space:]]*-[[:space:]]*/, ""); print } /^exclude:/ { f=1 }' \
+        _config.yml > "$work/exclude.txt"
+      : > "$work/liquid.txt"
+      git ls-files '*.md' | while IFS= read -r md; do
+        skip=no
+        while IFS= read -r ex; do
+          [ -n "$ex" ] || continue
+          case "$md" in "$ex" | "$ex"*) skip=yes; break ;; esac
+        done < "$work/exclude.txt"
+        [ "$skip" = yes ] && continue
+        # Raw markers are on their own line everywhere in this repository; a
+        # marker sharing a line with content would be scanned as content.
+        awk -v file="$md" -v ob="$open" -v cb="$close" '
+          /{% *raw *%}/ { raw = 1; next }
+          /{% *endraw *%}/ { raw = 0; next }
+          raw { next }
+          {
+            line = $0
+            p = index(line, ob)
+            while (p > 0) {
+              rest = substr(line, p + 2)
+              q = index(rest, cb)
+              if (q == 0) { print "FATAL\t" file "\t" FNR; break }
+              if (substr(rest, 1, q - 1) ~ /^[ ]*\./) print "BLANK\t" file "\t" FNR
+              line = substr(rest, q + 2)
+              p = index(line, ob)
+            }
+          }
+        ' "$md"
+      done >> "$work/liquid.txt"
+      nf=$(awk -F'\t' '$1 == "FATAL"' "$work/liquid.txt" | wc -l | tr -d ' ')
+      nb=$(awk -F'\t' '$1 == "BLANK"' "$work/liquid.txt" | wc -l | tr -d ' ')
+      if [ "$nf" -gt 0 ]; then
+        awk -F'\t' '$1 == "FATAL" { print "      " $2 ":" $3 }' "$work/liquid.txt"
+        fail "liquid: $nf unterminated $open outside a raw block — Jekyll raises a Liquid exception, pages-build-deployment goes red, and a red base branch blocks this release at verify-base"
+      fi
+      if [ "$nb" -gt 0 ]; then
+        awk -F'\t' '$1 == "BLANK" { print "      " $2 ":" $3 }' "$work/liquid.txt"
+        warn "liquid: $nb Go-template expression(s) outside a raw block render to nothing on the published site — wrap the page in {% raw %} / {% endraw %}"
+      fi
+      [ "$nf" -eq 0 ] && [ "$nb" -eq 0 ] && echo "ok    every published markdown page is Liquid-safe"
+
       section "base branch"
       base_sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH" 2>/dev/null || echo "")
       if [ -z "$base_sha" ]; then
@@ -336,6 +433,132 @@ steps:
         exit 1
       fi
       echo "no blocking findings"
+
+  - id: changelog
+    name: Check both changelogs on the release PR
+    type: command
+    shell: sh
+    timeout: 10m
+    # Reading two files and grepping them returns the same answer twice.
+    max_retries: 0
+    # Blocking, and early. Release Please writes `CHANGELOG.md` only, and the
+    # release PR is the one moment either changelog can be corrected — after
+    # the merge the entry is published (RELEASING.md step 3). 0.5.0 and 0.6.0
+    # both shipped past this: 0.5.0 with a bare three-line commit list, 0.6.0
+    # with its curated prose stranded under `## [Unreleased]` *below* the
+    # released section, a duplicated feature from a merge commit, and a site
+    # changelog that still stopped at the previous version.
+    #
+    # Task 52's `notes-review` agent found every one of those and the gate
+    # approved through it anyway, which is the argument for spending a command
+    # here rather than trusting a report: these four faults have exact shapes,
+    # so they are a grep, and a grep can block.
+    #
+    # Deliberately not `set -e` — every check runs and the exit code is the
+    # summary, the same contract `audit` uses.
+    run: |
+      fails=0
+      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
+      warn() { printf 'WARN %s\n' "$*"; }
+
+      work=.vincent-release/changelog
+      rm -rf "$work"
+      mkdir -p "$work"
+
+      repo=$(cat .vincent-release/repo.txt)
+      version=$(cat .vincent-release/proposed-version.txt)
+      head=$(jq -r .headRefName .vincent-release/pr.json)
+
+      if [ -z "$version" ]; then
+        echo "could not parse a version from the release PR title, so neither changelog can be checked" >&2
+        exit 1
+      fi
+      echo "checking CHANGELOG.md and site-changelog.md at $head for $version"
+      echo
+
+      fetch() {
+        gh api -H "Accept: application/vnd.github.raw+json" \
+          "repos/$repo/contents/$1?ref=$head" > "$work/$2" 2>"$work/$2.err"
+      }
+
+      # == CHANGELOG.md — the file Release Please owns.
+      if fetch CHANGELOG.md canonical.md; then
+        # The curated prose belongs *in* the released section. Release Please
+        # inserts each version directly beneath the preamble, so prose parked
+        # under `## [Unreleased]` is pushed below the release it describes and
+        # the released entry keeps the commit list — exactly what 0.6.0
+        # shipped. The file carries no Unreleased section for that reason.
+        if grep -q '^## \[Unreleased\]' "$work/canonical.md"; then
+          fail "changelog: CHANGELOG.md has an '## [Unreleased]' section. Release Please writes the new version above it, so its prose lands below the release it describes and never reaches the entry. Fold it into '## [$version]' and delete the heading."
+        fi
+
+        awk -v v="[$version]" '
+          index($0, "## " v) == 1 { inside = 1; next }
+          inside && /^## / { exit }
+          inside { print }
+        ' "$work/canonical.md" > "$work/section.md"
+
+        if [ ! -s "$work/section.md" ]; then
+          fail "changelog: CHANGELOG.md has no '## [$version]' section at the PR head"
+        else
+          # A Release Please bullet is `* subject ([abc1234](...))`. A curated
+          # one is prose. Any survivor means the swap RELEASING.md step 3 asks
+          # for never happened, and it is also the only place a duplicate can
+          # come from: GitHub copies a conventional PR title into the merge
+          # commit body, so the merge and the commit it merged are both
+          # recorded (0.6.0's retry_backoff, twice).
+          left=$(grep -cE '^\* .*\(\[[0-9a-f]{7,}\]\(' "$work/section.md" || true)
+          if [ "$left" -gt 0 ]; then
+            grep -nE '^\* .*\(\[[0-9a-f]{7,}\]\(' "$work/section.md" | sed 's/^/      /'
+            fail "changelog: $left mechanical commit line(s) survive in '## [$version]'. CHANGELOG.md's preamble makes the release PR the point where they are replaced with the context a commit subject cannot carry."
+          fi
+
+          dups=$(grep -oE '^\* [^(]+' "$work/section.md" | sed 's/[[:space:]]*$//' | sort | uniq -d)
+          if [ -n "$dups" ]; then
+            printf '      %s\n' "$dups"
+            fail "changelog: the above subject(s) appear twice in '## [$version]' — a conventional PR title copied into its merge commit body records both the merge and its inner commit"
+          fi
+
+          [ "$left" -eq 0 ] && [ -z "$dups" ] \
+            && echo "ok    CHANGELOG.md '## [$version]' is curated prose, no duplicates, no stray Unreleased"
+        fi
+      else
+        fail "changelog: CHANGELOG.md could not be read at $head: $(head -n 2 "$work/canonical.md.err" | tr '\n' ' ')"
+      fi
+
+      # == site-changelog.md — the GitHub Pages page, maintained by hand.
+      # Nothing generates it; no workflow derives it from CHANGELOG.md or from
+      # the tags (RELEASING.md § Automation boundary). If it is not written in
+      # this PR it is not written at all, which is how it came to stop two
+      # releases behind the tags.
+      if fetch site-changelog.md site.md; then
+        if grep -q "^## $version" "$work/site.md"; then
+          first=$(grep -m1 '^## ' "$work/site.md")
+          case "$first" in
+            "## $version"*) ;;
+            *) warn "changelog: site-changelog.md has $version, but '$first' is above it — the page reads newest-first" ;;
+          esac
+          awk -v v="$version" '
+            index($0, "## " v) == 1 { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' "$work/site.md" | grep -q '^Released ' \
+            || warn "changelog: site-changelog.md's $version section has no 'Released <date>.' line"
+          echo "ok    site-changelog.md carries a $version section"
+        else
+          fail "changelog: site-changelog.md has no '## $version' section. It is the changelog published at /changelog.html and linked from the site navigation, nothing generates it, and this PR is the only place it gets written."
+        fi
+      else
+        fail "changelog: site-changelog.md could not be read at $head — it is the published changelog at /changelog.html: $(head -n 2 "$work/site.md.err" | tr '\n' ' ')"
+      fi
+
+      echo
+      if [ "$fails" -gt 0 ]; then
+        echo "$fails blocking finding(s) — fix them on $head (push onto the Release Please branch) and retry this step"
+        echo "RELEASING.md step 3 describes both edits"
+        exit 1
+      fi
+      echo "both changelogs describe $version"
 
   - id: vuln
     name: Vulnerability sweep
@@ -429,10 +652,14 @@ steps:
     name: Verify the commit a tag would name
     type: command
     shell: sh
-    timeout: 15m
-    # Every failure here means "the world is not ready yet" — CI still running,
-    # a new commit on the base — and there is no delay between attempts, so a
-    # retry just fails a second time a second later. Re-run by hand.
+    # Long enough to watch a full matrix land: Windows CI alone took 11m54s in
+    # task 52, and this step now waits for both the PR's checks and the base
+    # branch's rather than reporting "not finished" as a failure.
+    timeout: 75m
+    # A failure that survives the wait means the world is genuinely not ready —
+    # a red check, a new commit on the base — and there is no delay between
+    # attempts, so a retry just fails a second time a second later. Re-run by
+    # hand once the cause is fixed.
     max_retries: 0
     run: |
       set -e
@@ -451,17 +678,22 @@ steps:
       printf '%s\n' "$pr" > .vincent-release/pr-view.json
       printf '%s' "$pr" | jq -r .headRefOid > .vincent-release/head-oid.txt
 
-      # The PR's own checks. `gh pr checks` exits non-zero while anything is
-      # pending or failing, which is exactly the precondition wanted here.
+      # The PR's own checks. `gh pr checks` exits 8 while anything is *pending*
+      # and 1 when something failed, and the bare form does not distinguish
+      # "CI is still running" from "CI said no" to a human reading a blocked
+      # task. `--watch` waits instead, so the exit code means one thing.
+      # Three of task 52's seven attempts here were nothing but exit 8.
       echo "== release PR checks"
-      gh pr checks "$number"
+      gh pr checks "$number" --watch --fail-fast --interval 30
 
       # And the branch it merges into: a tag on a red base produces signed,
-      # attested, broken binaries (RELEASING.md step 1).
+      # attested, broken binaries (RELEASING.md step 1). Same wait, same
+      # reason — and note this covers *every* check on the commit, not only
+      # `ci` and `gates`: pages-build-deployment is what was red in task 52.
       sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
       echo
       echo "== $VINCENT_BASE_BRANCH checks"
-      sh .vincent-release/require-green.sh "$sha"
+      sh .vincent-release/require-green.sh "$sha" 45
       printf '%s\n' "$sha" > .vincent-release/base-sha.txt
 
       mergeable=$(printf '%s' "$pr" | jq -r .mergeStateStatus)
@@ -508,6 +740,15 @@ steps:
          commit.
       3. Read `CHANGELOG.md`'s versioning and stability policy section, and
          `RELEASING.md § Version numbers`.
+      4. Read both changelogs **as they stand on the PR head**, which is where
+         they will be published from:
+         `gh pr view <number> --json headRefName --jq .headRefName`, then
+         `gh api -H "Accept: application/vnd.github.raw+json" "repos/{owner}/{repo}/contents/CHANGELOG.md?ref=<head>"`
+         and the same for `site-changelog.md`. The `changelog` step has already
+         proved both carry a section for this version, that the section is
+         curated prose rather than a surviving commit list, and that no subject
+         is duplicated — do not re-report any of that. What is left is the part
+         a grep cannot judge, below.
 
       Then report, as prose a maintainer reads in 30 seconds:
 
@@ -523,6 +764,13 @@ steps:
         what it did, because the type is what chose the version.
       - **Wrong or misleading** — any generated line that describes something
         that is not what the commit did.
+      - **Changelog prose** — whether each entry in `CHANGELOG.md`'s section
+        for this version describes what a *user* would notice rather than
+        restating the commit subject, whether an entry belongs to an earlier
+        release (check the commit is in this tag's range before saying so), and
+        whether `site-changelog.md`'s section is a fair human summary of the
+        same release rather than a copy of the canonical one. Both files ship;
+        neither is regenerated after the merge.
 
       If the notes are complete and the version fits the policy, say so in one
       line. Do not pad the report and do not restate the whole changelog. End
@@ -556,6 +804,12 @@ steps:
 
       {{(index .Steps "notes-review").Result}}
 
+      **Changelogs** ({{(index .Steps "changelog").Status}}) — both files
+      passed their structural checks; what those checks cannot judge is whether
+      the prose is *right*:
+
+      {{(index .Steps "changelog").Result}}
+
       **Audit findings** — read every `WARN` line here, they are the release
       failures no commit on a branch can prevent (a missing secret, an
       unreachable publish destination):
@@ -569,6 +823,11 @@ steps:
       2. The generated notes cover every user-visible change. Fix the notes
          *now* — edit the PR body — or reject and fix the commit convention;
          editing after the release means editing a published artifact.
+         The same applies to both changelogs: `changelog` proved the sections
+         exist and are curated, not that they describe this release honestly.
+         A `VERDICT: notes need attention` above is a reason to fix the
+         Release Please branch and retry, not a line to read past — 0.6.0 was
+         approved over exactly that verdict.
       3. All three `ci` and all three `gates` checks are green on both the PR
          and {{.Task.BaseBranch}} (`verify-base` just proved this, and re-proves
          nothing after you read it — a commit landing in the meantime is caught
@@ -786,6 +1045,16 @@ steps:
         printf '%s\n' "no catalog PR found" > .vincent-release/winget.txt
         echo "no microsoft/winget-pkgs pull request mentions lezli01.Vincent $version" >&2
         echo "check the Release run log for the WinGet publisher's output" >&2
+        # This is where task 52 stopped: branch pushed, no PR, and nothing said
+        # what to do next. The manifests are already on the fork, so the
+        # recovery is one command and needs no re-release.
+        if [ "$branch_ok" = yes ]; then
+          echo >&2
+          echo "the manifests are on the fork, so the catalog PR can be opened by hand:" >&2
+          echo "  gh pr create --repo microsoft/winget-pkgs --base master \\" >&2
+          echo "    --head lezli01:vincent-$version \\" >&2
+          echo "    --title 'New version: lezli01.Vincent version $version'" >&2
+        fi
         exit 1
       fi
 

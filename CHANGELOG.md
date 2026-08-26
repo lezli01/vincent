@@ -287,8 +287,8 @@ list with the user-facing context a commit subject cannot carry.
   ([#137](https://github.com/lezli01/vincent/issues/137))
 
 - **The documentation site renders again.** GitHub Pages builds this repository
-  with Jekyll, whose Liquid parser tried to evaluate the Go-template expressions
-  (`{{ ... }}`) that the workflow schema, guide, concepts, troubleshooting and
+  with Jekyll, whose Liquid parser tried to evaluate the Go-template
+  expressions that the workflow schema, guide, concepts, troubleshooting and
   bundled reference pages exist to document — breaking those builds. Every
   template-carrying page is now wrapped in `raw` blocks, internal engineering
   records (the spec, tasks, gates and history) are excluded from the site build
