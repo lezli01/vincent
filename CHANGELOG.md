@@ -11,151 +11,6 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
-
-### Features
-
-* **agents:** report each agent's observed usage window ([83a4887](https://github.com/lezli01/vincent/commit/83a4887b7b9fa07cf9f6e4e5422e3b823f1d6e52))
-* **daemon:** back up and restore daemon state ([9e2bfb6](https://github.com/lezli01/vincent/commit/9e2bfb68e7b0f0c932f3c0021269672bf57fa0f3))
-* **doctor:** measure the database's footprint, rows and span ([3ed2e66](https://github.com/lezli01/vincent/commit/3ed2e6622d9b78d78a860c01323e146ad5efc661))
-* run an ad-hoc repair agent on a blocked task ([06f03b5](https://github.com/lezli01/vincent/commit/06f03b5977f2e3ecf6a75fd4cc295ecfce6063ef))
-* **taskrun:** run follow-ups on a done or aborted task ([5a86315](https://github.com/lezli01/vincent/commit/5a86315a3054a9da6ea4b92970f0260290cf7fea))
-* **workflow:** add the create-workflow built-in ([4f02aac](https://github.com/lezli01/vincent/commit/4f02aac83e254febf69981f062c5e10044a6ddfd))
-* **workflow:** pace step retries with retry_backoff ([e5ee29c](https://github.com/lezli01/vincent/commit/e5ee29ce7478cdcbeb41336c0d53195e41f7cec5))
-* **workflow:** pace step retries with retry_backoff ([adf9e34](https://github.com/lezli01/vincent/commit/adf9e345e678f37ef7853d39d5e28862edc76f27))
-
-
-### Bug Fixes
-
-* **api:** page the SSE Last-Event-ID replay ([c25789d](https://github.com/lezli01/vincent/commit/c25789dbabd6145496040a76cf500aa5ba07f720)), closes [#138](https://github.com/lezli01/vincent/issues/138)
-* **api:** require one JSON document per request and bound the body ([2b969f5](https://github.com/lezli01/vincent/commit/2b969f5f851afde39cf94ceb72cded1d35df7b23)), closes [#140](https://github.com/lezli01/vincent/issues/140)
-* **config:** create and keep config.yaml owner-only ([e3a79bd](https://github.com/lezli01/vincent/commit/e3a79bd3edca3be91c33b4c26eaa4562151dd42d)), closes [#141](https://github.com/lezli01/vincent/issues/141)
-* **docs:** avoid case-colliding page names ([4aac2d2](https://github.com/lezli01/vincent/commit/4aac2d2868c57c8635188d7180eb5cc1c1831f0a))
-* **pages:** exclude internal docs from Jekyll ([c394b8f](https://github.com/lezli01/vincent/commit/c394b8f8de850a4510503efb60c874363d30cf8b))
-* **pages:** keep workflow skill page published ([f54b1b8](https://github.com/lezli01/vincent/commit/f54b1b8a1764dbde7a424f846efbfc78df5dc638))
-* **pages:** link rendered changelog and contributing pages ([29dab39](https://github.com/lezli01/vincent/commit/29dab393feef13dac2757b67fc96d46677266942))
-* **pages:** protect concepts templates from Liquid ([bf665a2](https://github.com/lezli01/vincent/commit/bf665a258714f4aa855a3c992683153b8c451364))
-* **pages:** protect troubleshooting templates from Liquid ([e08d62a](https://github.com/lezli01/vincent/commit/e08d62aa77557fb02137975dcc2ca6bffd1908ad))
-* **pages:** protect workflow guide templates from Liquid ([9a28617](https://github.com/lezli01/vincent/commit/9a286171977992ea93717db580cd0541263413fe))
-* **pages:** protect workflow schema templates from Liquid ([c20dbf3](https://github.com/lezli01/vincent/commit/c20dbf3a9ec363352675ec24c25f1d331a7dccd9))
-* **pages:** publish contributing guide ([201942c](https://github.com/lezli01/vincent/commit/201942c71a019c2585f506b793cd84f92a4edb5c))
-* **pages:** repair contributing and changelog pages ([f530c69](https://github.com/lezli01/vincent/commit/f530c69134c7cea3b6ae9878fce8574b7de5a0db))
-* **pages:** stop Liquid parsing Vincent templates ([9e63c32](https://github.com/lezli01/vincent/commit/9e63c32cc57ef9b9669db6ea73b3d003d605ee2d))
-* **pages:** wrap the template-carrying reference pages in raw blocks ([4085141](https://github.com/lezli01/vincent/commit/408514172f6ed6370b43b9e6ddda8e709609ec7a))
-* report each task's branch and correct branch-deletion docs ([0bfc520](https://github.com/lezli01/vincent/commit/0bfc520d245a6bee32ddc02cc89060a0ef4d39aa))
-* **taskrun:** fail closed when output capture or persistence is incomplete ([7cfa8c7](https://github.com/lezli01/vincent/commit/7cfa8c7606893e41f6e9af4a3479c8f8576c49a8)), closes [#139](https://github.com/lezli01/vincent/issues/139)
-* **taskrun:** keep the repair prompt's transcript window at its own bound ([4de3636](https://github.com/lezli01/vincent/commit/4de3636950778504544991fafaadda614b7f6cb0))
-* **taskrun:** make crash recovery atomic per task and fail closed ([4554488](https://github.com/lezli01/vincent/commit/45544885feef098ee06cc7a7515e0d7de4dc3d20)), closes [#142](https://github.com/lezli01/vincent/issues/142)
-* **taskrun:** re-apply a human action that loses its CAS to admission ([51159b8](https://github.com/lezli01/vincent/commit/51159b826ade798d248643987801ea8c99f4e77d)), closes [#127](https://github.com/lezli01/vincent/issues/127)
-* **workflow:** source only regular files, bounded to 1 MiB ([053a960](https://github.com/lezli01/vincent/commit/053a960dee3f807a48f6f5622b748f9561d31b97))
-* **worktree:** serialize create and remove per project ([201af74](https://github.com/lezli01/vincent/commit/201af74fac53c42a6193698f55f6c8cb2abbc7c3)), closes [#126](https://github.com/lezli01/vincent/issues/126)
-
-## [0.5.0](https://github.com/lezli01/vincent/compare/v0.4.2...v0.5.0) (2026-08-22)
-
-
-### Features
-
-* add Vincent workflow authoring skill ([5def996](https://github.com/lezli01/vincent/commit/5def996209b22d563ac6d3a331ac6b7fa325649b))
-* add workflow-declared task fields ([49659a2](https://github.com/lezli01/vincent/commit/49659a242dbd7e2c1f8ffc595450d1ea16660e8b))
-* harden Vincent workflow skill guidance ([bdc7262](https://github.com/lezli01/vincent/commit/bdc7262920d8b0fc2ffb8d2a5d8ce4a5cc38a25b))
-
-## [Unreleased]
-
-### Fixed
-
-- **Crash recovery no longer re-queues a task whose previous attempt it could
-  not close.** Startup recovery ran as two independent sweeps — finalize every
-  open step run, then re-queue every live task — with nothing carrying a failed
-  finalize forward into the re-queue decision. A storage failure at that one
-  write was logged and walked past, and the owning task went back to `queued`
-  anyway: a `queued` task with a step run the database still called `running`,
-  which the scheduler then admitted, starting a second attempt against a first
-  one that was, durably, still open. Recovery is now atomic per task — the step
-  runs, the task transition and its durable event commit together — and
-  fail-closed: a task that cannot be reconciled is left exactly as found, and
-  the daemon refuses to start rather than running the scheduler over rows it
-  knows are contradictory. Restarting the daemon retries recovery, and nothing
-  is duplicated if it runs twice. Two guards back it up: admission refuses a
-  `queued` task that still has a `running` step run, and `vincent doctor`
-  reports the combination under a new `tasks` problem and a
-  `tasks.unreconciled[]` list.
-  ([#142](https://github.com/lezli01/vincent/issues/142))
-- **Reconnecting to the event stream no longer stalls the daemon.** A client
-  resuming `GET /v1/events` or `GET /v1/tasks/{id}/events` with a
-  `Last-Event-ID` had its whole backlog read into memory in one query, and
-  written in full, before the stream went live. Event rows are kept
-  indefinitely, so that backlog only grows: on a long-lived installation a
-  single reconnect could allocate tens of mebibytes and hold the daemon's one
-  SQLite connection for the length of the scan, delaying task transitions and
-  every other write behind it. The catch-up now reads in fixed pages up to the
-  newest event id at the moment the stream opened, so the memory and the
-  connection are held for one page no matter how far behind the cursor is.
-  Nothing about what a client receives changed: every event after the cursor
-  is still delivered, in id order, exactly once across the hand-off to live
-  events. ([#138](https://github.com/lezli01/vincent/issues/138))
-- **A request body is now exactly one JSON document, and it is bounded.** The
-  daemon read the *first* JSON value in a request body and discarded everything
-  after it unread, so a client that framed two documents into one request — a
-  retry that re-wrote the body, a `jq -c` loop piped into a single `curl -d @-`,
-  a buggy generator — got a `201` for work vincent never saw, with nothing in the
-  response to distinguish it from the single-document call. Trailing content is
-  now `400 invalid_json`; trailing whitespace stays valid. Bodies are also read
-  under a fixed bound instead of into memory whole (64 KiB, or 4 MiB on the
-  routes that carry a prompt or a workflow source), over which is a new
-  `413 payload_too_large` naming the limit and never echoing the body, and long
-  strings, big maps and prompt or run overrides are bounded field by field with a
-  `400` naming the field. `POST /v1/workflows/validate` now honours the same
-  1 MiB workflow-source limit the registry applies to a file, so a source too
-  large to be catalogued no longer validates cleanly. A body labelled a clearly
-  non-JSON `Content-Type` — what a plain `curl -d` sends — is `415`; an absent
-  header and any `*/json` are still accepted. The daemon additionally sets read
-  and idle timeouts, so a client that sends headers and then dribbles a body no
-  longer holds a connection indefinitely; SSE streams are unaffected and keep
-  their unbounded response lifetime.
-  ([#140](https://github.com/lezli01/vincent/issues/140))
-- **`config.yaml` is no longer created world-readable.** On Linux and macOS the
-  daemon created `{config_dir}/` `0755` and `config.yaml` `0644`, so any other
-  local account could read the one file vincent creates that can hold your
-  secrets — `environment.set` values are literal, which is where an API token or
-  a license key ends up. Both are now created `0700`/`0600`, subject only to a
-  stricter umask, and **every daemon start re-tightens an existing installation**
-  the way it already re-tightens `{data_dir}/token`: group and other access is
-  dropped, owner bits are kept and the file's contents are never rewritten. The
-  change is announced rather than silent — the daemon logs the path and the mode
-  it found, and `vincent doctor` grows a `permissions` warning row carrying the
-  path, the observed mode, the expected mode and the exact `chmod`. That warning
-  is not part of the closed set that makes `vincent doctor` exit `1`. Windows is
-  unaffected: modes carry no access control there and access comes from the
-  per-user ACL `%APPDATA%` inherits. The docs now also say plainly that
-  "vincent stores no credentials" is about *vendor* credentials, and that
-  `environment.set` is not a secret store.
-  ([#141](https://github.com/lezli01/vincent/issues/141))
-- **A step whose output vincent could not capture is no longer reported as a
-  success.** Command output was read a line at a time with a one-mebibyte
-  ceiling; a longer line — minified JSON, a base64 blob, a `git diff` of a
-  generated file — stopped capture dead, sent the rest of the stream to
-  `/dev/null`, and left the step `succeeded` on its exit code alone, with a
-  megabyte of evidence gone and nothing a client could query saying so.
-  Over-long lines are now captured in bounded `partial` pieces that rejoin in
-  order, so an ordinary big-output command stays a success *with* its output.
-  Genuine evidence loss now fails the attempt instead: transcript write, encode
-  and close errors (a full disk, a revoked permission, a short write — `Close`
-  is checked, because that is where a buffered filesystem reports ENOSPC) fail
-  it with the new `transcript_io_error` reason, and a stream an agent adapter
-  could not read to the end fails it with `agent_protocol_error` rather than
-  blaming the CLI. Both retry normally and neither can be swallowed by
-  `allow_failure:`. `transcript_max_bytes` is unchanged and remains the only
-  size-based failure. ([#139](https://github.com/lezli01/vincent/issues/139))
-
-- **Workflow loading is bounded and refuses non-regular files.** A `*.yaml`
-  entry in a workflow directory that is a symlink, named pipe, socket or device
-  is no longer opened or followed, and a source is capped at 1 MiB. Previously a
-  named pipe in a registered repository's `.vincent/workflows/` parked the loader
-  in `open()` forever — enough to stop the daemon from starting, hang
-  `POST /v1/projects`, or kill hot reload for every scope — and a symlink was
-  followed out of the repository into whatever it pointed at. Rejected files are
-  listed as invalid entries naming the reason, so the valid workflows in the same
-  directory keep working. ([#136](https://github.com/lezli01/vincent/issues/136))
-
 ### Added
 
 - **The database now reports its own size, row counts and history span.**
@@ -265,13 +120,129 @@ list with the user-facing context a commit subject cannot carry.
   run with its own transcript, tokens and cost, shown as its own timeline entry,
   and it does not consume the blocked step's retry budget.
 
-- **Workflow-declared task fields.** Workflows can publish ordered task inputs
-  with labels, descriptions, required flags, string/integer/number/boolean
-  types and Go RE2 patterns. The TUI pre-renders those inputs, the daemon
-  validates declared values for every client, and additional undeclared fields
-  remain accepted and recorded on the task.
+- **The `create-workflow` built-in — a workflow whose deliverable is another
+  workflow.** A first workflow no longer has to be written by hand. Its one
+  agent step carries the published `vincent-workflows` authoring skill, embedded
+  from `skills/vincent-workflows/SKILL.md` at build time, so the skill stays the
+  single copy of that guidance and editing it changes the built-in at the next
+  build. Two task fields shape the result: `workflow_name` is required and held
+  to `^[a-z0-9][a-z0-9._-]*$` — stricter than the schema's rule for a workflow
+  name, because the value is also a file name — and `global` picks the registry,
+  true writing `{config_dir}/workflows` and false or unset writing the project's
+  `.vincent/workflows`. Both are live registry directories rather than the task's
+  worktree, since a file left in a worktree would not be a workflow until the
+  branch merged. The step runs under `on_input: wait` and the prompt says so: it
+  may stop and ask a design question the repository cannot answer, bounded by
+  what asking costs under §7.4 — a parked task holds its concurrency slot, and an
+  unanswered question fails the step on `input_timeout`.
 
 ### Fixed
+
+- **Crash recovery no longer re-queues a task whose previous attempt it could
+  not close.** Startup recovery ran as two independent sweeps — finalize every
+  open step run, then re-queue every live task — with nothing carrying a failed
+  finalize forward into the re-queue decision. A storage failure at that one
+  write was logged and walked past, and the owning task went back to `queued`
+  anyway: a `queued` task with a step run the database still called `running`,
+  which the scheduler then admitted, starting a second attempt against a first
+  one that was, durably, still open. Recovery is now atomic per task — the step
+  runs, the task transition and its durable event commit together — and
+  fail-closed: a task that cannot be reconciled is left exactly as found, and
+  the daemon refuses to start rather than running the scheduler over rows it
+  knows are contradictory. Restarting the daemon retries recovery, and nothing
+  is duplicated if it runs twice. Two guards back it up: admission refuses a
+  `queued` task that still has a `running` step run, and `vincent doctor`
+  reports the combination under a new `tasks` problem and a
+  `tasks.unreconciled[]` list.
+  ([#142](https://github.com/lezli01/vincent/issues/142))
+
+- **Reconnecting to the event stream no longer stalls the daemon.** A client
+  resuming `GET /v1/events` or `GET /v1/tasks/{id}/events` with a
+  `Last-Event-ID` had its whole backlog read into memory in one query, and
+  written in full, before the stream went live. Event rows are kept
+  indefinitely, so that backlog only grows: on a long-lived installation a
+  single reconnect could allocate tens of mebibytes and hold the daemon's one
+  SQLite connection for the length of the scan, delaying task transitions and
+  every other write behind it. The catch-up now reads in fixed pages up to the
+  newest event id at the moment the stream opened, so the memory and the
+  connection are held for one page no matter how far behind the cursor is.
+  Nothing about what a client receives changed: every event after the cursor
+  is still delivered, in id order, exactly once across the hand-off to live
+  events. ([#138](https://github.com/lezli01/vincent/issues/138))
+
+- **A request body is now exactly one JSON document, and it is bounded.** The
+  daemon read the *first* JSON value in a request body and discarded everything
+  after it unread, so a client that framed two documents into one request — a
+  retry that re-wrote the body, a `jq -c` loop piped into a single `curl -d @-`,
+  a buggy generator — got a `201` for work vincent never saw, with nothing in the
+  response to distinguish it from the single-document call. Trailing content is
+  now `400 invalid_json`; trailing whitespace stays valid. Bodies are also read
+  under a fixed bound instead of into memory whole (64 KiB, or 4 MiB on the
+  routes that carry a prompt or a workflow source), over which is a new
+  `413 payload_too_large` naming the limit and never echoing the body, and long
+  strings, big maps and prompt or run overrides are bounded field by field with a
+  `400` naming the field. `POST /v1/workflows/validate` now honours the same
+  1 MiB workflow-source limit the registry applies to a file, so a source too
+  large to be catalogued no longer validates cleanly. A body labelled a clearly
+  non-JSON `Content-Type` — what a plain `curl -d` sends — is `415`; an absent
+  header and any `*/json` are still accepted. The daemon additionally sets read
+  and idle timeouts, so a client that sends headers and then dribbles a body no
+  longer holds a connection indefinitely; SSE streams are unaffected and keep
+  their unbounded response lifetime.
+  ([#140](https://github.com/lezli01/vincent/issues/140))
+
+- **`config.yaml` is no longer created world-readable.** On Linux and macOS the
+  daemon created `{config_dir}/` `0755` and `config.yaml` `0644`, so any other
+  local account could read the one file vincent creates that can hold your
+  secrets — `environment.set` values are literal, which is where an API token or
+  a license key ends up. Both are now created `0700`/`0600`, subject only to a
+  stricter umask, and **every daemon start re-tightens an existing installation**
+  the way it already re-tightens `{data_dir}/token`: group and other access is
+  dropped, owner bits are kept and the file's contents are never rewritten. The
+  change is announced rather than silent — the daemon logs the path and the mode
+  it found, and `vincent doctor` grows a `permissions` warning row carrying the
+  path, the observed mode, the expected mode and the exact `chmod`. That warning
+  is not part of the closed set that makes `vincent doctor` exit `1`. Windows is
+  unaffected: modes carry no access control there and access comes from the
+  per-user ACL `%APPDATA%` inherits. The docs now also say plainly that
+  "vincent stores no credentials" is about *vendor* credentials, and that
+  `environment.set` is not a secret store.
+  ([#141](https://github.com/lezli01/vincent/issues/141))
+
+- **A step whose output vincent could not capture is no longer reported as a
+  success.** Command output was read a line at a time with a one-mebibyte
+  ceiling; a longer line — minified JSON, a base64 blob, a `git diff` of a
+  generated file — stopped capture dead, sent the rest of the stream to
+  `/dev/null`, and left the step `succeeded` on its exit code alone, with a
+  megabyte of evidence gone and nothing a client could query saying so.
+  Over-long lines are now captured in bounded `partial` pieces that rejoin in
+  order, so an ordinary big-output command stays a success *with* its output.
+  Genuine evidence loss now fails the attempt instead: transcript write, encode
+  and close errors (a full disk, a revoked permission, a short write — `Close`
+  is checked, because that is where a buffered filesystem reports ENOSPC) fail
+  it with the new `transcript_io_error` reason, and a stream an agent adapter
+  could not read to the end fails it with `agent_protocol_error` rather than
+  blaming the CLI. Both retry normally and neither can be swallowed by
+  `allow_failure:`. `transcript_max_bytes` is unchanged and remains the only
+  size-based failure. ([#139](https://github.com/lezli01/vincent/issues/139))
+
+- **The repair prompt's transcript excerpt keeps its own bound.** The 256 KiB
+  ceiling #139 gave the shared output-tail helper silently halved the 512 KiB
+  transcript window the repair prompt had already narrowed its own read to, so a
+  repair agent saw half the failure context it was designed to get. The bound is
+  now the caller's: the shared helper keeps §8.4's, and a caller that has already
+  bounded its own read says so. A silent narrowing is the shape of the bug #139
+  is about, so it should not arrive as a side effect of fixing it.
+
+- **Workflow loading is bounded and refuses non-regular files.** A `*.yaml`
+  entry in a workflow directory that is a symlink, named pipe, socket or device
+  is no longer opened or followed, and a source is capped at 1 MiB. Previously a
+  named pipe in a registered repository's `.vincent/workflows/` parked the loader
+  in `open()` forever — enough to stop the daemon from starting, hang
+  `POST /v1/projects`, or kill hot reload for every scope — and a symlink was
+  followed out of the repository into whatever it pointed at. Rejected files are
+  listed as invalid entries naming the reason, so the valid workflows in the same
+  directory keep working. ([#136](https://github.com/lezli01/vincent/issues/136))
 
 - **Logging in to an agent CLI is noticed within five minutes.** Adapter probe
   results are cached by binary identity, which is exact for the model and effort
@@ -306,6 +277,7 @@ list with the user-facing context a commit subject cannot carry.
   cleanup path — `vincent task ls --archived` — actually names the branches
   vincent made. Branch names are configurable, so a `vincent/*` glob is not
   guaranteed to find them. ([#137](https://github.com/lezli01/vincent/issues/137))
+
 - **Corrected documentation that promised branches are never deleted.** The FAQ
   said archiving always keeps the branch; archiving deletes a branch that has no
   commits past its base, and has since `delete_empty_branch_on_archive` shipped
@@ -313,6 +285,33 @@ list with the user-facing context a commit subject cannot carry.
   README, quickstart and scripting guide also claimed full TUI/CLI parity, which
   does not hold for the human actions on a running task.
   ([#137](https://github.com/lezli01/vincent/issues/137))
+
+- **The documentation site renders again.** GitHub Pages builds this repository
+  with Jekyll, whose Liquid parser tried to evaluate the Go-template expressions
+  (`{{ ... }}`) that the workflow schema, guide, concepts, troubleshooting and
+  bundled reference pages exist to document — breaking those builds. Every
+  template-carrying page is now wrapped in `raw` blocks, internal engineering
+  records (the spec, tasks, gates and history) are excluded from the site build
+  rather than half-rendered, two pages whose names collided on case-insensitive
+  filesystems were renamed, and the rendered changelog and contributing pages are
+  published and linked from the site navigation.
+
+## [0.5.0](https://github.com/lezli01/vincent/compare/v0.4.2...v0.5.0) (2026-08-22)
+
+### Added
+
+- **The Vincent Workflows authoring skill.** A portable agent skill for
+  designing workflows: it prefers deterministic commands and the language's
+  native control flow over asking an agent, keeps the cost of each step in
+  view, and asks about human gates, mid-run interaction, acceptance checks,
+  side effects and failure policy before it generates anything. The skill is
+  published at `skills/vincent-workflows/`.
+
+- **Workflow-declared task fields.** Workflows can publish ordered task inputs
+  with labels, descriptions, required flags, string/integer/number/boolean
+  types and Go RE2 patterns. The TUI pre-renders those inputs, the daemon
+  validates declared values for every client, and additional undeclared fields
+  remain accepted and recorded on the task.
 
 ## [0.4.2](https://github.com/lezli01/vincent/compare/v0.4.1...v0.4.2) (2026-08-21)
 
@@ -839,6 +838,5 @@ vincent is `0.x`. Until `1.0.0`:
   policy (`internal/store/migrations/`); downgrading a binary across a
   migration is not supported.
 
-[Unreleased]: https://github.com/lezli01/vincent/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/lezli01/vincent/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lezli01/vincent/releases/tag/v0.1.0
