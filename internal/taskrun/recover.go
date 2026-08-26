@@ -17,14 +17,43 @@ import (
 // journaled time is the daemon's wall clock just after spawn and the OS
 // reports kernel bookkeeping (tick/btime conversion on Linux), so the two
 // legitimately differ by a little; a recycled PID differs by the whole
-// lifetime of the daemon that died (PR D decision: ±5 s).
+// lifetime of the daemon that died.
+//
+// This is the **legacy fallback**, not the guard. PR D's ±5 s rule (grill
+// session 2026-08-08, docs/history/v0-tasks.md) was superseded by issue #149
+// and task 031: a step run journals procx.Identity beside its PID, and
+// recovery compares that token exactly. The tolerance survives only for rows
+// that carry no identity — written before migration 0013, or by a spawn whose
+// identity read failed — where it is still strictly better than nothing.
 const startTimeTolerance = 5 * time.Second
+
+// identityOf is procx.Identity, indirected so a test can make the read fail.
+// "Cannot prove, do not kill" is the invariant that matters most on the path
+// where the proof itself is unavailable, and there is no other way to reach
+// that branch deterministically.
+var identityOf = procx.Identity
+
+// journalIdentity reads the native identity of a process just spawned, for the
+// PID column's sake. A read that fails is journaled as no identity at all: the
+// step runs regardless, and its row falls back to the start-time tolerance —
+// a workspace where the read never works is exactly as safe as it was before
+// issue #149, and no safer. The failure is logged because a host that cannot
+// read process identity at all is worth knowing about.
+func journalIdentity(pid int, log *slog.Logger) *string {
+	id, err := identityOf(pid)
+	if err != nil {
+		log.Warn("process identity unavailable; the PID-reuse guard falls back to the start-time tolerance",
+			"pid", pid, "error", err)
+		return nil
+	}
+	return &id
+}
 
 // Recover is §12.4's startup crash recovery, run by the daemon before the
 // scheduler or runner start. Every step run a previous daemon process left
 // `running` is finalized as `interrupted` — after tree-killing its recorded
-// process if, and only if, the PID still exists and its start time matches
-// the journal (the PID-reuse guard). Each owning task then re-queues at its
+// process if, and only if, the PID still exists and still holds the process
+// the row journaled (the PID-reuse guard). Each owning task then re-queues at its
 // current step through the FSM's Interrupt action: the durable event fires,
 // the retry budget is untouched (§7.2), and tasks found in `awaiting_input`
 // are treated identically (§7.4). Returns how many tasks were re-queued.
@@ -116,30 +145,15 @@ func killOwned(runs []*store.StepRun, taskID int64, log *slog.Logger) {
 }
 
 // killOrphan tree-kills the process a running step run journaled, when it is
-// demonstrably still that process. A dead PID is the good case; a PID whose
-// start time does not match belongs to an innocent stranger and is left
-// alone (§12.4).
+// demonstrably still that process. A dead PID is the good case; a PID that
+// now holds somebody else belongs to an innocent stranger and is left alone
+// (§12.4).
 func killOrphan(run *store.StepRun, log *slog.Logger) {
-	if run.PID == nil || run.ProcStartedAt == nil {
+	if run.PID == nil {
 		return
 	}
 	pid := *run.PID
-	started, err := procx.StartTime(pid)
-	if errors.Is(err, procx.ErrProcessGone) {
-		return
-	}
-	if err != nil {
-		// Can't prove identity — do not kill what we cannot identify.
-		log.Warn("recovery: process start time unavailable; leaving PID alone", "pid", pid, "error", err)
-		return
-	}
-	diff := started.Sub(*run.ProcStartedAt)
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff > startTimeTolerance {
-		log.Warn("recovery: PID was reused by another process; leaving it alone",
-			"pid", pid, "journaled", run.ProcStartedAt, "actual", started)
+	if !stillTheJournaledProcess(run, pid, log) {
 		return
 	}
 	if err := procx.KillPID(pid); err != nil {
@@ -147,4 +161,65 @@ func killOrphan(run *store.StepRun, log *slog.Logger) {
 		return
 	}
 	log.Warn("recovery: killed orphaned process from a previous run", "pid", pid)
+}
+
+// stillTheJournaledProcess answers §12.4's only question about a recorded PID:
+// is the process holding it now the one this row spawned? It answers false
+// whenever it cannot prove otherwise — a gone PID, an unreadable identity, a
+// row that journaled nothing to compare — because the cost of a wrong "yes"
+// is killing a stranger's process and the cost of a wrong "no" is a stray
+// orphan the next recovery may still reap.
+func stillTheJournaledProcess(run *store.StepRun, pid int, log *slog.Logger) bool {
+	if run.ProcIdentity != nil {
+		return identityStillHolds(pid, *run.ProcIdentity, log)
+	}
+	if run.ProcStartedAt == nil {
+		return false // crashed before the journal write; nothing to compare
+	}
+	return startTimeStillHolds(pid, *run.ProcStartedAt, log)
+}
+
+// identityStillHolds compares the platform-native identity journaled at spawn
+// with the one the OS reports for that PID now — byte for byte, never parsed
+// (issue #149). A reused PID reports a different token by construction, and a
+// reboot changes it too where the token carries a boot id.
+func identityStillHolds(pid int, journaled string, log *slog.Logger) bool {
+	live, err := identityOf(pid)
+	if errors.Is(err, procx.ErrProcessGone) {
+		return false
+	}
+	if err != nil {
+		// Can't prove identity — do not kill what we cannot identify.
+		log.Warn("recovery: process identity unavailable; leaving PID alone", "pid", pid, "error", err)
+		return false
+	}
+	if live != journaled {
+		log.Warn("recovery: PID now belongs to a different process; leaving it alone",
+			"pid", pid, "journaled", journaled, "actual", live)
+		return false
+	}
+	return true
+}
+
+// startTimeStillHolds is the pre-#149 guard, kept for rows with no journaled
+// identity: two clocks compared within startTimeTolerance.
+func startTimeStillHolds(pid int, journaled time.Time, log *slog.Logger) bool {
+	started, err := procx.StartTime(pid)
+	if errors.Is(err, procx.ErrProcessGone) {
+		return false
+	}
+	if err != nil {
+		log.Warn("recovery: process start time unavailable; leaving PID alone", "pid", pid, "error", err)
+		return false
+	}
+	diff := started.Sub(journaled)
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > startTimeTolerance {
+		log.Warn("recovery: PID was reused by another process; leaving it alone",
+			"pid", pid, "journaled", journaled, "actual", started)
+		return false
+	}
+	return true
 }

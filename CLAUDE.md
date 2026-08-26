@@ -183,7 +183,9 @@ is a correctness bug, not a style issue:
   chunks are dropped for slow subscribers (the transcript file is the durable copy).
 - **Crash-first.** Every transition is persisted before it is acted on. Recovery
   (`internal/taskrun/recover.go`, spec §12.4) finalizes `running` step runs as
-  `interrupted`, kills verified orphans (PID **and** start time must match — PID
+  `interrupted`, kills verified orphans (the PID must still hold the process the
+  row journaled, proved by an exact platform-native identity — `procx.Identity`,
+  with the older start-time tolerance kept only for rows carrying none — the PID
   reuse guard), and re-runs the step as an attempt that does not consume a retry.
 
 **Package map** (each has a `doc.go` stating its role and spec sections):

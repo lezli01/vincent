@@ -12,7 +12,7 @@ import (
 
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
 	state, agent, model, effort, pid,
-	proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
+	proc_started_at, proc_identity, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
 	prompt_override, run_override, transcript_path,
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
 
@@ -34,7 +34,7 @@ func terminalizeOpenStepRuns(
 	ctx context.Context, db execer, taskID int64, state StepRunState, reason string,
 ) (int64, error) {
 	res, err := db.ExecContext(ctx, `
-		UPDATE step_runs SET state = ?, failure_reason = ?, pid = NULL, finished_at = ?
+		UPDATE step_runs SET state = ?, failure_reason = ?, pid = NULL, proc_identity = NULL, finished_at = ?
 		WHERE task_id = ? AND state = ?`,
 		string(state), nullString(reason), formatTime(time.Now()), taskID, string(StepRunning))
 	if err != nil {
@@ -95,14 +95,14 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
 			state, agent, model, effort, pid,
-			proc_started_at, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
-			prompt_override, run_override, transcript_path,
+			proc_started_at, proc_identity, exit_code, check_exit_code, failure_reason, skip_reason,
+			result_summary, prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
 		string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
-		r.PID, formatTimePtr(r.ProcStartedAt), r.ExitCode, r.CheckExitCode,
+		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.SkipReason), nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
@@ -123,12 +123,13 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
+			proc_identity = ?,
 			exit_code = ?, check_exit_code = ?, failure_reason = ?, skip_reason = ?, result_summary = ?,
 			prompt_override = ?, run_override = ?, transcript_path = ?,
 			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?
 		WHERE id = ?`,
 		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
-		r.PID, formatTimePtr(r.ProcStartedAt),
+		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity,
 		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.SkipReason),
 		nullString(r.ResultSummary),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
@@ -330,12 +331,13 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		promptOv, runOv                         sql.NullString
 		pid, exitCode, checkExit, inTok, outTok sql.NullInt64
 		cost                                    sql.NullFloat64
-		procStarted, finished                   sql.NullString
+		procStarted, procIdentity, finished     sql.NullString
 		started                                 string
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
 		&r.Iteration, &loopItem,
-		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &exitCode, &checkExit,
+		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &procIdentity,
+		&exitCode, &checkExit,
 		&failure, &skip, &summary, &promptOv, &runOv, &transcript,
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
 		return nil, err
@@ -353,6 +355,10 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	if pid.Valid {
 		v := int(pid.Int64)
 		r.PID = &v
+	}
+	if procIdentity.Valid {
+		v := procIdentity.String
+		r.ProcIdentity = &v
 	}
 	if exitCode.Valid {
 		v := int(exitCode.Int64)

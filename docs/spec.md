@@ -2842,8 +2842,9 @@ edited via `PATCH /v1/projects/{id}`.
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
 - On startup: any StepRun still marked `running` is finalized as `interrupted`; if its
-  recorded PID still exists *and* its start time matches the journaled spawn time
-  (within a small tolerance — the guard against PID reuse), the process is killed
+  recorded PID still exists *and* the process holding it is provably the one the row
+  spawned (the guard against PID reuse — see the 2026-08-26 amendment below), the
+  process is killed
   (orphan). The owning task returns to `queued` and the interrupted step re-runs as a
   fresh attempt that does **not** consume a retry. Tasks found in `awaiting_input`
   are treated identically — the pending request is discarded with the process, and
@@ -2895,6 +2896,31 @@ ones already in. Recovery is the **only** path allowed to abort. A human retry
 after a `merge_conflict` block finds the same in-progress merge and must
 commit their resolution instead; the two are told apart by how the previous
 attempt ended, read before the new attempt's row exists.
+
+*Amended 2026-08-26 (issue #149, task 031).* The PID-reuse guard compares a
+**platform-native process identity**, exactly, and no longer a wall clock
+within a tolerance. Beside the PID and `proc_started_at`, a spawn journals
+`step_runs.proc_identity` (migration 0013): an opaque, versioned, per-OS token
+— on Linux the raw start-tick count from `/proc/<pid>/stat` joined with
+`/proc/sys/kernel/random/boot_id`, on macOS the `kinfo_proc` fork stamp to the
+microsecond, on Windows the creation `FILETIME` in its raw 100 ns unit.
+Recovery reads the token again and kills only on a byte-for-byte match; it
+never parses one. This supersedes the PR D decision recorded in
+`docs/history/v0-tasks.md` — "within ±5 s of the journaled spawn time" — which
+compared the daemon's own clock against kernel bookkeeping and so had to
+tolerate a window a reused PID could theoretically fall inside. Keeping the
+Linux value as a count since boot rather than an absolute instant is what makes
+it immune to an NTP step or a suspend/resume, and the boot id makes a reboot a
+guaranteed mismatch.
+
+The ±5 s comparison survives as the **fallback for a row with no identity** —
+written before 0013, or by a spawn whose identity read failed, which is a real
+case rather than a hypothetical one. No installation is worse off than it was,
+and the rule underneath is untouched in both branches: *what cannot be proved
+is not killed.* An identity that cannot be read during recovery, when one was
+journaled, is never a kill. A mismatch is a logged warning and nothing more —
+the task re-queues normally, there is no new block reason and no doctor
+problem.
 
 ## 13. HTTP API
 
@@ -3430,7 +3456,13 @@ CREATE TABLE step_runs (
   model               TEXT,                   -- resolved model as passed to the adapter (§8.6)
   effort              TEXT,                   -- resolved effort as passed to the adapter (§8.6)
   pid                 INTEGER,                -- while running
-  proc_started_at     TEXT,
+  proc_started_at     TEXT,                   -- daemon wall clock just after spawn; the legacy reuse guard
+  -- Platform-native identity of that process, compared byte-for-byte by §12.4
+  -- recovery and never parsed (issue #149, task 031, migration 0013).
+  -- NULL = none journaled (pre-0013 row, or the read failed) — recovery then
+  -- falls back to the proc_started_at tolerance. Cleared with `pid` when the
+  -- row is terminalized.
+  proc_identity       TEXT,
   exit_code           INTEGER,
   check_exit_code     INTEGER,
   failure_reason      TEXT,

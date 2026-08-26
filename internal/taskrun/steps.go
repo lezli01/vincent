@@ -115,6 +115,7 @@ func (r *Runner) runAgentStep(
 	started := time.Now()
 	run.PID = &pid
 	run.ProcStartedAt = &started
+	run.ProcIdentity = journalIdentity(pid, env.log)
 	if err := r.deps.Store.UpdateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("journal agent pid", "error", err)
 	}
@@ -500,13 +501,15 @@ func (r *Runner) runShellCommand(
 	// Register the live process so a cancel can reach it (§6).
 	defer r.setProc(env.task.ID, proc)()
 
-	// Journal the PID before any output can arrive, so crash recovery can
-	// find and kill an orphaned command tree (§12.4 covers any step process;
-	// a check overwrites the body's PID — the column means "running now").
+	// Journal the PID and the process's native identity before any output
+	// can arrive, so crash recovery can find and kill an orphaned command
+	// tree (§12.4 covers any step process; a check overwrites the body's PID
+	// — the column means "running now").
 	pid := cmd.Process.Pid
 	started := time.Now()
 	run.PID = &pid
 	run.ProcStartedAt = &started
+	run.ProcIdentity = journalIdentity(pid, env.log)
 	if err := r.deps.Store.UpdateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("journal command pid", "error", err)
 	}

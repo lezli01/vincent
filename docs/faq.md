@@ -73,9 +73,11 @@ needs `loginctl enable-linger`, which the service installer handles).
 ### What happens if the daemon crashes mid-run?
 
 Every transition is persisted before it is acted on. On restart, interrupted step
-runs are finalized, verified orphan processes are killed (PID **and** start time
-must match), and the step re-runs as an attempt that **does not consume a
-retry**. See [Task lifecycle](reference/task-lifecycle.md#interruption-is-not-failure).
+runs are finalized, verified orphan processes are killed (the PID must still
+exist **and** still hold the same process, checked against a platform-native
+identity recorded at spawn — a PID the operating system has since handed to
+something else is left alone), and the step re-runs as an attempt that **does
+not consume a retry**. See [Task lifecycle](reference/task-lifecycle.md#interruption-is-not-failure).
 
 ### Do I have to write YAML?
 

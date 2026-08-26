@@ -1,0 +1,20 @@
+-- 0013_proc_identity: the platform-native process identity behind §12.4's
+-- PID-reuse guard (task 031, issue #149).
+--
+-- `proc_started_at` is the daemon's own wall clock read just after spawn, and
+-- recovery compared it with kernel bookkeeping within ±5 s (the PR D
+-- decision). Two clocks, one loose comparison. This column carries instead an
+-- opaque, versioned, per-OS token — Linux raw start ticks plus boot id, macOS
+-- the kinfo_proc fork stamp, Windows the creation FILETIME — that recovery
+-- compares byte-for-byte and never parses.
+--
+-- NULL is a first-class value and means "no identity was journaled": a row
+-- written before this migration, or one whose identity read failed at spawn
+-- (a real case — see task 022's verification record). Such a row keeps the
+-- ±5 s wall-clock comparison exactly as it is today, so no host gets worse
+-- than it was. `proc_started_at` is unchanged and stays: it is the
+-- human-readable stamp, and that fallback's input.
+--
+-- Cleared alongside `pid` when a row is terminalized, for the same reason:
+-- a closed row must keep no pointer at a process it no longer owns.
+ALTER TABLE step_runs ADD COLUMN proc_identity TEXT; -- NULL = fall back to the proc_started_at tolerance
