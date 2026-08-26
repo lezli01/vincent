@@ -85,8 +85,12 @@ func TestWorkflowInitE2ELiveReload(t *testing.T) {
 	}
 
 	// The watcher debounces a save by 100ms; poll rather than sleep once, so
-	// a loaded CI runner is slow rather than flaky.
-	deadline := time.Now().Add(15 * time.Second)
+	// a loaded CI runner is slow rather than flaky. The budget is generous on
+	// purpose: each turn of this loop spawns a process, which costs far more
+	// on the Windows leg than the debounce it is waiting out, and the other
+	// polls in this package that wait on daemon work use 30-90s for the same
+	// reason.
+	deadline := time.Now().Add(60 * time.Second)
 	var out string
 	for {
 		var code int
