@@ -17,7 +17,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
-| Platforms | Windows, macOS, and Linux; Homebrew, WinGet, Scoop, mise, deb/rpm, and archives |
+| Platforms | Windows, macOS, and Linux; Homebrew, a signed and notarized macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
 
 ## Orchestrate work instead of terminals
 
@@ -215,14 +215,17 @@ vincent is one self-contained Go binary with no runtime, CGO dependency, or
 external database. Releases cover Windows, macOS, and Linux, and are published
 as archives plus platform-friendly packages:
 
-- Homebrew on macOS
+- Homebrew or a universal installer package on macOS
 - WinGet or Scoop on Windows
 - deb and rpm packages on Linux
 - mise or release archives on all platforms
 
 Release archives are checksummed, the checksum manifest is signed with cosign,
-and builds carry GitHub attestations. Platform-specific installation, service,
-shell, and restricted-mode differences are documented in
+and builds carry GitHub attestations. Every macOS artifact is additionally
+signed with an Apple Developer ID identity under the hardened runtime and
+notarized, and the `.pkg` is stapled, so Gatekeeper opens a downloaded release
+without a prompt and without a quarantine attribute to strip. Platform-specific
+installation, service, shell, and restricted-mode differences are documented in
 [Installation](getting-started/installation.md) and the
 [platform guides](README.md#platforms).
 

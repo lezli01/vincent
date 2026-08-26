@@ -5,12 +5,13 @@ and no database server — the store is an embedded SQLite file.
 
 - [What you need](#what-you-need)
 - [Homebrew (macOS)](#homebrew-macos)
+- [Installer package (macOS)](#installer-package-macos)
 - [WinGet (Windows)](#winget-windows)
 - [Scoop (Windows)](#scoop-windows)
 - [mise (all platforms)](#mise-all-platforms)
 - [deb and rpm (Linux)](#deb-and-rpm-linux)
 - [Download a release](#download-a-release)
-- [First launch is flagged](#first-launch-is-flagged)
+- [First launch](#first-launch)
 - [Verify a download](#verify-a-download)
 - [Install an agent CLI](#install-an-agent-cli)
 - [Confirm the install](#confirm-the-install)
@@ -40,9 +41,9 @@ Go is *not* required to run vincent — only to
 brew install lezli01/tap/vincent
 ```
 
-This is the shortest path on macOS, and the only one that does not make you
-clear the quarantine attribute by hand — the cask does it during install, so
-[First launch is flagged](#first-launch-is-flagged) does not apply here.
+This is the shortest path on macOS. The binary it installs is Developer ID
+signed and notarized like every other macOS artifact, so nothing has to clear a
+quarantine attribute — the cask used to, and deliberately no longer does.
 
 Homebrew casks are macOS-only. On Linuxbrew, use the archive below.
 
@@ -55,6 +56,37 @@ brew uninstall --zap vincent
 
 Plain `brew uninstall vincent` removes the binary and unloads the LaunchAgent
 but leaves `~/Library/Application Support/vincent` intact.
+
+## Installer package (macOS)
+
+Stable releases attach `vincent_{version}_darwin_universal.pkg`: one universal
+installer covering Apple silicon and Intel, which puts the binary at
+`/usr/local/bin/vincent`. Download it from the
+[latest release](https://github.com/lezli01/vincent/releases/latest) and
+double-click it, or:
+
+```sh
+sudo installer -pkg vincent_*_darwin_universal.pkg -target /
+vincent version
+```
+
+The package is signed with an Apple Developer ID Installer identity, notarized,
+and **stapled** — its notarization ticket travels inside the file, so it
+installs on a machine with no network. That is the one thing it does that the
+archive cannot; everything else here is equivalent. Verify it before installing:
+
+```sh
+pkgutil --check-signature vincent_*_darwin_universal.pkg
+spctl --assess --type install -vv vincent_*_darwin_universal.pkg
+```
+
+The `.pkg` is deliberately absent from `checksums.txt` — it is built after the
+checksummed artifacts, from both of them — and carries Apple's installer
+signature plus a [build attestation](#verify-a-download) instead.
+
+To remove it, delete `/usr/local/bin/vincent` (after `vincent service
+uninstall`, if you registered the background service) and, if you also want the
+config, database and transcripts, `~/Library/Application Support/vincent`.
 
 ## WinGet (Windows)
 
@@ -188,24 +220,34 @@ vincent version
 Platform-specific detail lives in [Windows](../platforms/windows.md),
 [macOS](../platforms/macos.md) and [Linux](../platforms/linux.md).
 
-## First launch is flagged
+## First launch
 
-Releases carry cosign signatures, SHA-256 checksums and GitHub build
-attestations — but **not OS code signing**. Authenticode certificates and Apple
-notarization are recurring costs this project does not take on, so the first
-launch of a **downloaded archive** prompts. (Installing with
-[Homebrew](#homebrew-macos) avoids this — the cask clears the attribute for
-you.)
+Every release carries cosign signatures, SHA-256 checksums and GitHub build
+attestations. On top of those, macOS artifacts carry **Apple code signing**;
+Windows ones do not.
 
-- **macOS** — *"cannot be opened because it is from an unidentified developer"*.
-  Clear the quarantine attribute once:
+- **macOS** — nothing to do. The binaries and the `.pkg` are signed with an
+  Apple Developer ID identity under the hardened runtime and notarized, so
+  Gatekeeper clears them without a prompt. Do not run `xattr -d
+  com.apple.quarantine`: it is no longer needed, and it only turns off the check
+  that would tell you the file had been tampered with. Confirm the signature
+  yourself with:
 
   ```sh
-  xattr -d com.apple.quarantine /usr/local/bin/vincent
+  codesign --verify --strict --verbose=2 /usr/local/bin/vincent
+  spctl --assess --type execute -vv /usr/local/bin/vincent
   ```
 
+  Only the [`.pkg`](#installer-package-macos) is *stapled*, so it is the one
+  artifact whose first launch also works with no network — a bare binary has
+  nowhere to hold a notarization ticket, and Gatekeeper fetches its verdict from
+  Apple instead.
+
 - **Windows** — SmartScreen shows *"Windows protected your PC"*. Choose
-  **More info → Run anyway**. It appears once per binary.
+  **More info → Run anyway**. It appears once per binary. Releases are not
+  Authenticode-signed: an OV certificate on a hardware token is a recurring
+  purchase with no equivalent to Apple's single notary service, and this project
+  does not take it on.
 
 - **Linux** — nothing to clear. Make sure the file is executable
   (`chmod +x vincent`) if your extraction tool dropped the bit.
@@ -235,6 +277,23 @@ attestation. For example:
 ```sh
 gh attestation verify vincent_*_linux_amd64.tar.gz --repo lezli01/vincent
 ```
+
+The macOS `.pkg` is the one asset outside `checksums.txt`, so it is verified
+from its own two signatures — Apple's, and the attestation:
+
+```sh
+pkgutil --check-signature vincent_*_darwin_universal.pkg
+gh attestation verify vincent_*_darwin_universal.pkg --repo lezli01/vincent
+```
+
+The three signatures answer different questions, which is why all three exist.
+**cosign** says which GitHub Actions workflow, at which commit, produced the
+file — to anyone, with no vincent key to trust or rotate. The **build
+attestation** says the same thing in the format `gh` and `mise` check
+automatically. **Apple's Developer ID signature plus notarization** says to
+*macOS itself* that a known developer built this and Apple scanned it, which is
+what makes Gatekeeper open it. None of them substitutes for another, and no
+Windows equivalent of the third exists here.
 
 ## Install an agent CLI
 

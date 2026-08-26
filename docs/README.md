@@ -69,7 +69,7 @@ that is *not* true are stated rather than smoothed over.
 | Page | What it covers |
 |---|---|
 | [Windows](platforms/windows.md) | SmartScreen, `%APPDATA%`/`%LOCALAPPDATA%`, PowerShell command steps, the Scheduled Task, the one restricted-mode gap |
-| [macOS](platforms/macos.md) | Gatekeeper and quarantine, `~/Library/Application Support`, the LaunchAgent, `PATH` capture |
+| [macOS](platforms/macos.md) | Gatekeeper, the Developer ID signature and the stapled `.pkg`, `~/Library/Application Support`, the LaunchAgent, `PATH` capture |
 | [Linux](platforms/linux.md) | XDG directories, the systemd user unit, `loginctl enable-linger` |
 
 ## Reference
