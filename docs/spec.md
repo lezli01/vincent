@@ -2964,6 +2964,21 @@ in §13.2 sees the body:
   `answers` keys, values and entry counts, prompt and run overrides, names and
   branch names); over a field bound is `400` `validation_failed` naming the field
   and the limit.
+
+  *Amended 2026-08-26 (issue #197).* A `fields` key and an `answers` key are
+  bounded **separately**, because they are not the same kind of thing. A `fields`
+  key is a caller-chosen identifier a human or a workflow author types (§8.1.2),
+  and its bound is sized for one. An `answers` key is not chosen by the caller:
+  it is the agent's verbatim question text, which §7.4 makes the lookup key and
+  §9.2 writes back to the CLI unchanged, so no layer between the agent and the
+  answer route may shorten it. It is therefore bounded as agent-authored text —
+  the size an answer *value* gets — not as an identifier. Bounding the two alike
+  made any question past the identifier bound unanswerable: the daemon parked on,
+  persisted and rendered a question it then refused every answer to, leaving the
+  task holding its slot in `awaiting_input` until it was cancelled or timed out.
+  The count bounds and the route's body bound are unchanged, so nothing about the
+  key is unbounded. This section still fixes no numbers; `docs/reference/api.md`
+  publishes them.
 - **Labelled JSON, leniently.** A body with no `Content-Type`, or any `*/json` or
   `*+json` type with any parameters, is accepted. A non-empty body labelled a
   clearly non-JSON type — `text/html`, or the `application/x-www-form-urlencoded`

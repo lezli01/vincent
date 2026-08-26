@@ -565,13 +565,15 @@ func (v *answerValues) UnmarshalJSON(b []byte) error {
 // boundAnswers bounds an answer map: §13.1's entry count on the map itself,
 // on the values of any one answer, and on each question and answer string. The
 // values are templated into a resumed step's prompt, so they are bounded like
-// any other prompt input.
+// any other prompt input. The key is the agent's question text rather than a
+// caller-chosen identifier (§7.4), so it takes maxAnswersKeyBytes and not the
+// `fields` key bound — see the note on that constant.
 func boundAnswers(answers map[string]answerValues) string {
 	if msg := boundCount("answers", len(answers), maxFieldCount); msg != "" {
 		return msg
 	}
 	for text, vals := range answers {
-		if msg := boundString("answers key", text, maxFieldKeyBytes); msg != "" {
+		if msg := boundString("answers key", text, maxAnswersKeyBytes); msg != "" {
 			return msg
 		}
 		field := fmt.Sprintf("answers[%s]", truncKey(text))

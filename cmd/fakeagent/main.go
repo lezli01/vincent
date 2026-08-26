@@ -67,6 +67,11 @@
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
 //	FAKEAGENT_ASK_MULTI   ask-question: add a second, multi-select question
+//	FAKEAGENT_ASK_LONG    ask-question: "1" asks the question as prose well
+//	                      past 256 bytes, the length Claude routinely writes.
+//	                      The answer is keyed by that text verbatim (§7.4), so
+//	                      this drives the whole round trip against the API's
+//	                      key bound (issue #197)
 //	FAKEAGENT_DELAY_MS    success (both dialects): stretch the run over this
 //	                      many milliseconds, emitting one assistant line per
 //	                      second — the M3 gate needs tasks that are still
@@ -437,11 +442,27 @@ func awaitControlResponse(rd *bufio.Reader, requestID string) (controlResponse, 
 	}
 }
 
+// longQuestionText is what the ask-question scenario asks under
+// FAKEAGENT_ASK_LONG: one question of agent-authored prose comfortably past
+// 256 bytes, which is the length Claude routinely writes. A test answering it
+// keys off the text the daemon parked on rather than repeating this literal,
+// because that is what a human answering the form does (§7.4).
+const longQuestionText = "Two colors would both work for the header, and the " +
+	"choice changes more than it looks like it does: red reads as an alert " +
+	"everywhere else in this interface, so using it here would blunt that " +
+	"signal, while blue matches the rest of the chrome but is much easier to " +
+	"miss on a dim screen. Which would you rather I use, and should I apply " +
+	"it to the footer at the same time?"
+
 // askQuestion emits an AskUserQuestion control_request in the captured shape
 // and blocks until answered; the answers round-trip into the result text.
 func askQuestion(prompt []byte, rd *bufio.Reader) {
+	question := "Which color do you prefer?"
+	if os.Getenv("FAKEAGENT_ASK_LONG") == "1" {
+		question = longQuestionText
+	}
 	questions := []any{map[string]any{
-		"question": "Which color do you prefer?",
+		"question": question,
 		"header":   "Color",
 		"options": []any{
 			map[string]any{"label": "Red", "description": "The color red"},

@@ -35,11 +35,23 @@ const (
 	maxDescriptionBytes = 64 << 10 // task description
 	maxPromptBytes      = 1 << 20  // repair prompt, retry prompt override
 	maxCommandBytes     = 16 << 10 // retry run override — one shell command
-	maxFieldKeyBytes    = 256      // one fields/answers key
+	maxFieldKeyBytes    = 256      // one fields key
+	maxAnswersKeyBytes  = 64 << 10 // one answers key — the agent's question text
 	maxFieldValueBytes  = 64 << 10 // one fields/answers value
 	maxFieldCount       = 100      // fields/answers entries in one request
 	maxValueCount       = 100      // values in one answer
 )
+
+// The two key bounds differ because the two keys are different kinds of thing
+// (amended 2026-08-26, issue #197). A `fields` key is a caller-chosen
+// identifier a human or a workflow author types (§8.1.2), and 256 B is generous
+// for one. An `answers` key is not chosen by the caller at all: it is the
+// agent's verbatim question text, which §7.4 makes the lookup key and §9.2
+// writes back to the CLI unchanged, so nothing between the agent and the
+// answer route may shorten it. Bounding it like an identifier made any question
+// longer than 256 B unanswerable — the daemon parked on, persisted and rendered
+// a question it then refused every answer to. It is bounded like the prose it
+// is, at the same size as the answer value it arrives beside.
 
 // boundString reports the §13.1 validation message for a field longer than
 // limit, and "" when it fits. The bound is in bytes rather than runes: what it exists
