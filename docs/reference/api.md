@@ -588,6 +588,7 @@ rather than inventing a model name.
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
+| `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 
 On `POST /v1/tasks`, the daemon validates the selected root workflow's
 declared fields before inserting the task. Missing required values and invalid
@@ -738,9 +739,10 @@ Four details worth knowing:
   is given rather than switching on the two it knows.
 
 - **List rows carry the board fields** — `project_name`, `step_total`,
-  `step_name`, and `cost_usd` / `input_tokens` / `output_tokens` rolled up across
-  every attempt — so a board renders without an N+1. Those are list-only;
-  `GET /v1/tasks/{id}` serves the same numbers per attempt in `steps[]`.
+  `step_name`, `status_message`, and `cost_usd` / `input_tokens` /
+  `output_tokens` rolled up across every attempt — so a board renders without an
+  N+1. Those are list-only; `GET /v1/tasks/{id}` serves the same numbers per
+  attempt in `steps[]`.
 
 Every task shape carries `parent_task_id`, `lane_id` and `lane_order`, all null
 for a root task. `GET /v1/tasks/{id}` additionally carries `children` whenever
@@ -792,6 +794,58 @@ resolved into the snapshot, so an include that cycles, names a workflow this
 project cannot see, nests past `include.max_depth`, brings a step id already in
 use, or is restricted to another platform is a `400` here.
 
+## Step status
+
+A running step can say what it is doing, in its own words:
+
+```
+POST /v1/tasks/{id}/steps/{step_id}/status
+{ "message": "3 tests red in internal/store" }
+```
+
+The answer is `{ "message": … }` — the value **as stored**, so you can see what
+a reader will see.
+
+The caller is the step's own process. It addresses itself with two of the
+[`VINCENT_*` variables](../guides/workflows.md#the-vincent-environment) the
+daemon sets on every agent and command step, `VINCENT_TASK_ID` and
+`VINCENT_STEP_ID`, and the usual way to call it is not curl but
+[`vincent status`](cli.md#vincent-status), which reads both and needs no
+arguments beyond the message.
+
+The path names a **step id**, not a `step_runs` row id, because a step knows
+which step it is and cannot know its row. It names a step rather than only the
+task because a `parallel` group's sub-steps share one task and run at the same
+time; within one task a step id has at most one running row.
+
+What the daemon does with the message:
+
+- **Bounds it rather than validating it.** It is flattened to a single line,
+  stripped of control characters and truncated to 256 bytes. Over-long text is
+  never a `400` — a step reporting progress should not fail because it was
+  wordy. An empty message clears the status.
+- **Refuses a step that is not running**, with `409 invalid_state`. An unknown
+  task is `404`. A write is never silently dropped, so a script still narrating
+  after its step was killed finds out.
+- **Paces writes without rejecting them.** Two writes for one step run inside
+  one second coalesce to the later value, which lands when the second is up.
+  The first write after a quiet period is always immediate.
+- **Announces the change** as the durable
+  [`task.status_changed`](#state-events--durable) event — but only when the
+  stored value actually changed.
+
+Where it shows up: `status_message` on every step-run object from
+`GET /v1/tasks/{id}` and `GET /v1/tasks/{id}/steps`, and on each row of
+`GET /v1/tasks`, denormalized from the task's **newest** step run so a board
+never fetches step rows for it. It is `null` when the step said nothing, which
+is the ordinary case — only `agent` and `command` steps run a process, and one
+only speaks if its prompt or script was written to.
+
+**It is not a failure reason.** `failure_reason` is a closed set of
+daemon-authored constants and is vincent's own verdict; `status_message` is free
+text the step chose, possibly long before it died. Render it as the step's last
+status, not as the cause of anything.
+
 ## Transcripts and diffs
 
 ```
@@ -836,8 +890,9 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 
 ```
 task.created            task.state_changed      task.priority_changed
-task.step_advanced      task.children_changed   project.*
-workflow.registry_changed  agent.quota_changed  daemon.shutting_down
+task.step_advanced      task.status_changed     task.children_changed
+project.*               workflow.registry_changed
+agent.quota_changed     daemon.shutting_down
 ```
 
 Payloads carry ids and the new state, not full objects — clients re-fetch what
@@ -858,6 +913,11 @@ they need.
   transitions — re-fetch the `children` rollup when you see one. It exists
   because the per-task stream filters on `task_id` alone, so a root's stream
   would otherwise never see a depth-2 transition.
+- `task.status_changed` carries `{ task_id, step_id, message }` when a running
+  step changes what it says about itself — see [Step status](#step-status). It
+  is on the durable side deliberately, so a client that blinks recovers the
+  message through `Last-Event-ID`. It is emitted only when the stored value
+  actually changed, so a step re-asserting the same line does not wake you.
 - `agent.quota_changed` carries `{ agent, spent, resets_at, source }` and no
   `task_id`: the fact is about an adapter, not about any one task. It is
   emitted when a `usage_limit` stop is observed and when a successful run

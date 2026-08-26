@@ -13,6 +13,7 @@ localhost API.
 - [`vincent service`](#vincent-service)
 - [`vincent project`](#vincent-project)
 - [`vincent task`](#vincent-task)
+- [`vincent status`](#vincent-status)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
@@ -404,6 +405,18 @@ vincent task show <id> [--json]
 Shows one task with its step runs, the actions valid right now, and any pending
 input request.
 
+The step table's last two columns are different kinds of thing and should not be
+read as one. `REASON` is vincent's own `failure_reason`, a closed set of
+constants. `STATUS` is what the step said about *itself* through
+[`vincent status`](#vincent-status) — free text, `-` when it said nothing, and
+never the cause of a failure:
+
+```
+RUN  STEP       STATE      AGENT   REASON        STATUS
+1    implement  succeeded  claude  -             wired the adapter
+2    verify     failed     -       check_failed  3 tests red in internal/store
+```
+
 ### `vincent task cancel`
 
 ```sh
@@ -456,6 +469,52 @@ done
 The remaining human actions — approve, reject, retry, repair, skip, pause,
 resume, answer, archive — are TUI and API operations; see
 [the API reference](api.md#tasks).
+
+## `vincent status`
+
+```sh
+vincent status <message> [--json]
+```
+
+Records what the current step is doing, in its own words. It runs **from inside
+a step** — an agent's shell tool, or a `command` step's script — and takes no
+task or step argument: it reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` from
+[the environment](../guides/workflows.md#the-vincent-environment) the daemon
+sets on every agent and command step.
+
+```sh
+vincent status "running the store suite"
+# … later in the same step
+vincent status "3 tests red in internal/store"
+```
+
+The message has two readings and is one value. While the step runs it is the
+live answer to "what is this doing", shown on the board's `STATUS` column and on
+the attempt line in the [TUI](../guides/tui.md); the last value set before the
+attempt ends stays on the finished attempt as the step's own account of how it
+went.
+
+Details worth knowing:
+
+- **It is bounded, not validated.** The message is flattened to one line,
+  stripped of control characters and truncated to 256 bytes. Being wordy never
+  fails the command. An empty message clears the status.
+- **It is silent on success.** Its stdout is the step's transcript, and a step
+  that reports progress ten times should not add ten lines of vincent's own
+  noise to the record it is summarizing. `--json` prints the stored value if you
+  want it.
+- **It only works while the step is running.** Afterwards the daemon answers
+  `409` and the command exits 1 saying so, rather than dropping the message.
+- **Nothing asks an agent to call it.** The daemon appends no instruction to a
+  prompt, so an agent reports its status only when the workflow author asked it
+  to — see
+  [Reporting status from a step](../guides/workflows.md#56-reporting-status-from-a-step).
+- Outside a step, with neither variable set, it exits 1 and says so. It never
+  guesses a task.
+
+The status is never a `failure_reason`: nothing renders it as the cause of a
+failure, because a step killed on a timeout can be carrying a line it wrote
+half an hour earlier.
 
 ## `vincent workflow`
 

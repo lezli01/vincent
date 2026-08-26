@@ -222,6 +222,25 @@ that long in `queued` — holding no slot — and the step re-runs when the wait
 over. The budget is unchanged either way: the backoff decides *when* an attempt
 happens, never *whether*.
 
+## What a step says about itself
+
+Beside the outcome, a step run carries two pieces of text that are **not**
+vincent's words:
+
+- **`status_message`** — a line the running step wrote about itself through
+  [`vincent status`](../guides/workflows.md#56-reporting-status-from-a-step).
+  While the step runs it is the live answer to "what is this doing"; the last
+  value it set stays on the finished attempt. Empty unless the workflow asked
+  for it, and empty always for the step types that run no process (`manual`,
+  `parallel`, `fan_out`, `condition`, `loop`, `break`).
+- **`result_summary`** — the agent's final result text, or the last 200 lines of
+  a command step's stdout. Recorded on every attempt, readable from a later
+  step's `{{ .Steps.<id>.Result }}`.
+
+Neither is a failure reason, and no surface renders either as one. The reasons
+below are a closed set vincent authors; these two are whatever the step
+produced, possibly long before it stopped.
+
 ## Failure reasons
 
 The reason is recorded on the step run and on the task when it blocks. The
@@ -271,7 +290,9 @@ that renames the branch and re-admits it. See
 vincent is **crash-first**: every transition is persisted before it is acted on.
 When the daemon starts, recovery:
 
-1. finalizes any step run still marked `running` as `interrupted`;
+1. finalizes any step run still marked `running` as `interrupted`, keeping
+   whatever status message that step had set — "what was it doing when the
+   machine went down" is exactly what you want off that row;
 2. kills verified orphan processes — the recorded PID must still exist **and**
    still hold the very process the run spawned, checked against a
    platform-native identity recorded at spawn (start ticks plus boot id on

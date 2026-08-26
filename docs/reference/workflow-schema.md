@@ -920,8 +920,8 @@ missing value before a snapshot can run.
 
 ## Environment
 
-Command and check steps run with cwd set to the worktree, inherit the daemon's
-environment, and additionally receive:
+Agent, command and check steps run with cwd set to the worktree, inherit the
+daemon's environment, and additionally receive:
 
 ```
 VINCENT_TASK_ID        VINCENT_TASK_TITLE     VINCENT_PROJECT_NAME
@@ -930,7 +930,13 @@ VINCENT_BASE_BRANCH    VINCENT_STEP_ID        VINCENT_STEP_ATTEMPT
 VINCENT_WORKFLOW
 ```
 
-`env:` on a step is merged on top of these.
+`env:` on a step is merged on top of these — it is a command-step field, so an
+agent step has none. Nothing can remove a `VINCENT_*` variable: they are facts
+about the run, not inherited state.
+
+`VINCENT_TASK_ID` and `VINCENT_STEP_ID` are what
+[`vincent status`](cli.md#vincent-status) uses to address the step it is being
+run from, which is why every step type that runs a process gets them.
 
 ## Resolution order
 

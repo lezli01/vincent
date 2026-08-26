@@ -63,11 +63,61 @@ list with the user-facing context a commit subject cannot carry.
   name an issue; set it to `false` to switch the whole thing off.
   ([#200](https://github.com/lezli01/vincent/issues/200))
 
+- **A step can now say what it is doing, in its own words.** A running step used
+  to be opaque: a board row that had been `running` for twenty-five minutes
+  looked identical whether the agent was scaffolding a migration or stuck
+  retrying the same failing test, and when a step failed, `check_failed` was all
+  you got — the step usually *knew* it was "3 tests red in internal/store" and
+  had no way to say so. Any `agent` or `command` step can now run
+  `vincent status "<one short line>"` from inside itself. The message shows live
+  on the board's new `STATUS` column and on the attempt line in the task detail
+  view, and the last value the step set stays on the finished attempt as its own
+  account of how it went. It is one field with two readings, not two features.
+
+  It is **opt-in per workflow**: vincent never appends a protocol instruction to
+  an agent's prompt, so an agent reports its status only because a workflow
+  author asked it to in their own prompt — see the new *Reporting status from a
+  step* section in the workflows guide. A `command` step just calls it between
+  phases of its script.
+
+  It is **not** a failure reason and nothing renders it as one. `failure_reason`
+  remains a closed set of vincent's own constants; a step killed on a timeout
+  may be carrying a line it wrote half an hour earlier, so the two are shown
+  differently and never conflated. It is also invisible to `if:` guards and
+  `.Steps` — free text an agent chose at run time is not something a workflow
+  should branch on.
+
+  The plumbing, for anything scripted:
+  `POST /v1/tasks/{id}/steps/{step_id}/status` takes `{ message }`; every
+  step-run object gains `status_message`, and so does each row of
+  `GET /v1/tasks`; and a new durable `task.status_changed` SSE event carries
+  `{ task_id, step_id, message }`, so a client that reconnects with
+  `Last-Event-ID` recovers a message it missed. Messages are bounded rather than
+  refused — flattened to one line, control characters stripped, truncated at 256
+  bytes — and two writes within a second coalesce, so a chatty step costs
+  nothing. ([#199](https://github.com/lezli01/vincent/issues/199))
+
+- **Agent steps now receive the `VINCENT_*` environment variables.** They were
+  specified for command and check steps only, which left an agent process able
+  to see its worktree but unable to name the task or step it was executing.
+  Agent steps now get the same block — `VINCENT_TASK_ID`, `VINCENT_STEP_ID`,
+  `VINCENT_BRANCH` and the rest — under the same precedence rule, so a script an
+  agent runs can address the task it belongs to. This is what makes
+  `vincent status` work from an agent's shell tool, and it is useful on its own.
+
 ### Changed
 
 - **vincent is once again released under the MIT License.** The source,
   documentation, release archives, and package-manager metadata all carry the
   same permissive license, with no separate commercial-use restriction.
+
+- **The task detail view finally shows a failed attempt's result summary.** The
+  agent's final message, or the tail of a command's output, had been recorded on
+  every attempt and served on the API since the first release, and was rendered
+  on no screen at all — so diagnosing a blocked step always meant opening the
+  transcript. It now appears as a dim line under any attempt that did not
+  succeed, which is where the question "what went wrong" is actually being
+  asked. ([#199](https://github.com/lezli01/vincent/issues/199))
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 

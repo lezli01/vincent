@@ -117,6 +117,28 @@ Place a manual gate immediately before the effect it authorizes. Make the
 instructions name the artifact or change to inspect and the next action that
 approval permits.
 
+## Make long steps report on themselves
+
+A step that runs for many minutes is opaque to whoever is watching the board:
+the row says `running` and nothing else. Any `agent` or `command` step can fix
+that by running `vincent status "<one short line>"` from inside itself. The
+message is shown live and the last value set stays on the finished attempt, so
+it also answers "why did that fail" in words a failure reason cannot reach.
+
+Vincent never asks an agent to do this. Add the instruction yourself, and only
+where it pays for itself:
+
+- A `command` step calls it directly between phases of its script.
+- An `agent` step needs it in the prompt. Ask for a status before each
+  significant phase, under ten words, and specifically for a status naming what
+  is actually wrong when something fails — "3 tests red in internal/store", not
+  "working on it".
+
+Add it to steps that take minutes or that a human is likely to be waiting on,
+not to every step. The message is flattened to one line and truncated to 256
+bytes, two messages within a second coalesce, and it is never a failure reason
+and never readable by an `if:` guard or `.Steps` — it is for humans watching.
+
 Assume task fields, rendered prompts, instructions, command output, and agent
 transcripts are persisted or inspectable. Never put a secret in them. Use
 preconfigured environment credentials, credential stores, or authenticated

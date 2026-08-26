@@ -49,6 +49,7 @@ the living engineering specification records implementation contracts.
 | [033](033-task-cost-cap.md) | `max_task_cost_usd`: a per-task cost cap enforced at attempt boundaries | ✅ done (4/4) |
 | [034](034-workflow-init.md) | `vincent workflow init`, a CLI on-ramp for authoring a workflow | ✅ done (5/5) |
 | [035](035-github-issue-selection.md) | Select a GitHub issue when creating a task | ✅ done (12/12) |
+| [036](036-step-status-message.md) | A step-authored status message, live and terminal | ✅ done (7/7) |
 
 ## How to add and update a task document
 

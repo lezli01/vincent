@@ -83,6 +83,16 @@ Three behaviors matter:
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it.
 
+A wide terminal also gets a **`STATUS` column**: what the task's newest step run
+said about *itself*, if it said anything —
+`compiling internal/store`, `3 tests red`. It is set by the step, not by
+vincent, through [`vincent status`](../reference/cli.md#vincent-status), so it
+is empty until a workflow asks for it; see
+[Reporting status from a step](workflows.md#56-reporting-status-from-a-step).
+It is the first column dropped when the terminal narrows, and it needs a
+comfortably wide title to be admitted at all — so a board that has never seen it
+is a board that has the width for everything else instead.
+
 Elapsed on the board is **wall clock** from the task's start. That is
 deliberate: a task idle on a human for 35 of its 40 minutes must not read as
 "5m" on the board whose job is to flag it. The per-attempt figures in the
@@ -172,6 +182,17 @@ and the one you arrived to read is almost always the pass it stopped on.
 
 The board's and the header's step column say the same thing more briefly: a
 task inside a loop reads `3/7 green · loop 4/10`.
+
+Two things on an attempt line are worth telling apart. A red word like
+`check_failed` is vincent's **failure reason** — a fixed set of constants, and
+vincent's own verdict. A cyan `» 3 tests red in internal/store` is the step's
+own **status message**, free text it set while it was running and the last thing
+it said before it ended. It is never a cause: a step killed on a timeout may be
+carrying a line it wrote half an hour earlier.
+
+An attempt that did **not** succeed also gets a dim line beneath it with its
+**result summary** — the agent's final message, or the tail of a command's
+output. It is the sentence that decides whether to open the transcript.
 
 | Key | Does |
 |---|---|
