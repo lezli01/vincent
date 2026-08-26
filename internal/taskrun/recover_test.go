@@ -1,13 +1,16 @@
 package taskrun
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,9 +48,20 @@ func recoverTask(t *testing.T, st *store.Store, projectID int64, state store.Tas
 	return task
 }
 
-// journalRun writes a `running` step run as the engine would have before a
-// crash: created, then PID + proc start time journaled.
+// journalRun writes a `running` step run the way a pre-0013 daemon left one:
+// created, then PID + proc start time journaled, with no native identity. It
+// is the legacy shape the ±5 s tolerance still covers.
 func journalRun(t *testing.T, st *store.Store, taskID int64, pid *int, startedAt *time.Time) *store.StepRun {
+	t.Helper()
+	return journalRunWithIdentity(t, st, taskID, pid, startedAt, nil)
+}
+
+// journalRunWithIdentity writes a `running` step run as the engine writes one
+// today: PID, spawn stamp and the platform-native identity, all in one update
+// (§12.4, issue #149).
+func journalRunWithIdentity(
+	t *testing.T, st *store.Store, taskID int64, pid *int, startedAt *time.Time, identity *string,
+) *store.StepRun {
 	t.Helper()
 	run := &store.StepRun{
 		TaskID: taskID, StepIndex: 0, StepID: "s", StepType: "agent",
@@ -56,11 +70,22 @@ func journalRun(t *testing.T, st *store.Store, taskID int64, pid *int, startedAt
 	if err := st.CreateStepRun(context.Background(), run); err != nil {
 		t.Fatalf("CreateStepRun: %v", err)
 	}
-	run.PID, run.ProcStartedAt = pid, startedAt
+	run.PID, run.ProcStartedAt, run.ProcIdentity = pid, startedAt, identity
 	if err := st.UpdateStepRun(context.Background(), run); err != nil {
 		t.Fatalf("UpdateStepRun: %v", err)
 	}
 	return run
+}
+
+// liveIdentity reads the identity of a process the test just started, the way
+// the engine reads it at spawn.
+func liveIdentity(t *testing.T, pid int) string {
+	t.Helper()
+	id, err := procx.Identity(pid)
+	if err != nil {
+		t.Fatalf("procx.Identity(%d): %v", pid, err)
+	}
+	return id
 }
 
 func recoverSleeper(t *testing.T) (*exec.Cmd, *procx.Proc) {
@@ -133,6 +158,10 @@ func TestRecoverRequeuesThroughTheFSM(t *testing.T) {
 	}
 }
 
+// The legacy path: a row with no journaled identity is still judged by the
+// ±5 s wall-clock tolerance, and still killed inside it. Rows written before
+// migration 0013 — and by any spawn whose identity read failed — must behave
+// exactly as they did before issue #149.
 func TestRecoverKillsOrphanWhoseStartTimeMatches(t *testing.T) {
 	st, projectID := recoverStore(t)
 	task := recoverTask(t, st, projectID, store.TaskRunning)
@@ -156,6 +185,8 @@ func TestRecoverKillsOrphanWhoseStartTimeMatches(t *testing.T) {
 	}
 }
 
+// The other half of the legacy path: outside the tolerance, an identity-less
+// row still spares the PID.
 func TestRecoverSparesReusedPID(t *testing.T) {
 	st, projectID := recoverStore(t)
 	task := recoverTask(t, st, projectID, store.TaskRunning)
@@ -361,5 +392,162 @@ func TestRecoverReconcilesFanOutLanes(t *testing.T) {
 	}
 	if pt, _ := st.GetTask(ctx, parent.ID); pt.State != store.TaskAwaitingChildren {
 		t.Errorf("parent = %s, want it left awaiting_children", pt.State)
+	}
+}
+
+// The identity path's good case: the PID still holds the very process the row
+// journaled, so the orphan is tree-killed (§12.4, issue #149).
+func TestRecoverKillsOrphanWhoseIdentityMatches(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	cmd, proc := recoverSleeper(t)
+	defer proc.Release()
+	pid := cmd.Process.Pid
+	now := time.Now()
+	identity := liveIdentity(t, pid)
+	journalRunWithIdentity(t, st, task.ID, &pid, &now, &identity)
+
+	if _, err := Recover(context.Background(), st, discardLog()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	select {
+	case <-done: // recovery killed it
+	case <-time.After(10 * time.Second):
+		_ = proc.Kill()
+		t.Fatal("orphan with a matching identity survived recovery")
+	}
+}
+
+// The case the ±5 s tolerance could not see and issue #149 exists for: the
+// journaled PID is live and its wall-clock spawn stamp is seconds old, but the
+// process holding it is not the one the row spawned. Real PID reuse is not
+// reproducible on demand; a doctored token is the same comparison with the
+// same answer.
+func TestRecoverSparesSamePIDWithADifferentIdentity(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	cmd, proc := recoverSleeper(t)
+	defer func() {
+		_ = proc.Kill()
+		_ = cmd.Wait()
+		proc.Release()
+	}()
+	pid := cmd.Process.Pid
+	// Inside the legacy tolerance in every respect — only the identity says
+	// this is somebody else.
+	now := time.Now()
+	doctored := liveIdentity(t, pid) + "0"
+	run := journalRunWithIdentity(t, st, task.ID, &pid, &now, &doctored)
+
+	if _, err := Recover(context.Background(), st, discardLog()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	if _, err := procx.Identity(pid); err != nil {
+		t.Errorf("innocent process is gone (%v); a mismatched identity must spare it", err)
+	}
+	// The row is still finalized and the task still re-queued — only the
+	// kill is withheld.
+	got, _ := st.GetStepRun(context.Background(), run.ID)
+	if got.State != store.StepInterrupted {
+		t.Errorf("step run = %s, want interrupted", got.State)
+	}
+	if tk, _ := st.GetTask(context.Background(), task.ID); tk.State != store.TaskQueued {
+		t.Errorf("task = %s, want queued", tk.State)
+	}
+}
+
+// A token journaled in a previous boot. On Linux it is literally the boot-id
+// component that differs; on macOS and Windows the constant simply cannot
+// equal a live token. Either way a machine that rebooted between the crash and
+// the restart kills nothing, which is the reboot half of the acceptance
+// criteria.
+func TestRecoverSparesPIDWhoseIdentityIsFromAnotherBoot(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	cmd, proc := recoverSleeper(t)
+	defer func() {
+		_ = proc.Kill()
+		_ = cmd.Wait()
+		proc.Release()
+	}()
+	pid := cmd.Process.Pid
+	now := time.Now()
+	foreign := "linux1:00000000-0000-0000-0000-000000000000:1"
+	journalRunWithIdentity(t, st, task.ID, &pid, &now, &foreign)
+
+	if _, err := Recover(context.Background(), st, discardLog()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if _, err := procx.Identity(pid); err != nil {
+		t.Errorf("innocent process is gone (%v); a token from another boot must spare it", err)
+	}
+}
+
+// An identity journaled for a PID that has since exited is the quiet good
+// case: nothing to kill, no warning worth raising, and the task re-queues.
+func TestRecoverToleratesDeadPIDWithAnIdentity(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	cmd, proc := recoverSleeper(t)
+	pid := cmd.Process.Pid
+	spawned := time.Now()
+	identity := liveIdentity(t, pid)
+	if err := proc.Kill(); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	_ = cmd.Wait()
+	proc.Release()
+	journalRunWithIdentity(t, st, task.ID, &pid, &spawned, &identity)
+
+	n, err := Recover(context.Background(), st, discardLog())
+	if err != nil {
+		t.Fatalf("Recover with a dead pid: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("requeued = %d, want 1", n)
+	}
+	if tk, _ := st.GetTask(context.Background(), task.ID); tk.State != store.TaskQueued {
+		t.Errorf("task = %s, want queued", tk.State)
+	}
+}
+
+// "Cannot prove, do not kill" matters most where the proof itself is
+// unavailable: an identity was journaled, so the tolerance is not consulted,
+// and the read fails. The PID lives, and the daemon says why.
+func TestRecoverDoesNotKillWhenIdentityIsUnreadable(t *testing.T) {
+	st, projectID := recoverStore(t)
+	task := recoverTask(t, st, projectID, store.TaskRunning)
+	cmd, proc := recoverSleeper(t)
+	defer func() {
+		_ = proc.Kill()
+		_ = cmd.Wait()
+		proc.Release()
+	}()
+	pid := cmd.Process.Pid
+	now := time.Now()
+	identity := liveIdentity(t, pid)
+	journalRunWithIdentity(t, st, task.ID, &pid, &now, &identity)
+
+	// The identity the row carries is the live one, so only the unreadable
+	// read can spare this process.
+	restore := identityOf
+	identityOf = func(int) (string, error) { return "", errors.New("permission denied") }
+	t.Cleanup(func() { identityOf = restore })
+
+	var logged bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	if _, err := Recover(context.Background(), st, log); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	if _, err := procx.Identity(pid); err != nil {
+		t.Errorf("process was killed on an unreadable identity (%v); §12.4 forbids it", err)
+	}
+	if !strings.Contains(logged.String(), "process identity unavailable") {
+		t.Errorf("recovery left the PID alone without saying why; log was:\n%s", logged.String())
 	}
 }

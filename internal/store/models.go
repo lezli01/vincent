@@ -179,6 +179,13 @@ type StepRun struct {
 	Effort        string // resolved effort as passed to the adapter; "" = CLI default
 	PID           *int   // while running
 	ProcStartedAt *time.Time
+	// ProcIdentity is the platform-native identity of that process, read
+	// beside the PID at spawn and compared byte-for-byte by §12.4 recovery
+	// (issue #149, migration 0013). It is opaque: nothing parses it. nil
+	// means none was journaled — a pre-0013 row, or a spawn whose identity
+	// read failed — and recovery then falls back to the ProcStartedAt
+	// tolerance.
+	ProcIdentity  *string
 	ExitCode      *int
 	CheckExitCode *int
 	FailureReason string

@@ -145,7 +145,7 @@ answers with what it wrote:
   "bytes": 1503238553,
   "database_bytes": 8601600,
   "transcript_bytes": 1494360064,
-  "schema_version": 12,
+  "schema_version": 13,
   "created_at": "2026-08-25T14:05:00.000000000Z" }
 ```
 
@@ -227,11 +227,11 @@ endpoints can never disagree. Changes are announced by the
   "database": { "path": "…", "known": true, "size_bytes": 262144,
                 "wal_bytes": 4136960, "shm_bytes": 32768,
                 "total_bytes": 4431872,
-                "schema_version": 6, "newest_migration": 6,
+                "schema_version": 13, "newest_migration": 13,
                 "integrity_check": "ok",
                 "table_rows": { "events": 91234, "step_runs": 812, "tasks": 140,
                                 "projects": 7, "agent_quota": 0,
-                                "schema_migrations": 6 },
+                                "schema_migrations": 13 },
                 "oldest_event_at": "2025-06-02T09:11:04Z",
                 "workflow_snapshot_bytes": 2179072 },
   "agents":   [ { "name": "codex", "available": true, "path": "…",

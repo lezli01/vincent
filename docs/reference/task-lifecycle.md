@@ -271,8 +271,17 @@ vincent is **crash-first**: every transition is persisted before it is acted on.
 When the daemon starts, recovery:
 
 1. finalizes any step run still marked `running` as `interrupted`;
-2. kills verified orphan processes — the recorded PID **and** its start time must
-   both match, which is the guard against PID reuse killing an innocent process;
+2. kills verified orphan processes — the recorded PID must still exist **and**
+   still hold the very process the run spawned, checked against a
+   platform-native identity recorded at spawn (start ticks plus boot id on
+   Linux, the kernel fork stamp on macOS, the creation time on Windows, each
+   paired with the PID, because the operating system's stamp is a clock tick
+   wide and processes started inside one share it). That
+   is the guard against PID reuse killing an innocent process: anything vincent
+   cannot prove is the same process is left running. A run recorded before
+   vincent kept that identity — by an earlier version, or on a machine where
+   the read is unavailable — falls back to the older check, a start time within
+   five seconds of the recorded one;
 3. re-queues the owning task and re-runs the interrupted step as a **fresh
    attempt that does not consume a retry**.
 

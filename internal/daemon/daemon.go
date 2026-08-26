@@ -258,9 +258,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	})
 
 	// Crash recovery runs before anything can admit or execute (§12.4): it
-	// belongs to neither the scheduler nor the runner. Orphans are killed
-	// only when PID and start time both match the journal; the owning tasks
-	// re-queue through the FSM, consuming no retries.
+	// belongs to neither the scheduler nor the runner. Orphans are killed only
+	// when the PID still holds the process the journal names — an exact native
+	// identity, or the legacy start-time tolerance for a row that carries none
+	// (issue #149); the owning tasks re-queue through the FSM, consuming no
+	// retries.
 	//
 	// A failure here stops the daemon (issue #142). Recovery reconciles each
 	// task atomically or not at all, so what it leaves behind on failure is

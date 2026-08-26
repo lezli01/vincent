@@ -44,6 +44,7 @@ the living engineering specification records implementation contracts.
 | [028](028-retry-backoff.md) | `retry_backoff`: pacing step retries through task 003's admission hold | ✅ done (5/5) |
 | [029](029-database-size-reporting.md) | Reporting the database's footprint, row counts and retention span | ✅ done (6/6) |
 | [030](030-daemon-backup-and-restore.md) | `vincent daemon backup` / `restore` | ✅ done (6/6) |
+| [031](031-native-process-identity.md) | Exact native process identity for the §12.4 PID-reuse guard | ✅ done (5/5) |
 
 ## How to add and update a task document
 
