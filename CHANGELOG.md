@@ -9,6 +9,14 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Changed
+
+- **vincent is once again released under the MIT License.** The source,
+  documentation, release archives, and package-manager metadata all carry the
+  same permissive license, with no separate commercial-use restriction.
+
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
 ### Added
@@ -557,7 +565,6 @@ list with the user-facing context a commit subject cannot carry.
   `delete_empty_branch_on_archive: false` restores the old behaviour, while the
   opt-in `delete_remote_branch_on_archive` also removes a configured upstream
   after the safe local deletion. Project deletion never deletes remote branches.
-
 - **Release dependencies were refreshed without major-version changes.** This
   release uses Bubble Tea 2.0.9, Lip Gloss 2.0.6, `x/ansi` 0.11.8,
   modernc.org/sqlite 1.57.0 and govulncheck 1.7.0.

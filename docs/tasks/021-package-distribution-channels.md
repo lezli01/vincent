@@ -64,6 +64,10 @@ configuration and user documentation.
   both `LICENSE` and `COMMERCIAL-LICENSE.md`. A package manager making install
   easier does not broaden the rights granted by the release.
 
+  **Superseded 2026-08-26.** The project returned to the MIT License. Current
+  package metadata names `MIT`, and release artifacts carry `LICENSE` only;
+  the validation record below remains the historical result for `v0.3.1`.
+
 ## Tasks
 
 - [x] **021.1 — Build deb and rpm packages.** Add nFPM packaging for Linux

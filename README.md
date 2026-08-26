@@ -13,8 +13,7 @@
 
 <p align="center">
   <a href="https://github.com/lezli01/vincent/actions/workflows/ci.yml"><img src="https://github.com/lezli01/vincent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg" alt="License: PolyForm Noncommercial 1.0.0"></a>
-  <a href="COMMERCIAL-LICENSE.md"><img src="https://img.shields.io/badge/Commercial%20use-license%20required-orange.svg" alt="Commercial use: license required"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.buymeacoffee.com/lezli01"><img src="https://img.shields.io/badge/Buy_Me_a_Coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
 </p>
 
@@ -66,11 +65,9 @@ deterministic verification, human oversight, crash recovery, and live
 observability in one self-contained binary. The same workload can be operated
 from the TUI, scripted through the CLI, or integrated through the localhost API.
 
-It is **source-available and dual-licensed** — free for personal and
-non-commercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE),
-with a [separate commercial license](COMMERCIAL-LICENSE.md) for business use —
-and created by `lezli01` at [lezli01.is-a.dev](https://lezli01.is-a.dev).
-Contributions are welcome — see [Contributing](#contributing).
+It is released under the [MIT License](LICENSE) and created by `lezli01` at
+[lezli01.is-a.dev](https://lezli01.is-a.dev). Contributions are welcome — see
+[Contributing](#contributing).
 
 ## Features
 
@@ -556,37 +553,4 @@ rather than a public issue. See [SECURITY.md](SECURITY.md) for details.
 
 ## License
 
-vincent is source-available and dual-licensed. The source is public and stays
-public; what you may do with it depends on who you are and why you are running
-it. This is **not** an OSI-approved open-source license — restricting commercial
-use is incompatible with the Open Source Definition.
-
-### Personal and non-commercial use
-
-vincent is free to use, modify, and run for personal and non-commercial purposes
-under the [PolyForm Noncommercial License 1.0.0](LICENSE). Personal projects,
-study, research and experiment, and use by charities, educational institutions,
-public research bodies and government institutions are all covered at no cost.
-
-### Commercial use
-
-Commercial or business use requires a separate commercial license.
-
-This includes using vincent as part of a company's internal software-development
-workflow, engineering processes, AI/agentic development workflows, commercial
-products, services, or other activities primarily intended for commercial
-advantage — running it internally at a for-profit company counts, even though
-vincent itself is not being sold.
-
-For commercial licensing, see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
-
-### Previously released versions
-
-Previously released versions remain available under the license under which they
-were originally published: `v0.2.0` and every earlier release were published
-under the MIT License and stay usable under it. The first release published
-after this change, and every release after it, are PolyForm Noncommercial 1.0.0
-or commercial. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for the
-cutover table.
-
-© 2026 László Szabó (`lezli01`).
+vincent is released under the [MIT License](LICENSE). © 2026 lezli01.
