@@ -231,6 +231,16 @@ var builtinSources = map[string]string{
 	CreateWorkflowName: CreateWorkflowSource,
 }
 
+// IsBuiltin reports whether name belongs to the built-in scope. It is
+// derived from builtinSources rather than compared against the two name
+// constants, so a third built-in is covered the day it is added — which
+// matters to `workflow init`, whose shadow warning is the only place outside
+// this package that has to ask.
+func IsBuiltin(name string) bool {
+	_, ok := builtinSources[name]
+	return ok
+}
+
 // builtins returns the built-in scope, parsed once. A parse failure here is
 // a programming error in this package, so it panics rather than silently
 // serving an empty scope.

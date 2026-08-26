@@ -23,7 +23,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The daemon answered and rejected the request (bad id, invalid state transition, invalid workflow) |
+| `1` | The request was rejected — either the daemon answered no (bad id, invalid state transition), or one of the daemon-free commands refused it (`workflow validate` on an invalid file, `workflow init` on a name already taken) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -421,6 +421,58 @@ resume, answer, archive — are TUI and API operations; see
 ## `vincent workflow`
 
 Aliased as `vincent wf`.
+
+### `vincent workflow init`
+
+```sh
+vincent workflow init <name> [--from <example>] [--project ID] [--json]
+```
+
+Writes a valid workflow file into the registry and prints the path. This is the
+on-ramp: with the binary on your `$PATH` and nothing else — no daemon, no
+checkout of this repository, no agent CLI installed — it gets you a file in the
+right directory under the right name.
+
+```
+$ vincent workflow init release-notes
+/home/you/.config/vincent/workflows/release-notes.yaml
+Edit it, then `vincent workflow validate /home/you/.config/vincent/workflows/release-notes.yaml`.
+The daemon picks it up on save.
+```
+
+| Flag | Effect |
+|---|---|
+| `--from <example>` | Start from a [shipped example](../../examples) instead of the skeleton: `converge`, `cursor-review`, `docs-update`, `feature-pr`, `fix-and-test`. They are embedded in the binary, so this works from any directory |
+| `--project ID` | Write into that repository's `.vincent/workflows/` instead of `{config_dir}/workflows/`. **The one part that needs a daemon**, because only the daemon knows which projects exist and where they are |
+| `--json` | The written path, name, scope, source example, and what it shadows |
+
+**`<name>` is both the workflow's `name:` field and its file name**, so it is
+held to `^[a-z0-9][a-z0-9._-]*$` — the same pattern the built-in
+`create-workflow`'s `workflow_name` field uses, stricter than the schema's own
+rule for a `name:`. With `--from`, only the file's
+top-level `name:` line is rewritten; every comment is handed over untouched,
+including a header comment that still names the example it came from.
+
+**Collisions.** It refuses, without writing anything, if the target path already
+exists, or if another file **in the same scope** already declares that `name:` —
+one scope may not hold a name twice, and the loser by filename order would be
+listed as invalid ([shadowing and duplicates](../guides/workflows.md#12-where-workflow-files-live)).
+Shadowing a *lower* scope is legitimate and only warns: `--project` says when it
+takes a name the global scope or a built-in holds, and the default scope says
+when it takes a built-in's. It cannot warn in the other direction — a global
+workflow may be shadowed later by a project file in any repository, and without
+a daemon this command does not know which repositories exist.
+
+Exit `0` written · `1` refused · `2` no daemon answered (`--project` only).
+
+**`init` versus `create-workflow`.** `init` hands you a file; the built-in
+[`create-workflow`](../guides/workflows.md#12-where-workflow-files-live) workflow
+*designs* one for you from a description. `create-workflow` needs a running
+daemon, a registered project, an installed and authenticated agent CLI, and a
+task run that costs tokens and wall-clock time and may park in `awaiting_input`
+waiting on a design question. `init` is offline, free, instant and always the
+same file. Reach for `init` when you know roughly what you want to write, and
+for `create-workflow` when you would rather describe the outcome.
 
 ### `vincent workflow ls`
 

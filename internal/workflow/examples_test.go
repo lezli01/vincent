@@ -4,12 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/agent/claude"
-	"github.com/lezli01/vincent/internal/agent/codex"
-	"github.com/lezli01/vincent/internal/agent/cursor"
-	"github.com/lezli01/vincent/internal/config"
 )
 
 // TestShippedExamplesValidate parses every workflow in examples/ against the
@@ -28,24 +22,11 @@ func TestShippedExamplesValidate(t *testing.T) {
 	}
 
 	// Curated catalogs only: this must not spawn a probe, and an example is
-	// not allowed to depend on which CLIs the machine happens to have.
-	reg := agent.NewRegistry(
-		claude.New(func() string { return "" }),
-		codex.New(func() string { return "" }),
-		cursor.New(func() string { return "" }),
-	)
-	catalogs := make(agent.Catalogs, len(reg.Names()))
-	for _, a := range reg.All() {
-		catalogs[a.Name()] = a.Curated()
-	}
-	// The loop ceiling is the built-in default, matching what `vincent
-	// workflow validate` uses: an example must validate on a machine with no
-	// config file, so it cannot lean on a raised `loop.max_iterations`.
-	opts := Options{
-		KnownAgents:   reg.Names(),
-		Catalogs:      func() agent.Catalogs { return catalogs },
-		MaxIterations: func() int { return config.Default().Loop.MaxIterations },
-	}
+	// not allowed to depend on which CLIs the machine happens to have. The
+	// loop ceiling is the built-in default, matching what `vincent workflow
+	// validate` uses: an example must validate on a machine with no config
+	// file, so it cannot lean on a raised `loop.max_iterations`.
+	opts := curatedOptions()
 
 	found := 0
 	for _, e := range entries {
