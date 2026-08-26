@@ -28,6 +28,15 @@ it beat.
   "download, unzip, clear the quarantine attribute, run", and that is the step
   worth deleting.
 
+  **Partly superseded 2026-08-26 by [task 032](032-macos-notarization.md).** The
+  tap itself stands; what no longer holds is the *reason* recorded above. Apple
+  notarization is no longer descoped, so the archive path does not make anyone
+  run `xattr -d com.apple.quarantine` and the cask's `postflight` hook has been
+  removed rather than left harmless — keeping it would go on stripping the
+  attribute that the signature now makes meaningful. The quickstart really is
+  "download, unzip, run" again on macOS; the cask earns its keep on upgrades and
+  one-command install, which is the argument the X decision originally weighed.
+
 - **Scoop and winget stay rejected.** The argument above does not carry over: no
   Windows packager erases SmartScreen the way a cask erases Gatekeeper's prompt,
   so Windows would pay the X decision's cost and get only a shorter command. The
