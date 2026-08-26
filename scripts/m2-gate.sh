@@ -15,11 +15,12 @@
 # follow-up run works on a finished task's own branch before it is archived
 # (scenario 10), and that a step carrying `retry_backoff` paces its retry
 # through the same admission hold — releasing its slot and recovering
-# unattended (scenario 11).
+# unattended (scenario 11), and that a step can report its own status message
+# — visible on the running row and on the finished one (scenario 12).
 # Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1..11 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1..12 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -1353,6 +1354,91 @@ YAML
   echo "=== scenario 11 PASS (task $paced retried after a paced wait)"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 12 — a step reports its own status, live and terminal (task 033,
+# §5.4, §13.3). The agent step runs the real `vincent status` command from
+# inside itself, so this also proves §8.5's VINCENT_* block reaches an agent
+# step's environment — without it the command cannot address its own row.
+# ---------------------------------------------------------------------------
+scenario12() {
+  echo "=== scenario 12: a step's own status message, live then terminal"
+  scenario_dirs s12
+
+  export FAKEAGENT_SCENARIO=set-status
+  export FAKEAGENT_VINCENT_BIN
+  FAKEAGENT_VINCENT_BIN="$(hostpath "$VINCENT")"
+  export FAKEAGENT_STATUS="scaffolding the migration"
+  # Past the daemon's 1 s coalescing floor, so the second message is a write
+  # of its own and there is a window to observe the first one live.
+  export FAKEAGENT_STATUS_HOLD_MS=4000
+  export FAKEAGENT_STATUS_FINAL="3 tests red in internal/store"
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-status.yaml" <<'YAML'
+name: m2-status
+description: M2 gate — one agent step that reports on itself.
+defaults:
+  agent: claude
+  max_retries: 0
+steps:
+  - id: narrate
+    type: agent
+    prompt: report your status
+YAML
+
+  daemon_up
+
+  local repo="$TMP/s12/repo" proj task_id
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+  task_id="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-status\",\"title\":\"Narrating task\"}" | jq -r .id)"
+
+  echo "== the running step's status is visible while it runs"
+  local live="" row=""
+  for _ in $(seq 1 60); do
+    row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "narrate")][-1] // {}')"
+    if [[ "$(jq -r '.state // ""' <<<"$row")" == "running" ]]; then
+      live="$(jq -r '.status_message // ""' <<<"$row")"
+      [[ -n "$live" ]] && break
+    fi
+    sleep 1
+  done
+  [[ "$live" == "scaffolding the migration" ]] \
+    || fail "running step's status_message is '$live', want the message the step set: $row"
+
+  echo "== the board's list row carries it too, without fetching step rows"
+  local listed
+  listed="$(api GET "/tasks?limit=50" | jq -r "[.[] | select(.id == $task_id)][0].status_message // \"\"")"
+  [[ "$listed" == "scaffolding the migration" ]] \
+    || fail "GET /tasks status_message is '$listed', want the running step's"
+
+  echo "== wait for done; the last value survives on the finished row"
+  wait_for_state "$task_id" done 180
+  local final=""
+  for _ in $(seq 1 15); do
+    row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "narrate")][-1]')"
+    final="$(jq -r '.status_message // ""' <<<"$row")"
+    [[ "$final" == "3 tests red in internal/store" ]] && break
+    sleep 1
+  done
+  [[ "$(jq -r .state <<<"$row")" == "succeeded" ]] || fail "narrate step not succeeded: $row"
+  [[ "$final" == "3 tests red in internal/store" ]] \
+    || fail "finished step's status_message is '$final', want the last value the step set: $row"
+  [[ "$(jq -r '.failure_reason // "null"' <<<"$row")" == "null" ]] \
+    || fail "a status is not a failure: $row"
+
+  unset FAKEAGENT_SCENARIO FAKEAGENT_VINCENT_BIN FAKEAGENT_STATUS \
+    FAKEAGENT_STATUS_HOLD_MS FAKEAGENT_STATUS_FINAL
+  "$VINCENT" daemon stop
+  echo "=== scenario 12 PASS (task $task_id narrated itself, live and terminal)"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -1370,8 +1456,9 @@ case "$WHICH" in
   9) scenario9 ;;
   10) scenario10 ;;
   11) scenario11 ;;
+  12) scenario12 ;;
   all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
-     scenario9; scenario10; scenario11 ;;
+     scenario9; scenario10; scenario11; scenario12 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 
