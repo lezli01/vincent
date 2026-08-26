@@ -3,10 +3,17 @@ name: Release
 # Tag-driven packaging (T4.5). Normally Release Please creates the tag and the
 # GitHub release; this workflow then uploads the signed artifacts to that
 # release, attaches native Linux packages, and publishes the stable Homebrew,
-# Scoop, and WinGet metadata. The build runs once on ubuntu
+# Scoop, and WinGet metadata. The build runs once on macOS
 # — the binaries are pure Go, so a build matrix would produce identical
 # artifacts three times — and the per-OS jobs afterwards smoke-test what it
 # produced, which is the part a single runner genuinely cannot do.
+#
+# macOS is the build runner because Apple's signature lives *inside* the Mach-O
+# and must be applied before the archives and checksums exist, and `codesign`,
+# `notarytool`, `stapler` and `pkgbuild` ship nowhere else (task 031).
+# GoReleaser's own `notarize:` block is Pro-only, and signing from Linux with a
+# third-party reimplementation was rejected in favour of Apple's toolchain. The
+# deb/rpm inspection that a macOS runner cannot do moved to `verify-packages`.
 on:
   push:
     tags: ["v*"]
@@ -28,12 +35,20 @@ permissions:
 # Dependabot updates pinned SHAs and their `# vX.Y.Z` comments together.
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: macos-latest
+    # Notarization is a round trip to Apple's service, which usually answers in
+    # a few minutes and is entitled to take considerably longer.
+    timeout-minutes: 60
     permissions:
       contents: write # upload archives/packages and publish repository metadata
       id-token: write # keyless cosign + build attestations
       attestations: write
+    env:
+      # A v* tag must not be able to publish an unsigned macOS artifact; a dry
+      # run and a fork must not need a secret to work. This one variable is
+      # where that split lives — every signing step reads it, and nothing else
+      # decides it.
+      MACOS_SIGN_REQUIRED: ${{ github.event_name == 'push' && '1' || '0' }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
@@ -51,6 +66,100 @@ jobs:
       - id: meta
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Both identities land in a throwaway keychain created for this job: the
+      # runner's login keychain is never touched, and the keychain dies with the
+      # runner. The identity names are read back from the imported certificates
+      # rather than carried as secrets of their own, so rotating a certificate
+      # does not mean editing a workflow.
+      - name: Import the Developer ID identities
+        shell: bash
+        env:
+          MACOS_CERT_APPLICATION_P12: ${{ secrets.MACOS_CERT_APPLICATION_P12 }}
+          MACOS_CERT_INSTALLER_P12: ${{ secrets.MACOS_CERT_INSTALLER_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MACOS_CERT_APPLICATION_P12:-}" ] || [ -z "${MACOS_CERT_INSTALLER_P12:-}" ]; then
+            if [ "$MACOS_SIGN_REQUIRED" = "1" ]; then
+              echo "::error::a v* tag needs the Developer ID certificates; see RELEASING.md"
+              exit 1
+            fi
+            echo "::warning::no Developer ID certificates configured — this run produces unsigned macOS artifacts"
+            exit 0
+          fi
+
+          keychain="$RUNNER_TEMP/vincent-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          # Prepend rather than replace: dropping the login keychain from the
+          # search list breaks unrelated tooling on the runner.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          import_p12() {
+            p12="$RUNNER_TEMP/$1.p12"
+            printf '%s' "$2" | base64 --decode > "$p12"
+            security import "$p12" -k "$keychain" -P "${MACOS_CERT_PASSWORD:-}" \
+              -T /usr/bin/codesign -T /usr/bin/pkgbuild -T /usr/bin/productsign
+            rm -f "$p12"
+          }
+          import_p12 application "$MACOS_CERT_APPLICATION_P12"
+          import_p12 installer "$MACOS_CERT_INSTALLER_P12"
+          # Without this, codesign and pkgbuild block on a GUI keychain prompt
+          # that a headless runner can never answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain" >/dev/null
+
+          # awk deliberately reads to EOF and bash takes the first line: an awk
+          # that `exit`s mid-pipe would SIGPIPE `security`, and pipefail would
+          # then fail the step over a success.
+          application="$(security find-identity -v -p codesigning "$keychain" |
+            awk -F'"' '/Developer ID Application/ {print $2}')"
+          installer="$(security find-identity -v "$keychain" |
+            awk -F'"' '/Developer ID Installer/ {print $2}')"
+          application="${application%%$'\n'*}"
+          installer="${installer%%$'\n'*}"
+          [ -n "$application" ] || { echo "::error::no Developer ID Application identity in the imported certificate"; exit 1; }
+          [ -n "$installer" ] || { echo "::error::no Developer ID Installer identity in the imported certificate"; exit 1; }
+
+          {
+            echo "MACOS_KEYCHAIN=$keychain"
+            echo "MACOS_SIGN_IDENTITY=$application"
+            echo "MACOS_INSTALLER_IDENTITY=$installer"
+          } >> "$GITHUB_ENV"
+
+      # notarytool authenticates with an App Store Connect API key, not an Apple
+      # ID and app-specific password: the key is revocable on its own and needs
+      # no interactive two-factor step.
+      - name: Store the notarization credentials
+        shell: bash
+        env:
+          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MACOS_NOTARY_KEY_P8:-}" ] || [ -z "${MACOS_KEYCHAIN:-}" ]; then
+            if [ "$MACOS_SIGN_REQUIRED" = "1" ]; then
+              echo "::error::a v* tag needs the App Store Connect notary key; see RELEASING.md"
+              exit 1
+            fi
+            echo "::warning::no notary credentials configured — this run produces un-notarized macOS artifacts"
+            exit 0
+          fi
+
+          key="$RUNNER_TEMP/notary-key.p8"
+          printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$key"
+          xcrun notarytool store-credentials vincent-notary \
+            --key "$key" \
+            --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" \
+            --keychain "$MACOS_KEYCHAIN"
+          rm -f "$key"
+          echo "MACOS_NOTARY_PROFILE=vincent-notary" >> "$GITHUB_ENV"
 
       - name: Release
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
@@ -73,6 +182,106 @@ jobs:
           # snapshot mode renders manifests but never uses the credentials.
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN || 'unset' }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN || 'unset' }}
+          # MACOS_SIGN_IDENTITY and MACOS_KEYCHAIN reach the darwin build hook
+          # through $GITHUB_ENV; MACOS_SIGN_REQUIRED is the job-level split.
+
+      # The archives were assembled around these binaries, so verifying the
+      # binary verifies what shipped.
+      - name: Verify the darwin signatures
+        if: env.MACOS_SIGN_IDENTITY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed=0
+          while IFS= read -r binary; do
+            codesign --verify --strict --verbose=2 "$binary"
+            # bash's own regex, not a pipe into `grep -q`: grep exits at the
+            # first match, codesign takes SIGPIPE, and pipefail then reports a
+            # failure that never happened.
+            signature="$(codesign --display --verbose=2 "$binary" 2>&1)"
+            [[ "$signature" =~ flags=[^[:space:]]*runtime ]] ||
+              { echo "$binary is signed without the hardened runtime"; exit 1; }
+            signed=$((signed + 1))
+          done < <(find dist -type f -name vincent -path '*_darwin_*')
+          [ "$signed" -eq 2 ] || { echo "expected 2 signed darwin binaries, found $signed"; exit 1; }
+
+      # Notarization does not modify the artifact — the ticket is issued against
+      # the binary's code directory hash and served by Apple — so this runs
+      # after archiving, and only its success gates publication. A bare Mach-O
+      # cannot be submitted directly; notarytool takes a zip, a .pkg or a .dmg.
+      - name: Notarize the darwin binaries
+        if: env.MACOS_NOTARY_PROFILE != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="$RUNNER_TEMP/notarize"
+          rm -rf -- "$staging"
+          while IFS= read -r binary; do
+            target="$(basename "$(dirname "$binary")")"
+            mkdir -p "$staging/$target"
+            cp "$binary" "$staging/$target/vincent"
+          done < <(find dist -type f -name vincent -path '*_darwin_*')
+          ditto -c -k --keepParent "$staging" "$RUNNER_TEMP/vincent-darwin.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/vincent-darwin.zip" \
+            --keychain-profile "$MACOS_NOTARY_PROFILE" \
+            --keychain "$MACOS_KEYCHAIN" \
+            --wait
+
+      # The universal .pkg: the one artifact that can carry a stapled ticket and
+      # therefore clear Gatekeeper with no network. Built after GoReleaser
+      # because lipo needs both darwin slices, which is also why it is not in
+      # checksums.txt — see the script's own header.
+      - name: Build the macOS installer package
+        shell: bash
+        run: ./scripts/macos-pkg.sh "$(jq -r .version dist/metadata.json)" dist
+
+      - name: Publish the macOS installer package
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.pkg --clobber
+
+      # Provenance for every archive, native Linux package and the macOS
+      # installer, so a downloader can prove which workflow and commit produced
+      # the file they hold. For the .pkg this is half of its integrity story —
+      # Apple's installer signature is the other half — because it is
+      # deliberately absent from checksums.txt.
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: "dist/*.tar.gz,dist/*.zip,dist/*.deb,dist/*.rpm,dist/*.pkg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          # verify-packages inspects the generated manager metadata from a Linux
+          # runner, so the manifests travel in the artifact too.
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg
+            dist/checksums.txt
+            dist/winget/**/*.yaml
+            dist/scoop/vincent.json
+          retention-days: 7
+
+  # deb, rpm and the generated manager manifests, inspected with the native
+  # tools — `apt-get`, `dpkg-deb`, `rpm` and `rpm2archive`, none of which the
+  # macOS runner that now builds them has. Ordering is unchanged in any way that
+  # matters: this verification already ran after GoReleaser had published.
+  verify-packages:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
 
       - name: Install Linux package inspection tools
         run: |
@@ -138,25 +347,6 @@ jobs:
           grep -q '^    - PackageIdentifier: Git.Git$' "$winget_installer"
           grep -q '^License: PolyForm-Noncommercial-1.0.0$' "$winget_locale"
 
-      # Provenance for every archive and native Linux package, so a downloader
-      # can prove which workflow and commit produced the file they hold.
-      - name: Attest build provenance
-        if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
-        with:
-          subject-path: "dist/*.tar.gz,dist/*.zip,dist/*.deb,dist/*.rpm"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: dist
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.deb
-            dist/*.rpm
-            dist/checksums.txt
-          retention-days: 7
-
   # The done-when: the produced artifact runs on each OS. Unpacking the real
   # archive and running the real binary is the only thing that catches a
   # broken archive layout, a missing execute bit, or a binary that will not
@@ -214,6 +404,25 @@ jobs:
           code=$?
           set -e
           [ "$code" -eq 2 ] || { echo "task ls with no daemon exited $code, want 2"; exit 1; }
+
+      # Gatekeeper's own verdict on the binary a user downloads. `download-artifact`
+      # does not carry extended attributes, so the quarantine flag a browser
+      # would have set is written back by hand: that makes this a strong proxy
+      # for the first-launch dialog, not a proof of it. The proof is a human
+      # walkthrough — docs/gates/031-macos-notarization.md.
+      - name: Assess the macOS signature
+        if: runner.os == 'macOS' && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xattr -w com.apple.quarantine "0081;00000000;vincent-smoke;" out/vincent
+          codesign --verify --strict --verbose=2 out/vincent
+          signature="$(codesign --display --verbose=2 out/vincent 2>&1)"
+          [[ "$signature" =~ flags=[^[:space:]]*runtime ]] \
+            || { echo "the released binary lacks the hardened runtime"; exit 1; }
+          # Notarized but not stapled — a Mach-O has nowhere to hold a ticket —
+          # so this is the online check Gatekeeper performs on first launch.
+          spctl --assess --type execute -vv out/vincent
 
       - name: Verify checksum
         shell: bash

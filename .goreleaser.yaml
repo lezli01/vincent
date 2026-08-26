@@ -1,9 +1,11 @@
 # Release packaging (T4.5, spec §19 M4).
 #
-# Cross-compiled from a single ubuntu runner. modernc.org/sqlite is pure Go
-# and no CGO_ENABLED appears in the magefile or CI, so a three-OS *build*
-# matrix would buy nothing; the per-OS runners in release.yml exist only to
-# smoke-test the artifacts this produces (X decision).
+# Cross-compiled from a single runner. modernc.org/sqlite is pure Go and no
+# CGO_ENABLED appears in the magefile or CI, so a three-OS *build* matrix would
+# buy nothing; the per-OS runners in release.yml exist only to smoke-test the
+# artifacts this produces (X decision). That runner is macos-latest as of task
+# 031 — `codesign` must run before the archives are built, and it exists
+# nowhere else — but the single-runner shape the X decision chose is unchanged.
 version: 2
 
 project_name: vincent
@@ -30,6 +32,17 @@ builds:
       - -X github.com/lezli01/vincent/internal/version.commit={{.ShortCommit}}
       - -X github.com/lezli01/vincent/internal/version.date={{.CommitDate}}
     mod_timestamp: "{{ .CommitTimestamp }}"
+    # Developer ID signing has to happen here rather than in `signs:`, because
+    # the signature lives *inside* the Mach-O: it must be applied before the
+    # archive is assembled and before checksums.txt is computed, and a build
+    # hook is the only point that comes early enough (task 031). A build hook
+    # has no per-GOOS filter, so the script takes {{ .Os }} and no-ops for
+    # linux and windows. It also no-ops, loudly, when no identity is present
+    # and MACOS_SIGN_REQUIRED is unset — that is the fork/dry-run path.
+    hooks:
+      post:
+        - cmd: ./scripts/macos-sign.sh "{{ .Path }}" "{{ .Os }}"
+          output: true
 
 # cmd/fakeagent is deliberately absent: it is test scaffolding compiled by
 # ./... and must never ship in a release archive.
@@ -121,16 +134,13 @@ homebrew_casks:
       name: goreleaser
       email: goreleaser@users.noreply.github.com
     commit_msg_template: "chore: vincent {{ .Tag }}"
-    # The X decision descoped Apple notarization, so a downloaded binary is
-    # quarantined and Gatekeeper refuses it. brew installs from the same
-    # unsigned archive, so the cask must strip the attribute itself or
-    # `brew install` would produce a binary that will not run.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/vincent"]
-          end
+    # There is deliberately no `hooks.post.install` here. Until task 031 this
+    # cask ran `xattr -dr com.apple.quarantine`, which existed only because the
+    # X decision descoped notarization: brew installs from the same archive, and
+    # an unsigned quarantined binary will not start. The binaries in that
+    # archive are now Developer ID signed and notarized, so Gatekeeper clears
+    # them on its own. Stripping the attribute after paying for notarization
+    # would go on bypassing exactly the protection that was bought.
     # `vincent service install` writes a LaunchAgent (internal/service:
     # LaunchdName). Without this, `brew uninstall` would delete the binary out
     # from under a still-loaded launchd job that holds the SQLite file open.
@@ -218,10 +228,12 @@ winget:
     commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
 
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
-# without vincent publishing or rotating a key. Authenticode and Apple
-# notarization are recurring certificate costs v1 does not take on — §19's ‡
-# note records that descope, and the README documents the SmartScreen and
-# Gatekeeper prompts a user will therefore meet.
+# without vincent publishing or rotating a key. This is the supply-chain
+# signature and it is unchanged by task 031: Apple's Developer ID signature says
+# who built the binary to *macOS*, cosign and the build attestation say which
+# workflow and commit produced the file to *anyone*. Windows Authenticode
+# remains descoped — §19 †'s 2026-08-26 amendment reverses the Apple half only,
+# and the README still documents the SmartScreen prompt a user will meet.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"
@@ -284,7 +296,22 @@ release:
     sha256sum -c checksums.txt --ignore-missing
     ```
 
-    First launch prompts on macOS (Gatekeeper) and Windows (SmartScreen):
-    the binaries carry cosign signatures and build attestations, not OS code
-    signing. See the README for the exact steps, including
-    `xattr -d com.apple.quarantine`.
+    The macOS binaries are Developer ID signed and notarized, so Gatekeeper
+    clears them without a prompt and without clearing any attribute by hand:
+
+    ```sh
+    codesign --verify --strict --verbose=2 vincent
+    spctl --assess --type execute -vv vincent
+    ```
+
+    `vincent_*_darwin_universal.pkg` is the stapled installer — signed,
+    notarized and verifiable with no network — and is covered by its Apple
+    signature and a build attestation rather than by `checksums.txt`:
+
+    ```sh
+    pkgutil --check-signature vincent_*_darwin_universal.pkg
+    spctl --assess --type install -vv vincent_*_darwin_universal.pkg
+    ```
+
+    Windows still prompts (SmartScreen): these releases are not
+    Authenticode-signed. *More info → Run anyway*, once per binary.
