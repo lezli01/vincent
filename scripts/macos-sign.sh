@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Codesign one built binary with a Developer ID Application identity
-# (task 031, spec §19 †'s 2026-08-26 amendment).
+# (task 032, spec §19 †'s 2026-08-26 amendment).
 #
 # This runs as a GoReleaser `builds[].hooks.post` hook, once per build target,
 # so the signature is *inside* the Mach-O before the archive is assembled and

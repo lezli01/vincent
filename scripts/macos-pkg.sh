@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the signed, notarized, stapled macOS installer package
-# (task 031, spec §19 †'s 2026-08-26 amendment).
+# (task 032, spec §19 †'s 2026-08-26 amendment).
 #
 # lipo → pkgbuild → sign → notarize → staple → verify. This runs *after*
 # GoReleaser, not inside a build hook: a hook fires per target, and a universal

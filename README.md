@@ -242,12 +242,16 @@ then `vincent service install` needs no elevation again.
 brew install lezli01/tap/vincent
 ```
 
-The cask clears the quarantine attribute for you, so the Gatekeeper prompt
-described below does not apply to this path. Upgrades are `brew upgrade
-vincent`; `brew uninstall --zap vincent` also removes the LaunchAgent and
+The binary it installs is Developer ID signed and notarized, like every other
+macOS artifact here, so Gatekeeper opens it without a prompt. Upgrades are `brew
+upgrade vincent`; `brew uninstall --zap vincent` also removes the LaunchAgent and
 `~/Library/Application Support/vincent` (config, database, transcripts).
 
 Homebrew casks are macOS-only — on Linuxbrew, use the archive below.
+
+Or install `vincent_*_darwin_universal.pkg` from the
+[latest release](https://github.com/lezli01/vincent/releases/latest) — one
+universal, stapled installer for both architectures, which works offline.
 
 ### WinGet or Scoop (Windows)
 
@@ -314,18 +318,18 @@ reproducible against a published checksum:
 go install github.com/lezli01/vincent/cmd/vincent@latest
 ```
 
-**First launch will be flagged.** Releases carry cosign signatures, checksums
-and GitHub build attestations, but not OS code signing — Authenticode and
-Apple notarization are recurring certificate costs this project does not take
-on. So:
+**First launch.** Releases carry cosign signatures, checksums and GitHub build
+attestations everywhere; macOS artifacts additionally carry Apple code signing,
+Windows ones do not. So:
 
-- **macOS** shows "cannot be opened because it is from an unidentified
-  developer" — for a downloaded archive, not for `brew install`. Clear the
-  quarantine attribute once:
-  ```sh
-  xattr -d com.apple.quarantine /usr/local/bin/vincent
-  ```
-- **Windows** shows a SmartScreen prompt: *More info → Run anyway*.
+- **macOS** — nothing to do. The binaries and the `.pkg` are Developer ID
+  signed under the hardened runtime and notarized, so Gatekeeper opens them.
+  Do not run `xattr -d com.apple.quarantine`; it is no longer needed, and it
+  only disables the check that would catch a tampered file. Confirm with
+  `codesign --verify --strict --verbose=2` and `spctl --assess --type execute`.
+- **Windows** shows a SmartScreen prompt: *More info → Run anyway*. Releases are
+  not Authenticode-signed — an OV certificate on a hardware token is a recurring
+  purchase this project does not take on.
 
 To verify a download instead of trusting it:
 

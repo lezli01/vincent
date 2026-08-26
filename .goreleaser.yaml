@@ -4,7 +4,7 @@
 # CGO_ENABLED appears in the magefile or CI, so a three-OS *build* matrix would
 # buy nothing; the per-OS runners in release.yml exist only to smoke-test the
 # artifacts this produces (X decision). That runner is macos-latest as of task
-# 031 — `codesign` must run before the archives are built, and it exists
+# 032 — `codesign` must run before the archives are built, and it exists
 # nowhere else — but the single-runner shape the X decision chose is unchanged.
 version: 2
 
@@ -35,7 +35,7 @@ builds:
     # Developer ID signing has to happen here rather than in `signs:`, because
     # the signature lives *inside* the Mach-O: it must be applied before the
     # archive is assembled and before checksums.txt is computed, and a build
-    # hook is the only point that comes early enough (task 031). A build hook
+    # hook is the only point that comes early enough (task 032). A build hook
     # has no per-GOOS filter, so the script takes {{ .Os }} and no-ops for
     # linux and windows. It also no-ops, loudly, when no identity is present
     # and MACOS_SIGN_REQUIRED is unset — that is the fork/dry-run path.
@@ -134,7 +134,7 @@ homebrew_casks:
       name: goreleaser
       email: goreleaser@users.noreply.github.com
     commit_msg_template: "chore: vincent {{ .Tag }}"
-    # There is deliberately no `hooks.post.install` here. Until task 031 this
+    # There is deliberately no `hooks.post.install` here. Until task 032 this
     # cask ran `xattr -dr com.apple.quarantine`, which existed only because the
     # X decision descoped notarization: brew installs from the same archive, and
     # an unsigned quarantined binary will not start. The binaries in that
@@ -229,7 +229,7 @@ winget:
 
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
 # without vincent publishing or rotating a key. This is the supply-chain
-# signature and it is unchanged by task 031: Apple's Developer ID signature says
+# signature and it is unchanged by task 032: Apple's Developer ID signature says
 # who built the binary to *macOS*, cosign and the build attestation say which
 # workflow and commit produced the file to *anyone*. Windows Authenticode
 # remains descoped — §19 †'s 2026-08-26 amendment reverses the Apple half only,

@@ -4324,6 +4324,37 @@ per-user service. External bootstrap and first-release proof are tracked in
 `docs/tasks/021-package-distribution-channels.md`; documentation must not infer
 catalog availability from a successful local manifest render.
 
+**Amended 2026-08-26 — macOS OS code signing is accepted; Windows Authenticode
+is not.** This reverses the **Apple half** of the † descope above, and it
+supersedes the 2026-08-14 amendment's "the binaries are still not notarized …
+so the `xattr` instructions stay". The ~$99/yr Apple Developer Program cost that
+the descope priced correctly is now paid, in exchange for a macOS install path
+that clears Gatekeeper on its own rather than by stripping the quarantine
+attribute — which the cask had been doing, and no longer does. Darwin binaries
+are `codesign`ed with a Developer ID Application identity under the hardened
+runtime and a secure timestamp, inside a build hook so the signature is in the
+Mach-O before archiving and before `checksums.txt`; those binaries are notarized;
+and a new universal `vincent_*_darwin_universal.pkg`, signed with a Developer ID
+Installer identity, is notarized and **stapled**, which is the only artifact here
+that can carry a ticket and therefore the only one that clears Gatekeeper
+offline. **The direct-download macOS path now meets Gatekeeper**: neither
+`xattr -d com.apple.quarantine` nor `brew`'s former `postflight` hook is part of
+any documented install, and re-adding either would bypass the protection just
+bought. Windows Authenticode remains descoped for exactly the reasons the X
+decision gave — an OV certificate on a hardware token is a recurring purchase
+with no equivalent to Apple's single notary service — so §19's SmartScreen
+wording, `docs/platforms/windows.md` and the WinGet installation notes are
+unchanged. A Microsoft Store MSIX was weighed as a way to obtain a
+Microsoft-applied signature without buying a certificate, and rejected in the
+same session. The release job consequently builds on `macos-latest`
+(`codesign`/`notarytool`/`stapler`/`pkgbuild` exist nowhere else, and
+GoReleaser's own `notarize:` block is Pro-only); the single-runner shape the X
+decision chose survives. The `.pkg` is deliberately **not** in `checksums.txt` —
+it is built after the GoReleaser run, because a universal binary needs both
+darwin slices — and is covered by Apple's installer signature plus a GitHub
+build attestation instead. Reasoning and the external enrolment blocker are in
+`docs/tasks/032-macos-notarization.md`.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the

@@ -10,7 +10,7 @@ name: Release
 #
 # macOS is the build runner because Apple's signature lives *inside* the Mach-O
 # and must be applied before the archives and checksums exist, and `codesign`,
-# `notarytool`, `stapler` and `pkgbuild` ship nowhere else (task 031).
+# `notarytool`, `stapler` and `pkgbuild` ship nowhere else (task 032).
 # GoReleaser's own `notarize:` block is Pro-only, and signing from Linux with a
 # third-party reimplementation was rejected in favour of Apple's toolchain. The
 # deb/rpm inspection that a macOS runner cannot do moved to `verify-packages`.
@@ -409,7 +409,7 @@ jobs:
       # does not carry extended attributes, so the quarantine flag a browser
       # would have set is written back by hand: that makes this a strong proxy
       # for the first-launch dialog, not a proof of it. The proof is a human
-      # walkthrough — docs/gates/031-macos-notarization.md.
+      # walkthrough — docs/gates/032-macos-notarization.md.
       - name: Assess the macOS signature
         if: runner.os == 'macOS' && github.event_name == 'push'
         shell: bash
