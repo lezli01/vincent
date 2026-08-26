@@ -20,8 +20,20 @@
 //	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
 //	                      variables as its result — the §12.3 environment
 //	                      policy) | usage-limit | unauthenticated (task 003) |
+//	                      set-status (runs the real `vincent status` command
+//	                      from inside the step — task 033) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
+//	FAKEAGENT_VINCENT_BIN set-status: path to the vincent binary to invoke.
+//	                      A fake agent has no other way to find one
+//	FAKEAGENT_STATUS      set-status: the message to report while running
+//	FAKEAGENT_STATUS_HOLD_MS
+//	                      set-status: hold this long after reporting, so a
+//	                      watcher can see the message on the *running* row
+//	FAKEAGENT_STATUS_FINAL
+//	                      set-status: a second message set just before the
+//	                      step ends — the value that must survive on the
+//	                      finished row
 //	FAKEAGENT_USAGE_LIMIT_RESET
 //	                      usage-limit: seconds from now until the window
 //	                      reopens, embedded in the message as the CLI does.
@@ -251,6 +263,26 @@ func main() {
 		}
 		emitText(strings.Join(reported, " "))
 		emitSuccessResult([]byte(strings.Join(reported, " ")), 1, 1)
+	case "set-status":
+		// A step that reports on itself (task 033). It runs the real
+		// `vincent status` command rather than emitting a marker the daemon
+		// would parse, because that is what the feature *is*: an agent tells
+		// the daemon what it is doing by calling it, and nothing in any
+		// adapter is involved. Addressing comes from §8.5's VINCENT_TASK_ID
+		// and VINCENT_STEP_ID, which reach an agent step's environment — so
+		// this scenario failing is also how a regression there is caught.
+		reports := setStatus(os.Getenv("FAKEAGENT_STATUS"))
+		if ms := envMillis("FAKEAGENT_STATUS_HOLD_MS"); ms > 0 {
+			// Long enough for a watcher to see the message on the *running*
+			// row, which is the live half of the feature.
+			emitText("holding so the status is observable while running")
+			time.Sleep(ms)
+		}
+		if final := os.Getenv("FAKEAGENT_STATUS_FINAL"); final != "" {
+			reports += " " + setStatus(final)
+		}
+		emitText(reports)
+		emitSuccessResult([]byte(reports), 1, 1)
 	case "flood":
 		// An agent that will not stop talking: emits until something kills
 		// it, which is exactly what the §12.3 transcript cap must do.
@@ -554,6 +586,39 @@ func emitSuccessResult(prompt []byte, inTok, outTok int64) {
 		"total_cost_usd": 0.0123,
 		"usage":          map[string]int64{"input_tokens": inTok, "output_tokens": outTok},
 	})
+}
+
+// setStatus runs `vincent status <message>` the way a step's own process
+// would, and reports what happened in one line so the result text carries it
+// — a scenario that swallowed the error would make a broken command look like
+// a step that simply said nothing.
+//
+// The binary comes from FAKEAGENT_VINCENT_BIN because a fake agent has no
+// other way to find it: there is no install on a test machine's PATH, and
+// os.Executable() is this program.
+func setStatus(message string) string {
+	if message == "" {
+		return "status: nothing to say"
+	}
+	bin := os.Getenv("FAKEAGENT_VINCENT_BIN")
+	if bin == "" {
+		return "status: FAKEAGENT_VINCENT_BIN is unset"
+	}
+	out, err := exec.Command(bin, "status", message).CombinedOutput()
+	if err != nil {
+		return "status: failed: " + err.Error() + ": " + flatten(string(out), 200)
+	}
+	return "status: set to " + flatten(message, 200)
+}
+
+// envMillis reads a millisecond duration from the environment; 0 when unset
+// or unparseable.
+func envMillis(name string) time.Duration {
+	n, err := strconv.Atoi(os.Getenv(name))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Millisecond
 }
 
 // block sleeps forever. Not `select {}` — with no other goroutines that
