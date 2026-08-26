@@ -20,12 +20,31 @@ const (
 	widthStepLong  = 18
 	widthElapsed   = 9
 	widthCost      = 8
-	minTitle       = 16
+	// widthStatus holds a step's own status message (task 033) — enough for a
+	// clause, with the rest truncated. It is not wider because this column is
+	// affordable only on a board with room to spare, which is the deal it is
+	// admitted on.
+	widthStatus = 28
+	minTitle    = 16
+	// minTitleWithStatus is the title width below which the status column is
+	// not worth its cells. minTitle alone is the wrong gate for it: a
+	// 120-column board is the common case, and admitting the status there
+	// would take a 50-cell title down to 20 — still "legal", and still a
+	// board whose titles no longer identify anything.
+	//
+	// Set high enough that the column is genuinely a wide-terminal luxury,
+	// and — deliberately — high enough that it cannot eat the width a grouped
+	// board frees by dropping PROJECT and WORKFLOW. That width was recorded
+	// as going to the title (see columnsFor), and a new column quietly
+	// spending it would overturn that decision rather than add to it. At
+	// every width, a grouped board's title stays strictly wider than a flat
+	// board's.
+	minTitleWithStatus = 64
 )
 
 // maxBoardColumns is every column the widest board can carry — the size a row
 // is built at, so rowsFor and groupHeaderRow never grow their slice mid-loop.
-const maxBoardColumns = 9
+const maxBoardColumns = 10
 
 // columnSet records which optional columns survived the current width.
 type columnSet struct {
@@ -41,6 +60,11 @@ type columnSet struct {
 	workflow bool
 	stepName bool
 	cost     bool
+	// status is the step's own status message (§5.4, task 033). It is the
+	// first column shed and the last admitted: it is a luxury of a wide
+	// terminal, and a board narrow enough to drop it renders exactly as it
+	// did before the column existed.
+	status bool
 }
 
 // fixedWidth is everything a set costs except the title, padding included.
@@ -69,6 +93,10 @@ func (s columnSet) fixedWidth() int {
 		total += widthCost
 		count++
 	}
+	if s.status {
+		total += widthStatus
+		count++
+	}
 	return total + count*colPadding
 }
 
@@ -80,10 +108,17 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // §15's columns do not fit a narrow terminal, and truncating all of them
 // proportionally leaves a row of unreadable stubs — a 6-character title
 // tells you nothing. Whole columns are dropped instead, in increasing order
-// of how much you navigate by them: cost, then the step name, then the
-// workflow, then the project. Dropping continues until the title clears its
-// minimum, so the thresholds follow from the widths rather than being
-// second-guessed as constants that can silently disagree with them.
+// of how much you navigate by them: the status, then cost, then the step
+// name, then the workflow, then the project. Dropping continues until the
+// title clears its minimum, so the thresholds follow from the widths rather
+// than being second-guessed as constants that can silently disagree with
+// them.
+//
+// The status goes first (task 033) because it is the only column that is
+// prose: a task is found by its project, its workflow and its title, and a
+// step's self-report is what you read once you have found it. Shedding it
+// first is also what keeps the addition free — a board too narrow for it
+// renders byte-for-byte as it did before.
 //
 // The workflow outranks the step name: "survey" is meaningless without
 // knowing it belongs to docs-update, while the workflow alone still tells you
@@ -103,9 +138,20 @@ func columnsFor(width int, g grouping, marking bool) columnSet {
 		workflow: !g.has(groupWorkflow),
 		stepName: true,
 		cost:     true,
+		status:   true,
+	}
+	// The status has a gate of its own, stricter than the shedding ladder
+	// below, which is what makes it a luxury of a wide terminal rather than
+	// something every board pays for. Anything that clears this gate has room
+	// to spare; anything that does not renders exactly as it did before the
+	// column existed.
+	if set.titleWidth(width) < minTitleWithStatus {
+		set.status = false
 	}
 	for set.titleWidth(width) < minTitle {
 		switch {
+		case set.status:
+			set.status = false
 		case set.cost:
 			set.cost = false
 		case set.stepName:
@@ -154,6 +200,9 @@ func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSe
 	)
 	if set.cost {
 		cols = append(cols, table.Column{Title: "COST", Width: widthCost})
+	}
+	if set.status {
+		cols = append(cols, table.Column{Title: "STATUS", Width: widthStatus})
 	}
 	return cols, set
 }

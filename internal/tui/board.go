@@ -832,6 +832,9 @@ func (b *board) rowsFor(rows []boardRow, set columnSet) []table.Row {
 		if set.cost {
 			row = append(row, formatCost(t.CostUSD))
 		}
+		if set.status {
+			row = append(row, formatStatus(t.StatusMessage))
+		}
 		out = append(out, row)
 	}
 	return out
@@ -857,6 +860,9 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	}
 	row = append(row, r.headerCell(), "", "", "")
 	if set.cost {
+		row = append(row, "")
+	}
+	if set.status {
 		row = append(row, "")
 	}
 	return row
