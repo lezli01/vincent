@@ -132,6 +132,58 @@ func TestEngineInputRequestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEngineLongQuestionRoundTrip is the engine leg of issue #197: a question
+// longer than the API's 256 B `fields`-key bound, asked by the agent and
+// answered under its own verbatim text. The answer is keyed off what the
+// daemon parked on rather than off a literal, because that is what a human
+// answering the form does — validateAnswer matches the key exactly (§7.4) and
+// the adapter writes it back to the CLI unchanged (§9.2), so no layer on this
+// path may shorten it.
+func TestEngineLongQuestionRoundTrip(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "ask-question")
+	t.Setenv("FAKEAGENT_ASK_LONG", "1")
+	h := newEngineHarness(t)
+	h.start(t)
+	task := h.createTask(t, askSnapshot())
+
+	waiting := h.waitForState(t, task.ID, store.TaskAwaitingInput, store.TaskBlocked, store.TaskDone)
+	if waiting.State != store.TaskAwaitingInput {
+		t.Fatalf("task reached %s (block_reason %q), want awaiting_input", waiting.State, waiting.BlockReason)
+	}
+	var pending PendingInput
+	if err := json.Unmarshal([]byte(waiting.PendingInputJSON), &pending); err != nil {
+		t.Fatalf("pending_input_json %q: %v", waiting.PendingInputJSON, err)
+	}
+	if len(pending.Questions) != 1 {
+		t.Fatalf("pending = %+v, want one question", pending)
+	}
+	text := pending.Questions[0].Text
+	if len(text) <= 256 {
+		t.Fatalf("question is %d bytes; FAKEAGENT_ASK_LONG must ask past the 256 B bound", len(text))
+	}
+
+	if _, err := h.runner.Answer(t.Context(), task.ID,
+		AnswerInput{Answers: map[string][]string{text: {"Red"}}}); err != nil {
+		t.Fatalf("Answer a %d-byte question: %v", len(text), err)
+	}
+	final := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if final.State != store.TaskDone {
+		t.Fatalf("task reached %s (block_reason %q), want done", final.State, final.BlockReason)
+	}
+	if final.PendingInputJSON != "" {
+		t.Errorf("pending_input_json survived the answer: %s", final.PendingInputJSON)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 || runs[0].State != store.StepSucceeded {
+		t.Fatalf("step runs = %+v, want one succeeded attempt", runs)
+	}
+	// The agent echoes updatedInput.answers, so this proves the key survived
+	// the trip out to the CLI and back rather than only reaching the engine.
+	if !containsAll(runs[0].ResultSummary, text, `"Red"`) {
+		t.Errorf("result %q does not echo the long question and its answer", runs[0].ResultSummary)
+	}
+}
+
 func TestEngineInputPermissionAnswer(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "ask-permission")
 	h := newEngineHarness(t)

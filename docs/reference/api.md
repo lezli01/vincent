@@ -77,9 +77,15 @@ the field and the limit:
 | project `name`, `branch_name`, `base_branch`, `branch_override` | 512 B |
 | `prompt`, `prompt_override` | 1 MiB |
 | `run_override` | 16 KiB |
-| one `fields` / `answers` key | 256 B |
+| one `fields` key | 256 B |
+| one `answers` key | 64 KiB |
 | one `fields` / `answers` value | 64 KiB |
 | `fields` / `answers` entries, values per answer | 100 |
+
+The two keys differ because they are different kinds of thing. A `fields` key is
+a short identifier you choose. An `answers` key is not yours to choose at all: it
+is the agent's question text, which the answer is keyed by and which the daemon
+hands back to the CLI unchanged, so it is bounded like the prose it is.
 
 These are fixed constants, not configuration: a body larger than one of them is
 a buggy client rather than a workload to tune for.
