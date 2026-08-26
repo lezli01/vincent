@@ -57,6 +57,33 @@ func testConfig() apiclient.Config {
 	}
 }
 
+// TestDaemonViewRendersTheTaskCostCap: the daemon view is where a user reads
+// what the daemon is actually enforcing, so a per-task spend cap belongs on
+// it (task 033). An unset cap reads "off", never "$0.00" — that spelling is
+// reserved for a task whose adapters reported nothing.
+func TestDaemonViewRendersTheTaskCostCap(t *testing.T) {
+	d := newTestDaemonView(nil, nil)
+	d.update(daemonInfoMsg{info: testInfo()})
+	d.update(daemonConfigMsg{config: testConfig()})
+	out := renderDaemon(d)
+	if !strings.Contains(out, "max task cost") || !strings.Contains(out, "off") {
+		t.Errorf("an unset cap is not rendered as off:\n%s", out)
+	}
+	if strings.Contains(out, "$0.00") {
+		t.Error("an unset cap rendered as $0.00, which is a claim the daemon never made")
+	}
+
+	capped := testConfig()
+	capped.MaxTaskCostUSD = 12.5
+	d.update(daemonConfigMsg{config: capped})
+	out = renderDaemon(d)
+	for _, want := range []string{"max task cost", "$12.5", "per task"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the view does not show %q:\n%s", want, out)
+		}
+	}
+}
+
 func loadedDaemon(d *daemonView) {
 	d.update(daemonInfoMsg{info: testInfo()})
 	d.update(daemonConfigMsg{config: testConfig()})

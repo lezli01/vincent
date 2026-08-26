@@ -55,7 +55,9 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   catalog, so a CLI upgrade that adds an effort level makes it selectable without
   a vincent release.
 - **Reports token usage and cost.** The board's cost column sums every attempt,
-  retries included. The other two adapters report no cost at all.
+  retries included. The other two adapters report no cost at all — which also
+  means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)
+  can only stop a task that ran on claude.
 - **Recognizes a spent usage quota and a logged-out CLI** in the output of a run
   that failed. A quota stop becomes `usage_limit` — no retry consumed, the task
   waits and re-runs itself — and a logged-out CLI becomes
@@ -301,7 +303,8 @@ authority there, and you find out at run time.
 - **Anything where you may want to answer a question mid-run** — claude. It is
   the only adapter that can be asked and resumed.
 - **Cost tracking matters** — claude. The other two report none, so the board's
-  cost column stays empty for them.
+  cost column stays empty for them and a configured per-task spend cap never
+  fires. vincent will not estimate money from token counts.
 - **Cheap, strictly unattended passes** — codex or cursor are fine; set
   `on_input: deny` and neither will ever try to stop for you anyway.
 - **You want a specific model cursor offers** — cursor, remembering that the

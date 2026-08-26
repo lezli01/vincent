@@ -2734,6 +2734,7 @@ delete_empty_branch_on_archive: true   # archive deletes a branch with no commit
 delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
+max_task_cost_usd: 0            # per-task spend ceiling (§17, §18); 0 = no cap
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
 parallel:
   max_parallel: 4            # sub-steps of one `parallel` group at once (§7.5); the §11 caps do not see these
@@ -2766,6 +2767,27 @@ resolved configuration at the moment of the wait, so it carries no per-task
 state either, and it is §7.2's concept rather than a second one beside it. It
 has no key in this file for the same reason `max_retries` has none: retry
 policy is a workflow's business, and `defaults:` here is timeouts.
+
+**`max_task_cost_usd` (task 033, added 2026-08-26).** A ceiling, in US dollars,
+on what **one task** may spend — the §17 rollup of `cost_usd` over every attempt
+of every step it runs, retries included. Past it the task goes `blocked` with
+`block_reason = cost_limit` (§18). Zero, which is the default, is no cap, so
+nothing changes for anyone who does not ask; a negative value fails the load.
+It sits at the top level beside `transcript_max_bytes` rather than under
+`defaults:`, which is timeouts a step may override — a budget is not something a
+step inherits — and it is a plain number rather than a `Duration`- or
+`ByteSize`-style string because USD is already the unit and it is in the key
+name. Read per check, so a hot reload reaches a task that is already running.
+
+It counts **one task**, which is not the same as one *tree*: a `fan_out` lane is
+an ordinary task row (§7.6), so a twenty-lane tree may spend twenty times this
+before any single row trips, and the parent's own rollup never sees a lane's
+spend. A per-tree cap was considered and deferred — it needs a recursive rollup
+over `parent_task_id` and a rule for which task blocks when the total trips — and
+the multiplication is documented here rather than worked around. It is also
+inert on the adapters that report no cost: codex (§9.3) and cursor (§9.7) leave
+`cost_usd` unset, and the check is guarded by "some attempt reported a cost"
+rather than by arithmetic, so a cap must never be estimated from token counts.
 
 **`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
 added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
@@ -4138,7 +4160,14 @@ currently true to show (§15 view 6).
   full JSONL transcript on disk (agent events, command output, check output,
   input requests and answers).
 - **Per task:** aggregate duration/tokens/cost across attempts (rolled up from
-  step_runs; shown on board and detail views).
+  step_runs; shown on board and detail views). *Amended 2026-08-26 (task 033):
+  the cost rollup is no longer only reported.* When `max_task_cost_usd` (§12.3)
+  is set, the engine compares this figure against it at every attempt boundary
+  and blocks the task `cost_limit` (§18) once it is over. "Across attempts,
+  retries included" is therefore load-bearing rather than a reporting nicety: a
+  step that failed twice before succeeding spent money three times, and a cap
+  reading only the surviving attempt would under-count exactly the tasks that
+  burned it.
 - **Daemon log:** structured (slog), rotated; scheduler decisions at debug level.
 - **Retention:** transcripts of archived tasks pruned after
   `transcript_retention_days` (default 90); DB rows kept indefinitely (rows are small,
@@ -4215,6 +4244,7 @@ currently true to show (§15 view 6).
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
+| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget, and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7) |
 | A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
 | A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
 | An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |

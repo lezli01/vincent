@@ -106,7 +106,13 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			// spent, so this is not its verdict yet, and swallowing it here
 			// would turn `retry_backoff` off for every allow_failure sub-step
 			// (task 028).
-			if out.state == store.StepFailed && out.backoffUntil == nil && allowFailure(sub, out.reason) {
+			//
+			// A sub-step that took the task past its cost cap is excluded
+			// for the stronger reason: `allow_failure` says this failure does
+			// not stop the workflow, and the budget stop is not this
+			// failure's verdict at all (task 033).
+			if out.state == store.StepFailed && out.backoffUntil == nil &&
+				!out.costExceeded && allowFailure(sub, out.reason) {
 				subEnv.log.Info("sub-step failed; allowed by allow_failure", "reason", out.reason)
 				out = stepOutcome{state: store.StepSucceeded}
 			}
@@ -220,19 +226,29 @@ func (r *Runner) groupLimit(step workflow.Step) int {
 // declaration order so the same set of failures always reports the same
 // reason.
 //
-// Precedence is interruption, then a failure with its budget spent, then a
-// failure owed a paced retry, then success. An interruption means the daemon
-// is stopping or a quota is spent: that attempt consumed no retry and the task
-// will be re-admitted, so reporting a sibling's failure instead would block a
-// task that is only paused.
+// Precedence is interruption, then the cost cap, then a failure with its
+// budget spent, then a failure owed a paced retry, then success. An
+// interruption means the daemon is stopping or a quota is spent: that attempt
+// consumed no retry and the task will be re-admitted, so reporting a
+// sibling's failure instead would block a task that is only paused. It stays
+// ahead of the cost cap on those grounds — nothing is lost, because the
+// re-admitted group re-runs its unfinished sub-steps and the next attempt
+// boundary asks about the same rollup (task 033).
 //
 // A spent failure outranks a backoff-pending one (task 028) for the same
 // reason: waiting on a sibling whose budget is *already* gone only delays the
 // block. The task would be held, re-admitted, and blocked anyway — one hold
 // later, with nothing learned.
 func collectGroup(outcomes []stepOutcome) stepOutcome {
-	var failure, backoff *stepOutcome
+	var failure, backoff, cost *stepOutcome
 	for i := range outcomes {
+		// Whatever else the group did, one sub-step took the task past its
+		// budget, and that is the group's verdict (task 033). It is collected
+		// from a succeeded sub-step as readily as from a failed one: the flag
+		// is about the task's spend, not about what the sub-step produced.
+		if outcomes[i].costExceeded && cost == nil {
+			cost = &outcomes[i]
+		}
 		switch outcomes[i].state {
 		case store.StepInterrupted:
 			return outcomes[i]
@@ -249,6 +265,9 @@ func collectGroup(outcomes []stepOutcome) stepOutcome {
 		case store.StepSucceeded, store.StepRunning, store.StepApproved,
 			store.StepRejected, store.StepSkipped, store.StepStopped:
 		}
+	}
+	if cost != nil {
+		return *cost
 	}
 	if failure != nil {
 		return *failure

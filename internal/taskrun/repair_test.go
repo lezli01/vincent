@@ -12,7 +12,6 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
-	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
@@ -610,7 +609,7 @@ func (h *engineHarness) restart(t *testing.T) {
 	agents := agent.NewRegistry(claude.New(func() string { return fake }))
 	h.runner = New(Deps{
 		Store:     h.store,
-		Config:    func() config.Config { return h.cfg },
+		Config:    h.config,
 		Worktrees: worktree.NewManager(gitx.New(), h.dataDir),
 		Agents:    agents,
 		Catalog:   agent.NewCatalogCache(agents),
@@ -619,7 +618,7 @@ func (h *engineHarness) restart(t *testing.T) {
 	})
 	sched := scheduler.New(scheduler.Deps{
 		Store:    h.store,
-		Config:   func() config.Config { return h.cfg },
+		Config:   h.config,
 		Admitter: h.runner,
 		Logger:   log,
 	})

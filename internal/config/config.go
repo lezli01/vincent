@@ -175,6 +175,23 @@ type Config struct {
 	// at the top level beside its retention sibling, not under `defaults:`,
 	// which is timeouts only (PR V decision).
 	TranscriptMaxBytes ByteSize `yaml:"transcript_max_bytes"`
+	// MaxTaskCostUSD caps what **one task** may spend before the engine stops
+	// it (§12.3, §17, §18 — task 033). Past it the task blocks `cost_limit` at
+	// the next attempt boundary. Zero — the default — is no cap, so nothing
+	// changes for anyone who does not ask.
+	//
+	// It sits at the top level beside TranscriptMaxBytes rather than under
+	// `defaults:`, which is timeouts a step may override (PR V decision): a
+	// budget is not something a step inherits.
+	//
+	// A plain float64, unlike Duration and ByteSize: those exist because a
+	// bare number of nanoseconds or bytes is unreadable in a file, and USD is
+	// already the unit — it is in the key name.
+	//
+	// Per task, not per daemon and not per tree: a `fan_out` lane is an
+	// ordinary task row (task 014 decision 1), so a tree of twenty lanes may
+	// spend twenty times this before any single row trips.
+	MaxTaskCostUSD float64 `yaml:"max_task_cost_usd"`
 	// UsageLimitRecheckInterval is how long a task waits before trying again
 	// after its agent reported a spent usage quota *without* a reset time
 	// (task 003, §11). When the CLI does report one, that timestamp wins and
@@ -461,6 +478,12 @@ func (c Config) validate() error {
 	}
 	if c.TranscriptRetentionDays < 0 {
 		return fmt.Errorf("transcript_retention_days must not be negative, got %d", c.TranscriptRetentionDays)
+	}
+	// Non-negative, not positive: zero is the documented "no cap" (task 033),
+	// unlike usage_limit_recheck_interval below where zero would mean a
+	// respawn loop. A negative budget cannot be honoured by any run.
+	if c.MaxTaskCostUSD < 0 {
+		return fmt.Errorf("max_task_cost_usd must not be negative, got %v", c.MaxTaskCostUSD)
 	}
 	// Positive, not merely non-negative: zero would re-admit a quota-held task
 	// on the very next tick, which is the tight respawn loop the hold exists

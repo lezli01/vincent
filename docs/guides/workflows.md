@@ -1717,10 +1717,14 @@ What follows from that:
   while its children run (`awaiting_children`). A step waiting on a mid-run
   question (`awaiting_input`) **keeps** its slot, because the process is alive.
 
-Two more bounds worth knowing when a run behaves oddly:
-`transcript_max_bytes` (512MB per attempt, then `transcript_limit`) and
+Three more bounds worth knowing when a run behaves oddly:
+`transcript_max_bytes` (512MB per attempt, then `transcript_limit`);
 `usage_limit`, which is not a failure — the task waits `queued` until the
-agent's quota window reopens, consuming no retry.
+agent's quota window reopens, consuming no retry; and
+[`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd), off by
+default, which blocks a task with `cost_limit` once its spend across every
+attempt passes a ceiling you set. That last one counts **one task**, so each
+fan-out lane carries its own budget, and it only sees agents that report cost.
 
 ---
 

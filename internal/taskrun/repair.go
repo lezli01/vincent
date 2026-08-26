@@ -144,6 +144,11 @@ func (r *Runner) runRepair(
 		r.interrupt(task, log)
 		return
 	}
+	// A repair that took the task past `max_task_cost_usd` needs nothing
+	// here: this path ends `blocked` whatever the run did, and the reason it
+	// restores — the one the task was blocked with — says more than
+	// cost_limit would (task 033). The next ordinary retry is where the cap
+	// speaks.
 	log.Info("repair finished; returning the task to blocked",
 		"outcome", string(outcome.state), "reason", outcome.reason)
 	r.finishRepair(task, req, log)

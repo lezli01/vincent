@@ -46,6 +46,7 @@ the living engineering specification records implementation contracts.
 | [030](030-daemon-backup-and-restore.md) | `vincent daemon backup` / `restore` | ✅ done (6/6) |
 | [031](031-native-process-identity.md) | Exact native process identity for the §12.4 PID-reuse guard | ✅ done (5/5) |
 | [032](032-macos-notarization.md) | macOS Developer ID signing and notarization | ⚠ verification blocked (5/7) |
+| [033](033-task-cost-cap.md) | `max_task_cost_usd`: a per-task cost cap enforced at attempt boundaries | ✅ done (4/4) |
 
 ## How to add and update a task document
 

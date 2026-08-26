@@ -166,6 +166,11 @@ which includes running it inside a for-profit company's development workflow.
 Your agent CLI's usage is billed by its vendor.
 Claude Code reports cost, so the board's cost column sums every attempt for it;
 codex and cursor report none, and vincent shows nothing rather than guessing.
+That figure can also be a limit:
+[`max_task_cost_usd`](reference/configuration.md#max_task_cost_usd) blocks a task
+once it has spent past a ceiling you set. It is off by default, and — for the
+same reason the column is empty — it cannot see a task that ran on codex or
+cursor.
 
 ### How do I stop everything right now?
 

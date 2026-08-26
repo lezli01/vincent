@@ -139,7 +139,22 @@ const (
 	// attempt keeps whatever it actually failed with, its row stays `failed`,
 	// and it consumes a retry. This reason belongs to the task's wait alone,
 	// which is why nothing ever writes it to a step_runs row.
-	ReasonRetryBackoff  = "retry_backoff"
+	ReasonRetryBackoff = "retry_backoff"
+	// ReasonCostLimit is a task whose rolled-up spend passed
+	// `max_task_cost_usd` (§12.3, §17, §18 — task 033). It is checked at
+	// every attempt boundary, so the attempt that crossed the line ran to
+	// completion: cost arrives on an agent run's terminal result line and
+	// nowhere else, and there is no mid-run signal to poll (§9.1).
+	//
+	// It blocks the task rather than failing the step, and it is the one
+	// verdict that outranks a failure with retry budget left. A budget
+	// overrun is a policy stop, not something the step did wrong: the
+	// finished `step_run` keeps its own state and its own failure reason, no
+	// retry is consumed, and a due retry does not run — retrying would spend
+	// more money to arrive at the same wall. The remedy is to raise the cap
+	// and retry; a retry that does not raise it advances by exactly one
+	// attempt and blocks here again.
+	ReasonCostLimit     = "cost_limit"
 	ReasonInternalError = "internal_error"
 )
 
@@ -341,6 +356,17 @@ type stepOutcome struct {
 	// and advancing on it would spend an `allow_failure` step's first failure
 	// as though the budget were gone.
 	backoffUntil *time.Time
+	// costExceeded marks the attempt boundary at which this task's rolled-up
+	// spend passed `max_task_cost_usd` (task 033). The task blocks
+	// `cost_limit` whatever the attempt itself did — a success stops the
+	// workflow here, and a failure with budget left does not get its retry.
+	//
+	// It inherits backoffUntil's standing rule verbatim: **every branch that
+	// turns an outcome into something else must test it first**, in the step
+	// loop, in a group and in a loop body. An `allow_failure` that swallowed
+	// this, or a collector that dropped it, would spend the next attempt's
+	// money to reach the same wall one boundary later.
+	costExceeded bool
 }
 
 // execute runs one admission of a task: it walks the snapshot's steps from
@@ -547,6 +573,18 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 		default:
 			outcome = r.runStepWithRetries(ctx, env)
 		}
+		// Before the switch, because the flag outranks every arm of it: the
+		// task stops here whether the attempt succeeded or failed (task 033).
+		// The cursor deliberately does not advance — a blocked task stays at
+		// the step it is on, which is what lets a group resume its unfinished
+		// sub-steps and a loop resume its iteration from the rows. The row
+		// this attempt wrote keeps its own state and reason, so the timeline
+		// still says what the step did while block_reason says why nothing
+		// further was tried.
+		if outcome.costExceeded {
+			r.fail(task, ReasonCostLimit, env.log, "task cost limit reached", nil)
+			return
+		}
 		switch outcome.state {
 		case store.StepSucceeded:
 			w.persist(ctx, pos+1, env.log)
@@ -660,6 +698,14 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 	for {
 		attempts.Last++
 		last = r.runAttempt(ctx, env, attempts.Last, last)
+		// The attempt boundary, and the only one there is: the row is
+		// written, so the rollup this reads includes the money that attempt
+		// just spent (task 033). Before the failure and retry arms
+		// deliberately — a cost verdict outranks both.
+		if r.overCostCap(ctx, env, last) {
+			last.costExceeded = true
+			return last
+		}
 		if last.state != store.StepFailed {
 			return last
 		}
@@ -703,6 +749,54 @@ func (r *Runner) runStepWithRetries(ctx context.Context, env *stepEnv) stepOutco
 		last.backoffUntil = &until
 		return last
 	}
+}
+
+// overCostCap reports whether this task has spent past `max_task_cost_usd`
+// (§12.3, §17 — task 033). It is asked once per finished attempt, which is
+// the only boundary cost is known at: an agent run reports it on its terminal
+// result line and nowhere else (§9.1).
+//
+// The cap is read per check rather than cached, exactly as the transcript cap
+// is read per attempt: config hot-reloads (§12.3), and an operator raising
+// this after a block must see the new value on the retry rather than after a
+// daemon restart.
+//
+// Three things make it a no-op rather than a coincidence. An unset cap is off
+// — zero and absent are the same value, which is what keeps this invisible to
+// anyone who did not ask for it. An unfinished attempt is not a boundary: an
+// interruption consumes no retry and the task is re-admitted, so the next
+// attempt asks again, and blocking here would turn a shutdown into a budget
+// stop. And HasCost, not arithmetic, is what excludes the adapters that
+// report no cost at all: codex and cursor leave it nil (§9.3, §9.7), so their
+// rollup is "unreported" rather than $0.00 and the cap is inert on them by
+// construction.
+func (r *Runner) overCostCap(ctx context.Context, env *stepEnv, out stepOutcome) bool {
+	limit := r.deps.Config().MaxTaskCostUSD
+	if limit <= 0 {
+		return false
+	}
+	switch out.state {
+	case store.StepSucceeded, store.StepFailed:
+	case store.StepRunning, store.StepInterrupted, store.StepApproved,
+		store.StepRejected, store.StepSkipped, store.StepStopped:
+		return false
+	}
+	rollups, err := r.deps.Store.TaskRollups(ctx, []int64{env.task.ID})
+	if err != nil {
+		// Fail open, loudly. A read that failed says nothing about what the
+		// task spent, and blocking a task on a database error would report a
+		// budget overrun that may not have happened.
+		env.log.Error("read task cost rollup", "error", err)
+		return false
+	}
+	rollup, ok := rollups[env.task.ID]
+	if !ok || !rollup.HasCost || rollup.CostUSD <= limit {
+		return false
+	}
+	env.log.Warn("task cost limit reached",
+		"cost_usd", rollup.CostUSD, "max_task_cost_usd", limit,
+		"step", env.step.ID, "attempt_outcome", string(out.state))
+	return true
 }
 
 // previousFailure reconstructs `.LastFailure` for the first attempt of an

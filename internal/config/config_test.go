@@ -59,6 +59,7 @@ defaults:
   input_timeout: 36h
 transcript_retention_days: 7
 transcript_max_bytes: 32MB
+max_task_cost_usd: 12.5
 usage_limit_recheck_interval: 2m
 log_level: warn
 agents:
@@ -85,6 +86,7 @@ agents:
 		DeleteEmptyBranchOnArchive: true,
 		TranscriptRetentionDays:    7,
 		TranscriptMaxBytes:         32 << 20,
+		MaxTaskCostUSD:             12.5,
 		UsageLimitRecheckInterval:  Duration(2 * time.Minute),
 		LogLevel:                   "warn",
 		// The file omits `environment:`, so the §12.3 default survives an
@@ -184,6 +186,29 @@ delete_remote_branch_on_archive: true
 	}
 }
 
+// TestTaskCostCapDefaultsOff pins task 033's "nothing changes for anyone who
+// does not ask": the built-in default is zero, an explicit zero is the same
+// value, and zero is the documented way to say "no cap" — so neither an
+// untouched config nor a deliberate `max_task_cost_usd: 0` can be refused.
+func TestTaskCostCapDefaultsOff(t *testing.T) {
+	if got := Default().MaxTaskCostUSD; got != 0 {
+		t.Errorf("max_task_cost_usd default = %v, want 0 (off)", got)
+	}
+	for content, want := range map[string]float64{
+		"max_task_cost_usd: 0\n":   0,
+		"max_task_cost_usd: 2.5\n": 2.5,
+		"max_task_cost_usd: 5\n":   5, // an integer is a perfectly good budget
+	} {
+		cfg, err := Load(writeConfig(t, content))
+		if err != nil {
+			t.Fatalf("Load(%q): %v", content, err)
+		}
+		if cfg.MaxTaskCostUSD != want {
+			t.Errorf("Load(%q) = %v, want %v", content, cfg.MaxTaskCostUSD, want)
+		}
+	}
+}
+
 // TestBoardGroupingDefault pins §15's default: a board is read project by
 // project, and within a project by what each task is doing.
 func TestBoardGroupingDefault(t *testing.T) {
@@ -230,6 +255,10 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		"listen without port":   "listen: 127.0.0.1\n",
 		"bad port":              "listen: 127.0.0.1:notaport\n",
 		"negative retention":    "transcript_retention_days: -1\n",
+		// Non-negative, not positive: zero is the documented "no cap"
+		// (task 033), so only a budget no run could honour is refused.
+		"negative task cost cap":        "max_task_cost_usd: -1\n",
+		"task cost cap is not a number": "max_task_cost_usd: five dollars\n",
 		// Zero would re-admit a quota-held task on the very next tick, which
 		// is the respawn loop the hold exists to stop (task 003).
 		"zero recheck interval":     "usage_limit_recheck_interval: 0s\n",
