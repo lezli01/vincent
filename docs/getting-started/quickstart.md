@@ -65,20 +65,20 @@ to put one:
 `~/Library/Application Support/vincent` on macOS, `~/.config/vincent` on Linux
 (see [Files and directories](../reference/files.md)).
 
-Global is the easier start. Copy one of the shipped
-[examples](../../examples):
+Global is the easier start, and the binary will write the file for you — the
+same command on all three platforms, with no checkout of this repository and no
+daemon needed:
 
 ```sh
-# macOS / Linux
-mkdir -p ~/.config/vincent/workflows        # macOS: ~/Library/Application\ Support/vincent/workflows
-cp examples/feature-pr.yaml ~/.config/vincent/workflows/
+vincent workflow init feature-pr --from feature-pr
 ```
 
-```powershell
-# Windows (PowerShell)
-mkdir -Force $env:APPDATA\vincent\workflows
-copy examples\feature-pr.yaml $env:APPDATA\vincent\workflows\
-```
+That creates the directory if it is missing, writes the shipped
+[example](../../examples/feature-pr.yaml) with its comments intact, and prints
+the path. Drop `--from` for a commented one-agent-step skeleton instead, or add
+`--project 1` to write into that repository's `.vincent/workflows/` (the one
+part that needs a running daemon). It refuses rather than overwriting anything
+already there.
 
 The daemon watches both directories and picks the file up **on save**. There is
 no restart and no apply step. A file that fails to parse is reported as invalid
@@ -87,7 +87,7 @@ and the previously loaded version keeps running.
 Check what the registry now holds:
 
 ```sh
-vincent workflow validate examples/feature-pr.yaml
+vincent workflow validate ~/.config/vincent/workflows/feature-pr.yaml
 vincent workflow ls                # built-in + global
 vincent workflow ls --project 1    # …plus that project's .vincent/workflows
 ```
@@ -95,6 +95,13 @@ vincent workflow ls --project 1    # …plus that project's .vincent/workflows
 `vincent workflow validate` runs entirely locally — no daemon, no network, no
 agent CLI installed — which is what makes it usable from a pre-commit hook or
 CI.
+
+> There is a second way to get a workflow: the built-in `create-workflow`, an
+> agent that *designs* one from a description and installs it. It needs a
+> daemon, an agent CLI, tokens and time, and may stop to ask you a design
+> question. `workflow init` hands you a file instead — reach for it when you
+> know roughly what you want to write. See
+> [Writing workflows](../guides/workflows.md#12-where-workflow-files-live).
 
 ### What `feature-pr` does
 

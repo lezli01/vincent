@@ -168,7 +168,8 @@ Three things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Five ready-to-copy workflows ship in [`examples/`](examples);
+Five ready-to-copy workflows ship in [`examples/`](examples), and
+`vincent workflow init <name> --from <example>` installs one without a checkout;
 [Writing workflows](docs/guides/workflows.md) is the authoring guide and
 [Agent CLIs](docs/guides/agents.md) covers the adapters in full.
 
@@ -186,19 +187,22 @@ vincent task add --project 1 --title "Add a health endpoint"
 vincent task ls --state running
 vincent task show 7
 vincent task cancel 7
+vincent workflow init my-flow              # or --from feature-pr, --project 1
 vincent workflow ls
 vincent workflow validate .vincent/workflows/feature-pr.yaml
 ```
 
 Every subcommand takes `--json` for scripting. Exit codes are `0` success,
-`1` the daemon answered and rejected the request, and `2` no daemon answered
+`1` the request was rejected — by the daemon, or by a daemon-free command such as
+`workflow validate` on an invalid file — and `2` no daemon answered
 — so a script can tell "start the daemon" from "fix your request" without
 parsing stderr. The subcommands never auto-start a daemon; only the TUI does,
 because that is an interactive session you asked for.
 
 `vincent workflow validate` runs entirely locally against the built-in agent
 catalogs — no daemon, no installed agent CLI — which makes it usable from CI
-and pre-commit hooks.
+and pre-commit hooks. So does `vincent workflow init`, except for `--project`,
+which needs a daemon only to resolve the id to a repository.
 
 `vincent service install` registers the daemon with your OS so it starts at
 login and survives reboot — a launchd user agent, a systemd user unit, or a
@@ -384,20 +388,21 @@ vincent project ls
   name: `.vincent/workflows/` inside the repo.
 
 Either way the daemon picks it up on save; there is no restart or apply step.
-Global is the easier start:
+Global is the easier start, and the binary writes the file for you — one command
+on all three platforms, no checkout of this repository and no daemon needed:
 
 ```sh
-# Windows (PowerShell)
-mkdir -Force $env:APPDATA\vincent\workflows
-copy examples\feature-pr.yaml $env:APPDATA\vincent\workflows\
-
-# macOS / Linux
-mkdir -p ~/.config/vincent/workflows          # macOS: ~/Library/Application\ Support/vincent/workflows
-cp examples/feature-pr.yaml ~/.config/vincent/workflows/
+vincent workflow init feature-pr --from feature-pr
 ```
 
+It creates the directory if it is missing, writes the shipped example with its
+comments intact, and prints the path. Drop `--from` for a commented
+one-agent-step skeleton, or add `--project 1` to write into that repository's
+`.vincent/workflows/` instead. It refuses rather than overwriting anything
+already there.
+
 ```sh
-vincent workflow validate examples/feature-pr.yaml
+vincent workflow validate ~/.config/vincent/workflows/feature-pr.yaml
 vincent workflow ls              # global + built-in
 vincent workflow ls --project 1  # add this project's own .vincent/workflows
 ```

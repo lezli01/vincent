@@ -11,8 +11,14 @@ schema is shaped the way it is. Keep the
 [Workflow schema](../reference/workflow-schema.md) beside it when you need every
 field and default in table form.
 
-Five ready-to-copy files live in [`examples/`](../../examples). If you would
-rather read one working workflow than a guide, start with
+Five ready-to-copy files live in [`examples/`](../../examples), and the binary
+will install one for you:
+
+```sh
+vincent workflow init my-flow --from feature-pr   # or drop --from for a skeleton
+```
+
+If you would rather read one working workflow than a guide, start with
 [`feature-pr.yaml`](../../examples/feature-pr.yaml) and come back here for the
 parts you want to change.
 
@@ -136,6 +142,22 @@ Details that matter in practice:
 `vincent workflow ls` prints the merged registry with a scope badge per entry;
 `--project <id>` includes that repository's own files.
 
+**Getting a file into one of those directories.**
+[`vincent workflow init <name>`](../reference/cli.md#vincent-workflow-init)
+writes one and prints the path — the skeleton by default, or a shipped example
+with `--from`, embedded in the binary so it works from any directory. The
+default (global) scope needs no daemon; `--project <id>` does, because only the
+daemon knows where that repository is. It never overwrites: an existing path, or
+a sibling in the same scope already declaring that `name:`, is refused. Taking a
+name from a *lower* scope is the shadowing above working as intended, so it
+warns and writes.
+
+That is the offline route: instant, free, and always the same file.
+`create-workflow` above is the other one — it *designs* a workflow from a
+description, at the cost of a daemon, an agent CLI, tokens, wall-clock time and
+a run that may stop to ask you a design question. Reach for `init` when you know
+roughly what you want to write.
+
 ### 1.3 Validating a file
 
 ```sh
@@ -175,6 +197,10 @@ restart and no "apply" step.
 ## 2. Your first workflow
 
 ### 2.1 The minimum viable file
+
+`vincent workflow init tidy` writes a commented one-agent-step starting point
+into `{config_dir}/workflows/tidy.yaml` and prints the path. What follows is
+smaller still, to show what is actually *required*:
 
 ```yaml
 name: tidy

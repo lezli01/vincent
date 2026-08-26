@@ -523,11 +523,8 @@ func typeName(mode os.FileMode) string {
 // fallbackName names a broken file so it can still be listed: its declared
 // `name:` if that much decodes, else the file's base name.
 func fallbackName(src []byte, path string) string {
-	var probe struct {
-		Name string `yaml:"name"`
-	}
-	if err := yamlUnmarshalLenient(src, &probe); err == nil && probe.Name != "" {
-		return probe.Name
+	if name := DeclaredName(src); name != "" {
+		return name
 	}
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
