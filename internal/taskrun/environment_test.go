@@ -1,6 +1,7 @@
 package taskrun
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,44 @@ func TestAgentStepGetsTheResolvedEnvironment(t *testing.T) {
 	}
 	if !strings.Contains(got, "VINCENT_T423_AMBIENT=[]") {
 		t.Errorf("environment.unset did not drop the inherited variable: %q", got)
+	}
+}
+
+// TestAgentStepGetsTheVincentVariables is task 033's prerequisite: an agent
+// step saw the resolved base environment and none of the §8.5 run facts, so
+// an agent had no way to name the step it was running — which is exactly what
+// `vincent status` needs in order to address itself.
+//
+// VINCENT_STEP_ID and VINCENT_TASK_ID are the two the command uses; the rest
+// of the block rides along, since it is one layering either way.
+func TestAgentStepGetsTheVincentVariables(t *testing.T) {
+	t.Setenv("FAKEAGENT_SCENARIO", "report-env")
+	t.Setenv("FAKEAGENT_REPORT_ENV", "VINCENT_TASK_ID,VINCENT_STEP_ID,VINCENT_WORKTREE,VINCENT_BRANCH")
+
+	h := newEngineHarness(t)
+	task := h.createTask(t, "name: env\nsteps:\n  - id: implement\n    type: agent\n    prompt: report\n")
+	h.start(t)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 {
+		t.Fatalf("step runs = %d, want 1", len(runs))
+	}
+	got := runs[0].ResultSummary
+	for _, want := range []string{
+		"VINCENT_STEP_ID=[implement]",
+		fmt.Sprintf("VINCENT_TASK_ID=[%d]", task.ID),
+		"VINCENT_BRANCH=[" + done.BranchName + "]",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("agent step environment misses %s: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "VINCENT_WORKTREE=[]") {
+		t.Errorf("VINCENT_WORKTREE did not reach the agent: %q", got)
 	}
 }
 
