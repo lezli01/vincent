@@ -59,7 +59,6 @@ archives:
     files:
       - README.md
       - LICENSE
-      - COMMERCIAL-LICENSE.md
       - examples/*.yaml
 
 # Native Linux packages use the same pure-Go binaries as the release archives.
@@ -75,7 +74,7 @@ nfpms:
     homepage: "https://github.com/lezli01/vincent"
     maintainer: "László Szabó <lezli01@gmail.com>"
     description: "Vendor-independent control plane for executing native agent tooling"
-    license: PolyForm-Noncommercial-1.0.0
+    license: MIT
     formats: [deb, rpm]
     dependencies: [git]
     bindir: /usr/bin
@@ -86,8 +85,6 @@ nfpms:
         dst: /usr/share/licenses/vincent/LICENSE
       - src: LICENSE
         dst: /usr/share/doc/vincent/copyright
-      - src: COMMERCIAL-LICENSE.md
-        dst: /usr/share/doc/vincent/COMMERCIAL-LICENSE.md
       - src: README.md
         dst: /usr/share/doc/vincent/README.md
 
@@ -117,12 +114,7 @@ homebrew_casks:
     directory: Casks
     homepage: "https://github.com/lezli01/vincent"
     description: "Vendor-independent control plane for executing native agent tooling"
-    # The field takes a single SPDX identifier, and the dual model has none:
-    # `PolyForm-Noncommercial-1.0.0` is the license this artifact is offered
-    # under to everyone who downloads it, and the commercial license is a
-    # separate agreement (COMMERCIAL-LICENSE.md) rather than a public grant, so
-    # it is not expressible here. Do not invent a compound identifier for it.
-    license: PolyForm-Noncommercial-1.0.0
+    license: MIT
     # An rc tag must not move the cask users install; goreleaser's `auto`
     # skips the push whenever the release is a prerelease.
     skip_upload: auto
@@ -170,7 +162,7 @@ scoops:
   - name: vincent
     homepage: "https://github.com/lezli01/vincent"
     description: "Vendor-independent control plane for executing native agent tooling"
-    license: PolyForm-Noncommercial-1.0.0
+    license: MIT
     depends: [git]
     skip_upload: auto
     repository:
@@ -194,7 +186,7 @@ winget:
     description: >-
       Vincent runs Claude Code, Codex, and Cursor CLI workflows in isolated git
       worktrees, with a local daemon, terminal UI, audit transcripts, and gates.
-    license: PolyForm-Noncommercial-1.0.0
+    license: MIT
     license_url: "https://github.com/lezli01/vincent/blob/{{ .Tag }}/LICENSE"
     homepage: "https://github.com/lezli01/vincent"
     publisher_url: "https://lezli01.is-a.dev"

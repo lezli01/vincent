@@ -90,10 +90,6 @@ that is *not* true are stated rather than smoothed over.
 - [FAQ](faq.md) — the short answers.
 - [Example workflows](../examples) — five ready-to-copy files.
 - [Changelog](../CHANGELOG.md) — user-visible changes in every release.
-- [Commercial licensing](../COMMERCIAL-LICENSE.md) — vincent is source-available
-  and dual-licensed: free for personal and non-commercial use under the
-  [PolyForm Noncommercial License 1.0.0](../LICENSE), separate license required
-  for commercial or business use.
 
 ## Contributing
 

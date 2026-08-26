@@ -86,24 +86,6 @@ LINT=$(go tool -n golangci-lint)
 for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
 ```
 
-## Licensing of contributions
-
-vincent is distributed under a dual-license model consisting of a non-commercial
-source-available license ([PolyForm Noncommercial 1.0.0](LICENSE)) and separate
-commercial licenses ([COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)).
-
-By submitting a contribution, you agree that your contribution may be
-distributed by the vincent project under the project's current non-commercial
-license and under separate commercial licenses offered by the project owner.
-
-You retain copyright in your contribution unless otherwise agreed.
-
-> **Note:** this is a lightweight statement of intent, not a formal Contributor
-> License Agreement, and it is not necessarily a substitute for one. If a CLA
-> becomes necessary — for example if the project takes on contributions large
-> enough that clear relicensing rights matter — one will be added separately and
-> announced, rather than read into this paragraph.
-
 ## Pull request checklist
 
 - [ ] PR title is plain language (no Conventional Commit prefix)

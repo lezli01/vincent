@@ -303,16 +303,14 @@ jobs:
             dpkg-deb --field "$deb_package" Depends | grep -E '(^|, )git([ ,]|$)' >/dev/null
             dpkg-deb --contents "$deb_package" | grep -E './usr/bin/vincent$' >/dev/null
             dpkg-deb --contents "$deb_package" | grep -E './usr/share/licenses/vincent/LICENSE$' >/dev/null
-            dpkg-deb --contents "$deb_package" | grep -E './usr/share/doc/vincent/COMMERCIAL-LICENSE.md$' >/dev/null
           done
 
           for rpm_package in dist/*.rpm; do
             [ "$(rpm -qp --queryformat '%{NAME}' "$rpm_package")" = vincent ]
-            [ "$(rpm -qp --queryformat '%{LICENSE}' "$rpm_package")" = PolyForm-Noncommercial-1.0.0 ]
+            [ "$(rpm -qp --queryformat '%{LICENSE}' "$rpm_package")" = MIT ]
             rpm -qp --requires "$rpm_package" | grep -x git >/dev/null
             rpm -qpl "$rpm_package" | grep -E '^/usr/bin/vincent$' >/dev/null
             rpm -qpl "$rpm_package" | grep -E '^/usr/share/licenses/vincent/LICENSE$' >/dev/null
-            rpm -qpl "$rpm_package" | grep -E '^/usr/share/doc/vincent/COMMERCIAL-LICENSE.md$' >/dev/null
           done
 
           deb="$(find dist -maxdepth 1 -type f -name '*_amd64.deb' -print -quit)"
@@ -331,7 +329,7 @@ jobs:
           "$package_tmp/rpm/usr/bin/vincent" version
 
           jq -e '
-            .license == "PolyForm-Noncommercial-1.0.0" and
+            .license == "MIT" and
             .depends == ["git"] and
             (.architecture["64bit"].bin | index("vincent.exe")) != null and
             (.architecture.arm64.bin | index("vincent.exe")) != null
@@ -345,7 +343,7 @@ jobs:
           grep -q '^PackageIdentifier: lezli01.Vincent$' "$winget_version"
           [ "$(grep -c '^  - Architecture:' "$winget_installer")" -eq 2 ]
           grep -q '^    - PackageIdentifier: Git.Git$' "$winget_installer"
-          grep -q '^License: PolyForm-Noncommercial-1.0.0$' "$winget_locale"
+          grep -q '^License: MIT$' "$winget_locale"
 
   # The done-when: the produced artifact runs on each OS. Unpacking the real
   # archive and running the real binary is the only thing that catches a

@@ -49,8 +49,8 @@ Start with [Concepts](docs/getting-started/concepts.md) for the architecture, th
 
 ## Licensing
 
-Vincent uses a dual-license model: the source is available under the [PolyForm Noncommercial 1.0.0 license](https://github.com/lezli01/vincent/blob/master/LICENSE), while commercial use requires a separate [commercial license](https://github.com/lezli01/vincent/blob/master/COMMERCIAL-LICENSE.md).
+Vincent is released under the [MIT License](https://github.com/lezli01/vincent/blob/master/LICENSE).
 
-By submitting a contribution, you agree that it may be distributed under Vincent's current non-commercial license and under separate commercial licenses offered by the project owner. You retain copyright in your contribution unless otherwise agreed.
+By submitting a contribution, you agree that it may be distributed under the MIT License. You retain copyright in your contribution unless otherwise agreed.
 
 For the complete contributor policy and maintainer details, read [CONTRIBUTING.md on GitHub](https://github.com/lezli01/vincent/blob/master/CONTRIBUTING.md).
