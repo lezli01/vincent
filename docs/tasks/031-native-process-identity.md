@@ -38,22 +38,34 @@ Migration `0013_proc_identity.sql` adds `step_runs.proc_identity TEXT`. `procx`
 gains `Identity(pid int) (string, error)`, whose contract is *compare, never
 parse*:
 
-- **Linux** — `/proc/<pid>/stat` field 22 raw (start ticks, USER_HZ = 100, so
-  10 ms precision) joined with `/proc/sys/kernel/random/boot_id`. Deliberately
-  **not** `btime`: keeping the tick count out of absolute time is what makes
-  the token immune to an NTP step and to suspend/resume, and the boot id is
-  what makes a reboot a guaranteed mismatch rather than an arithmetic
-  coincidence.
-- **macOS** — `kinfo_proc.Proc.P_starttime` `sec` and `usec` (1 µs), a stamp
-  taken once at fork that a later clock adjustment does not move.
-- **Windows** — the creation `FILETIME` from `GetProcessTimes` in its raw
-  100 ns unit, not converted to a `time.Time`. The unit is finer than the
-  value — the system clock updates on a ~15 ms tick — so for one PID a
-  collision would need a reuse inside a single tick.
+- **Linux** — `linux1:<boot id>:<start ticks>:<pid>`. `/proc/<pid>/stat`
+  field 22 raw (start ticks, USER_HZ = 100, so 10 ms precision) joined with
+  `/proc/sys/kernel/random/boot_id`. Deliberately **not** `btime`: keeping the
+  tick count out of absolute time is what makes the token immune to an NTP step
+  and to suspend/resume, and the boot id is what makes a reboot a guaranteed
+  mismatch rather than an arithmetic coincidence.
+- **macOS** — `darwin1:<sec>.<usec>:<pid>`. `kinfo_proc.Proc.P_starttime` `sec`
+  and `usec` (1 µs), a stamp taken once at fork that a later clock adjustment
+  does not move.
+- **Windows** — `windows1:<filetime>:<pid>`. The creation `FILETIME` from
+  `GetProcessTimes` in its raw 100 ns unit, not converted to a `time.Time`.
 
 Each token carries a scheme prefix (`linux1:`, `darwin1:`, `windows1:`) so a
 future format change cannot be mistaken for a match: an old token stops
 comparing equal, which fails the safe way.
+
+*Corrected 2026-08-26, before merge.* Every token ends in the PID. The first
+cut of 031.1 was the timestamp alone, and `TestIdentityDiffersBetweenLiveProcesses`
+caught what that means on CI: on all three platforms the unit of the stamp is
+finer than the value it carries — 10 ms on Linux, ~15 ms on Windows, 1 µs on
+macOS — so two processes started inside one tick answer with the same bytes,
+and a token that names a batch of processes is not an identity. Pairing the
+stamp with the PID is the OS's own answer (the pid/start-time pair), and it
+takes nothing away from the guard, which only ever compares a journaled token
+against one read back for that same PID. The residual risk is what it always
+was, now stated where the code is: a collision needs a PID **reused inside a
+single tick**. The scheme prefixes are not bumped — the three-component format
+never left this branch.
 
 **Beat:** re-using `proc_started_at` to hold `procx.StartTime`'s output and
 comparing *that* exactly — no migration, but nothing would then distinguish a

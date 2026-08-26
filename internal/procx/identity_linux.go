@@ -15,7 +15,14 @@ import (
 const identityScheme = "linux1"
 
 // identity is Identity on Linux: the raw start-tick count of the process,
-// qualified by the boot it was measured in.
+// qualified by the boot it was measured in and by the PID that holds it.
+//
+// The PID is part of the token because the tick count alone does not name a
+// process: USER_HZ is 100, so every process started within the same 10 ms
+// window carries the same count, and two of them alive at once would answer
+// with the same bytes. Pairing it with the PID is the kernel's own notion of
+// a unique process — the pid/start-time pair — and costs the guard nothing,
+// since a token is only ever compared against one read back for that same PID.
 func identity(pid int) (string, error) {
 	ticks, err := startTicks(pid)
 	if err != nil {
@@ -25,7 +32,7 @@ func identity(pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return identityScheme + ":" + boot + ":" + ticks, nil
+	return fmt.Sprintf("%s:%s:%s:%d", identityScheme, boot, ticks, pid), nil
 }
 
 // bootID reads the kernel's random per-boot identifier. It is what makes a

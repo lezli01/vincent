@@ -59,7 +59,11 @@ func TestIdentityDiffersBetweenLiveProcesses(t *testing.T) {
 		t.Fatalf("Identity(b): %v", err)
 	}
 	// Two processes alive at once cannot be each other, whatever the
-	// platform's timestamp resolution says.
+	// platform's timestamp resolution says. Every platform's stamp is a
+	// bucket rather than an instant — 10 ms on Linux, ~15 ms on Windows —
+	// so this holds only because the token also carries the PID; without it
+	// the assertion fails whenever two sleepers start inside one tick, which
+	// is most of the time on an unloaded machine.
 	if a == b {
 		t.Errorf("two live processes share an identity: %q", a)
 	}

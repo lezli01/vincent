@@ -2903,9 +2903,13 @@ within a tolerance. Beside the PID and `proc_started_at`, a spawn journals
 `step_runs.proc_identity` (migration 0013): an opaque, versioned, per-OS token
 — on Linux the raw start-tick count from `/proc/<pid>/stat` joined with
 `/proc/sys/kernel/random/boot_id`, on macOS the `kinfo_proc` fork stamp to the
-microsecond, on Windows the creation `FILETIME` in its raw 100 ns unit.
-Recovery reads the token again and kills only on a byte-for-byte match; it
-never parses one. This supersedes the PR D decision recorded in
+microsecond, on Windows the creation `FILETIME` in its raw 100 ns unit — each
+of them ending in the PID it belongs to, because every platform's stamp is a
+tick-wide bucket rather than an instant and processes started inside one share
+it. Recovery reads the token again and kills only on a byte-for-byte match; it
+never parses one. What remains after the pairing is one narrow case, and it is
+the same on all three: a PID **reused inside a single tick** of the platform's
+clock. This supersedes the PR D decision recorded in
 `docs/history/v0-tasks.md` — "within ±5 s of the journaled spawn time" — which
 compared the daemon's own clock against kernel bookkeeping and so had to
 tolerate a window a reused PID could theoretically fall inside. Keeping the
