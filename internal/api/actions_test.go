@@ -573,3 +573,71 @@ func hasAction(actions []string, want string) bool {
 	}
 	return false
 }
+
+// longQuestionText is a question the size Claude routinely writes: prose the
+// agent authored, well past maxFieldKeyBytes. §7.4 keys an answer by the
+// question's exact text (taskrun.validateAnswer matches it verbatim, and the
+// claude adapter writes it back to the CLI under that same text, §9.2), so
+// nothing between the agent and this route may shorten it.
+func longQuestionText() string {
+	q := "Which of these two migration strategies should I take for the store " +
+		"package, given that the events table is already several million rows " +
+		"and the daemon holds a single SQLite connection: " +
+		strings.Repeat("a rolling backfill behind a feature flag, or one offline pass? ", 4)
+	if len(q) <= maxFieldKeyBytes {
+		panic("longQuestionText must exceed maxFieldKeyBytes to exercise the bound")
+	}
+	return q
+}
+
+// TestAnswerLongQuestion pins the §13.1 field bound against §7.4: a question
+// the daemon was willing to park on and display is one a human can answer. An
+// `answers` key is not a caller-chosen identifier like a `fields` key — it is
+// the agent's question text — so the 256 B key bound must not apply to it.
+func TestAnswerLongQuestion(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	text := longQuestionText()
+	pending, err := json.Marshal(map[string]any{
+		"kind": "question",
+		"questions": []any{map[string]any{
+			"text": text, "header": "Migration", "options": []string{"Rolling", "Offline"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal pending: %v", err)
+	}
+	setAwaitingInput(t, h, task.ID, string(pending))
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/answer", task.ID),
+		map[string]any{"answers": map[string]any{text: "Rolling"}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("answer a %d-byte question: %d %s, want 200", len(text), resp.StatusCode, body)
+	}
+	out := decodeTask(t, body)
+	if out.State != string(store.TaskRunning) {
+		t.Errorf("state after answer = %s, want running", out.State)
+	}
+	if len(out.PendingInput) != 0 {
+		t.Errorf("pending_input survived the answer: %s", out.PendingInput)
+	}
+}
+
+// TestFieldsKeyBoundUnchanged is TestAnswerLongQuestion's guard rail: the
+// `fields` key really is a caller-chosen identifier (§8.1.2) and keeps its
+// 256 B bound, so relaxing the answers key must not relax this one.
+func TestFieldsKeyBoundUnchanged(t *testing.T) {
+	h := newActionHarness(t)
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/tasks", map[string]any{
+		"project_id": h.projectID,
+		"title":      "long fields key",
+		"fields":     map[string]any{strings.Repeat("k", maxFieldKeyBytes+1): "v"},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("create with an oversized fields key: %d %s, want 400", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), CodeValidationFailed) {
+		t.Errorf("error body %s does not carry %s", body, CodeValidationFailed)
+	}
+}
