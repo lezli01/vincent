@@ -1,13 +1,14 @@
 # Task 032 gate — macOS signing and notarization
 
-> **Not walkable as of 2026-08-27.** No release is signed: the Apple Developer
-> Program membership 032.7 needs was never bought, and
-> [task 039](../tasks/039-unsigned-releases-by-default.md) makes a missing
-> certificate produce an unsigned release rather than a failed one. Every check
-> below will fail on a current artifact, correctly. This walkthrough describes
-> the release that exists once the six `MACOS_*` secrets are installed; until
-> then the documented macOS path is `xattr -d com.apple.quarantine`, and the
-> Homebrew cask strips the attribute itself again.
+> **Not walkable, and no longer waiting to be.** 032.7 — the Apple Developer
+> Program enrolment — was **dropped** on 2026-08-27; no release is signed, and
+> none is expected to be. Every check below will fail on a current artifact,
+> correctly. This walkthrough is retained as the acceptance procedure for the
+> day someone installs the six `MACOS_*` secrets, which is the whole of what
+> reviving macOS signing takes. Until then the documented macOS path is
+> `xattr -d com.apple.quarantine` once per download, and the Homebrew cask
+> strips the attribute itself again. Reasoning in
+> [task 039](../tasks/039-unsigned-releases-by-default.md).
 
 **Acceptance (task 032.7):** a real user downloading a real release on a real
 Mac sees **no** Gatekeeper dialog, and the `.pkg` installs with the network off.
@@ -135,4 +136,4 @@ something unintended happened, not an improvement.
 
 | Date | Version | macOS | Walked by | Result |
 |---|---|---|---|---|
-| — | — | — | — | not yet walked; blocked on 032.7 (Apple Developer Program enrolment and the six repository secrets). Releases ship unsigned in the meantime — see task 039. |
+| — | — | — | — | never walked. 032.7 dropped 2026-08-27; releases ship unsigned — see task 039. Retained as the procedure if the six `MACOS_*` secrets are ever installed. |

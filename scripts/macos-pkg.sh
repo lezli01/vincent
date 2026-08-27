@@ -5,8 +5,8 @@
 #
 # lipo → pkgbuild → sign → notarize → staple → verify, where every step past
 # pkgbuild is skipped without credentials. That is not only the dry-run path any
-# more: the Apple Developer Program was never bought, so it is what a stable
-# release takes today (task 039), and an unsigned .pkg is still a real
+# more: the Apple Developer Program was never bought and 032.7 is dropped, so it
+# is what every release takes (task 039), and an unsigned .pkg is still a real
 # installer — one universal binary into /usr/local/bin — that a user opens with
 # right-click → Open instead of a double-click.
 #
@@ -29,8 +29,8 @@
 #                             configured — missing identities, credentials or
 #                             tools are then fatal. Otherwise the package is
 #                             still built, just unsigned and un-notarized, which
-#                             is both the secretless dry run and, until 032.7,
-#                             the stable release.
+#                             is both the secretless dry run and, 032.7 having
+#                             been dropped, the stable release.
 #   MACOS_SIGN_IDENTITY       Developer ID Application identity (re-signs the
 #                             lipo-merged binary; merging produces a new Mach-O).
 #   MACOS_INSTALLER_IDENTITY  Developer ID Installer identity (signs the .pkg).

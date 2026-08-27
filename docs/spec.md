@@ -4770,6 +4770,27 @@ fee waiver reaches nonprofit, educational and government *organizations* only,
 which task 038 already recorded as unavailable here. Reasoning in
 `docs/tasks/039-unsigned-releases-by-default.md`.
 
+**Amended 2026-08-27 (later the same day) — macOS OS code signing is descoped
+again; the machinery is retained.** The amendment immediately above deliberately
+left the enrolment open. It is now closed: the ~$99/yr Apple Developer Program
+membership is **not being bought**, 032.7 is dropped, and the 2026-08-26
+amendment's reversal of the Apple half of † is itself reversed. **Neither
+desktop platform carries an OS code signature**, which returns §19 to the shape
+the X decision gave it — macOS Gatekeeper and Windows SmartScreen both prompt on
+first launch, and the documented macOS path is `xattr -d com.apple.quarantine`
+once per download, with the Homebrew cask stripping the attribute itself. What
+does **not** revert: the `.pkg`, which stands on being one universal binary at a
+fixed install path rather than on a stapled ticket; cosign over `checksums.txt`
+and the GitHub build attestations, which were never conditional; and the signing
+implementation itself, which is complete, verified and kept dormant so that
+installing six repository secrets is the entire cost of reversing this — the
+decision was made on price, and is meant to stay cheap to unmake.
+`docs/tasks/032-macos-notarization.md` is retained as that design and is no
+longer a description of what ships. Windows is untouched here: task 038's
+free-for-OSS Authenticode survey continues, and a free route accepted there would
+sign Windows while macOS stays unsigned. Reasoning in
+`docs/tasks/039-unsigned-releases-by-default.md`.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the

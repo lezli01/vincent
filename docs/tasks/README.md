@@ -45,14 +45,14 @@ the living engineering specification records implementation contracts.
 | [029](029-database-size-reporting.md) | Reporting the database's footprint, row counts and retention span | ✅ done (6/6) |
 | [030](030-daemon-backup-and-restore.md) | `vincent daemon backup` / `restore` | ✅ done (6/6) |
 | [031](031-native-process-identity.md) | Exact native process identity for the §12.4 PID-reuse guard | ✅ done (5/5) |
-| [032](032-macos-notarization.md) | macOS Developer ID signing and notarization | ⚠ verification blocked (5/7) |
+| [032](032-macos-notarization.md) | macOS Developer ID signing and notarization | ✅ built, never activated (6/6, 032.7 dropped) |
 | [033](033-task-cost-cap.md) | `max_task_cost_usd`: a per-task cost cap enforced at attempt boundaries | ✅ done (4/4) |
 | [034](034-workflow-init.md) | `vincent workflow init`, a CLI on-ramp for authoring a workflow | ✅ done (5/5) |
 | [035](035-github-issue-selection.md) | Select a GitHub issue when creating a task | ✅ done (12/12) |
 | [036](036-step-status-message.md) | A step-authored status message, live and terminal | ✅ done (7/7) |
 | [037](037-update-workflows-builtin.md) | `update-workflows`, a built-in that maintains the ones you have | ✅ done (5/5) |
 | [038](038-release-signing-posture.md) | Release signing posture for an MIT project | ⚠ blocked on the owner (1/7) |
-| [039](039-unsigned-releases-by-default.md) | A missing certificate must not destroy a release | ⚠ verification blocked (5/6) |
+| [039](039-unsigned-releases-by-default.md) | A missing certificate must not destroy a release | ⚠ verification blocked (6/7) |
 
 ## How to add and update a task document
 

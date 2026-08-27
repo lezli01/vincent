@@ -39,7 +39,7 @@ builds:
     # has no per-GOOS filter, so the script takes {{ .Os }} and no-ops for
     # linux and windows. It also no-ops, loudly, when no identity is present
     # and MACOS_SIGN_REQUIRED is unset — the fork, dry-run, and (task 039,
-    # until 032.7's Apple enrolment) stable-release path.
+    # 032.7 having been dropped) stable-release path.
     hooks:
       post:
         - cmd: ./scripts/macos-sign.sh "{{ .Path }}" "{{ .Os }}"
@@ -131,9 +131,10 @@ homebrew_casks:
     # quarantines what it downloads: an unsigned quarantined binary does not
     # start. Task 032 deleted this hook because notarization made it a bypass of
     # protection that had been paid for — but the Apple Developer Program was
-    # never bought (task 039), so the archive is unsigned again and the hook is
-    # load-bearing again. Delete it in the same change that closes 032.7: with a
-    # notarized binary it goes back to bypassing a real check.
+    # never bought and 032.7 is dropped (task 039), so the archive is unsigned
+    # again and the hook is load-bearing again. Delete it in the same change that
+    # ever installs the certificates: with a notarized binary it goes straight
+    # back to bypassing a real check.
     hooks:
       post:
         install: |

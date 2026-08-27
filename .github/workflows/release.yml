@@ -15,10 +15,12 @@ name: Release
 # third-party reimplementation was rejected in favour of Apple's toolchain. The
 # deb/rpm inspection that a macOS runner cannot do moved to `verify-packages`.
 #
-# That signing is **best-effort**: Apple's Developer Program is a ~$99/yr
-# purchase this project has not made (task 039), so every signing step below
-# degrades to a warning when the certificates are absent and the release ships
-# unsigned. The runner stays macOS regardless — it is where the .pkg is built.
+# That signing is **best-effort, and currently inert**: Apple's Developer Program
+# is a ~$99/yr purchase this project declined (task 039, dropping 032.7), so
+# every signing step below degrades to a warning and the release ships unsigned.
+# The steps are kept because installing the six MACOS_* secrets is then the whole
+# of the switch. The runner stays macOS regardless — it is where the .pkg is
+# built.
 on:
   push:
     tags: ["v*"]
@@ -51,8 +53,8 @@ jobs:
     env:
       # Signing is mandatory exactly where it is possible. With the Developer ID
       # certificates configured, a v* tag must not publish an unsigned macOS
-      # artifact; without them — a fork, a dry run, or this repository until
-      # 032.7's Apple enrolment happens — every signing step degrades to a
+      # artifact; without them — a fork, a dry run, or this repository, whose
+      # 032.7 Apple enrolment was dropped — every signing step degrades to a
       # warning and the release still ships, unsigned.
       #
       # Keying this on the *tag* instead is what destroyed v0.7.0: the build

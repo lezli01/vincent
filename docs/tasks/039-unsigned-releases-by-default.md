@@ -1,10 +1,11 @@
 # 039 — A missing certificate must not destroy a release
 
-**Status:** ⚠ verification blocked (5/6) · **Opened:** 2026-08-27
+**Status:** ⚠ verification blocked (6/7) · **Opened:** 2026-08-27
 
 Task 032 built the macOS Developer ID signing path on the assumption that the
-Apple Developer Program membership it needs would be bought. It was not — 032.7
-is still open — and the pipeline made that a **fatal** condition on a `v*` tag.
+Apple Developer Program membership it needs would be bought. It was not — and
+`032.7`, the enrolment, is now **dropped** — while the pipeline made that a
+**fatal** condition on a `v*` tag.
 `v0.7.0` was therefore not a release at all: [run
 33057721082](https://github.com/lezli01/vincent/actions/runs/33057721082) died at
 its first signing step, before GoReleaser ran, so the tag produced no archives,
@@ -14,7 +15,9 @@ no deb or rpm, no attestations and no Homebrew, Scoop or WinGet metadata, and
 This task changes what a missing certificate does: it makes the release
 **unsigned** instead of making it **not exist**. Nothing about task 032's
 mechanism is removed — every step of it stays wired and runs the moment the six
-`MACOS_*` secrets appear.
+`MACOS_*` secrets appear. Later the same day the enrolment itself was dropped,
+so those secrets are not expected; the machinery is kept anyway, for the reasons
+in the last decision below.
 
 Conventions for this file are in [the tasks README](README.md). Behaviour lands
 in [the spec](../spec.md) as dated amendments, in the same PR as the release
@@ -35,8 +38,10 @@ configuration and user documentation that make them true.
   release, which is the failure task 032 was right to want caught. Deriving the
   value from the secret keeps the guard and costs nothing.
 
-  A third alternative — buy the membership — is not this task's to take. It is
-  032.7, it is owner-only, and it is unchanged by anything here.
+  A third alternative — buy the membership — was 032.7's, and was declined the
+  same day. That does not change this decision: keying on the certificate is
+  correct whether or not one is ever installed, and it is what makes installing
+  one the only step needed to reverse the decline.
 
 - **Half-configured is still fatal, and so is signing without notarizing.** With
   the Application certificate present, a missing Installer certificate or a
@@ -57,10 +62,10 @@ configuration and user documentation that make them true.
 
   It is restored unconditionally rather than templated on the signing env,
   because a GoReleaser template inside a Ruby cask body is not covered by
-  `goreleaser check` and would fail where nothing tests it. **Delete it in the
-  same change that closes 032.7** — the comment above it in `.goreleaser.yaml`
-  says so, and 032.4's reasoning becomes correct again the moment a notarized
-  binary ships.
+  `goreleaser check` and would fail where nothing tests it. With 032.7 dropped it
+  is permanent for now: **delete it in the same change that ever installs the
+  certificates**, since 032.4's reasoning becomes correct again the moment a
+  notarized binary ships. The comment above it in `.goreleaser.yaml` says so.
 
 - **The smoke job's Gatekeeper assessment is skipped, not softened.** `codesign
   --verify` and `spctl --assess` on an unsigned binary fail, correctly. Making
@@ -78,7 +83,7 @@ configuration and user documentation that make them true.
   here: documentation that is wrong in the direction of "this does not work".
   All of it is rewritten to the unsigned reality, including the `.pkg`'s
   right-click → *Open* path, and `RELEASING.md` gains an explicit note that the
-  signing machinery is wired and dormant.
+  signing machinery is wired and dormant, with no enrolment coming.
 
 - **The `.pkg` stays, unsigned.** Its stapled ticket was the headline in task
   032, and without notarization there is no ticket — but the rest of what it does
@@ -86,15 +91,46 @@ configuration and user documentation that make them true.
   `/usr/local/bin/vincent` under `dev.lezli01.vincent`, which is what
   [task 021](021-package-distribution-channels.md)'s recorded-executable-path
   behaviour wants. Dropping it would remove a working installer and force a
-  fourth documentation rewrite when 032.7 lands. It keeps its build attestation
-  and stays outside `checksums.txt` for the unchanged reason that it is built
-  after the checksums are computed.
+  fourth documentation rewrite. It keeps its build attestation and stays outside
+  `checksums.txt` for the unchanged reason that it is built after the checksums
+  are computed.
 
-- **This is not a decision to abandon macOS signing.** 032.7 stays open, the
+- ~~**This is not a decision to abandon macOS signing.** 032.7 stays open, the
   secrets table in `RELEASING.md` stays, the keychain import stays, and
   installing the six secrets is the entire switch — no workflow edit follows it.
   What is abandoned is only the coupling that made an unbought certificate
-  destroy a release.
+  destroy a release.~~ **Superseded the same day by the decision below**: the
+  half of this that survives is the second sentence — the machinery stays and
+  the six secrets remain the entire switch. The first sentence does not.
+
+- **The Apple enrolment is dropped, and 032.7 with it (2026-08-27, later the
+  same day).** The membership is not being bought, so waiting on it was
+  recording an intention rather than a plan. `032.7` is struck through in
+  [task 032](032-macos-notarization.md) and that document is retained as a
+  design, not as a description of what ships.
+
+  **The machinery stays anyway**, which is the part that needs the reasoning,
+  because dead code normally does not earn its place. Three things pay for it:
+  it is *finished and verified* — 032.6 closed on this diff, with `goreleaser
+  check`, `actionlint` and `shellcheck` all clean — so its cost from here is
+  storage, not maintenance; removing it would be a second large documentation
+  rewrite and re-adding it a third; and it keeps the decision **cheaply
+  reversible**, which matters for a decision made on price. Installing six
+  secrets re-arms every step, with no code change and no release-day surprise.
+
+  The alternative it beat was deleting `scripts/macos-sign.sh`, the keychain and
+  notary steps, the signing branches of `scripts/macos-pkg.sh`, and
+  `RELEASING.md`'s Apple bootstrap and rotation sections. That is the honest
+  shape if the answer were "never" rather than "not at this price", and it
+  remains available: nothing here depends on the dormant code, and one commit
+  removes it.
+
+  What this decision does **not** touch: the `.pkg`, which was never justified by
+  its ticket alone; cosign and the build attestations, which are unconditional
+  and always present; and Windows, whose free-for-OSS Authenticode survey is
+  [task 038](038-release-signing-posture.md)'s and unaffected — a free route
+  accepted there would sign Windows while macOS stays unsigned, which is a
+  coherent posture, not an inconsistency.
 
 ## Tasks
 
@@ -104,7 +140,7 @@ configuration and user documentation that make them true.
   ✓ 2026-08-27
 - [x] **039.2 — Restore the cask's quarantine hook.** `.goreleaser.yaml`
   `homebrew_casks[].hooks.post.install`, with the comment that ties its removal
-  to 032.7. ✓ 2026-08-27
+  to the day certificates are installed. ✓ 2026-08-27
 - [x] **039.3 — Skip the Gatekeeper assessment on an unsigned release.**
   `Depends: 039.1`. A `macos_signed` output on the `release` job, consumed by the
   `smoke` job's *Assess the macOS signature* step. ✓ 2026-08-27
@@ -116,7 +152,15 @@ configuration and user documentation that make them true.
   amendment's "is now paid" was not true, and what a missing certificate does
   instead. In the same pull request as 039.1–039.4, per the tasks README.
   ✓ 2026-08-27
-- [!] **039.6 — Prove a tag publishes without the certificates.** — **owner-only**:
+- [x] **039.7 — Close 032.7 as dropped and record why the machinery stays.**
+  Appended after 039.1–039.5: the strike-through and retained-design banner in
+  [task 032](032-macos-notarization.md), its index row, a second §19 amendment,
+  the 032 gate's preamble, and `RELEASING.md`'s "dormant" wording. 032.6 closed
+  in the same pass — `goreleaser`, `actionlint` and `shellcheck` are present in
+  this environment, which is the only thing that had blocked it. ✓ 2026-08-27
+- [!] **039.6 — Prove a tag publishes without the certificates.** — with 032.7
+  dropped this is the *only* remaining release proof: no signed release is ever
+  coming to supersede it. — **owner-only**:
   it needs a real `v*` tag, and the thing being proved is that the release
   workflow completes end to end and attaches every asset. Re-cut `0.7.0` (its
   curated changelog prose is in `2baafbb`, per `6041bfd`) and confirm the release
@@ -152,10 +196,12 @@ config and documentation — and none was invented to look like there is.
   before any signing existed. The mitigation is that the fix is one documented
   command and the Homebrew path needs none of it.
 - **Re-adding the cask hook re-adds a bypass.** It is only correct while the
-  binary is unsigned. If 032.7 lands and the hook is forgotten, brew installs
-  would go on stripping quarantine from a notarized binary — the precise thing
-  032.4 removed. The comment in `.goreleaser.yaml` and 039.6's successor are
-  where that is caught; there is no test for it, because the condition is "a
+  binary is unsigned. If the certificates are ever installed and the hook is
+  forgotten, brew installs would go on stripping quarantine from a notarized
+  binary — the precise thing 032.4 removed. With 032.7 dropped there is no open
+  task left to catch it, which makes the comment in `.goreleaser.yaml` and the
+  [032 gate](../gates/032-macos-notarization.md)'s retained walkthrough the only
+  guards. There is no test for it either, because the condition is "a
   certificate exists", which CI cannot see.
 - **A silent regression to unsigned, later.** With signing keyed on a secret, a
   deleted or expired certificate now produces a quietly unsigned release instead

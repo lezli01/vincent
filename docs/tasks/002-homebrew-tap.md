@@ -31,8 +31,9 @@ it beat.
   **Reinstated 2026-08-27 by [task 039](039-unsigned-releases-by-default.md).**
   The Apple Developer Program membership task 032 assumed was never bought, so
   the archive is unsigned again and the `postflight` hook is back in the cask,
-  for exactly the reason recorded below. The 032 supersession that follows
-  applies again once 032.7 closes.
+  for exactly the reason recorded below. 032.7 was dropped the same day, so this
+  is the state for the foreseeable future; the 032 supersession that follows
+  applies again only if the Developer ID certificates are ever installed.
 
   **Partly superseded 2026-08-26 by [task 032](032-macos-notarization.md).** The
   tap itself stands; what no longer holds is the *reason* recorded above. Apple

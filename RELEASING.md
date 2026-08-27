@@ -10,13 +10,15 @@ installer package, update the stable Homebrew and Scoop metadata, and submit the
 stable WinGet manifest. There is no manual tag or upload step, and no artifact
 is built on a maintainer's machine.
 
-**Apple code signing is configured but not currently active.** Every step of it
-is wired and runs the moment the six `MACOS_*` secrets exist; they do not,
-because the Apple Developer Program membership they need has not been bought
-(032.7). A tag therefore ships **unsigned** macOS artifacts rather than failing —
-that split is task 039's decision, taken after `v0.7.0` died at the first
-signing step and produced nothing at all. Everything below that describes
-signing describes what happens once the certificates are installed.
+**Apple code signing is configured and not used.** Every step of it is wired and
+runs the moment the six `MACOS_*` secrets exist. They do not: the Apple Developer
+Program membership they need was never bought, and **032.7, the enrolment, was
+dropped on 2026-08-27** (task 039). A tag therefore ships **unsigned** macOS
+artifacts rather than failing — a split taken after `v0.7.0` died at the first
+signing step and produced nothing at all. The machinery below is kept because
+installing those six secrets is then the entire cost of reversing that decision;
+everything in this document that describes signing describes what would happen
+once they are installed, not what happens today.
 
 The build job runs on **macOS**, not Linux: Apple's signature lives inside the
 Mach-O and has to be applied before the archives and `checksums.txt` exist, and
@@ -61,11 +63,13 @@ does not mean editing the workflow.
 
 ### Bootstrapping the Apple credentials
 
-Prerequisite: an **Apple Developer Program** membership (~$99/yr). §19 †'s
-2026-08-26 amendment records accepting that cost for macOS and declining the
-Windows equivalent; its 2026-08-27 amendment records that the membership was
-never actually bought, so releases ship unsigned until these six secrets exist.
-Installing them is the whole of the switch — no workflow edit follows.
+**This section is dormant.** §19 †'s 2026-08-26 amendment records accepting the
+~$99/yr **Apple Developer Program** cost for macOS; its two 2026-08-27
+amendments record that the membership was never bought and that the enrolment is
+dropped. It is kept, complete, because installing these six secrets is the whole
+of the switch — no workflow edit follows, and nothing else has to be rediscovered
+if the decision is ever revisited. Prerequisite for all of it: that
+membership.
 
 1. In Xcode or on the developer portal, create two certificates for the team:
    **Developer ID Application** and **Developer ID Installer**.
@@ -300,9 +304,10 @@ all.
    The cask carries a quarantine-stripping `postflight` hook again (task 039):
    the binary is unsigned, so without it `brew install` would produce something
    that will not start. What proves the install is `vincent version` running at
-   all, plus the absence of the attribute. When 032.7 lands the certificates,
-   that hook is deleted and this step becomes `spctl --assess --type execute`
-   reporting `accepted`, `source=Notarized Developer ID`.
+   all, plus the absence of the attribute. If the certificates are ever
+   installed, that hook is deleted in the same change and this step becomes
+   `spctl --assess --type execute` reporting `accepted`, `source=Notarized
+   Developer ID`.
 
 9. **Check the Windows and Linux channels** (skip for a pre-release).
 
@@ -362,17 +367,19 @@ all.
   attaches it. That is also why it is absent from `checksums.txt` — its
   integrity comes from a build attestation, plus Apple's installer signature
   when there is one.
-- **OS code signing is wired for macOS and dormant.** The Apple Developer ID
-  path is fully implemented — §19 †'s 2026-08-26 amendment records reversing the
-  Apple half of the original descope, and task 032 carries the reasoning — but
-  the membership was never bought, so §19's 2026-08-27 amendment (task 039)
-  makes a missing certificate produce an *unsigned release* rather than a failed
-  one. **Windows Authenticode stays descoped**: an OV certificate on a hardware
-  token is a recurring purchase with no equivalent to Apple's single notary
-  service, so the README and `docs/platforms/windows.md` continue to document
-  the SmartScreen prompt users will meet. cosign signatures and build provenance
-  are unchanged on every platform, always present, and are not a substitute for
-  either.
+- **OS code signing is descoped on both desktop platforms, and the macOS path is
+  built but dormant.** The Apple Developer ID implementation is complete — task
+  032 carries its reasoning, and §19 †'s 2026-08-26 amendment records accepting
+  the cost — but the membership was never bought; §19's two 2026-08-27
+  amendments (task 039) make a missing certificate produce an *unsigned release*
+  rather than a failed one, and drop the enrolment. **Windows Authenticode stays
+  descoped** for its own reasons: an OV certificate on a hardware token is a
+  recurring purchase with no equivalent to Apple's single notary service, and
+  task 038 is surveying the free-for-OSS routes. So both platforms prompt on
+  first launch, and the README, `docs/platforms/macos.md` and
+  `docs/platforms/windows.md` document what a user does about it. cosign
+  signatures and build provenance are unchanged on every platform, always
+  present, and are not a substitute for either.
 - **External catalogs remain external.** Scoop updates a repository the
   maintainer controls. WinGet is a pull request into Microsoft's catalog and
   can remain pending after the GitHub release succeeds. The accepted

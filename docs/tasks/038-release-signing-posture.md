@@ -68,7 +68,11 @@ configuration and user documentation that make them true.
   of `.goreleaser.yaml` and `.github/workflows/release.yml`, so **no signing
   configuration encodes the dual license today**. There is nothing to revisit and
   no spec amendment to write. Task 032's enrolment blocker (032.7) is untouched
-  by this and stays 032's job.
+  by this and stays 032's job. *(2026-08-27, later the same day: 032.7 was
+  dropped — the membership is not being bought. See
+  [task 039](039-unsigned-releases-by-default.md). This strand's reasoning is
+  unaffected, and so is the Windows survey below: a free route accepted there
+  would sign Windows while macOS stays unsigned.)*
 
 - **deb and rpm stay unsigned, deliberately.** This converts an undecided gap
   into a recorded decision; `nfpms` at `.goreleaser.yaml:68` is correct as it
