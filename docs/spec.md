@@ -3755,7 +3755,7 @@ CREATE TABLE step_runs (
   failure_reason      TEXT,
   skip_reason         TEXT,                   -- 'condition' for a false `if:` (§7.7); NULL for the human skip (§6)
   result_summary      TEXT,                   -- agent result text / command stdout tail
-  -- What the step said about *itself* (§5.4, task 036, migration 0014): short
+  -- What the step said about *itself* (§5.4, task 036, migration 0015): short
   -- free text its own process set through
   -- POST /v1/tasks/{id}/steps/{step_id}/status while it was running. NULL is
   -- the ordinary case — the step types that run no process never speak, and an

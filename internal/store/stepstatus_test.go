@@ -243,7 +243,7 @@ func TestLatestStepStatuses(t *testing.T) {
 	}
 }
 
-// A database written before 0014 has rows with no status column at all. They
+// A database written before 0015 has rows with no status column at all. They
 // must survive the upgrade readable, with the status reading as "said
 // nothing" rather than as an error.
 func TestMigrateAddsStatusToPreexistingRows(t *testing.T) {
@@ -272,7 +272,7 @@ func TestMigrateAddsStatusToPreexistingRows(t *testing.T) {
 			t.Fatalf("pragma_table_info: %v", err)
 		}
 		if n != 0 {
-			t.Fatalf("status_message exists at schema 13; the fixture is not a pre-0014 database")
+			t.Fatalf("status_message exists at schema 13; the fixture is not a pre-0015 database")
 		}
 	}()
 

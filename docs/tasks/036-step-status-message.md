@@ -174,7 +174,7 @@ doing something else.
 
 ## Tasks
 
-- [x] **036.1** Store: migration `0014_step_status.sql`, `StatusMessage` on
+- [x] **036.1** Store: migration `0015_step_status.sql`, `StatusMessage` on
   `store.StepRun` threaded through the typed CRUD (and deliberately *not*
   through `UpdateStepRun`), `SetStepRunStatus` /`SetStepRunStatusByRun` with the
   dedup rule and the `task.status_changed` event in one transaction,
