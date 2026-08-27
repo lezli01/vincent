@@ -17,9 +17,14 @@ Apple silicon and Intel are both released and both exercised in CI.
 brew install lezli01/tap/vincent
 ```
 
-Or double-click `vincent_*_darwin_universal.pkg` from the release page — one
+Or install `vincent_*_darwin_universal.pkg` from the release page — one
 universal installer for both architectures, putting the binary at
-`/usr/local/bin/vincent`.
+`/usr/local/bin/vincent`. It is unsigned, so open it with **right-click →
+*Open*** rather than a double-click, which a double-click will not offer:
+
+```sh
+sudo installer -pkg vincent_*_darwin_universal.pkg -target /   # or from the terminal
+```
 
 Or unpack the release archive by hand:
 
@@ -35,35 +40,43 @@ detail, including signature verification:
 
 ## Gatekeeper
 
-**There is nothing to do.** Every macOS artifact — the binaries inside both
-archives, and the `.pkg` — is signed with an Apple Developer ID identity under
-the hardened runtime, and notarized by Apple. Gatekeeper clears a downloaded
-release on its own, so there is no *"cannot be opened because it is from an
-unidentified developer"* dialog and no quarantine attribute to strip.
+**The macOS artifacts are not Apple code signed.** Developer ID signing and
+notarization require an Apple Developer Program membership — a ~$99/yr recurring
+purchase this project has not made — so a downloaded binary is quarantined by
+the browser and Gatekeeper refuses it: *"vincent cannot be opened because the
+developer cannot be verified."*
 
-If you have older instructions that say to run `xattr -d com.apple.quarantine`,
-delete them. Stripping the attribute now only turns off the check that would
-have told you the file had been tampered with.
-
-Check for yourself, on the binary you are about to run:
+Clear the attribute the browser set, once per download:
 
 ```sh
-codesign --verify --strict --verbose=2 /usr/local/bin/vincent
-spctl --assess --type execute -vv /usr/local/bin/vincent
+xattr -d com.apple.quarantine /usr/local/bin/vincent
+vincent version
 ```
 
-`spctl` should report `accepted` with `source=Notarized Developer ID`. That
-check reaches Apple over the network: the ticket for a bare binary is served by
-Apple rather than carried inside it, because a Mach-O has nowhere to staple one.
+`brew install` needs none of this — the cask strips the attribute itself as part
+of the install.
 
-The **`.pkg` is stapled**, which is the one thing it does that the archive
-cannot: its ticket travels inside the file, so a first launch works on a machine
-that is offline or behind a filtered network. Verify it before installing with:
+For the `.pkg`, the equivalent is opening it from the Finder's context menu
+(**right-click → *Open*** → *Open* in the dialog), or installing it from the
+terminal with `sudo installer -pkg … -target /`, which does not consult
+Gatekeeper at all.
+
+Stripping quarantine turns off the check that would otherwise flag a tampered
+file, so do it on a download you have verified. Both the archives and the `.pkg`
+carry proof of where they came from that does not depend on Apple:
 
 ```sh
-pkgutil --check-signature vincent_*_darwin_universal.pkg
-spctl --assess --type install -vv vincent_*_darwin_universal.pkg
+cosign verify-blob checksums.txt \
+  --certificate checksums.txt.pem --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/lezli01/vincent/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+shasum -a 256 -c checksums.txt --ignore-missing
+gh attestation verify vincent_*_darwin_universal.pkg --repo lezli01/vincent
 ```
+
+The full verification story, including why the `.pkg` is outside
+`checksums.txt`, is in
+[Installation](../getting-started/installation.md#verify-a-download).
 
 `com.apple.provenance` is unrelated — macOS adds it to everything and it does
 not block execution.

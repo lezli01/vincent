@@ -124,7 +124,12 @@ configuration and user documentation.
   `ci.yml` runs `goreleaser check` on every PR, which covers the config schema;
   the workflow's own syntax is proven by it running. Done when those three have
   actually run, plus the repository's required code checks.
-- [!] **032.7 — Enrol with Apple and prove a signed release.** — requires the
+- [!] **032.7 — Enrol with Apple and prove a signed release.** — *2026-08-27:
+  still open, and [task 039](039-unsigned-releases-by-default.md) has removed its
+  ability to break a release. Until it closes, every macOS artifact ships
+  unsigned, the cask's quarantine hook is back, and §19's 2026-08-26 amendment is
+  read through its 2026-08-27 successor. Closing this task means deleting that
+  hook in the same change.* — requires the
   owner's Apple Developer Program enrolment, the two Developer ID identities,
   an App Store Connect API key, and the six repository secrets; all are
   owner-only account mutations. Done when a **stable tag** produces artifacts

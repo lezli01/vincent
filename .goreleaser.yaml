@@ -38,7 +38,8 @@ builds:
     # hook is the only point that comes early enough (task 032). A build hook
     # has no per-GOOS filter, so the script takes {{ .Os }} and no-ops for
     # linux and windows. It also no-ops, loudly, when no identity is present
-    # and MACOS_SIGN_REQUIRED is unset — that is the fork/dry-run path.
+    # and MACOS_SIGN_REQUIRED is unset — the fork, dry-run, and (task 039,
+    # until 032.7's Apple enrolment) stable-release path.
     hooks:
       post:
         - cmd: ./scripts/macos-sign.sh "{{ .Path }}" "{{ .Os }}"
@@ -126,13 +127,19 @@ homebrew_casks:
       name: goreleaser
       email: goreleaser@users.noreply.github.com
     commit_msg_template: "chore: vincent {{ .Tag }}"
-    # There is deliberately no `hooks.post.install` here. Until task 032 this
-    # cask ran `xattr -dr com.apple.quarantine`, which existed only because the
-    # X decision descoped notarization: brew installs from the same archive, and
-    # an unsigned quarantined binary will not start. The binaries in that
-    # archive are now Developer ID signed and notarized, so Gatekeeper clears
-    # them on its own. Stripping the attribute after paying for notarization
-    # would go on bypassing exactly the protection that was bought.
+    # brew installs from the same archive GitHub Releases serves, and Homebrew
+    # quarantines what it downloads: an unsigned quarantined binary does not
+    # start. Task 032 deleted this hook because notarization made it a bypass of
+    # protection that had been paid for — but the Apple Developer Program was
+    # never bought (task 039), so the archive is unsigned again and the hook is
+    # load-bearing again. Delete it in the same change that closes 032.7: with a
+    # notarized binary it goes back to bypassing a real check.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/vincent"]
+          end
     # `vincent service install` writes a LaunchAgent (internal/service:
     # LaunchdName). Without this, `brew uninstall` would delete the binary out
     # from under a still-loaded launchd job that holds the SQLite file open.
@@ -221,11 +228,13 @@ winget:
 
 # Keyless cosign: an OIDC identity from the workflow itself, verifiable
 # without vincent publishing or rotating a key. This is the supply-chain
-# signature and it is unchanged by task 032: Apple's Developer ID signature says
-# who built the binary to *macOS*, cosign and the build attestation say which
-# workflow and commit produced the file to *anyone*. Windows Authenticode
-# remains descoped — §19 †'s 2026-08-26 amendment reverses the Apple half only,
-# and the README still documents the SmartScreen prompt a user will meet.
+# signature, and it is the *only* signature a released artifact is guaranteed to
+# carry: OS code signing on both macOS and Windows is a recurring purchase this
+# project has not made (task 039). Apple's Developer ID signature, when the
+# certificates are configured, says who built the binary to *macOS*; cosign and
+# the build attestation say which workflow and commit produced the file to
+# *anyone*, always. The README documents the Gatekeeper and SmartScreen prompts
+# a user meets on an unsigned release.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"
@@ -288,22 +297,31 @@ release:
     sha256sum -c checksums.txt --ignore-missing
     ```
 
-    The macOS binaries are Developer ID signed and notarized, so Gatekeeper
-    clears them without a prompt and without clearing any attribute by hand:
+    First launch prompts on macOS and on Windows: these releases carry cosign
+    signatures and build attestations, not OS code signing. Apple's Developer
+    Program and an Authenticode certificate are both recurring purchases this
+    project has not made.
+
+    On macOS, clear the quarantine attribute the browser set, once per download:
 
     ```sh
-    codesign --verify --strict --verbose=2 vincent
-    spctl --assess --type execute -vv vincent
+    xattr -d com.apple.quarantine vincent
     ```
 
-    `vincent_*_darwin_universal.pkg` is the stapled installer — signed,
-    notarized and verifiable with no network — and is covered by its Apple
-    signature and a build attestation rather than by `checksums.txt`:
+    `vincent_*_darwin_universal.pkg` installs the same binary, universal for
+    both architectures, to `/usr/local/bin`. It is unsigned, so open it with
+    right-click → *Open* rather than a double-click, or install it without
+    Finder:
 
     ```sh
-    pkgutil --check-signature vincent_*_darwin_universal.pkg
-    spctl --assess --type install -vv vincent_*_darwin_universal.pkg
+    sudo installer -pkg vincent_*_darwin_universal.pkg -target /
     ```
 
-    Windows still prompts (SmartScreen): these releases are not
-    Authenticode-signed. *More info → Run anyway*, once per binary.
+    The `.pkg` is not in `checksums.txt` — it is built after the checksums are
+    computed — so verify it with its build attestation:
+
+    ```sh
+    gh attestation verify vincent_*_darwin_universal.pkg --repo lezli01/vincent
+    ```
+
+    On Windows, SmartScreen offers *More info → Run anyway*, once per binary.

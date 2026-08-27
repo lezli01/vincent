@@ -243,16 +243,19 @@ then `vincent service install` needs no elevation again.
 brew install lezli01/tap/vincent
 ```
 
-The binary it installs is Developer ID signed and notarized, like every other
-macOS artifact here, so Gatekeeper opens it without a prompt. Upgrades are `brew
-upgrade vincent`; `brew uninstall --zap vincent` also removes the LaunchAgent and
-`~/Library/Application Support/vincent` (config, database, transcripts).
+The cask clears the quarantine attribute on install, so the binary runs
+straight away — the macOS artifacts are not Developer ID signed (see **First
+launch** below). Upgrades are `brew upgrade vincent`; `brew uninstall --zap
+vincent` also removes the LaunchAgent and `~/Library/Application
+Support/vincent` (config, database, transcripts).
 
 Homebrew casks are macOS-only — on Linuxbrew, use the archive below.
 
 Or install `vincent_*_darwin_universal.pkg` from the
 [latest release](https://github.com/lezli01/vincent/releases/latest) — one
-universal, stapled installer for both architectures, which works offline.
+universal installer for both architectures. It is unsigned, so open it with
+right-click → *Open*, or run `sudo installer -pkg vincent_*_darwin_universal.pkg
+-target /`.
 
 ### WinGet or Scoop (Windows)
 
@@ -320,14 +323,16 @@ go install github.com/lezli01/vincent/cmd/vincent@latest
 ```
 
 **First launch.** Releases carry cosign signatures, checksums and GitHub build
-attestations everywhere; macOS artifacts additionally carry Apple code signing,
-Windows ones do not. So:
+attestations everywhere, and no OS code signing on either macOS or Windows: an
+Apple Developer Program membership and an Authenticode certificate are both
+recurring purchases this project does not take on. So:
 
-- **macOS** — nothing to do. The binaries and the `.pkg` are Developer ID
-  signed under the hardened runtime and notarized, so Gatekeeper opens them.
-  Do not run `xattr -d com.apple.quarantine`; it is no longer needed, and it
-  only disables the check that would catch a tampered file. Confirm with
-  `codesign --verify --strict --verbose=2` and `spctl --assess --type execute`.
+- **macOS** shows *"cannot be opened because the developer cannot be verified"*
+  on a downloaded archive. Clear the attribute the browser set, once per
+  download: `xattr -d com.apple.quarantine vincent`. The `.pkg` is unsigned
+  too — open it with right-click → *Open* rather than a double-click, or run
+  `sudo installer -pkg vincent_*_darwin_universal.pkg -target /`. Homebrew
+  needs neither: the cask clears the attribute itself.
 - **Windows** shows a SmartScreen prompt: *More info → Run anyway*. Releases are
   not Authenticode-signed — an OV certificate on a hardware token is a recurring
   purchase this project does not take on.

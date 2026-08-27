@@ -1310,8 +1310,11 @@ steps:
       echo "  * read $url one more time, the changelogs especially;"
       echo "  * merge it. That merge is the release: Release Please creates"
       echo "    tag v$version and the GitHub release, and that tag triggers"
-      echo "    the Release workflow, which builds, signs, notarizes,"
-      echo "    attests, uploads and updates Homebrew, Scoop and WinGet."
+      echo "    the Release workflow, which builds, checksums, signs with"
+      echo "    cosign, attests, uploads and updates Homebrew, Scoop and"
+      echo "    WinGet. Apple code signing runs only if the MACOS_* secrets"
+      echo "    exist; without them the macOS artifacts ship unsigned"
+      echo "    (task 039) rather than failing the release."
       echo "  * a published tag is never re-pointed — RELEASING.md § If a"
       echo "    release goes wrong."
       echo

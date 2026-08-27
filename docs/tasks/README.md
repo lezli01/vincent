@@ -52,6 +52,7 @@ the living engineering specification records implementation contracts.
 | [036](036-step-status-message.md) | A step-authored status message, live and terminal | ✅ done (7/7) |
 | [037](037-update-workflows-builtin.md) | `update-workflows`, a built-in that maintains the ones you have | ✅ done (5/5) |
 | [038](038-release-signing-posture.md) | Release signing posture for an MIT project | ⚠ blocked on the owner (1/7) |
+| [039](039-unsigned-releases-by-default.md) | A missing certificate must not destroy a release | ⚠ verification blocked (5/6) |
 
 ## How to add and update a task document
 
