@@ -11,7 +11,7 @@ change the world outside the task: opening or merging a pull request, publishing
 a package, deploying a service, or closing a ticket. At those boundaries,
 review and authorization are part of correctness.
 
-vincent makes that distinction explicit with `manual` steps. A workflow runs
+Vincent makes that distinction explicit with `manual` steps. A workflow runs
 until it reaches a gate, persists its place, and releases its scheduler slot
 while it waits. The branch, worktree, transcripts, results, and diff remain
 available for inspection. A person can approve and continue, reject and block
@@ -36,7 +36,7 @@ Execution permission and delivery authorization are separate choices, and a
 workflow can represent both.
 
 The best automation does not remove people indiscriminately. It removes people
-from repetition and places them where judgment has the highest value. vincent is
+from repetition and places them where judgment has the highest value. Vincent is
 awesome because the pause is not an informal habit or a reminder in a prompt;
 it is part of the executable process.
 

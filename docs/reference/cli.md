@@ -149,7 +149,7 @@ report is printed anyway.
   you add `--force`. An orphan whose dirty check cannot run at all — the project
   repo is gone, so the directory is just files — counts as dirty for this
   purpose: nothing is deleted on the strength of a check that did not happen.
-- vincent does **not** run `git worktree prune` in your repositories. A stale
+- Vincent does **not** run `git worktree prune` in your repositories. A stale
   registration can therefore survive there; the report says so and names the
   command.
 - Compaction is a real `VACUUM`, and it is **skipped while any task is running

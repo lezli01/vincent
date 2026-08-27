@@ -5,7 +5,7 @@ session produced: context. The command exits, the terminal stops moving, and the
 next attempt begins by rediscovering the branch, the error, and what changed
 before everything went wrong.
 
-vincent treats failure as durable state instead.
+Vincent treats failure as durable state instead.
 
 Every attempt records its result, transcript, timing, and failure reason. A
 workflow may retry automatically, and an agent retry receives the previous

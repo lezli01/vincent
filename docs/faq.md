@@ -12,7 +12,7 @@ every client is a thin consumer of its localhost API.
 
 ### Does it need an API key or an account?
 
-No. vincent stores **no credentials**. It runs the agent CLI you already
+No. Vincent stores **no credentials**. It runs the agent CLI you already
 installed and authenticated. There is no vincent account and no telemetry, and
 vincent reaches the network only on your behalf: whatever your agent CLI and
 your workflow's own git commands do, plus reading a GitHub issue when you create
@@ -169,7 +169,7 @@ endpoints.
 
 ### Does it cost anything? Does it show me what a run cost?
 
-vincent is MIT-licensed and free. Your agent CLI's usage is billed by its vendor.
+Vincent is MIT-licensed and free. Your agent CLI's usage is billed by its vendor.
 Claude Code reports cost, so the board's cost column sums every attempt for it;
 codex and cursor report none, and vincent shows nothing rather than guessing.
 That figure can also be a limit:

@@ -95,7 +95,7 @@ pwsh -NoProfile -Command "<rendered>"
 falling back to `powershell` when PowerShell 7 is absent. Pin a different one
 per step with `shell: sh | pwsh | cmd`.
 
-vincent makes **no attempt to translate** command steps between platforms. If a
+Vincent makes **no attempt to translate** command steps between platforms. If a
 workflow is meant to run on Windows and on POSIX, write commands that work in
 both — `&&` chaining is fine everywhere, `test -f` is not — or pin the shell and
 accept that the workflow is platform-specific.
@@ -165,7 +165,7 @@ it is stated rather than discovered.
 **A cursor step with `permission_mode: restricted` fails on Windows.**
 `cursor-agent --sandbox enabled` exits 1 with *"Sandbox mode is enabled but not
 available on this system. Sandbox requires macOS or Linux"* before doing any
-work. vincent surfaces that as block reason `restricted_unsupported`, under the
+work. Vincent surfaces that as block reason `restricted_unsupported`, under the
 normal retry policy.
 
 Falling back to `--force` was rejected outright: it would run full-auto a step

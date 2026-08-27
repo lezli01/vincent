@@ -9,7 +9,7 @@ useful explanation. Reopening the project means reconstructing what ran, which
 branch it changed, and whether it was waiting, finished, or quietly stuck. The
 longer the task runs, the more fragile that arrangement feels.
 
-vincent moves ownership into a background daemon. The daemon owns task state,
+Vincent moves ownership into a background daemon. The daemon owns task state,
 workflow execution, agent processes, scheduling, the database, and git
 worktrees. The TUI, CLI, and API are clients of that state. Closing any client
 changes nothing about the work behind it.
@@ -20,7 +20,7 @@ same state and history. Several clients can inspect the same daemon without
 becoming competing writers. The scheduler can admit tasks by priority and
 concurrency limits even when nobody has a dashboard open.
 
-Durability also changes how interruption is handled. vincent persists a state
+Durability also changes how interruption is handled. Vincent persists a state
 transition before acting on it. If the daemon stops during a step, restart
 recovery records the interrupted attempt, verifies any orphaned process before
 stopping it, and runs the step again without consuming a failure retry. The

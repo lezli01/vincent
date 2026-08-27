@@ -287,7 +287,7 @@ that renames the branch and re-admits it. See
 
 ## Interruption is not failure
 
-vincent is **crash-first**: every transition is persisted before it is acted on.
+Vincent is **crash-first**: every transition is persisted before it is acted on.
 When the daemon starts, recovery:
 
 1. finalizes any step run still marked `running` as `interrupted`, keeping

@@ -582,7 +582,7 @@ count is zero.
 A **database** block sits between the config and the adapters: how big the
 database is on disk — including the WAL, which the file size alone leaves out —
 what each table holds, how many bytes of workflow snapshots the tasks are
-carrying, and how far back the event history goes. vincent keeps database rows
+carrying, and how far back the event history goes. Vincent keeps database rows
 forever, so this is the block that tells you what that has cost so far. Like
 everything else here it reports and offers nothing to press; `vincent doctor`
 prints the same figures in pasteable form, and `vincent doctor --fix` is what

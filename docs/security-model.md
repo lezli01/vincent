@@ -158,7 +158,7 @@ is the boundary that matters.
 
 ## Credentials
 
-**vincent has no credential store of its own.** No vendor API keys, no OAuth
+**Vincent has no credential store of its own.** No vendor API keys, no OAuth
 flow, no keychain entries. An agent step spawns the CLI you installed, which
 authenticates however it already does.
 
@@ -192,7 +192,7 @@ to pass.
 Exactly one thing, and it is recorded here rather than discovered:
 
 **A cursor step passes `--model`, and cursor persists that selection to
-`~/.cursor/cli-config.json`.** vincent always passes one (defaulting to `auto`)
+`~/.cursor/cli-config.json`.** Vincent always passes one (defaulting to `auto`)
 because leaving it unset would mean "whatever the last invocation chose",
 possibly a previous vincent step — and determinism is worth more to an
 orchestrator than preserving an interactive preference.
@@ -233,7 +233,7 @@ In rough order of value:
 
 Stated so you do not assume otherwise:
 
-- **Sandboxing the agent beyond what its own CLI offers.** vincent passes the
+- **Sandboxing the agent beyond what its own CLI offers.** Vincent passes the
   switch; it does not build a jail.
 - **Multi-user or multi-tenant operation.** One OS user, one daemon.
 - **Protecting you from your own workflow files.** A `command` step is a shell

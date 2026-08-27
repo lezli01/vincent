@@ -74,7 +74,7 @@ configuration and user documentation that make them true.
   into a recorded decision; `nfpms` at `.goreleaser.yaml:68` is correct as it
   stands and gains no `signature:` block. The reasoning:
 
-  vincent publishes **no APT or YUM repository**. `dpkg` and `apt` do not verify
+  Vincent publishes **no APT or YUM repository**. `dpkg` and `apt` do not verify
   a per-package signature on a downloaded `.deb` at all — apt verifies the
   repository's `Release` file, and `dpkg-sig` is not part of the path a user
   takes when they `dpkg -i` a file fetched from a GitHub release. So deb signing

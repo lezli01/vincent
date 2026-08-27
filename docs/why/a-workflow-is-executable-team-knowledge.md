@@ -9,7 +9,7 @@ when the process is sound, the next person has to translate the prose back into
 commands, decisions, and handoffs. The knowledge exists, but it is not
 executable.
 
-vincent workflows turn that playbook into versioned YAML. A project workflow can
+Vincent workflows turn that playbook into versioned YAML. A project workflow can
 live under `.vincent/workflows/` beside the code it serves. It can declare typed
 task inputs, run deterministic commands, call agents for reasoning, verify
 results with checks, branch through native control flow, and pause at human

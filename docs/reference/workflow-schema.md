@@ -91,7 +91,7 @@ this page and validates each one.
 
 ## `platforms`
 
-vincent never translates a command step between shells, so a workflow that
+Vincent never translates a command step between shells, so a workflow that
 pipes `cat` into `wc` is a POSIX workflow. Declaring that keeps it from being
 offered on a host it cannot run on:
 
@@ -280,7 +280,7 @@ Runs a shell command in the worktree.
 ```
 
 Default shells: `/bin/sh -c` on POSIX, `pwsh -NoProfile -Command` on Windows
-(falling back to `powershell`). vincent does not translate between them —
+(falling back to `powershell`). Vincent does not translate between them —
 portability is the author's job.
 
 `shell:` accepts exactly three values — **`bash` is not one of them**. Use `sh`

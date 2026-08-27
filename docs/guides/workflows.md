@@ -544,7 +544,7 @@ exactly as at the top level. They may not be any other type — see
 [§4.11](#411-where-each-type-may-appear).
 
 > **Sub-steps share one working tree.** Two of them writing the same file is a
-> bug in your workflow. vincent isolates worktrees between *tasks*, not
+> bug in your workflow. Vincent isolates worktrees between *tasks*, not
 > processes inside one task.
 
 > **`max_parallel` is not covered by your concurrency caps.** Those count tasks
@@ -1531,7 +1531,7 @@ A reason means the same thing wherever it originated.
 
 ### 8.5 Interruption is not failure
 
-vincent is crash-first: every transition is persisted before it is acted on. A
+Vincent is crash-first: every transition is persisted before it is acted on. A
 daemon that stops mid-step marks the run `interrupted`, kills verified orphan
 processes, and re-runs the step as a **fresh attempt that does not consume a
 retry**.
@@ -1640,7 +1640,7 @@ slot**: the agent process is alive, idle on its stdin. The step's timeout clock
 pauses. The board pins the task, rings the terminal bell, and the answer form
 opens on `enter`. Answering resumes the same session where it stopped.
 
-**`deny`** — for runs that must stay strictly unattended. vincent answers
+**`deny`** — for runs that must stay strictly unattended. Vincent answers
 immediately through the adapter: questions get a canned "no user is available;
 decide with your best judgment", and permission requests are denied. The task
 never leaves `running`.

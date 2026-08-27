@@ -3,7 +3,7 @@
 **Status:** ✅ done (7/7)
 **Opened:** 2026-08-24
 
-vincent only ever learned about an agent's usage quota after it was gone, and
+Vincent only ever learned about an agent's usage quota after it was gone, and
 then threw the fact away. Task 003 taught the adapters to recognize a CLI that
 stopped because the account's window is spent (`agent.FailureUsageLimit`), and
 the engine turns that into an admission hold rather than a failure — good
