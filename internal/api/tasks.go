@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -95,6 +96,11 @@ type taskResponse struct {
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	// PauseRequested is a pause accepted but not yet in effect (§6).
 	PauseRequested bool `json:"pause_requested"`
+	// GitHubIssue is the issue snapshot this task was created from (§5.3,
+	// task 035); null for every task created without one. It is served as
+	// captured and never refreshed — clients render it as history, not as the
+	// issue's current state.
+	GitHubIssue *github.Issue `json:"github_issue"`
 	// AvailableActions are the §6 human actions valid from the current
 	// state. Derived, never stored: clients render an action bar from this
 	// rather than restating the state machine.
@@ -179,6 +185,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		AdmitNotBefore:   timePtr(t.AdmitNotBefore),
 		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
+		GitHubIssue:      t.GitHubIssue,
 		PauseRequested:   t.PauseRequested,
 		AvailableActions: availableActions(t.State),
 		CreatedAt:        t.CreatedAt.UTC().Format(time.RFC3339),
@@ -322,6 +329,12 @@ type taskCreateRequest struct {
 	Agent      *string `json:"agent"`
 	Model      *string `json:"model"`
 	Effort     *string `json:"effort"`
+	// GitHubIssue creates this task from a GitHub issue (§13.2, task 035).
+	// The daemon fetches it, prefills the task from it and persists the
+	// snapshot on the row; **any value the request supplies explicitly wins**
+	// over the issue-derived one, which is what makes `--github-issue N` and
+	// the TUI's previewed prefill produce the same stored task (decision 2).
+	GitHubIssue *int `json:"github_issue"`
 }
 
 // handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
@@ -359,11 +372,6 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "get project", err)
 		return
 	}
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
-		return
-	}
 	// Workflow resolution (§5.3): the named workflow, else the project's
 	// default, else the built-in adhoc. The entry's source becomes the
 	// task's snapshot, so later edits to the file never touch this task.
@@ -385,6 +393,18 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("workflow %q cannot run here: %s", workflowName, mismatch))
+		return
+	}
+	// The GitHub issue prefill (task 035), before field validation because it
+	// is one of the things being validated, and before the title check
+	// because filling the title in is half of what it is for.
+	issue, ok := s.applyIssuePrefill(r.Context(), w, project, entry.Workflow, &req)
+	if !ok {
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
 		return
 	}
 	// Workflow-declared fields (§8.1.2, task 022) are a contract on the
@@ -499,6 +519,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		Fields:           req.Fields,
 		AgentOverride:    agentOverride,
 		State:            store.TaskQueued,
+		GitHubIssue:      issue,
 	}
 	if req.Description != nil {
 		t.Description = *req.Description

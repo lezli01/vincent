@@ -81,3 +81,69 @@ func TestDatabaseSpanWithNoEvents(t *testing.T) {
 		t.Errorf("the zero time reached the report:\n%s", out)
 	}
 }
+
+// The GitHub integration row (task 035). Every "no" it can report leaves task
+// creation without an issue working exactly as before, so the row states the
+// facts and the consequence and never accuses — and none of it is a Problem,
+// which is why `vincent doctor` does not exit 1 over any of these.
+
+// TestDoctorGitHubRowWithoutGH is the diagnosis the daemon log used to carry
+// alone: no `gh`, no token, and a sentence saying what still works.
+func TestDoctorGitHubRowWithoutGH(t *testing.T) {
+	out := joinRows(doctorGitHubRows(apiclient.DoctorGitHub{
+		Enabled: true,
+		Message: "no GitHub credential: gh is not installed or not authenticated, " +
+			"and neither GITHUB_TOKEN nor GH_TOKEN is set",
+	}))
+	for _, want := range []string{
+		"enabled\tyes",
+		"gh cli\tnot found",
+		"token\tnot set",
+		"unavailable: no GitHub credential",
+		"tasks can still be created without an issue",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the github row does not show %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestDoctorGitHubRowLoggedOut: an installed `gh` that is not logged in is the
+// case worth naming — it probes as present and then answers nothing.
+func TestDoctorGitHubRowLoggedOut(t *testing.T) {
+	row := apiclient.DoctorGitHub{Enabled: true, Message: "no GitHub credential"}
+	row.GHFound, row.GHPath, row.GHVersion = true, "/usr/bin/gh", "gh version 2.98.0 (2026-08-20)"
+	out := joinRows(doctorGitHubRows(row))
+	if !strings.Contains(out, "gh version 2.98.0") || !strings.Contains(out, "auth no") {
+		t.Errorf("a logged-out gh is not reported as found-but-unauthenticated:\n%s", out)
+	}
+}
+
+// TestDoctorGitHubRowNamesTheVariableNotTheToken: a diagnostic pastes into an
+// issue, so the token's *name* is reported and its value never is.
+func TestDoctorGitHubRowNamesTheVariableNotTheToken(t *testing.T) {
+	row := apiclient.DoctorGitHub{Enabled: true, Usable: true}
+	row.TokenVar, row.Via = "GH_TOKEN", "token"
+	out := joinRows(doctorGitHubRows(row))
+	if !strings.Contains(out, "set (GH_TOKEN)") {
+		t.Errorf("the token row does not name the variable:\n%s", out)
+	}
+	if !strings.Contains(out, "readable via token") {
+		t.Errorf("a usable integration does not say so:\n%s", out)
+	}
+}
+
+// TestDoctorGitHubRowDisabled: the toggle off is not a fault, and the row says
+// so plainly rather than reporting an unavailability.
+func TestDoctorGitHubRowDisabled(t *testing.T) {
+	out := joinRows(doctorGitHubRows(apiclient.DoctorGitHub{Enabled: false}))
+	if !strings.Contains(out, "enabled\tno") {
+		t.Errorf("a disabled integration does not say so:\n%s", out)
+	}
+	if !strings.Contains(out, "not read (integration disabled)") {
+		t.Errorf("the issues row does not explain the disabled state:\n%s", out)
+	}
+	if strings.Contains(out, "unavailable") {
+		t.Errorf("a disabled integration is reported as unavailable:\n%s", out)
+	}
+}

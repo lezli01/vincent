@@ -381,8 +381,8 @@ key.
 
 Opens for the project you are looking at. A guided form: project → workflow
 (with its description and step list, flagging steps whose agent is unavailable)
-→ title → description → fields → base branch → priority → optional
-agent/model/effort override.
+→ *(GitHub issue)* → title → description → fields → base branch → priority →
+optional agent/model/effort override.
 
 When the selected workflow declares [`fields:`](../reference/workflow-schema.md#fields),
 the Fields row is pre-rendered in declaration order. It shows labels,
@@ -392,6 +392,26 @@ editable. You can still add and delete custom key/value rows — additional,
 undeclared fields remain valid and are recorded on the task. Values are kept
 when you switch workflows, including fields that the new workflow does not
 declare.
+
+**The GitHub issue row** appears only when this project's issues can be read:
+the [`github` integration](../reference/configuration.md#github) is on, the
+project's `origin` remote is a github.com repository, and vincent has a
+credential — `gh` logged in, or `GITHUB_TOKEN`/`GH_TOKEN` in the environment the
+daemon inherited. Otherwise the row is simply not there, and no GitHub call is
+made. `vincent doctor` says which of those is missing.
+
+Its picker lists the repository's open issues, newest first, and narrows as you
+type, like every other picker here. Choosing one fills the title, fills the
+description with the issue body plus a trailing `GitHub issue #N: <url>` line,
+and fills any of the workflow's declared `labels`, `assignee` or `milestone`
+fields whose declared type accepts the value. **All of it lands in the ordinary
+editable rows** — rewrite or clear anything before creating, and what you leave
+is what the task gets. A `(none)` row at the top of the picker removes the link.
+
+The issue is read **once**, when you create the task, and stored on it. Editing
+the issue on GitHub afterwards does not change what a later step sees; the
+snapshot is what [`.Issue`](../reference/workflow-schema.md#template-context)
+renders from.
 
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,

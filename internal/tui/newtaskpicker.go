@@ -303,13 +303,15 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "project", n.projectOptions(), false, strconv.FormatInt(n.projectID, 10))
 	case ntWorkflow:
 		n.pick = newPicker(int(row), "workflow", n.workflowOptions(), false, n.workflow)
+	case ntIssue:
+		n.pick = newPicker(int(row), "github issue", n.issueOptions(), false, n.issueValue())
 	case ntAgent:
 		n.pick = newPicker(int(row), "agent override", n.agentOptions(), false, n.agent)
 	case ntModel:
 		n.pick = newPicker(int(row), "model override", n.optionRows(n.effectiveAgentModels()), true, n.model)
 	case ntEffort:
 		n.pick = newPicker(int(row), "effort override", n.optionRows(n.effectiveAgentEfforts()), true, n.effort)
-	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntCreate, ntRowCount:
 		return
 	}
 	n.mode = ntPicking
@@ -349,12 +351,24 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 			}
 		}
 		// The registry is project-scoped (§5.2), so the workflow list and
-		// the selection made from it are both stale now.
+		// the selection made from it are both stale now. So is everything
+		// GitHub: a different repository, a different answer to "is this on
+		// GitHub", and an issue from the old project has no meaning here.
 		n.workflows = nil
 		n.setWorkflow("")
-		return n.workflowsCmd(id)
+		n.github, n.githubProject = apiclient.GitHubStatus{}, 0
+		n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
+		return tea.Batch(n.workflowsCmd(id), n.githubCmd(id))
 	case ntWorkflow:
 		n.setWorkflow(value)
+		// Each listed issue carries the prefill computed for the workflow's
+		// declared fields, so a workflow change makes those prefills stale.
+		return tea.Batch(n.issuesCmd(), n.resolveCmd())
+	case ntIssue:
+		n.applyIssuePick(value)
+		// The title and fields the prefill just wrote are §8.6 and branch
+		// inputs, so the draft's resolution has changed with them.
+		return n.resolveCmd()
 	case ntAgent:
 		if value == n.agent {
 			return nil
@@ -369,7 +383,7 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		n.model = value
 	case ntEffort:
 		n.effort = value
-	case ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntCreate, ntRowCount:
+	case ntTitle, ntDescription, ntFields, ntBranch, ntBranchName, ntPriority, ntCreate, ntRowCount:
 		return nil
 	}
 	// Every row that falls through here is a §8.6 input, so what the draft

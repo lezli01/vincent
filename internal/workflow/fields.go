@@ -106,6 +106,19 @@ func (w *Workflow) ValidateTaskFields(values map[string]string) Errors {
 	return errs
 }
 
+// Validate checks one value against this declaration, returning the same
+// message ValidateTaskFields would report for it and "" when it passes.
+//
+// It exists so a caller that wants to *offer* a value can ask whether the
+// declaration would accept it without assembling a whole task field map —
+// the GitHub issue prefill's "a value is offered only if it satisfies the
+// declaration's type and pattern" rule (task 035 decision 7). Exporting the
+// same routine ValidateTaskFields uses is what keeps that rule and the create
+// call's 400 from ever disagreeing.
+func (f FieldDefinition) Validate(value string) string {
+	return validateTaskFieldValue(f, value)
+}
+
 func validateTaskFieldValue(field FieldDefinition, value string) string {
 	switch field.Type {
 	case FieldInteger:

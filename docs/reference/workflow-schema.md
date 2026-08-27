@@ -832,11 +832,52 @@ starts.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
+| `.Issue` | the GitHub issue the task was created from: `Number` (**0** when there is none), `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a list), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. See [`.Issue`](#issue) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retries only: `{Reason, Output}`; empty otherwise |
 | `.Conflicts` | the conflicted file paths, on an `on_conflict: agent` [merge resolver](#merge-and-conflicts) only. Empty everywhere else, so a prompt may read it defensively anywhere |
+
+### `.Issue`
+
+A task can be created from a GitHub issue — from the TUI's new-task form, or
+with `vincent task add --github-issue N`. When it was, `.Issue` carries that
+issue and a prompt can use it directly:
+
+```yaml
+  - id: fix
+    type: agent
+    prompt: |
+      Fix GitHub issue #{{ .Issue.Number }} — {{ .Issue.Title }}
+
+      {{ .Issue.Body }}
+
+      Labels:{{ range .Issue.Labels }} {{ . }}{{ end }}
+      Discussion: {{ .Issue.URL }}
+```
+
+`.Issue.Number` is **0** when no issue is linked, exactly the way `.Loop.Index`
+is 0 outside a loop, so one workflow serves both kinds of task:
+
+```yaml
+    prompt: |
+      {{ if .Issue.Number }}Fix issue #{{ .Issue.Number }}: {{ .Issue.Title }}
+      {{ else }}{{ .Task.Description }}{{ end }}
+```
+
+`Labels` is a real list, so `range` works on it. Everything else is a string.
+
+The issue is a **snapshot**, read once when the task was created. Nothing
+re-reads it, so editing the issue on GitHub afterwards does not change what a
+later step renders — and rendering never touches the network, which is why a
+step cannot fail here because GitHub is down. A [fan-out](#type-fan_out) lane
+inherits its parent's issue, the same way it inherits `.Task.Fields`.
+
+Creating a task from an issue also prefills the task's title, its description
+(the issue body plus a `GitHub issue #N: <url>` line) and any declared
+[`fields:`](#fields) named exactly `labels`, `assignee` or `milestone`. All of
+that is editable before the task is created; `.Issue` is the untouched copy.
 
 Visibility follows one rule — a step appears once the engine has advanced past
 it — and three consequences follow from it:

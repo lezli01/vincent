@@ -106,6 +106,18 @@ agents:
   cursor:
     path: ""
 
+# Reading GitHub issues, so a task can be created from one (task 035). It
+# applies only to a project whose "origin" remote is a github.com repository,
+# and the daemon makes no call at all until you open the issue picker or name
+# an issue on the command line.
+#
+# vincent stores no credential: it drives the "gh" CLI when it is installed
+# and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
+# environment the daemon inherited. Set enabled to false to stop the daemon
+# reading GitHub at all.
+github:
+  enabled: true
+
 # What clients render, not what the daemon does. The daemon validates these,
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.

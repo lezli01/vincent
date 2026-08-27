@@ -32,9 +32,11 @@ size and last lines; the database's size on disk (including its WAL sidecar),
 schema version, `PRAGMA integrity_check`, per-table row counts,
 workflow-snapshot bytes and how far back its event history reaches; every agent
 CLI with its path, version and
-[`logged_in`](agents.md#found-is-not-usable); free disk, worktree count and
-bytes, and any orphaned worktrees; and task counts by state — so "12 blocked" is
-visible without opening the board.
+[`logged_in`](agents.md#found-is-not-usable); whether the
+[GitHub integration](../reference/configuration.md#github) can read issues, and
+if not which piece is missing; free disk, worktree count and bytes, and any
+orphaned worktrees; and task counts by state — so "12 blocked" is visible
+without opening the board.
 
 **It works with no daemon**, which is the point: the daemon being down is one of
 the answers. In that mode it exits `2`, still prints everything it can read from

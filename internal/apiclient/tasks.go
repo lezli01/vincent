@@ -303,7 +303,12 @@ type TaskDetail struct {
 	Description  string          `json:"description"`
 	WorktreePath *string         `json:"worktree_path"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
-	Steps        []StepRun       `json:"steps"`
+	// GitHubIssue is the issue this task was created from (task 035); nil for
+	// a task created without one. It is the snapshot as captured, never
+	// refreshed — a client renders it as the task's history, not as the
+	// issue's current state.
+	GitHubIssue *GitHubIssue `json:"github_issue,omitempty"`
+	Steps       []StepRun    `json:"steps"`
 	// Warnings is set on the POST /v1/tasks 201 only: advisory findings that
 	// did not block creation, such as a model the catalog does not know.
 	// POST /v1/tasks/{id}/repair reports the same findings about its own
@@ -397,6 +402,10 @@ type CreateTaskRequest struct {
 	Agent      *string `json:"agent,omitempty"`
 	Model      *string `json:"model,omitempty"`
 	Effort     *string `json:"effort,omitempty"`
+	// GitHubIssue creates the task from a GitHub issue (task 035). The daemon
+	// fetches it, prefills whatever this request left unset, and persists the
+	// snapshot; anything set here wins over the issue-derived value.
+	GitHubIssue *int `json:"github_issue,omitempty"`
 }
 
 // CreateTask creates a task and returns it as the daemon recorded it. The

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
@@ -146,11 +147,17 @@ type Task struct {
 	ParentStepIndex *int
 	LaneID          string
 	LaneOrder       int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
-	ArchivedAt      *time.Time
+	// GitHubIssue is the issue this task was created from (§5.3, task 035),
+	// captured once at creation and nil for every task created without one.
+	// It is never re-fetched: every step renders `.Issue` from this snapshot,
+	// which is why a step render still cannot fail for an external reason
+	// (§8.4). A fan-out lane inherits its parent's copy verbatim.
+	GitHubIssue *github.Issue
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
+	ArchivedAt  *time.Time
 }
 
 // StepRun is one attempt at executing one step of one task; history is

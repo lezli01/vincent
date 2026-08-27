@@ -21,15 +21,20 @@ import (
 const loadTimeout = 10 * time.Second
 
 // ntRow identifies one line of the form. The order is §15's: project →
-// workflow → title → description → fields → base branch → branch name →
+// workflow → issue → title → description → fields → base branch → branch name →
 // priority → agent/model/effort → create. Wide terminals group that order into
 // six visual stages, but this remains the one cursor: back-navigation and
 // review-before-submit do not need a second wizard state machine (task 020).
+//
+// ntIssue is **conditional**: it is present only when the daemon's capability
+// probe says this project's issues can be read (task 035). Every other row is
+// always there, so rowVisible is the one place that difference lives.
 type ntRow int
 
 const (
 	ntProject ntRow = iota
 	ntWorkflow
+	ntIssue
 	ntTitle
 	ntDescription
 	ntFields
@@ -83,6 +88,23 @@ type (
 		key        resolveKey
 		resolution apiclient.Resolution
 		err        error
+	}
+	// ntGitHubMsg carries the §13.2 capability probe for a project (task
+	// 035). The project travels with it because the user may have switched
+	// projects while it was in flight; a reply for another project is
+	// dropped, not applied.
+	ntGitHubMsg struct {
+		projectID int64
+		status    apiclient.GitHubStatus
+		err       error
+	}
+	// ntIssuesMsg carries a project's issue listing, with the prefill the
+	// daemon computed for the workflow that was selected when it was asked.
+	// The key travels with it for the same reason.
+	ntIssuesMsg struct {
+		key    issuesKey
+		issues []apiclient.GitHubIssue
+		err    error
 	}
 	// ntDescriptionMsg carries the result of editing the description in
 	// $EDITOR.
@@ -139,6 +161,22 @@ type newTask struct {
 	agent      string
 	model      string
 	effort     string
+
+	// github is the daemon's capability probe for githubProject (task 035).
+	// The TUI holds no GitHub state the daemon does not have: it never parses
+	// a remote, never reads a token, and never calls GitHub — it renders this
+	// answer and asks the daemon for issues when it says yes.
+	github        apiclient.GitHubStatus
+	githubProject int64
+	// issues is the listing the picker offers, and issuesFor the draft it was
+	// fetched for. The workflow is part of that key because each row carries
+	// the prefill computed against the workflow's declared fields.
+	issues    []apiclient.GitHubIssue
+	issuesFor issuesKey
+	issuesErr string
+	// issue is the issue this draft is linked to, nil when none. It is what
+	// `github_issue` on the create request carries.
+	issue *apiclient.GitHubIssue
 
 	cursor   ntRow
 	mode     ntMode
@@ -237,7 +275,7 @@ func (n *newTask) paste(text string) tea.Cmd {
 			n.priority, cmd = n.priority.Update(tea.PasteMsg{Content: text})
 		case ntDescription:
 			n.desc, cmd = n.desc.Update(tea.PasteMsg{Content: text})
-		case ntProject, ntWorkflow, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+		case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 			return nil
 		}
 		delete(n.rowErr, n.cursor)
@@ -412,11 +450,16 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.projectID == n.projectID && msg.err == nil {
 			n.workflows = msg.entries
 			n.selectDefaultWorkflow()
-			return n, n.resolveCmd()
+			return n, tea.Batch(n.resolveCmd(), n.issuesCmd())
 		}
 		return n, nil
 	case ntResolvedMsg:
 		n.applyResolution(msg)
+		return n, nil
+	case ntGitHubMsg:
+		return n, n.applyGitHub(msg)
+	case ntIssuesMsg:
+		n.applyIssues(msg)
 		return n, nil
 	case ntDescriptionMsg:
 		n.applyDescription(msg)
@@ -455,6 +498,8 @@ func (n *newTask) reset() {
 	n.rowErr = map[ntRow]string{}
 	n.err, n.submitting, n.touched = "", false, false
 	n.loaded, n.loadErr = false, nil
+	n.github, n.githubProject = apiclient.GitHubStatus{}, 0
+	n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
 }
 
 func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
@@ -469,7 +514,7 @@ func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
 	// The project the picker settled on may not be the one the workflow list
 	// was fetched for.
 	if p, ok := n.project(); ok {
-		return n.workflowsCmd(p.ID)
+		return tea.Batch(n.workflowsCmd(p.ID), n.githubCmd(p.ID))
 	}
 	return n.resolveCmd()
 }
@@ -629,21 +674,73 @@ func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return n, nil
 }
 
+// moveCursor walks to the next *visible* row. A hidden row is stepped over
+// rather than landed on: ntIssue is absent whenever the daemon says this
+// project's issues cannot be read, and a cursor parked on a row nothing draws
+// is a form that appears to swallow keystrokes.
 func (n *newTask) moveCursor(delta int) {
-	next := int(n.cursor) + delta
-	if next < 0 {
-		next = 0
+	if delta == 0 {
+		return
 	}
-	if next >= int(ntRowCount) {
-		next = int(ntRowCount) - 1
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	next := int(n.cursor)
+	for range abs(delta) {
+		candidate := next + step
+		for candidate >= 0 && candidate < int(ntRowCount) && !n.rowVisible(ntRow(candidate)) {
+			candidate += step
+		}
+		if candidate < 0 || candidate >= int(ntRowCount) {
+			break
+		}
+		next = candidate
 	}
 	n.cursor = ntRow(next)
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// rowVisible reports whether a row is part of this draft's form.
+//
+// Only ntIssue is ever hidden, and only on the daemon's word: the integration
+// is disabled, the project's origin is not a github.com repository, or GitHub
+// cannot be reached. In all three the row is simply absent — the form does not
+// offer a control that would fail (task 035).
+func (n *newTask) rowVisible(row ntRow) bool {
+	if row != ntIssue {
+		return true
+	}
+	return n.githubAvailable()
+}
+
+// githubAvailable reports the probe's verdict for the project on screen. A
+// probe for a different project is not an answer about this one.
+func (n *newTask) githubAvailable() bool {
+	return n.projectID != 0 && n.githubProject == n.projectID && n.github.Available
+}
+
+// visibleRows lists the rows this draft draws, in order.
+func (n *newTask) visibleRows() []ntRow {
+	out := make([]ntRow, 0, int(ntRowCount))
+	for row := ntProject; row < ntRowCount; row++ {
+		if n.rowVisible(row) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // activate opens whatever the focused row edits.
 func (n *newTask) activate() tea.Cmd {
 	switch n.cursor {
-	case ntProject, ntWorkflow, ntAgent, ntModel, ntEffort:
+	case ntProject, ntWorkflow, ntIssue, ntAgent, ntModel, ntEffort:
 		n.openPicker(n.cursor)
 	case ntTitle, ntBranch, ntBranchName, ntPriority, ntDescription:
 		n.startEditing()
@@ -669,7 +766,7 @@ func (n *newTask) startEditing() {
 		n.priority.Focus()
 	case ntDescription:
 		n.desc.Focus()
-	case ntProject, ntWorkflow, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 }
 
@@ -707,7 +804,7 @@ func (n *newTask) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		n.priority, cmd = n.priority.Update(msg)
 	case ntDescription:
 		n.desc, cmd = n.desc.Update(msg)
-	case ntProject, ntWorkflow, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntIssue, ntFields, ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
 	delete(n.rowErr, n.cursor)
 	return cmd
@@ -851,6 +948,18 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	if f := n.fieldMap(); len(f) > 0 {
 		req.Fields = f
 	}
+	if n.issue != nil {
+		number := n.issue.Number
+		req.GitHubIssue = &number
+		// A linked draft sends what is on screen *explicitly*, empties
+		// included, because the daemon fills in anything the request leaves
+		// unset (task 035 decision 2). Omitting a description or a declared
+		// field the human deliberately cleared would have the daemon put the
+		// prefill straight back — which is the one way the form's "nothing is
+		// locked" promise could quietly become false.
+		req.Description = ptr(n.desc.Value())
+		req.Fields = n.issueFieldMap()
+	}
 	if b := strings.TrimSpace(n.branch.Value()); b != "" {
 		req.BaseBranch = ptr(b)
 	}
@@ -870,6 +979,22 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 		req.Effort = ptr(n.effort)
 	}
 	return req
+}
+
+// issueFieldMap is fieldMap for a draft linked to an issue: every named row
+// is sent, including the ones whose value is empty. See request() — an omitted
+// key is a key the daemon prefills.
+func (n *newTask) issueFieldMap() map[string]string {
+	out := make(map[string]string, len(n.fields))
+	for _, f := range n.fields {
+		if f.key != "" {
+			out[f.key] = f.value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // fieldMap flattens the ordered rows. Untouched declarations are form chrome,

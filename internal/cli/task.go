@@ -34,6 +34,7 @@ func newTaskAddCmd() *cobra.Command {
 		model       string
 		effort      string
 		fields      []string
+		githubIssue int
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -68,6 +69,16 @@ func newTaskAddCmd() *cobra.Command {
 					p := priority
 					req.Priority = &p
 				}
+				// Resolved daemon-side, deliberately (task 035 decision 2):
+				// the flag carries the number and nothing else, so the CLI
+				// and the TUI go through one prefill implementation and
+				// cannot drift into producing different tasks from the same
+				// issue. Every explicit flag above already sits in req, and
+				// the daemon fills only what is still unset.
+				if cmd.Flags().Changed("github-issue") {
+					n := githubIssue
+					req.GitHubIssue = &n
+				}
 				t, err := c.CreateTask(ctx, req)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -80,6 +91,14 @@ func newTaskAddCmd() *cobra.Command {
 				if _, err := fmt.Fprintf(out, "task %d created: %s (%s, branch %s)\n",
 					t.ID, t.Title, t.Workflow, t.BranchName); err != nil {
 					return err
+				}
+				// Which issue the daemon actually resolved, said out loud: the
+				// flag carried a number, and the title it produced came from
+				// somewhere the user cannot see from here.
+				if summary := githubIssueSummary(t.GitHubIssue); summary != "" {
+					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
+						return err
+					}
 				}
 				// Warnings are advisory — a catalog-unknown model, say. The
 				// task exists and will run, so this is not an error exit; but
@@ -105,8 +124,13 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort override (§8.6 level 2)")
 	cmd.Flags().StringArrayVar(&fields, "field", nil,
 		"Task field as name=value; repeat for additional fields")
+	cmd.Flags().IntVar(&githubIssue, "github-issue", 0,
+		"Create the task from this GitHub issue; explicit flags win over what it would fill in")
 	_ = cmd.MarkFlagRequired("project")
-	_ = cmd.MarkFlagRequired("title")
+	// One of the two, not --title alone: an issue supplies the title, which is
+	// the whole point of naming one (task 035). Requiring both would make
+	// `--github-issue` a decoration on a title the user had to retype.
+	cmd.MarkFlagsOneRequired("title", "github-issue")
 	jsonFlag(cmd)
 	return cmd
 }

@@ -370,6 +370,8 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `GET` | `/v1/projects/{id}` | |
 | `PATCH` | `/v1/projects/{id}` | Any mutable field, including re-pointing `path` |
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
+| `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
+| `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
@@ -379,6 +381,78 @@ archived rows included, because the cascade erases the branch names for good.
 here; failures are logged and the delete proceeds. Set
 [`delete_empty_branch_on_archive: false`](configuration.md#delete_empty_branch_on_archive)
 to disable the sweep.
+
+### GitHub issues
+
+`GET /v1/projects/{id}/github` is the capability probe. It is a separate call
+rather than three fields on the project object because the board lists projects
+constantly, and answering it there would run `gh auth status` per project on
+every refresh:
+
+```json
+{ "enabled": true, "repo": "lezli01/vincent", "available": true, "via": "gh" }
+```
+
+`enabled` is [`github.enabled`](configuration.md#github). `repo` is derived from
+the project's `origin` remote at the moment you ask, and is absent when that
+remote is not a github.com URL. `via` is `gh` or `token`. When `available` is
+false the body carries a `reason` and a human-readable `message`:
+
+| `reason` | Meaning |
+|---|---|
+| `disabled` | `github.enabled` is false |
+| `not_github` | No `origin`, or one that is not a github.com repository |
+| `no_credential` | `gh` is absent or logged out, and neither `GITHUB_TOKEN` nor `GH_TOKEN` is set |
+| `unauthorized` | GitHub rejected the credential |
+| `forbidden` | Authenticated, but not permitted to read this repository's issues |
+| `not_found` | No such repository or issue |
+| `rate_limited` | The API rate limit is spent |
+| `timeout` | GitHub did not answer in time |
+| `unreachable` | The call failed, or the API answered something with no more specific meaning |
+| `bad_response` | The answer arrived and did not parse |
+
+Those reasons are the whole client-facing vocabulary. `gh`'s stderr and the
+API's response body never appear in any of these fields — they go to the daemon
+log.
+
+`GET /v1/projects/{id}/github/issues` lists the repository's issues, newest
+first. Pull requests are never included. `?state=` takes `open` (the default),
+`closed` or `all`; `?limit=` caps the rows. There is no `?q=` — narrow the list
+client-side, the way the TUI's picker does.
+
+```json
+[
+  {
+    "repo": "lezli01/vincent", "number": 200,
+    "title": "GitHub integration: select a GitHub issue when creating a task",
+    "body": "### Problem\n\n…", "url": "https://github.com/lezli01/vincent/issues/200",
+    "state": "open", "labels": ["enhancement"], "author": "lezli01",
+    "created_at": "2026-08-26T19:21:29Z", "updated_at": "2026-08-26T19:30:00Z",
+    "fetched_at": "2026-08-26T20:04:11Z"
+  }
+]
+```
+
+Adding `?workflow=<name>` attaches a `prefill` object to every row — the
+daemon's own answer to "what would creating a task from this issue fill in":
+
+```json
+{ "prefill": { "title": "…", "description": "…\n\nGitHub issue #200: https://…",
+               "fields": { "labels": "enhancement" } } }
+```
+
+`POST /v1/tasks` computes exactly the same prefill from the same code, so a
+preview a human accepted and a create call that names only the issue produce the
+same task. An unknown workflow name is `400 validation_failed`.
+
+Either endpoint answers **409** when the integration is not usable, carrying the
+reason a client can branch on:
+
+```json
+{ "error": { "code": "invalid_state",
+             "message": "GitHub is not available for this project: …",
+             "details": { "reason": "no_credential" } } }
+```
 
 ## Workflows
 
@@ -510,7 +584,7 @@ rather than inventing a model name.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort? }` — `branch_name` is used verbatim and wins over any template |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue? }` — `branch_name` is used verbatim and wins over any template |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
@@ -520,6 +594,23 @@ declared fields before inserting the task. Missing required values and invalid
 types or patterns return `400 validation_failed`. The `fields` object remains
 open: additional names that the workflow did not declare are accepted, stored,
 and returned with the task.
+
+`github_issue` is an issue **number**. The daemon fetches that issue, computes
+the [prefill](#github-issues), and fills in whatever this request left unset —
+**anything you send explicitly wins.** For `fields` and `description` that is
+decided by *presence*: a key sent with an empty value is a row somebody cleared
+on purpose and stays cleared, so `"description": ""` creates a task with no
+description rather than the issue body. Only `title` keys on emptiness as well
+as absence — there is no such thing as deliberately creating an untitled task —
+so `title` becomes optional when `github_issue` is given.
+
+The issue is stored on the task and served back on every task representation as
+`github_issue`, in the same shape the listing returns. It is a **snapshot**: it
+is never re-read, so editing the issue on GitHub afterwards does not change what
+a later step renders through
+[`.Issue`](workflow-schema.md#template-context). A request that names no
+`github_issue` makes no GitHub call at all. An unusable integration is the same
+409 with `details.reason` the GitHub endpoints return.
 
 Human actions, all `POST /v1/tasks/{id}/…`:
 

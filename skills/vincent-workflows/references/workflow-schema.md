@@ -255,11 +255,19 @@ command timeout, independently of the main step timeout.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |
+| `.Issue` | `Number`, `Repo`, `Title`, `Body`, `URL`, `State`, `Labels`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber` |
 | `.Steps` | completed step ids → `Status`, `Result`, `ExitCode` |
 | `.Host` | `OS`, `Arch` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | `Reason`, `Output` during retries |
 | `.Conflicts` | conflicted paths during an agent merge resolution |
+
+`.Issue` is the GitHub issue the task was created from. `.Issue.Number` is `0`
+when there is none — the same convention as `.Loop.Index` — so
+`{{ if .Issue.Number }}` lets one workflow serve linked and unlinked tasks.
+`Labels` is a list; everything else is a string. It is a snapshot taken at task
+creation and never re-read, so rendering it needs no network, and a fan-out lane
+inherits its parent's copy.
 
 Only completed steps are visible in `.Steps`. Parallel siblings are not
 visible to one another. Within a loop, later body steps see earlier steps from

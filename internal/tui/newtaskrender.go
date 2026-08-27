@@ -13,6 +13,7 @@ import (
 var ntLabels = [ntRowCount]string{
 	ntProject:     "project",
 	ntWorkflow:    "workflow",
+	ntIssue:       "issue",
 	ntTitle:       "title",
 	ntDescription: "description",
 	ntFields:      "fields",
@@ -61,7 +62,11 @@ func ntStageForRow(row ntRow) ntStage {
 		return ntStageProject
 	case ntWorkflow:
 		return ntStageWorkflow
-	case ntTitle, ntDescription, ntFields:
+	case ntIssue, ntTitle, ntDescription, ntFields:
+		// The issue row belongs to Task details, not to a stage of its own:
+		// picking one is how a human fills the title and description in, and
+		// separating the pick from what it fills would put the guess and its
+		// review on different screens (task 035).
 		return ntStageDetails
 	case ntBranch, ntBranchName, ntPriority:
 		return ntStageGit
@@ -80,7 +85,7 @@ func ntRowsForStage(stage ntStage) []ntRow {
 	case ntStageWorkflow:
 		return []ntRow{ntWorkflow}
 	case ntStageDetails:
-		return []ntRow{ntTitle, ntDescription, ntFields}
+		return []ntRow{ntIssue, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
 		return []ntRow{ntBranch, ntBranchName, ntPriority}
 	case ntStageExecution:
@@ -116,7 +121,7 @@ func (n *newTask) render(width, height int) string {
 func (n *newTask) renderCompact(height int) string {
 	lines := make([]string, 0, int(ntRowCount)+12)
 	cursorLine := 0
-	for row := ntProject; row < ntRowCount; row++ {
+	for _, row := range n.visibleRows() {
 		if row == n.cursor {
 			cursorLine = len(lines)
 		}
@@ -180,6 +185,10 @@ func (n *newTask) stageSummary(stage ntStage) string {
 	case ntStageWorkflow:
 		return firstNonEmpty(n.workflow, "Not selected")
 	case ntStageDetails:
+		if n.issue != nil {
+			return "#" + strconv.Itoa(n.issue.Number) + " · " +
+				firstNonEmpty(n.titleText(), "Title required")
+		}
 		return firstNonEmpty(n.titleText(), "Title required")
 	case ntStageGit:
 		return "Base " + firstNonEmpty(strings.TrimSpace(n.branch.Value()), "project default")
@@ -204,6 +213,9 @@ func (n *newTask) renderStage(stage ntStage) ([]string, int) {
 	}
 	cursorLine := len(lines)
 	for _, row := range ntRowsForStage(stage) {
+		if !n.rowVisible(row) {
+			continue
+		}
 		if row == n.cursor {
 			cursorLine = len(lines)
 		}
@@ -221,6 +233,11 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		n.reviewLine("project", n.rowValue(ntProject)),
 		n.reviewLine("workflow", n.rowValue(ntWorkflow)),
 		section("Task"),
+	)
+	if n.rowVisible(ntIssue) {
+		lines = append(lines, n.reviewLine("issue", n.rowValue(ntIssue)))
+	}
+	lines = append(lines,
 		n.reviewLine("title", n.rowValue(ntTitle)),
 		n.reviewLine("description", n.rowValue(ntDescription)),
 		n.reviewLine("fields", n.rowValue(ntFields)),
@@ -273,6 +290,8 @@ func (n *newTask) rowValue(row ntRow) string {
 		return p.Name + "  " + styleDim.Render(p.Path)
 	case ntWorkflow:
 		return n.workflowSummary()
+	case ntIssue:
+		return n.issueSummary()
 	case ntTitle:
 		if n.mode == ntEditing && n.cursor == ntTitle {
 			return n.titleIn.View()

@@ -1,0 +1,25 @@
+-- 0014_github_issue: the GitHub issue a task was created from (task 035,
+-- spec §5.3/§14).
+--
+-- One nullable JSON column, the shape 0012's pending_follow_up_json set: NULL
+-- means the task is not linked to an issue, and the payload is the normalized
+-- internal/github.Issue exactly as the daemon fetched it. Nothing queries
+-- inside it — no index, no generated column — so a linked task costs the same
+-- as any other on every board query (decision 3).
+--
+-- JSON rather than columns for two reasons. Labels stay a real list instead of
+-- a joined string, which is what lets `.Issue.Labels` be structured while a
+-- declared `labels` field gets the comma-joined spelling (decision 7). And the
+-- shape can grow when pull-request checking arrives without a second
+-- migration, which decision 10 explicitly leaves room for.
+--
+-- It is a **snapshot**, not a pointer. The issue is read once at task creation
+-- and every step renders from this row; an issue edited on GitHub afterwards
+-- is deliberately not reflected. That is the same reasoning that makes §5.3
+-- snapshot the workflow YAML: a run is reproducible, no network call enters
+-- the step path, and a step render still cannot fail for an external reason.
+--
+-- A `fan_out` lane inherits it verbatim from its parent (decision 9), for the
+-- reason lanes already inherit `fields_json`: a lane prompt that can read
+-- `.Task.Fields` but not `.Issue` would be an arbitrary hole.
+ALTER TABLE tasks ADD COLUMN github_issue_json TEXT; -- NULL = no linked issue

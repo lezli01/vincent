@@ -274,6 +274,10 @@ func (r *Runner) laneTask(env *stepEnv, lane workflow.Lane, order int) (*store.T
 		Title:       fmt.Sprintf("%s — %s", env.task.Title, lane.ID),
 		Description: env.task.Description,
 		Fields:      mergeFields(env.task.Fields, lane.Fields),
+		// The parent's issue snapshot, verbatim (task 035 decision 9). No
+		// lane re-fetches anything: `.Issue` is a property of the work, and
+		// a lane is doing part of the parent's work.
+		GitHubIssue: cloneIssue(env.task.GitHubIssue),
 		// workflow_name records where the lane came from: the registry name
 		// for a resolved lane, the synthetic path for an inline one.
 		WorkflowName:     workflow.LaneWorkflowName(lane, env.wf.Name, env.step.ID),

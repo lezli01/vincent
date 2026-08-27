@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
@@ -326,6 +327,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	})
 
 	startedAt := time.Now()
+	// The GitHub issue reader (task 035). It is built once and reads the
+	// config toggle per call through the API's own gate, so a hot reload
+	// governs the next request rather than requiring a restart.
+	githubClient := github.New(github.Options{Logger: logger})
+
 	srv := api.New(api.Deps{
 		Token:       token,
 		Config:      currentConfig,
@@ -338,6 +344,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Logger:      logger,
 		Store:       st,
 		Git:         git,
+		GitHub:      githubClient,
 		Worktrees:   worktrees,
 		Agents:      agents,
 		Catalog:     catalog,

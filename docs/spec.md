@@ -110,6 +110,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
 | 25 | Conditions between steps | `if:` guards any step (skip and carry on) and any fan-out lane or group sub-step (subset the set); `type: condition` ends the sequence with the task `done`; `allow_failure:` turns the failures a step itself produced into an advance, so a guard has a run's own findings to read. Guards are §8.4 templates that must render exactly `true` or `false`, re-evaluated every time and never cached (§7.7, task 015) |
+| 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26) |
 
 ## 4. Architecture
 
@@ -243,6 +244,7 @@ A unit of work delivered by running a workflow against a project.
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
+| `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
 
 
 *Amended 2026-08-17 (task 014).* A snapshot may carry a whole fan-out tree: a
@@ -1569,6 +1571,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration |
 | `.Loop` | *Added 2026-08-18 (task 016).* `Index` (1-based iteration, and **0** outside any loop, so a shared template can tell), `Item` (the `for_each` item this iteration runs on — a string; empty for a `count:` loop), `IsFirst`, `IsLast`. See §7.8 |
+| `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
@@ -2472,8 +2475,18 @@ One Go binary, `vincent`:
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2) |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
-| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered |
+| `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
+| `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code |
 | `vincent version` | Build info |
+
+*Added 2026-08-26 (task 035).* `vincent task add --github-issue <n>` creates a
+task from a GitHub issue. The flag carries the **number and nothing else**: the
+issue is resolved daemon-side (§13.2), so the command line and the TUI's
+previewed prefill go through one implementation and cannot drift into producing
+different tasks from the same issue. Every other flag still wins over what the
+issue would have filled in, and `--title` becomes optional when it is given —
+requiring both would make the flag a decoration on a title the user had to
+retype.
 
 *Amended 2026-08-15 (task 005).* `gc` breaks this table's noun-verb pattern
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
@@ -2748,6 +2761,8 @@ agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
+github:
+  enabled: true                # read GitHub issues, so a task can be created from one (§13.2)
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
@@ -2802,6 +2817,25 @@ succeeded — and that combination is a startup/reload **warning**, not a load f
 a key that is merely unreachable is not an invalid one, and refusing the file over it
 would revert every unrelated edit in the same save. Both are read per archive, so a
 hot reload reaches the next one.
+
+**`github` (task 035, added 2026-08-26).** Whether the daemon may read GitHub
+issues, so a task can be created from one (§5.3, §13.2, §15). It governs
+**reading only**: nothing under this key writes to GitHub, and no call is made
+from a step — the daemon calls at pick time and at create time and nowhere else.
+
+It is an opt-**out**, defaulting to `true`. It is inert on every project whose
+`origin` is not a github.com repository, and makes no call at all until a human
+opens the issue picker or names an issue on the command line, so on by default
+costs nothing unasked for. Setting it to `false` stops the daemon reading
+GitHub entirely: the TUI's issue row disappears, `GET
+/v1/projects/{id}/github` answers `disabled`, and `github_issue` on `POST
+/v1/tasks` is refused.
+
+There is deliberately **no token key here**. vincent stores no credential of
+its own: it drives `gh` when that is installed and authenticated, and otherwise
+reads `GITHUB_TOKEN` or `GH_TOKEN` out of the environment the daemon already
+inherited (§2's "secret management" non-goal, decision record row 26). Read per
+use, so a hot reload governs the next call rather than requiring a restart.
 
 **`tui` (task 009, added 2026-08-16).** The one section the daemon does not act
 on. It validates it, hot-reloads it with the rest of the file and serves it on
@@ -3119,6 +3153,35 @@ DELETE /v1/projects/{id}                hard-deletes the project and its task hi
                                         archived ones too — loses its branch if that branch has
                                         no commits past its base (§10, task 008); best-effort,
                                         local only, never a remote
+GET    /v1/projects/{id}/github         *Added 2026-08-26 (task 035).* The capability probe:
+                                        { enabled, repo?, available, reason?, message?, via? }.
+                                        `enabled` is the §12.3 toggle; `repo` is `owner/name`
+                                        derived from this project's `origin` at the point of use
+                                        and absent when it is not a github.com remote; `via` is
+                                        `gh` or `token` when available. `reason` is one of the
+                                        named unavailability reasons — `disabled`, `not_github`,
+                                        `no_credential`, `unauthorized`, `forbidden`,
+                                        `not_found`, `rate_limited`, `timeout`, `unreachable`,
+                                        `bad_response` — and never carries `gh`'s stderr or an
+                                        HTTP body; the daemon logs those.
+                                        It is its own endpoint rather than three fields on the
+                                        project DTO because the board lists projects constantly
+                                        and answering this there would probe `gh auth` per
+                                        project per refresh; and it is not inferred from a failed
+                                        listing, which would surface the reason only after the
+                                        call it exists to prevent. Answered from a short
+                                        daemon-side cache
+GET    /v1/projects/{id}/github/issues  *Added 2026-08-26 (task 035).* The project's issues,
+                                        newest first, never including pull requests.
+                                        `?state=` (open — the default — closed or all),
+                                        `?limit=`, and `?workflow=` which adds a `prefill`
+                                        object per row: { title, description, fields }, the
+                                        server's own answer to "what would creating a task from
+                                        this issue fill in". No `?q=`: a client filters what it
+                                        was given, as every §15 picker does.
+                                        An unusable integration is a **409** carrying
+                                        `details.reason` from the vocabulary above, not a 200
+                                        with an empty list
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
@@ -3210,7 +3273,7 @@ GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_
                                         drifts from the rows it counts.
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
-                                          model?, effort? }
+                                          model?, effort?, github_issue? }
                                         branch_name is used verbatim and wins over every
                                         template (§10, task 001)
                                         → task (state=queued); agent/model/effort form the
@@ -3220,6 +3283,24 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         The selected root workflow's §8.1.2 declarations are
                                         validated before insert. Additional, undeclared field
                                         names remain accepted and are recorded on the task
+                                        *Added 2026-08-26 (task 035):* github_issue is an issue
+                                        **number**. The daemon fetches it, computes the same
+                                        prefill the issues endpoint previews, and folds it into
+                                        the request wherever the caller left a value unset —
+                                        **any value supplied explicitly wins**. Presence is what
+                                        counts for `fields` and `description`: a key sent with an
+                                        empty value is a row a human cleared on purpose and is
+                                        left cleared, which is what lets the §15 form send its
+                                        emptied rows verbatim. Only `title` keys on blank as well
+                                        as absent — an untitled task is not something anyone
+                                        creates on purpose. The
+                                        resulting issue snapshot is persisted on the task (§5.3)
+                                        and served back on every task representation as
+                                        `github_issue`. `title` becomes optional when
+                                        github_issue is given, because the issue supplies one.
+                                        An unusable integration is the same **409** with
+                                        `details.reason` the issues endpoint returns; a request
+                                        without github_issue makes no GitHub call at all
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
@@ -3467,6 +3548,13 @@ CREATE TABLE tasks (
   parent_step_index   INTEGER,                -- the fan_out step's index in the parent
   lane_id             TEXT,                   -- the lane's id in that step
   lane_order          INTEGER,
+  github_issue_json   TEXT,                   -- the GitHub issue this task was created from (§5.3, task 035,
+                                              -- migration 0014); NULL = no linked issue. A snapshot: written
+                                              -- once at creation and never refreshed, which is what lets
+                                              -- `.Issue` (§8.4) render offline. Nothing queries inside it — no
+                                              -- index, no generated column — so a linked task costs the same
+                                              -- as any other on every board query. A fan_out lane inherits
+                                              -- its parent's copy verbatim (§7.6)
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,
@@ -3676,7 +3764,8 @@ stream for the live tail.
    round's steps share one index and are named individually beneath that header,
    the way a `parallel` group's members are.
 3. **New task.** Project picker → workflow picker (shows description + step list;
-   flags steps whose agent is unavailable) → title → description (inline or
+   flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
+   title → description (inline or
    `$EDITOR`) → fields → base branch (default prefilled) →
    priority → optional agent/model/effort override (pickers fed by
    `GET /v1/agents` with provenance-tagged options and free-text entry;
@@ -3693,6 +3782,24 @@ stream for the live tail.
    catalog makes a viewport with a scroll indicator and incremental filtering
    mandatory; the flagging of unavailable agents grows a second reason —
    *installed but not authenticated* (`logged_in: false`, §9.5).
+   **GitHub issue row (task 035, added 2026-08-26):** a conditional row between
+   workflow and title. It is present **only** when
+   `GET /v1/projects/{id}/github` says this project's issues can be read — the
+   integration on, the project's `origin` a github.com repository, a credential
+   that answers — and is simply absent otherwise, in all three cases, so the
+   form never offers a control that would fail. When it is absent the form makes
+   no GitHub call at all. Its picker has the same windowed, type-filterable
+   shape as every other one and lists open issues newest first, plus a `(none)`
+   row that unlinks. Selecting an issue drops the daemon's computed prefill into
+   the form's **own editable rows** — title, description with its trailing
+   `GitHub issue #N: <url>` line, and any §8.1.2 declared field the mapping
+   filled — because the mapping guesses, and a guess has to be visible before
+   creation rather than applied silently at run time. Nothing is locked: every
+   prefilled value can be rewritten or cleared, and a cleared value stays
+   cleared (§13.2's precedence rule). It belongs to the **Task details** stage
+   of the guided layout, not a stage of its own: picking an issue is how the
+   title and description get filled in, and separating the pick from what it
+   fills would put the guess and its review on different screens.
    **Guided wide layout (task 020, added 2026-08-20):** the same row order is
    grouped into six visual stages — Project, Workflow, Task details, Git &
    priority, Execution, Review. The stage is derived from the field cursor,
@@ -4213,6 +4320,19 @@ currently true to show (§15 view 6).
     (§14 — every task stores the workflow YAML as it stood at creation). It is
     separate because "412 MB of events" and "412 MB of snapshots" point at
     different decisions, and a single byte count cannot tell them apart.
+
+  *Amended 2026-08-26 (task 035): the GitHub integration is reported too.* The
+  same "why is nothing offered?" question the rows above answer for tasks has a
+  GitHub-shaped version — why is the new-task form not offering an issue
+  picker? — and it had exactly one surface: a line in the daemon log. The
+  report now carries `github`: the `github.enabled` toggle, whether `gh` was
+  found and at what path and version, whether `gh auth status` succeeds,
+  whether `GITHUB_TOKEN` or `GH_TOKEN` is set (the variable's **name**, never
+  its value — a diagnostic is something people paste into issues), and whether
+  issues are readable and by which credential. **Nothing here is a problem and
+  nothing moves the exit code:** every "no" it can report leaves task creation
+  without an issue working exactly as it did before, so accusing the machine of
+  being unhealthy over it would be wrong.
   - **`oldest_event_at`**, on `/v1/doctor` only, null on an install with no events.
     A count without a span is not extrapolable.
 
@@ -4442,5 +4562,17 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   the first `for_each` that cannot filter at its source.
 - LLM-as-judge verification as an optional third success layer.
 - Multi-user / remote daemons / fleet view across hosts.
-- Task templates & recurring tasks; issue-tracker ingestion (Jira → task).
+- Task templates & recurring tasks; ~~issue-tracker ingestion (Jira → task)~~ —
+  **the GitHub half promoted out of future work, 2026-08-26** (§5.3, §8.4,
+  §12.3, §13.2, §14, §15; decision record row 26, task 035): a task can be
+  created *from* a GitHub issue, which prefills it and reaches templates as
+  `.Issue`. It is **reading only** — nothing writes to GitHub, so decision
+  record row 11 is untouched — and the issue is snapshotted at creation rather
+  than re-fetched, so the step path is unchanged. Jira and task templates stay
+  deferred; nothing here was a decision *against* them, only a v1 scope line,
+  and v1 shipped. **Pull requests** — checking, listing or reporting on them —
+  are the intended next piece and are deliberately not built: the normalized
+  types live in their own package, the capability probe already answers "is
+  this project GitHub-based and reachable", and the task column can carry a PR
+  shape without a second migration.
 - Container/VM-sandboxed step execution.
