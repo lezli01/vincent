@@ -11,31 +11,6 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-27)
 
-
-### Features
-
-* **api:** serve the step status message, and accept one ([4aaef4c](https://github.com/lezli01/vincent/commit/4aaef4c89fe4d0810ccb38956b273fc980eda3d2))
-* **cli:** add `vincent workflow init` to write a workflow file ([84dca03](https://github.com/lezli01/vincent/commit/84dca032cbad3b8b9e0dec86cb870190e7f7c76b))
-* **cli:** add vincent status ([c5b939d](https://github.com/lezli01/vincent/commit/c5b939d0238016715b55fa823d436fa228bc5a09))
-* **github:** create a task from a GitHub issue ([d963a2c](https://github.com/lezli01/vincent/commit/d963a2cab90f0f29ec00efde53ddbdf5c68ec19e))
-* **recovery:** guard PID reuse with an exact native process identity ([1bd8a56](https://github.com/lezli01/vincent/commit/1bd8a56355449d9dd872fea908294fdf3316ac1e))
-* **release:** sign, notarize and staple the macOS artifacts ([bbf7a81](https://github.com/lezli01/vincent/commit/bbf7a810c1f71349140eb4f5519f1972e40d4fdf))
-* **store:** record what a step says about itself ([ca28e4d](https://github.com/lezli01/vincent/commit/ca28e4d9ce913093778d84513d786d869dc31845))
-* **taskrun:** accept a step's status, and give agent steps the VINCENT_* env ([0ac9a11](https://github.com/lezli01/vincent/commit/0ac9a11b2c10f3cf0d40ee031b52f80418df9855))
-* **taskrun:** cap what one task may spend, enforced at attempt boundaries ([8fd5763](https://github.com/lezli01/vincent/commit/8fd576366101ef40839340cced9c31c407c307cf)), closes [#97](https://github.com/lezli01/vincent/issues/97)
-* **tui:** show a step's own status, and finally show the result summary ([e72f2f0](https://github.com/lezli01/vincent/commit/e72f2f0f2bc8bd5fba6ba82c50a7fdd8c4498326))
-* **workflows:** block a release on either changelog, and stop thrashing on pending checks ([69d5a3f](https://github.com/lezli01/vincent/commit/69d5a3fb98b87bd9c432d3883faa1964a92c8a65))
-
-
-### Bug Fixes
-
-* **api:** bound an answers key as question text, not as an identifier ([0b6fd68](https://github.com/lezli01/vincent/commit/0b6fd681ab706547089167edf6ae5525a30d00f3)), closes [#197](https://github.com/lezli01/vincent/issues/197)
-* **procx:** end every native identity in the PID it names ([41d2a25](https://github.com/lezli01/vincent/commit/41d2a2598a95fe3f6e9703130693852164979ef0))
-* **store:** renumber the step-status migration to 0015 ([1c6f767](https://github.com/lezli01/vincent/commit/1c6f767eaf21e35be56bde2e5d7a20b614919003))
-* **workflows:** pace every retry and poll, and stop a blip from ending a wait ([1f679f4](https://github.com/lezli01/vincent/commit/1f679f462a73db7560d988e3b0cf4345b456c707))
-
-## [Unreleased]
-
 ### Added
 
 - **Create a task from a GitHub issue.** Most work in a GitHub-hosted repository
@@ -130,6 +105,62 @@ list with the user-facing context a commit subject cannot carry.
   agent runs can address the task it belongs to. This is what makes
   `vincent status` work from an agent's shell tool, and it is useful on its own.
 
+- **`vincent workflow init` writes a workflow file for you.** The CLI's workflow
+  surface was `ls` and `validate`, neither of which creates anything, so anything
+  past a one-off ad-hoc run meant reading the schema reference, hunting for
+  `examples/`, copying one by hand, working out which of the two scope
+  directories it belongs in, and validating in hope. `vincent workflow init
+  <name> [--from <example>] [--project N] [--json]` now writes a valid file into
+  the right directory and prints the path. With no `--from` you get a commented
+  one-agent-step skeleton whose comments name what a first author otherwise
+  misses — `command` and `manual` steps, `check` as a *field* on agent and
+  command steps rather than a fourth type, `max_retries`, `timeout`. `--from`
+  writes one of the shipped `examples/*.yaml` with its comments intact, embedded
+  from the real published files rather than a copy that can drift, and the
+  accepted values are read from that set at run time, so a new example is offered
+  the day it lands. The default global scope resolves with no daemon at all;
+  `--project N` needs one only to turn the id into a repository root. Nothing is
+  ever clobbered: the file is opened `O_CREATE|O_EXCL`, and a *name* another file
+  in the same scope already declares is refused too.
+  ([#203](https://github.com/lezli01/vincent/pull/203))
+
+- **macOS downloads are signed, notarized and stapled.** Every darwin binary is
+  codesigned with an Apple Developer ID Application identity under the hardened
+  runtime with a secure timestamp, and notarized with Apple before the release
+  publishes. A new `vincent_*_darwin_universal.pkg` installer is signed with a
+  Developer ID Installer identity, notarized and **stapled** — it is the only
+  artifact that can carry a notarization ticket, so it is the only one whose
+  first launch works with no network. The Homebrew cask no longer runs
+  `xattr -dr com.apple.quarantine`: that hook existed only because signing was
+  descoped, and keeping it would go on bypassing the protection just paid for.
+  Windows is deliberately untouched — Authenticode stays descoped, and the
+  SmartScreen prompt is still documented rather than papered over. A stable tag
+  now *fails* without a signing identity, while a dry run or a fork build warns
+  and produces unsigned artifacts, so a contributor needs no secrets and an
+  unsigned stable release is impossible rather than merely unlikely.
+  ([#196](https://github.com/lezli01/vincent/pull/196))
+
+- **A task can be capped on what it spends.** Cost had been measured on every
+  attempt, rolled up across the task and rendered on the board, and nothing ever
+  read it to decide anything — which left a gap between the two guards that do
+  exist: `agent_timeout` bounds one attempt's wall clock and
+  `transcript_max_bytes` its bytes on disk, and an agent that loops
+  *productively* trips neither, so it can spend its full timeout per attempt
+  across the whole retry budget with only a human noticing to stop it. The new
+  top-level `max_task_cost_usd` closes that gap. When set, the engine compares
+  the task's rollup against it immediately after each attempt's row is finished
+  and blocks the task with `cost_limit` once it is over. The check sits at
+  *attempt* boundaries rather than step boundaries on purpose: a check at the top
+  level would let a fifty-iteration loop, or a step's entire retry budget, run
+  before the cap was consulted once. It is a block, not a step failure — no retry
+  is consumed, the finished attempt keeps its own state and reason, the step
+  cursor does not advance, and a due retry does not fire, because spending more
+  money to reach the same wall is not a recovery. The default is `0`, meaning
+  off. It counts one task, so a `fan_out` tree spends a multiple of it, and it is
+  inert on codex and cursor, which report no cost at all — "unreported" and
+  "free" stay different facts.
+  ([#201](https://github.com/lezli01/vincent/pull/201))
+
 ### Changed
 
 - **vincent is once again released under the MIT License.** The source,
@@ -143,6 +174,59 @@ list with the user-facing context a commit subject cannot carry.
   transcript. It now appears as a dim line under any attempt that did not
   succeed, which is where the question "what went wrong" is actually being
   asked. ([#199](https://github.com/lezli01/vincent/issues/199))
+
+### Fixed
+
+- **Crash recovery can no longer kill an unrelated process.** Recovery decided
+  whether a journaled PID still held the process it recorded by comparing the
+  daemon's own wall clock at spawn against the kernel's start time for that PID,
+  accepting anything within ±5 seconds — two clocks and one loose comparison,
+  leaving a narrow crash/PID-reuse window in which a stranger's process could be
+  killed as an orphan. A spawn now journals an exact, opaque, per-OS process
+  identity beside the PID — Linux start ticks joined with the kernel boot id,
+  macOS the fork stamp to the microsecond, Windows the raw creation FILETIME —
+  and recovery kills only on a byte-for-byte match. Keeping the Linux value a
+  count since boot rather than an absolute instant is what makes it immune to an
+  NTP step or a suspend/resume, and the boot id makes a reboot a guaranteed
+  mismatch. A row written before the upgrade, or by a spawn whose identity read
+  failed, keeps the old comparison exactly as it was, so no installation is worse
+  off — and the rule underneath is unchanged in both branches: what cannot be
+  proved is not killed.
+  ([#195](https://github.com/lezli01/vincent/pull/195))
+
+- **A question longer than 256 bytes can be answered again.** One bound served
+  two unrelated keys. A task *field* key is an identifier a human or a workflow
+  author types, and 256 bytes is generous for one; an answers key is not chosen
+  by the caller at all — it is the agent's verbatim question text, which is the
+  lookup key and is written back to the CLI unchanged, so no layer in between may
+  shorten it. Bounding the two alike made any question past that length
+  unanswerable: the daemon parked on, persisted and rendered a question it then
+  refused every answer to, and the task held its concurrency slot in
+  `awaiting_input` until it was cancelled or the 24-hour input timeout expired.
+  Long questions are routine on claude, the one adapter with mid-run input.
+  Answers keys now take their own bound, sized like the answer value they arrive
+  beside; the request-body bound and the field and value count limits are
+  untouched, so nothing became unbounded.
+  ([#198](https://github.com/lezli01/vincent/pull/198))
+
+- **The workflows bundled with this repository no longer retry instantly, and a
+  blip no longer ends a wait.** None of them set `retry_backoff`, so every retry
+  fired the moment the attempt failed, and three long waits could be ended
+  outright by a single transient GitHub API failure — one unguarded call under
+  `set -e` was enough to throw away a 75-minute wait and block the release, and
+  the same shape would have reported an already-released tag as a failed release.
+  Every poll loop is now paced rather than fixed and reads a failed call as "no
+  answer yet", tolerating a run of them before reporting the outage as itself
+  instead of as an empty result; two postconditions that raced the effect they
+  check now wait for the value to settle and still fail if it never does. The
+  `release` workflow also gained a `changelog` step that reads both changelogs at
+  the release PR head and blocks on the exact faults 0.6.0 shipped — a surviving
+  `Unreleased` heading, Release Please's mechanical commit list left unreplaced,
+  a subject recorded twice because a conventional PR title reached its own merge
+  commit body, and a `site-changelog.md` with no section for the version — while
+  `verify-base` stopped treating "not finished" as "no" and now waits out pending
+  checks rather than failing on them.
+  ([#193](https://github.com/lezli01/vincent/pull/193))
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
