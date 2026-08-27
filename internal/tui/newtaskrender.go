@@ -49,11 +49,11 @@ var ntStageLabels = [ntStageCount]string{
 
 var ntStageHints = [ntStageCount]string{
 	ntStageProject:   "Choose the repository that will own this task.",
-	ntStageWorkflow:  "Choose what Vincent should run and inspect its steps.",
+	ntStageWorkflow:  "Choose what vincent should run and inspect its steps.",
 	ntStageDetails:   "Describe the outcome and add any workflow fields.",
 	ntStageGit:       "Choose the base, task branch, and queue priority.",
 	ntStageExecution: "Keep workflow defaults or override the agent selection.",
-	ntStageReview:    "Review the complete request before Vincent creates it.",
+	ntStageReview:    "Review the complete request before vincent creates it.",
 }
 
 func ntStageForRow(row ntRow) ntStage {

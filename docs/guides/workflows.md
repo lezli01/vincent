@@ -24,7 +24,7 @@ parts you want to change.
 
 ## Agent-assisted authoring
 
-The portable [Vincent Workflows skill](../../skills/vincent-workflows/SKILL.md)
+The portable [vincent Workflows skill](../../skills/vincent-workflows/SKILL.md)
 helps supporting coding agents design and validate these files:
 
 ```sh

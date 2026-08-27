@@ -1,0 +1,102 @@
+[
+  {
+    "order": 1,
+    "path": "docs/why/the-workflow-i-kept-repeating-and-how-vincent-was-born.md",
+    "url": "/docs/why/the-workflow-i-kept-repeating-and-how-vincent-was-born.html",
+    "title": "The workflow I kept repeating—and how vincent was born",
+    "seo_title": "How repeated QA workflows led to vincent",
+    "description": "See how a repeated QA-to-fix workflow—validate, reproduce, test, document, review, open a PR, and update the ticket—led to vincent.",
+    "image": "/docs/assets/social/the-workflow-i-kept-repeating-and-how-vincent-was-born.png",
+    "image_alt": "The workflow I kept repeating—and how vincent was born"
+  },
+  {
+    "order": 2,
+    "path": "docs/why/spend-inference-only-where-it-belongs.md",
+    "url": "/docs/why/spend-inference-only-where-it-belongs.html",
+    "title": "Spend inference only where it belongs",
+    "seo_title": "Cost-effective agentic workflows with deterministic commands",
+    "description": "Learn how vincent keeps deterministic work in commands and reserves costly agent inference for the changes that actually require reasoning.",
+    "image": "/docs/assets/social/spend-inference-only-where-it-belongs.png",
+    "image_alt": "Spend inference only where it belongs"
+  },
+  {
+    "order": 3,
+    "path": "docs/why/done-is-not-a-success-condition.md",
+    "url": "/docs/why/done-is-not-a-success-condition.html",
+    "title": "“Done” is not a success condition",
+    "seo_title": "Why agentic work needs deterministic success checks",
+    "description": "Learn why agentic workflows need explicit checks, tests, and success criteria instead of accepting an agent's claim that the work is done.",
+    "image": "/docs/assets/social/done-is-not-a-success-condition.png",
+    "image_alt": "“Done” is not a success condition"
+  },
+  {
+    "order": 4,
+    "path": "docs/why/automation-without-giving-up-control.md",
+    "url": "/docs/why/automation-without-giving-up-control.html",
+    "title": "Automation without giving up control",
+    "seo_title": "Human approval gates for safe agentic automation",
+    "description": "See how vincent combines automated execution with human approval gates for review, release, and other consequential decisions.",
+    "image": "/docs/assets/social/automation-without-giving-up-control.png",
+    "image_alt": "Automation without giving up control"
+  },
+  {
+    "order": 5,
+    "path": "docs/why/the-terminal-should-not-own-the-work.md",
+    "url": "/docs/why/the-terminal-should-not-own-the-work.html",
+    "title": "The terminal should not own the work",
+    "seo_title": "Durable AI agent execution beyond terminal sessions",
+    "description": "Learn how vincent moves coding-agent work out of fragile terminal sessions and into durable tasks that survive disconnects and restarts.",
+    "image": "/docs/assets/social/the-terminal-should-not-own-the-work.png",
+    "image_alt": "The terminal should not own the work"
+  },
+  {
+    "order": 6,
+    "path": "docs/why/failure-should-be-a-state-not-a-dead-end.md",
+    "url": "/docs/why/failure-should-be-a-state-not-a-dead-end.html",
+    "title": "Failure should be a state, not a dead end",
+    "seo_title": "Recoverable agent workflows with retained context",
+    "description": "See how vincent models failures as recoverable workflow states, retaining logs, context, and worktrees for retry, takeover, or investigation.",
+    "image": "/docs/assets/social/failure-should-be-a-state-not-a-dead-end.png",
+    "image_alt": "Failure should be a state, not a dead end"
+  },
+  {
+    "order": 7,
+    "path": "docs/why/one-task-one-branch-no-checkout-traffic-jam.md",
+    "url": "/docs/why/one-task-one-branch-no-checkout-traffic-jam.html",
+    "title": "One task, one branch, no checkout traffic jam",
+    "seo_title": "Isolated git worktrees for concurrent coding agents",
+    "description": "Learn how vincent uses isolated git worktrees so multiple coding-agent tasks can run concurrently without branch switching or file conflicts.",
+    "image": "/docs/assets/social/one-task-one-branch-no-checkout-traffic-jam.png",
+    "image_alt": "One task, one branch, no checkout traffic jam"
+  },
+  {
+    "order": 8,
+    "path": "docs/why/a-workflow-is-executable-team-knowledge.md",
+    "url": "/docs/why/a-workflow-is-executable-team-knowledge.html",
+    "title": "A workflow is executable team knowledge",
+    "seo_title": "Versioned agent workflows as executable team knowledge",
+    "description": "See how versioned vincent workflows turn recurring engineering practices into reviewable, reusable, and executable team knowledge.",
+    "image": "/docs/assets/social/a-workflow-is-executable-team-knowledge.png",
+    "image_alt": "A workflow is executable team knowledge"
+  },
+  {
+    "order": 9,
+    "path": "docs/why/bring-your-agent-keep-your-control-plane.md",
+    "url": "/docs/why/bring-your-agent-keep-your-control-plane.html",
+    "title": "Bring your agent, keep your control plane",
+    "seo_title": "Orchestrate Claude Code, Codex, and Cursor locally",
+    "description": "Use Claude Code, Codex, or Cursor behind vincent's local control plane while keeping workflow policy, state, and evidence independent of one agent.",
+    "image": "/docs/assets/social/bring-your-agent-keep-your-control-plane.png",
+    "image_alt": "Bring your agent, keep your control plane"
+  },
+  {
+    "order": 10,
+    "path": "docs/why/from-a-wall-of-terminals-to-one-control-room.md",
+    "url": "/docs/why/from-a-wall-of-terminals-to-one-control-room.html",
+    "title": "From a wall of terminals to one control room",
+    "seo_title": "A control room for concurrent coding-agent workloads",
+    "description": "See how vincent replaces a wall of agent terminals with one control room for concurrent tasks, live output, approvals, diffs, and recovery.",
+    "image": "/docs/assets/social/from-a-wall-of-terminals-to-one-control-room.png",
+    "image_alt": "From a wall of terminals to one control room"
+  }
+]

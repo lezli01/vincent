@@ -1,0 +1,148 @@
+[
+  {
+    "path": "README.md",
+    "seo_title": "Local AI coding-agent workflow orchestrator",
+    "description": "Run Claude Code, Codex, and Cursor through durable, verified workflows in isolated git worktrees with vincent's local-first control plane."
+  },
+  {
+    "path": "CODE_OF_CONDUCT.md",
+    "seo_title": "Code of conduct",
+    "description": "Standards for respectful, inclusive participation in the vincent open-source community."
+  },
+  {
+    "path": "SECURITY.md",
+    "seo_title": "Security policy",
+    "description": "Learn how to report security vulnerabilities in vincent and what maintainers need to investigate them safely."
+  },
+  {
+    "path": "site-changelog.md",
+    "seo_title": "vincent changelog",
+    "description": "Review notable features, fixes, and other changes delivered in each vincent release."
+  },
+  {
+    "path": "site-contributing.md",
+    "seo_title": "Contributing to vincent",
+    "description": "Set up a vincent development environment, run the quality gates, and prepare a focused contribution."
+  },
+  {
+    "path": "skills/vincent-workflows/SKILL.md",
+    "seo_title": "vincent workflow authoring skill",
+    "description": "Author and validate vincent workflow YAML with guidance for agents, commands, gates, checks, retries, conditions, loops, and fan-out."
+  },
+  {
+    "path": "docs/README.md",
+    "seo_title": "vincent documentation",
+    "description": "Install, configure, and operate vincent's local-first workflow orchestrator for AI coding agents."
+  },
+  {
+    "path": "docs/faq.md",
+    "seo_title": "vincent frequently asked questions",
+    "description": "Find answers about vincent workflows, agents, worktrees, permissions, costs, and task recovery."
+  },
+  {
+    "path": "docs/features.md",
+    "seo_title": "vincent features",
+    "description": "Explore durable workflows, isolated worktrees, deterministic checks, human gates, scheduling, and multi-agent visibility in vincent."
+  },
+  {
+    "path": "docs/getting-started/concepts.md",
+    "seo_title": "Core vincent concepts",
+    "description": "Understand vincent projects, workflows, tasks, worktrees, schedulers, agent adapters, events, and transcripts."
+  },
+  {
+    "path": "docs/getting-started/installation.md",
+    "seo_title": "Install vincent",
+    "description": "Install and verify vincent on Windows, macOS, or Linux, then connect a locally authenticated coding-agent CLI."
+  },
+  {
+    "path": "docs/getting-started/quickstart.md",
+    "seo_title": "vincent quickstart",
+    "description": "Register a repository and run, review, approve, and archive your first managed coding-agent task with vincent."
+  },
+  {
+    "path": "docs/guides/agents.md",
+    "seo_title": "Configure coding-agent CLIs",
+    "description": "Compare Claude Code, Codex, and Cursor integration, authentication, models, effort, permissions, input, and cost reporting."
+  },
+  {
+    "path": "docs/guides/running-at-login.md",
+    "seo_title": "Run vincent at login",
+    "description": "Start the vincent daemon automatically with launchd, systemd, or Windows Task Scheduler."
+  },
+  {
+    "path": "docs/guides/scripting.md",
+    "seo_title": "Script and automate vincent",
+    "description": "Automate vincent with JSON CLI output, exit codes, the localhost REST API, and server-sent events."
+  },
+  {
+    "path": "docs/guides/troubleshooting.md",
+    "seo_title": "Troubleshoot vincent",
+    "description": "Diagnose daemon, workflow, agent, worktree, permission, and task failures in vincent."
+  },
+  {
+    "path": "docs/guides/tui.md",
+    "seo_title": "Use the vincent TUI",
+    "description": "Operate vincent's task board, timelines, live output, diffs, workflow graph, and recovery actions from the terminal."
+  },
+  {
+    "path": "docs/guides/workflows.md",
+    "seo_title": "Write reliable agent workflows",
+    "description": "Design reliable vincent workflows with agents, commands, checks, gates, templates, retries, conditions, loops, and fan-out."
+  },
+  {
+    "path": "docs/platforms/linux.md",
+    "seo_title": "vincent on Linux",
+    "description": "Install, configure, and run vincent on Linux with systemd integration and native filesystem protections."
+  },
+  {
+    "path": "docs/platforms/macos.md",
+    "seo_title": "vincent on macOS",
+    "description": "Install, configure, and run vincent on macOS with launchd integration and local coding-agent CLIs."
+  },
+  {
+    "path": "docs/platforms/windows.md",
+    "seo_title": "vincent on Windows",
+    "description": "Install, configure, and run vincent on Windows with native worktrees, job objects, and Task Scheduler integration."
+  },
+  {
+    "path": "docs/reference/api.md",
+    "seo_title": "vincent HTTP API reference",
+    "description": "Integrate with vincent's localhost REST API and server-sent event stream for projects, tasks, workflows, and approvals."
+  },
+  {
+    "path": "docs/reference/cli.md",
+    "seo_title": "vincent CLI reference",
+    "description": "Use vincent CLI commands for the daemon, projects, workflows, tasks, approvals, recovery, configuration, and diagnostics."
+  },
+  {
+    "path": "docs/reference/configuration.md",
+    "seo_title": "vincent configuration reference",
+    "description": "Configure vincent's daemon, agents, workspaces, scheduler, permissions, secrets, costs, and retention."
+  },
+  {
+    "path": "docs/reference/files.md",
+    "seo_title": "vincent files and directories",
+    "description": "Locate vincent configuration, state, logs, transcripts, worktrees, sockets, and generated task artifacts on every platform."
+  },
+  {
+    "path": "docs/reference/task-lifecycle.md",
+    "seo_title": "vincent task lifecycle",
+    "description": "Understand vincent task states, step transitions, approvals, retries, cancellation, recovery, and archival."
+  },
+  {
+    "path": "docs/reference/workflow-schema.md",
+    "seo_title": "vincent workflow YAML schema",
+    "description": "Reference every vincent workflow YAML field for agents, commands, checks, gates, conditions, retries, loops, parallelism, and includes."
+  },
+  {
+    "path": "docs/security-model.md",
+    "seo_title": "vincent security model",
+    "description": "Understand vincent's localhost trust boundary, agent permissions, secret handling, process isolation, and workflow safety controls."
+  },
+  {
+    "path": "docs/why/README.md",
+    "seo_title": "Why vincent is awesome",
+    "description": "Explore why vincent makes agentic development durable, verifiable, cost-effective, recoverable, and easier to control.",
+    "schema_type": "CollectionPage"
+  }
+]

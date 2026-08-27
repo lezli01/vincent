@@ -353,7 +353,7 @@ vincent currently follows **pre-1.0 Semantic Versioning**. The config file,
 workflow YAML schema, REST API and CLI flags may change in a minor release — pin
 a version if you script against them. Patch releases are fixes only, and the
 on-disk database migrates forward automatically. Full policy and release history:
-[CHANGELOG.md](CHANGELOG.md).
+[changelog](https://lezli01.is-a.dev/vincent/changelog.html).
 
 ## Quickstart
 
@@ -457,6 +457,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 **Start here**
 
 - [Features](docs/features.md) — the product tour and common use cases
+- [Why vincent is awesome](docs/why/README.md) — the stories and recurring
+  workflows that led to it
 - [Installation](docs/getting-started/installation.md) — download, verify, and
   install an agent CLI
 - [Quickstart](docs/getting-started/quickstart.md) — first task, end to end
@@ -492,7 +494,7 @@ and native control flow, and validates generated workflow YAML.
 [HTTP API](docs/reference/api.md)
 
 **Also** — [Security model](docs/security-model.md) · [FAQ](docs/faq.md) ·
-[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+[Changelog](https://lezli01.is-a.dev/vincent/changelog.html) · [Contributing](https://lezli01.is-a.dev/vincent/contributing.html)
 
 ## Build & Test
 
@@ -529,7 +531,7 @@ three platforms.
 Contributions of every size are welcome — bug reports, docs, test cases, and
 features. Start here:
 
-- Read the [Contributing guide](CONTRIBUTING.md) for development setup, build
+- Read the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html) for development setup, build
   and test commands, and the commit-message convention.
 - Be a good neighbor: this project follows a
   [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -540,7 +542,7 @@ All changes land via pull request to `master`, merged with merge commits (no
 squashing), using [Conventional Commits](https://www.conventionalcommits.org/).
 Conventional prefixes belong on commit messages; PR titles use plain language so
 release automation does not duplicate the change through the merge commit.
-Details are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Details are in the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html).
 
 ## Security
 

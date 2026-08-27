@@ -97,7 +97,7 @@ one-off renderer.
 - Show a workflow's control-flow shape in the TUI, not just its top-level list.
 - Correctly represent sequence, `parallel`, `fan_out`, merge, guards,
   `condition`, `loop`, and `break`.
-- Preserve Vincent's daemon/API boundary: the TUI receives normalized workflow
+- Preserve vincent's daemon/API boundary: the TUI receives normalized workflow
   structure from the daemon and never parses repository workflow files itself.
 - Keep Bubble Tea v2, Bubbles v2 and Lip Gloss v2 as the only TUI framework
   stack.
@@ -112,7 +112,7 @@ one-off renderer.
 - Creating, deleting or changing workflow steps from the TUI.
 - Writing YAML or preserving YAML comments/formatting.
 - Drag-and-drop or mouse-first editing.
-- A general-purpose graph visualization library inside Vincent.
+- A general-purpose graph visualization library inside vincent.
 - Visualizing live task execution state; this task visualizes workflow
   definitions. Runtime overlays can be added later against the same node ids.
 - Recursively expanding a lane that references another named workflow. The
@@ -147,7 +147,7 @@ make a future builder coordinate edits across both.
 containment but not a fan-out join, a condition that exits a sequence, or a loop
 back-edge without inventing false hierarchy.
 
-### 2. `workflowgraph` is a Vincent-owned component, not a third-party graph widget
+### 2. `workflowgraph` is a vincent-owned component, not a third-party graph widget
 
 *2026-08-18.* Add a focused package under `internal/tui/workflowgraph`. Its
 public surface to the rest of the TUI is small: load a definition, set size,
@@ -160,7 +160,7 @@ events.
 
 Wanda is useful prior art for terminal graph navigation and layout ideas, but is
 not a dependency for 017. Pulling in a graph widget whose current Charm versions
-or bundled layout engine differ from Vincent's stack would trade a small amount
+or bundled layout engine differ from vincent's stack would trade a small amount
 of drawing code for a large integration surface and binary-size cost.
 
 **Beat:** depending on Graphviz or an ELK/elkjs bridge for the first version.
@@ -295,7 +295,7 @@ implement those mutation modes.
 The workflows takeover keeps its current list navigation. Expanding a workflow
 shows the graph; an explicit focus action transfers input to the graph viewport,
 and `Esc` returns one layer to the workflow list before a later `Esc` leaves the
-takeover. This preserves Vincent's one-layer-per-Escape rule.
+takeover. This preserves vincent's one-layer-per-Escape rule.
 
 Selection movement is geometry-aware rather than source-index-only: a right
 move from one fan-out lane should prefer the nearest node to its right, while a

@@ -22,7 +22,7 @@ WinGet is the shortest system-managed path:
 winget install --id lezli01.Vincent --exact
 ```
 
-Or use Vincent's Scoop bucket:
+Or use vincent's Scoop bucket:
 
 ```powershell
 scoop bucket add vincent https://github.com/lezli01/scoop-bucket

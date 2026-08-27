@@ -180,7 +180,7 @@ winget:
     ids: [vincent]
     publisher: László Szabó
     package_identifier: lezli01.Vincent
-    package_name: Vincent
+    package_name: vincent
     default_locale: en-US
     short_description: "Vendor-independent control plane for native coding-agent CLIs"
     description: >-

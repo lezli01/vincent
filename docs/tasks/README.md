@@ -36,7 +36,7 @@ the living engineering specification records implementation contracts.
 | [020](020-guided-takeover-layouts.md) | Guided takeover layouts for task, project, and workflow views | ⚠ verification blocked (6/7) |
 | [021](021-package-distribution-channels.md) | WinGet, Scoop, mise, deb, and rpm distribution | ⚠ verification blocked (5/7) |
 | [022](022-workflow-fields.md) | Workflow-declared task fields | ⚠ verification blocked (6/7) |
-| [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware Vincent workflow authoring skill | ✅ done (10/10) |
+| [023](023-vincent-workflow-authoring-skill.md) | Portable, cost-aware vincent workflow authoring skill | ✅ done (10/10) |
 | [024](024-create-workflow-builtin.md) | `create-workflow`, a built-in that writes workflows | ✅ done (7/7) |
 | [025](025-ad-hoc-repair-agent.md) | An ad-hoc repair agent for a blocked step | ✅ done (8/8) |
 | [026](026-agent-quota-visibility.md) | Reporting each agent's usage-quota state in the daemon and TUI | ✅ done (7/7) |

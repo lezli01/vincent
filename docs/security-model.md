@@ -68,7 +68,7 @@ across `partial` records rather than dropped, so length alone never costs you
 evidence; only `transcript_max_bytes` deliberately stops a runaway, and it says
 so in the file. What is *not* promised: vincent writes and closes the file and
 checks both, but does not fsync per line, so a host that loses power can still
-lose the tail of a transcript. See [spec §12.2](spec.md#122-directories-platform-native).
+lose the tail of a transcript. See [spec §12.2](https://github.com/lezli01/vincent/blob/master/docs/spec.md#122-directories-platform-native).
 
 The TUI shows this warning **once**, on first run. The acknowledgment persists in
 `{data_dir}/tui.json` and is written when the notice is *dismissed*, never when
@@ -250,4 +250,4 @@ Stated so you do not assume otherwise:
 - [SECURITY.md](../SECURITY.md) — reporting a vulnerability.
 - [Agent CLIs](guides/agents.md) — per-adapter behavior.
 - [Writing workflows](guides/workflows.md#93-permission-modes).
-- Spec [§16](spec.md) — the normative version.
+- Spec [§16](https://github.com/lezli01/vincent/blob/master/docs/spec.md) — the normative version.

@@ -204,7 +204,7 @@ instead. Include `vincent version`, your OS, and the relevant part of
 
 ### Can I contribute?
 
-Please. [CONTRIBUTING.md](../CONTRIBUTING.md) has the setup, the commit
+Please. The [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html) has the setup, the commit
 convention, architecture pointers, documentation expectations, and the PR
 checklist. For substantial changes, open an issue first so the problem and user
 impact can be agreed before implementation begins.

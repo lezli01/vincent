@@ -1,0 +1,115 @@
+{% assign canonical_url = page.url | absolute_url %}
+{% assign absolute_social_image = include.social_image | absolute_url %}
+{% if page.url == '/' %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": {{ canonical_url | append: "#website" | jsonify }},
+      "url": {{ canonical_url | jsonify }},
+      "name": {{ site.title | jsonify }},
+      "description": {{ include.meta_description | jsonify }},
+      "inLanguage": {{ site.lang | jsonify }}
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": {{ canonical_url | append: "#software" | jsonify }},
+      "name": {{ site.title | jsonify }},
+      "url": {{ canonical_url | jsonify }},
+      "description": {{ include.meta_description | jsonify }},
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, macOS, Linux",
+      "image": {{ absolute_social_image | jsonify }},
+      "author": {
+        "@type": "Person",
+        "name": {{ site.author | jsonify }},
+        "url": "https://lezli01.is-a.dev/"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": {{ canonical_url | append: "#source" | jsonify }},
+      "name": {{ site.title | jsonify }},
+      "codeRepository": {{ site.code_repository | jsonify }},
+      "license": {{ site.license_url | jsonify }},
+      "programmingLanguage": "Go",
+      "runtimePlatform": "Windows, macOS, Linux",
+      "mainEntityOfPage": {{ canonical_url | jsonify }}
+    }
+  ]
+}
+</script>
+{% elsif include.article %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": {{ include.article.title | jsonify }},
+      "description": {{ include.meta_description | jsonify }},
+      "url": {{ canonical_url | jsonify }},
+      "mainEntityOfPage": {{ canonical_url | jsonify }},
+      "image": {{ absolute_social_image | jsonify }},
+      "inLanguage": {{ site.lang | jsonify }},
+      "author": {
+        "@type": "Person",
+        "name": {{ site.author | jsonify }},
+        "url": "https://lezli01.is-a.dev/"
+      },
+      "isPartOf": {
+        "@type": "CollectionPage",
+        "name": "Why vincent is awesome",
+        "url": {{ '/docs/why/' | absolute_url | jsonify }}
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "vincent",
+          "item": {{ '/' | absolute_url | jsonify }}
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Why vincent is awesome",
+          "item": {{ '/docs/why/' | absolute_url | jsonify }}
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": {{ include.article.title | jsonify }},
+          "item": {{ canonical_url | jsonify }}
+        }
+      ]
+    }
+  ]
+}
+</script>
+{% else %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": {{ include.seo_page.schema_type | default: 'WebPage' | jsonify }},
+  "name": {{ include.meta_title | strip | jsonify }},
+  "description": {{ include.meta_description | jsonify }},
+  "url": {{ canonical_url | jsonify }},
+  "inLanguage": {{ site.lang | jsonify }},
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": {{ site.title | jsonify }},
+    "url": {{ '/' | absolute_url | jsonify }}
+  }
+}
+</script>
+{% endif %}

@@ -235,7 +235,7 @@ vincent's words:
   `parallel`, `fan_out`, `condition`, `loop`, `break`).
 - **`result_summary`** — the agent's final result text, or the last 200 lines of
   a command step's stdout. Recorded on every attempt, readable from a later
-  step's `{{ .Steps.<id>.Result }}`.
+  step's `{% raw %}{{ .Steps.<id>.Result }}{% endraw %}`.
 
 Neither is a failure reason, and no surface renders either as one. The reasons
 below are a closed set vincent authors; these two are whatever the step

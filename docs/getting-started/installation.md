@@ -109,7 +109,7 @@ release can therefore appear here after its GitHub assets do.
 
 ## Scoop (Windows)
 
-Add Vincent's bucket once, then install its manifest:
+Add vincent's bucket once, then install its manifest:
 
 ```powershell
 scoop bucket add vincent https://github.com/lezli01/scoop-bucket
@@ -124,7 +124,7 @@ uninstall` if you registered the background service.
 
 ## mise (all platforms)
 
-mise can consume the existing GitHub release archives directly; Vincent does
+mise can consume the existing GitHub release archives directly; vincent does
 not need a mise plugin or registry entry:
 
 ```sh
@@ -133,7 +133,7 @@ vincent version
 ```
 
 That records `latest` in mise's global config and selects the archive matching
-the current OS and architecture. For Vincent's releases, mise also verifies the
+the current OS and architecture. For vincent's releases, mise also verifies the
 GitHub artifact attestation before extracting the archive. Pin a project or
 machine to a specific release instead with:
 
@@ -164,7 +164,7 @@ vincent version
 ```
 
 Both formats put the binary at `/usr/bin/vincent` and the license documents
-under `/usr/share`. They deliberately install no system service: Vincent's
+under `/usr/share`. They deliberately install no system service: vincent's
 service is per-user and must capture that user's `PATH`, config, and data
 directories, so opt in afterwards with `vincent service install`.
 
@@ -173,7 +173,7 @@ package database records the install, but it cannot discover a newer release;
 download the next deb/rpm and run the same command to upgrade.
 
 WinGet and Scoop metadata is published only for stable releases. If a
-newly introduced channel reports that Vincent is not found before its first
+newly introduced channel reports that vincent is not found before its first
 stable publication, use [mise](#mise-all-platforms) or
 [download a release](#download-a-release).
 
@@ -361,7 +361,7 @@ go run mage.go testrace   # go test -race ./...   (needs cgo and a C compiler)
 go run mage.go lint       # golangci-lint, pinned via the go.mod tool directive
 ```
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the development workflow.
+See the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html) for the development workflow.
 
 ## Upgrading
 
@@ -412,7 +412,7 @@ For the other managers, remove the binary only after `vincent service
 uninstall`: `winget uninstall --id lezli01.Vincent --exact`, `scoop uninstall
 vincent`, `mise unuse -g github:lezli01/vincent` followed by `mise uninstall
 --all github:lezli01/vincent`, `sudo apt remove vincent`, `sudo dnf remove
-vincent`. None of these removes Vincent's config, database, transcripts, or
+vincent`. None of these removes vincent's config, database, transcripts, or
 worktrees.
 
 **A branch with commits on it is never deleted by vincent.** Archiving a task
