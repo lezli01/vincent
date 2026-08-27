@@ -3985,7 +3985,11 @@ stream for the live tail.
    the form's **own editable rows** — title, description with its trailing
    `GitHub issue #N: <url>` line, and any §8.1.2 declared field the mapping
    filled — because the mapping guesses, and a guess has to be visible before
-   creation rather than applied silently at run time. Nothing is locked: every
+   creation rather than applied silently at run time. *Amended 2026-08-27:* the
+   prefilled title is the issue title prefixed `#N`, and `issue` joins `labels`,
+   `assignee` and `milestone` as a declared field the mapping fills — with the
+   issue **number**, which is the only way a `command` step can read it, since
+   §8.5's environment is what a `run:` body sees and `.Issue` is not in it. Nothing is locked: every
    prefilled value can be rewritten or cleared, and a cleared value stays
    cleared (§13.2's precedence rule). It belongs to the **Task details** stage
    of the guided layout, not a stage of its own: picking an issue is how the

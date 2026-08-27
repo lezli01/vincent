@@ -117,7 +117,11 @@ secret store, which §2 declines.
 
 - **Title** ← the issue title, truncated only by the same rules any typed title
   gets — which live in §13.1's bounds check, applied to the prefilled request so
-  the two cannot diverge.
+  the two cannot diverge. *Amended 2026-08-27:* prefixed with the issue's own
+  number — `#42 daemon leaks the lock file`. It is for the humans reading a
+  board row and for the slug reading a branch name; no workflow parses it back
+  out, which is what the `issue` field below is for. A title that already
+  carries the prefix is left alone rather than doubled.
 - **Description** ← the issue body, followed by a link line appended as its own
   trailing block: a blank line, then `GitHub issue #N: <url>`. It is plain text
   in an editable row — a human may delete it — and a task read on its own still
@@ -126,7 +130,7 @@ secret store, which §2 declines.
   otherwise every prompt interpolating the description carries stray carriage
   returns.
 - **Declared fields** (§8.1.2) are filled by **exact name match only**, against
-  the names `labels`, `assignee`, `milestone`. No aliases, no fuzzy matching, no
+  the names `issue`, `labels`, `assignee`, `milestone`. No aliases, no fuzzy matching, no
   case folding: a guess that has to be reviewed is cheap, a guess that is hard to
   predict is not. A value is offered only if the declaration's `type` and
   `pattern` would accept it — a declared `integer` named `milestone` gets the
@@ -137,6 +141,23 @@ secret store, which §2 declines.
 - **Undeclared names are never invented.** Issue metadata reaches templates
   through `.Issue`, which is what the "flatten into `Task.Fields`" alternative
   was rejected for.
+
+*Amended 2026-08-27 — `issue`, the fourth name.* A declared `issue` field is
+filled with the issue **number**: bare decimal for a `string` declaration, the
+same digits for `integer` and `number`, nothing for a `boolean`. It exists
+because the number had nowhere else to go that a `command` step could reach.
+Step bodies receive §8.5's environment, not §8.4's template context, so
+`.Issue.Number` is unreadable from a `run:` — before this, a workflow acting on
+an issue had to parse the id back out of `VINCENT_TASK_TITLE`, which made the
+title a machine-readable contract and the first token of it unwritable. The
+field moves the contract to where §8.1.2 already validates it, and hands the
+title back to the humans. `.vincent/workflows/github-resolve-issue.yaml` is the
+first consumer: it declares `issue` `required: true` and its `fetch` step reads
+`{{ index .Task.Fields "issue" }}`.
+
+This does not weaken "undeclared names are never invented": a workflow that
+declares no `issue` field still gets none, and the number remains available to
+templates as `.Issue.Number` either way.
 
 The validation is `workflow.FieldDefinition.Validate`, exported for this and
 used by `ValidateTaskFields` itself, so "what the prefill offers" and "what the

@@ -874,10 +874,17 @@ later step renders — and rendering never touches the network, which is why a
 step cannot fail here because GitHub is down. A [fan-out](#type-fan_out) lane
 inherits its parent's issue, the same way it inherits `.Task.Fields`.
 
-Creating a task from an issue also prefills the task's title, its description
-(the issue body plus a `GitHub issue #N: <url>` line) and any declared
-[`fields:`](#fields) named exactly `labels`, `assignee` or `milestone`. All of
-that is editable before the task is created; `.Issue` is the untouched copy.
+Creating a task from an issue also prefills the task's title (`#N ` and the
+issue title), its description (the issue body plus a `GitHub issue #N: <url>`
+line) and any declared [`fields:`](#fields) named exactly `issue`, `labels`,
+`assignee` or `milestone`. All of that is editable before the task is created;
+`.Issue` is the untouched copy.
+
+A declared `issue` field carries the issue **number** — bare, without the `#`
+the title carries — and it is how a `command` step gets at it: step bodies see
+§8.5's environment, not this context, so `{{ index .Task.Fields "issue" }}` is
+the way into a `run:`. Declare it `integer` (or `number`, or `string`); a
+`boolean` `issue` is left empty like any other type mismatch.
 
 Visibility follows one rule — a step appears once the engine has advanced past
 it — and three consequences follow from it:

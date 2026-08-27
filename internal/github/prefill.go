@@ -6,11 +6,18 @@ import (
 	"strings"
 )
 
-// The three declared field names an issue can fill, matched **exactly**
+// The four declared field names an issue can fill, matched **exactly**
 // (task 035 decision 7). No aliases, no fuzzy matching, no case folding: a
 // guess that has to be reviewed is cheap, a guess that is hard to predict is
 // not.
+//
+// FieldIssue was added 2026-08-27: a workflow that acts on the issue needs the
+// **number** somewhere a step body can read it, and `.Issue.Number` is not
+// that place for a `run:` — command steps receive §8.5's environment, not the
+// template context, so the number had to be parsed back out of the title. A
+// declared `issue` field is the number itself, validated like any other.
 const (
+	FieldIssue     = "issue"
 	FieldLabels    = "labels"
 	FieldAssignee  = "assignee"
 	FieldMilestone = "milestone"
@@ -51,6 +58,19 @@ func Candidate(issue Issue, decl FieldDecl) (string, bool) {
 		kind = TypeString
 	}
 	switch decl.Name {
+	case FieldIssue:
+		// The number is a number, so every numeric declaration takes it and a
+		// `string` one takes its decimal spelling — bare, without the "#" the
+		// title carries. A workflow that wants the hash writes it.
+		switch kind {
+		case TypeString, TypeInteger, TypeNumber:
+			if issue.Number == 0 {
+				return "", false
+			}
+			return strconv.Itoa(issue.Number), true
+		default:
+			return "", false
+		}
 	case FieldLabels:
 		if kind != TypeString || len(issue.Labels) == 0 {
 			return "", false
@@ -107,7 +127,30 @@ func Description(issue Issue) string {
 	return body + "\n\n" + LinkLine(issue)
 }
 
-// Title is the issue title, verbatim. It is truncated only by the same rules
-// any typed title gets, which live in the API's own bounds check — this
-// returns the whole thing so those rules stay in one place.
-func Title(issue Issue) string { return strings.TrimSpace(issue.Title) }
+// Title is the issue title prefixed with the issue's own number: `#42 Daemon
+// leaks the lock file` (amended 2026-08-27). The prefix is for the humans
+// reading a board row and the slug reading a branch name; it is deliberately
+// *not* how a workflow finds the number, which is what FieldIssue is for.
+//
+// A title that already carries the prefix is left alone rather than doubled —
+// people do write issue titles that quote their own number — and an issue with
+// an empty title yields the prefix alone rather than a trailing space.
+//
+// It is truncated only by the same rules any typed title gets, which live in
+// the API's own bounds check — this returns the whole thing so those rules
+// stay in one place.
+func Title(issue Issue) string {
+	title := strings.TrimSpace(issue.Title)
+	if issue.Number == 0 {
+		return title
+	}
+	prefix := "#" + strconv.Itoa(issue.Number)
+	switch {
+	case title == "":
+		return prefix
+	case title == prefix, strings.HasPrefix(title, prefix+" "):
+		return title
+	default:
+		return prefix + " " + title
+	}
+}

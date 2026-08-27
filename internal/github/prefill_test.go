@@ -56,15 +56,21 @@ func TestDescriptionNormalizesCRLF(t *testing.T) {
 	}
 }
 
-// TestCandidateMapsOnlyTheThreeNames, by exact match and by type. A guess
+// TestCandidateMapsOnlyTheFourNames, by exact match and by type. A guess
 // that has to be reviewed is cheap; a guess that is hard to predict is not,
 // which is why there are no aliases and no case folding (decision 7).
-func TestCandidateMapsOnlyTheThreeNames(t *testing.T) {
+func TestCandidateMapsOnlyTheFourNames(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind string
 		want       string
 		offered    bool
 	}{
+		{FieldIssue, TypeInteger, "200", true},
+		{FieldIssue, TypeNumber, "200", true},
+		// A `string` issue field gets the bare decimal spelling, not the "#"
+		// the prefilled title carries.
+		{FieldIssue, TypeString, "200", true},
+		{FieldIssue, TypeBoolean, "", false},
 		{FieldLabels, TypeString, "enhancement, area/api", true},
 		{FieldAssignee, TypeString, "hubot", true},
 		{FieldMilestone, TypeString, "v0.2.0", true},
@@ -112,12 +118,43 @@ func TestCandidateOffersNothingForMissingMetadata(t *testing.T) {
 	}
 }
 
-// TestTitleIsTheIssueTitle: verbatim, trimmed. Any bound on its length is the
-// API's, applied to a typed title and a prefilled one alike.
-func TestTitleIsTheIssueTitle(t *testing.T) {
-	issue := sample
-	issue.Title = "  padded  "
-	if got := Title(issue); got != "padded" {
-		t.Errorf("Title = %q, want %q", got, "padded")
+// TestTitleCarriesTheIssueNumber: trimmed, and prefixed with `#N` so a board
+// row and a branch slug say which issue the task came from. Any bound on its
+// length is the API's, applied to a typed title and a prefilled one alike.
+func TestTitleCarriesTheIssueNumber(t *testing.T) {
+	for _, tc := range []struct{ title, want string }{
+		{"  padded  ", "#200 padded"},
+		{"Select a GitHub issue", "#200 Select a GitHub issue"},
+		// Already prefixed: left alone rather than doubled into "#200 #200 …".
+		{"#200 already numbered", "#200 already numbered"},
+		{"#200", "#200"},
+		// A near-miss is a different issue's number and stays where it is.
+		{"#2000 a different issue", "#200 #2000 a different issue"},
+		// No title at all yields the prefix alone, not a trailing space.
+		{"   ", "#200"},
+	} {
+		issue := sample
+		issue.Title = tc.title
+		if got := Title(issue); got != tc.want {
+			t.Errorf("Title(%q) = %q, want %q", tc.title, got, tc.want)
+		}
+	}
+}
+
+// TestTitleWithoutANumber: the zero Issue is what an unlinked task renders,
+// and prefixing "#0" onto anything would be a lie about a real issue.
+func TestTitleWithoutANumber(t *testing.T) {
+	if got := Title(Issue{Title: "  no issue  "}); got != "no issue" {
+		t.Errorf("Title = %q, want %q", got, "no issue")
+	}
+}
+
+// TestCandidateOffersNoIssueNumberWithoutOne: same reason — a declared
+// `issue` field is left empty rather than filled with 0.
+func TestCandidateOffersNoIssueNumberWithoutOne(t *testing.T) {
+	for _, kind := range []string{TypeString, TypeInteger, TypeNumber} {
+		if value, ok := Candidate(Issue{Title: "unlinked"}, FieldDecl{Name: FieldIssue, Type: kind}); ok {
+			t.Errorf("Candidate(issue, %q) offered %q for an issue with no number", kind, value)
+		}
 	}
 }

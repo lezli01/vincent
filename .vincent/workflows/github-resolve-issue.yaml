@@ -7,12 +7,16 @@
 # before the fix is written. This file keeps both differences and shares
 # everything else.
 #
-# The task's **title starts with the issue id**: `42`, `#42`, or the issue URL,
-# optionally followed by a short description — `42 daemon leaks the lock file`.
-# `fetch` takes the first whitespace-separated token as the id, which keeps the
-# title machine-readable while letting the rest of it do real work: it is what
-# the board row shows, and what `{{.Slug}}` turns into the branch name. A bare
-# id alone still works; it just produces a branch that says nothing.
+# The issue number is the declared **`issue` field**, not the title. Picking an
+# issue in the new-task form fills it in, and so does
+# `vincent task add --github-issue 42`; typing it by hand is the third way. It
+# is `required: true`, so a task that reaches this workflow without one is
+# refused at creation rather than 45 minutes into a run.
+#
+# The title is left to the humans. The prefill writes `#42 daemon leaks the
+# lock file` into it — the number for the board row, the words for `{{.Slug}}`
+# and the branch name — but nothing here parses it, so rewriting it entirely
+# breaks nothing.
 #
 # Shape:
 #
@@ -294,6 +298,18 @@
 name: github-resolve-issue
 description: Read a GitHub bug or enhancement issue, clarify it with the author, deliver the fix or feature, open the PR, then rebase and merge it once you approve.
 
+fields:
+  - name: issue
+    label: Issue number
+    description: >-
+      The number of the GitHub issue to resolve, in this project's `origin`
+      repository. The new-task form's issue picker and
+      `vincent task add --github-issue N` both fill this in; typing it is the
+      third way. `fetch` reads it and nothing else — the task title is yours to
+      write.
+    type: integer
+    required: true
+
 defaults:
   agent: claude
   max_retries: 1
@@ -332,12 +348,15 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      # First token only: everything after it is the human-readable half of the
-      # title, which exists so the branch slug and the board row say something.
-      id=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}' | sed 's/^#//')
+      # The declared `issue` field, rendered in. It is `required: true` and
+      # `type: integer`, so §8.1.2 validated it at creation and this is a bare
+      # decimal number — no "#", no URL, nothing to parse. The guard below is
+      # for the one case validation cannot cover: a task created against an
+      # older snapshot of this workflow, before the field existed.
+      id='{{ index .Task.Fields "issue" }}'
       if [ -z "$id" ]; then
-        say "task title does not start with an issue id"
-        echo "task title is empty; it must start with the issue id (42, #42, or the issue URL)" >&2
+        say "task carries no issue number"
+        echo "the 'issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
         exit 1
       fi
 
@@ -356,7 +375,7 @@ steps:
         --json number,title,body,state,url,labels,comments,createdAt \
         > .vincent-issue/issue.json; then
         say "no such issue: #$id"
-        echo "no such issue: $id (the task title's first word must be the issue id)" >&2
+        echo "no such issue: $id (the 'issue' field must name an issue in this project's origin repository)" >&2
         exit 1
       fi
 

@@ -422,10 +422,11 @@ daemon inherited. Otherwise the row is simply not there, and no GitHub call is
 made. `vincent doctor` says which of those is missing.
 
 Its picker lists the repository's open issues, newest first, and narrows as you
-type, like every other picker here. Choosing one fills the title, fills the
-description with the issue body plus a trailing `GitHub issue #N: <url>` line,
-and fills any of the workflow's declared `labels`, `assignee` or `milestone`
-fields whose declared type accepts the value. **All of it lands in the ordinary
+type, like every other picker here. Choosing one fills the title with `#N ` and
+the issue title, fills the description with the issue body plus a trailing
+`GitHub issue #N: <url>` line, and fills any of the workflow's declared `issue`,
+`labels`, `assignee` or `milestone` fields whose declared type accepts the value
+— `issue` being the issue number, the one a `run:` body can read. **All of it lands in the ordinary
 editable rows** — rewrite or clear anything before creating, and what you leave
 is what the task gets. A `(none)` row at the top of the picker removes the link.
 

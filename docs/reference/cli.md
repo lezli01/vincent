@@ -356,10 +356,11 @@ task 61 created: GitHub integration: select a GitHub issue when creating a task 
 
 The flag carries the **number and nothing else**. The daemon resolves the issue,
 so the command line and the TUI's issue picker go through one implementation and
-produce the same task from the same issue. It fills in the title, the
-description (the issue body plus a trailing `GitHub issue #N: <url>` line), and
-any of the workflow's declared `labels`, `assignee` or `milestone` fields whose
-declared type accepts the value.
+produce the same task from the same issue. It fills in the title (`#N ` and the
+issue title), the description (the issue body plus a trailing
+`GitHub issue #N: <url>` line), and any of the workflow's declared `issue`,
+`labels`, `assignee` or `milestone` fields whose declared type accepts the value
+— `issue` being the issue number.
 
 **Every explicit flag wins over what the issue would have filled in**, so
 `--title "Something else"` keeps your title and takes the rest from the issue.
