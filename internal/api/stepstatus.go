@@ -10,7 +10,7 @@ import (
 )
 
 // stepStatusRequest is the body of POST /v1/tasks/{id}/steps/{step_id}/status
-// (§13.2, task 033): the one line the step wants to say about itself.
+// (§13.2, task 036): the one line the step wants to say about itself.
 type stepStatusRequest struct {
 	Message string `json:"message"`
 }
@@ -18,7 +18,7 @@ type stepStatusRequest struct {
 // handleStepStatus records a running step's own status message.
 //
 // The producer is this endpoint and not a sentinel line in the step's output
-// (task 033 decision 1). A marker printed on stdout would force a
+// (task 036 decision 1). A marker printed on stdout would force a
 // strip-or-keep choice over the transcript and `result_summary` with no good
 // answer, would miss the obvious agent spelling entirely — an agent running
 // `echo` through its Bash tool produces a tool-use event, not the output

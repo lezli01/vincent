@@ -10,14 +10,14 @@ import (
 )
 
 // ErrStepNotRunning reports that no *running* step run of the task carries
-// the step id a status write was addressed at (task 033). It is deliberately
+// the step id a status write was addressed at (task 036). It is deliberately
 // distinct from ErrNotFound, which the task lookup answers with: the API
 // turns a missing task into a 404 and this into a 409, because a finished
 // step is a state the caller can see and re-check rather than a typo.
 var ErrStepNotRunning = errors.New("step run is not running")
 
 // LatestStepStatuses returns, for each of ids that has one, the status
-// message on the task's **newest** step run (task 033). Tasks whose newest
+// message on the task's **newest** step run (task 036). Tasks whose newest
 // row said nothing are absent from the map.
 //
 // The newest row rather than a search for the newest *message* is the whole
@@ -72,7 +72,7 @@ func (s *Store) LatestStepStatuses(ctx context.Context, ids []int64) (map[int64]
 // stepID, or ErrStepNotRunning when the task has none.
 //
 // It exists so a caller can answer "is this addressable at all" before
-// deciding whether to write — the engine's status throttle (task 033) refuses
+// deciding whether to write — the engine's status throttle (task 036) refuses
 // a write against a finished step whether or not it would have coalesced the
 // value. The resolution rule is SetStepRunStatus's, and the two are
 // deliberately the same query.
@@ -138,7 +138,7 @@ func (s *Store) SetStepRunStatus(
 // SetStepRunStatusByRun is SetStepRunStatus addressed at one row, whatever
 // state it is in.
 //
-// It exists for the engine's coalescing floor (§13.3, task 033). A message
+// It exists for the engine's coalescing floor (§13.3, task 036). A message
 // written inside the floor is deferred, not refused, and the step may finish
 // before the deferred write lands — so requiring `running` here would silently
 // drop the last thing a step said, which is precisely the value the terminal

@@ -129,7 +129,7 @@ func TestAgentStepGetsTheResolvedEnvironment(t *testing.T) {
 	}
 }
 
-// TestAgentStepGetsTheVincentVariables is task 033's prerequisite: an agent
+// TestAgentStepGetsTheVincentVariables is task 036's prerequisite: an agent
 // step saw the resolved base environment and none of the §8.5 run facts, so
 // an agent had no way to name the step it was running — which is exactly what
 // `vincent status` needs in order to address itself.

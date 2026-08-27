@@ -21,7 +21,7 @@
 //	                      variables as its result — the §12.3 environment
 //	                      policy) | usage-limit | unauthenticated (task 003) |
 //	                      set-status (runs the real `vincent status` command
-//	                      from inside the step — task 033) |
+//	                      from inside the step — task 036) |
 //	                      sleep (internal: silent child)
 //	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
 //	FAKEAGENT_VINCENT_BIN set-status: path to the vincent binary to invoke.
@@ -264,7 +264,7 @@ func main() {
 		emitText(strings.Join(reported, " "))
 		emitSuccessResult([]byte(strings.Join(reported, " ")), 1, 1)
 	case "set-status":
-		// A step that reports on itself (task 033). It runs the real
+		// A step that reports on itself (task 036). It runs the real
 		// `vincent status` command rather than emitting a marker the daemon
 		// would parse, because that is what the feature *is*: an agent tells
 		// the daemon what it is doing by calling it, and nothing in any

@@ -239,7 +239,7 @@ type stepRunResponse struct {
 	// two share one state, so this is what tells a timeline which it is.
 	SkipReason    *string `json:"skip_reason"`
 	ResultSummary string  `json:"result_summary"`
-	// StatusMessage is what the step said about *itself* (§5.4, task 033):
+	// StatusMessage is what the step said about *itself* (§5.4, task 036):
 	// free text its own process set through
 	// POST /v1/tasks/{id}/steps/{step_id}/status. Null when it said nothing,
 	// which is every step type that runs no process and every `agent` or
@@ -281,7 +281,7 @@ type listTaskResponse struct {
 	CostUSD      *float64 `json:"cost_usd"`
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
-	// StatusMessage is the newest step run's status (§5.4, task 033),
+	// StatusMessage is the newest step run's status (§5.4, task 036),
 	// denormalized here the way step_name and cost_usd are: a board reads
 	// this endpoint and never fetches step rows. Null when the newest
 	// attempt said nothing — which is deliberate, so a finished step's line

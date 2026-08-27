@@ -7,7 +7,7 @@ import (
 )
 
 // EventTaskStatusChanged is the durable SSE type a running step's status
-// change arrives as (§13.3, task 033). Payload
+// change arrives as (§13.3, task 036). Payload
 // `{task_id, step_id, message}`; a client re-fetches rather than rendering
 // the payload, the way it does for every other state event.
 //
@@ -17,7 +17,7 @@ import (
 const EventTaskStatusChanged = "task.status_changed"
 
 // SetStepStatus records what a running step is doing, in its own words
-// (§13.2, task 033). taskID and stepID are §8.5's VINCENT_TASK_ID and
+// (§13.2, task 036). taskID and stepID are §8.5's VINCENT_TASK_ID and
 // VINCENT_STEP_ID: the step's process is the caller, so those are the only
 // two things it knows about itself.
 //

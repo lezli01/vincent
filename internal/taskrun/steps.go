@@ -73,7 +73,7 @@ func (r *Runner) runAgentStep(
 		// value this engine computed, not whatever the daemon was started
 		// from.
 		//
-		// It carries the §8.5 VINCENT_* block too, as of task 033: an agent
+		// It carries the §8.5 VINCENT_* block too, as of task 036: an agent
 		// step used to see the resolved base and none of the run facts, so
 		// an agent could not name the step it was running even to the daemon
 		// that started it. `vincent status` addresses itself with
@@ -743,7 +743,7 @@ func (r *Runner) childEnv() []string {
 // `environment.unset` cannot reach a VINCENT_* variable. Those are facts
 // about the run, not inherited state.
 //
-// It serves `agent` steps as well as `command` and `check` ones (task 033);
+// It serves `agent` steps as well as `command` and `check` ones (task 036);
 // only the latter pass a stepEnvVars map, since `env:` is a command-step
 // field.
 func commandEnv(base []string, rc workflow.RenderContext, stepEnvVars map[string]string) []string {

@@ -200,7 +200,7 @@ type StepRun struct {
 	// for a false guard, empty for the human `skip` action (§6, §7.7).
 	SkipReason    string
 	ResultSummary string
-	// StatusMessage is what the step said about *itself* (§5.4, task 033):
+	// StatusMessage is what the step said about *itself* (§5.4, task 036):
 	// short free text its own process wrote through
 	// `POST /v1/tasks/{id}/steps/{step_id}/status`. Empty is the ordinary
 	// case — a step with nothing to say says nothing, and the step types that

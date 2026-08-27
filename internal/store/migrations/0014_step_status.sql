@@ -1,4 +1,4 @@
--- 0014_step_status: the step-authored status message (task 033, issue #199).
+-- 0014_step_status: the step-authored status message (task 036, issue #199).
 --
 -- Free text a *running* step wrote about itself — "3 tests red in
 -- internal/store", "rebasing onto master" — set through

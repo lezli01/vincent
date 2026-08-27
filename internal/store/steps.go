@@ -123,7 +123,7 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 // UpdateStepRun writes every mutable field of r (matched by ID). Returns
 // ErrNotFound when the row does not exist.
 //
-// `status_message` is deliberately **not** in the SET list (task 033). It is
+// `status_message` is deliberately **not** in the SET list (task 036). It is
 // the one column the actor is not the sole writer of: the step's own process
 // sets it through SetStepRunStatus while the actor is blocked in Wait, so an
 // UPDATE carrying the actor's stale copy of the struct would erase whatever

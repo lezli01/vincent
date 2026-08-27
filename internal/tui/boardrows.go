@@ -266,7 +266,7 @@ func formatCost(c *float64) string {
 }
 
 // formatStatus renders the newest step run's own status message in the board
-// cell (§5.4, task 033). Empty rather than a dash: a step saying nothing is
+// cell (§5.4, task 036). Empty rather than a dash: a step saying nothing is
 // the ordinary case for most step types and every workflow that has not
 // adopted the protocol, and a column of dashes reads as something missing.
 //

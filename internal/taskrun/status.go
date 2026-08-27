@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// StatusMessageLimit bounds a step's status message (§5.4, §13.3, task 033).
+// StatusMessageLimit bounds a step's status message (§5.4, §13.3, task 036).
 //
 // 256 bytes is a line, not a report: the message is rendered in a board cell
 // and on one attempt line, and anything longer is a transcript. Over-long
@@ -30,7 +30,7 @@ const StatusMessageLimit = 256
 const statusMinInterval = time.Second
 
 // SetStepStatus records what a running step says about itself (§5.4, task
-// 033).
+// 036).
 //
 // It is the engine's entry point for
 // `POST /v1/tasks/{id}/steps/{step_id}/status`, and it is here rather than in

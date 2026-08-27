@@ -44,7 +44,7 @@ type Task struct {
 	OutputTokens int64    `json:"output_tokens"`
 
 	// StatusMessage is the newest step run's status message (§5.4, task
-	// 033), served on the list row so a board never fetches step rows for
+	// 036), served on the list row so a board never fetches step rows for
 	// it. Nil when the newest attempt said nothing.
 	StatusMessage *string `json:"status_message"`
 
@@ -210,7 +210,7 @@ type StepRun struct {
 	// carry State "skipped".
 	SkipReason    *string `json:"skip_reason"`
 	ResultSummary string  `json:"result_summary"`
-	// StatusMessage is what the step said about itself (§5.4, task 033):
+	// StatusMessage is what the step said about itself (§5.4, task 036):
 	// free text its own process set while it was running, and nil when it
 	// said nothing. It is never a failure cause — `failure_reason` is the
 	// daemon's verdict, and a killed step can be carrying a message it set

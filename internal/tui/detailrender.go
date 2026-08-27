@@ -19,7 +19,7 @@ var (
 	styleStderr     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true)
 	styleAsk        = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	styleFocus      = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	// styleStatus renders a step's own status message (task 033). Cyan and
+	// styleStatus renders a step's own status message (task 036). Cyan and
 	// unbold: near the running state's colour, because that is what it is
 	// usually reporting on, and nowhere near styleBad — the failure reason
 	// beside it is the daemon's verdict and this is not.
@@ -563,7 +563,7 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	if r.Agent != nil && *r.Agent != "" {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
 	}
-	// What the step said about itself (§5.4, task 033) goes last, and in its
+	// What the step said about itself (§5.4, task 036) goes last, and in its
 	// own style. It is deliberately *not* rendered beside failure_reason:
 	// the reason is the daemon's verdict, while this is free text the step
 	// chose — a step killed on `timeout` may be carrying a line it wrote

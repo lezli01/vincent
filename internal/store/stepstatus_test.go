@@ -68,7 +68,7 @@ func TestStepRunStatusRoundTrip(t *testing.T) {
 	// its status from another process while the actor is blocked in Wait, so
 	// an UpdateStepRun with the actor's stale struct would erase it. This is
 	// the property that makes the last live value survive onto the finished
-	// row (task 033).
+	// row (task 036).
 	stale := *got
 	stale.StatusMessage = ""
 	stale.State = StepSucceeded

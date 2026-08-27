@@ -7,7 +7,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The attempt line carries both readings of the status (task 033): the live
+// The attempt line carries both readings of the status (task 036): the live
 // one on a running attempt, and the terminal one on a finished attempt beside
 // — never instead of — the daemon's failure_reason. The two are rendered in
 // different styles, because a stale self-report presented as the daemon's
@@ -116,7 +116,7 @@ func TestFormatStatus(t *testing.T) {
 	}
 }
 
-// The shedding ladder (task 033): the status is the last column admitted and
+// The shedding ladder (task 036): the status is the last column admitted and
 // the first shed, so a board narrow enough to drop it renders exactly as it
 // did before the column existed. Asserted over every width rather than at a
 // few, because what matters is that there is no width at which the status

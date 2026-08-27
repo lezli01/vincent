@@ -1355,7 +1355,7 @@ YAML
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 12 — a step reports its own status, live and terminal (task 033,
+# Scenario 12 — a step reports its own status, live and terminal (task 036,
 # §5.4, §13.3). The agent step runs the real `vincent status` command from
 # inside itself, so this also proves §8.5's VINCENT_* block reaches an agent
 # step's environment — without it the command cannot address its own row.

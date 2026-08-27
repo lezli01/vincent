@@ -28,7 +28,7 @@ const (
 	// nothing about what may be admitted (see scheduler.WakeOn).
 	EventTaskStepAdvanced = "task.step_advanced"
 	// EventTaskStatusChanged is written when a running step changes what it
-	// says about itself (§5.4, §13.3, task 033). Payload
+	// says about itself (§5.4, §13.3, task 036). Payload
 	// `{task_id, step_id, message}`. It is durable, so a client that blinks
 	// recovers the message through `Last-Event-ID` — which is the whole
 	// reason a status is not a live output chunk.

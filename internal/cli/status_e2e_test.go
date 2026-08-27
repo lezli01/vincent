@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// TestStatusFromInsideAStep is task 033's whole claim, driven end to end
+// TestStatusFromInsideAStep is task 036's whole claim, driven end to end
 // through the real binary: an agent step runs `vincent status`, and the
 // message it wrote reaches the row, `vincent task show` and `--json`.
 //

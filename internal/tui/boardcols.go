@@ -20,7 +20,7 @@ const (
 	widthStepLong  = 18
 	widthElapsed   = 9
 	widthCost      = 8
-	// widthStatus holds a step's own status message (task 033) — enough for a
+	// widthStatus holds a step's own status message (task 036) — enough for a
 	// clause, with the rest truncated. It is not wider because this column is
 	// affordable only on a board with room to spare, which is the deal it is
 	// admitted on.
@@ -60,7 +60,7 @@ type columnSet struct {
 	workflow bool
 	stepName bool
 	cost     bool
-	// status is the step's own status message (§5.4, task 033). It is the
+	// status is the step's own status message (§5.4, task 036). It is the
 	// first column shed and the last admitted: it is a luxury of a wide
 	// terminal, and a board narrow enough to drop it renders exactly as it
 	// did before the column existed.
@@ -114,7 +114,7 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // than being second-guessed as constants that can silently disagree with
 // them.
 //
-// The status goes first (task 033) because it is the only column that is
+// The status goes first (task 036) because it is the only column that is
 // prose: a task is found by its project, its workflow and its title, and a
 // step's self-report is what you read once you have found it. Shedding it
 // first is also what keeps the addition free — a board too narrow for it

@@ -14,7 +14,7 @@ import (
 
 // Environment variables `vincent status` addresses the step with. They are
 // two of §8.5's block, which reaches `agent` steps as well as `command` ones
-// as of task 033 — the whole point of the command is that a step can say
+// as of task 036 — the whole point of the command is that a step can say
 // something without being told which row it is.
 const (
 	envTaskID = "VINCENT_TASK_ID"

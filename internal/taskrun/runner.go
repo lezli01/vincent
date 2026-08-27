@@ -88,7 +88,7 @@ type Runner struct {
 	mu   sync.Mutex
 	live map[int64]*liveRun
 
-	// status paces the step-authored status message (§13.3, task 033). It is
+	// status paces the step-authored status message (§13.3, task 036). It is
 	// on the runner rather than on a live run because a status write arrives
 	// on an API goroutine, addressed by ids the step read from its own
 	// environment — there is no actor to route it through, and the row it
