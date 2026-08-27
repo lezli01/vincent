@@ -52,6 +52,7 @@ and design choices that made a durable orchestrator feel necessary.
 | Article | What it covers |
 |---|---|
 | [The workflow I kept repeating—and how vincent was born](why/the-workflow-i-kept-repeating-and-how-vincent-was-born.md) | How a recurring QA-ticket routine revealed that the missing tool was a reusable workflow, not another prompt |
+| [Spend inference only where it belongs](why/spend-inference-only-where-it-belongs.md) | How command-first workflows reduce cost by reserving agents for work that actually requires judgment |
 
 [Browse the series →](why/README.md)
 

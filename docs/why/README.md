@@ -11,6 +11,8 @@ and the principles that continue to shape it.
 
 - [The workflow I kept repeating—and how vincent was born](the-workflow-i-kept-repeating-and-how-vincent-was-born.md)
   — how a familiar QA-ticket routine turned into the idea that became vincent.
+- [Spend inference only where it belongs](spend-inference-only-where-it-belongs.md)
+  — how deterministic steps make agentic delivery more cost-effective.
 
 ## Continue exploring
 
