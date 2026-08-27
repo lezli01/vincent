@@ -457,6 +457,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 **Start here**
 
 - [Features](docs/features.md) — the product tour and common use cases
+- [Why vincent is awesome](docs/why/README.md) — the stories and recurring
+  workflows that led to it
 - [Installation](docs/getting-started/installation.md) — download, verify, and
   install an agent CLI
 - [Quickstart](docs/getting-started/quickstart.md) — first task, end to end

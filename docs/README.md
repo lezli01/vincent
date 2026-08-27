@@ -20,6 +20,7 @@ task with the [Quickstart](getting-started/quickstart.md).
 
 | I want to… | Start here |
 |---|---|
+| Understand why vincent is awesome | [Why vincent is awesome](why/README.md) |
 | Understand what vincent can do | [Features](features.md) |
 | Run my first managed agent task | [Quickstart](getting-started/quickstart.md) |
 | Learn the daemon, workflow, task, and worktree model | [Concepts](getting-started/concepts.md) |
@@ -41,6 +42,18 @@ task with the [Quickstart](getting-started/quickstart.md).
   edit and retry failed steps, and choose exactly when delivery happens.
 - **The interface is yours to choose.** Use the full TUI, JSON-capable CLI, or
   localhost REST + SSE API on Windows, macOS, and Linux.
+
+## Why vincent is awesome
+
+The reference tells you how vincent works. This series tells the story behind
+what makes it awesome: the repeated agentic workflows, practical frustrations,
+and design choices that made a durable orchestrator feel necessary.
+
+| Article | What it covers |
+|---|---|
+| [The workflow I kept repeating—and how vincent was born](why/the-workflow-i-kept-repeating-and-how-vincent-was-born.md) | How a recurring QA-ticket routine revealed that the missing tool was a reusable workflow, not another prompt |
+
+[Browse the series →](why/README.md)
 
 ## Getting started
 
