@@ -180,9 +180,12 @@ A named, ordered list of steps defined in YAML (§8). Workflows live in files, n
 DB; the daemon maintains a registry of parsed workflows from three scopes:
 
 - **Built-in:** shipped in the binary. Lowest precedence — a global or project file
-  of the same name shadows it. Two are present:
+  of the same name shadows it. Three are present:
   - `adhoc` — the single-step agent workflow used when a task is created without
-    naming one (§5.3).
+    naming one (§5.3). *Amended 2026-08-27 (task 037): its prompt — and every
+    other built-in agent prompt — asks the agent to report through `vincent
+    status` (§5.6). The daemon appends no such instruction to any prompt, so a
+    built-in that does not ask is one that runs silent on the board.*
   - `create-workflow` — *added 2026-08-23 (task 024).* One agent step that writes
     another workflow file. It declares two task fields: `workflow_name`
     (required; becomes both the new workflow's `name:` and its file name, so it
@@ -198,6 +201,23 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
     the live registry directory rather than the task's worktree — the registry
     watches project repo roots, so a file left in a worktree would not become a
     workflow until the branch merged.
+  - `update-workflows` — *added 2026-08-27 (task 037).* A maintenance pass over
+    the workflows the task's own project versions under `.vincent/workflows`:
+    it brings them up to the current schema and the `vincent-workflows` skill's
+    practices without changing what any of them does. It declares no task
+    fields and has six steps — a `git ls-files --error-unmatch` probe whose
+    stdout is both the file list and the "this project versions no workflows"
+    signal, a `condition` that ends the run `done` when there are none, one
+    agent step carrying the same embedded skill `create-workflow` carries, a
+    relist, a `for_each` loop validating every file (`vincent workflow
+    validate` takes one file, so per-file iteration is the loop's job), and a
+    `git diff --stat` for the record. Its agent step runs under `on_input:
+    deny`: the answers are in the repository and the result is reviewed as a
+    diff, so parking the task in `awaiting_input` would buy a held slot and
+    nothing else. Unlike `create-workflow`, its deliverable is **the task's own
+    worktree and branch**, reviewed and merged like any other diff — these
+    files are versioned by the repository, and merging is what makes a
+    rewritten workflow live.
 - **Global:** `{config_dir}/workflows/*.yaml` — available to every project.
 - **Project:** `{repo}/.vincent/workflows/*.yaml` — available to that project only,
   git-versioned and shareable with a team. A project workflow **shadows** a global

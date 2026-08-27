@@ -8,10 +8,10 @@
 // must stay that way, so any package may import it.
 //
 // The published skill is the single source: editing
-// `vincent-workflows/SKILL.md` changes the built-in `create-workflow`
-// workflow's prompt at the next build, with no Go change. That coupling is
-// deliberate (task 024 decision 7) and is why the consumer escapes and
-// re-indents the text rather than assuming anything about its shape.
+// `vincent-workflows/SKILL.md` changes the built-in `create-workflow` and
+// `update-workflows` prompts at the next build, with no Go change. That
+// coupling is deliberate (task 024 decision 7) and is why the consumers escape
+// and re-indent the text rather than assuming anything about its shape.
 package skills
 
 import _ "embed"
