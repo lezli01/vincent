@@ -39,12 +39,34 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// hermeticEnv is the test process's environment with every VINCENT_* variable
+// removed.
+//
+// This suite is itself run from inside a vincent step — that is what the
+// repository's own workflows do, and what CI's gates do — and a step's
+// environment carries §8.5's VINCENT_* block. Inheriting it makes a child
+// `vincent` believe it belongs to the *outer* task: `TestStatusOutsideAStep`
+// saw a real VINCENT_TASK_ID and reported a daemon problem instead of the
+// missing-variable error it asserts. The two dirs the callers pin are appended
+// after this, so nothing a test relies on is lost.
+func hermeticEnv() []string {
+	env := os.Environ()
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "VINCENT_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // runVincent runs the built binary with isolated config/data dirs and
 // returns its combined output and exit code.
 func runVincent(t *testing.T, dataDir, cfgDir string, args ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command(vincentBin, args...)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(hermeticEnv(),
 		config.EnvDataDir+"="+dataDir,
 		config.EnvConfigDir+"="+cfgDir,
 	)
@@ -64,7 +86,7 @@ func TestDaemonStartStatusStopCycle(t *testing.T) {
 	t.Cleanup(func() {
 		// Never leak a detached daemon, even when an assertion fails.
 		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(hermeticEnv(),
 			config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 		_, _ = cmd.CombinedOutput()
 	})

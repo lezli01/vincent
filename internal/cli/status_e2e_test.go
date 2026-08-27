@@ -29,7 +29,7 @@ func TestStatusFromInsideAStep(t *testing.T) {
 	dataDir, cfgDir := t.TempDir(), t.TempDir()
 	t.Cleanup(func() {
 		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(hermeticEnv(),
 			config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 		_, _ = cmd.CombinedOutput()
 	})
@@ -134,6 +134,13 @@ func TestStatusFromInsideAStep(t *testing.T) {
 // that someone typed the command at a shell.
 func TestStatusOutsideAStep(t *testing.T) {
 	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	// Pin the hostile environment rather than hoping for a clean one. This
+	// suite really is run from inside a vincent step, and inheriting §8.5's
+	// block made the child address the *outer* task and report a daemon
+	// problem instead. `runVincent` strips it; setting it here is what asserts
+	// that, and what makes the regression reproduce off a dev machine.
+	t.Setenv(envTaskID, "4242")
+	t.Setenv(envStepID, "outer-step")
 	out, code := runVincent(t, dataDir, cfgDir, "status", "hello")
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)

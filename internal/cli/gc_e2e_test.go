@@ -18,7 +18,7 @@ func TestGCAgainstLiveDaemon(t *testing.T) {
 	dataDir, cfgDir := t.TempDir(), t.TempDir()
 	t.Cleanup(func() {
 		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(hermeticEnv(),
 			config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 		_, _ = cmd.CombinedOutput()
 	})

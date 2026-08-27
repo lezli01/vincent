@@ -130,7 +130,7 @@ func TestCrashRecoveryE2E(t *testing.T) {
 func startDaemonProcess(t *testing.T, dataDir, cfgDir, scenario string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(vincentBin, "daemon")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(hermeticEnv(),
 		config.EnvDataDir+"="+dataDir,
 		config.EnvConfigDir+"="+cfgDir,
 		"FAKEAGENT_SCENARIO="+scenario,
