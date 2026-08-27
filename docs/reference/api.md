@@ -597,11 +597,12 @@ and returned with the task.
 
 `github_issue` is an issue **number**. The daemon fetches that issue, computes
 the [prefill](#github-issues), and fills in whatever this request left unset —
-**anything you send explicitly wins.** For `fields` that is decided by
-*presence*: a key sent with an empty value is a row somebody cleared on purpose
-and stays cleared, while `title` and `description` fall back to the issue when
-they are blank or absent. `title` therefore becomes optional when
-`github_issue` is given.
+**anything you send explicitly wins.** For `fields` and `description` that is
+decided by *presence*: a key sent with an empty value is a row somebody cleared
+on purpose and stays cleared, so `"description": ""` creates a task with no
+description rather than the issue body. Only `title` keys on emptiness as well
+as absence — there is no such thing as deliberately creating an untitled task —
+so `title` becomes optional when `github_issue` is given.
 
 The issue is stored on the task and served back on every task representation as
 `github_issue`, in the same shape the listing returns. It is a **snapshot**: it

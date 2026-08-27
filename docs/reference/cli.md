@@ -14,6 +14,7 @@ localhost API.
 - [`vincent project`](#vincent-project)
 - [`vincent task`](#vincent-task)
 - [`vincent workflow`](#vincent-workflow)
+- [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
 
 ---
@@ -308,7 +309,7 @@ Lists registered projects with their ids, paths and defaults.
 vincent task add --project ID (--title TITLE | --github-issue N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
-                 [--effort E] [--field NAME=VALUE]... [--github-issue N] [--json]
+                 [--effort E] [--field NAME=VALUE]... [--json]
 ```
 
 Creates a task. It is `queued` immediately — there is no draft state.

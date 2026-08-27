@@ -13,8 +13,13 @@ every client is a thin consumer of its localhost API.
 ### Does it need an API key or an account?
 
 No. vincent stores **no credentials**. It runs the agent CLI you already
-installed and authenticated. There is no vincent account, no telemetry, and no
-network dependency beyond whatever your agent CLI does.
+installed and authenticated. There is no vincent account and no telemetry, and
+vincent reaches the network only on your behalf: whatever your agent CLI and
+your workflow's own git commands do, plus reading a GitHub issue when you create
+a task from one — which uses your existing `gh` login, or a
+`GITHUB_TOKEN`/`GH_TOKEN` already in the daemon's environment, stores neither,
+and is switched off by
+[`github.enabled: false`](reference/configuration.md#github).
 
 ### Which agent CLIs work?
 

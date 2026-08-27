@@ -3288,9 +3288,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         prefill the issues endpoint previews, and folds it into
                                         the request wherever the caller left a value unset —
                                         **any value supplied explicitly wins**. Presence is what
-                                        counts for `fields`: a key sent with an empty value is a
-                                        row a human cleared on purpose and is left cleared, while
-                                        `title` and `description` key on blank/absent. The
+                                        counts for `fields` and `description`: a key sent with an
+                                        empty value is a row a human cleared on purpose and is
+                                        left cleared, which is what lets the §15 form send its
+                                        emptied rows verbatim. Only `title` keys on blank as well
+                                        as absent — an untitled task is not something anyone
+                                        creates on purpose. The
                                         resulting issue snapshot is persisted on the task (§5.3)
                                         and served back on every task representation as
                                         `github_issue`. `title` becomes optional when

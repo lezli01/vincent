@@ -855,6 +855,7 @@ is whether `.Steps.foo` exists — that is a run-time fact.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | completed steps by id → `{Status, Result, ExitCode}` — [§5.3](#53-passing-one-steps-output-to-the-next) |
 | `.Loop` | `Index` (1-based, **0** outside any loop), `Item`, `IsFirst`, `IsLast` — [§6.4](#64-loops-in-depth) |
+| `.Issue` | the GitHub issue the task was created from: `Number` (**0** when there is none), `Repo`, `Title`, `Body`, `URL`, `State`, `Labels` (a list), `Author`, `Assignee`, `Milestone`, `MilestoneNumber` — [reference](../reference/workflow-schema.md#issue) |
 | `.Host` | `OS`, `Arch` — the **daemon's** GOOS/GOARCH — [§10.4](#104-gating-one-step-by-platform) |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retry attempts only: `{Reason, Output}`; empty otherwise |

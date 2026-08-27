@@ -45,9 +45,10 @@ list with the user-facing context a commit subject cannot carry.
   Outside the TUI: `vincent task add --github-issue 200` resolves and prefills the
   issue daemon-side, so it produces the same stored task the form does, with any
   flag you pass explicitly winning over the issue-derived value; `vincent github
-  issues --project <id>` lists issues without opening the TUI (`--json` for
-  scripts); and `GET /v1/projects/{id}/github` and `.../github/issues` expose the
-  capability probe and the listing over the API.
+  issues --project <id>` lists issues without opening the TUI and `vincent github
+  status --project <id>` says whether that project's issues can be read at all
+  (`--json` on both, for scripts); and `GET /v1/projects/{id}/github` and
+  `.../github/issues` expose the capability probe and the listing over the API.
 
   vincent **stores no GitHub credential**. It prefers the `gh` CLI you have already
   configured — which carries your own host, enterprise and SSO setup — and falls
