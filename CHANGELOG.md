@@ -9,6 +9,16 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-08-27)
+
+
+### Features
+
+* **github:** give the issue number a task field of its own ([ca3fc32](https://github.com/lezli01/vincent/commit/ca3fc326575a241fc62283abef538189fbc6b3a7))
+* **workflows:** add the prepare-release workflow ([7f05e9b](https://github.com/lezli01/vincent/commit/7f05e9bef81e6e9171aaa4d8ae81fe5134e9b1bb))
+* **workflows:** add the update-workflows built-in ([0f1a88e](https://github.com/lezli01/vincent/commit/0f1a88e2e9a99532223163a62403d2c62fb29d30))
+* **workflows:** report step status from the project workflows ([c6ef8f8](https://github.com/lezli01/vincent/commit/c6ef8f82c59fd0505088be1539cab6d41ec46089))
+
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-27)
 
 ### Added
