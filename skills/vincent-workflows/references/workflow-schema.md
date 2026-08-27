@@ -1,22 +1,22 @@
-# Vincent workflow schema
+# vincent workflow schema
 
 Use this compact reference while authoring or reviewing. The repository's
-`docs/reference/workflow-schema.md` remains authoritative if Vincent has evolved
+`docs/reference/workflow-schema.md` remains authoritative if vincent has evolved
 since this skill was installed.
 
 ## Compatibility and authority
 
-This file is a schema snapshot, not a promise that every released Vincent
+This file is a schema snapshot, not a promise that every released vincent
 binary supports every listed feature. Establish the target before writing:
 
-1. Inside a Vincent source checkout, prefer its current
+1. Inside a vincent source checkout, prefer its current
    `docs/reference/workflow-schema.md`.
 2. Run `vincent version` and record the exact output when a binary is available.
 3. Run that binary's `vincent workflow validate`; its result is the final local
    compatibility verdict.
 
 If the validator rejects a referenced feature, report the mismatch and ask
-whether to upgrade Vincent or author against the installed version. A generic
+whether to upgrade vincent or author against the installed version. A generic
 YAML parser cannot answer this question. When another host or version will run
 the workflow, treat local validation as provisional until that target binary
 also accepts the file.
@@ -299,5 +299,5 @@ and platform tokens. Unknown model values can be warnings because the live CLI
 is the final authority. Include resolution is deferred until task creation.
 
 Treat a warning as a review item. The file being syntactically valid YAML is
-not evidence that Vincent accepts or safely executes it. Report the exact
-Vincent version with the verdict so a future reader can reproduce the result.
+not evidence that vincent accepts or safely executes it. Report the exact
+vincent version with the verdict so a future reader can reproduce the result.

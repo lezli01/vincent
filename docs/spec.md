@@ -4684,7 +4684,7 @@ pull request requires the explicitly documented classic-`public_repo`
 exception. All formats consume the same GoReleaser build, checksums and release
 tag. None changes the security boundary: binaries remain
 without Authenticode/Apple notarization, package metadata preserves the MIT
-license, and no root package script registers Vincent's
+license, and no root package script registers vincent's
 per-user service. External bootstrap and first-release proof are tracked in
 `docs/tasks/021-package-distribution-channels.md`; documentation must not infer
 catalog availability from a successful local manifest render.

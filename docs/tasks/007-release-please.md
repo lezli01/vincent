@@ -44,7 +44,7 @@ Conventions for this file are in [the tasks README](README.md).
 - [x] **007.4 — Maintainer documentation.** Document tokens, release PR review,
   dry runs, release verification, and stable/prerelease behavior. ✓ 2026-08-16
 - [x] **007.5 — Verification.** Parse both JSON files, lint the GitHub Actions
-  YAML, run `goreleaser check`, validate the checked-in Vincent workflows, and
+  YAML, run `goreleaser check`, validate the checked-in vincent workflows, and
   run the repository linter. ✓ 2026-08-16
 - [x] **007.6 — Repository credential.** Create a fine-grained PAT scoped only
   to `lezli01/vincent` with Contents, Issues, and Pull requests read/write, then

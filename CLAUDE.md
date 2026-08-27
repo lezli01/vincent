@@ -23,6 +23,12 @@ change to any of those is a change to its page. The same rule covers the
 pictures: every `docs/assets/tui-*.png` is a capture of the running TUI produced
 by `scripts/screenshots.sh` (below), never a drawing of one.
 
+**Product-name style:** write `vincent` with a lowercase `v` everywhere in
+prose, headings, labels, metadata, and skill names. Use an initial capital only
+when vincent is the first word of a complete sentence. Preserve the exact case of
+case-sensitive code and external identifiers, such as the `$VINCENT` gate-script
+variable and the WinGet package ID `lezli01.Vincent`; those are not prose.
+
 Implementation work also uses these maintainer records. They are **not**
 optional when a change touches the behavior or decision they describe:
 

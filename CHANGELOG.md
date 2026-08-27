@@ -519,7 +519,7 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
-- **The Vincent Workflows authoring skill.** A portable agent skill for
+- **The vincent Workflows authoring skill.** A portable agent skill for
   designing workflows: it prefers deterministic commands and the language's
   native control flow over asking an agent, keeps the cost of each step in
   view, and asks about human gates, mid-run interaction, acceptance checks,
@@ -556,11 +556,11 @@ list with the user-facing context a commit subject cannot carry.
   ([#153](https://github.com/lezli01/vincent/pull/153))
 
 - **WinGet, Scoop, mise, deb and rpm distribution.** Stable releases now publish
-  Vincent's Windows archives through its Scoop bucket and submit them to
+  vincent's Windows archives through its Scoop bucket and submit them to
   Microsoft's WinGet catalog, attach native deb/rpm packages for x86-64 and
   ARM64, and support mise through its standard GitHub backend. All formats use
   the same checksummed release binaries and preserve the noncommercial license;
-  deb/rpm packages install no root-owned service for Vincent's per-user daemon.
+  deb/rpm packages install no root-owned service for vincent's per-user daemon.
   ([#158](https://github.com/lezli01/vincent/pull/158))
 
 ## [0.3.0](https://github.com/lezli01/vincent/compare/8efa4c8c7bb8b034831c04447f17122f9d8aaf0a...v0.3.0) (2026-08-19)

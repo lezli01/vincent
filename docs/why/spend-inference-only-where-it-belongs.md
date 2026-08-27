@@ -16,7 +16,7 @@ because an agent reasons its way through them again on every run.
 
 vincent lets the same request become a small workflow in which each job is given
 to the cheapest correct primitive. The portable
-[Vincent Workflows skill](../../skills/vincent-workflows/SKILL.md) follows this
+[vincent Workflows skill](../../skills/vincent-workflows/SKILL.md) follows this
 principle when it helps create workflows: it prefers commands and native control
 flow, then uses an agent only when the work actually requires interpretation or
 judgment.

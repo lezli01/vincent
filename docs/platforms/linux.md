@@ -29,7 +29,7 @@ Download the package from the
 These are release assets rather than an apt/dnf repository, so install the next
 downloaded package the same way to upgrade. Both formats put the binary at
 `/usr/bin/vincent`, depend on git, carry the license documents, and deliberately
-do not create a root-owned service for Vincent's per-user daemon.
+do not create a root-owned service for vincent's per-user daemon.
 
 mise works across distributions without a distro package:
 

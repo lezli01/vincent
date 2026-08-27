@@ -111,7 +111,7 @@ purpose or keep one.
 
 ## Calculate the agent-session envelope
 
-Report the maximum automatic agent sessions Vincent may start before any human
+Report the maximum automatic agent sessions vincent may start before any human
 chooses retry. This is a planned-cost upper bound, not a token or currency
 estimate. Human-triggered retries can make lifetime use unbounded and are
 reported separately.

@@ -59,7 +59,7 @@ not implement.
 
 **Beat:** adding Overview/Tasks/Settings or Overview/Steps/Graph tab chrome
 only to match a mock-up. Navigation that looks interactive but is not is worse
-than a quieter hierarchy around the capabilities Vincent already has.
+than a quieter hierarchy around the capabilities vincent already has.
 
 ## Work
 

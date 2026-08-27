@@ -1,16 +1,16 @@
 ---
 name: vincent-workflows
-description: Create, edit, review, and validate Vincent workflow YAML under .vincent/workflows. Use for Vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for GitHub Actions or other workflow systems.
+description: Create, edit, review, and validate vincent workflow YAML under .vincent/workflows. Use for vincent workflow fields, step selection, templates, checks, human gates, retries, conditions, loops, parallel work, fan-out, includes, or validation errors. Do not use for GitHub Actions or other workflow systems.
 license: LICENSE.txt
 metadata:
   author: lezli01
 ---
 
-# Vincent Workflows
+# vincent Workflows
 
-Design the smallest reliable Vincent workflow for the requested outcome. Spend
+Design the smallest reliable vincent workflow for the requested outcome. Spend
 agent tokens only where reasoning is part of the work; express everything else
-with deterministic steps and Vincent's native control flow.
+with deterministic steps and vincent's native control flow.
 
 ## Gather only decisions that matter
 
@@ -21,7 +21,7 @@ set of questions only when an answer changes the YAML, especially:
 - What deliverable ends the run, and which commands prove it is correct?
 - Which task inputs are required, optional, typed, or pattern-constrained?
 - Which host platforms and shells must the commands support?
-- Which Vincent version and environment will execute the workflow, and is the
+- Which vincent version and environment will execute the workflow, and is the
   locally available binary representative of that target?
 - Does any step publish, deploy, push, delete, spend money, mutate an external
   service, or otherwise become difficult to reverse?
@@ -45,7 +45,7 @@ ritual gate when the user has already made the policy clear.
 
 ## Establish compatibility and read references
 
-If this work is inside a Vincent source checkout, read its current
+If this work is inside a vincent source checkout, read its current
 `docs/reference/workflow-schema.md`; it is newer and more authoritative than a
 bundled snapshot. Otherwise use
 [references/workflow-schema.md](references/workflow-schema.md) as the design
@@ -55,7 +55,7 @@ Run `vincent version` when the binary is available and retain the exact output
 for the final summary. The installed binary's
 `vincent workflow validate <file>` result is the compatibility verdict. If it
 rejects a feature described by the reference, explain the version mismatch and
-ask whether to upgrade Vincent or target the installed feature set. Do not
+ask whether to upgrade vincent or target the installed feature set. Do not
 silently claim compatibility or rewrite the requested design. If execution
 targets another host or version, identify local validation as provisional until
 the target binary validates it.
@@ -168,7 +168,7 @@ human-triggered retry.
 Return a compact design summary with:
 
 - the created or edited path;
-- Vincent version, schema source, and validator result;
+- vincent version, schema source, and validator result;
 - every retained agent step's necessity, check, and maximum automatic sessions;
 - the workflow's total session envelope and any unknown dynamic contribution;
 - task fields, binary manual gates, and live interaction separately;

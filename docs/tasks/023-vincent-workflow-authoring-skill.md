@@ -1,10 +1,10 @@
-# 023 — Vincent workflow authoring skill
+# 023 — vincent workflow authoring skill
 
 **Status:** ✅ done (10/10)
 **Opened:** 2026-08-21
 
 Create a portable Agent Skill that helps coding agents design, write, review, and
-validate Vincent workflow YAML. The skill must select Vincent's control-flow
+validate vincent workflow YAML. The skill must select vincent's control-flow
 primitives deliberately, reserve prompt-based agent steps for work that requires
 reasoning, and surface meaningful human-gate and interaction choices before the
 workflow is committed.
@@ -28,7 +28,7 @@ workflow is committed.
    platforms, failure policy, side effects, concurrency, and whether a human
    gate or live agent interaction is required. This beats either a fixed
    questionnaire or silently assuming that all workflows should be unattended.
-4. **2026-08-21 — Use progressive references and Vincent's own validator.** Keep
+4. **2026-08-21 — Use progressive references and vincent's own validator.** Keep
    the entrypoint focused, put schema and design detail in references, and make
    `vincent workflow validate` the final deterministic check. This beats
    duplicating the entire documentation set or adding a helper script around an
@@ -42,7 +42,7 @@ workflow is committed.
    only when the same reasoning session needs an answer. This beats implying
    that approval can return an arbitrary choice or credential.
 7. **2026-08-21 — Make schema-version drift visible.** Prefer repository-local
-   workflow documentation, record the installed Vincent version, and rely on
+   workflow documentation, record the installed vincent version, and rely on
    that binary's validator for the final compatibility verdict. This beats
    silently treating the bundled reference as timeless.
 8. **2026-08-21 — Report a conservative agent-session cost envelope.** Count
@@ -65,7 +65,7 @@ workflow is committed.
 - [x] **023.4 — Validate skill structure, discovery, and representative workflow behavior.** ✓ 2026-08-21
 - [x] **023.5 — Review the final diff and repository verification.** ✓ 2026-08-21
 - [x] **023.6 — Correct manual-gate, choice, and credential guidance.** ✓ 2026-08-21
-- [x] **023.7 — Add Vincent version and schema-drift handling.** ✓ 2026-08-21
+- [x] **023.7 — Add vincent version and schema-drift handling.** ✓ 2026-08-21
 - [x] **023.8 — Add a conservative agent-session cost envelope.** ✓ 2026-08-21
 - [x] **023.9 — Strengthen secret and external-effect safety guidance.** ✓ 2026-08-21
 - [x] **023.10 — Add the final workflow design summary and re-verify the skill.** ✓ 2026-08-21

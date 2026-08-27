@@ -1,10 +1,10 @@
 ---
 title: Contributing
-description: How to contribute code, documentation, and fixes to Vincent.
+description: How to contribute code, documentation, and fixes to vincent.
 permalink: /contributing.html
 ---
 
-# Contributing to Vincent
+# Contributing to vincent
 
 Contributions are welcome. This page covers the public contributor workflow; the repository's [canonical CONTRIBUTING guide](https://github.com/lezli01/vincent/blob/master/CONTRIBUTING.md) remains the detailed source of truth.
 

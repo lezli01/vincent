@@ -119,6 +119,9 @@ record when a change needs one.
 
 ## Conventions in these docs
 
+- Write `vincent` with a lowercase `v`, except when it begins a complete
+  sentence. Preserve case-sensitive external identifiers such as
+  `lezli01.Vincent` exactly.
 - `{config_dir}` and `{data_dir}` are the platform-native directories resolved
   in [Files and directories](reference/files.md).
 - Shell samples are POSIX unless a PowerShell equivalent is shown beside them.

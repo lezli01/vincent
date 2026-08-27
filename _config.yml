@@ -19,7 +19,7 @@ defaults:
 
 # GitHub Pages builds this repository with Jekyll 3.x. Keep internal engineering
 # records and template-heavy bundled reference material out of the site build;
-# those files intentionally contain Vincent Go-template expressions (`{{ ... }}`)
+# those files intentionally contain vincent Go-template expressions (`{{ ... }}`)
 # that Liquid would otherwise try to evaluate.
 exclude:
   - AGENTS.md
