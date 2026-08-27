@@ -172,6 +172,18 @@ trailing one, and the interior CRs then fail an exact comparison against a
 `$'a\nb'` literal. Single-line captures are unaffected, which is how this hid
 until `m8` compared a list.
 
+**Never pipe into `grep -q`.** Capture first and match a here-string:
+`out="$(git log --format=%s "$b")"; grep -qx thing <<<"$out"`. `grep -q` exits
+at its first match and closes the pipe; the producer then dies of SIGPIPE
+writing whatever came next, and `set -o pipefail` reports 141 — so the
+assertion fails *because it matched*. It is a race, not a certainty: it fires
+only when the producer still had output to write, which made `m7` scenario 4
+fail ~20% of runs on a three-line `git log` whose match was the second line,
+red on CI and green on a rerun. `m2`'s follow-up assertion had carried the
+here-string fix and its explanation since it was written; eight other sites
+across `m2`, `m5`, `m6` and `m7` had not. The same applies to any early-exiting
+consumer — `head`, `read`, a `jq` that `exit`s mid-stream.
+
 Requires bash, go, git, curl, jq.
 
 ## Architecture

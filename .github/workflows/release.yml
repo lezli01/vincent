@@ -1,9 +1,9 @@
 name: Release
 
 # Tag-driven packaging (T4.5). Normally Release Please creates the tag and the
-# GitHub release; this workflow then uploads the signed artifacts to that
-# release, attaches native Linux packages, and publishes the stable Homebrew,
-# Scoop, and WinGet metadata. The build runs once on macOS
+# GitHub release; this workflow then uploads the artifacts to that release,
+# attaches native Linux packages, and publishes the stable Homebrew, Scoop, and
+# WinGet metadata. The build runs once on macOS
 # — the binaries are pure Go, so a build matrix would produce identical
 # artifacts three times — and the per-OS jobs afterwards smoke-test what it
 # produced, which is the part a single runner genuinely cannot do.
@@ -14,6 +14,13 @@ name: Release
 # GoReleaser's own `notarize:` block is Pro-only, and signing from Linux with a
 # third-party reimplementation was rejected in favour of Apple's toolchain. The
 # deb/rpm inspection that a macOS runner cannot do moved to `verify-packages`.
+#
+# That signing is **best-effort, and currently inert**: Apple's Developer Program
+# is a ~$99/yr purchase this project declined (task 039, dropping 032.7), so
+# every signing step below degrades to a warning and the release ships unsigned.
+# The steps are kept because installing the six MACOS_* secrets is then the whole
+# of the switch. The runner stays macOS regardless — it is where the .pkg is
+# built.
 on:
   push:
     tags: ["v*"]
@@ -44,13 +51,25 @@ jobs:
       id-token: write # keyless cosign + build attestations
       attestations: write
     env:
-      # A v* tag must not be able to publish an unsigned macOS artifact; a dry
-      # run and a fork must not need a secret to work. This one variable is
-      # where that split lives — every signing step reads it, and nothing else
-      # decides it.
-      MACOS_SIGN_REQUIRED: ${{ github.event_name == 'push' && '1' || '0' }}
+      # Signing is mandatory exactly where it is possible. With the Developer ID
+      # certificates configured, a v* tag must not publish an unsigned macOS
+      # artifact; without them — a fork, a dry run, or this repository, whose
+      # 032.7 Apple enrolment was dropped — every signing step degrades to a
+      # warning and the release still ships, unsigned.
+      #
+      # Keying this on the *tag* instead is what destroyed v0.7.0: the build
+      # died at the first signing step, so that release produced no archives, no
+      # packages and no manager metadata at all. An unsigned release is a worse
+      # release; no release is not a release (task 039).
+      #
+      # This one variable is still where the split lives — every signing step
+      # reads it, and nothing else decides it.
+      MACOS_SIGN_REQUIRED: ${{ secrets.MACOS_CERT_APPLICATION_P12 != '' && '1' || '0' }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      # Whether this run's darwin artifacts carry a signature at all, so the
+      # smoke job assesses Gatekeeper only when there is something to assess.
+      macos_signed: ${{ steps.meta.outputs.macos_signed }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -65,7 +84,10 @@ jobs:
 
       - id: meta
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "macos_signed=$MACOS_SIGN_REQUIRED" >> "$GITHUB_OUTPUT"
 
       # Both identities land in a throwaway keychain created for this job: the
       # runner's login keychain is never touched, and the keychain dies with the
@@ -81,8 +103,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${MACOS_CERT_APPLICATION_P12:-}" ] || [ -z "${MACOS_CERT_INSTALLER_P12:-}" ]; then
+            # MACOS_SIGN_REQUIRED is derived from the Application certificate
+            # alone, so reaching here with it set means the pair is half
+            # configured — a misconfiguration, not the unenrolled path.
             if [ "$MACOS_SIGN_REQUIRED" = "1" ]; then
-              echo "::error::a v* tag needs the Developer ID certificates; see RELEASING.md"
+              echo "::error::MACOS_CERT_APPLICATION_P12 is set but MACOS_CERT_INSTALLER_P12 is not; see RELEASING.md"
               exit 1
             fi
             echo "::warning::no Developer ID certificates configured — this run produces unsigned macOS artifacts"
@@ -143,8 +168,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${MACOS_NOTARY_KEY_P8:-}" ] || [ -z "${MACOS_KEYCHAIN:-}" ]; then
+            # A Developer ID signature Apple has not notarized is worse than no
+            # signature: Gatekeeper reports source=Unnotarized Developer ID and
+            # still refuses. Certificates without a notary key is therefore a
+            # hard error, never the unsigned path.
             if [ "$MACOS_SIGN_REQUIRED" = "1" ]; then
-              echo "::error::a v* tag needs the App Store Connect notary key; see RELEASING.md"
+              echo "::error::the Developer ID certificates are configured but MACOS_NOTARY_KEY_P8 is not; see RELEASING.md"
               exit 1
             fi
             echo "::warning::no notary credentials configured — this run produces un-notarized macOS artifacts"
@@ -408,8 +437,13 @@ jobs:
       # would have set is written back by hand: that makes this a strong proxy
       # for the first-launch dialog, not a proof of it. The proof is a human
       # walkthrough — docs/gates/032-macos-notarization.md.
+      #
+      # Skipped entirely on an unsigned release: with no certificates there is
+      # no signature to assess, and `codesign --verify` on an ad-hoc binary
+      # would fail the smoke job over the documented state of the release
+      # (task 039).
       - name: Assess the macOS signature
-        if: runner.os == 'macOS' && github.event_name == 'push'
+        if: runner.os == 'macOS' && github.event_name == 'push' && needs.release.outputs.macos_signed == '1'
         shell: bash
         run: |
           set -euo pipefail

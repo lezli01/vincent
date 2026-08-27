@@ -246,10 +246,16 @@ EOF
   branch="$(api GET "/tasks/$task_id" | jq -r .branch_name)"
   git -C "$remote" rev-parse --verify "refs/heads/$branch" >/dev/null \
     || fail "branch $branch missing in the bare remote"
-  git -C "$remote" log -1 --format=%s "$branch" | grep -q 'm2 gate: record the answer' \
+  # Captured rather than piped into `grep -q`: grep exits at its first match,
+  # the producer dies of SIGPIPE writing the rest, and pipefail reports that as
+  # a failed assertion over data that was correct. Proven in m7 scenario 4.
+  local subject files
+  subject="$(git -C "$remote" log -1 --format=%s "$branch")"
+  grep -q 'm2 gate: record the answer' <<<"$subject" \
     || fail "published tip is not the gate commit"
   if (( ! REAL_AGENT )); then
-    git -C "$remote" show --name-only --format= "$branch" | grep -qx 'README.md' \
+    files="$(git -C "$remote" show --name-only --format= "$branch")"
+    grep -qx 'README.md' <<<"$files" \
       || fail "published commit does not carry the agent's README.md edit"
   fi
 
@@ -390,7 +396,9 @@ EOF
   local alive=1
   for _ in $(seq 1 20); do
     if [[ "${OS:-}" == "Windows_NT" ]]; then
-      tasklist //FI "PID eq $child_pid" 2>/dev/null | grep -q " $child_pid " || { alive=0; break; }
+      local listing
+      listing="$(tasklist //FI "PID eq $child_pid" 2>/dev/null || true)"
+      grep -q " $child_pid " <<<"$listing" || { alive=0; break; }
     else
       kill -0 "$child_pid" 2>/dev/null || { alive=0; break; }
     fi

@@ -4743,6 +4743,54 @@ by this amendment and remains descoped**: the free-for-OSS signing route is bein
 surveyed under task 038, and §19 will not describe a Windows signature before one
 exists.
 
+**Amended 2026-08-27 — the macOS signature is conditional, and today absent.**
+The 2026-08-26 amendment above says the ~$99/yr Apple Developer Program cost
+"is now paid". **It was not**, and the pipeline it describes was written as
+though it had been: `MACOS_SIGN_REQUIRED` was keyed on the *tag*, so a `v*` tag
+without the certificates was a hard error. `v0.7.0` proved what that costs —
+the tag build died at its first signing step and produced no archives, no deb or
+rpm, no attestations and no Homebrew, Scoop or WinGet metadata, and the release
+was unwound. Signing is therefore keyed on the *certificates* instead: with them
+configured a tag must not publish an unsigned macOS artifact, and without them
+every signing step warns and the release ships **unsigned**. An unsigned release
+is worse than a signed one; no release is not a release. The macOS install path
+consequently meets Gatekeeper again — the direct-download path documents `xattr
+-d com.apple.quarantine` once per download, the `.pkg` is installed with
+right-click → *Open* or `sudo installer`, and the Homebrew cask's
+quarantine-stripping `postflight` hook is **restored**, because brew installs the
+same unsigned archive and would otherwise deliver a binary that will not start.
+The rest of the 2026-08-26 amendment stands unchanged and is not relitigated:
+every mechanism it describes is implemented and dormant, and installing the six
+`MACOS_*` secrets is the whole of the switch — the `.pkg` is still built, still
+universal, still outside `checksums.txt`, still covered by a build attestation,
+and the release job still runs on `macos-latest`, now for `pkgbuild` alone. The
+enrolment blocker stays 032.7's; **this amendment is not a decision to abandon
+signing**, only to stop a missing certificate from destroying a release. Apple's
+fee waiver reaches nonprofit, educational and government *organizations* only,
+which task 038 already recorded as unavailable here. Reasoning in
+`docs/tasks/039-unsigned-releases-by-default.md`.
+
+**Amended 2026-08-27 (later the same day) — macOS OS code signing is descoped
+again; the machinery is retained.** The amendment immediately above deliberately
+left the enrolment open. It is now closed: the ~$99/yr Apple Developer Program
+membership is **not being bought**, 032.7 is dropped, and the 2026-08-26
+amendment's reversal of the Apple half of † is itself reversed. **Neither
+desktop platform carries an OS code signature**, which returns §19 to the shape
+the X decision gave it — macOS Gatekeeper and Windows SmartScreen both prompt on
+first launch, and the documented macOS path is `xattr -d com.apple.quarantine`
+once per download, with the Homebrew cask stripping the attribute itself. What
+does **not** revert: the `.pkg`, which stands on being one universal binary at a
+fixed install path rather than on a stapled ticket; cosign over `checksums.txt`
+and the GitHub build attestations, which were never conditional; and the signing
+implementation itself, which is complete, verified and kept dormant so that
+installing six repository secrets is the entire cost of reversing this — the
+decision was made on price, and is meant to stay cheap to unmake.
+`docs/tasks/032-macos-notarization.md` is retained as that design and is no
+longer a description of what ships. Windows is untouched here: task 038's
+free-for-OSS Authenticode survey continues, and a free route accepted there would
+sign Windows while macOS stays unsigned. Reasoning in
+`docs/tasks/039-unsigned-releases-by-default.md`.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the

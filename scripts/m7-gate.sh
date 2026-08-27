@@ -319,9 +319,15 @@ YAML
   KIDS="$(api GET "/tasks?parent_id=$TID" | jq 'length')"
   [[ "$KIDS" == 1 ]] || fail "expected 1 lane to be spawned, got $KIDS"
   BRANCH="$(api GET "/tasks/$TID" | jq -r .branch_name)"
-  git -C "$REPO" log --format=%s "$BRANCH" | grep -qx lane-api \
+  # Captured, not piped into `grep -q`. `grep -q` exits at its first match,
+  # `git log` then dies of SIGPIPE writing the commits after it, and pipefail
+  # reports that as a failed assertion over data that was correct all along —
+  # 20% of runs here, because `lane-api` is the second subject of three. Same
+  # trap release.yml's signature checks already work around.
+  SUBJECTS="$(git -C "$REPO" log --format=%s "$BRANCH")"
+  grep -qx lane-api <<<"$SUBJECTS" \
     || fail "the selected lane's commit is not on the parent's branch"
-  if git -C "$REPO" log --format=%s "$BRANCH" | grep -qx lane-skipped; then
+  if grep -qx lane-skipped <<<"$SUBJECTS"; then
     fail "the guarded-off lane ran anyway"
   fi
   daemon_down

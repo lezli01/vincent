@@ -18,7 +18,7 @@ state stay on your machine; vincent provides the control plane around them.
 | GitHub | Create a task from an issue, prefilled and editable; issue details in templates; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
-| Platforms | Windows, macOS, and Linux; Homebrew, a signed and notarized macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
+| Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
 
 ## Orchestrate work instead of terminals
 
@@ -267,10 +267,11 @@ as archives plus platform-friendly packages:
 - mise or release archives on all platforms
 
 Release archives are checksummed, the checksum manifest is signed with cosign,
-and builds carry GitHub attestations. Every macOS artifact is additionally
-signed with an Apple Developer ID identity under the hardened runtime and
-notarized, and the `.pkg` is stapled, so Gatekeeper opens a downloaded release
-without a prompt and without a quarantine attribute to strip. Platform-specific
+and builds carry GitHub attestations. There is no OS code signing on either
+macOS or Windows — both are recurring certificate purchases this project has not
+made — so a downloaded release meets Gatekeeper or SmartScreen once, and
+[Installation](getting-started/installation.md) documents the one command that
+clears it. Platform-specific
 installation, service, shell, and restricted-mode differences are documented in
 [Installation](getting-started/installation.md) and the
 [platform guides](README.md#platforms).

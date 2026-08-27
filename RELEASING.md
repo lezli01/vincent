@@ -4,18 +4,27 @@ Releases are **Release Please-driven**. Conventional Commits on `master` keep a
 release pull request current. Merging that pull request makes Release Please
 create the `vMAJOR.MINOR.PATCH` tag and GitHub release; that tag triggers
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which uses
-[`.goreleaser.yaml`](.goreleaser.yaml) to cross-compile, codesign and notarize
-the macOS binaries, checksum, sign, attest, upload, smoke-test on all three
-OSes, build deb/rpm packages and the macOS installer package, update the stable
-Homebrew and Scoop metadata, and submit the stable WinGet manifest. There
-is no manual tag or upload step, and no artifact is built on a maintainer's
-machine.
+[`.goreleaser.yaml`](.goreleaser.yaml) to cross-compile, checksum, sign, attest,
+upload, smoke-test on all three OSes, build deb/rpm packages and the macOS
+installer package, update the stable Homebrew and Scoop metadata, and submit the
+stable WinGet manifest. There is no manual tag or upload step, and no artifact
+is built on a maintainer's machine.
+
+**Apple code signing is configured and not used.** Every step of it is wired and
+runs the moment the six `MACOS_*` secrets exist. They do not: the Apple Developer
+Program membership they need was never bought, and **032.7, the enrolment, was
+dropped on 2026-08-27** (task 039). A tag therefore ships **unsigned** macOS
+artifacts rather than failing — a split taken after `v0.7.0` died at the first
+signing step and produced nothing at all. The machinery below is kept because
+installing those six secrets is then the entire cost of reversing that decision;
+everything in this document that describes signing describes what would happen
+once they are installed, not what happens today.
 
 The build job runs on **macOS**, not Linux: Apple's signature lives inside the
 Mach-O and has to be applied before the archives and `checksums.txt` exist, and
 `codesign`, `notarytool`, `stapler` and `pkgbuild` ship nowhere else (task 032).
-The deb/rpm and manifest inspection therefore runs in its own `verify-packages`
-job on ubuntu.
+`pkgbuild` alone keeps it there while signing is dormant. The deb/rpm and
+manifest inspection therefore runs in its own `verify-packages` job on ubuntu.
 
 Only a maintainer with push access can cut a release.
 
@@ -54,9 +63,13 @@ does not mean editing the workflow.
 
 ### Bootstrapping the Apple credentials
 
-Prerequisite: an **Apple Developer Program** membership (~$99/yr). §19 †'s
-2026-08-26 amendment records accepting that cost for macOS and declining the
-Windows equivalent.
+**This section is dormant.** §19 †'s 2026-08-26 amendment records accepting the
+~$99/yr **Apple Developer Program** cost for macOS; its two 2026-08-27
+amendments record that the membership was never bought and that the enrolment is
+dropped. It is kept, complete, because installing these six secrets is the whole
+of the switch — no workflow edit follows, and nothing else has to be rediscovered
+if the decision is ever revisited. Prerequisite for all of it: that
+membership.
 
 1. In Xcode or on the developer portal, create two certificates for the team:
    **Developer ID Application** and **Developer ID Installer**.
@@ -152,7 +165,8 @@ The normal Release Please path creates stable releases. If a maintainer cuts an
 exceptional `vX.Y.Z-rcN` tag, GoReleaser marks it as a prerelease and
 `skip_upload: auto` prevents it from moving the Homebrew, Scoop, or WinGet
 metadata. The prerelease still carries its deb, rpm and macOS `.pkg` assets
-on GitHub, signed and notarized like any other tag.
+on GitHub, signed exactly as much as any other tag — which today is not at
+all.
 
 ## Cutting a release
 
@@ -202,13 +216,14 @@ on GitHub, signed and notarized like any other tag.
    job inspects the deb/rpm payloads and the generated Scoop and WinGet metadata
    from the uploaded `dist` artifact, which is also there for a manual look.
 
-   A dry run run **from this repository** does sign and notarize, which is the
-   point: it proves the certificates and the notary key still work before a tag
-   commits you to them. A dry run run **from a fork**, where every secret
-   resolves to empty, instead warns and produces unsigned macOS binaries and an
-   unsigned `.pkg` — and must still finish green. That is the contributor path
-   and the regression test for the required/skip split; if a dry run ever needs
-   a secret to complete, the split has broken.
+   A dry run run **from this repository** signs and notarizes once the
+   certificates exist, which is the point: it proves they and the notary key
+   still work before a tag commits you to them. Without them — a fork, or this
+   repository today — every signing step warns and produces unsigned macOS
+   binaries and an unsigned `.pkg`, and must still finish green. That is both
+   the contributor path and the current release path, and it is the regression
+   test for the required/skip split; if a run ever needs a secret to complete,
+   the split has broken.
 
 5. **Merge the Release Please PR.** This is the release action. Release Please
    creates the tag and GitHub release; do not create or push the tag by hand.
@@ -216,13 +231,16 @@ on GitHub, signed and notarized like any other tag.
 6. **Watch both workflows.** `gh run watch`, or the Actions tab.
    - `Release Please` creates the tag and GitHub release from the merged release
      PR. The dedicated PAT makes that tag start the next workflow.
-   - `Release` runs on macOS: it codesigns each darwin binary before archiving,
-     runs GoReleaser, preserves Release Please's notes, builds and signs the
-     checksum, notarizes the darwin binaries, builds/signs/notarizes/staples
-     `vincent_*_darwin_universal.pkg` and uploads it, attests every archive,
-     native package and the `.pkg`, uploads the artifacts to the existing GitHub
-     release, and updates Homebrew, Scoop, and the WinGet submission for a
-     stable tag. A prerelease skips all three manager publishers automatically.
+   - `Release` runs on macOS: it codesigns each darwin binary before archiving
+     *if the certificates are installed*, runs GoReleaser, preserves Release
+     Please's notes, builds and signs the checksum, notarizes the darwin
+     binaries, builds `vincent_*_darwin_universal.pkg` — signing, notarizing and
+     stapling it under the same condition — and uploads it, attests every
+     archive, native package and the `.pkg`, uploads the artifacts to the
+     existing GitHub release, and updates Homebrew, Scoop, and the WinGet
+     submission for a stable tag. Without the certificates every signing step
+     logs a `::warning::` and the release ships unsigned. A prerelease skips all
+     three manager publishers automatically.
    - `verify-packages` (ubuntu) inspects the deb and rpm payloads and the
      generated Scoop and WinGet metadata with the native tools.
    - `smoke` (one job per OS) downloads the **real published archive**, unpacks
@@ -252,9 +270,15 @@ on GitHub, signed and notarized like any other tag.
    gh attestation verify vincent_X.Y.Z_amd64.deb --repo lezli01/vincent
    ```
 
-   On a Mac, also check what Gatekeeper will check. The `.pkg` is the only
-   asset outside `checksums.txt`, so it is verified from Apple's signature and
-   its attestation instead:
+   The `.pkg` is the only asset outside `checksums.txt`, so its attestation is
+   the whole of its verification:
+
+   ```sh
+   gh attestation verify vincent_X.Y.Z_darwin_universal.pkg --repo lezli01/vincent
+   ```
+
+   On a Mac, once the Apple certificates are installed, also check what
+   Gatekeeper will check — and expect all four to *fail* while they are not:
 
    ```sh
    tar -xzf vincent_X.Y.Z_darwin_arm64.tar.gz
@@ -264,7 +288,6 @@ on GitHub, signed and notarized like any other tag.
    pkgutil --check-signature vincent_X.Y.Z_darwin_universal.pkg
    spctl --assess --type install -vv vincent_X.Y.Z_darwin_universal.pkg
    xcrun stapler validate vincent_X.Y.Z_darwin_universal.pkg
-   gh attestation verify vincent_X.Y.Z_darwin_universal.pkg --repo lezli01/vincent
    ```
 
 8. **Check the Homebrew cask** (skip for a pre-release, which does not publish
@@ -275,14 +298,16 @@ on GitHub, signed and notarized like any other tag.
    brew info lezli01/tap/vincent               # version must be the tag
    brew reinstall lezli01/tap/vincent
    vincent version
-   spctl --assess --type execute -vv "$(readlink -f "$(brew --prefix)/bin/vincent")"
+   xattr -l "$(readlink -f "$(brew --prefix)/bin/vincent")"   # no com.apple.quarantine
    ```
 
-   The cask no longer carries a quarantine-stripping `postflight` hook — task
-   032 removed it — so what proves the install is Gatekeeper accepting the
-   binary, not the absence of an attribute. `com.apple.quarantine` being present
-   is fine and expected now; `spctl` reporting anything but `accepted` with
-   `source=Notarized Developer ID` is the failure.
+   The cask carries a quarantine-stripping `postflight` hook again (task 039):
+   the binary is unsigned, so without it `brew install` would produce something
+   that will not start. What proves the install is `vincent version` running at
+   all, plus the absence of the attribute. If the certificates are ever
+   installed, that hook is deleted in the same change and this step becomes
+   `spctl --assess --type execute` reporting `accepted`, `source=Notarized
+   Developer ID`.
 
 9. **Check the Windows and Linux channels** (skip for a pre-release).
 
@@ -340,16 +365,21 @@ on GitHub, signed and notarized like any other tag.
   binary needs both darwin slices, which do not both exist until the build is
   over, so `scripts/macos-pkg.sh` builds it afterwards and `gh release upload`
   attaches it. That is also why it is absent from `checksums.txt` — its
-  integrity comes from Apple's installer signature and a build attestation.
-- **OS code signing is macOS-only, deliberately.** Apple Developer ID signing
-  and notarization are paid for and applied to every darwin artifact, including
-  a stapled universal `.pkg` — §19 †'s 2026-08-26 amendment records reversing
-  the Apple half of the original descope, and task 032 carries the reasoning.
-  **Windows Authenticode stays descoped**: an OV certificate on a hardware token
-  is a recurring purchase with no equivalent to Apple's single notary service,
-  so the README and `docs/platforms/windows.md` continue to document the
-  SmartScreen prompt users will meet. cosign signatures and build provenance are
-  unchanged on every platform and are not a substitute for either.
+  integrity comes from a build attestation, plus Apple's installer signature
+  when there is one.
+- **OS code signing is descoped on both desktop platforms, and the macOS path is
+  built but dormant.** The Apple Developer ID implementation is complete — task
+  032 carries its reasoning, and §19 †'s 2026-08-26 amendment records accepting
+  the cost — but the membership was never bought; §19's two 2026-08-27
+  amendments (task 039) make a missing certificate produce an *unsigned release*
+  rather than a failed one, and drop the enrolment. **Windows Authenticode stays
+  descoped** for its own reasons: an OV certificate on a hardware token is a
+  recurring purchase with no equivalent to Apple's single notary service, and
+  task 038 is surveying the free-for-OSS routes. So both platforms prompt on
+  first launch, and the README, `docs/platforms/macos.md` and
+  `docs/platforms/windows.md` document what a user does about it. cosign
+  signatures and build provenance are unchanged on every platform, always
+  present, and are not a substitute for either.
 - **External catalogs remain external.** Scoop updates a repository the
   maintainer controls. WinGet is a pull request into Microsoft's catalog and
   can remain pending after the GitHub release succeeds. The accepted

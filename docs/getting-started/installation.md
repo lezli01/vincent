@@ -41,9 +41,10 @@ Go is *not* required to run vincent — only to
 brew install lezli01/tap/vincent
 ```
 
-This is the shortest path on macOS. The binary it installs is Developer ID
-signed and notarized like every other macOS artifact, so nothing has to clear a
-quarantine attribute — the cask used to, and deliberately no longer does.
+This is the shortest path on macOS, and the only one with nothing to clear by
+hand: the macOS artifacts are not Apple code signed (see [First
+launch](#first-launch)), so the cask strips the quarantine attribute as part of
+the install.
 
 Homebrew casks are macOS-only. On Linuxbrew, use the archive below.
 
@@ -62,27 +63,26 @@ but leaves `~/Library/Application Support/vincent` intact.
 Stable releases attach `vincent_{version}_darwin_universal.pkg`: one universal
 installer covering Apple silicon and Intel, which puts the binary at
 `/usr/local/bin/vincent`. Download it from the
-[latest release](https://github.com/lezli01/vincent/releases/latest) and
-double-click it, or:
+[latest release](https://github.com/lezli01/vincent/releases/latest), then:
 
 ```sh
 sudo installer -pkg vincent_*_darwin_universal.pkg -target /
 vincent version
 ```
 
-The package is signed with an Apple Developer ID Installer identity, notarized,
-and **stapled** — its notarization ticket travels inside the file, so it
-installs on a machine with no network. That is the one thing it does that the
-archive cannot; everything else here is equivalent. Verify it before installing:
+The package is **not signed** with an Apple Developer ID Installer identity, so
+a double-click in Finder is refused. The terminal command above does not consult
+Gatekeeper and works as-is; from the Finder, use **right-click → *Open***, then
+*Open* in the dialog.
 
-```sh
-pkgutil --check-signature vincent_*_darwin_universal.pkg
-spctl --assess --type install -vv vincent_*_darwin_universal.pkg
-```
+What the `.pkg` buys over the archive is one file covering both architectures
+and a fixed install path, not a Gatekeeper-clean install — that would need the
+Apple Developer Program membership described under [First
+launch](#first-launch).
 
 The `.pkg` is deliberately absent from `checksums.txt` — it is built after the
-checksummed artifacts, from both of them — and carries Apple's installer
-signature plus a [build attestation](#verify-a-download) instead.
+checksummed artifacts, from both of them — and carries a [build
+attestation](#verify-a-download) instead.
 
 To remove it, delete `/usr/local/bin/vincent` (after `vincent service
 uninstall`, if you registered the background service) and, if you also want the
@@ -220,25 +220,29 @@ Platform-specific detail lives in [Windows](../platforms/windows.md),
 ## First launch
 
 Every release carries cosign signatures, SHA-256 checksums and GitHub build
-attestations. On top of those, macOS artifacts carry **Apple code signing**;
-Windows ones do not.
+attestations. None carries **OS code signing** — neither Apple's nor
+Authenticode — because both are recurring certificate purchases this project has
+not made. So each desktop OS asks once:
 
-- **macOS** — nothing to do. The binaries and the `.pkg` are signed with an
-  Apple Developer ID identity under the hardened runtime and notarized, so
-  Gatekeeper clears them without a prompt. Do not run `xattr -d
-  com.apple.quarantine`: it is no longer needed, and it only turns off the check
-  that would tell you the file had been tampered with. Confirm the signature
-  yourself with:
+- **macOS** — Gatekeeper refuses a downloaded binary: *"vincent cannot be opened
+  because the developer cannot be verified."* Clear the quarantine attribute the
+  browser set, once per download:
 
   ```sh
-  codesign --verify --strict --verbose=2 /usr/local/bin/vincent
-  spctl --assess --type execute -vv /usr/local/bin/vincent
+  xattr -d com.apple.quarantine /usr/local/bin/vincent
+  vincent version
   ```
 
-  Only the [`.pkg`](#installer-package-macos) is *stapled*, so it is the one
-  artifact whose first launch also works with no network — a bare binary has
-  nowhere to hold a notarization ticket, and Gatekeeper fetches its verdict from
-  Apple instead.
+  Do that on a download you have [verified](#verify-a-download): stripping
+  quarantine also turns off the check that would flag a tampered file.
+  [Homebrew](#homebrew-macos) does it for you. The
+  [`.pkg`](#installer-package-macos) is unsigned as well — open it with
+  right-click → *Open*, or install it with `sudo installer`, which does not
+  consult Gatekeeper.
+
+  Apple's Developer Program is ~$99/yr, and its fee waiver reaches only
+  nonprofit, educational and government *organizations*, which a
+  single-maintainer project cannot be.
 
 - **Windows** — SmartScreen shows *"Windows protected your PC"*. Choose
   **More info → Run anyway**. It appears once per binary. Releases are not
@@ -275,22 +279,20 @@ attestation. For example:
 gh attestation verify vincent_*_linux_amd64.tar.gz --repo lezli01/vincent
 ```
 
-The macOS `.pkg` is the one asset outside `checksums.txt`, so it is verified
-from its own two signatures — Apple's, and the attestation:
+The macOS `.pkg` is the one asset outside `checksums.txt`, so its attestation is
+the whole of its verification:
 
 ```sh
-pkgutil --check-signature vincent_*_darwin_universal.pkg
 gh attestation verify vincent_*_darwin_universal.pkg --repo lezli01/vincent
 ```
 
-The three signatures answer different questions, which is why all three exist.
-**cosign** says which GitHub Actions workflow, at which commit, produced the
-file — to anyone, with no vincent key to trust or rotate. The **build
+The two signatures answer the same question in two formats, which is why both
+exist. **cosign** says which GitHub Actions workflow, at which commit, produced
+the file — to anyone, with no vincent key to trust or rotate. The **build
 attestation** says the same thing in the format `gh` and `mise` check
-automatically. **Apple's Developer ID signature plus notarization** says to
-*macOS itself* that a known developer built this and Apple scanned it, which is
-what makes Gatekeeper open it. None of them substitutes for another, and no
-Windows equivalent of the third exists here.
+automatically, and it is the only one that covers the `.pkg`. Neither is an OS
+code signature: they tell *you* where the file came from, and tell Gatekeeper
+and SmartScreen nothing, which is why those still prompt.
 
 ## Install an agent CLI
 

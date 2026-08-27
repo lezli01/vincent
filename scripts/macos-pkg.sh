@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# Build the signed, notarized, stapled macOS installer package
-# (task 032, spec §19 †'s 2026-08-26 amendment).
+# Build the universal macOS installer package — signed, notarized and stapled
+# when the Developer ID certificates are configured, and plain otherwise
+# (task 032, spec §19 †'s 2026-08-26 and 2026-08-27 amendments).
 #
-# lipo → pkgbuild → sign → notarize → staple → verify. This runs *after*
-# GoReleaser, not inside a build hook: a hook fires per target, and a universal
-# binary needs both darwin slices to exist. The consequence is recorded and
-# deliberate — the .pkg is not in checksums.txt. Its integrity story is Apple's
-# own signature plus the GitHub build attestation, and
-# docs/getting-started/installation.md's claim that checksums.txt covers every
-# archive, deb and rpm stays literally true.
+# lipo → pkgbuild → sign → notarize → staple → verify, where every step past
+# pkgbuild is skipped without credentials. That is not only the dry-run path any
+# more: the Apple Developer Program was never bought and 032.7 is dropped, so it
+# is what every release takes (task 039), and an unsigned .pkg is still a real
+# installer — one universal binary into /usr/local/bin — that a user opens with
+# right-click → Open instead of a double-click.
+#
+# It runs *after* GoReleaser, not inside a build hook: a hook fires per target,
+# and a universal binary needs both darwin slices to exist. The consequence is
+# recorded and deliberate — the .pkg is not in checksums.txt. Its integrity
+# story is the GitHub build attestation, plus Apple's own signature when there
+# is one, and docs/getting-started/installation.md's claim that checksums.txt
+# covers every archive, deb and rpm stays literally true.
 #
 # The package installs /usr/local/bin/vincent under the identifier
 # dev.lezli01.vincent — the same identifier internal/service already uses for
@@ -18,11 +25,12 @@
 # Usage: macos-pkg.sh <version> [dist-dir]
 #
 # Environment:
-#   MACOS_SIGN_REQUIRED       "1" on a v* tag build — missing identities,
-#                             credentials or tools are fatal. Otherwise the
-#                             package is still built, just unsigned and
-#                             un-notarized, so a dry run with no secrets proves
-#                             the packaging itself.
+#   MACOS_SIGN_REQUIRED       "1" when the Developer ID certificates are
+#                             configured — missing identities, credentials or
+#                             tools are then fatal. Otherwise the package is
+#                             still built, just unsigned and un-notarized, which
+#                             is both the secretless dry run and, 032.7 having
+#                             been dropped, the stable release.
 #   MACOS_SIGN_IDENTITY       Developer ID Application identity (re-signs the
 #                             lipo-merged binary; merging produces a new Mach-O).
 #   MACOS_INSTALLER_IDENTITY  Developer ID Installer identity (signs the .pkg).
@@ -45,8 +53,8 @@ fail() {
 	exit 1
 }
 
-# Everything past the plain `pkgbuild` is optional on a dry run and mandatory on
-# a tag. `require` is the one place that split is expressed.
+# Everything past the plain `pkgbuild` is optional without certificates and
+# mandatory with them. `require` is the one place that split is expressed.
 require() {
 	if [ "$required" = "1" ]; then
 		fail "$1"

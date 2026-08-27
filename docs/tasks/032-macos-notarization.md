@@ -1,6 +1,18 @@
 # 032 — macOS Developer ID signing and notarization
 
-**Status:** ⚠ verification blocked (5/7) · **Opened:** 2026-08-26
+**Status:** ✅ built, never activated (6/6, 032.7 dropped) · **Opened:**
+2026-08-26 · **Closed:** 2026-08-27
+
+> **2026-08-27 — the signature this task describes has never existed, and now
+> will not.** Every mechanism below was built and works; the Apple Developer
+> Program membership it needs was never bought, and 032.7 — the enrolment — is
+> **dropped**, with the reasoning in
+> [task 039](039-unsigned-releases-by-default.md). Releases ship unsigned; the
+> cask's quarantine hook is back; §19's 2026-08-26 amendment is superseded by its
+> two 2026-08-27 successors. **This document is retained as the design, not as a
+> description of what ships.** Read every sentence below in the future tense: it
+> is what happens if the six `MACOS_*` secrets are ever installed, which is the
+> whole of the switch.
 
 macOS artifacts are signed with an Apple Developer ID identity, notarized, and —
 for a new universal `.pkg` — stapled, so a downloaded release clears Gatekeeper
@@ -117,21 +129,28 @@ configuration and user documentation.
   README, `docs/README.md`'s macOS row, and `RELEASING.md`'s secrets, keychain
   bootstrap and certificate rotation/revocation guidance. Windows wording
   untouched throughout. ✓ 2026-08-26
-- [!] **032.6 — Run repository verification and review the final diff.** —
-  `goreleaser`, `actionlint` and `shellcheck` are all absent from this
-  environment and cannot be installed here, so the two new shell scripts and the
-  rewritten workflow have not been linted locally. `packaging-config` in
-  `ci.yml` runs `goreleaser check` on every PR, which covers the config schema;
-  the workflow's own syntax is proven by it running. Done when those three have
-  actually run, plus the repository's required code checks.
-- [!] **032.7 — Enrol with Apple and prove a signed release.** — requires the
-  owner's Apple Developer Program enrolment, the two Developer ID identities,
-  an App Store Connect API key, and the six repository secrets; all are
-  owner-only account mutations. Done when a **stable tag** produces artifacts
-  that a human verifies through [the gate](../gates/032-macos-notarization.md).
-  **A green dry run does not close this** — a dry run with no secrets is
-  designed to produce unsigned artifacts, so it cannot evidence a working
-  signature.
+- [x] **032.6 — Run repository verification and review the final diff.** All
+  three tools were absent from the environment 032 was written in; they are
+  present now and have run against the task 039 diff, which touches every file
+  032 added. `goreleaser check` validates, `actionlint` reports nothing in
+  `release.yml` (its two findings are pre-existing and deliberate — `ci.yml`'s
+  `./bin/vincent*` glob and a `go-toolchain.yml` SC2016), `shellcheck` is clean
+  on both `scripts/macos-sign.sh` and `scripts/macos-pkg.sh`, and `go run mage.go
+  test` and `lint` are green. ✓ 2026-08-27
+- ~~**032.7 — Enrol with Apple and prove a signed release.**~~ **Dropped
+  2026-08-27** by the owner: the ~$99/yr Apple Developer Program membership is
+  not being bought, so the enrolment this task waited on will not happen and
+  there is nothing left to unblock. Reasoning in
+  [task 039](039-unsigned-releases-by-default.md)'s 2026-08-27 decisions; the
+  pipeline it would have activated is retained and dormant, and installing the
+  six `MACOS_*` secrets is still the whole of the switch if this is ever
+  revived. Its original text: *requires the owner's Apple Developer Program
+  enrolment, the two Developer ID identities, an App Store Connect API key, and
+  the six repository secrets; all are owner-only account mutations. Done when a
+  **stable tag** produces artifacts that a human verifies through
+  [the gate](../gates/032-macos-notarization.md). A green dry run does not close
+  this — a dry run with no secrets is designed to produce unsigned artifacts, so
+  it cannot evidence a working signature.*
 
 ## What the tests prove, and what they do not
 

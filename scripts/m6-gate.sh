@@ -345,8 +345,10 @@ YAML
   # The conflict is left in place on purpose: this is a human resolving it.
   # Both lanes *create* the file, so git reports an add/add conflict (AA)
   # rather than a content one (UU). Match any unmerged status.
-  git -C "$WT" status --porcelain | grep -qE '^(DD|AU|UD|UA|DU|AA|UU)' \
-    || fail "no conflicted file in the worktree: $(git -C "$WT" status --porcelain)"
+  # Captured rather than piped into `grep -q` — see m7 scenario 4's comment.
+  PORCELAIN="$(git -C "$WT" status --porcelain)"
+  grep -qE '^(DD|AU|UD|UA|DU|AA|UU)' <<<"$PORCELAIN" \
+    || fail "no conflicted file in the worktree: $PORCELAIN"
   echo resolved > "$WT/shared.txt"
   git -C "$WT" add shared.txt
 
