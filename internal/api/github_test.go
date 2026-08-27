@@ -32,12 +32,14 @@ import (
 // records its argv, which is how "with the integration disabled, no GitHub
 // call is made" is *asserted* rather than assumed.
 
-// issueWorkflowYAML declares the three names the prefill maps plus two it
+// issueWorkflowYAML declares the four names the prefill maps plus two it
 // must not touch: `notes` is undeclared-adjacent (declared, but not one of
-// the three) and `ticket` carries a pattern no issue value satisfies.
+// the four) and `ticket` carries a pattern no issue value satisfies.
 const issueWorkflowYAML = `name: fix-issue
 description: Fix a reported issue.
 fields:
+  - name: issue
+    type: integer
   - name: labels
   - name: assignee
   - name: milestone
@@ -294,8 +296,13 @@ func TestGitHubIssuesPrefill(t *testing.T) {
 	if prefill == nil {
 		t.Fatal("no prefill on a listing that named a workflow")
 	}
-	if prefill.Title != out[0].Title {
-		t.Errorf("prefill title = %q, want the issue title %q", prefill.Title, out[0].Title)
+	if want := "#200 " + out[0].Title; prefill.Title != want {
+		t.Errorf("prefill title = %q, want the numbered issue title %q", prefill.Title, want)
+	}
+	// The number is a field too, so a `run:` body can read it without parsing
+	// it back out of the title (amended 2026-08-27).
+	if got := prefill.Fields["issue"]; got != "200" {
+		t.Errorf("issue = %q, want the issue number 200", got)
 	}
 	wantTail := "\n\nGitHub issue #200: https://github.com/octo/repo/issues/200"
 	if !strings.HasSuffix(prefill.Description, wantTail) {
@@ -314,7 +321,7 @@ func TestGitHubIssuesPrefill(t *testing.T) {
 	if got := prefill.Fields["milestone"]; got != "4" {
 		t.Errorf("milestone = %q, want the number 4 for an integer field", got)
 	}
-	// `notes` is declared but is not one of the three names, and `ticket`
+	// `notes` is declared but is not one of the four names, and `ticket`
 	// declares a pattern nothing an issue offers satisfies. Neither is
 	// invented, and neither is filled with a value the create call would 400
 	// on.
@@ -325,13 +332,14 @@ func TestGitHubIssuesPrefill(t *testing.T) {
 	}
 
 	// An issue with no metadata leaves every declared field empty rather than
-	// filling it with blanks.
+	// filling it with blanks. Every issue has a number, so `issue` is the one
+	// field a bare issue still fills.
 	bare := out[1].Prefill
 	if bare == nil {
 		t.Fatal("the second issue carried no prefill")
 	}
-	if len(bare.Fields) != 0 {
-		t.Errorf("an issue with no labels/assignee/milestone prefilled %v", bare.Fields)
+	if len(bare.Fields) != 1 || bare.Fields["issue"] != "41" {
+		t.Errorf("an issue with no labels/assignee/milestone prefilled %v, want only its number", bare.Fields)
 	}
 	if bare.Description != "GitHub issue #41: https://github.com/octo/repo/issues/41" {
 		t.Errorf("an empty body produced %q, want the link line alone", bare.Description)
@@ -392,8 +400,8 @@ func TestCreateTaskFromAnIssue(t *testing.T) {
 	if err := json.Unmarshal(body, &tr); err != nil {
 		t.Fatalf("task body: %v (%s)", err, body)
 	}
-	if tr.Title != "GitHub integration: select a GitHub issue when creating a task" {
-		t.Errorf("title = %q, want the issue's", tr.Title)
+	if tr.Title != "#200 GitHub integration: select a GitHub issue when creating a task" {
+		t.Errorf("title = %q, want the issue's, numbered", tr.Title)
 	}
 	if !strings.HasSuffix(tr.Description,
 		"GitHub issue #200: https://github.com/octo/repo/issues/200") {
@@ -401,6 +409,9 @@ func TestCreateTaskFromAnIssue(t *testing.T) {
 	}
 	if tr.Fields["labels"] != "enhancement, area/api" || tr.Fields["milestone"] != "4" {
 		t.Errorf("fields = %v, want the mapped prefill", tr.Fields)
+	}
+	if tr.Fields["issue"] != "200" {
+		t.Errorf("issue field = %q, want the issue number a step body reads", tr.Fields["issue"])
 	}
 	if tr.GitHubIssue == nil {
 		t.Fatal("the created task carries no issue snapshot")

@@ -86,13 +86,18 @@ not consume a retry**. See [Task lifecycle](reference/task-lifecycle.md#interrup
 
 ### Do I have to write YAML?
 
-Not to start: the built-in `adhoc` workflow is one agent step, and four
+Not to start: the built-in `adhoc` workflow is one agent step, and five
 [examples](../examples) ship ready to copy. You will want your own soon after —
 [Writing workflows](guides/workflows.md) is short. If you would rather not write
 the first one by hand, run the built-in `create-workflow` against the repository
 that needs it: describe the workflow in the task, name it in the required
 `workflow_name` field, and leave `global` unset to install into that repo's
 `.vincent/workflows` — or set it to `true` for `{config_dir}/workflows`.
+
+Later, when vincent has grown features your files predate, the built-in
+`update-workflows` rewrites the workflows a project versions against the
+current schema and hands you the result as a reviewable diff. It changes how
+they are written, not what they do.
 
 ### How do I make a workflow only apply to one repository?
 

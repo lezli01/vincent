@@ -16,12 +16,32 @@ const AdhocName = "adhoc"
 // definition below and the M1 runner's prompt cannot drift apart.
 const AdhocIntro = `You are running unattended in a dedicated git worktree created for this task; the current working directory is that worktree. Complete the task described below. Everything you change in the working tree (committed or not) will be reviewed by an engineer as a diff afterwards.`
 
+// StatusInstruction is the standing request that an agent step narrate itself
+// through `vincent status` (§5.6, task 036). The daemon deliberately appends
+// no such instruction to a prompt, so an agent reports only because the
+// workflow asked — which means every built-in that runs long enough for
+// someone to wonder has to ask, and asks in one wording rather than three.
+//
+// It is spliced into a YAML block scalar, so it is indented by the consumer
+// rather than carrying its own column.
+const StatusInstruction = `Say what you are doing as you go. Before each significant phase of the work, run:
+
+  vincent status "<one short line about what you are doing now>"
+
+Keep it under ten words. If something fails or you get stuck, set it to what is
+actually wrong — "3 tests red in internal/store", not "working on it". It is
+free, it is what someone watching the board sees, and the last line you set
+stays on the finished attempt.`
+
 // AdhocSource is the built-in ad-hoc workflow: one agent step whose prompt
 // embeds the task title and description. It is a real registry entry at the
 // lowest precedence (phase 2 decision), so a file named `adhoc.yaml` in the
 // global or project scope shadows it. max_retries is pinned to 0 — an
 // ad-hoc run fails fast rather than paying for a second agent attempt.
-const AdhocSource = `# Built into vincent: the workflow used for tasks created without one
+//
+// It is a var rather than a const because StatusInstruction is re-indented
+// into it at init. Nothing may reassign it.
+var AdhocSource = `# Built into vincent: the workflow used for tasks created without one
 # (spec §5.3). Shadowed by a global or project workflow named "adhoc".
 name: adhoc
 description: Ad-hoc single-step agent task
@@ -37,6 +57,8 @@ steps:
       Task: {{.Task.Title}}
 
       {{.Task.Description}}
+
+` + indentBlock(StatusInstruction) + `
 `
 
 // CreateWorkflowName is the built-in workflow that writes another workflow
@@ -67,7 +89,10 @@ const promptIndent = "      "
 // for the reason §8.4 gives for any step whose replay is not provably safe —
 // a second attempt starts a fresh session that would find the first attempt's
 // file already on disk.
-const createWorkflowHeader = `# Built into vincent: authors a new workflow and installs it in the global or
+//
+// It is a var rather than a const for the same reason AdhocSource is:
+// StatusInstruction is re-indented into it at init.
+var createWorkflowHeader = `# Built into vincent: authors a new workflow and installs it in the global or
 # project registry (task 024). Shadowed by a global or project workflow named
 # "create-workflow".
 #
@@ -118,6 +143,10 @@ steps:
       Task: {{.Task.Title}}
 
       {{.Task.Description}}
+
+      ## While you work
+
+` + indentBlock(StatusInstruction) + `
 
       ## Destination
 
@@ -187,8 +216,285 @@ const createWorkflowFooter = `
 // It is a var rather than a const because the skill is spliced in at init.
 // Nothing may reassign it; the built-in scope parses it once.
 var CreateWorkflowSource = createWorkflowHeader +
-	indentBlock(EscapeTemplate(skillInstructions(skills.VincentWorkflows)), promptIndent) +
+	indentBlock(EscapeTemplate(skillInstructions(skills.VincentWorkflows))) +
 	createWorkflowFooter
+
+// UpdateWorkflowsName is the built-in that brings the workflows a project
+// already has up to the current feature set and the authoring skill's
+// practices (task 037). Its deliverable is a diff on the task's own branch,
+// which is the one thing that distinguishes it from create-workflow: those
+// files are versioned by the repository, so the reviewed diff — not a write
+// into a live registry — is how a change to them lands (decision 1).
+const UpdateWorkflowsName = "update-workflows"
+
+// updateWorkflowsHeader is everything before the embedded skill: the framing,
+// the file list, the compatibility probe, this file's own review checklist,
+// and the corrections the skill cannot make for itself.
+//
+// The checklist under "The bar" is deliberately version-coupled: it names the
+// features a workflow can be behind on, so a workflow feature that lands
+// without a line here is a feature this built-in will never propagate. Adding
+// that line is part of shipping the feature (decision 5).
+//
+// `on_input: deny` rather than create-workflow's `wait` (decision 4). The two
+// built-ins face opposite ways: create-workflow is designing something that
+// does not exist yet and a question may be the only way to get it right,
+// while this one has the answers in front of it — the file, its comments, its
+// history — and its output is reviewed before it can affect anything. Parking
+// a maintenance pass in `awaiting_input` costs a held slot for a question the
+// repository already answers.
+var updateWorkflowsHeader = `# Built into vincent: updates the workflows a project already versions so they
+# use the current schema and follow the authoring skill (task 037). Shadowed by
+# a global or project workflow named "update-workflows".
+#
+# The design rules below the "How to design them" heading are
+# skills/vincent-workflows/SKILL.md, embedded at build time — edit the skill,
+# not this file. The checklist above them is this file's own, and is coupled to
+# the feature set on purpose: a workflow feature that ships without a line there
+# is one this workflow will never propagate.
+name: update-workflows
+description: Update this project's workflows to the current feature set and authoring practices
+defaults:
+  agent: claude
+steps:
+  # The probe and the file list in one command: --error-unmatch turns "this
+  # project versions no workflows" into a nonzero exit the next step reads,
+  # and the stdout it prints on success is the list the agent works from and
+  # the loop below iterates. git is one of the few executables spelled the
+  # same under /bin/sh and pwsh (§8.3), which is what every run: body here is
+  # held to.
+  - id: inventory
+    name: List the workflows this project versions
+    type: command
+    max_retries: 0
+    allow_failure: true
+    run: 'git ls-files --error-unmatch -- ".vincent/workflows/*.y*ml"'
+  # A project with no workflows of its own is not a failure — there is simply
+  # nothing to update, and the task is done.
+  - id: has-workflows
+    name: Stop if there are none
+    type: condition
+    if: '{{ eq (index .Steps "inventory").Status "succeeded" }}'
+  - id: modernize
+    name: Bring them up to the current feature set
+    type: agent
+    # One retry, unlike the other two built-ins: the deliverable is edits in a
+    # private worktree with no external effect, a second session sees the
+    # first one's partial work as ordinary uncommitted changes, and the pass
+    # is convergent — every item below asks the file to conform, not to change
+    # again.
+    max_retries: 1
+    on_input: deny
+    prompt: |
+      You are running unattended in a dedicated git worktree created for this
+      task; the current working directory is that worktree. Your deliverable is
+      an edit to the workflow files this repository already versions under
+      .vincent/workflows, made here, on this task's branch. An engineer reads
+      the result as a diff and merges it, and merging is what makes the
+      rewritten workflows live — nothing you do here changes what the daemon is
+      running right now.
+
+      Task: {{.Task.Title}}
+
+      {{.Task.Description}}
+
+      ## The files
+
+      A previous step listed every workflow file this repository has committed:
+
+      {{ (index .Steps "inventory").Result }}
+
+      Those are the whole job. A workflow the project keeps but has never
+      committed is not in this worktree and is out of scope, and so is the
+      global registry, which no repository versions. Change nothing outside
+      .vincent/workflows: if a document elsewhere in the repository describes a
+      workflow you changed, say so in your final message instead of editing it.
+
+      ## Nobody is watching
+
+      This step runs under on_input: deny. A question you ask is answered "no
+      user is available" and you carry on alone, so asking buys you nothing.
+      Where you are unsure, make the conservative change or make none, and say
+      which in your final message. The diff is the conversation.
+
+      ## While you work
+
+` + indentBlock(StatusInstruction) + `
+
+      ## Find out what this vincent can actually do
+
+      The feature set that matters is the installed binary's, not the one you
+      remember:
+
+      - Run "vincent version" first and keep its exact output for your final
+        message.
+      - "vincent workflow validate <file>" is the verdict on every file you
+        touch. It needs no daemon and no network, and unknown keys are errors
+        rather than ignored settings — which makes it the way to ask whether
+        this version has a feature at all: write a candidate to a temporary
+        path outside this worktree, validate it there, and never leave a probe
+        file in the repository.
+      - If this repository is a vincent checkout, its own
+        docs/reference/workflow-schema.md is the exact reference for the
+        version it builds. Read it before you rely on anything below.
+      - Do not run "vincent workflow init". It writes into a live registry.
+
+      ## The bar
+
+      A file you leave behind must be one you would defend under the authoring
+      skill reproduced below. Work through this list for every workflow, and
+      report per workflow which items applied:
+
+      1. Cheapest correct primitive. An agent step whose work is a known
+         command — a build, a test suite, a formatter, a git operation, a
+         structured query, an API call — becomes a command step. Every agent
+         step that survives passes the skill's own test: it needs an agent
+         because something in it cannot be decided reliably without one.
+      2. Native control flow, never an agent asked to simulate it. A prompt
+         that says "if X, do Y" is an if: guard or a condition step. "Keep
+         going until it passes" is a loop with a break, not a retry budget used
+         as iteration. "Do these independently" is parallel, or fan_out when
+         they need separate branches. A step sequence duplicated across two of
+         this project's workflows is an include.
+      3. Verification. A step that changes state a command can check carries a
+         check:. An agent's claim that it worked is not verification.
+      4. Typed inputs. A value the prompt tells a human to bury in the task
+         description becomes a declared field, with a type, and a pattern where
+         one exists. A workflow that digs an issue number out of the task title
+         reads .Issue instead.
+      5. Failure policy, per step. max_retries: 0 on a probe and on anything
+         whose replay is not provably safe; allow_failure: true where a red
+         result is data a later guard reads; retry_backoff where retrying
+         immediately cannot help.
+      6. Human mechanism, deliberately chosen. A manual gate sits immediately
+         before the effect it authorizes and names what to inspect.
+         on_input: require only where the conversation genuinely is part of the
+         run, and never on a step that resolves to an adapter with no control
+         channel. on_input: deny on a step meant to run untended.
+      7. Visibility. A step that runs for minutes, or that someone waits on,
+         reports through vincent status — in the script for a command step, in
+         the prompt for an agent step, in the wording used above.
+      8. Portability. A run: body is handed to /bin/sh on POSIX and to pwsh on
+         Windows, and vincent translates nothing. A body outside the
+         intersection of the two is either rewritten into it, or the workflow
+         declares platforms:, or the step carries a .Host.OS guard.
+      9. Defensive templates. Rendering uses missingkey=error, so an optional
+         field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
+         and never bare. A required field may be read directly.
+      10. Secrets. Nothing in a prompt, a field, an instruction or a run: body
+          that you would not want sitting in a transcript.
+
+      ## What you may not change
+
+      Each of these workflows encodes a decision somebody made. You are
+      modernizing how it is expressed, not redesigning what it does:
+
+      - A workflow keeps its name, its file keeps its path, and no file is
+        deleted.
+      - A declared field keeps its name and its meaning. Adding one is fine;
+        renaming or repurposing one breaks every task that names it.
+      - A manual gate stays, and stays in front of the effect it guards. Never
+        turn a gated external effect into an unattended one, never widen a
+        permission_mode, and never raise max_retries on a step that publishes,
+        deploys, pushes, deletes or spends money.
+      - A workflow that is already right is left byte for byte alone. An empty
+        diff for it is a correct outcome, and you say so.
+      - A comment that is still true is kept; a comment your edit made false is
+        corrected. The next person reads the comments.
+      - A workflow that is wrong in a way you cannot fix conservatively is left
+        alone and reported. A run that changed three workflows and explained
+        why it did not touch the fourth is a good run.
+
+      ## How to design them
+
+      What follows is the vincent-workflows skill, reproduced verbatim. It is
+      written for designing a new workflow from an outcome; here the outcome is
+      already encoded in the file in front of you. Follow it, with three
+      corrections it cannot make for itself — where they disagree with it, they
+      win:
+
+      1. The deliverable is an edit to the existing files listed above, in this
+         worktree — not a new file written into a live registry directory. The
+         path its authoring step names is right; the copy you edit is this
+         worktree's.
+      2. You cannot ask, per "Nobody is watching" above. Every question its
+         "Gather only decisions that matter" section raises is one you answer
+         from the repository, its agent instructions, the workflow's own
+         comments and its git history — or one you leave the current behavior
+         alone over.
+      3. The skill's own references/ files are not on disk here. Read
+         docs/reference/workflow-schema.md from the repository if this is a
+         vincent checkout, which the skill already prefers; otherwise work from
+         what the skill states directly and from the validator.
+
+`
+
+// updateWorkflowsFooter closes the prompt and carries the steps that verify
+// the pass. The validation loop is deliberately not a `check:` on the agent
+// step: `vincent workflow validate` takes exactly one file, so the per-file
+// iteration a whole registry needs is `for_each` over a step's output — the
+// construct §7.8 exists for. It relists
+// the files rather than reusing the first inventory so a file the pass added
+// (an `include` extracted out of two workflows) is validated too, and it
+// counts untracked files because a new file is not committed yet.
+//
+// A file that fails there blocks the task with that step's own reason, which
+// is the right outcome: an invalid workflow must not reach a reviewer as a
+// merge candidate.
+const updateWorkflowsFooter = `
+      ## When you are done
+
+      Your final message is the report an engineer reads before the diff:
+
+      - the exact "vincent version" output;
+      - one entry per workflow file: changed or untouched, which numbered items
+        from "The bar" applied, and what you deliberately left alone;
+      - for every workflow you changed, the maximum number of automatic agent
+        sessions it can spend, before and after, computed the way the skill's
+        cost rules say;
+      - anything that needs a human decision, and anything you would have asked
+        if asking were possible;
+      - the validator's verdict for every file you touched.
+
+      Every workflow file must pass "vincent workflow validate" before you
+      finish. A later step validates all of them again, and one that fails
+      there blocks the task.
+  - id: relist
+    name: Relist the workflow files
+    type: command
+    max_retries: 0
+    run: 'git ls-files --cached --others --exclude-standard -- ".vincent/workflows/*.y*ml"'
+  - id: validate
+    name: Validate every workflow file
+    type: loop
+    for_each: '{{ (index .Steps "relist").Result }}'
+    # Generous, because an iteration here is one local validator run and
+    # nothing else. A registry larger than this blocks before the first
+    # iteration, naming the count, which is a legible way to be told.
+    max_iterations: 50
+    steps:
+      - id: file
+        type: command
+        max_retries: 0
+        run: 'vincent workflow validate "{{ .Loop.Item }}"'
+  - id: changes
+    name: Record what changed
+    type: command
+    max_retries: 0
+    run: |
+      vincent status "summarizing the workflow diff"
+      git --no-pager diff --stat {{.Task.BaseBranch}}
+`
+
+// UpdateWorkflowsSource is the built-in maintenance pass over a project's own
+// workflows: a probe, an agent rewrite carrying the same `vincent-workflows`
+// skill create-workflow carries, and a per-file validation loop.
+//
+// It is a var for the same reason CreateWorkflowSource is: the skill is
+// spliced in at init. Nothing may reassign it.
+var UpdateWorkflowsSource = updateWorkflowsHeader +
+	indentBlock(EscapeTemplate(skillInstructions(skills.VincentWorkflows))) +
+	updateWorkflowsFooter
 
 // skillInstructions drops an Agent Skill's YAML front matter, keeping the
 // Markdown a model is meant to act on. A file with no front matter is
@@ -206,14 +512,19 @@ func skillInstructions(src string) string {
 	return strings.TrimLeft(rest[end+len("\n"+fence):], "\n")
 }
 
-// indentBlock prefixes every non-empty line so the text sits inside a YAML
-// block scalar at that column. Empty lines stay empty: trailing whitespace is
-// preserved by "|" and would show up in the rendered prompt.
-func indentBlock(s, indent string) string {
+// indentBlock prefixes every non-empty line with promptIndent, so the text
+// sits inside one of the `prompt: |` block scalars above. Empty lines stay
+// empty: trailing whitespace is preserved by "|" and would show up in the
+// rendered prompt.
+//
+// The column is not a parameter because every built-in's prompt sits at the
+// same one — a second column would mean a built-in whose YAML shape differs
+// from the others for no reason.
+func indentBlock(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
 		if line != "" {
-			lines[i] = indent + line
+			lines[i] = promptIndent + line
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -227,8 +538,9 @@ var (
 // builtinSources is the built-in scope's contents, in no particular order —
 // the registry sorts. Adding an entry here is all a new built-in needs.
 var builtinSources = map[string]string{
-	AdhocName:          AdhocSource,
-	CreateWorkflowName: CreateWorkflowSource,
+	AdhocName:           AdhocSource,
+	CreateWorkflowName:  CreateWorkflowSource,
+	UpdateWorkflowsName: UpdateWorkflowsSource,
 }
 
 // IsBuiltin reports whether name belongs to the built-in scope. It is

@@ -103,7 +103,7 @@ schema follows from them:
 |---|---|---|
 | **Project** | `.vincent/workflows/*.yaml` inside the repo | Highest — shadows global |
 | **Global** | `{config_dir}/workflows/*.yaml` | Shadows built-in |
-| **Built-in** | `adhoc` and `create-workflow` — one agent step each, always present | Lowest |
+| **Built-in** | `adhoc`, `create-workflow` and `update-workflows` — always present | Lowest |
 
 `{config_dir}` is `%APPDATA%\vincent` on Windows, `~/Library/Application
 Support/vincent` on macOS and `~/.config/vincent` on Linux; the full table is in
@@ -135,6 +135,24 @@ Details that matter in practice:
   `{config_dir}/workflows`. Either way the file lands in the live registry rather
   than in the task's worktree, so the daemon reloads it immediately and it is
   **not** part of the task's diff.
+- **`update-workflows` maintains the ones you already have.** It is the third
+  built-in, and the one to run when vincent has gained features since your
+  workflows were written. It reads every workflow the task's project versions
+  under `.vincent/workflows`, brings each up to the current schema and the same
+  authoring skill — a command step where an agent step was running a build, a
+  guard where a prompt said "if X then Y", a `check:` where a prompt only
+  claimed success, a declared field where a value was buried in the task
+  description, a [`vincent status`](#56-reporting-status-from-a-step) line in
+  the steps you sit and wait on — and then validates every file. It changes
+  *how* a workflow is expressed, never what it does: names, fields, manual
+  gates and external effects are off limits, and a workflow it cannot improve
+  conservatively is left alone and reported. Unlike `create-workflow`, its
+  deliverable **is** the task's diff — these files are versioned by the
+  repository, so you review the rewrite on the task's branch and merging it is
+  what makes the new versions live. A workflow file you have never committed is
+  not in the worktree and is not touched; the global registry is out of scope.
+  It takes no task fields, never asks you anything (`on_input: deny`), and
+  finishes with nothing to do on a project that has no workflows of its own.
 - Two files in **one scope** declaring the same `name:` is an error, resolved
   deterministically: the first in filename order keeps the name, and the loser
   is listed as invalid rather than silently dropped.

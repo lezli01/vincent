@@ -24,6 +24,27 @@
 # Requires `gh`, authenticated, with the worktree's `origin` pointing at the
 # repo the issue should land in.
 #
+# ## Saying what is happening
+#
+# The drafting step can sit in `awaiting_input` for hours and the filing step
+# is the one-way door, so both say what they are doing through
+# `vincent status` (§5.4) — the board's STATUS column, and the last thing an
+# attempt said before it ended. Command steps call it through a `say` helper
+# defined at the top of each script:
+#
+#     say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+#
+# Guarded twice on purpose. `--` keeps a message that happens to start with a
+# dash out of cobra's flag parser, and `>/dev/null 2>&1 || true` makes a status
+# write incapable of failing a step: a `vincent` that is not on the daemon's
+# PATH, or a step that has already finished (the daemon answers 409), would
+# otherwise abort a `set -e` script. The cost of the guard is that the
+# messages are silently dropped rather than explained when `vincent` cannot
+# be found — check the STATUS column is populated on a first run.
+#
+# The agent step is *asked* for status in its prompt. Vincent never appends an
+# instruction of its own, so an agent reports only because the workflow said to.
+#
 # Known wart: this workflow commits nothing, so every run still leaves an
 # empty `vincent/{id}-{slug}` branch and worktree behind — a task always gets
 # one. Archive the task when you're done to clean it up.
@@ -59,6 +80,18 @@ steps:
       Draft description:
       {{.}}
       {{end}}
+
+      Someone may be watching this task on the board, and this step can park in
+      `awaiting_input` for hours. Say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you ask the
+      author something — `vincent status "waiting on 3 answers about the repro"`
+      is the difference between a row that looks stuck and one that explains
+      itself. Under ten words. If something goes wrong, set the status to what
+      is actually wrong: "no issue template matches this draft", not "working on
+      it". The last thing you set is what stays on the finished step.
 
       Do this in order:
 
@@ -131,12 +164,23 @@ steps:
     # succeeded and the response was lost", so this one never retries.
     max_retries: 0
     timeout: 2m
-    run: >
-      gh issue create
-      --title "$(cat .vincent-issue/title.txt)"
-      --body-file .vincent-issue/body.md
-      --label "$(cat .vincent-issue/labels.txt)"
-      > .vincent-issue/url.txt
+    # `set -e` carries the same guarantee the folded one-liner this replaced
+    # got from `&&`: the first failing command is the step's exit code, and
+    # nothing after it runs. The status left behind on a failure is therefore
+    # "filing…", which is the honest account of a `gh issue create` that did
+    # not come back — and the one thing a person needs to know before deciding
+    # whether an issue exists.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "filing the issue on GitHub"
+      gh issue create \
+        --title "$(cat .vincent-issue/title.txt)" \
+        --body-file .vincent-issue/body.md \
+        --label "$(cat .vincent-issue/labels.txt)" \
+        > .vincent-issue/url.txt
+      say "filed $(cat .vincent-issue/url.txt)"
 
   - id: report
     name: Report the issue
@@ -154,7 +198,20 @@ steps:
     # where you read it. Clearing `.vincent-issue/` afterwards leaves the
     # worktree clean, so archiving the task does not warn about a dirty tree.
     #
-    # `&&`, not two lines: sh reports the last command's status, so an
-    # unchained `rm` would mask a failed `view` and leave the step green. It
-    # also means the drafts survive for inspection when the report fails.
-    run: gh issue view "$(cat .vincent-issue/url.txt)" && rm -rf .vincent-issue
+    # `set -e`, not an unchained script: sh reports the last command's status,
+    # so a bare `rm` after a failed `view` would mask it and leave the step
+    # green. It also means the drafts survive for inspection when the report
+    # fails, and that the status a failure leaves behind is "reading … back"
+    # rather than the success line.
+    #
+    # `say` is deliberately the last command: it always returns 0, and by then
+    # everything that can fail already has.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      url=$(cat .vincent-issue/url.txt)
+      say "reading $url back"
+      gh issue view "$url"
+      rm -rf .vincent-issue
+      say "filed $url"

@@ -197,10 +197,16 @@ Start with [Scripting vincent](guides/scripting.md), then use the complete
 On a project whose `origin` remote points at github.com, the new-task form
 offers an issue row above the title. It opens the same type-to-filter picker the
 project and workflow rows use, listing open issues newest first. Selecting one
-fills in the title, the body plus a `GitHub issue #N: <url>` link line, and any
-declared `fields:` named exactly `labels`, `assignee`, or `milestone`. Every
-value lands in an ordinary editable row, so a guess can be corrected or cleared
-before the task exists.
+fills in the title — prefixed `#N`, so the board row says which issue it is —
+the body plus a `GitHub issue #N: <url>` link line, and any declared `fields:`
+named exactly `issue`, `labels`, `assignee`, or `milestone`. Every value lands
+in an ordinary editable row, so a guess can be corrected or cleared before the
+task exists.
+
+A declared `issue` field gets the issue **number**, which is how a `command`
+step reads it: step bodies receive the environment of [§8.5](reference/workflow-schema.md#environment),
+not the template context, so `{{ index .Task.Fields "issue" }}` is what puts the
+number into a `run:` body.
 
 Templates receive the issue as `.Issue` — number, title, body, URL, state,
 labels, author, assignee, and milestone — zero-valued when nothing is linked, so

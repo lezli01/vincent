@@ -179,8 +179,10 @@ func TestPickingAnIssueFillsEditableRows(t *testing.T) {
 	if n.issue == nil || n.issue.Number != 200 {
 		t.Fatalf("linked issue = %+v, want #200", n.issue)
 	}
-	if n.titleText() == "" {
-		t.Error("the title row was not filled from the issue")
+	// The title is the issue's, prefixed with its number, so the board row
+	// and the branch slug both say which issue this is.
+	if title := n.titleText(); !strings.HasPrefix(title, "#200 ") {
+		t.Errorf("title row = %q, want the issue title prefixed with #200", title)
 	}
 	description := n.desc.Value()
 	if !strings.Contains(description,

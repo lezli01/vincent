@@ -1,0 +1,1322 @@
+# prepare-release — get the Release Please pull request to the point where a
+# human can merge it, and stop there.
+#
+# `release` (the sibling workflow in this registry) cuts the release: it audits,
+# dry-runs, gates, *merges* the Release Please PR and then watches every
+# channel. This one owns the part before that one-way door — RELEASING.md steps
+# 1 to 4 — and deliberately never merges anything. When it finishes green, the
+# release PR is a merge away.
+#
+#   preflight → update-deps → audit (loop: sweep → break → repair) → vuln-clear
+#            → changes → deps-pr → deps-gate → refresh → stage → changelogs
+#            → push → dry-run → green → verify → report
+#
+# Two effects reach the outside world and both are reversible:
+#
+#   * `deps-pr` pushes this task's own branch and opens an ordinary pull
+#     request against the base branch, because a dependency or vulnerability
+#     fix is a product change: it needs its own Conventional Commit, its own
+#     CI, and its own changelog line (CLAUDE.md, "everything lands via PR to
+#     master"). It is *not* pushed onto the bot's branch.
+#   * `push` pushes two curated changelog files onto the Release Please
+#     branch, which is exactly what RELEASING.md step 3 asks a maintainer to
+#     do and the only moment either changelog can be written.
+#
+# Nothing here tags, publishes, or merges. The single manual gate is
+# `deps-gate`, and it is not ceremony: if a dependency PR was opened it has to
+# land on the base branch *before* the changelogs are written, because Release
+# Please force-pushes its branch whenever a new commit reaches the base — which
+# would take the changelog commit with it. The gate holds the task in
+# `awaiting_gate` (slot released) until that has happened, and `refresh`
+# re-reads the world afterwards. When no dependency PR was opened the gate is
+# skipped and the run is unattended end to end.
+#
+# Credentials: this workflow never reads or prints a secret. It needs `gh`
+# already authenticated with push access to this repository, a git identity,
+# and network access for `govulncheck`'s database.
+#
+# Specific to **this** repository: it knows the Release Please label and title
+# shape, `.release-please-manifest.json`, the `ci` and `gates` check matrices,
+# the `Release` workflow file and its `dry_run` input, and both changelog files
+# with the four failure shapes RELEASING.md step 3 warns about.
+#
+# POSIX-only, and it says so: every command step pins `shell: sh`, and the
+# agent steps' `check` runs under the platform default and is written in `sh`
+# regardless (§8.2 rejects `shell` on an agent step).
+#
+# Saying what is happening: most of this workflow's wall clock is spent
+# waiting — a two-hour vulnerability loop, a 75-minute dry run, a 90-minute
+# wait for two green matrices — and a `running` row with no other output is
+# unreadable. Every step that runs a process reports through `vincent status`
+# (§5.4), shown live on the board's STATUS column and kept on the finished
+# attempt. Command steps call it through a `say` helper defined at the top of
+# each script:
+#
+#     say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+#
+# Guarded twice on purpose. `--` keeps a message that happens to start with a
+# dash out of cobra's flag parser, and `>/dev/null 2>&1 || true` makes a status
+# write incapable of failing a step: a `vincent` that is not on the daemon's
+# PATH, or a step that has already finished (the daemon answers 409), would
+# otherwise abort a `set -e` script. The cost is that the messages are silently
+# dropped rather than explained when `vincent` cannot be found; check the
+# STATUS column is populated on a first run.
+#
+# Two uses, and they are different. **Progress**, set before the thing it
+# names, which under `set -e` doubles as the error message: the step dies at
+# the failing command and the status still says what was being attempted.
+# And a **verdict**, set on a path that is about to exit non-zero — every
+# refusal in `preflight`, `vuln-clear` and `verify` says which refusal it was,
+# because they all exit 1 and all classify `nonzero_exit`. `changes` is the
+# one step whose red row is a *normal* outcome, and the status is the only
+# thing that can say so on the board.
+#
+# Agent steps are *asked* for status in their prompts. Vincent never appends
+# an instruction of its own, so an agent reports only because this file said to.
+#
+# Requires: `gh` (authenticated), `git`, `go`, `jq`, `awk`.
+name: prepare-release
+description: Make the Release Please PR mergeable — dependencies, vulnerabilities, both changelogs, an optional dry run, and a green verdict. Never merges.
+
+platforms: [posix]
+
+fields:
+  - name: dependencies
+    label: Dependency work before the release
+    description: >-
+      none = sweep for vulnerabilities and block on a finding, touching nothing.
+      security = fix only what govulncheck reports. all = also run
+      `go get -u ./...` and `go mod tidy` first, then repair whatever that
+      breaks. Anything but `none` may open a pull request you have to merge
+      before this workflow can continue.
+    type: string
+    required: true
+    pattern: '^(none|security|all)$'
+
+  - name: dry-run
+    label: Dry-run the Release workflow
+    description: >-
+      RELEASING.md step 4. Set true whenever .goreleaser.yaml, the build tags or
+      the archive contents changed since the last tag — it dispatches Release
+      with dry_run and watches the whole three-OS smoke matrix, which costs
+      ~20-40 minutes of CI. false skips that leg.
+    type: boolean
+    required: true
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # The only human checkpoint is the `deps-gate` gate. An agent parking the
+  # task in `awaiting_input` would add a second one nobody is watching for —
+  # and this workflow is meant to run to completion unattended when there is
+  # no dependency PR to land.
+  on_input: deny
+
+steps:
+  - id: preflight
+    name: Find the Release Please PR
+    type: command
+    shell: sh
+    timeout: 10m
+    # A missing tool, an unauthenticated gh, an absent git identity or an
+    # absent release PR is not transient — fix the world and re-run the step.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # Six ways this step refuses, all of them exit 1, all of them
+      # `nonzero_exit`. The status is what says which — a missing tool, a
+      # logged-out gh, an unset git identity and "there is nothing to prepare"
+      # are four different things for a maintainer to go and do.
+      say "checking the tools, the git identity and the repository layout"
+      for tool in gh git go jq awk; do
+        command -v "$tool" >/dev/null 2>&1 || { say "$tool is not installed"; echo "$tool is required" >&2; exit 1; }
+      done
+      gh auth status >/dev/null 2>&1 || { say "gh is not authenticated"; echo "gh is not authenticated" >&2; exit 1; }
+
+      # Two commits get made here — one on this task's branch, one on the bot's
+      # — and git refuses both without an identity. Failing now beats failing
+      # after an agent has spent a session writing prose.
+      git config user.email >/dev/null 2>&1 || { say "git user.email is not set"; echo "git user.email is not set" >&2; exit 1; }
+      git config user.name >/dev/null 2>&1 || { say "git user.name is not set"; echo "git user.name is not set" >&2; exit 1; }
+
+      for file in release-please-config.json .release-please-manifest.json \
+        .github/workflows/release-please.yml .github/workflows/release.yml \
+        CHANGELOG.md site-changelog.md RELEASING.md; do
+        [ -f "$file" ] || { say "missing $file"; echo "missing $file" >&2; exit 1; }
+      done
+
+      old=$(jq -er '."."' .release-please-manifest.json)
+      case "$old" in
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) say "manifest version is not semver: $old"; echo "manifest version is not semver: $old" >&2; exit 1 ;;
+      esac
+
+      say "looking for the Release Please PR"
+      repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      remote=$(git remote get-url origin)
+
+      # There is exactly one releasable pull request and Release Please owns
+      # it. No PR means there is nothing to prepare: land a releasable
+      # Conventional Commit, or run the Release Please workflow, then re-run.
+      pr=$(gh pr list \
+        --base "$VINCENT_BASE_BRANCH" \
+        --state open \
+        --label "autorelease: pending" \
+        --json number,title,url,headRefName,headRefOid \
+        --jq '.[0] // empty')
+      [ -n "$pr" ] || {
+        say "no open Release Please PR: nothing to prepare"
+        echo "no open Release Please PR targets $VINCENT_BASE_BRANCH" >&2
+        echo "push a releasable Conventional Commit or run the Release Please workflow" >&2
+        exit 1
+      }
+
+      rm -rf .vincent-prepare
+      mkdir -p .vincent-prepare
+      printf '%s\n' "$old" > .vincent-prepare/old-version.txt
+      printf '%s\n' "$repo" > .vincent-prepare/repo.txt
+      printf '%s\n' "$remote" > .vincent-prepare/remote.txt
+      printf '%s\n' "$pr" > .vincent-prepare/pr.json
+
+      title=$(printf '%s' "$pr" | jq -r .title)
+      # Release Please titles its PR "chore(master): release X.Y.Z". Both
+      # changelogs are written under that exact number, so a title this cannot
+      # be parsed out of is a stop, not a warning.
+      version=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
+      [ -n "$version" ] || {
+        say "could not parse a version out of the release PR title"
+        echo "could not parse a version out of the release PR title: $title" >&2
+        exit 1
+      }
+      printf '%s\n' "$version" > .vincent-prepare/version.txt
+
+      if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+        say "v$version is already tagged on origin: that release is already cut"
+        echo "tag v$version already exists on origin — that release is already cut, and a published tag is never re-pointed (RELEASING.md)" >&2
+        exit 1
+      fi
+
+      # == The changelog audit, written once and called three times: as the
+      # `changelogs` agent's `check` against the scratch clone, and by `verify`
+      # against what GitHub actually serves at the PR head. One script, three
+      # callers, no drift — and every rule in it is a fault a real release
+      # shipped with (0.5.0 a bare commit list, 0.6.0 curated prose stranded
+      # under `## [Unreleased]` below the section it described, plus a
+      # duplicated feature and a site changelog two releases behind).
+      #
+      # Usage: sh audit-changelog.sh <dir> <version>. Deliberately not
+      # `set -e`: every check runs and the exit code is the summary.
+      cat > .vincent-prepare/audit-changelog.sh <<'AUDIT'
+      dir="$1"
+      version="$2"
+      [ -n "$dir" ] && [ -n "$version" ] || { echo "usage: audit-changelog.sh <dir> <version>" >&2; exit 2; }
+
+      fails=0
+      failed=""
+      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); failed="$failed$*; "; }
+      warn() { printf 'WARN %s\n' "$*"; }
+      # This script runs as a child of whichever step invoked it — as the
+      # `changelogs` agent's check, and inside `stage` and `verify` — and
+      # `vincent status` addresses the step from VINCENT_TASK_ID /
+      # VINCENT_STEP_ID, which a child inherits. So the verdict it reaches
+      # lands on that step's row, which for `changelogs` is the one thing a
+      # `check_failed` reason cannot carry: *which* of the four failure shapes
+      # RELEASING.md warns about was found.
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      can="$dir/CHANGELOG.md"
+      site="$dir/site-changelog.md"
+      tmp="$dir/.audit.tmp"
+
+      echo "auditing CHANGELOG.md and site-changelog.md in $dir for $version"
+
+      # == CHANGELOG.md — the file Release Please owns.
+      if [ -f "$can" ]; then
+        # Release Please inserts each new version directly beneath the
+        # preamble, so prose parked under `## [Unreleased]` is pushed *below*
+        # the release it describes and never reaches the entry. The file
+        # carries no Unreleased section for that reason.
+        if grep -q '^## \[Unreleased\]' "$can"; then
+          fail "CHANGELOG.md has an '## [Unreleased]' section. Fold it into '## [$version]' and delete the heading."
+        fi
+
+        awk -v v="[$version]" '
+          index($0, "## " v) == 1 { inside = 1; next }
+          inside && /^## / { exit }
+          inside { print }
+        ' "$can" > "$tmp"
+
+        if [ ! -s "$tmp" ]; then
+          fail "CHANGELOG.md has no '## [$version]' section"
+        else
+          # A Release Please bullet is `* subject ([abc1234](...))`. A curated
+          # one is prose. Any survivor means the swap RELEASING.md step 3 asks
+          # for never happened.
+          left=$(grep -cE '^\* .*\(\[[0-9a-f]{7,}\]\(' "$tmp" || true)
+          if [ "$left" -gt 0 ]; then
+            grep -nE '^\* .*\(\[[0-9a-f]{7,}\]\(' "$tmp" | sed 's/^/      /'
+            fail "$left mechanical commit line(s) survive in CHANGELOG.md '## [$version]'"
+          fi
+
+          # GitHub copies a conventional PR title into the merge commit body,
+          # so a conventional PR title records both the merge and its inner
+          # commit (0.6.0's retry_backoff, twice).
+          dups=$(grep -oE '^[*-] [^(]+' "$tmp" | sed 's/[[:space:]]*$//' | sort | uniq -d)
+          if [ -n "$dups" ]; then
+            printf '      %s\n' "$dups"
+            fail "the above subject(s) appear twice in CHANGELOG.md '## [$version]'"
+          fi
+
+          body=$(grep -c '[^[:space:]]' "$tmp" || true)
+          if [ "$body" -lt 3 ]; then
+            fail "CHANGELOG.md '## [$version]' has $body non-empty line(s) — that is not a curated entry"
+          fi
+
+          [ "$left" -eq 0 ] && [ -z "$dups" ] && [ "$body" -ge 3 ] \
+            && echo "ok    CHANGELOG.md '## [$version]' is curated prose, no duplicates, no stray Unreleased"
+        fi
+      else
+        fail "CHANGELOG.md is missing from $dir"
+      fi
+
+      # == site-changelog.md — the GitHub Pages page at /changelog.html,
+      # maintained by hand. Nothing generates it (RELEASING.md § Automation
+      # boundary); if it is not written in this PR it is not written at all.
+      if [ -f "$site" ]; then
+        if grep -q "^## $version" "$site"; then
+          before=$fails
+          first=$(grep -m1 '^## ' "$site")
+          case "$first" in
+            "## $version"*) ;;
+            *) fail "site-changelog.md has $version, but '$first' is above it — the page reads newest-first" ;;
+          esac
+
+          awk -v v="$version" '
+            index($0, "## " v) == 1 { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' "$site" > "$tmp"
+
+          grep -q '^Released ' "$tmp" \
+            || fail "site-changelog.md's $version section has no 'Released <date>.' line"
+
+          body=$(grep -c '[^[:space:]]' "$tmp" || true)
+          if [ "$body" -lt 3 ]; then
+            fail "site-changelog.md's $version section has $body non-empty line(s)"
+          fi
+
+          grep -q 'github.com/[^ )]*/pull/[0-9]' "$tmp" \
+            || warn "site-changelog.md's $version section links no pull request — every other entry does"
+
+          [ "$fails" -eq "$before" ] \
+            && echo "ok    site-changelog.md carries a $version section, newest-first, dated"
+        else
+          fail "site-changelog.md has no '## $version' section. It is the changelog published at /changelog.html, nothing generates it, and this PR is the only place it gets written."
+        fi
+      else
+        fail "site-changelog.md is missing from $dir"
+      fi
+
+      rm -f "$tmp"
+      echo
+      if [ "$fails" -gt 0 ]; then
+        # The findings themselves, not the count. `fail` accumulates them into
+        # `$failed` as it prints them, so the status names what is actually
+        # wrong; over-long lists are truncated at 256 bytes rather than
+        # refused (§5.4), which in practice keeps the first finding — the one
+        # that gets fixed first anyway.
+        say "changelog: $failed"
+        echo "$fails blocking finding(s) — RELEASING.md step 3 describes both edits"
+        exit 1
+      fi
+      say "both changelogs describe $version"
+      echo "both changelogs describe $version"
+      AUDIT
+
+      # == The green check, written once and called by `green` for the base
+      # branch. Exit 0 iff every check run on the commit completed successfully
+      # and both required matrices are present. A commit with *no* checks yet
+      # passes the per-run rule trivially, which is why the count matters as
+      # much as the conclusions.
+      #
+      # Pending is not failure: a run still in flight is waited on, up to the
+      # caller's bound in minutes, and only a *completed* non-success is
+      # reported.
+      cat > .vincent-prepare/require-green.sh <<'GREEN'
+      set -e
+      # Reports its own progress. It inherits VINCENT_TASK_ID and
+      # VINCENT_STEP_ID from the step that invoked it, so it speaks as that
+      # step — which is what is wanted: the 45-minute wait in `green` happens
+      # entirely inside here, and without this the board shows `running` and
+      # nothing else for the whole of it.
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      sha="$1"
+      wait_min=${2:-0}
+      short=$(printf '%s' "$sha" | cut -c1-7)
+      deadline=$(( $(date +%s) + wait_min * 60 ))
+
+      # One paced sleep shared by the "still pending" and "the API blipped"
+      # paths, so a wait that hits both does not restart its ramp. 15s doubling
+      # to a 60s ceiling: CI here is a three-OS matrix measured in minutes, so
+      # a fixed 30s spends most of the wait re-asking a settled question.
+      nap=15
+      pace() {
+        sleep "$nap"
+        if [ "$nap" -lt 60 ]; then
+          nap=$(( nap * 2 ))
+          if [ "$nap" -gt 60 ]; then nap=60; fi
+        fi
+      }
+
+      # `gh api` failing is not a verdict about the commit. Five consecutive
+      # failures are tolerated; the sixth is reported as itself, rather than as
+      # an empty run list the count check below would call "found 0".
+      errors=0
+      while :; do
+        set +e
+        runs=$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs?per_page=100" \
+          --jq '.check_runs[] | [.name, .status, (.conclusion // "pending"), (.html_url // "-")] | @tsv' 2>/dev/null)
+        rc=$?
+        set -e
+
+        if [ "$rc" -ne 0 ]; then
+          errors=$(( errors + 1 ))
+          if [ "$errors" -gt 5 ]; then
+            echo "the GitHub API failed six times in a row reading the check runs for $sha" >&2
+            exit 1
+          fi
+          now=$(date +%s)
+          if [ "$now" -ge "$deadline" ]; then
+            echo "could not read the check runs for $sha: the API failed on the last attempt" >&2
+            exit 1
+          fi
+          say "GitHub API failed reading checks for $short ($errors/5), retrying"
+          echo "the GitHub API failed reading check runs for $sha; retrying in ${nap}s" >&2
+          pace
+          continue
+        fi
+        errors=0
+
+        pending=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && $2 != "completed" { print $1 }')
+        if [ -z "$pending" ]; then break; fi
+        now=$(date +%s)
+        if [ "$now" -ge "$deadline" ]; then break; fi
+        # Names the checks rather than counting them: on a three-OS matrix the
+        # one still running is the interesting fact, and Windows CI alone has
+        # taken 11m54s here.
+        say "$short: waiting on $(printf '%s\n' "$pending" | tr '\n' ' ')"
+        echo "waiting on $(printf '%s\n' "$pending" | wc -l | tr -d ' ') pending check(s) on $sha: $(printf '%s\n' "$pending" | tr '\n' ' ')" >&2
+        pace
+      done
+
+      printf '%s\n' "$runs" | awk -F'\t' 'NF { print $1 "\t" $2 "\t" $3 }'
+
+      if [ -n "$pending" ]; then
+        say "$short still has pending checks after ${wait_min}m"
+        echo "still pending on $sha after ${wait_min}m:" >&2
+        printf '%s\n' "$pending" >&2
+        exit 1
+      fi
+
+      # Report the URL alongside the name: a check called `build` says nothing
+      # about which workflow owns it.
+      bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && $3 != "success" && $3 != "skipped" { print $1 " " $3 " " $4 }')
+      if [ -n "$bad" ]; then
+        say "not green on $short: $(printf '%s\n' "$runs" | awk -F'\t' 'NF && $3 != "success" && $3 != "skipped" { printf "%s (%s); ", $1, $3 }')"
+        echo "not green on $sha:" >&2
+        printf '%s\n' "$bad" >&2
+        exit 1
+      fi
+      for job in ci gates; do
+        n=$(printf '%s\n' "$runs" | awk -F'\t' -v j="$job" 'index($1, j " (") == 1' | wc -l | tr -d ' ')
+        if [ "$n" -ne 3 ]; then
+          say "expected 3 '$job' checks on $short, found $n"
+          echo "expected 3 '$job' checks on $sha (ubuntu, macos, windows), found $n" >&2
+          exit 1
+        fi
+      done
+      GREEN
+
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      say "preparing v$version from release PR $(printf '%s' "$pr" | jq -r .number)"
+
+      echo "repository:    $repo"
+      echo "last release:  v$old"
+      echo "preparing:     v$version"
+      echo "release PR:    $title — $(printf '%s' "$pr" | jq -r .url)"
+      echo "dependencies:  {{index .Task.Fields "dependencies"}}"
+      echo "dry run:       {{index .Task.Fields "dry-run"}}"
+
+  - id: update-deps
+    name: Update every Go dependency
+    type: command
+    shell: sh
+    # Only on the broadest setting. `security` lets govulncheck decide what
+    # moves; `none` moves nothing.
+    if: '{{ eq (index .Task.Fields "dependencies") "all" }}'
+    timeout: 30m
+    # A bump that does not compile is *data* the audit loop repairs, not a
+    # reason to block or to try the same fetch twice.
+    allow_failure: true
+    max_retries: 0
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      say "go get -u ./..."
+      set -e
+      go get -u ./...
+      say "go mod tidy"
+      go mod tidy
+      echo
+      git --no-pager diff --stat -- go.mod go.sum
+
+  - id: audit
+    name: Sweep for vulnerabilities and repair
+    type: loop
+    count: 2
+    # Two full passes of build + test + govulncheck-on-three-platforms, plus an
+    # agent session between them.
+    timeout: 2h
+    steps:
+      - id: sweep
+        name: Build, test and govulncheck
+        type: command
+        shell: sh
+        timeout: 40m
+        # The verdict is the deliverable, so a failure is data for the `break`
+        # below and for `vuln-clear`. A second identical run tells nobody
+        # anything new — the loop is the iteration, not the retry budget.
+        allow_failure: true
+        max_retries: 0
+        run: |
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          rc=0
+
+          # Build and test only when the tree actually differs from the commit
+          # this task branched off. Untracked scratch under .vincent-prepare/
+          # is invisible to `git diff HEAD`, which is why it can live here.
+          if git diff --quiet HEAD; then
+            echo "== tree unchanged, skipping build and test"
+          else
+            say "building the updated tree"
+            echo "== go build ./..."
+            go build ./... || rc=1
+            if [ "$rc" -eq 0 ]; then
+              say "running the test suite"
+              echo "== go run mage.go test"
+              go run mage.go test || rc=1
+            fi
+          fi
+
+          if [ "$rc" -eq 0 ]; then
+            say "govulncheck, three platforms"
+            echo "== go run mage.go vuln"
+            go run mage.go vuln || rc=1
+          fi
+
+          printf '%s\n' "$rc" > .vincent-prepare/sweep.rc
+          # The first pass is the verdict on the tree as it arrived, and it is
+          # what decides whether a dependency PR is a `fix` or a `chore`.
+          [ -f .vincent-prepare/sweep-first.rc ] \
+            || printf '%s\n' "$rc" > .vincent-prepare/sweep-first.rc
+          # The verdict, before the exit that carries it. This step is
+          # `allow_failure` and its red row is a normal outcome — it is what
+          # sends the loop to `repair` — so the status is the only thing that
+          # can say which of the three legs said no.
+          if [ "$rc" -eq 0 ]; then
+            say "pass {{.Loop.Index}}: build, tests and govulncheck clean"
+          else
+            say "pass {{.Loop.Index}}: the sweep failed; the repair agent runs next"
+          fi
+          exit "$rc"
+
+      - id: clear
+        type: break
+        if: '{{ eq (index .Steps "sweep").ExitCode 0 }}'
+
+      - id: repair
+        name: Fix what the sweep reported
+        type: agent
+        # `none` means "touch nothing": the sweep still reports, and
+        # `vuln-clear` still blocks on a finding, but nothing is edited.
+        if: '{{ ne (index .Task.Fields "dependencies") "none" }}'
+        timeout: 45m
+        # The loop is the retry. A step-level retry here would be a second
+        # fresh session on the same failure inside the same iteration, for
+        # double the tokens and no new information.
+        max_retries: 0
+        check: go build ./... && go run mage.go test && go run mage.go vuln
+        prompt: |
+          This repository is being prepared for a release and a pre-release
+          sweep failed. You are fixing it. This is pass {{.Loop.Index}} of at
+          most 2.
+
+          What the sweep ran, in order, stopping at the first failure:
+
+              go build ./...            (only when the tree already differs from HEAD)
+              go run mage.go test
+              go run mage.go vuln       (govulncheck for linux, darwin and windows)
+
+          Its output:
+
+          ```
+          {{(index .Steps "sweep").Result}}
+          ```
+
+          Fix it, with the smallest change that actually resolves the finding:
+
+          - A **vulnerability** is fixed by moving the affected module to the
+            first version that carries the fix — `go get module@vX.Y.Z`, then
+            `go mod tidy`. Prefer the minimum bump. Do not vendor a patch, do
+            not add a `//go:build` exclusion, and never silence govulncheck.
+            Reachability differs per platform, so a finding that only appears
+            for one GOOS is still a finding.
+          - A **build or test failure** here comes from a dependency that
+            moved. Adapt this repository's code to the new API; do not roll the
+            dependency back to hide the break unless the new version is
+            genuinely broken, and say so in the summary if you do.
+          - Read `CLAUDE.md` before editing Go code. Migrations are
+            append-only, platform-specific code lives in `_unix.go` /
+            `_windows.go` files, and `go run mage.go lint` is strict.
+
+          Do not touch `CHANGELOG.md` or `site-changelog.md` — a later step in
+          this same run writes both — and do not commit, push, or open a pull
+          request. Leave your work as uncommitted changes in the worktree.
+
+          Run `vincent status "<under ten words>"` before each significant
+          phase, and when something goes wrong make the status name the actual
+          problem — "x/net still vulnerable after bump", not "working on it".
+
+          Finish by running `go build ./... && go run mage.go test && go run
+          mage.go vuln` yourself. That exact command is this step's check, so
+          if it does not pass, the step has not succeeded. Summarize which
+          modules moved, from which version to which, and why.
+
+  - id: vuln-clear
+    name: Confirm the tree has no known vulnerabilities
+    type: command
+    shell: sh
+    timeout: 5m
+    max_retries: 0
+    # The postcondition for the loop above, and free: it reads the verdict the
+    # last sweep recorded rather than spending another three-platform
+    # govulncheck. It exists for one path in particular — `dependencies: none`,
+    # where `repair` is skipped and the loop would otherwise end quietly with a
+    # vulnerability still in the tree.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      rc=$(cat .vincent-prepare/sweep.rc 2>/dev/null || echo 1)
+      first=$(cat .vincent-prepare/sweep-first.rc 2>/dev/null || echo 1)
+      printf '%s\n' "$first" > .vincent-prepare/initial-verdict.txt
+      if [ "$rc" -ne 0 ]; then
+        # Two different refusals, and the `none` one has a specific remedy
+        # that the board should carry: re-run with a setting that repairs.
+        if [ "{{index .Task.Fields "dependencies"}}" = "none" ]; then
+          say "still failing and dependencies=none: re-run with security or all"
+        else
+          say "the last sweep still fails after 2 passes: see the sweep output"
+        fi
+        echo "the last sweep still fails (exit $rc)" >&2
+        echo "read the 'sweep' step's output above for what govulncheck, the build or the tests reported" >&2
+        if [ "{{index .Task.Fields "dependencies"}}" = "none" ]; then
+          echo "this task ran with dependencies=none, so nothing was repaired — re-run with security or all, or fix it by hand" >&2
+        fi
+        exit 1
+      fi
+      echo "build, tests and govulncheck (linux, darwin, windows) are clean"
+      if [ "$first" -eq 0 ]; then
+        echo "the tree was already clean when this task started"
+        say "clean, and the tree was already clean when this task started"
+      else
+        say "clean: build, tests and govulncheck on all three platforms"
+      fi
+
+  - id: changes
+    name: Did anything in the tree change?
+    type: command
+    shell: sh
+    timeout: 5m
+    # A probe, so its failure is the answer: nonzero means the working tree
+    # differs from the commit this task branched off.
+    allow_failure: true
+    max_retries: 0
+    # The one step here whose red row is the *interesting* outcome — it is what
+    # opens the dependency PR and turns on the manual gate. The status says so,
+    # because `nonzero_exit` reads as a fault and this is not one.
+    #
+    # Set before the probe, never after: `git diff --quiet HEAD` has to be the
+    # last command, since its exit code is what every guard downstream reads.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      git --no-pager diff --stat HEAD
+      if git diff --quiet HEAD; then
+        say "tree unchanged: no dependency PR, the gate is skipped"
+      else
+        say "tree changed: a dependency PR will be opened and gated"
+      fi
+      git diff --quiet HEAD
+
+  - id: deps-pr
+    name: Open a pull request for the dependency work
+    type: command
+    shell: sh
+    if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
+    timeout: 15m
+    # Pushing a branch and opening a PR is an outward effect; a retry after an
+    # ambiguous failure would risk a second pull request. Look at the remote
+    # first, then re-run by hand.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      version=$(cat .vincent-prepare/version.txt)
+      initial=$(cat .vincent-prepare/initial-verdict.txt)
+
+      # A vulnerability that was present when this task started is a `fix:` —
+      # it earns its own changelog line and a patch bump. A routine `go get -u`
+      # sweep is a `chore:`, matching what Dependabot writes for gomod.
+      if [ "$initial" -ne 0 ]; then
+        type=fix
+        subject="fix(deps): update dependencies reported by govulncheck"
+        prtitle="Update the dependencies govulncheck flagged before v$version"
+      else
+        type=chore
+        subject="chore(deps): update Go module dependencies"
+        prtitle="Update Go module dependencies before v$version"
+      fi
+
+      # Only tracked files. `git add -A` would sweep .vincent-prepare/ — this
+      # task's scratch — into the commit.
+      git add -u
+      git diff --cached --quiet && { say "nothing staged after all"; echo "nothing staged after all" >&2; exit 1; }
+      git commit -q -m "$subject"
+
+      say "pushing $VINCENT_BRANCH"
+      git push -u origin "HEAD:refs/heads/$VINCENT_BRANCH"
+
+      # Re-running this step after a partial failure must not open a second
+      # pull request.
+      existing=$(gh pr list --head "$VINCENT_BRANCH" --state open --json number,url --jq '.[0] // empty')
+      if [ -n "$existing" ]; then
+        number=$(printf '%s' "$existing" | jq -r .number)
+        url=$(printf '%s' "$existing" | jq -r .url)
+        echo "pull request #$number already open for $VINCENT_BRANCH"
+      else
+        say "opening the dependency pull request"
+        # A plain-language title, never a conventional one: GitHub copies the
+        # PR title into the merge commit body, so a conventional title makes
+        # Release Please record both the merge and its inner commit. The
+        # `PR title` workflow enforces this (CLAUDE.md).
+        url=$(gh pr create \
+          --base "$VINCENT_BASE_BRANCH" \
+          --head "$VINCENT_BRANCH" \
+          --title "$prtitle" \
+          --body "Opened by the \`prepare-release\` workflow for vincent task #$VINCENT_TASK_ID, on the way to v$version.
+
+      The commit is \`$subject\`, so Release Please will record it under the next version once this lands.
+
+      \`\`\`
+      $(git --no-pager diff --stat HEAD~1 HEAD)
+      \`\`\`
+
+      Merge this first: the release PR's changelogs are written only after it is on \`$VINCENT_BASE_BRANCH\`, because Release Please force-pushes its branch whenever a new commit reaches the base and would take a changelog commit with it.")
+        number=$(printf '%s' "$url" | grep -oE '[0-9]+$')
+      fi
+
+      printf '%s\n' "$number" > .vincent-prepare/deps-pr.txt
+      say "dependency PR #$number open: merge it, then approve the gate"
+      echo
+      echo "dependency pull request: $url"
+      echo "commit:                  $subject"
+      echo
+      echo "this must be merged into $VINCENT_BASE_BRANCH before the changelogs are written"
+
+  - id: deps-gate
+    name: Land the dependency pull request
+    type: manual
+    if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
+    instructions: |
+      This run changed dependencies and opened a pull request for them:
+
+      {{(index .Steps "deps-pr").Result}}
+
+      Do this before approving:
+
+      1. Review and merge that pull request into `{{.Task.BaseBranch}}`, once
+         its own CI is green.
+      2. Wait for the `Release Please` workflow to run afterwards. It will
+         rewrite its release pull request — possibly with a new version number
+         — and **force-push its branch**. That is exactly why this gate is
+         here: a changelog commit written before this point would be discarded.
+      3. Approve here. The next step re-reads the release pull request from
+         scratch and will refuse to continue if the dependency PR is not
+         actually merged.
+
+      Reject if the dependency work is wrong or the release should wait. The
+      task blocks and nothing has been written to the release branch.
+
+  - id: refresh
+    name: Re-read the release pull request
+    type: command
+    shell: sh
+    timeout: 20m
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # If a dependency PR was opened, it has to be merged — not closed, not
+      # still open. Approving the gate is a claim; this is the check.
+      if [ -f .vincent-prepare/deps-pr.txt ]; then
+        number=$(cat .vincent-prepare/deps-pr.txt)
+        state=$(gh pr view "$number" --json state --jq .state)
+        [ "$state" = MERGED ] || {
+          say "dependency PR #$number is $state, not MERGED: cannot continue"
+          echo "dependency PR #$number is $state, not MERGED — the release cannot be prepared on top of it" >&2
+          exit 1
+        }
+        echo "dependency PR #$number is merged"
+
+        # Release Please reruns on that merge and rewrites its branch. Give it
+        # a bounded chance to finish before reading the PR, so the version and
+        # head this task writes against are the post-merge ones.
+        say "waiting for Release Please to refresh its PR"
+        waited=0
+        while [ "$waited" -lt 600 ]; do
+          running=$(gh run list --workflow=release-please.yml --limit 5 \
+            --json status --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo 0)
+          [ "$running" = 0 ] && break
+          sleep 30
+          waited=$((waited + 30))
+        done
+      fi
+
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+
+      pr=$(gh pr list \
+        --base "$VINCENT_BASE_BRANCH" \
+        --state open \
+        --label "autorelease: pending" \
+        --json number,title,url,headRefName,headRefOid \
+        --jq '.[0] // empty')
+      [ -n "$pr" ] || {
+        say "the Release Please PR has disappeared from $VINCENT_BASE_BRANCH"
+        echo "the Release Please PR has disappeared from $VINCENT_BASE_BRANCH" >&2
+        exit 1
+      }
+      printf '%s\n' "$pr" > .vincent-prepare/pr.json
+
+      title=$(printf '%s' "$pr" | jq -r .title)
+      version=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
+      [ -n "$version" ] || { say "could not parse a version out of the PR title"; echo "could not parse a version out of: $title" >&2; exit 1; }
+
+      was=$(cat .vincent-prepare/version.txt)
+      if [ "$was" = "$version" ]; then
+        say "release PR still proposes v$version"
+      else
+        # Worth a message of its own: everything downstream is written for
+        # this number, and a move here is the usual reason a later step
+        # refuses.
+        say "the proposed version moved: v$was -> v$version"
+        echo "the proposed version moved: v$was -> v$version"
+      fi
+      printf '%s\n' "$version" > .vincent-prepare/version.txt
+
+      if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+        say "v$version appeared on origin mid-run: find out who pushed it"
+        echo "tag v$version appeared on origin while this task was running — stop and work out who pushed it" >&2
+        exit 1
+      fi
+
+      echo "release PR:  $title — $(printf '%s' "$pr" | jq -r .url)"
+      echo "branch:      $(printf '%s' "$pr" | jq -r .headRefName)"
+      echo "head:        $(printf '%s' "$pr" | jq -r .headRefOid)"
+
+  - id: stage
+    name: Check out the release branch and gather its history
+    type: command
+    shell: sh
+    timeout: 20m
+    max_retries: 0
+    # The Release Please branch is checked out into scratch *inside* this
+    # task's worktree rather than by switching the worktree's own branch:
+    # vincent owns `{{.Task.BranchName}}`, and its dirty and branch checks
+    # assume it stays put. Cloning the project repo locally rather than
+    # fetching from GitHub keeps this offline-cheap; only the refs come over
+    # the network.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      rp=.vincent-prepare/rp
+      old=$(cat .vincent-prepare/old-version.txt)
+      version=$(cat .vincent-prepare/version.txt)
+      remote=$(cat .vincent-prepare/remote.txt)
+      head=$(jq -r .headRefName .vincent-prepare/pr.json)
+
+      say "cloning the release branch"
+      rm -rf "$rp"
+      git clone --quiet --no-checkout "$VINCENT_PROJECT_PATH" "$rp"
+      git -C "$rp" remote set-url origin "$remote"
+      git -C "$rp" fetch --quiet --tags origin \
+        "+refs/heads/$head:refs/remotes/origin/$head" \
+        "+refs/heads/$VINCENT_BASE_BRANCH:refs/remotes/origin/$VINCENT_BASE_BRANCH"
+      git -C "$rp" checkout -q -B "$head" "refs/remotes/origin/$head"
+      git -C "$rp" config user.email "$(git config user.email)"
+      git -C "$rp" config user.name "$(git config user.name)"
+
+      [ -f "$rp/CHANGELOG.md" ] || { say "CHANGELOG.md is missing on $head"; echo "CHANGELOG.md is missing on $head" >&2; exit 1; }
+      [ -f "$rp/site-changelog.md" ] || { say "site-changelog.md is missing on $head"; echo "site-changelog.md is missing on $head" >&2; exit 1; }
+
+      # == The material the agent writes from. Commit subjects alone cannot
+      # carry the context CHANGELOG.md's preamble asks for, which is why the
+      # merged pull requests and their bodies are gathered too.
+      say "gathering the history since v$old"
+      ctx=.vincent-prepare/context
+      rm -rf "$ctx"
+      mkdir -p "$ctx"
+
+      if git -C "$rp" rev-parse -q --verify "v$old^{commit}" >/dev/null; then
+        git -C "$rp" log --no-merges --pretty='- %h %s' \
+          "v$old..refs/remotes/origin/$VINCENT_BASE_BRANCH" > "$ctx/commits.md"
+        since=$(git -C "$rp" log -1 --format=%cI "v$old")
+      else
+        echo "tag v$old is not in the clone; falling back to the last 100 commits" >&2
+        git -C "$rp" log --no-merges -100 --pretty='- %h %s' \
+          "refs/remotes/origin/$VINCENT_BASE_BRANCH" > "$ctx/commits.md"
+        since=$(git -C "$rp" log -1 --format=%cI "refs/remotes/origin/$VINCENT_BASE_BRANCH~100" 2>/dev/null || echo "1970-01-01T00:00:00Z")
+      fi
+
+      gh pr list --state merged --base "$VINCENT_BASE_BRANCH" --limit 100 \
+        --json number,title,url,mergedAt,body \
+        --jq "[.[] | select(.mergedAt > \"$since\")] | sort_by(.mergedAt) | .[] | \"## #\(.number) — \(.title)\n\(.url)\nmerged \(.mergedAt)\n\n\((.body // \"\")[0:2500])\n\"" \
+        > "$ctx/merged-prs.md"
+
+      # What Release Please proposes, mechanical list and all — the thing being
+      # replaced.
+      awk -v v="[$version]" '
+        index($0, "## " v) == 1 { inside = 1 }
+        inside && index($0, "## " v) != 1 && /^## / { exit }
+        inside { print }
+      ' "$rp/CHANGELOG.md" > "$ctx/proposed-entry.md"
+
+      # The previous release, in both files, as the shape to imitate.
+      awk -v v="[$old]" '
+        index($0, "## " v) == 1 { inside = 1 }
+        inside && index($0, "## " v) != 1 && /^## / { exit }
+        inside { print }
+      ' "$rp/CHANGELOG.md" > "$ctx/previous-canonical.md"
+      awk -v v="$old" '
+        index($0, "## " v) == 1 { inside = 1 }
+        inside && index($0, "## " v) != 1 && /^## / { exit }
+        inside { print }
+      ' "$rp/site-changelog.md" > "$ctx/previous-site.md"
+
+      echo "release branch checked out at $rp ($head @ $(git -C "$rp" rev-parse --short HEAD))"
+      echo "context written to $ctx:"
+      wc -l "$ctx"/*.md
+      echo
+      echo "current audit verdict for v$version:"
+      # `|| true` because this is a baseline reading, not an assertion — the
+      # agent is about to fix whatever it reports. The audit script sets its
+      # own status from inside, so the last word this step leaves on the board
+      # is that baseline verdict, which is the right one to hand to the agent
+      # step that follows.
+      sh .vincent-prepare/audit-changelog.sh "$rp" "$version" || true
+
+  - id: changelogs
+    name: Write both changelogs for this release
+    type: agent
+    timeout: 45m
+    # One retry, and it is worth having: the `check` below is a precise,
+    # machine-readable list of what is still wrong, and it is appended to the
+    # second attempt's prompt automatically.
+    max_retries: 1
+    check: 'sh .vincent-prepare/audit-changelog.sh .vincent-prepare/rp "$(cat .vincent-prepare/version.txt)"'
+    prompt: |
+      Write the two changelog entries for the vincent release named in
+      `.vincent-prepare/version.txt`. Read that file first and use that exact
+      number everywhere below, wherever this prompt says VERSION. Do not guess
+      it and do not take it from anything else.
+
+      You are editing a **second checkout**, not this worktree's own tree.
+      Both files live under `.vincent-prepare/rp/`:
+
+      - `.vincent-prepare/rp/CHANGELOG.md`
+      - `.vincent-prepare/rp/site-changelog.md`
+
+      That directory is the Release Please pull request's branch. Change
+      nothing else in it, create no files in it, and do not run any git command
+      anywhere — a later step commits and pushes for you.
+
+      This is the only moment either changelog gets written (see `RELEASING.md`
+      step 3 and the preamble of `CHANGELOG.md`). After the release PR merges,
+      the entry is published.
+
+      ## Your material
+
+      Read all of these first:
+
+      - `.vincent-prepare/context/proposed-entry.md` — Release Please's
+        mechanical entry, the thing you are replacing.
+      - `.vincent-prepare/context/merged-prs.md` — every pull request merged
+        since the last release, with its number, URL and body. This is where
+        the user-facing context lives, and where the `([#N](url))` links come
+        from.
+      - `.vincent-prepare/context/commits.md` — the raw commit subjects.
+      - `.vincent-prepare/context/previous-canonical.md` and
+        `.vincent-prepare/context/previous-site.md` — the previous release in
+        both files. Match their voice, depth and structure.
+      - `RELEASING.md` step 3, and the preamble of `CHANGELOG.md`.
+
+      ## CHANGELOG.md
+
+      Replace the mechanical commit list inside the `## [VERSION]` heading with
+      the user-facing context a commit subject cannot carry. Keep the heading
+      line Release Please generated — its compare link and date — exactly as it
+      is. Keep the Keep a Changelog groups (`### Added`, `### Changed`,
+      `### Fixed`, and only the ones that apply).
+
+      Four failures this file has actually shipped with, all of which the check
+      below will catch:
+
+      - **An `## [Unreleased]` section.** Release Please inserts each new
+        version directly beneath the preamble, so prose parked under
+        `Unreleased` is pushed *below* the release it describes. If one exists,
+        fold its content into `## [VERSION]` and delete the heading. The file
+        carries no Unreleased section by design.
+      - **Surviving mechanical lines** of the form
+        `* subject ([abc1234](commit-url))`. Every one must be gone.
+      - **A duplicated subject.** GitHub copies a pull request title into its
+        merge commit body, so one change can appear twice. Merge the pair.
+      - **Nothing at all** under the heading.
+
+      ## site-changelog.md
+
+      The human-facing history published at `/changelog.html`. Nothing
+      generates it. Add a new section at the **top**, above the current newest
+      one and below the `# Changelog` intro paragraph:
+
+          ## VERSION — <a short theme naming the release>
+
+          Released <YYYY-MM-DD>.
+
+          ### Added
+          ...
+
+      Use today's date. Product-focused, deduplicated, one bold lead phrase per
+      entry, and **link the pull request** for each entry the way the previous
+      section does: `([#204](https://github.com/lezli01/vincent/pull/204))`.
+      This page is shorter and less technical than `CHANGELOG.md` — it explains
+      what a user can now do, not how it was implemented.
+
+      ## Rules
+
+      - Never invent a change. If the material does not say what a commit did
+        for a user, describe only what you can support from it.
+      - Do not renumber, reorder or edit any previously released section in
+        either file.
+      - Do not edit anything outside `.vincent-prepare/rp/`.
+
+      Run `vincent status "<under ten words>"` before each significant phase —
+      reading the material, writing the canonical entry, writing the site page
+      — and if you get stuck, make the status say what is actually missing, for
+      example "no PR body for #207".
+
+      Finish by running
+
+          sh .vincent-prepare/audit-changelog.sh .vincent-prepare/rp "$(cat .vincent-prepare/version.txt)"
+
+      from this worktree. That exact command is this step's check: if it prints
+      any `FAIL`, the step has not succeeded. Then summarize, in a few lines,
+      what the release is about.
+
+  - id: push
+    name: Push both changelogs onto the release branch
+    type: command
+    shell: sh
+    timeout: 15m
+    # The one write to somebody else's branch. It is a plain fast-forward push
+    # — never `--force` — so if Release Please rewrote the branch while the
+    # agent was writing, this fails rather than discarding what it rewrote.
+    # That failure is a reason to re-run the task, not to retry the push.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      rp=.vincent-prepare/rp
+      version=$(cat .vincent-prepare/version.txt)
+      head=$(jq -r .headRefName .vincent-prepare/pr.json)
+
+      git -C "$rp" add CHANGELOG.md site-changelog.md
+      if git -C "$rp" diff --cached --quiet; then
+        say "both changelogs were already written on $head: nothing to push"
+        echo "neither changelog changed on $head" >&2
+        echo "the audit passed, so they were already written — nothing to push" >&2
+        exit 0
+      fi
+
+      echo "== staged"
+      git -C "$rp" --no-pager diff --cached --stat
+
+      git -C "$rp" commit -q -m "docs(changelog): curate the $version entry and write the site changelog"
+      sha=$(git -C "$rp" rev-parse HEAD)
+
+      # The one write to somebody else's branch. The status is set before it
+      # and says where it is going, so a fast-forward refused because Release
+      # Please rewrote the branch mid-run leaves a row that names the branch
+      # rather than one that says `nonzero_exit`.
+      say "pushing the changelogs to $head"
+      git -C "$rp" push origin "HEAD:refs/heads/$head"
+      printf '%s\n' "$sha" > .vincent-prepare/changelog-sha.txt
+
+      echo
+      echo "pushed $sha to $head"
+      say "pushed the v$version changelogs to $head"
+
+  - id: dry-run
+    name: Dry-run the Release workflow
+    type: command
+    shell: sh
+    # RELEASING.md step 4. Skipped when the task says packaging did not change;
+    # the step still shows up as `skipped` with reason `condition`, so the
+    # report can say which legs actually ran.
+    if: '{{ eq (index .Task.Fields "dry-run") "true" }}'
+    # Cross-compiles six archives and smoke-tests them on three OSes; the poll
+    # for the run to appear is inside the same budget.
+    timeout: 75m
+    # Dispatching is an outward action and a retry would start a second run
+    # while the first is still going. Re-run by hand — it just dispatches a
+    # fresh run.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      say "dispatching a Release dry run"
+      gh workflow run release.yml --ref "$VINCENT_BASE_BRANCH" -f dry_run=true
+      echo "dispatched a dry run of Release on $VINCENT_BASE_BRANCH"
+
+      # The run takes a few seconds to appear. Match on creation time as well
+      # as branch, so a dry run someone else started an hour ago is not
+      # mistaken for this one. `gh run list` is guarded: an unguarded
+      # assignment under `set -e` turns one 502 into the false and expensive
+      # statement "the dispatched run never appeared".
+      id=""
+      nap=3
+      waited=0
+      while :; do
+        set +e
+        id=$(gh run list --workflow=release.yml --event=workflow_dispatch --limit 30 \
+          --json databaseId,createdAt,headBranch \
+          --jq "[.[] | select(.headBranch == \"$VINCENT_BASE_BRANCH\" and .createdAt >= \"$started\")] | sort_by(.createdAt) | .[0].databaseId // empty" 2>/dev/null)
+        if [ $? -ne 0 ]; then id=""; fi
+        set -e
+        if [ -n "$id" ]; then break; fi
+        if [ "$waited" -ge 300 ]; then break; fi
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 15 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 15 ]; then nap=15; fi
+        fi
+      done
+      [ -n "$id" ] || {
+        say "the dispatched Release run never appeared: check Actions"
+        echo "the dispatched Release run never appeared — check Actions" >&2
+        exit 1
+      }
+
+      url=$(gh run view "$id" --json url --jq .url)
+      printf '%s\n' "$url" > .vincent-prepare/dry-run-url.txt
+      echo "$url"
+      # The longest single wait in this step, and `gh run watch` writes nothing
+      # vincent can see: this one message is what the board shows for most of
+      # the 20-40 minutes.
+      say "watching the dry run: 6 archives, smoke on 3 OSes"
+      gh run watch "$id" --exit-status
+      say "dry run green"
+
+      echo
+      echo "dry run green: $url"
+      echo "not exercised by a dry run: cosign signing, build provenance, the GitHub release, and the Homebrew/Scoop/WinGet pushes"
+
+  - id: green
+    name: Wait for the release PR and the base branch to go green
+    type: command
+    shell: sh
+    # Long enough to watch a full matrix land twice: the changelog push starts
+    # a fresh three-OS run on the PR, and Windows CI alone has taken 11m54s.
+    timeout: 90m
+    # A failure that survives the wait means the world is genuinely not ready —
+    # a red check, a new commit on the base. There is no delay between
+    # attempts, so a retry fails a second time a second later.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      number=$(jq -r .number .vincent-prepare/pr.json)
+
+      # `gh pr checks` exits 8 while anything is *pending* and 1 when something
+      # failed, and the bare form does not distinguish "CI is still running"
+      # from "CI said no" to a human reading a blocked task. `--watch` waits
+      # instead, so the exit code means one thing.
+      # Two waits, each measured in minutes, inside one 90-minute step. Without
+      # a status the board cannot say which of the two it is in.
+      say "watching the release PR's checks (#$number)"
+      echo "== release PR #$number checks"
+      gh pr checks "$number" --watch --fail-fast --interval 30
+
+      # And the branch it merges into: a tag on a red base produces signed,
+      # attested, broken binaries (RELEASING.md step 1). This covers *every*
+      # check on the commit, not only `ci` and `gates`.
+      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
+      # require-green.sh reports its own progress from here — it inherits this
+      # step's VINCENT_TASK_ID and VINCENT_STEP_ID, so its "waiting on …" lines
+      # land on this row.
+      say "watching $VINCENT_BASE_BRANCH at $(printf '%s' "$sha" | cut -c1-7)"
+      echo
+      echo "== $VINCENT_BASE_BRANCH checks"
+      sh .vincent-prepare/require-green.sh "$sha" 45
+      printf '%s\n' "$sha" > .vincent-prepare/base-sha.txt
+      say "release PR and $VINCENT_BASE_BRANCH are both green"
+
+  - id: verify
+    name: Verify the release PR is ready to merge
+    type: command
+    shell: sh
+    timeout: 15m
+    max_retries: 0
+    # The read-only postcondition, run against what GitHub actually serves
+    # rather than against the scratch clone. Release Please force-pushes its
+    # branch whenever a commit reaches the base, so between `push` and here the
+    # curated changelogs may simply be gone — and the sweep, the dry run and
+    # the CI wait all happened in that window.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      number=$(jq -r .number .vincent-prepare/pr.json)
+      repo=$(cat .vincent-prepare/repo.txt)
+      version=$(cat .vincent-prepare/version.txt)
+
+      # The postcondition, and the step most likely to catch the thing this
+      # whole workflow's ordering exists to avoid: Release Please force-pushing
+      # its branch and taking the curated changelogs with it. Each refusal
+      # names itself, because "re-run the task" and "someone closed the PR" are
+      # different instructions.
+      say "re-reading release PR #$number as GitHub serves it"
+      pr=$(gh pr view "$number" --json state,title,url,headRefName,headRefOid,mergeStateStatus)
+      state=$(printf '%s' "$pr" | jq -r .state)
+      [ "$state" = OPEN ] || { say "release PR #$number is $state, not OPEN"; echo "release PR #$number is $state, not OPEN" >&2; exit 1; }
+
+      title=$(printf '%s' "$pr" | jq -r .title)
+      now=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
+      [ "$now" = "$version" ] || {
+        say "PR now proposes v$now but the changelogs say v$version: re-run this task"
+        echo "the release PR now proposes v$now, but the changelogs were written for v$version" >&2
+        echo "something landed on $VINCENT_BASE_BRANCH while this task ran — re-run this task" >&2
+        exit 1
+      }
+
+      head=$(printf '%s' "$pr" | jq -r .headRefName)
+      oid=$(printf '%s' "$pr" | jq -r .headRefOid)
+
+      # Fetch both files as GitHub serves them at the PR head, then run the
+      # same audit script the agent's check ran.
+      remote=.vincent-prepare/remote-head
+      rm -rf "$remote"
+      mkdir -p "$remote"
+      say "auditing both changelogs as served at $head"
+      for f in CHANGELOG.md site-changelog.md; do
+        gh api -H "Accept: application/vnd.github.raw+json" \
+          "repos/$repo/contents/$f?ref=$head" > "$remote/$f" || {
+          say "could not read $f at $head"
+          echo "could not read $f at $head" >&2; exit 1; }
+      done
+      # Sets its own status from inside, so a failure here leaves the finding
+      # on the row rather than `nonzero_exit`.
+      sh .vincent-prepare/audit-changelog.sh "$remote" "$version"
+
+      if [ -f .vincent-prepare/changelog-sha.txt ]; then
+        pushed=$(cat .vincent-prepare/changelog-sha.txt)
+        if [ "$pushed" != "$oid" ]; then
+          echo "note: $head has moved past the changelog commit ($pushed -> $oid); the audit above is what counts"
+        fi
+      fi
+
+      mergeable=$(printf '%s' "$pr" | jq -r .mergeStateStatus)
+      case "$mergeable" in
+        CLEAN|HAS_HOOKS|UNSTABLE) ;;
+        *)
+          say "release PR #$number is not mergeable: $mergeable"
+          echo "release PR #$number is not mergeable (mergeStateStatus=$mergeable)" >&2
+          exit 1
+          ;;
+      esac
+
+      printf '%s\n' "$oid" > .vincent-prepare/head-oid.txt
+      echo
+      echo "release PR #$number is open, green, mergeable and describes v$version"
+      say "v$version ready: PR #$number is open, green and mergeable"
+
+  - id: report
+    name: What is ready, and what merging it will do
+    type: command
+    shell: sh
+    timeout: 5m
+    max_retries: 0
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      version=$(cat .vincent-prepare/version.txt)
+      number=$(jq -r .number .vincent-prepare/pr.json)
+      url=$(gh pr view "$number" --json url --jq .url 2>/dev/null || echo "?")
+      # The last word of the whole run, and the one the board keeps against
+      # this task: what is ready, and that merging it is still a person's job.
+      say "v$version ready to release: merge PR #$number when you are happy"
+
+      echo "=============================================================="
+      echo " v$version is ready to release"
+      echo "=============================================================="
+      echo
+      echo "release PR:     #$number  $url"
+      echo "PR head:        $(cat .vincent-prepare/head-oid.txt 2>/dev/null || echo '?')"
+      echo "merges into:    $VINCENT_BASE_BRANCH @ $(cat .vincent-prepare/base-sha.txt 2>/dev/null || echo '?')"
+      echo "last release:   v$(cat .vincent-prepare/old-version.txt)"
+      echo
+      echo "done in this run:"
+      echo "  dependencies      {{index .Task.Fields "dependencies"}}"
+      if [ -f .vincent-prepare/deps-pr.txt ]; then
+        echo "  dependency PR     #$(cat .vincent-prepare/deps-pr.txt) (merged)"
+      else
+        echo "  dependency PR     none needed"
+      fi
+      echo "  vulnerabilities   govulncheck clean for linux, darwin and windows"
+      echo "  CHANGELOG.md      curated for $version and pushed to the release branch"
+      echo "  site-changelog.md $version section written and pushed"
+      if [ -f .vincent-prepare/dry-run-url.txt ]; then
+        echo "  dry run           green — $(cat .vincent-prepare/dry-run-url.txt)"
+      else
+        echo "  dry run           skipped (this task said packaging did not change)"
+      fi
+      echo "  CI                release PR and $VINCENT_BASE_BRANCH both green"
+      echo
+      echo "not done, and deliberately so — this is yours:"
+      echo "  * read $url one more time, the changelogs especially;"
+      echo "  * merge it. That merge is the release: Release Please creates"
+      echo "    tag v$version and the GitHub release, and that tag triggers"
+      echo "    the Release workflow, which builds, signs, notarizes,"
+      echo "    attests, uploads and updates Homebrew, Scoop and WinGet."
+      echo "  * a published tag is never re-pointed — RELEASING.md § If a"
+      echo "    release goes wrong."
+      echo
+      echo "the sibling 'release' workflow does the merge-and-watch half if you"
+      echo "would rather drive it from vincent than from the browser."
+      echo
+      echo "secrets the tag will need (names only, never values):"
+      gh secret list 2>/dev/null | awk '{ print "  " $1 }' || echo "  could not list repository secrets"

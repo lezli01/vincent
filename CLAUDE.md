@@ -47,12 +47,21 @@ optional when a change touches the behavior or decision they describe:
 
 `skills/vincent-workflows/SKILL.md` is **runtime text, not just documentation**:
 `skills/embed.go` embeds it and `internal/workflow/builtin.go` splices it into
-the built-in `create-workflow` workflow's prompt at build time (task 024). An
-edit to that file changes what the daemon tells an agent to do. It reaches the
-prompt escaped for `text/template` and re-indented into a YAML block scalar, so
-it may contain anything — but the three standing corrections the prompt applies
-to it (what asking costs, destination, missing `references/`) live in
-`createWorkflowHeader`, never in the skill.
+the built-in `create-workflow` (task 024) and `update-workflows` (task 037)
+prompts at build time. An edit to that file changes what the daemon tells an
+agent to do. It reaches both prompts escaped for `text/template` and re-indented
+into a YAML block scalar, so it may contain anything — but each built-in's
+standing corrections to it (what asking costs, destination, missing
+`references/` for one; that the deliverable is an edit to existing files, that
+asking is denied, missing `references/` for the other) live in that built-in's
+own header, never in the skill.
+
+The built-ins are held to the same bar `update-workflows` holds a project's
+workflows to (task 037 decision 5): when a workflow feature lands, re-read all
+three sources in the same piece of work, use the feature where it applies, and
+add the line for it to `update-workflows`' checklist — that checklist is
+version-coupled by design, and a feature missing from it is one the built-in
+will never propagate.
 
 Phase decisions ("phase 2 decision", "PR G decision", "T1.5/T1.6 decision") recorded
 inline in comments and in tasks.md are binding — they are the outcome of design

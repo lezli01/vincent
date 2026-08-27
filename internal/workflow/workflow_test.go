@@ -729,7 +729,7 @@ func TestCreateWorkflowSkillSplicingIsTemplateSafe(t *testing.T) {
 		t.Fatalf("front matter survived: %q", body)
 	}
 
-	indented := indentBlock(EscapeTemplate(body), promptIndent)
+	indented := indentBlock(EscapeTemplate(body))
 	for _, line := range strings.Split(indented, "\n") {
 		if line != "" && !strings.HasPrefix(line, promptIndent) {
 			t.Errorf("line %q is not indented into the block scalar", line)
@@ -805,5 +805,147 @@ func TestBuiltinCreateWorkflowDestinationBranches(t *testing.T) {
 				t.Errorf("rendered prompt does not carry workflow_name:\n%s", got)
 			}
 		})
+	}
+}
+
+// TestBuiltinUpdateWorkflowsIsValid pins the shape of the maintenance
+// built-in (task 037). Every assertion here is a decision the definition
+// makes rather than a restatement of the YAML: the probe that lets an empty
+// registry finish clean, the deny that keeps the pass unattended, and the
+// per-file validation loop that makes the run's verdict independent of what
+// the agent claims.
+func TestBuiltinUpdateWorkflowsIsValid(t *testing.T) {
+	e, ok := builtins()[UpdateWorkflowsName]
+	if !ok {
+		t.Fatalf("builtins() has no %q entry", UpdateWorkflowsName)
+	}
+	if !e.Valid() {
+		t.Fatalf("built-in update-workflows is invalid: %v", e.Errors)
+	}
+	if e.Scope != ScopeBuiltin || e.File != "" {
+		t.Errorf("scope = %q, file = %q; want builtin scope and no file", e.Scope, e.File)
+	}
+	// It needs nothing typed at creation: the project decides what there is
+	// to update, not the person filing the task.
+	if len(e.Workflow.Fields) != 0 {
+		t.Errorf("fields = %+v, want none", e.Workflow.Fields)
+	}
+
+	steps := e.Workflow.Steps
+	wantIDs := []string{"inventory", "has-workflows", "modernize", "relist", "validate", "changes"}
+	if len(steps) != len(wantIDs) {
+		t.Fatalf("steps = %d, want %d (%v)", len(steps), len(wantIDs), wantIDs)
+	}
+	for i, want := range wantIDs {
+		if steps[i].ID != want {
+			t.Fatalf("steps[%d].ID = %q, want %q", i, steps[i].ID, want)
+		}
+	}
+
+	// The probe reports "this project versions no workflows" as a nonzero
+	// exit, so it must not block on it and must not pay for a retry.
+	probe := steps[0]
+	if probe.Type != StepCommand || !probe.AllowFailure {
+		t.Errorf("inventory = %+v, want an allow_failure command step", probe)
+	}
+	if mr := probe.MaxRetries; mr == nil || *mr != 0 {
+		t.Errorf("inventory max_retries = %v, want 0 (a probe should not retry)", mr)
+	}
+	if steps[1].Type != StepCondition || steps[1].If == "" {
+		t.Errorf("has-workflows = %+v, want a condition step carrying a guard", steps[1])
+	}
+
+	agentStep := steps[2]
+	if agentStep.Type != StepAgent {
+		t.Fatalf("modernize type = %q, want an agent step", agentStep.Type)
+	}
+	// Deliberately deny, not create-workflow's wait: the answers are in the
+	// repository and the diff is reviewed before it can affect anything, so
+	// parking the task would buy a held slot and nothing else (decision 4).
+	if agentStep.OnInput != InputDeny {
+		t.Errorf("modernize on_input = %q, want %q", agentStep.OnInput, InputDeny)
+	}
+	if mr := agentStep.MaxRetries; mr == nil || *mr != 1 {
+		t.Errorf("modernize max_retries = %v, want 1 (edits in a private worktree replay safely)", mr)
+	}
+
+	loop := steps[4]
+	if loop.Type != StepLoop || len(loop.ForEach) == 0 || len(loop.Steps) != 1 {
+		t.Fatalf("validate = %+v, want a for_each loop with one body step", loop)
+	}
+	// The list is relisted after the pass rather than reused from the probe,
+	// so a file the pass added is validated too.
+	if !strings.Contains(loop.ForEach[0], `"relist"`) {
+		t.Errorf("validate for_each = %q, want it driven by the relist step", loop.ForEach[0])
+	}
+	if body := loop.Steps[0]; body.Type != StepCommand || !strings.Contains(body.Run, "workflow validate") {
+		t.Errorf("loop body = %+v, want a command step running the validator", body)
+	}
+}
+
+// The prompt is the workflow: it carries the file list a command produced,
+// the skill, and template syntax quoted as prose. All three go through one
+// render, because each of them fails silently in a different way — a missing
+// splice, an executed skill, an escaped example that never came back.
+func TestBuiltinUpdateWorkflowsPromptRenders(t *testing.T) {
+	steps := builtins()[UpdateWorkflowsName].Workflow.Steps
+	rc := RenderContext{
+		Task:    TaskContext{Title: "modernize the workflows", BaseBranch: "master"},
+		Project: ProjectContext{Name: "vincent", Path: "/repo/root"},
+		Steps: map[string]StepResult{
+			"inventory": {Status: "succeeded", Result: ".vincent/workflows/feature-pr.yaml"},
+		},
+	}
+
+	got, err := Render("prompt", steps[2].Prompt, rc)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	// The list a command produced is what the agent works from; without it
+	// the prompt would be asking an agent to go and find the files itself.
+	if !strings.Contains(got, ".vincent/workflows/feature-pr.yaml") {
+		t.Errorf("rendered prompt does not carry the inventory listing:\n%s", got)
+	}
+	if !strings.Contains(got, "Choose the cheapest correct primitive") {
+		t.Errorf("rendered prompt does not carry the embedded skill:\n%s", got)
+	}
+	if strings.Contains(got, "name: vincent-workflows") {
+		t.Errorf("rendered prompt still carries the skill's front matter:\n%s", got)
+	}
+	// The checklist quotes a template as an example. It has to survive the
+	// render as text — an unescaped one would either execute or fail the
+	// step before the agent ever starts.
+	if !strings.Contains(got, `{{with index .Task.Fields "x"}}`) {
+		t.Errorf("the defensive-template example did not survive rendering:\n%s", got)
+	}
+	if !strings.Contains(got, "vincent status") {
+		t.Errorf("rendered prompt does not ask for a status line:\n%s", got)
+	}
+
+	// The verification steps render too: a template error there would only
+	// surface after the agent had already been paid for.
+	for _, step := range []Step{steps[3], steps[4].Steps[0], steps[5]} {
+		if _, err := Render("run", step.Run, rc); err != nil {
+			t.Errorf("Render(%q run) error = %v", step.ID, err)
+		}
+	}
+	if got, err := Render("run", steps[5].Run, rc); err != nil || !strings.Contains(got, "master") {
+		t.Errorf("changes run = %q, err = %v; want the base branch rendered in", got, err)
+	}
+}
+
+// Every built-in that runs an agent asks it to report through `vincent
+// status` (§5.6). The daemon appends no such instruction, so a built-in that
+// stops asking goes quiet on the board with nothing to say why.
+func TestBuiltinAgentStepsAskForStatus(t *testing.T) {
+	for name, e := range builtins() {
+		for _, step := range e.Workflow.Steps {
+			if step.Type != StepAgent {
+				continue
+			}
+			if !strings.Contains(step.Prompt, "vincent status") {
+				t.Errorf("built-in %q step %q never asks for a status line", name, step.ID)
+			}
+		}
 	}
 }
