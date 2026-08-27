@@ -4720,6 +4720,29 @@ darwin slices — and is covered by Apple's installer signature plus a GitHub
 build attestation instead. Reasoning and the external enrolment blocker are in
 `docs/tasks/032-macos-notarization.md`.
 
+**Amended 2026-08-27 — deb and rpm ship deliberately unsigned.** The 2026-08-20
+amendment above generated deb and rpm assets without deciding whether they
+should carry a maintainer signature; `nfpms` has never had a `signature:` block,
+which until now was an undecided gap rather than a decision. It is decided: the
+packages stay unsigned, and `nfpms` is correct as it stands. vincent publishes
+**no APT or YUM repository**, and `dpkg`/`apt` do not verify a per-package
+signature on a `.deb` downloaded from a release page at all — apt verifies a
+repository's `Release` file — so signing the deb buys nothing on the path
+vincent's users actually take. `rpm -K` *does* verify once its key is imported,
+and that is the half of the case with real content; the alternative it beat was
+therefore adding `signature:` with a **release-held GPG key**, publishing that
+key and documenting `rpm -K`. That was declined because it improves the rpm path
+only, leaves the deb path untouched, and trades this project's keyless supply
+chain for a long-lived secret with publication and rotation duty — precisely what
+keyless cosign exists to avoid. Both formats remain covered by cosign over
+`checksums.txt` and by GitHub build attestations, which is what
+`docs/platforms/linux.md` now states beside the existing "no Gatekeeper or
+SmartScreen equivalent" note. Reasoning in
+`docs/tasks/038-release-signing-posture.md`. **Windows Authenticode is untouched
+by this amendment and remains descoped**: the free-for-OSS signing route is being
+surveyed under task 038, and §19 will not describe a Windows signature before one
+exists.
+
 **M4's acceptance is met, 2026-08-11.** The T4.6 walkthrough ran on a clean VM
 per OS with no Go toolchain, against the `v0.1.0-rc1` artifacts: **5:00** on
 Windows 11, **4:30** on macOS, **3:35** on Linux — every run under half the
