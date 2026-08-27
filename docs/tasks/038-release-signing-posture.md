@@ -228,7 +228,7 @@ all. For the Windows strand the proof is layered exactly as task 032 layered it:
 ## Risks
 
 - **The application may be declined.** SignPath Foundation evaluates project
-  maturity and user base; vincent is at `v0.7.0`. A decline stops the Windows
+  maturity and user base; vincent is at `v0.6.0`. A decline stops the Windows
   strand and the SmartScreen wording stays exactly as written. The outcome is
   recorded in 038.1 either way, so the question is not re-derived a third time.
 - **OV will not clear SmartScreen at release time.** Already priced into the
