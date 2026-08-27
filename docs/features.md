@@ -205,12 +205,12 @@ task exists.
 
 A declared `issue` field gets the issue **number**, which is how a `command`
 step reads it: step bodies receive the environment of [§8.5](reference/workflow-schema.md#environment),
-not the template context, so `{{ index .Task.Fields "issue" }}` is what puts the
+not the template context, so `{% raw %}{{ index .Task.Fields "issue" }}{% endraw %}` is what puts the
 number into a `run:` body.
 
 Templates receive the issue as `.Issue` — number, title, body, URL, state,
 labels, author, assignee, and milestone — zero-valued when nothing is linked, so
-`{{ if .Issue.Number }}` lets one workflow serve both. The issue is fetched once
+`{% raw %}{{ if .Issue.Number }}{% endraw %}` lets one workflow serve both. The issue is fetched once
 at creation and stored on the task, so runs stay reproducible and no step render
 touches the network. Fan-out lanes inherit their parent's issue.
 

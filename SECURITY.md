@@ -10,11 +10,11 @@
 vincent is a pre-1.0, single-maintainer project: there are no backport branches
 and no long-term support line. A security fix lands on `master` and ships in the
 next release, so "supported" means **the newest release** — see
-[CHANGELOG.md § Versioning and stability](CHANGELOG.md#versioning-and-stability)
+[CHANGELOG.md § Versioning and stability](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md#versioning-and-stability)
 for what a minor or patch bump is allowed to change.
 
 Known vulnerabilities in the dependency graph are swept weekly by
-[`.github/workflows/vuln.yml`](.github/workflows/vuln.yml) (govulncheck across
+[`.github/workflows/vuln.yml`](https://github.com/lezli01/vincent/blob/master/.github/workflows/vuln.yml) (govulncheck across
 all three target platforms), and on every change to `go.mod`/`go.sum`.
 
 ## Reporting a vulnerability

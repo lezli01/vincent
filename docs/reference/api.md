@@ -966,6 +966,6 @@ store publishes after the database has recorded the event.
 
 - [Scripting vincent](../guides/scripting.md) — worked examples.
 - [Task lifecycle](task-lifecycle.md) — what the action endpoints do.
-- Spec [§13](../spec.md) — the normative definition.
+- Spec [§13](https://github.com/lezli01/vincent/blob/master/docs/spec.md) — the normative definition.
 
 {% endraw %}

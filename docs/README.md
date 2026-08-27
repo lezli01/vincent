@@ -111,11 +111,11 @@ that is *not* true are stated rather than smoothed over.
   does and does not isolate, and how to tighten it.
 - [FAQ](faq.md) — the short answers.
 - [Example workflows](../examples) — five ready-to-copy files.
-- [Changelog](../CHANGELOG.md) — user-visible changes in every release.
+- [Changelog](https://lezli01.is-a.dev/vincent/changelog.html) — user-visible changes in every release.
 
 ## Contributing
 
-Want to improve vincent itself? The [Contributing guide](../CONTRIBUTING.md)
+Want to improve vincent itself? The [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html)
 covers development setup, architecture pointers, documentation expectations,
 tests, cross-platform checks, commit conventions, and pull requests.
 

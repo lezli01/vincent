@@ -1,23 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ site.lang | default: 'en' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#282828">
   <meta name="color-scheme" content="dark">
-  {% assign meta_description = page.description | default: site.description | strip_html | normalize_whitespace %}
-  {% assign social_image = page.image | default: site.social_image %}
-  {% assign social_image_alt = page.image_alt | default: site.social_image_alt %}
-  <title>{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}</title>
+  {% for candidate in site.data.why_articles %}{% if candidate.path == page.path %}{% assign article_meta = candidate %}{% break %}{% endif %}{% endfor %}
+  {% for candidate in site.data.seo_pages %}{% if candidate.path == page.path %}{% assign seo_page = candidate %}{% break %}{% endif %}{% endfor %}
+  {% assign resolved_title = page.seo_title | default: article_meta.seo_title | default: seo_page.seo_title | default: page.title %}
+  {% if page.url == '/' %}{% assign meta_title = site.homepage_title %}{% elsif resolved_title %}{% capture meta_title %}{{ resolved_title }} · {{ site.title }}{% endcapture %}{% else %}{% assign meta_title = site.title %}{% endif %}
+  {% assign content_description = content | strip_html | normalize_whitespace | truncate: 160 %}
+  {% assign meta_description = page.description | default: article_meta.description | default: seo_page.description | default: content_description | default: site.description | strip_html | normalize_whitespace %}
+  {% assign social_image = page.image | default: article_meta.image | default: seo_page.image | default: site.social_image %}
+  {% assign social_image_alt = page.image_alt | default: article_meta.image_alt | default: seo_page.image_alt | default: site.social_image_alt %}
+  {% if article_meta %}{% assign default_og_type = 'article' %}{% else %}{% assign default_og_type = 'website' %}{% endif %}
+  {% assign og_type = page.og_type | default: default_og_type %}
+  {% assign robots_directive = page.robots | default: 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1' %}
+  <title>{{ meta_title | strip | escape }}</title>
   <meta name="description" content="{{ meta_description | escape }}">
   <meta name="author" content="{{ site.author | escape }}">
+  <meta name="robots" content="{{ robots_directive | escape }}">
+  {% if site.google_site_verification %}<meta name="google-site-verification" content="{{ site.google_site_verification | escape }}">{% endif %}
+  {% if site.bing_site_verification %}<meta name="msvalidate.01" content="{{ site.bing_site_verification | escape }}">{% endif %}
   <link rel="canonical" href="{{ page.url | absolute_url }}">
+  <link rel="sitemap" type="application/xml" title="Sitemap" href="{{ '/sitemap.xml' | absolute_url }}">
 
-  <meta property="og:type" content="{{ page.og_type | default: 'website' }}">
+  <meta property="og:type" content="{{ og_type }}">
   <meta property="og:site_name" content="{{ site.title | escape }}">
   <meta property="og:locale" content="{{ site.locale }}">
   <meta property="og:url" content="{{ page.url | absolute_url }}">
-  <meta property="og:title" content="{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}">
+  <meta property="og:title" content="{{ meta_title | strip | escape }}">
   <meta property="og:description" content="{{ meta_description | escape }}">
   <meta property="og:image" content="{{ social_image | absolute_url }}">
   <meta property="og:image:secure_url" content="{{ social_image | absolute_url }}">
@@ -28,10 +40,12 @@
 
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:url" content="{{ page.url | absolute_url }}">
-  <meta name="twitter:title" content="{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}">
+  <meta name="twitter:title" content="{{ meta_title | strip | escape }}">
   <meta name="twitter:description" content="{{ meta_description | escape }}">
   <meta name="twitter:image" content="{{ social_image | absolute_url }}">
   <meta name="twitter:image:alt" content="{{ social_image_alt | escape }}">
+
+  {% include seo-structured-data.html article=article_meta seo_page=seo_page meta_title=meta_title meta_description=meta_description social_image=social_image %}
 
   <link rel="icon" href="{{ '/docs/assets/avatar-icon.png' | relative_url }}" type="image/png">
   <link rel="apple-touch-icon" href="{{ '/docs/assets/avatar-icon.png' | relative_url }}">
@@ -75,6 +89,7 @@
           <a href="{{ '/docs/reference/cli.html' | relative_url }}"># CLI</a>
           <a href="{{ '/docs/reference/api.html' | relative_url }}"># API</a>
           <a href="{{ '/docs/security-model.html' | relative_url }}"># Security</a>
+          <a href="{{ '/docs/why/' | relative_url }}"># Why vincent is awesome</a>
           <div class="nav-divider"></div>
           <a class="nav-muted" href="{{ '/changelog.html' | relative_url }}">Changelog</a>
           <a class="nav-muted" href="{{ '/contributing.html' | relative_url }}">Contributing</a>
@@ -87,7 +102,13 @@
           <span class="page-status"><i aria-hidden="true"></i> docs online</span>
         </div>
         <article class="prose">
-          {{ content }}
+          {% if page.path == 'skills/vincent-workflows/SKILL.md' %}
+            {% comment %}The bundled references are excluded from Pages because their Go templates conflict with Liquid. Keep the runtime skill's relative links intact in source while sending site readers to the same files on GitHub.{% endcomment %}
+            {{ content | replace: 'href="references/', 'href="https://github.com/lezli01/vincent/blob/master/skills/vincent-workflows/references/' }}
+          {% else %}
+            {{ content }}
+          {% endif %}
+          {% if article_meta %}{% include why-article-nav.html article=article_meta %}{% endif %}
         </article>
       </main>
     </div>

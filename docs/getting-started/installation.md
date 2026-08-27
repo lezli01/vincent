@@ -361,7 +361,7 @@ go run mage.go testrace   # go test -race ./...   (needs cgo and a C compiler)
 go run mage.go lint       # golangci-lint, pinned via the go.mod tool directive
 ```
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the development workflow.
+See the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html) for the development workflow.
 
 ## Upgrading
 

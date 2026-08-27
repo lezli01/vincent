@@ -1,0 +1,30 @@
+{% assign previous_order = include.article.order | minus: 1 %}
+{% assign next_order = include.article.order | plus: 1 %}
+{% for candidate in site.data.why_articles %}
+  {% if candidate.order == previous_order %}{% assign previous_article = candidate %}{% endif %}
+  {% if candidate.order == next_order %}{% assign next_article = candidate %}{% endif %}
+{% endfor %}
+<nav class="series-nav" aria-label="Why vincent is awesome article navigation">
+  <div class="series-nav__heading">
+    <span>// why vincent is awesome</span>
+    <a href="{{ '/docs/why/' | relative_url }}">All articles</a>
+  </div>
+  <div class="series-nav__links">
+    {% if previous_article %}
+      <a class="series-nav__link series-nav__link--previous" href="{{ previous_article.url | relative_url }}">
+        <span>← Previous</span>
+        <strong>{{ previous_article.title }}</strong>
+      </a>
+    {% else %}
+      <span class="series-nav__link series-nav__link--empty" aria-hidden="true"></span>
+    {% endif %}
+    {% if next_article %}
+      <a class="series-nav__link series-nav__link--next" href="{{ next_article.url | relative_url }}">
+        <span>Next →</span>
+        <strong>{{ next_article.title }}</strong>
+      </a>
+    {% else %}
+      <span class="series-nav__link series-nav__link--empty" aria-hidden="true"></span>
+    {% endif %}
+  </div>
+</nav>
