@@ -294,9 +294,13 @@ EOF
   echo "== assert the branch carries the edit"
   local branch
   branch="$(api GET "/tasks/$task_id" | jq -r .branch_name)"
-  git -C "$repo" log -1 --format=%s "$branch" | grep -q 'm5 gate: cursor edit' \
+  # Captured rather than piped into `grep -q` — see m7 scenario 4's comment.
+  local subject files
+  subject="$(git -C "$repo" log -1 --format=%s "$branch")"
+  grep -q 'm5 gate: cursor edit' <<<"$subject" \
     || fail "branch $branch tip is not the gate commit"
-  git -C "$repo" show --name-only --format= "$branch" | grep -qx 'README.md' \
+  files="$(git -C "$repo" show --name-only --format= "$branch")"
+  grep -qx 'README.md' <<<"$files" \
     || fail "the cursor step changed no tracked file"
 
   "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
