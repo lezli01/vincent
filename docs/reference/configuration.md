@@ -183,7 +183,7 @@ Available in a template:
 
 Two things to get right, because git will not catch them for you:
 
-**Put a discriminator in it.** vincent never deletes a branch that carries a
+**Put a discriminator in it.** Vincent never deletes a branch that carries a
 commit, so a template like `feat/{{.Fields.ticket}}` collides on the *second* task
 for the same ticket. Include `{{.ID}}`, or expect to name repeats by hand.
 ([`delete_empty_branch_on_archive`](#delete_empty_branch_on_archive) reclaims only
@@ -527,7 +527,7 @@ appending.
 
 **`set` is not a secret store.** A literal value is exactly where an API token
 would go, and nothing here encrypts one: it is plaintext in a file you may hand
-to version control or sync between machines. vincent creates `config.yaml`
+to version control or sync between machines. Vincent creates `config.yaml`
 `0600` inside a `0700` directory and re-tightens both on every daemon start on
 POSIX — see [Files and directories](files.md#the-config-directory) — but that
 only keeps other local accounts out. Prefer naming the variable under `inherit`
@@ -545,7 +545,7 @@ The case that motivated it: on Windows, a daemon started from Git Bash carries
 `MSYSTEM`, and Cursor imports Claude Code's hooks and evaluates them under
 bash, so **every** cursor tool call is silently blocked. No amount of
 `unset MSYSTEM` in the launching shell helps — the MSYS runtime re-injects it
-into every child. vincent sets the child's environment block directly, so:
+into every child. Vincent sets the child's environment block directly, so:
 
 ```yaml
 environment:
@@ -559,7 +559,7 @@ More generally: pin the environment when a run has to be reproducible, and
 
 #### Two things to know
 
-**vincent honours the policy as written and warns rather than correcting it.**
+**Vincent honours the policy as written and warns rather than correcting it.**
 If the resolved environment has no `PATH` (or no `SystemRoot` on Windows) the
 daemon logs a warning at startup and runs anyway. The failure it is warning
 about is silent and late: adapters are resolved with `exec.LookPath` inside the
@@ -620,7 +620,7 @@ row disappears, `GET /v1/projects/{id}/github` reports `disabled`, and creating
 a task with `--github-issue` is refused. Read per use, so a
 [reload](#reload-semantics) governs the next call.
 
-**There is deliberately no token key here.** vincent stores no credential of its
+**There is deliberately no token key here.** Vincent stores no credential of its
 own. It uses the `gh` CLI when that is installed and logged in — which carries
 your own host, enterprise and SSO configuration — and otherwise reads
 `GITHUB_TOKEN` or `GH_TOKEN` from the environment the daemon inherited. Both are

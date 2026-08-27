@@ -9,7 +9,7 @@
 > [documentation home](README.md), and [workflow schema](reference/workflow-schema.md)
 > for the current user-facing view of vincent.
 
-vincent is a single-user, local-first control plane for AI coding-agent
+Vincent is a single-user, local-first control plane for AI coding-agent
 workloads. A background daemon owns all state and execution; the TUI, CLI, and
 other integrations are clients of its localhost HTTP API. Work continues when
 no client is attached.
@@ -2485,7 +2485,7 @@ would invalidate every one of them.
     into a repository that is often deleted or pruned, which makes this the common
     answer rather than the rare one, and it is reported distinctly because "you have
     uncommitted work" and "nobody can tell" are different facts.
-  - **Non-directory entries are reported, never removed.** vincent only ever creates
+  - **Non-directory entries are reported, never removed.** Vincent only ever creates
     directories under these roots.
   - **Branches are never deleted here either.** §10's standing rule has no gc
     exception. (*Confirmed 2026-08-16, task 008*, which gave archive one: no orphan has
@@ -2852,7 +2852,7 @@ limits are stated rather than assumed:
   instead of reporting a success over a record that is missing the run it
   describes. `Close` is checked, because a buffered filesystem reports ENOSPC
   there and nowhere else.
-- **Persisted, not fsynced.** vincent writes and closes, and checks both. It
+- **Persisted, not fsynced.** Vincent writes and closes, and checks both. It
   does not fsync per line; a transcript can therefore lose its tail to a host
   that loses power, and an audit-grade durability mode is a separate decision.
 
@@ -2961,7 +2961,7 @@ GitHub entirely: the TUI's issue row disappears, `GET
 /v1/projects/{id}/github` answers `disabled`, and `github_issue` on `POST
 /v1/tasks` is refused.
 
-There is deliberately **no token key here**. vincent stores no credential of
+There is deliberately **no token key here**. Vincent stores no credential of
 its own: it drives `gh` when that is installed and authenticated, and otherwise
 reads `GITHUB_TOKEN` or `GH_TOKEN` out of the environment the daemon already
 inherited (§2's "secret management" non-goal, decision record row 26). Read per
@@ -4454,7 +4454,7 @@ currently true to show (§15 view 6).
 - The daemon stores no secrets; agent CLIs use their own auth (keychain/config). The
   token file gates only the vincent API itself.
 - **"Stores no secrets" is about vendor credentials, not about the user's own.**
-  *Amended 2026-08-25 (#141).* vincent has no key store and no vendor
+  *Amended 2026-08-25 (#141).* Vincent has no key store and no vendor
   credentials of its own, but `config.yaml` takes literal `environment.set`
   values (§12.3) and a user can reasonably put an API token there. That file and
   its directory are therefore owner-only on POSIX and re-tightened on every
@@ -4470,7 +4470,7 @@ currently true to show (§15 view 6).
   `--dangerously-skip-permissions` (claude),
   `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
   Cursor's reads mildest and is not; the first-run notice covers all three.
-- **vincent writes to one CLI's own config**: a cursor step passes `--model`,
+- **Vincent writes to one CLI's own config**: a cursor step passes `--model`,
   which cursor persists to `~/.cursor/cli-config.json` (§9.7). It is not a
   secret and not an escalation, but it is the one place vincent mutates state
   outside its own data dir, so it is recorded here rather than discovered.
@@ -4724,7 +4724,7 @@ build attestation instead. Reasoning and the external enrolment blocker are in
 amendment above generated deb and rpm assets without deciding whether they
 should carry a maintainer signature; `nfpms` has never had a `signature:` block,
 which until now was an undecided gap rather than a decision. It is decided: the
-packages stay unsigned, and `nfpms` is correct as it stands. vincent publishes
+packages stay unsigned, and `nfpms` is correct as it stands. Vincent publishes
 **no APT or YUM repository**, and `dpkg`/`apt` do not verify a per-package
 signature on a `.deb` downloaded from a release page at all — apt verifies a
 repository's `Release` file — so signing the deb buys nothing on the path

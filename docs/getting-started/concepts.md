@@ -39,7 +39,7 @@ and an optional per-project concurrency cap.
 vincent project add /path/to/repo --name api --default-branch develop
 ```
 
-vincent never modifies your checkout. It reads the repository to create
+Vincent never modifies your checkout. It reads the repository to create
 worktrees; your working tree, your current branch and your stash are untouched.
 
 ## A workflow

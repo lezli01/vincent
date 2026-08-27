@@ -13,7 +13,7 @@ affordance.
 
 So anything past a one-step ad-hoc run meant reading
 `docs/reference/workflow-schema.md`, finding `examples/`, copying one, working
-out where it goes (`{config_dir}/workflows/` for global, `{repo}/.vincent/
+out where it goes (`{config_dir}/workflows/` for global, `{repo}/.Vincent/
 workflows/` for project, precedence builtin < global < project), and running
 `vincent workflow validate` in hope. The docs carry all of that. The tool never
 mentioned it, and a user with the binary on their `$PATH` and no checkout in

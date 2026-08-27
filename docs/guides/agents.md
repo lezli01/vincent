@@ -1,6 +1,6 @@
 # Agent CLIs
 
-vincent orchestrates agent CLIs you install and authenticate yourself. It
+Vincent orchestrates agent CLIs you install and authenticate yourself. It
 stores no credentials, embeds no model access, and speaks to no vendor API of
 its own: an agent step spawns the same binary you would have run by hand, in
 the task's worktree, with its prompt on stdin.
@@ -118,7 +118,7 @@ a step that reaches the engine anyway fails with `input_unsupported`.
 
 > **Caveat on `restricted` + git.** In a linked worktree the real git directory
 > lives under the main repository, outside the sandbox, so a `git commit` from a
-> restricted codex step may be denied. vincent itself never needs a commit — the
+> restricted codex step may be denied. Vincent itself never needs a commit — the
 > diff reads the working tree — but a workflow that commits from a restricted
 > codex step should use a `command` step for the commit instead.
 
@@ -133,7 +133,7 @@ and would open a GUI. **Workflow value:** `agent: cursor`.
 - `--trust` is passed in **both** modes: a task runs in a git worktree the CLI
   has never seen, and a workspace-trust prompt in a headless run is a hang, not a
   question.
-- vincent's own worktree flags are never passed to it. Cursor has a worktree
+- Vincent's own worktree flags are never passed to it. Cursor has a worktree
   feature; worktrees belong to vincent, and two owners of one concept is a defect.
 - Reports token usage but **no cost**, and `supports_input: false` — so, like
   codex, cursor cannot back a step declaring `on_input: require`, and pinning it
@@ -254,7 +254,7 @@ never guesses.
 No CLI vincent supports answers "how much quota do I have?" from a
 non-interactive invocation. `claude` has no `usage` or `limits` command,
 `codex` has neither, and `cursor-agent about --format json` reports a plan tier
-and no numbers. vincent does not emulate what an adapter cannot do, so there is
+and no numbers. Vincent does not emulate what an adapter cannot do, so there is
 no probe and no percentage.
 
 What it does instead is remember. When an agent stops on a spent window, the
@@ -304,7 +304,7 @@ authority there, and you find out at run time.
   the only adapter that can be asked and resumed.
 - **Cost tracking matters** — claude. The other two report none, so the board's
   cost column stays empty for them and a configured per-task spend cap never
-  fires. vincent will not estimate money from token counts.
+  fires. Vincent will not estimate money from token counts.
 - **Cheap, strictly unattended passes** — codex or cursor are fine; set
   `on_input: deny` and neither will ever try to stop for you anyway.
 - **You want a specific model cursor offers** — cursor, remembering that the

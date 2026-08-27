@@ -7,7 +7,7 @@ invalidates a process still running in the old tree. Uncommitted work forces
 everyone to wait. The repository may support parallel development, but a single
 working directory turns it back into a queue.
 
-vincent gives every task its own git worktree and branch before the workflow
+Vincent gives every task its own git worktree and branch before the workflow
 runs. The task receives an isolated directory containing the same repository,
 while the developer's active checkout stays untouched. Starting another task
 creates another worktree instead of competing for the first one.

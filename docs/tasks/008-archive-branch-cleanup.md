@@ -58,7 +58,7 @@ tree.
 *2026-08-16.* `delete_remote_branch_on_archive`, honoured only by
 `POST /v1/tasks/{id}/archive`. `DELETE /v1/projects/{id}?force` never touches a remote.
 
-vincent has no push, no remote refs and no credential handling anywhere in the tree
+Vincent has no push, no remote refs and no credential handling anywhere in the tree
 today; the single mention of a remote is `origin/HEAD` detection at project
 registration. Deleting a branch on a forge the user shares with other people is
 unrecoverable and outward-facing — strictly further-reaching than the local directories

@@ -4,7 +4,7 @@
 
 # vincent documentation
 
-vincent is a local-first control plane for AI coding-agent workloads. A
+Vincent is a local-first control plane for AI coding-agent workloads. A
 background daemon owns the state and the execution — SQLite, git worktrees,
 agent CLI subprocesses — and every client (the TUI, the `vincent` subcommands,
 `curl`) is a thin consumer of its localhost API.
@@ -85,7 +85,7 @@ and design choices that made a durable orchestrator feel necessary.
 
 ## Platforms
 
-vincent runs the same feature set on all three platforms, and the places where
+Vincent runs the same feature set on all three platforms, and the places where
 that is *not* true are stated rather than smoothed over.
 
 | Page | What it covers |

@@ -1,6 +1,6 @@
 # Files and directories
 
-vincent keeps two directories: **config** (things you edit) and **data** (things
+Vincent keeps two directories: **config** (things you edit) and **data** (things
 it owns). Both are platform-native, and both can be overridden.
 
 - [Where they are](#where-they-are)
@@ -98,7 +98,7 @@ Two rules worth internalizing:
 
 - **The worktree is disposable.** Archiving a task removes it. If it has
   uncommitted changes, archiving refuses unless forced — that work would be lost.
-- **The branch is not — as long as it holds a commit.** vincent never deletes a
+- **The branch is not — as long as it holds a commit.** Vincent never deletes a
   branch that has commits past the base it was cut from, so everything an agent
   actually wrote accumulates in your repository until you remove it. The one
   branch archiving does delete is one that received *no* commit at all, which is

@@ -127,7 +127,7 @@ native child inherits — only the **exported** environment reaches the daemon a
 then the agent.
 
 Also confirm you are logged in — `cursor-agent status` — or every run fails at
-the API. vincent surfaces that as `logged_in: false` before a task is created
+the API. Vincent surfaces that as `logged_in: false` before a task is created
 (scenario 3), which is the point of the field.
 
 ## Recorded runs

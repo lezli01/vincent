@@ -45,7 +45,7 @@
 
 Coding agents are easy to start and hard to supervise: kick off a handful of
 CLI runs across a few repositories and you are soon juggling terminals, losing
-transcripts, and hand-managing branches. vincent turns that into a managed
+transcripts, and hand-managing branches. Vincent turns that into a managed
 workload — one place to register repositories, author workflows, launch tasks,
 and see what every agent is doing, with work continuing when no client is
 attached.
@@ -59,7 +59,7 @@ The name is an acronym, and every part of it maps to the system:
 - **Native agent tooling** — it invokes locally installed tools such as
   Claude Code, Codex, and Cursor.
 
-vincent is an operating layer for day-to-day agent work, not a terminal
+Vincent is an operating layer for day-to-day agent work, not a terminal
 multiplexer. It combines reusable workflows, durable scheduling, git isolation,
 deterministic verification, human oversight, crash recovery, and live
 observability in one self-contained binary. The same workload can be operated
@@ -349,7 +349,7 @@ and stores no credentials of its own. Per-platform detail, build-from-source
 and upgrade instructions:
 [Installation](docs/getting-started/installation.md).
 
-vincent currently follows **pre-1.0 Semantic Versioning**. The config file,
+Vincent currently follows **pre-1.0 Semantic Versioning**. The config file,
 workflow YAML schema, REST API and CLI flags may change in a minor release — pin
 a version if you script against them. Patch releases are fixes only, and the
 on-disk database migrates forward automatically. Full policy and release history:
@@ -498,7 +498,7 @@ and native control flow, and validates generated workflow YAML.
 
 ## Build & Test
 
-vincent is a single Go module; Go 1.26 or newer is the only prerequisite.
+Vincent is a single Go module; Go 1.26 or newer is the only prerequisite.
 `go.mod` pins an exact patch toolchain that the default `GOTOOLCHAIN=auto`
 fetches on the first build.
 Build targets run via [mage](https://magefile.org/) with zero install — CI
@@ -546,7 +546,7 @@ Details are in the [Contributing guide](https://lezli01.is-a.dev/vincent/contrib
 
 ## Security
 
-vincent executes AI agents in full-auto mode by default — a documented design
+Vincent executes AI agents in full-auto mode by default — a documented design
 decision, not a vulnerability. In full-auto an agent can run arbitrary commands
 **as the invoking user**, and a git worktree isolates collisions between tasks,
 not privileges; the TUI shows this warning once on first run. The full picture —
@@ -560,4 +560,4 @@ rather than a public issue. See [SECURITY.md](SECURITY.md) for details.
 
 ## License
 
-vincent is released under the [MIT License](LICENSE). © 2026 lezli01.
+Vincent is released under the [MIT License](LICENSE). © 2026 lezli01.

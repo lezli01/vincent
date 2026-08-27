@@ -50,7 +50,7 @@ vincent version
 Linux has no Gatekeeper or SmartScreen equivalent — though you may need
 `chmod +x vincent` if your extraction tool dropped the bit.
 
-The deb and rpm carry **no maintainer GPG signature**, deliberately. vincent
+The deb and rpm carry **no maintainer GPG signature**, deliberately. Vincent
 publishes no APT or YUM repository, and `dpkg`/`apt` do not verify a per-package
 signature on a `.deb` you downloaded from a release page — apt verifies a
 repository's `Release` file, which is not the path you are on. `rpm -K` would

@@ -1,6 +1,6 @@
 # The workflow I kept repeating—and how vincent was born
 
-vincent began when I realized that, in many of my agentic coding scenarios, I
+Vincent began when I realized that, in many of my agentic coding scenarios, I
 was doing the same work over and over again. The ticket changed, but the process
 around it barely did. I was not only asking an agent to solve a problem; I was
 manually coordinating a small delivery workflow every time.

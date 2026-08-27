@@ -126,7 +126,7 @@ closes it for the daemon, which can be handed the job as a task like any other.
     already accepts for a field name, so it adds no third spelling of "slug"
     to the product.
     It also makes the *project* destination fully known before the step starts
-    — `{{.Project.Path}}/.vincent/workflows/{{ index .Task.Fields
+    — `{{.Project.Path}}/.Vincent/workflows/{{ index .Task.Fields
     "workflow_name" }}.yaml` — which is the precondition decision 4 said it
     lacked. Decision 4 is **not** reopened here: the global destination is
     still not template-computable, so a `check` would cover one branch and not

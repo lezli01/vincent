@@ -8,7 +8,7 @@ one is still streaming, one stopped twenty minutes ago, one is waiting for an
 answer, and another finished on a branch whose name is no longer visible. The
 operator's attention becomes the only thing connecting them.
 
-vincent's TUI is designed around workloads rather than sessions.
+Vincent's TUI is designed around workloads rather than sessions.
 
 ![The task board with a selected task's timeline and live output](../assets/tui-board.png)
 

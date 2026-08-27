@@ -1,6 +1,6 @@
 # Installation
 
-vincent is one self-contained binary. There is no runtime to install, no CGO,
+Vincent is one self-contained binary. There is no runtime to install, no CGO,
 and no database server — the store is an embedded SQLite file.
 
 - [What you need](#what-you-need)
@@ -29,7 +29,7 @@ and no database server — the store is an embedded SQLite file.
 | **At least one agent CLI** | Agent steps drive a CLI you already have | `claude`, `codex`, or `cursor-agent` — see [Install an agent CLI](#install-an-agent-cli) |
 | A terminal | The TUI is a full-screen terminal app | Any modern terminal. On Windows, Windows Terminal is what ships with Windows 11 |
 
-vincent stores **no credentials of its own**. It runs the agent CLI you
+Vincent stores **no credentials of its own**. It runs the agent CLI you
 installed, authenticated as you already authenticated it.
 
 Go is *not* required to run vincent — only to
@@ -294,7 +294,7 @@ Windows equivalent of the third exists here.
 
 ## Install an agent CLI
 
-vincent orchestrates agent CLIs; it does not embed one. Install and log in to
+Vincent orchestrates agent CLIs; it does not embed one. Install and log in to
 at least one, following that vendor's own instructions:
 
 | Agent | Binary vincent looks for | `agent:` value in a workflow |

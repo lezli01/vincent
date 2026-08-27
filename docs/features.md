@@ -1,6 +1,6 @@
 # Features
 
-vincent turns locally installed coding agents into managed, repeatable
+Vincent turns locally installed coding agents into managed, repeatable
 workloads. Your repositories, credentials, worktrees, transcripts, and task
 state stay on your machine; vincent provides the control plane around them.
 
@@ -163,7 +163,7 @@ view and key.
 
 ## Bring the agent you already use
 
-vincent invokes locally installed and authenticated CLIs; it stores no agent
+Vincent invokes locally installed and authenticated CLIs; it stores no agent
 API keys or login credentials.
 
 | Agent | What vincent integrates |
@@ -217,7 +217,7 @@ touches the network. Fan-out lanes inherit their parent's issue.
 `vincent task add --github-issue 200` takes the same path as the form, with
 explicit flags winning, and `vincent github issues` lists issues without the TUI.
 
-vincent stores no credential: it prefers your existing `gh` CLI and falls back to
+Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
 `GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Access is read-only —
 nothing is ever written to GitHub. When it is unavailable the row does not
 appear, `vincent doctor` reports why, and everything else is unaffected. Set
@@ -257,7 +257,7 @@ and exit codes.
 
 ## Run it on your platform
 
-vincent is one self-contained Go binary with no runtime, CGO dependency, or
+Vincent is one self-contained Go binary with no runtime, CGO dependency, or
 external database. Releases cover Windows, macOS, and Linux, and are published
 as archives plus platform-friendly packages:
 

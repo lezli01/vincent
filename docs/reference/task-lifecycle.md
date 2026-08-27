@@ -266,7 +266,7 @@ same thing wherever it originated.
 | `transcript_limit` | The attempt hit `transcript_max_bytes` |
 | `cost_limit` | The task has spent past [`max_task_cost_usd`](configuration.md#max_task_cost_usd). **Not a step failure:** the finished step run keeps its own state and reason, no retry is consumed, and a retry that was due does not run. Checked after each attempt, so expect to overshoot by up to one. Raise the cap — it is hot-reloaded — and retry; retrying without raising it buys exactly one more attempt. Inert on agents that report no cost |
 | `transcript_io_error` | The attempt's transcript could not be written, encoded or closed — a full disk, a revoked permission, a short write. The step fails rather than reporting a success over a record that is missing the run it describes. Retries as usual (a new attempt writes a new file), then blocks. **Not** what an over-long line produces: those are captured in `partial` pieces |
-| `agent_protocol_error` | vincent could not read the agent's stream to the end, so the transcript is missing lines the CLI wrote. Not `agent_error` — the CLI may have behaved perfectly; the reader that failed is vincent's |
+| `agent_protocol_error` | Vincent could not read the agent's stream to the end, so the transcript is missing lines the CLI wrote. Not `agent_error` — the CLI may have behaved perfectly; the reader that failed is vincent's |
 | `shell_unavailable` | The requested shell is not installed |
 | `rejected` | You rejected a manual gate |
 | `canceled` | You cancelled the task |
@@ -287,7 +287,7 @@ that renames the branch and re-admits it. See
 
 ## Interruption is not failure
 
-vincent is **crash-first**: every transition is persisted before it is acted on.
+Vincent is **crash-first**: every transition is persisted before it is acted on.
 When the daemon starts, recovery:
 
 1. finalizes any step run still marked `running` as `interrupted`, keeping

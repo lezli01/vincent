@@ -72,7 +72,7 @@ design and are reported rather than hidden: an orphan with local changes is
 skipped until you pass `--force`, and the `VACUUM` is skipped while any task is
 in flight, because it would stall that task mid-step.
 
-vincent does not run `git worktree prune` in your repositories. After doctor
+Vincent does not run `git worktree prune` in your repositories. After doctor
 removes an orphan, the repo it came from may still carry a stale registration;
 `git -C <repo> worktree prune` clears it.
 
@@ -229,7 +229,7 @@ while executing them with bash — so every hook errors, and an erroring hook
 blocks the call. It is a Cursor interop bug on Windows, not a vincent one.
 
 `unset MSYSTEM` in the launching shell does not help: the MSYS runtime
-re-injects it into every child. vincent sets the child's environment block
+re-injects it into every child. Vincent sets the child's environment block
 directly, so this does:
 
 ```yaml
@@ -250,7 +250,7 @@ which runs outside the agent's sandbox.
 
 ### `project add` refuses: no default branch
 
-vincent detects the default branch from `origin/HEAD`, then a local `main`, then
+Vincent detects the default branch from `origin/HEAD`, then a local `main`, then
 `master`, then the current branch. A detached or unborn HEAD hits none of them:
 
 ```sh
@@ -269,7 +269,7 @@ discard, then archive again.
 ### `branch_exists` / `worktree_path_occupied`
 
 The branch this task would use, or its worktree directory, already exists from an
-earlier run. vincent **never deletes a branch that carries a commit**, so
+earlier run. Vincent **never deletes a branch that carries a commit**, so
 leftovers accumulate if you re-create tasks with the same title — or if a branch
 template has no discriminator in it, in which case the *second* task for the same
 input collides every time. (Archiving cleans up only the branches that received
@@ -476,7 +476,7 @@ The block reason names what happened:
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
 | `cost_limit` | The task has spent past `max_task_cost_usd` (see below) |
 | `transcript_io_error` | The attempt's transcript could not be written or closed (see below) |
-| `agent_protocol_error` | vincent could not read the agent's stream to the end (see below) |
+| `agent_protocol_error` | Vincent could not read the agent's stream to the end (see below) |
 | `rejected` | You rejected a manual gate |
 | `shell_unavailable` | The requested shell is not installed |
 | `interrupted` | The daemon stopped mid-step — **not** a failure; the step re-runs and does not consume a retry |
@@ -489,7 +489,7 @@ prompt and retry with better instructions.
 ### `usage_limit` — do nothing
 
 The agent CLI stopped because your account's usage quota for the current window
-is spent. vincent treats this as a wait, not a failure:
+is spent. Vincent treats this as a wait, not a failure:
 
 - the attempt is recorded `interrupted` and consumes **no** retry;
 - the task goes back to `queued` and **gives up its concurrency slot**, so other
@@ -557,7 +557,7 @@ cheap probe, so there the first sign is still a failed step.
 ### `transcript_limit`
 
 One attempt produced more output than `transcript_max_bytes` (default 512MB).
-vincent kills the process rather than filling your disk, and writes the tripping
+Vincent kills the process rather than filling your disk, and writes the tripping
 annotation into the file so it records *why* it ends. Usually this means an agent
 or command is in a loop; fix that rather than raising the cap.
 
@@ -565,7 +565,7 @@ or command is in a loop; fix that rather than raising the cap.
 
 The task's cost so far — every attempt of every step, retries included — has
 passed [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd).
-vincent stopped it rather than letting it keep spending.
+Vincent stopped it rather than letting it keep spending.
 
 It is a policy stop, not a broken step. The step run that just finished keeps
 its own state and reason — if it succeeded, it still reads `succeeded` — it
@@ -604,7 +604,7 @@ neither CLI reports cost, so the cap cannot see them. See
 
 ### `transcript_io_error` — check the disk
 
-vincent could not write, encode or close the attempt's transcript, so the record
+Vincent could not write, encode or close the attempt's transcript, so the record
 of the run is incomplete. The step **fails** rather than reporting a success it
 cannot evidence: the usual cause is a full disk or a data directory whose
 permissions changed under the daemon. `df` the data directory (`vincent doctor`
@@ -617,7 +617,7 @@ step for size.
 
 ### `agent_protocol_error` — vincent's reader, not the CLI's fault
 
-vincent could not read the agent's event stream to the end, so its transcript is
+Vincent could not read the agent's event stream to the end, so its transcript is
 missing lines the CLI wrote. The reason is named separately from `agent_error`
 on purpose: the agent may have completed its work perfectly, and there is
 usually nothing to fix in the CLI. Retry the task; if it repeats on the same
