@@ -243,6 +243,44 @@
 # Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
 # pointing at the repo that owns the issue.
 #
+# ## Saying what is happening
+#
+# This workflow is mostly *waiting*: a 45-minute agent, a 20-minute matrix of
+# lint targets, a 90-minute poll for CI. A row that says `running` and nothing
+# else for an hour is unreadable, so every step that runs a process reports
+# through `vincent status` (§5.4) — shown live on the board's STATUS column and
+# kept on the finished attempt as that attempt's own account of how it went.
+#
+# Command steps call it through a `say` helper defined at the top of each
+# script:
+#
+#     say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+#
+# Guarded twice on purpose. `--` keeps a message that happens to start with a
+# dash out of cobra's flag parser, and `>/dev/null 2>&1 || true` makes a status
+# write incapable of failing a step: a `vincent` that is not on the daemon's
+# PATH, or a step that has already finished (the daemon answers 409), would
+# otherwise abort a `set -e` script — and in a poll loop it would also print
+# one line of noise per iteration. The cost of that guard is that the messages
+# are silently dropped rather than explained when `vincent` cannot be found;
+# check the STATUS column is populated on a first run.
+#
+# Two uses, and they are different:
+#
+# - **Progress**, set *before* the thing it names. Under `set -e` that is also
+#   what makes it an error message: the step dies at the failing command, and
+#   the status still says what was being attempted. `verify-probe` sets one per
+#   lint target for exactly this reason — the surviving status names the GOOS
+#   that failed, which no `failure_reason` can reach.
+# - **A verdict**, set on a path that is about to exit non-zero — `triage` on a
+#   rejected brief, `wait-checks` on a red context. This workflow has four
+#   `allow_failure` steps whose red row is the *normal* path (`is-bug`,
+#   `docs-scope`, `rebase`, `verify-probe`), and a status is the only thing that
+#   can say so on the board.
+#
+# Agent steps are *asked* for status in their prompts. Vincent never appends an
+# instruction of its own, so an agent reports only because this file said to.
+#
 # On branch names: the built-in name is `vincent/{id}-{slug}` and the slug comes
 # from the title, so the title's description half is the whole reason a branch
 # reads `vincent/7-42-daemon-leaks-lock-file` instead of `vincent/7-42`. Full
@@ -292,13 +330,22 @@ steps:
     # like fetching — are what enters the brief step's context.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       # First token only: everything after it is the human-readable half of the
       # title, which exists so the branch slug and the board row say something.
       id=$(printf '%s' "$VINCENT_TASK_TITLE" | awk '{print $1}' | sed 's/^#//')
       if [ -z "$id" ]; then
+        say "task title does not start with an issue id"
         echo "task title is empty; it must start with the issue id (42, #42, or the issue URL)" >&2
         exit 1
       fi
+
+      # Every guard below sets a status before it exits. These are the four
+      # ways a run of this workflow ends two seconds after it started, and the
+      # `failure_reason` for all four is the same word (`nonzero_exit`) — so
+      # the status is the only place the board can say which one happened.
+      say "reading issue #$id"
 
       mkdir -p .vincent-issue
       # `comments` matters more than it looks: a bug report's real reproduction
@@ -308,12 +355,14 @@ steps:
       if ! gh issue view "$id" \
         --json number,title,body,state,url,labels,comments,createdAt \
         > .vincent-issue/issue.json; then
+        say "no such issue: #$id"
         echo "no such issue: $id (the task title's first word must be the issue id)" >&2
         exit 1
       fi
 
       state=$(jq -r .state .vincent-issue/issue.json)
       if [ "$state" != "OPEN" ]; then
+        say "issue #$id is $state, not open"
         echo "issue #$id is $state; this workflow only picks up open issues" >&2
         exit 1
       fi
@@ -324,12 +373,14 @@ steps:
       # which demands a regression test.
       if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement")' \
         .vincent-issue/issue.json > /dev/null; then
+        say "issue #$id is labeled neither bug nor enhancement"
         echo "issue #$id is labeled neither 'bug' nor 'enhancement'; refusing to guess at its type" >&2
         jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-issue/issue.json >&2
         exit 1
       fi
 
       jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
+      say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
 
   - id: is-bug
     name: Classify — is this a bug?
@@ -345,12 +396,24 @@ steps:
     allow_failure: true
     # A probe never retries: the answer is a file this workflow already wrote.
     max_retries: 0
+    # The status is the fix for this file's one documented wart: on the
+    # enhancement path this step exits 1 *on purpose*, and the board has shown
+    # a red `is-bug` row with nothing to say it was the intended answer. The
+    # message survives on the finished attempt, so the row now reads
+    # "failed — enhancement path: judged by the new behaviour", which is true
+    # and legible. It is not readable by the `if:` guards below — those read
+    # `.ExitCode`, and free text an agent or a script chose is not something a
+    # workflow branches on (§5.4) — so nothing downstream depends on it.
     run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       if jq -e '[.labels[].name] | index("bug")' .vincent-issue/issue.json > /dev/null; then
         echo "path: bug — a regression test must be observed failing before the fix."
+        say "bug path: a regression test must be seen failing first"
         exit 0
       fi
       echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
+      say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
       exit 1
 
   - id: diagnose
@@ -374,6 +437,20 @@ steps:
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and can park in `awaiting_input` for
+      half a day, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below — "reading spec §12.4",
+      "reproducing against internal/taskrun" — and again the moment you stop to
+      ask the author: `vincent status "waiting on the reporter's OS and version"`
+      is the difference between a row that looks hung and one that explains
+      itself. Under ten words. When something is wrong, make the status say
+      what is wrong: "cannot reproduce at HEAD", not "still working". The last
+      thing you set stays on the finished step, so end on your verdict —
+      "verdict: proceed, repro is a test in internal/store".
 
       Do this in order:
 
@@ -512,6 +589,18 @@ steps:
       The issue is in `.vincent-issue/issue.json` — number, title, body, state,
       labels and every comment. Read it first.
 
+      This step can park in `awaiting_input` for half a day, so say what you are
+      doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you stop to
+      ask the author — `vincent status "waiting on your call between two designs"`
+      is the difference between a row that looks hung and one that explains
+      itself. Under ten words. When something is wrong, make the status say what
+      is wrong: "issue contradicts the phase 2 decision", not "still working".
+      The last thing you set stays on the finished step, so end on your verdict.
+
       Do this in order:
 
       1. Understand what is being asked. Read enough of the codebase to know
@@ -595,17 +684,27 @@ steps:
     # verdict vocabulary, which is most of why merging the two workflows was
     # worth doing.
     max_retries: 0
+    # The status is what makes the two stopping verdicts tell themselves apart
+    # on the board. Both exit 1 and both classify `nonzero_exit`, and the whole
+    # point of keeping `reject` and `needs-info` distinct is lost if the row
+    # cannot say which one it was — `reject` means never, `needs-info` means
+    # re-run this task once the thread has more in it, and those are different
+    # instructions to the person reading the board.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       verdict=$(head -n 1 .vincent-issue/brief.md)
       case "$verdict" in
         'verdict: reject')
+          say "brief rejected the issue: nothing will be implemented"
           echo "the brief rejected this issue; nothing will be implemented." >&2
           echo "--- brief.md ---" >&2
           cat .vincent-issue/brief.md >&2
           exit 1
           ;;
         'verdict: needs-info')
+          say "needs info: re-run once the issue thread has more in it"
           echo "the issue could not be settled with the information available." >&2
           echo "it stays open; re-run this task once the thread has more in it." >&2
           echo "--- brief.md ---" >&2
@@ -614,6 +713,7 @@ steps:
           ;;
       esac
       cat .vincent-issue/brief.md
+      say "brief says proceed"
 
   - id: confirm-red
     name: Confirm the test fails
@@ -634,8 +734,11 @@ steps:
     # taken here was taken while the bug was still present.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       cmd=$(head -n 1 .vincent-issue/red-test.txt)
       if [ -z "$cmd" ]; then
+        say "red-test.txt is empty"
         echo ".vincent-issue/red-test.txt is empty" >&2
         exit 1
       fi
@@ -646,13 +749,19 @@ steps:
           echo "this fix ships without a regression test; the gate step is the only"
           echo "thing standing between it and the PR."
           printf 'exit 0\n' > .vincent-issue/green.sh
+          # A green step whose status says the proof is missing. This is the
+          # escape hatch the file header calls "loud", and the board is one of
+          # the places it has to be loud in.
+          say "NO AUTOMATED REPRODUCTION: this fix ships without proof"
           exit 0
           ;;
       esac
 
       printf '%s\n' "$cmd" > .vincent-issue/green.sh
       echo "--- red run: $cmd ---"
+      say "running the regression test against the unfixed code"
       if sh .vincent-issue/green.sh; then
+        say "the regression test passes unfixed: it does not capture the bug"
         echo "the reproduction command passed against the unfixed code:" >&2
         echo "  $cmd" >&2
         echo "it does not capture the reported bug. A regression test that was never" >&2
@@ -660,6 +769,7 @@ steps:
         exit 1
       fi
       echo "--- confirmed red: the test fails on the unfixed code ---"
+      say "confirmed red: the test fails on the unfixed code"
 
   - id: implement
     name: Implement the change
@@ -712,6 +822,18 @@ steps:
 
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and its check runs the whole suite and
+      the linter afterwards, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Before each phase — reading the brief, writing the fix, running the tests,
+      writing the PR body. Under ten words. If a test or the linter is red, set
+      the status to what is actually red: "3 tests red in internal/store", not
+      "fixing tests". That sentence is the one thing a `check_failed` reason
+      cannot carry, and it is what a person sees on the board when this step
+      burns its second attempt.
 
       **Cross-platform is a hard requirement** (`CLAUDE.md`): Windows, macOS and
       Linux all run the full suite. Platform-specific code goes in `_unix.go` /
@@ -794,10 +916,30 @@ steps:
     # needs to know which commits are *its own*, and `implement` may well have
     # left several.
     allow_failure: true
+    # The second `allow_failure` step whose red row is a normal outcome: exit 1
+    # here means "nothing but tests changed", which is a saving, not a fault.
+    # The status says so, because `nonzero_exit` cannot.
+    #
+    # Set before `grep` runs, not after, because grep's exit code has to be the
+    # last thing this script does — anything after it would become the step's
+    # exit code and destroy the guard `docs-sync` reads.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       git rev-parse HEAD > .vincent-issue/pre-docs.sha
       git diff --name-only {{.Task.BaseBranch}}..HEAD > .vincent-issue/changed.txt
+      # `|| true` and the default together: `grep -c` exits 1 on no match, and
+      # an unset `n` would make the `[` below a syntax error rather than a
+      # count — either of which would kill this step under `set -e` and take
+      # the guard `docs-sync` reads with it.
+      n=$(grep -cvE '(_test\.go$|(^|/)testdata/)' .vincent-issue/changed.txt || true)
+      n=${n:-0}
+      if [ "$n" -eq 0 ]; then
+        say "tests only: the documentation audit is skipped"
+      else
+        say "$n behaviour-bearing file(s) changed: auditing the docs"
+      fi
       # grep's exit code is the step's: 1 means nothing outside tests changed.
       grep -vE '(_test\.go$|(^|/)testdata/)' .vincent-issue/changed.txt
 
@@ -827,6 +969,17 @@ steps:
       outcome — say so and stop. Do not rewrite prose that is still true, do
       not restructure a page you happen to be reading, and do not add a
       paragraph about the change to a page that never mentioned that area.
+
+      Say what you are auditing as you go, so the board is not a blank
+      `running` row for half an hour:
+
+          vincent status "<one short line about what you are doing now>"
+
+      One before each derivation you check — "checking the CLI page against the
+      cobra tree" — and one when you commit. Under ten words. End on the
+      verdict you are about to write into `docs.md`: "docs: none needed, 6
+      derivations checked" or "docs: updated spec §7.9 and the schema page".
+      That last message is what stays on the finished step.
 
       What the change touched:
 
@@ -972,14 +1125,33 @@ steps:
         # the linter and then cannot run it, so the linter is built for the host
         # once and re-run per target. A host-only lint hides every finding in a
         # build-tagged file — exactly where a platform-specific bug fix lands.
+        # The clearest case in this file for a status per phase. Four legs run
+        # under one `set -e`, so the step dies at the first red one and the
+        # status set just before it is still standing — the finished attempt
+        # then reads "linting GOOS=windows" and a person knows which of the
+        # four failed without opening a 20-minute transcript. `check_failed`
+        # and `nonzero_exit` cannot say that.
+        #
+        # The loop index is in the message because this step runs up to four
+        # times and the board shows the latest attempt: without the pass number
+        # the same four messages cycle with nothing to date them. (This is a
+        # YAML comment, outside the `run:` scalar, so the braces below are not
+        # rendered here — a template action in a comment *inside* the body
+        # would be.)
         run: |
           set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          pass="pass {{.Loop.Index}}/4"
+
+          say "$pass: go run mage.go testrace"
           go run mage.go testrace
           LINT=$(go tool -n golangci-lint)
           for os in windows darwin linux; do
             echo "--- golangci-lint GOOS=$os ---"
+            say "$pass: linting GOOS=$os"
             GOOS=$os "$LINT" run ./...
           done
+          say "$pass: race detector and all three lint targets green"
 
       - id: verify-ok
         name: Stop once the legs are green
@@ -1014,6 +1186,19 @@ steps:
           {{.Worktree.Path}}. The change under repair is the one described in
           `.vincent-issue/brief.md`; the original issue is in
           `.vincent-issue/issue.json`.
+
+          Say what you are doing as you go — this is one of at most three
+          repair passes and someone may be watching it burn:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Keep the pass number in it, because the board shows only the latest
+          attempt and the three passes are otherwise indistinguishable. Under
+          ten words after the prefix. Name the actual fault rather than the
+          activity — "race in scheduler admit, fixing the lock" beats
+          "investigating". If you conclude the legs are red for a reason that
+          predates this branch, say *that* in the status: it is the one finding
+          that should stop a person from waiting for pass three.
 
           Fix the underlying cause:
 
@@ -1070,7 +1255,14 @@ steps:
     # linter text, full of quotes and backticks, and rendering it into a shell
     # script is how a diagnostic becomes a syntax error. It is already in the
     # transcript under `verify-probe`, which is where you read it.
+    #
+    # The status is the same restraint applied to the board: a short line
+    # saying the branch was refused and where the failure is written down. It
+    # deliberately does not try to summarise the compiler output either.
     run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "legs still red after 3 repair passes: see the last verify-probe run"
       echo "the cross-platform legs are still red after three repair passes." >&2
       echo "read the last 'verify-probe' run in this task's transcript for the failure." >&2
       exit 1
@@ -1146,14 +1338,27 @@ steps:
     # `--head` is passed explicitly rather than letting gh infer it: inference
     # from the current branch is exactly the kind of thing that behaves
     # differently inside a linked worktree.
-    run: >
-      git push -u origin {{.Task.BranchName}} &&
-      gh pr create
-      --base {{.Task.BaseBranch}}
-      --head {{.Task.BranchName}}
-      --title "$(cat .vincent-issue/pr-title.txt)"
-      --body-file .vincent-issue/pr.md
-      > .vincent-issue/url.txt
+    #
+    # `set -e` carries the same guarantee the folded `&&` chain this replaced
+    # did — first failure wins, nothing after it runs — and it makes the two
+    # halves distinguishable on the board, which matters here more than
+    # anywhere: a failed push and a failed `gh pr create` need completely
+    # different responses, and this step never retries.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "pushing {{.Task.BranchName}} to origin"
+      git push -u origin {{.Task.BranchName}}
+
+      say "opening the pull request against {{.Task.BaseBranch}}"
+      gh pr create \
+        --base {{.Task.BaseBranch}} \
+        --head {{.Task.BranchName}} \
+        --title "$(cat .vincent-issue/pr-title.txt)" \
+        --body-file .vincent-issue/pr.md \
+        > .vincent-issue/url.txt
+      say "opened $(cat .vincent-issue/url.txt)"
 
   - id: report
     name: Report the PR
@@ -1225,6 +1430,9 @@ steps:
     # through the other endpoint. Both are read-only.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "reading the required checks on {{.Task.BaseBranch}}"
       slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
       printf '%s\n' "$slug" > .vincent-issue/slug.txt
 
@@ -1249,6 +1457,7 @@ steps:
       fi
 
       if [ ! -s .vincent-issue/required.txt ]; then
+        say "{{.Task.BaseBranch}} has no required checks this token can read"
         echo "no required status checks are configured on {{.Task.BaseBranch}}, or this token cannot read them." >&2
         echo "this workflow waits for a named set of checks on the commit it pushes; with no such set," >&2
         echo "'all required checks passed' would only mean 'nothing has reported yet' and the merge" >&2
@@ -1258,6 +1467,7 @@ steps:
 
       echo "required checks on {{.Task.BaseBranch}} ($slug):"
       cat .vincent-issue/required.txt
+      say "$(wc -l < .vincent-issue/required.txt | tr -d ' ') required check(s) to wait for"
 
   - id: rebase
     name: Rebase onto the base branch
@@ -1271,10 +1481,30 @@ steps:
     # A failure leaves the worktree mid-rebase, which is exactly the state
     # `resolve` needs to finish the job — so nothing aborts it here.
     allow_failure: true
+    # The conflict path is handled explicitly rather than left to `set -e`
+    # because this is the third step whose red row is a normal outcome, and the
+    # status is the only thing that can distinguish the two ways it goes red: a
+    # conflict, which `resolve` is about to pick up, and a failed `git fetch`,
+    # which it cannot do anything about. `resolve`'s prompt already tells the
+    # agent to check for that second case — this puts the same distinction on
+    # the board.
+    #
+    # `exit 1` after the guard rather than the rebase's own code: the `if:`
+    # below reads `ne … 0`, so any non-zero is equivalent, and the fetch path
+    # keeps `set -e`'s code by construction.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "fetching origin/{{.Task.BaseBranch}}"
       git fetch origin {{.Task.BaseBranch}}
-      git rebase origin/{{.Task.BaseBranch}}
+
+      say "rebasing onto origin/{{.Task.BaseBranch}}"
+      if ! git rebase origin/{{.Task.BaseBranch}}; then
+        say "rebase stopped on conflicts: the resolver runs next"
+        exit 1
+      fi
+      say "rebased cleanly onto origin/{{.Task.BaseBranch}}"
 
   - id: resolve
     name: Resolve the rebase conflicts
@@ -1296,6 +1526,17 @@ steps:
       change anything — it may be a conflict, or it may be that the fetch
       itself failed, in which case there is nothing here to resolve and you
       should say so rather than inventing a fix.
+
+      Say what you find and what you are doing about it:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Start with what `git status` actually showed — "mid-rebase, 2 conflicted
+      files" or "the fetch failed, nothing to resolve" — because those two lead
+      to opposite outcomes and the board cannot tell them apart otherwise. Then
+      one per conflicted commit you continue past, and one at the end. Under ten
+      words. If the two sides are genuinely incompatible and you are stopping,
+      make the status say so: "internal/store conflict needs a human decision".
 
       If it is a conflict, resolve it:
 
@@ -1357,7 +1598,10 @@ steps:
     # two happened.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
+        say "branch is not on top of the base: nothing was pushed"
         echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
         echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
         git status --short --branch >&2
@@ -1372,6 +1616,7 @@ steps:
       # origin, which is what lets `await-head` tell "GitHub has not caught up
       # yet" apart from "someone else pushed".
       if ! prev=$(git rev-parse --verify --quiet "origin/{{.Task.BranchName}}"); then
+        say "no origin/{{.Task.BranchName}} to replace: nothing was pushed"
         echo "this worktree has no origin/{{.Task.BranchName}}, so there is no published commit" >&2
         echo "for the force-push to replace and no lease for it to hold. nothing was pushed." >&2
         exit 1
@@ -1379,8 +1624,13 @@ steps:
       printf '%s\n' "$prev" > .vincent-issue/prev-head.sha
       git rev-parse HEAD > .vincent-issue/head.sha
 
+      # A lease failure is the one interesting way this dies, and the status
+      # set here is what survives to say so: someone pushed to the branch while
+      # the merge gate was open.
+      say "force-pushing $(cut -c1-7 .vincent-issue/head.sha) over $(printf '%s' "$prev" | cut -c1-7)"
       git push --force-with-lease origin {{.Task.BranchName}}
       echo "pushed $(cat .vincent-issue/head.sha) over $(cat .vincent-issue/prev-head.sha)"
+      say "pushed $(cut -c1-7 .vincent-issue/head.sha)"
 
   - id: await-head
     name: Wait for the PR to point at the pushed commit
@@ -1408,9 +1658,18 @@ steps:
     # though the polls are no longer evenly spaced.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
       prev=$(cat .vincent-issue/prev-head.sha)
+      short=$(printf '%s' "$head" | cut -c1-7)
+
+      # Set once, outside the loop: this usually finishes in about two seconds
+      # and re-stating the same sentence per poll would be noise the coalescing
+      # floor cannot even see. The polls that say something new — a third sha,
+      # the timeout — say it where they exit.
+      say "waiting for the PR head to become $short"
 
       nap=2
       waited=0
@@ -1427,10 +1686,12 @@ steps:
 
         if [ "$oid" = "$head" ]; then
           echo "the pull request head is $head"
+          say "the PR points at $short"
           break
         fi
 
         if [ -n "$oid" ] && [ "$oid" != "$prev" ]; then
+          say "someone else pushed to {{.Task.BranchName}}: refusing to wait"
           echo "the pull request head is $oid, which is neither the commit this task pushed" >&2
           echo "($head) nor the one it replaced ($prev): someone else pushed to" >&2
           echo "{{.Task.BranchName}}. refusing to wait on checks for a branch this task no longer owns." >&2
@@ -1438,6 +1699,7 @@ steps:
         fi
 
         if [ "$waited" -ge 300 ]; then
+          say "PR head still not $short five minutes after the push"
           echo "five minutes after the force-push the pull request still reports $oid," >&2
           echo "not the pushed commit $head. nothing was merged." >&2
           exit 1
@@ -1499,13 +1761,31 @@ steps:
     # Both sleeps draw on the one budget, so an alternating error/pending
     # pattern — which never reaches six errors in a row — is still bounded by
     # the hour.
+    # This is the step the status message exists for. It can hold a task for an
+    # hour with a `running` row and no other output — the polling is silent by
+    # design — so it reports the live tally instead: how many of the expected
+    # contexts have reported success, and how long it has been waiting. The
+    # tally comes out of the same `checks.txt` the verdict is graded from, so
+    # the board and the exit code can never disagree.
+    #
+    # Once per *pending* poll, which is at worst every 15 seconds — well clear
+    # of the one-second coalescing floor (§5.4) and around 60 messages across a
+    # full hour. The error path deliberately says nothing per attempt: five
+    # tolerated blips are not news, and overwriting the tally with "the API
+    # blipped" would lose the one number a person is watching. Only the sixth,
+    # which ends the wait, speaks.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       url=$(cat .vincent-issue/url.txt)
       slug=$(cat .vincent-issue/slug.txt)
       head=$(cat .vincent-issue/head.sha)
+      short=$(printf '%s' "$head" | cut -c1-7)
+      nreq=$(wc -l < .vincent-issue/required.txt | tr -d ' ')
       echo "waiting for the required checks on $head"
       echo "($url)"
+      say "waiting for $nreq required check(s) on $short"
 
       budget=3600
       waited=0
@@ -1531,6 +1811,7 @@ steps:
         # the branch moved under this task would otherwise be retried five
         # times as if they were blips.
         if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
+          say "someone pushed to {{.Task.BranchName}} during the wait: not merging"
           echo "the pull request head moved to $oid while waiting for checks on $head:" >&2
           echo "someone pushed to {{.Task.BranchName}}. nothing was merged." >&2
           exit 1
@@ -1539,11 +1820,13 @@ steps:
         if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
           errors=$((errors + 1))
           if [ "$errors" -gt 5 ]; then
+            say "the GitHub API failed six times in a row: not merging"
             echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
             cat .vincent-issue/api-err.txt >&2
             exit 1
           fi
           if [ "$waited" -ge "$budget" ]; then
+            say "an hour up with the GitHub API failing: not merging"
             echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
             cat .vincent-issue/api-err.txt >&2
             exit 1
@@ -1600,9 +1883,18 @@ steps:
           pass)
             sed -n '2,$p' .vincent-issue/checks.txt
             echo "--- every required check passed on $head ---"
+            say "all $nreq required check(s) green on $short"
             break
             ;;
           fail)
+            # Name the contexts, not the count: "ci (windows-latest) FAILURE"
+            # is actionable from the board, "a required check failed" sends
+            # someone to the transcript to find out which. `NR > 1` skips the
+            # verdict word on line 1, which is itself `fail` here; dropping the
+            # marker field and keeping the rest is what survives a context name
+            # containing spaces, which every matrix job's does. Over-long lists
+            # are truncated at 256 bytes rather than refused (§5.4).
+            say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' .vincent-issue/checks.txt)"
             echo "a required check did not pass on $head; not merging:" >&2
             sed -n '2,$p' .vincent-issue/checks.txt >&2
             exit 1
@@ -1610,10 +1902,19 @@ steps:
         esac
 
         if [ "$waited" -ge "$budget" ]; then
+          say "still pending after an hour on $short: not merging"
           echo "required checks on $head still pending after an hour; not merging:" >&2
           sed -n '2,$p' .vincent-issue/checks.txt >&2
           exit 1
         fi
+
+        # The live tally, refreshed on every pending poll: the one number a
+        # person watching an hour-long wait actually wants. `NR > 1` again —
+        # line 1 of checks.txt is the verdict, which is `pending` every time
+        # execution reaches here, and counting it would report one context
+        # fewer as green than is true.
+        pend=$(awk 'NR > 1 && $1 == "pending"' .vincent-issue/checks.txt | wc -l | tr -d ' ')
+        say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
 
         sleep "$nap"
         waited=$((waited + nap))
@@ -1652,8 +1953,16 @@ steps:
     # failure message stays true.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
+
+      # Set once: the common case settles in seconds. Each of the four states
+      # this refuses gets its own message where it exits, because `BEHIND`,
+      # `DIRTY` and `DRAFT` need three different responses from a person and
+      # `nonzero_exit` is the same word for all of them.
+      say "waiting for GitHub to call the PR mergeable"
 
       nap=2
       waited=0
@@ -1670,6 +1979,7 @@ steps:
         state=$(cut -f3 .vincent-issue/mergeable.tsv)
 
         if [ -n "$oid" ] && [ "$oid" != "$head" ]; then
+          say "the PR head moved off the verified commit: not merging"
           echo "the pull request head moved to $oid, not the verified commit $head." >&2
           echo "nothing was merged." >&2
           exit 1
@@ -1678,25 +1988,30 @@ steps:
         case "$state" in
           CLEAN|UNSTABLE|HAS_HOOKS)
             echo "mergeable: $mergeable, state: $state"
+            say "GitHub calls it mergeable: $state"
             break
             ;;
           BEHIND)
+            say "BEHIND: {{.Task.BaseBranch}} moved, the rebase is stale — re-run from the merge gate"
             echo "{{.Task.BaseBranch}} moved while the checks ran, and this repository requires a branch" >&2
             echo "to be up to date before merging: this rebase is stale. re-run this task from the" >&2
             echo "merge gate to rebase again. nothing was merged." >&2
             exit 1
             ;;
           DIRTY)
+            say "DIRTY: the PR conflicts with {{.Task.BaseBranch}}"
             echo "the pull request conflicts with {{.Task.BaseBranch}}; nothing was merged." >&2
             exit 1
             ;;
           DRAFT)
+            say "DRAFT: the PR is not ready to merge"
             echo "the pull request is a draft; nothing was merged." >&2
             exit 1
             ;;
         esac
 
         if [ "$waited" -ge 300 ]; then
+          say "GitHub still says ${state:-unknown} five minutes after the checks went green"
           echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
           echo "five minutes after every required check went green; not merging. read the PR." >&2
           exit 1
@@ -1729,10 +2044,22 @@ steps:
     # poll and this call, a push could still land. GitHub refuses the merge if
     # the head is not the commit whose checks were verified, which is a server
     # -side guarantee rather than one this workflow has to win a race for.
-    run: >
-      gh pr merge "$(cat .vincent-issue/url.txt)"
-      --merge
-      --match-head-commit "$(cat .vincent-issue/head.sha)"
+    #
+    # The status is set before the call and never after it: this is the
+    # irreversible step, and a message claiming success would be a claim this
+    # step is not entitled to make — `gh pr merge` exiting 0 is the API
+    # accepting the merge, not GitHub having recorded it. `merged` reads the
+    # real answer back and says so. What survives here on a failure —
+    # "merging <sha>" — is exactly the sentence a person needs before deciding
+    # whether to look at the PR.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "merging $(cut -c1-7 .vincent-issue/head.sha) with a merge commit"
+      gh pr merge "$(cat .vincent-issue/url.txt)" \
+        --merge \
+        --match-head-commit "$(cat .vincent-issue/head.sha)"
 
   - id: merged
     name: Confirm the merge
@@ -1763,8 +2090,13 @@ steps:
     # being re-attempted is not a postcondition.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       url=$(cat .vincent-issue/url.txt)
       head=$(cat .vincent-issue/head.sha)
+      short=$(printf '%s' "$head" | cut -c1-7)
+
+      say "confirming the merge landed at $short"
 
       nap=2
       waited=0
@@ -1792,6 +2124,7 @@ steps:
         .vincent-issue/merged.json
 
       if [ "$state" != "MERGED" ]; then
+        say "the PR is ${state:-unreadable}, not MERGED, a minute after the merge call"
         echo "the pull request is ${state:-unreadable}, not MERGED, a minute after the merge call;" >&2
         echo "the scratch directory is left in place." >&2
         exit 1
@@ -1799,8 +2132,14 @@ steps:
 
       oid=$(jq -r .headRefOid .vincent-issue/merged.json)
       if [ "$oid" != "$head" ]; then
+        say "merged at $(printf '%s' "$oid" | cut -c1-7), not the verified commit $short"
         echo "the pull request merged at $oid, not at the verified commit $head." >&2
         echo "the scratch directory is left in place." >&2
         exit 1
       fi
+      # Read before the delete, said after it: the merge commit lives in the
+      # scratch directory that the next line removes.
+      commit=$(jq -r '.mergeCommit.oid // "unknown"' .vincent-issue/merged.json | cut -c1-7)
       rm -rf .vincent-issue
+      # The last word of the whole run, and the one the board keeps.
+      say "merged $short as $commit"

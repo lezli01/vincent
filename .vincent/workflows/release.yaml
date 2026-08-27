@@ -42,6 +42,33 @@
 # agent step's `check` runs under the platform default and is written in `sh`
 # regardless (§8.2 rejects `shell` on an agent step).
 #
+# Saying what is happening: this workflow spends most of its wall clock
+# waiting — a 60-minute dry run, a 75-minute wait for two green matrices, a
+# 90-minute wait for Release Please and GoReleaser — and a `running` row with
+# no other output for an hour is unreadable. Every step that runs a process
+# reports through `vincent status` (§5.4), which the board shows live in its
+# STATUS column and keeps on the finished attempt. Command steps call it
+# through a `say` helper defined at the top of each script:
+#
+#     say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+#
+# Guarded twice on purpose. `--` keeps a message that happens to start with a
+# dash out of cobra's flag parser, and `>/dev/null 2>&1 || true` makes a status
+# write incapable of failing a step: a `vincent` that is not on the daemon's
+# PATH, or a step that has already finished (the daemon answers 409), would
+# otherwise abort a `set -e` script — and in a poll loop it would print one
+# line of noise per iteration. The cost is that the messages are silently
+# dropped rather than explained when `vincent` cannot be found; check the
+# STATUS column is populated on a first run.
+#
+# Set *before* the thing it names, which under `set -e` is what makes it an
+# error message too: the step dies at the failing command and the status still
+# says what was being attempted. `audit` hangs its message on the `section`
+# function it already had, so the board follows the audit section by section.
+# The steps after the one-way door say what they are waiting for and never
+# claim an effect they have not read back: `merge` says "merging", and
+# `verify` is what says a release is actually on Homebrew.
+#
 # Requires: `gh` (authenticated), `git`, `go`, `jq`, `awk`, `tar`, and a sha256
 # tool (`sha256sum` or `shasum`).
 name: release
@@ -79,23 +106,31 @@ steps:
     max_retries: 0
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # Every refusal in this step says which one it was. They all exit 1 and
+      # all classify `nonzero_exit`, and "a tool is missing", "gh is logged
+      # out" and "there is no release to cut" are three different things for a
+      # maintainer to go and do.
+      say "checking the tools and the repository layout"
       for tool in gh git go jq awk tar; do
-        command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 1; }
+        command -v "$tool" >/dev/null 2>&1 || { say "$tool is not installed"; echo "$tool is required" >&2; exit 1; }
       done
-      gh auth status >/dev/null 2>&1 || { echo "gh is not authenticated" >&2; exit 1; }
+      gh auth status >/dev/null 2>&1 || { say "gh is not authenticated"; echo "gh is not authenticated" >&2; exit 1; }
 
       for file in release-please-config.json .release-please-manifest.json \
         .github/workflows/release-please.yml .github/workflows/release.yml \
         .goreleaser.yaml RELEASING.md; do
-        [ -f "$file" ] || { echo "missing $file" >&2; exit 1; }
+        [ -f "$file" ] || { say "missing $file"; echo "missing $file" >&2; exit 1; }
       done
 
       old=$(jq -er '."."' .release-please-manifest.json)
       case "$old" in
         [0-9]*.[0-9]*.[0-9]*) ;;
-        *) echo "manifest version is not semver: $old" >&2; exit 1 ;;
+        *) say "manifest version is not semver: $old"; echo "manifest version is not semver: $old" >&2; exit 1 ;;
       esac
 
+      say "looking for the Release Please PR"
       repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
       # There is exactly one releasable pull request and Release Please owns
@@ -108,6 +143,7 @@ steps:
         --json number,title,url,headRefName,headRefOid \
         --jq '.[0] // empty')
       [ -n "$pr" ] || {
+        say "no open Release Please PR: nothing to release"
         echo "no open Release Please PR targets $VINCENT_BASE_BRANCH" >&2
         echo "push a releasable Conventional Commit or run the Release Please workflow" >&2
         exit 1
@@ -128,12 +164,19 @@ steps:
       proposed=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
       printf '%s\n' "$proposed" > .vincent-release/proposed-version.txt
       if [ -n "$proposed" ] && git ls-remote --exit-code --tags origin "refs/tags/v$proposed" >/dev/null 2>&1; then
+        say "v$proposed is already tagged on origin: that release is already cut"
         echo "tag v$proposed already exists on origin — that release is already cut, and a published tag is never re-pointed (RELEASING.md)" >&2
         exit 1
       fi
 
       # Written once, called twice: advisory inside `audit`, blocking in
       # `verify-base`. One script, two callers, no drift.
+      #
+      # It reports its own progress. `vincent status` addresses the step from
+      # `VINCENT_TASK_ID` / `VINCENT_STEP_ID`, which a child process inherits,
+      # so this script speaks as whichever step invoked it — which is what is
+      # wanted: the 45-minute wait in `verify-base` is the thing a person is
+      # watching, and it happens entirely inside here.
       cat > .vincent-release/require-green.sh <<'GREEN'
       # Usage: sh require-green.sh <sha> [wait-minutes]. Exit 0 iff every check
       # run on the commit completed successfully and both required matrices are
@@ -147,8 +190,10 @@ steps:
       # non-success is reported. The bound is a number of minutes so a caller
       # that wants a snapshot passes 0.
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       sha="$1"
       wait_min=${2:-0}
+      short=$(printf '%s' "$sha" | cut -c1-7)
       deadline=$(( $(date +%s) + wait_min * 60 ))
 
       # One paced sleep, shared by the "still pending" and "the API blipped"
@@ -191,6 +236,7 @@ steps:
             echo "could not read the check runs for $sha: the API failed on the last attempt" >&2
             exit 1
           fi
+          say "GitHub API failed reading checks for $short ($errors/5), retrying"
           echo "the GitHub API failed reading check runs for $sha; retrying in ${nap}s" >&2
           pace
           continue
@@ -201,6 +247,11 @@ steps:
         if [ -z "$pending" ]; then break; fi
         now=$(date +%s)
         if [ "$now" -ge "$deadline" ]; then break; fi
+        # The live line for the long wait. It names the checks rather than
+        # counting them: on this repository a three-OS matrix means the one
+        # that is still running is the interesting fact, and Windows CI alone
+        # took 11m54s in task 52. Truncation at 256 bytes handles a long list.
+        say "$short: waiting on $(printf '%s\n' "$pending" | tr '\n' ' ')"
         echo "waiting on $(printf '%s\n' "$pending" | wc -l | tr -d ' ') pending check(s) on $sha: $(printf '%s\n' "$pending" | tr '\n' ' ')" >&2
         pace
       done
@@ -208,6 +259,7 @@ steps:
       printf '%s\n' "$runs" | awk -F'\t' 'NF { print $1 "\t" $2 "\t" $3 }'
 
       if [ -n "$pending" ]; then
+        say "$short still has pending checks after ${wait_min}m"
         echo "still pending on $sha after ${wait_min}m:" >&2
         printf '%s\n' "$pending" >&2
         exit 1
@@ -218,6 +270,7 @@ steps:
       # agent to resolve to Jekyll's pages-build-deployment.
       bad=$(printf '%s\n' "$runs" | awk -F'\t' 'NF && $3 != "success" && $3 != "skipped" { print $1 " " $3 " " $4 }')
       if [ -n "$bad" ]; then
+        say "not green on $short: $(printf '%s\n' "$runs" | awk -F'\t' 'NF && $3 != "success" && $3 != "skipped" { printf "%s (%s); ", $1, $3 }')"
         echo "not green on $sha:" >&2
         printf '%s\n' "$bad" >&2
         exit 1
@@ -225,6 +278,7 @@ steps:
       for job in ci gates; do
         n=$(printf '%s\n' "$runs" | awk -F'\t' -v j="$job" 'index($1, j " (") == 1' | wc -l | tr -d ' ')
         if [ "$n" -ne 3 ]; then
+          say "expected 3 '$job' checks on $short, found $n"
           echo "expected 3 '$job' checks on $sha (ubuntu, macos, windows), found $n" >&2
           exit 1
         fi
@@ -232,6 +286,7 @@ steps:
       GREEN
 
       git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      say "release PR #$number found: ${proposed:-version unknown}"
 
       echo "repository:   $repo"
       echo "last release: v$old"
@@ -261,12 +316,22 @@ steps:
     # Deliberately not `set -e`: an audit that stops at the first problem makes
     # a human run it once per problem. Every check runs; the exit code is the
     # summary.
+    #
+    # The status hangs off `section`, which this step already had: eleven
+    # sections over twenty minutes, and the board now follows them one at a
+    # time rather than showing `running` for the whole cross-compile. It costs
+    # one line of the existing helper, and because the message is set *as* a
+    # section opens, a step killed on its timeout says which section it died
+    # in. `fail` reports the running count for the same reason — the summary
+    # line only exists once the last section has run.
     run: |
       fails=0
       mark=0
-      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
+      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); say "$fails blocking finding(s) so far: ${current}"; }
       warn() { printf 'WARN %s\n' "$*"; }
-      section() { echo "== $1"; mark=$fails; }
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      current=""
+      section() { echo "== $1"; mark=$fails; current=$1; say "auditing $1"; }
       passed() { [ "$fails" -eq "$mark" ]; }
 
       work=.vincent-release/work
@@ -472,9 +537,11 @@ steps:
 
       echo
       if [ "$fails" -gt 0 ]; then
+        say "$fails blocking finding(s): a tag on this tree would not build green"
         echo "$fails blocking finding(s) — a tag on this tree would not produce a green Release run"
         exit 1
       fi
+      say "no blocking findings"
       echo "no blocking findings"
 
   - id: changelog
@@ -503,6 +570,7 @@ steps:
       fails=0
       fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
       warn() { printf 'WARN %s\n' "$*"; }
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
       work=.vincent-release/changelog
       rm -rf "$work"
@@ -513,10 +581,12 @@ steps:
       head=$(jq -r .headRefName .vincent-release/pr.json)
 
       if [ -z "$version" ]; then
+        say "could not parse a version from the release PR title"
         echo "could not parse a version from the release PR title, so neither changelog can be checked" >&2
         exit 1
       fi
       echo "checking CHANGELOG.md and site-changelog.md at $head for $version"
+      say "checking both changelogs at $head for $version"
       echo
 
       fetch() {
@@ -597,10 +667,12 @@ steps:
 
       echo
       if [ "$fails" -gt 0 ]; then
+        say "$fails changelog finding(s): fix them on $head and retry"
         echo "$fails blocking finding(s) — fix them on $head (push onto the Release Please branch) and retry this step"
         echo "RELEASING.md step 3 describes both edits"
         exit 1
       fi
+      say "both changelogs describe $version"
       echo "both changelogs describe $version"
 
   - id: vuln
@@ -618,7 +690,19 @@ steps:
     # fetch failure is not, and an immediate retry lands inside the same
     # outage. 30s is the pause that separates the two.
     retry_backoff: 30s
-    run: go run mage.go vuln
+    # `say` before, never after: the sweep is the last command, so its exit
+    # code is the step's, and the message left standing on a failure —
+    # "sweeping all three GOOS values" — is the honest account of a step that
+    # either found something or could not reach the database. Which of the two
+    # it was is in `govulncheck`'s own output, and this deliberately does not
+    # try to summarise it into one line.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "govulncheck: sweeping all three GOOS values"
+      go run mage.go vuln
+      say "no reachable vulnerabilities"
 
   - id: dry-run
     name: Dry-run the Release workflow
@@ -637,9 +721,13 @@ steps:
     max_retries: 0
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      say "dispatching a dry run of Release on $VINCENT_BASE_BRANCH"
       gh workflow run release.yml --ref "$VINCENT_BASE_BRANCH" -f dry_run=true
       echo "dispatched a dry run of Release on $VINCENT_BASE_BRANCH"
+      say "waiting for the dispatched run to appear"
 
       # The run takes a few seconds to appear. Match on creation time as well
       # as branch, so a dry run someone else started an hour ago is not
@@ -671,33 +759,44 @@ steps:
           if [ "$nap" -gt 15 ]; then nap=15; fi
         fi
       done
-      [ -n "$id" ] || { echo "the dispatched Release run never appeared — check Actions" >&2; exit 1; }
+      [ -n "$id" ] || {
+        say "the dispatched Release run never appeared: check Actions"
+        echo "the dispatched Release run never appeared — check Actions" >&2
+        exit 1
+      }
 
       url=$(gh run view "$id" --json url --jq .url)
       printf '%s\n' "$url" > .vincent-release/dry-run-url.txt
       echo "$url"
+      # The long leg: six cross-compilations and a three-OS smoke matrix,
+      # measured in tens of minutes, and `gh run watch` says nothing vincent
+      # can see. This one message is what the board shows for most of the hour.
+      say "watching the dry run: 6 archives, smoke on 3 OSes"
       gh run watch "$id" --exit-status
 
       # Green means the archives built and ran. This says what is *in* them:
       # `archives.files` is a glob list, and a glob that stops matching ships a
       # smaller archive without failing anything upstream.
+      say "dry run green: checking what is in the archives"
       rm -rf .vincent-release/dist
       mkdir -p .vincent-release/dist
       gh run download "$id" -n dist -D .vincent-release/dist
       cd .vincent-release/dist
 
       n=$(ls ./*.tar.gz ./*.zip 2>/dev/null | wc -l | tr -d ' ')
-      [ "$n" -eq 6 ] || { echo "expected 6 archives (3 OS x 2 arch), found $n" >&2; exit 1; }
+      [ "$n" -eq 6 ] || { say "expected 6 archives, found $n"; echo "expected 6 archives (3 OS x 2 arch), found $n" >&2; exit 1; }
       n=$(ls ./*.deb 2>/dev/null | wc -l | tr -d ' ')
-      [ "$n" -eq 2 ] || { echo "expected 2 deb packages, found $n" >&2; exit 1; }
+      [ "$n" -eq 2 ] || { say "expected 2 deb packages, found $n"; echo "expected 2 deb packages, found $n" >&2; exit 1; }
       n=$(ls ./*.rpm 2>/dev/null | wc -l | tr -d ' ')
-      [ "$n" -eq 2 ] || { echo "expected 2 rpm packages, found $n" >&2; exit 1; }
+      [ "$n" -eq 2 ] || { say "expected 2 rpm packages, found $n"; echo "expected 2 rpm packages, found $n" >&2; exit 1; }
 
+      say "verifying checksums.txt"
       if command -v sha256sum >/dev/null 2>&1; then
         sha256sum -c checksums.txt
       elif command -v shasum >/dev/null 2>&1; then
         shasum -a 256 -c checksums.txt
       else
+        say "no sha256 tool found (sha256sum or shasum)"
         echo "no sha256 tool found (sha256sum or shasum)" >&2
         exit 1
       fi
@@ -706,8 +805,13 @@ steps:
       mkdir -p unpacked
       tar -xzf "$archive" -C unpacked
       for f in vincent README.md LICENSE examples/cursor-review.yaml; do
-        [ -e "unpacked/$f" ] || { echo "the archive is missing $f — check archives.files in .goreleaser.yaml" >&2; exit 1; }
+        [ -e "unpacked/$f" ] || {
+          say "the linux_amd64 archive is missing $f"
+          echo "the archive is missing $f — check archives.files in .goreleaser.yaml" >&2
+          exit 1
+        }
       done
+      say "dry run green: 6 archives, 2 deb, 2 rpm, payload intact"
 
       echo
       echo "dry run green: $(cat ../dry-run-url.txt)"
@@ -730,6 +834,8 @@ steps:
     max_retries: 0
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
       number=$(jq -r .number .vincent-release/pr.json)
 
@@ -737,7 +843,7 @@ steps:
       # land, so the number is the only field from preflight still trustworthy.
       pr=$(gh pr view "$number" --json state,title,url,headRefOid,mergeStateStatus)
       state=$(printf '%s' "$pr" | jq -r .state)
-      [ "$state" = OPEN ] || { echo "release PR #$number is $state, not OPEN" >&2; exit 1; }
+      [ "$state" = OPEN ] || { say "release PR #$number is $state, not OPEN"; echo "release PR #$number is $state, not OPEN" >&2; exit 1; }
 
       title=$(printf '%s' "$pr" | jq -r .title)
       proposed=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
@@ -751,6 +857,10 @@ steps:
       # task. `--watch` waits instead, so the exit code means one thing.
       # Three of task 52's seven attempts here were nothing but exit 8.
       echo "== release PR checks"
+      # Two waits, each measured in minutes, and this step is budgeted 75 of
+      # them. Without a status the board cannot say which of the two it is in,
+      # and three of task 52's seven attempts here were spent in the first one.
+      say "waiting on the release PR's own checks (#$number)"
       gh pr checks "$number" --watch --fail-fast --interval 30
 
       # And the branch it merges into: a tag on a red base produces signed,
@@ -760,19 +870,29 @@ steps:
       sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
       echo
       echo "== $VINCENT_BASE_BRANCH checks"
+      # require-green.sh reports its own progress from here — it inherits this
+      # step's VINCENT_TASK_ID and VINCENT_STEP_ID, so its "waiting on …" lines
+      # land on this row.
+      say "waiting on $VINCENT_BASE_BRANCH's checks at $(printf '%s' "$sha" | cut -c1-7)"
       sh .vincent-release/require-green.sh "$sha" 45
       printf '%s\n' "$sha" > .vincent-release/base-sha.txt
 
       mergeable=$(printf '%s' "$pr" | jq -r .mergeStateStatus)
       case "$mergeable" in
         CLEAN|HAS_HOOKS|UNSTABLE) ;;
-        *) echo "release PR #$number is not mergeable (mergeStateStatus=$mergeable)" >&2; exit 1 ;;
+        *)
+          say "release PR #$number is not mergeable: $mergeable"
+          echo "release PR #$number is not mergeable (mergeStateStatus=$mergeable)" >&2
+          exit 1
+          ;;
       esac
 
       if [ -n "$proposed" ] && git ls-remote --exit-code --tags origin "refs/tags/v$proposed" >/dev/null 2>&1; then
+        say "v$proposed appeared on origin mid-run: find out who pushed it"
         echo "tag v$proposed appeared on origin while this task was running — stop and work out who pushed it" >&2
         exit 1
       fi
+      say "PR and $VINCENT_BASE_BRANCH both green; v${proposed:-?} would tag $(printf '%s' "$sha" | cut -c1-7)"
 
       echo
       echo "release PR:  $title — $(printf '%s' "$pr" | jq -r .url)"
@@ -798,6 +918,19 @@ steps:
       The release pull request number is in `.vincent-release/pr.json` (field
       `number`). The last released version is in
       `.vincent-release/old-version.txt`.
+
+      Say what you are doing as you go — a person is waiting on this to reach
+      the release gate:
+
+          vincent status "<one short line about what you are doing now>"
+
+      One before each numbered step below. Under ten words. This step runs with
+      `allow_failure`, so if it fails the release still goes to the gate with
+      nothing from you — make the status say why, "cannot read the PR body",
+      so the gate knows the report is missing rather than empty. End on your
+      verdict: `vincent status "VERDICT: notes need attention (2 missing)"`.
+      That line is what stays on the finished step and what a maintainer sees
+      on the board next to the gate.
 
       1. Read the PR body and its changelog section:
          `gh pr view <number> --json title,body --jq .body`
@@ -914,13 +1047,28 @@ steps:
     # failing before it look the same from here, and re-running it blind is how
     # a release gets cut twice. If this fails, look at the PR on GitHub first.
     max_retries: 0
+    #
+    # The status is set before the call and not replaced after it. This step
+    # publishes; `gh pr merge` returning is the API accepting the merge, not
+    # the release existing, and `publish` and `verify` are what read the real
+    # answer back. A message left standing that says "merging the release PR"
+    # is the correct account of a call whose response was lost — and it is the
+    # sentence that tells a person to go and look at GitHub before doing
+    # anything else.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       number=$(jq -r .number .vincent-release/pr.json)
       oid=$(cat .vincent-release/head-oid.txt)
 
       state=$(gh pr view "$number" --json state --jq .state)
-      [ "$state" = OPEN ] || { echo "release PR #$number is $state, not OPEN — someone else acted on it" >&2; exit 1; }
+      [ "$state" = OPEN ] || {
+        say "release PR #$number is $state, not OPEN: someone else acted on it"
+        echo "release PR #$number is $state, not OPEN — someone else acted on it" >&2
+        exit 1
+      }
+      say "merging the release PR #$number — this publishes"
 
       # A merge commit, never a squash: branch history becomes the base
       # branch's history (CLAUDE.md § Git flow). `--match-head-commit` refuses
@@ -940,12 +1088,22 @@ steps:
     # Watching is not replaying, but a retry restarts both polls from zero for
     # no benefit; re-run the step by hand if a poll times out.
     max_retries: 0
+    #
+    # Three distinct waits inside one step, each of which can be the one that
+    # times out, and each with a different response. The status is what tells
+    # them apart on the board and on the finished attempt: a Release Please
+    # that never ran, a tag that never triggered the Release workflow
+    # (RELEASE_PLEASE_TOKEN), and a GoReleaser run that went red are three
+    # different problems, and `timeout` is the same word for the first two.
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       old=$(cat .vincent-release/old-version.txt)
       repo=$(cat .vincent-release/repo.txt)
 
       echo "waiting for Release Please to advance the manifest from $old"
+      say "waiting for Release Please to advance the manifest from $old"
 
       # Both waits below are paced the same way: 5s doubling to a 30s ceiling,
       # ten minutes of budget counted in seconds waited rather than in polls,
@@ -975,6 +1133,7 @@ steps:
         fi
       done
       [ -n "$new" ] && [ "$new" != "$old" ] || {
+        say "Release Please did not advance the manifest in 10 minutes"
         echo "Release Please did not advance the manifest within 10 minutes — check the Release Please workflow run" >&2
         exit 1
       }
@@ -982,6 +1141,7 @@ steps:
       tag="v$new"
       printf '%s\n' "$tag" > .vincent-release/tag.txt
       echo "Release Please created $tag; waiting for the Release workflow"
+      say "$tag tagged; waiting for the Release workflow to start"
 
       # The tag push is the trigger, so the run's headBranch is the tag name.
       run_id=""
@@ -1018,13 +1178,19 @@ steps:
         fi
       done
       [ -n "$run_id" ] || {
+        say "$tag exists but triggered no Release run: check RELEASE_PLEASE_TOKEN"
         echo "no Release workflow run appeared for $tag within 10 minutes — RELEASE_PLEASE_TOKEN is what makes that tag trigger it (RELEASING.md)" >&2
         exit 1
       }
 
       printf '%s\n' "$run_url" > .vincent-release/run-url.txt
+      # The longest silence in the whole workflow: GoReleaser builds, signs,
+      # attests, uploads and smoke-tests on three OSes, and `gh run watch`
+      # writes nothing vincent can see.
+      say "$tag: GoReleaser building, signing and uploading"
       gh run watch "$run_id" --exit-status
       echo "$tag published: $run_url"
+      say "$tag published"
 
   - id: verify
     name: Verify GitHub, Homebrew and Scoop
@@ -1037,11 +1203,20 @@ steps:
     max_retries: 0
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       tag=$(cat .vincent-release/tag.txt)
       version=${tag#v}
 
+      # Three channels checked in sequence, two of which wait out a replica
+      # lag. The status names the channel being checked, so a failure says
+      # which one is defective without opening the transcript — and this is
+      # the step that turns "the release run was green" into "the release is
+      # actually there", so the distinction is the whole point of it.
+      say "$tag: checking the GitHub release assets"
       release=$(gh release view "$tag" --json isDraft,isPrerelease,url,assets)
       [ "$(printf '%s' "$release" | jq -r .isDraft)" = false ] || {
+        say "$tag is still a draft"
         echo "$tag is still a draft" >&2
         exit 1
       }
@@ -1052,6 +1227,7 @@ steps:
       # files the release footer tells a user to verify with.
       for asset in checksums.txt checksums.txt.sig checksums.txt.pem; do
         printf '%s\n' "$names" | grep -qx "$asset" || {
+          say "$tag has no $asset"
           echo "$tag has no $asset" >&2
           exit 1
         }
@@ -1062,15 +1238,16 @@ steps:
         darwin_amd64 darwin_arm64 \
         windows_amd64 windows_arm64; do
         printf '%s\n' "$names" | grep -q "_${target}\\.\(tar\\.gz\|zip\)$" || {
+          say "$tag is missing the $target archive"
           echo "$tag is missing the $target archive" >&2
           exit 1
         }
       done
 
       n=$(printf '%s\n' "$names" | grep -c '\.deb$' || true)
-      [ "$n" -eq 2 ] || { echo "$tag has $n deb package(s), expected 2" >&2; exit 1; }
+      [ "$n" -eq 2 ] || { say "$tag has $n deb package(s), expected 2"; echo "$tag has $n deb package(s), expected 2" >&2; exit 1; }
       n=$(printf '%s\n' "$names" | grep -c '\.rpm$' || true)
-      [ "$n" -eq 2 ] || { echo "$tag has $n rpm package(s), expected 2" >&2; exit 1; }
+      [ "$n" -eq 2 ] || { say "$tag has $n rpm package(s), expected 2"; echo "$tag has $n rpm package(s), expected 2" >&2; exit 1; }
 
       echo "GitHub release: $(printf '%s' "$release" | jq -r .url)"
       echo "assets: 6 archives, 2 deb, 2 rpm, checksums.txt + cosign .sig/.pem"
@@ -1080,6 +1257,7 @@ steps:
       # version there would be wrong.
       if [ "$(printf '%s' "$release" | jq -r .isPrerelease)" = true ]; then
         echo "$tag is a prerelease; Homebrew, Scoop and WinGet correctly remain on the stable channel"
+        say "$tag is a prerelease: package managers correctly untouched"
         printf '%s\n' "prerelease" > .vincent-release/channels.txt
         exit 0
       fi
@@ -1122,23 +1300,28 @@ steps:
           | jq -e --arg v "$version" '.version == $v' >/dev/null
       }
 
+      say "$tag: waiting for the Homebrew cask to report $version"
       if ! settle cask_reports; then
         cask=$(gh api -H "Accept: application/vnd.github.raw+json" \
           "repos/lezli01/homebrew-tap/contents/Casks/vincent.rb?ref=main" 2>/dev/null || true)
+        say "Homebrew cask still not on $version five minutes on"
         echo "Homebrew cask does not report $version five minutes after the release" >&2
         printf '%s\n' "$cask" | grep -i '^[[:space:]]*version' >&2 || echo "  (the cask could not be read)" >&2
         exit 1
       fi
       echo "Homebrew cask: $version in lezli01/homebrew-tap"
 
+      say "$tag: waiting for the Scoop manifest to report $version"
       if ! settle scoop_reports; then
         scoop=$(gh api -H "Accept: application/vnd.github.raw+json" \
           "repos/lezli01/scoop-bucket/contents/vincent.json?ref=main" 2>/dev/null || true)
+        say "Scoop manifest still not on $version five minutes on"
         echo "Scoop manifest does not report $version five minutes after the release (got $(printf '%s' "$scoop" | jq -r '.version // "unreadable"'))" >&2
         exit 1
       fi
       echo "Scoop manifest: $version in lezli01/scoop-bucket"
       printf '%s\n' "stable" > .vincent-release/channels.txt
+      say "$tag verified: GitHub, Homebrew and Scoop all on $version"
 
   - id: winget
     name: Check the WinGet submission
@@ -1154,10 +1337,13 @@ steps:
     allow_failure: true
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       tag=$(cat .vincent-release/tag.txt)
       version=${tag#v}
       if [ "$(cat .vincent-release/channels.txt)" = prerelease ]; then
         echo "prerelease: WinGet is correctly not submitted"
+        say "prerelease: WinGet correctly not submitted"
         printf '%s\n' "skipped (prerelease)" > .vincent-release/winget.txt
         exit 0
       fi
@@ -1183,6 +1369,7 @@ steps:
       pr=""
       nap=5
       waited=0
+      say "waiting for the winget-pkgs catalog PR for $version"
       while :; do
         if gh api "repos/lezli01/winget-pkgs/branches/vincent-$version" --jq .name >/dev/null 2>&1; then
           branch_ok=yes
@@ -1210,8 +1397,14 @@ steps:
       echo "fork branch vincent-$version pushed: $branch_ok"
       if [ -n "$pr" ]; then
         echo "catalog PR: $(printf '%s' "$pr" | jq -r '.state + " — " + .url')"
+        say "winget catalog PR $(printf '%s' "$pr" | jq -r .state) for $version"
         printf '%s\n' "$(printf '%s' "$pr" | jq -r '.state + " " + .url')" > .vincent-release/winget.txt
       else
+        # This step is `allow_failure`, so its red row is not a broken release
+        # — the tag published fine and WinGet is outside the automation
+        # boundary. The status is what says so on the board, and it names the
+        # recovery, which is where task 52 stopped with nothing to go on.
+        say "no winget catalog PR; fork branch pushed: $branch_ok (release is fine)"
         printf '%s\n' "no catalog PR found" > .vincent-release/winget.txt
         echo "two minutes after the release, no microsoft/winget-pkgs pull request mentions lezli01.Vincent $version" >&2
         echo "check the Release run log for the WinGet publisher's output" >&2
@@ -1241,6 +1434,8 @@ steps:
     retry_backoff: 20s
     run: |
       set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
       tag=$(cat .vincent-release/tag.txt)
       run_url=$(cat .vincent-release/run-url.txt)
       release_url=$(gh release view "$tag" --json url --jq .url)
@@ -1263,3 +1458,6 @@ steps:
       echo
       echo "worktree status (expect empty):"
       git status --porcelain
+      # The last word of the whole run, and the one the board keeps against
+      # this release.
+      say "$tag released; RELEASING.md steps 7-9 are left to a human"
