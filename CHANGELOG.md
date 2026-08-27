@@ -9,6 +9,31 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-27)
+
+
+### Features
+
+* **api:** serve the step status message, and accept one ([4aaef4c](https://github.com/lezli01/vincent/commit/4aaef4c89fe4d0810ccb38956b273fc980eda3d2))
+* **cli:** add `vincent workflow init` to write a workflow file ([84dca03](https://github.com/lezli01/vincent/commit/84dca032cbad3b8b9e0dec86cb870190e7f7c76b))
+* **cli:** add vincent status ([c5b939d](https://github.com/lezli01/vincent/commit/c5b939d0238016715b55fa823d436fa228bc5a09))
+* **github:** create a task from a GitHub issue ([d963a2c](https://github.com/lezli01/vincent/commit/d963a2cab90f0f29ec00efde53ddbdf5c68ec19e))
+* **recovery:** guard PID reuse with an exact native process identity ([1bd8a56](https://github.com/lezli01/vincent/commit/1bd8a56355449d9dd872fea908294fdf3316ac1e))
+* **release:** sign, notarize and staple the macOS artifacts ([bbf7a81](https://github.com/lezli01/vincent/commit/bbf7a810c1f71349140eb4f5519f1972e40d4fdf))
+* **store:** record what a step says about itself ([ca28e4d](https://github.com/lezli01/vincent/commit/ca28e4d9ce913093778d84513d786d869dc31845))
+* **taskrun:** accept a step's status, and give agent steps the VINCENT_* env ([0ac9a11](https://github.com/lezli01/vincent/commit/0ac9a11b2c10f3cf0d40ee031b52f80418df9855))
+* **taskrun:** cap what one task may spend, enforced at attempt boundaries ([8fd5763](https://github.com/lezli01/vincent/commit/8fd576366101ef40839340cced9c31c407c307cf)), closes [#97](https://github.com/lezli01/vincent/issues/97)
+* **tui:** show a step's own status, and finally show the result summary ([e72f2f0](https://github.com/lezli01/vincent/commit/e72f2f0f2bc8bd5fba6ba82c50a7fdd8c4498326))
+* **workflows:** block a release on either changelog, and stop thrashing on pending checks ([69d5a3f](https://github.com/lezli01/vincent/commit/69d5a3fb98b87bd9c432d3883faa1964a92c8a65))
+
+
+### Bug Fixes
+
+* **api:** bound an answers key as question text, not as an identifier ([0b6fd68](https://github.com/lezli01/vincent/commit/0b6fd681ab706547089167edf6ae5525a30d00f3)), closes [#197](https://github.com/lezli01/vincent/issues/197)
+* **procx:** end every native identity in the PID it names ([41d2a25](https://github.com/lezli01/vincent/commit/41d2a2598a95fe3f6e9703130693852164979ef0))
+* **store:** renumber the step-status migration to 0015 ([1c6f767](https://github.com/lezli01/vincent/commit/1c6f767eaf21e35be56bde2e5d7a20b614919003))
+* **workflows:** pace every retry and poll, and stop a blip from ending a wait ([1f679f4](https://github.com/lezli01/vincent/commit/1f679f462a73db7560d988e3b0cf4345b456c707))
+
 ## [Unreleased]
 
 ### Added
