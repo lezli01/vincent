@@ -50,8 +50,23 @@ vincent version
 Linux has no Gatekeeper or SmartScreen equivalent — though you may need
 `chmod +x vincent` if your extraction tool dropped the bit.
 
-Full detail, including signature verification:
-[Installation](../getting-started/installation.md).
+The deb and rpm carry **no maintainer GPG signature**, deliberately. vincent
+publishes no APT or YUM repository, and `dpkg`/`apt` do not verify a per-package
+signature on a `.deb` you downloaded from a release page — apt verifies a
+repository's `Release` file, which is not the path you are on. `rpm -K` would
+verify, but only after importing a long-lived release key you would then have to
+trust and track through rotations. Instead every archive, deb and rpm is covered
+by a keyless cosign signature over `checksums.txt` and by a GitHub build
+attestation, both of which bind the file to the workflow and commit that
+produced it with no vincent key for you to trust:
+
+```sh
+sha256sum -c checksums.txt --ignore-missing
+gh attestation verify vincent_*_amd64.deb --repo lezli01/vincent
+```
+
+Full detail, including the cosign step:
+[Verify a download](../getting-started/installation.md#verify-a-download).
 
 ## Directories
 
