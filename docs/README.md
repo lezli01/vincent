@@ -53,6 +53,14 @@ and design choices that made a durable orchestrator feel necessary.
 |---|---|
 | [The workflow I kept repeating—and how vincent was born](why/the-workflow-i-kept-repeating-and-how-vincent-was-born.md) | How a recurring QA-ticket routine revealed that the missing tool was a reusable workflow, not another prompt |
 | [Spend inference only where it belongs](why/spend-inference-only-where-it-belongs.md) | How command-first workflows reduce cost by reserving agents for work that actually requires judgment |
+| [“Done” is not a success condition](why/done-is-not-a-success-condition.md) | Why agent output becomes trustworthy only when objective checks define success |
+| [Automation without giving up control](why/automation-without-giving-up-control.md) | How human gates keep review and authorization inside an otherwise automated process |
+| [The terminal should not own the work](why/the-terminal-should-not-own-the-work.md) | Why durable execution belongs to a daemon rather than a terminal tab |
+| [Failure should be a state, not a dead end](why/failure-should-be-a-state-not-a-dead-end.md) | How retained context and explicit recovery actions turn failure into a decision point |
+| [One task, one branch, no checkout traffic jam](why/one-task-one-branch-no-checkout-traffic-jam.md) | How isolated worktrees make concurrent agentic work practical |
+| [A workflow is executable team knowledge](why/a-workflow-is-executable-team-knowledge.md) | Why a versioned playbook is more valuable than a prompt only one person remembers |
+| [Bring your agent, keep your control plane](why/bring-your-agent-keep-your-control-plane.md) | How local adapters provide choice without pretending every agent has the same capabilities |
+| [From a wall of terminals to one control room](why/from-a-wall-of-terminals-to-one-control-room.md) | Why agentic workloads need an interface built around state, history, and attention |
 
 [Browse the series →](why/README.md)
 
