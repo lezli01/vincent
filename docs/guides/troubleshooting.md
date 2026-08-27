@@ -476,7 +476,7 @@ The block reason names what happened:
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |
 | `cost_limit` | The task has spent past `max_task_cost_usd` (see below) |
 | `transcript_io_error` | The attempt's transcript could not be written or closed (see below) |
-| `agent_protocol_error` | vincent could not read the agent's stream to the end (see below) |
+| `agent_protocol_error` | Vincent could not read the agent's stream to the end (see below) |
 | `rejected` | You rejected a manual gate |
 | `shell_unavailable` | The requested shell is not installed |
 | `interrupted` | The daemon stopped mid-step — **not** a failure; the step re-runs and does not consume a retry |

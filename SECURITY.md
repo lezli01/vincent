@@ -7,7 +7,7 @@
 | latest `0.x` release | ✅ fixes ship in the next patch or minor |
 | any earlier release | ❌ upgrade to the latest |
 
-vincent is a pre-1.0, single-maintainer project: there are no backport branches
+Vincent is a pre-1.0, single-maintainer project: there are no backport branches
 and no long-term support line. A security fix lands on `master` and ships in the
 next release, so "supported" means **the newest release** — see
 [CHANGELOG.md § Versioning and stability](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md#versioning-and-stability)
@@ -29,7 +29,7 @@ on a best-effort basis.
 
 ## Scope notes
 
-vincent executes AI agents in **full-auto mode by default** — agents can run
+Vincent executes AI agents in **full-auto mode by default** — agents can run
 arbitrary commands as the invoking user, and git worktrees provide collision
 isolation, not security isolation. This is intentional product behavior,
 documented in the [security model](docs/security-model.md), and the TUI states

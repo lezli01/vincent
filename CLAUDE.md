@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-vincent is a local-first control plane for AI coding-agent workloads: a background
+Vincent is a local-first control plane for AI coding-agent workloads: a background
 daemon owns state and execution (SQLite + git worktrees + agent CLI subprocesses),
 and every client — the Bubble Tea TUI, `vincent` CLI subcommands, curl — is a thin
 consumer of its localhost REST+SSE API. One Go binary (`cmd/vincent`) serves all

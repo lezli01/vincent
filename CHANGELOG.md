@@ -50,7 +50,7 @@ list with the user-facing context a commit subject cannot carry.
   (`--json` on both, for scripts); and `GET /v1/projects/{id}/github` and
   `.../github/issues` expose the capability probe and the listing over the API.
 
-  vincent **stores no GitHub credential**. It prefers the `gh` CLI you have already
+  Vincent **stores no GitHub credential**. It prefers the `gh` CLI you have already
   configured — which carries your own host, enterprise and SSO setup — and falls
   back to `GITHUB_TOKEN`/`GH_TOKEN` if they happen to be in the daemon's
   environment. The daemon makes every call; no client ever talks to GitHub. It is
@@ -163,7 +163,7 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
-- **vincent is once again released under the MIT License.** The source,
+- **Vincent is once again released under the MIT License.** The source,
   documentation, release archives, and package-manager metadata all carry the
   same permissive license, with no separate commercial-use restriction.
 
@@ -233,7 +233,7 @@ list with the user-facing context a commit subject cannot carry.
 ### Added
 
 - **The database now reports its own size, row counts and history span.**
-  vincent keeps database rows forever — one `events` row per state change, plus
+  Vincent keeps database rows forever — one `events` row per state change, plus
   the whole workflow YAML on every task — and that is a deliberate decision, but
   nothing measured what it cost, so "rows are small" was untestable on your own
   machine after six months of use. `vincent doctor` now prints the footprint
@@ -755,7 +755,7 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
-- **vincent is now source-available and dual-licensed, not MIT.** Personal and
+- **Vincent is now source-available and dual-licensed, not MIT.** Personal and
   non-commercial use is free under the
   [PolyForm Noncommercial License 1.0.0](LICENSE); commercial or business use —
   including running vincent inside a for-profit company's own development
@@ -1043,7 +1043,7 @@ M5 acceptance gates are met.
 
 ## Versioning and stability
 
-vincent is `0.x`. Until `1.0.0`:
+Vincent is `0.x`. Until `1.0.0`:
 
 - **Breaking changes may land in any minor release** (`0.1` → `0.2`), and are
   called out under a `### Changed` heading here with the migration needed.
