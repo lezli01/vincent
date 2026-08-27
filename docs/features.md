@@ -134,6 +134,10 @@ Human oversight is part of the workflow instead of an informal terminal habit:
   in its existing worktree, as many times as it takes, before archiving it.
 - Use bulk selection to act on several eligible tasks while refusals remain
   selected for follow-up.
+- Let a long-running step say what it is doing: `vincent status "<message>"`
+  from inside an agent or command step reports a line that shows live on the
+  board and stays on the finished attempt as the step's own account of how it
+  went. It is opt-in per workflow — vincent never asks an agent for it.
 
 The daemon computes the actions valid in each state and sends that list to
 every client, so the TUI, CLI, and API agree on what can happen next. See the
@@ -143,8 +147,8 @@ every client, so the TUI, CLI, and API agree on what can happen next. See the
 
 Running `vincent` opens a Bubble Tea interface for active agent workloads:
 
-- A filterable, grouped task board shows state, current step, elapsed time, and
-  reported cost.
+- A filterable, grouped task board shows state, current step, elapsed time,
+  reported cost, and — on a wide terminal — the step's own status message.
 - Task detail keeps the attempt timeline beside live output and the git diff.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.

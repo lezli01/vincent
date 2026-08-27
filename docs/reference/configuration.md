@@ -534,10 +534,10 @@ only keeps other local accounts out. Prefer naming the variable under `inherit`
 and letting the value come from the environment that starts the daemon; see
 [Security model](../security-model.md#credentials).
 
-Command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#55-environment-variables)
-and then their own `env:` on top. Neither `unset` nor `set` can touch those —
-they are facts about the run, not inherited state — and a step's `env:` still
-wins over everything.
+Agent, command and check steps layer the [`VINCENT_*` variables](../guides/workflows.md#55-environment-variables)
+on top of that, and command and check steps then layer their own `env:`. Neither
+`unset` nor `set` can touch the `VINCENT_*` block — those are facts about the
+run, not inherited state — and a step's `env:` still wins over everything.
 
 #### What it is for
 
@@ -713,7 +713,7 @@ VINCENT_CONFIG_DIR=/tmp/v-cfg VINCENT_DATA_DIR=/tmp/v-data vincent daemon start
 > or the CLI and the service will quietly use different databases. See
 > [Running at login](../guides/running-at-login.md).
 
-Command and check steps additionally receive `VINCENT_TASK_ID`,
+Agent, command and check steps additionally receive `VINCENT_TASK_ID`,
 `VINCENT_TASK_TITLE`, `VINCENT_PROJECT_NAME`, `VINCENT_PROJECT_PATH`,
 `VINCENT_WORKTREE`, `VINCENT_BRANCH`, `VINCENT_BASE_BRANCH`, `VINCENT_STEP_ID`,
 `VINCENT_STEP_ATTEMPT` and `VINCENT_WORKFLOW` — see

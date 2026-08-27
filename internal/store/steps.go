@@ -13,6 +13,7 @@ import (
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
 	state, agent, model, effort, pid,
 	proc_started_at, proc_identity, exit_code, check_exit_code, failure_reason, skip_reason, result_summary,
+	status_message,
 	prompt_override, run_override, transcript_path,
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
 
@@ -96,14 +97,15 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
 			state, agent, model, effort, pid,
 			proc_started_at, proc_identity, exit_code, check_exit_code, failure_reason, skip_reason,
-			result_summary, prompt_override, run_override, transcript_path,
+			result_summary, status_message, prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
 		string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.SkipReason), nullString(r.ResultSummary),
+		nullString(r.StatusMessage),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
 		formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
@@ -120,6 +122,13 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 
 // UpdateStepRun writes every mutable field of r (matched by ID). Returns
 // ErrNotFound when the row does not exist.
+//
+// `status_message` is deliberately **not** in the SET list (task 036). It is
+// the one column the actor is not the sole writer of: the step's own process
+// sets it through SetStepRunStatus while the actor is blocked in Wait, so an
+// UPDATE carrying the actor's stale copy of the struct would erase whatever
+// the step said. Leaving the column out is what makes the last live value
+// survive onto the finished row for free.
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
@@ -327,6 +336,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		r                                       StepRun
 		agent, model, effort                    sql.NullString
 		failure, skip, summary, transcript      sql.NullString
+		status                                  sql.NullString
 		loopItem                                sql.NullString
 		promptOv, runOv                         sql.NullString
 		pid, exitCode, checkExit, inTok, outTok sql.NullInt64
@@ -338,7 +348,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		&r.Iteration, &loopItem,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &procIdentity,
 		&exitCode, &checkExit,
-		&failure, &skip, &summary, &promptOv, &runOv, &transcript,
+		&failure, &skip, &summary, &status, &promptOv, &runOv, &transcript,
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
 		return nil, err
 	}
@@ -349,6 +359,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	r.FailureReason = failure.String
 	r.SkipReason = skip.String
 	r.ResultSummary = summary.String
+	r.StatusMessage = status.String
 	r.PromptOverride = promptOv.String
 	r.RunOverride = runOv.String
 	r.TranscriptPath = transcript.String

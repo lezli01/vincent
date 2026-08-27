@@ -52,7 +52,7 @@ requires reasoning.
 
 **Making steps talk to each other**
 
-- [5. Templates and data flow](#5-templates-and-data-flow) — [5.1 Template fields](#51-which-fields-are-templates) · [5.2 The context](#52-the-template-context) · [5.3 Step to step](#53-passing-one-steps-output-to-the-next) · [5.4 Task fields](#54-task-fields) · [5.5 Environment](#55-environment-variables)
+- [5. Templates and data flow](#5-templates-and-data-flow) — [5.1 Template fields](#51-which-fields-are-templates) · [5.2 The context](#52-the-template-context) · [5.3 Step to step](#53-passing-one-steps-output-to-the-next) · [5.4 Task fields](#54-task-fields) · [5.5 Environment](#55-environment-variables) · [5.6 Reporting status](#56-reporting-status-from-a-step)
 - [6. Control flow](#6-control-flow) — [6.1 `if:`](#61-if--skip-a-step-and-carry-on) · [6.2 `allow_failure:`](#62-allow_failure--a-failure-that-is-data) · [6.3 `condition`](#63-condition--finish-early-and-succeed) · [6.4 Loops in depth](#64-loops-in-depth) · [6.5 Guard recipes](#65-guard-recipes)
 
 **Making it reliable**
@@ -980,8 +980,10 @@ workflow *requires*, where failing loudly is what you want.
 
 ### 5.5 Environment variables
 
-Command steps and checks run with the working directory set to the worktree and
-receive these on top of the daemon's own environment:
+<a id="the-vincent-environment"></a>
+
+Agent steps, command steps and checks run with the working directory set to the
+worktree and receive these on top of the daemon's own environment:
 
 | Variable | |
 |---|---|
@@ -1007,11 +1009,65 @@ keep out of the YAML:
       SLACK_CHANNEL: "#builds"
 ```
 
-A step's `env:` is layered on top and wins. What the daemon passes down in the
-first place is itself configurable — see
+A command step's `env:` is layered on top and wins. What the daemon passes down
+in the first place is itself configurable — see
 [`environment`](../reference/configuration.md#environment) — but neither that
 policy nor a step's `env:` can remove a `VINCENT_*` variable: those are facts
 about the run, not inherited state.
+
+An **agent** step gets the same block, without the `env:` layer — `env:` is a
+command-step field. That is what lets an agent call
+[`vincent status`](#56-reporting-status-from-a-step) from its own shell tool: the
+command reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` and needs nothing else.
+
+### 5.6 Reporting status from a step
+
+A running step can say what it is doing, in a sentence, by running
+[`vincent status`](../reference/cli.md#vincent-status) from inside itself:
+
+```yaml
+  - id: suite
+    type: command
+    run: |
+      vincent status "running the store suite"
+      go test ./internal/store/...
+```
+
+The message shows up live on the board's `STATUS` column and on the attempt line
+in the [TUI](tui.md), and the last value set before the step ends stays on the
+finished attempt. It is the answer to "what is this actually doing" for a step
+that has been running for twenty-five minutes, and to "why did that fail" in
+terms a `failure_reason` like `check_failed` cannot reach.
+
+For an **agent** step, ask for it in the prompt. The daemon deliberately does
+not append any instruction of its own, so an agent reports its status only
+because you asked:
+
+```yaml
+  - id: implement
+    type: agent
+    prompt: |
+      Implement {{.Task.Title}}.
+
+      Before each significant phase of work, run:
+        vincent status "<one short line about what you are doing now>"
+      Keep it under ten words. If you get stuck or something fails, set it to
+      what is actually wrong — "3 tests red in internal/store", not "working".
+```
+
+Worth knowing when you write that instruction:
+
+- Only `agent` and `command` steps can report. `manual`, `parallel`, `fan_out`,
+  `condition`, `loop` and `break` run no process, so they have no voice and
+  their status stays empty.
+- The message is flattened to one line, stripped of control characters and
+  truncated to 256 bytes. Being wordy never fails the step.
+- Two messages inside one second coalesce to the later one, so an agent that
+  narrates in a tight loop costs nothing. The first message after a quiet
+  period is always immediate.
+- It is **not** a failure reason and nothing renders it as one. It is also not
+  visible to `.Steps` or to an `if:` guard — free text an agent chose at run
+  time is not something a workflow should branch on.
 
 ---
 

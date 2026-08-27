@@ -72,12 +72,17 @@ func (r *Runner) runAgentStep(
 		// and "decided" is the whole point: what a step runs under is now a
 		// value this engine computed, not whatever the daemon was started
 		// from.
-		Env: r.childEnv(),
-		// Always explicit, even when the policy inherits everything (T4.23).
-		// Passing nil would hand the adapter the ambient environment again,
-		// and "decided" is the whole point: what a step runs under is now a
-		// value this engine computed, not whatever the daemon was started
-		// from.
+		//
+		// It carries the §8.5 VINCENT_* block too, as of task 036: an agent
+		// step used to see the resolved base and none of the run facts, so
+		// an agent could not name the step it was running even to the daemon
+		// that started it. `vincent status` addresses itself with
+		// VINCENT_TASK_ID and VINCENT_STEP_ID, which is what made the gap
+		// load-bearing. Same precedence rule as a command step's — the
+		// variables layer over the policy, so `environment.unset` cannot
+		// reach them. There is no step-level `env:` here: `env:` is a
+		// command-step field (§8.1).
+		Env: commandEnv(r.childEnv(), rc, nil),
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -720,9 +725,6 @@ func resultChunks(results []agent.ToolResult) []map[string]any {
 	return out
 }
 
-// commandEnv builds the environment of a command or check step: the
-// daemon's own environment, the §8.5 vincent variables, then the step's
-// declared `env` (which wins, so a workflow can override anything).
 // childEnv resolves the §12.3 environment policy against this process's own
 // environment (T4.23).
 //
@@ -735,11 +737,15 @@ func (r *Runner) childEnv() []string {
 	return r.deps.Config().Environment.ResolveProcess()
 }
 
-// commandEnv builds a command or check step's environment: the §12.3 resolved
-// base, then the §8.5 VINCENT_* variables, then the step's own `env:`. The
-// order is the precedence — Go's exec keeps the last of any duplicate name —
-// and it is why `environment.unset` cannot reach a VINCENT_* variable. Those
-// are facts about the run, not inherited state.
+// commandEnv builds a step's environment: the §12.3 resolved base, then the
+// §8.5 VINCENT_* variables, then the step's own `env:`. The order is the
+// precedence — Go's exec keeps the last of any duplicate name — and it is why
+// `environment.unset` cannot reach a VINCENT_* variable. Those are facts
+// about the run, not inherited state.
+//
+// It serves `agent` steps as well as `command` and `check` ones (task 036);
+// only the latter pass a stepEnvVars map, since `env:` is a command-step
+// field.
 func commandEnv(base []string, rc workflow.RenderContext, stepEnvVars map[string]string) []string {
 	out := append([]string(nil), base...)
 	out = append(out, workflow.Env(rc)...)

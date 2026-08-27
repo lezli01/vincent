@@ -19,6 +19,11 @@ var (
 	styleStderr     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true)
 	styleAsk        = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	styleFocus      = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	// styleStatus renders a step's own status message (task 036). Cyan and
+	// unbold: near the running state's colour, because that is what it is
+	// usually reporting on, and nowhere near styleBad — the failure reason
+	// beside it is the daemon's verdict and this is not.
+	styleStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 )
 
 // editedBadge marks an attempt whose prompt or command a human rewrote
@@ -328,6 +333,13 @@ func (d *detail) renderTimeline(height int) string {
 		}
 		lines = append(lines, line)
 		ids = append(ids, r.ID)
+		if summary := summaryLine(r, grouped || looped || repair); summary != "" {
+			// The same run id, so clicking the continuation selects the
+			// attempt it belongs to rather than falling through to a focus
+			// click on nothing.
+			lines = append(lines, summary)
+			ids = append(ids, r.ID)
+		}
 	}
 	// The windowed ids are kept for hit-testing clicks on the same lines.
 	start := windowStart(len(lines), cursorLine, height)
@@ -551,7 +563,47 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	if r.Agent != nil && *r.Agent != "" {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
 	}
+	// What the step said about itself (§5.4, task 036) goes last, and in its
+	// own style. It is deliberately *not* rendered beside failure_reason:
+	// the reason is the daemon's verdict, while this is free text the step
+	// chose — a step killed on `timeout` may be carrying a line it wrote
+	// thirty-five minutes earlier, and styling the two alike would present a
+	// stale self-report as a cause. Last, because it is the one field with no
+	// bound a reader can predict: when the pane is too narrow it is what the
+	// frame truncates, rather than the metrics beside it.
+	if r.StatusMessage != nil && *r.StatusMessage != "" {
+		fields = append(fields, styleStatus.Render(statusGlyph+" "+*r.StatusMessage))
+	}
 	return strings.Join(fields, " ")
+}
+
+// statusGlyph marks a step-authored status message, so it reads as a quote
+// rather than as another of the daemon's own fields — and so the distinction
+// survives a monochrome terminal, where the colour does not.
+const statusGlyph = "»"
+
+// summaryLine renders an attempt's result_summary as a dim continuation line
+// under it: the agent's final result text, or the tail of a command's stdout
+// (§5.4). It has been stored, served and read by `.Steps.<id>.Result` and the
+// repair prompt since the first release and shown on no screen at all.
+//
+// Only for an attempt that did **not** succeed. That is where it earns a
+// line: a blocked task's reader is asking "what went wrong", and
+// `failure_reason` answers only which category. Under every attempt it would
+// roughly double the height of a healthy timeline to restate what the output
+// pane is already showing for the one attempt the reader selected.
+//
+// One line, flattened. The full text is in the output pane and the
+// transcript; this is the sentence that decides whether to go there.
+func summaryLine(r apiclient.StepRun, indented bool) string {
+	if r.State == "succeeded" || strings.TrimSpace(r.ResultSummary) == "" {
+		return ""
+	}
+	indent := "       "
+	if indented {
+		indent = "         "
+	}
+	return styleDim.Render(indent + strings.Join(strings.Fields(r.ResultSummary), " "))
 }
 
 func formatTokens(r apiclient.StepRun) string {

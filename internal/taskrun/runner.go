@@ -87,6 +87,13 @@ type Runner struct {
 
 	mu   sync.Mutex
 	live map[int64]*liveRun
+
+	// status paces the step-authored status message (§13.3, task 036). It is
+	// on the runner rather than on a live run because a status write arrives
+	// on an API goroutine, addressed by ids the step read from its own
+	// environment — there is no actor to route it through, and the row it
+	// lands on is the truth either way.
+	status *statusThrottle
 }
 
 // stopper is the part of a live process the human actions need: ask it to
@@ -124,7 +131,18 @@ func New(deps Deps) *Runner {
 	if deps.Shells == nil {
 		deps.Shells = NewShells(deps.Logger)
 	}
-	return &Runner{deps: deps, live: map[int64]*liveRun{}}
+	r := &Runner{deps: deps, live: map[int64]*liveRun{}}
+	r.status = newStatusThrottle(func(runID int64, message string) {
+		// By run id, and through persistCtx rather than a request context:
+		// the coalesced write happens up to an interval after the request
+		// that produced it returned, and the step may have finished in the
+		// meantime. The step said this while it was running — deferring when
+		// to persist it must not turn it into something the step never said.
+		if _, err := r.deps.Store.SetStepRunStatusByRun(r.persistCtx(), runID, message); err != nil {
+			r.deps.Logger.Error("persist step status", "run", runID, "error", err)
+		}
+	})
+	return r
 }
 
 // Start prepares the runner to accept admissions until ctx is canceled or

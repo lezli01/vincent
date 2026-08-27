@@ -27,6 +27,19 @@ const (
 	// It deliberately does not wake the scheduler: advancing a step changes
 	// nothing about what may be admitted (see scheduler.WakeOn).
 	EventTaskStepAdvanced = "task.step_advanced"
+	// EventTaskStatusChanged is written when a running step changes what it
+	// says about itself (§5.4, §13.3, task 036). Payload
+	// `{task_id, step_id, message}`. It is durable, so a client that blinks
+	// recovers the message through `Last-Event-ID` — which is the whole
+	// reason a status is not a live output chunk.
+	//
+	// Like the two above it is not a transition, and like them it does not
+	// wake the scheduler (see scheduler.WakeOn): nothing about admission
+	// changes when a step describes itself. It is appended only when the
+	// stored value actually changed — the rule agent.quota_changed already
+	// records — so a step re-asserting the line it already set does not wake
+	// every board with news it has.
+	EventTaskStatusChanged = "task.status_changed"
 )
 
 // StateConflictError reports that a task was not in the expected state when

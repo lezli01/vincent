@@ -154,7 +154,7 @@ func pointAgentsAtNothing(t *testing.T, cfgDir string) {
 func stopDaemon(t *testing.T, dataDir, cfgDir string) {
 	t.Helper()
 	cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(hermeticEnv(),
 		config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 	_, _ = cmd.CombinedOutput()
 }

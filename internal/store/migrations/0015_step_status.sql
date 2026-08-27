@@ -1,0 +1,28 @@
+-- 0015_step_status: the step-authored status message (task 036, issue #199).
+--
+-- Free text a *running* step wrote about itself — "3 tests red in
+-- internal/store", "rebasing onto master" — set through
+-- `POST /v1/tasks/{id}/steps/{step_id}/status` (§13.2) by the step's own
+-- process, which is what makes it say something no workflow author could have
+-- written in advance.
+--
+-- One column with two readings, not two features: while the row is `running`
+-- it is the live answer to "what is this doing", and the last value written
+-- before the attempt ends stays on the finished row as its self-report.
+--
+-- NULL and empty are the same thing and mean the ordinary case: the step said
+-- nothing. Most rows carry NULL — `manual`, `parallel`, `fan_out`,
+-- `condition`, `loop` and `break` run no process and so have no voice at all
+-- (§5.4), and an `agent` or `command` step only speaks when its prompt or its
+-- script was written to.
+--
+-- It is deliberately **not** a widening of `failure_reason`, which stays the
+-- closed, daemon-authored vocabulary shared with internal/worktree
+-- (T1.5/T1.6 decision): nothing renders this as a cause of failure, because a
+-- step killed on `timeout` may be carrying a message it set half an hour
+-- earlier.
+--
+-- No `status_updated_at` companion and no clearing rule. The event carries the
+-- moment it changed (§13.3), the row carries the value, and a second column
+-- would have to be kept true by every writer for something no surface renders.
+ALTER TABLE step_runs ADD COLUMN status_message TEXT; -- NULL = the step said nothing

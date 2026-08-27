@@ -237,8 +237,18 @@ type stepRunResponse struct {
 	// SkipReason says why a `skipped` attempt was skipped: "condition" for a
 	// false `if:` guard (§7.7), null for the human `skip` action (§6). The
 	// two share one state, so this is what tells a timeline which it is.
-	SkipReason     *string  `json:"skip_reason"`
-	ResultSummary  string   `json:"result_summary"`
+	SkipReason    *string `json:"skip_reason"`
+	ResultSummary string  `json:"result_summary"`
+	// StatusMessage is what the step said about *itself* (§5.4, task 036):
+	// free text its own process set through
+	// POST /v1/tasks/{id}/steps/{step_id}/status. Null when it said nothing,
+	// which is every step type that runs no process and every `agent` or
+	// `command` step that was never asked to report.
+	//
+	// It is not a failure cause and must not be rendered as one: a step
+	// killed on `timeout` can carry a message it set half an hour earlier,
+	// and `failure_reason` is the daemon's verdict.
+	StatusMessage  *string  `json:"status_message"`
 	TranscriptPath *string  `json:"transcript_path"`
 	InputTokens    *int64   `json:"input_tokens"`
 	OutputTokens   *int64   `json:"output_tokens"`
@@ -271,6 +281,12 @@ type listTaskResponse struct {
 	CostUSD      *float64 `json:"cost_usd"`
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
+	// StatusMessage is the newest step run's status (§5.4, task 036),
+	// denormalized here the way step_name and cost_usd are: a board reads
+	// this endpoint and never fetches step rows. Null when the newest
+	// attempt said nothing — which is deliberate, so a finished step's line
+	// does not linger beside the next one.
+	StatusMessage *string `json:"status_message"`
 }
 
 func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunResponse {
@@ -295,6 +311,7 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		FailureReason:  nilIfEmpty(r.FailureReason),
 		SkipReason:     nilIfEmpty(r.SkipReason),
 		ResultSummary:  r.ResultSummary,
+		StatusMessage:  nilIfEmpty(r.StatusMessage),
 		TranscriptPath: nilIfEmpty(r.TranscriptPath),
 		InputTokens:    r.InputTokens,
 		OutputTokens:   r.OutputTokens,
@@ -862,6 +879,10 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
+	statuses, err := s.deps.Store.LatestStepStatuses(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	projects, err := s.deps.Store.ListProjects(ctx)
 	if err != nil {
 		return nil, err
@@ -883,6 +904,7 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		}
 		row.Loop = s.loopRollup(ctx, t, summary)
 		row.ProjectName = names[t.ProjectID]
+		row.StatusMessage = nilIfEmpty(statuses[t.ID])
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
 			row.CostUSD = &cost

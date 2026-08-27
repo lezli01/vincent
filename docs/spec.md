@@ -276,7 +276,9 @@ re-runs after interruption) is a distinct StepRun row — history is append-only
 
 Records: step id/index/type, attempt number, state (`running`, `succeeded`, `failed`,
 `interrupted`, `approved`, `rejected`, `skipped`, `stopped`), timestamps, agent/model/effort used (as resolved per §8.6), exit code,
-check exit code, failure reason, skip reason, transcript file path, input/output tokens, cost (USD,
+check exit code, failure reason, skip reason, result summary, status message
+(both added to this list 2026-08-26 — see the task 036 amendment below),
+transcript file path, input/output tokens, cost (USD,
 nullable — not all agents report cost), input wait time (ms spent in `awaiting_input`,
 §7.4 — excluded from duration metrics).
 
@@ -333,6 +335,58 @@ point of a follow-up; rows from *earlier* rounds are hidden for the reason a
 `__repair` row is, because nobody wrote them into the workflow being run. Where
 a follow-up workflow reuses an id from the original workflow, the round's own
 row shadows it.
+
+*Amended 2026-08-26 (task 036).* The field list above gains two entries. The
+first, **`result_summary`**, is not new — it has been recorded, served on the
+§13.2 DTO and read by `.Steps.<id>.Result` and the repair prompt since the first
+release — and was simply never listed here. It holds the agent's final result
+text, or the last 200 lines of a command step's stdout.
+
+The second is new: the **status message**, a short piece of free text a
+*running* step writes about itself through
+`POST /v1/tasks/{id}/steps/{step_id}/status` (§13.2). It is nullable, and null
+is the ordinary case.
+
+It is one field with two readings, not two features. While the row is `running`
+it is the live answer to "what is this doing"; the last value written before the
+attempt ends stays on the finished row as the step's self-report, which is the
+half that answers "why did that fail" in terms a human wants — "3 tests red in
+internal/store" rather than `check_failed`.
+
+Four properties are normative:
+
+- **It is not a `failure_reason`, and no client may render it as one.** That
+  enum stays the closed, daemon-authored vocabulary shared with
+  `internal/worktree` (T1.5/T1.6 decision). A step killed on `timeout` after
+  forty minutes may be carrying a message it set thirty-five minutes earlier,
+  so presenting it beside the reason as though it were the daemon's verdict
+  would be a lie the daemon never told. It renders as *the step's last status*,
+  visually distinct (§15).
+- **Only `agent` and `command` steps have one.** `manual`, `parallel`,
+  `fan_out`, `condition`, `loop` and `break` write `step_run` rows but run no
+  process, so they have no voice and their status stays null; `include` never
+  reaches the engine at all (§7.9). Synthesising daemon text for the
+  process-less types was rejected: it would put daemon-authored and
+  step-authored strings in one field, which is the confusion this field exists
+  to escape. So is a workflow-authored `status:` template — it can only restate
+  what the author knew before the run, and the whole value here is what only the
+  run can know.
+- **The daemon never asks for it.** No protocol instruction is appended to a
+  rendered agent prompt; §8.4's automatic append stays reserved for
+  `<previous-attempt-failure>`. A workflow author who wants live status writes
+  the instruction into their own prompt. The cost is a low hit rate until
+  authors adopt it; the alternative charges every workflow that does not care
+  for tokens on every step.
+- **It is human-facing only.** It is not in `.Steps` (§8.4) and not in the
+  `<previous-attempt-failure>` block (§7.2). Free text an agent chose at run
+  time is not something an `if:` guard should branch on, and `.Steps.<id>.Status`
+  already means the run *state* — exposing the message there would need a
+  second, confusable key.
+
+There is no `status_updated_at` column and no rule that clears the value: the
+event announces when it changed (§13.3), the row carries what it is, and a
+second column would have to be kept true by every writer for something no
+surface renders.
 
 ## 6. Task lifecycle
 
@@ -666,6 +720,14 @@ stdout/stderr are captured to the step transcript.
 - **`condition_error` is the one reason that does not run this budget.**
   *Added 2026-08-18 (task 015).* A guard is evaluated before the step becomes
   an attempt, so there is no attempt to retry (§7.7).
+- **A step's status message is not part of the retry block.** *Added
+  2026-08-26 (task 036).* The status a step wrote about itself (§5.4) is never
+  a `failure_reason` and is deliberately **not** put in the
+  `<previous-attempt-failure>` block the daemon appends on retry. The block is
+  the daemon's account of what went wrong — reason plus output — and mixing an
+  agent's own free text into it hands the next attempt a claim it cannot tell
+  apart from a fact vincent established. The failed attempt's status is
+  displayed to humans (§15) and reaches nothing the run itself reads.
 - **`agent_unauthenticated` stays under the normal budget.** *Added 2026-08-14
   (task 003).* A CLI that refuses because it is not logged in fails the attempt
   like any other, retries as usual, and blocks when the budget is spent. Waiting
@@ -1588,7 +1650,22 @@ reason: check command failed (exit 1)
 </previous-attempt-failure>
 ```
 
-### 8.5 Environment for command/check steps
+*Recorded 2026-08-26 (task 036).* That block stays the **only** thing the
+daemon appends to a rendered prompt. In particular the step-status protocol
+(§5.4, §13.2) is documented rather than injected: a workflow author who wants
+an agent to report on itself writes the instruction into their own prompt, and
+`.Steps.<id>` deliberately does not gain the status message — it means what a
+completed step *produced*, and `Status` there already means the run state.
+
+### 8.5 Environment for command, check and agent steps
+
+*Retitled 2026-08-26 (task 036): this block now reaches `agent` steps too. It
+had always been specified for command and check steps alone, which left an
+agent process able to see the resolved environment and none of the facts about
+the run it was executing — so an agent could not name its own step even to the
+daemon that started it. `vincent status` (§12.1) addresses itself with
+`VINCENT_TASK_ID` and `VINCENT_STEP_ID`, which is what made the gap
+load-bearing.*
 
 Inherits the daemon's environment (which inherits the user's), with cwd set to the
 worktree, plus:
@@ -1598,6 +1675,12 @@ VINCENT_TASK_ID, VINCENT_TASK_TITLE, VINCENT_PROJECT_NAME, VINCENT_PROJECT_PATH,
 VINCENT_WORKTREE, VINCENT_BRANCH, VINCENT_BASE_BRANCH, VINCENT_STEP_ID,
 VINCENT_STEP_ATTEMPT, VINCENT_WORKFLOW
 ```
+
+The precedence is one rule for all three step types: the §12.3 resolved base
+environment, then this block, then a `command` step's own `env:` (which is a
+command-step field, so an agent step has none). Because the block is layered
+*after* the policy, `environment.unset` cannot reach a `VINCENT_*` variable:
+these are facts about the run, not inherited state.
 
 ### 8.6 Agent, model, and effort resolution
 
@@ -1631,6 +1714,23 @@ a workflow `agent` step, so the workflow's `defaults:` govern it and full-auto,
 `wait` and the agent timeout are the fallbacks.
 
 ## 9. Agent adapters
+
+*Recorded 2026-08-26 (task 036).* The step-status channel (§5.4) is
+**adapter-independent** and is not part of this section's surface. A step sets
+its status by calling `POST /v1/tasks/{id}/steps/{step_id}/status` from its own
+process — usually through `vincent status` (§12.1) — so nothing is parsed out
+of an adapter's stream and no `AgentAdapter` method is involved. No adapter can
+therefore lack the feature, and nothing about it is emulated for one that would
+have: the difference this section documents everywhere else does not arise
+here.
+
+That is also why the status is not a marked line in a step's output. A marker
+lifted out of the normalized `AgentEvent` stream would miss the obvious agent
+spelling — an agent running `echo '::vincent:status:: …'` through its shell
+tool produces a tool-use event, not an `Output` event — would force a
+strip-or-keep choice over the transcript and `result_summary` with no good
+answer, and would make every step's stdout a control channel, so that any
+program which happened to print the marker changed daemon state.
 
 ### 9.1 Interface
 
@@ -2474,6 +2574,7 @@ One Go binary, `vincent`:
 | `vincent workflow ls / validate [file] / init <name>` | Registry listing / YAML validation / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2) |
+| `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code |
@@ -2492,6 +2593,15 @@ retype.
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
 scope spans two directory trees — worktrees and transcripts — so a `worktree` noun
 would have been wrong on the day it shipped.
+
+*Added 2026-08-26 (task 036).* `status` is the second command in this table
+invoked by a *program* rather than by a human at a prompt, after `follow-up`,
+and it is the reason the noun-verb pattern is broken again: there is no noun. It
+does not act on a task the caller names, it reports on the step the caller *is*,
+which is also why it takes its addressing from the environment rather than from
+flags nobody would be there to type. It is a thin client for
+`POST /v1/tasks/{id}/steps/{step_id}/status` (§13.2) and carries `--json` like
+the rest.
 
 *Added 2026-08-25 (task 027).* `follow_up` is the one §6 human action with a
 command line. `retry`, `repair`, `skip` and `approve` are deliberately
@@ -3386,6 +3496,39 @@ GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         (task 015, 2026-08-18: each carries `skip_reason`
                                         — "condition" for a false `if:`, null for the human
                                         skip — and `state` may now be "stopped", §5.4/§7.7)
+                                        (task 036, 2026-08-26: each also carries
+                                        `status_message` — what the step said about itself,
+                                        null when it said nothing — and `result_summary`,
+                                        which has always been on this DTO and is now listed
+                                        in §5.4 as well. `GET /v1/tasks` carries
+                                        `status_message` too, denormalized from the task's
+                                        *newest* step run the way `step_name` and `cost_usd`
+                                        are, so a board never fetches step rows for it)
+POST   /v1/tasks/{id}/steps/{step_id}/status
+                                        { message } → { message }, the value as stored
+                                        (added 2026-08-26, task 036). Records what the
+                                        **running** step at `step_id` is doing, in its own
+                                        words (§5.4). The caller is that step's own process:
+                                        it addresses itself with §8.5's VINCENT_TASK_ID and
+                                        VINCENT_STEP_ID, which is why the path names a step
+                                        id rather than a `step_runs` row id — a step knows
+                                        which step it is and cannot know its row. It is keyed
+                                        by step id and not by task alone because a `parallel`
+                                        group's sub-steps share one task and run at the same
+                                        time (§7.5); within one task a step id has at most one
+                                        running row.
+                                        `message` is bounded rather than validated: it is
+                                        flattened to a single line, stripped of control
+                                        characters and truncated to **256 bytes**, and the
+                                        response reports what was stored. An empty message
+                                        clears the status. An unknown task is a 404; a step
+                                        that is **not running** is a **409** — never a silent
+                                        no-op, so a script still reporting progress after its
+                                        step was killed learns that.
+                                        Writes are paced, not rejected: two writes for one
+                                        step run inside **1 s** coalesce to the later value,
+                                        which lands when the floor expires (§13.3). The first
+                                        write after a quiet period is always immediate
 GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         the attempt's JSONL transcript, ranged.
                                         `offset=` (bytes) and `tail=` (last N bytes) are
@@ -3439,8 +3582,23 @@ Two kinds of streams:
    emitted as SSE with `id:` set, so clients reconnect with `Last-Event-ID` and miss
    nothing. Types:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
-   `task.children_changed`, `project.*`, `workflow.registry_changed`,
-   `agent.quota_changed`, `daemon.shutting_down`.
+   `task.status_changed`, `task.children_changed`, `project.*`,
+   `workflow.registry_changed`, `agent.quota_changed`, `daemon.shutting_down`.
+   (`task.status_changed` — *added 2026-08-26, task 036* — carries
+   `{task_id, step_id, message}` and announces that a running step changed what
+   it says about itself (§5.4). It is on the **durable** side deliberately: the
+   message is state, not output, so a client that blinks must be able to recover
+   it through `Last-Event-ID`, which a live output chunk cannot offer. Three
+   bounds keep it off the events table's critical path. A write whose message is
+   byte-identical to the stored value appends **no** event — the rule
+   `agent.quota_changed` already records, so a board that refetches on it is not
+   woken by news it has. A **1 s** minimum interval per step run coalesces
+   anything faster to the latest value rather than rejecting it, and the first
+   write after a quiet period is always immediate, so the live reading is never
+   delayed. The message itself is capped at **256 bytes**, truncated rather than
+   refused, forced to a single line with control characters stripped.
+   `scheduler.WakeOn` is **false** for it: nothing about admission changes when
+   a step describes itself.)
    (`agent.quota_changed` — *added 2026-08-24, task 026* — carries
    `{agent, spent, resets_at, source}` and, like `workflow.registry_changed`,
    no `task_id` and no `project_id`: the fact is about an adapter, not about
@@ -3597,6 +3755,14 @@ CREATE TABLE step_runs (
   failure_reason      TEXT,
   skip_reason         TEXT,                   -- 'condition' for a false `if:` (§7.7); NULL for the human skip (§6)
   result_summary      TEXT,                   -- agent result text / command stdout tail
+  -- What the step said about *itself* (§5.4, task 036, migration 0015): short
+  -- free text its own process set through
+  -- POST /v1/tasks/{id}/steps/{step_id}/status while it was running. NULL is
+  -- the ordinary case — the step types that run no process never speak, and an
+  -- agent or command step only speaks when its prompt or script was written to.
+  -- Never written by the actor's own row updates, which is what makes the last
+  -- live value survive onto the finished row.
+  status_message      TEXT,                   -- NULL = the step said nothing
   prompt_override     TEXT,                   -- edit+retry: the prompt a human supplied for this attempt (§6)
   run_override        TEXT,                   -- edit+retry: the command a human supplied for this attempt (§6)
   transcript_path     TEXT,
@@ -3704,7 +3870,32 @@ stream for the live tail.
    `space` marks the row under the cursor, `V` marks everything the filter is
    showing, and while anything is marked the task-action keys act on the whole
    selection. See *Bulk selection* below.
-2. **Task detail.** Step timeline (every attempt, with durations, tokens, cost);
+   **A STATUS column (task 036, added 2026-08-26)** shows what the task's
+   newest step run said about itself (§5.4), truncated with an ellipsis. It sits
+   at the top of the shedding ladder — dropped before cost, the step name, the
+   workflow and the project — and it carries a higher bar than the others: it is
+   admitted only when the title still clears a comfortable width, so a board
+   narrow enough to lose it renders exactly as it did before the column existed,
+   and the width a grouped board frees by dropping PROJECT and WORKFLOW still
+   goes to the title. The status of the *newest* row, not the newest message: a
+   step that spoke and finished must not have its line linger beside the next
+   step, which is doing something else. The state cell is untouched — the
+   recorded reasoning that keeps a hold's reason out of it (it does not fit, and
+   widening a column for a rare state costs every board the columns that shed
+   first) stands unchanged, and this column is why the status did not go there.
+2. **Task detail.** *Amended 2026-08-26 (task 036): the attempt line gains two
+   fields.* The step's own **status message** (§5.4) renders last on the line,
+   in its own style and behind a glyph, so it reads as a quotation from the step
+   rather than as another of the daemon's fields — and specifically **not** in
+   `failure_reason`'s style, because a step killed on `timeout` can be carrying
+   a line it wrote half an hour earlier and a client must never present that as
+   the daemon's verdict. And **`result_summary`**, which had been stored and
+   served since the first release and rendered on no screen at all, appears as a
+   dim continuation line under an attempt that did **not** succeed — where a
+   reader is asking "what went wrong" and the reason answers only which
+   category. Under every attempt it would double a healthy timeline's height to
+   restate what the output pane already shows for the selected one.
+   Step timeline (every attempt, with durations, tokens, cost);
    live output tail of the running step (follow mode); scrollback into full
    transcripts of past steps. Timeline and output are **side by side, both always
    visible** — selecting an attempt *is* how scrollback is navigated, so neither

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -262,6 +263,22 @@ func formatCost(c *float64) string {
 		return "—"
 	}
 	return fmt.Sprintf("$%.2f", *c)
+}
+
+// formatStatus renders the newest step run's own status message in the board
+// cell (§5.4, task 036). Empty rather than a dash: a step saying nothing is
+// the ordinary case for most step types and every workflow that has not
+// adopted the protocol, and a column of dashes reads as something missing.
+//
+// Truncated with an ellipsis rather than wrapped, because the table gives
+// every row one line. The whole message is on the attempt line in the detail
+// view, which has the width — the same division of labour renderBoardState
+// makes for a hold's reason.
+func formatStatus(message *string) string {
+	if message == nil || *message == "" {
+		return ""
+	}
+	return ansi.Truncate(*message, widthStatus, "…")
 }
 
 // formatStep renders k/n plus the step name when there is room. A snapshot

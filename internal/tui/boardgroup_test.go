@@ -237,7 +237,9 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 // glitch.
 func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 	b := groupedBoard(task(1, stateRunning, inProject("api"), inWorkflow("build")))
-	for _, width := range []int{40, 70, 90, 120, 200} {
+	// 240 is wide enough for the status column (task 036), which is the
+	// widest set a row is ever built at.
+	for _, width := range []int{40, 70, 90, 120, 200, 240} {
 		for _, g := range []grouping{nil, {groupProject}, {groupProject, groupWorkflow}} {
 			b.group = g
 			// With and without the bulk-selection marker column (task 011):
