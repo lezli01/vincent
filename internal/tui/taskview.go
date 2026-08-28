@@ -45,11 +45,16 @@ type taskView struct {
 	width     int
 	height    int
 
-	detailsTop   int
-	detailsCount int
-	detailsH     int
-	tabHits      []taskTabHit
-	bodyY        int
+	detailsTop        int
+	detailsCount      int
+	detailsH          int
+	detailsSection    string
+	detailsSections   []string
+	detailsSidebarW   int
+	detailsSidebarY   int
+	detailsSidebarTop int
+	tabHits           []taskTabHit
+	bodyY             int
 }
 
 func newTaskView(detail *detail) *taskView {
@@ -119,6 +124,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case selectTaskMsg:
 		t.tab = taskTabSteps
 		t.detailsTop = 0
+		t.detailsSection = ""
 		t.popup = false
 		t.detail.active = true
 		return t, t.detail.open(msg.id, msg.state)
@@ -272,23 +278,48 @@ func (t *taskView) updateDetailsKey(msg tea.KeyPressMsg) tea.Cmd {
 	page := max(t.detailsH-1, 1)
 	switch msg.String() {
 	case "up", "k":
-		t.detailsTop--
+		t.moveDetailsSection(-1)
 	case "down", "j":
-		t.detailsTop++
+		t.moveDetailsSection(1)
 	case "pgup":
 		t.detailsTop -= page
 	case "pgdown":
 		t.detailsTop += page
 	case "home", "g":
-		t.detailsTop = 0
+		t.selectDetailsSection(0)
 	case "end", "G":
-		t.detailsTop = max(t.detailsCount-t.detailsH, 0)
+		t.selectDetailsSection(len(t.detailsSections) - 1)
 	default:
 		// Task actions remain available from the read-only details tab.
 		return t.detail.update(msg)
 	}
 	t.detailsTop = min(max(t.detailsTop, 0), max(t.detailsCount-t.detailsH, 0))
 	return nil
+}
+
+func (t *taskView) moveDetailsSection(delta int) {
+	if len(t.detailsSections) == 0 {
+		return
+	}
+	i := 0
+	for at, title := range t.detailsSections {
+		if title == t.detailsSection {
+			i = at
+			break
+		}
+	}
+	t.selectDetailsSection(min(max(i+delta, 0), len(t.detailsSections)-1))
+}
+
+func (t *taskView) selectDetailsSection(i int) {
+	if i < 0 || i >= len(t.detailsSections) {
+		return
+	}
+	if t.detailsSection == t.detailsSections[i] {
+		return
+	}
+	t.detailsSection = t.detailsSections[i]
+	t.detailsTop = 0
 }
 
 func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
@@ -307,6 +338,12 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	switch t.tab {
 	case taskTabSteps:
 		return t.detail.clickTimeline(msg.Y - t.bodyY)
+	case taskTabDetails:
+		row := msg.Y - t.bodyY - t.detailsSidebarY
+		section := t.detailsSidebarTop + row
+		if msg.X <= t.detailsSidebarW+1 && row >= 0 && section < len(t.detailsSections) {
+			t.selectDetailsSection(section)
+		}
 	case taskTabDiff:
 		t.detail.diff.clickRow(msg.Y - t.bodyY)
 	}
@@ -322,7 +359,11 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	case taskTabSteps:
 		return t.detail.moveSelection(delta)
 	case taskTabDetails:
-		t.detailsTop = min(max(t.detailsTop+delta, 0), max(t.detailsCount-t.detailsH, 0))
+		if msg.X <= t.detailsSidebarW+1 {
+			t.moveDetailsSection(delta)
+		} else {
+			t.detailsTop = min(max(t.detailsTop+delta, 0), max(t.detailsCount-t.detailsH, 0))
+		}
 	case taskTabOutput:
 		if delta > 0 {
 			t.detail.vp.ScrollDown(1)
@@ -441,10 +482,143 @@ func (t *taskView) renderOutputAttemptSelector(width int) string {
 }
 
 func (t *taskView) renderDetails(width, height int) string {
-	lines := t.detailLines(width)
-	t.detailsCount, t.detailsH = len(lines), height
-	t.detailsTop = min(max(t.detailsTop, 0), max(len(lines)-height, 0))
-	return strings.Join(windowRange(lines, t.detailsTop, t.detailsTop+height, height), "\n")
+	if !t.detail.loaded || t.detail.taskID == 0 {
+		lines := t.detailLines(width)
+		t.detailsCount, t.detailsH = len(lines), height
+		t.detailsTop = min(max(t.detailsTop, 0), max(len(lines)-height, 0))
+		return strings.Join(windowRange(lines, t.detailsTop, t.detailsTop+height, height), "\n")
+	}
+
+	t.detailsSidebarW = min(24, max(width/3, 16))
+	contentWidth := max(width-t.detailsSidebarW-3, 12)
+	document := splitTaskDetailDocument(t.detailLines(contentWidth))
+	if len(document.sections) == 0 {
+		return strings.Join(document.header, "\n")
+	}
+
+	t.detailsSections = t.detailsSections[:0]
+	selected := 0
+	for i, item := range document.sections {
+		t.detailsSections = append(t.detailsSections, item.title)
+		if item.title == t.detailsSection {
+			selected = i
+		}
+	}
+	if t.detailsSection == "" || t.detailsSections[selected] != t.detailsSection {
+		t.detailsSection = t.detailsSections[0]
+		t.detailsTop = 0
+		selected = 0
+	}
+
+	header := append([]string(nil), document.header...)
+	for len(header) > 0 && header[len(header)-1] == "" {
+		header = header[:len(header)-1]
+	}
+	if len(header) > 0 && len(header) < height {
+		header = append(header, "")
+	}
+	t.detailsSidebarY = len(header)
+	bodyH := max(height-len(header), 1)
+	content := document.sections[selected].lines
+	t.detailsCount, t.detailsH = len(content), bodyH
+	t.detailsTop = min(max(t.detailsTop, 0), max(len(content)-bodyH, 0))
+	visible := windowRange(content, t.detailsTop, t.detailsTop+bodyH, bodyH)
+	sidebar := t.renderDetailsSidebar(bodyH)
+
+	lines := make([]string, 0, len(header)+bodyH)
+	for _, line := range header {
+		lines = append(lines, ansi.Truncate(line, max(width, 1), "…"))
+	}
+	separator := " " + styleDim.Render("│") + " "
+	for row := range bodyH {
+		left := ""
+		if row < len(sidebar) {
+			left = sidebar[row]
+		}
+		right := ""
+		if row < len(visible) {
+			right = ansi.Truncate(visible[row], contentWidth, "…")
+		}
+		lines = append(lines, padDisplayWidth(left, t.detailsSidebarW)+separator+right)
+	}
+	return strings.Join(lines, "\n")
+}
+
+type taskDetailSection struct {
+	title string
+	lines []string
+}
+
+type taskDetailDocument struct {
+	header   []string
+	sections []taskDetailSection
+}
+
+var taskDetailSectionOrder = []string{
+	"Description",
+	"Overview",
+	"Execution",
+	"Relationships",
+	"Fields",
+	"Lifecycle",
+	"Warnings",
+	"Pending input",
+	"GitHub issue",
+	"Workflow snapshot",
+}
+
+func splitTaskDetailDocument(lines []string) taskDetailDocument {
+	var document taskDetailDocument
+	current := -1
+	for _, line := range lines {
+		if title := taskDetailSectionTitle(line); title != "" {
+			document.sections = append(document.sections, taskDetailSection{title: title})
+			current = len(document.sections) - 1
+		}
+		if current < 0 {
+			document.header = append(document.header, line)
+		} else {
+			document.sections[current].lines = append(document.sections[current].lines, line)
+		}
+	}
+	return document
+}
+
+func taskDetailSectionTitle(line string) string {
+	plain := strings.TrimSpace(ansi.Strip(line))
+	for _, title := range taskDetailSectionOrder {
+		if plain == title || strings.HasPrefix(plain, title+"  ") {
+			return title
+		}
+	}
+	return ""
+}
+
+func (t *taskView) renderDetailsSidebar(height int) []string {
+	lines := make([]string, 0, height)
+	selected := 0
+	for i, title := range t.detailsSections {
+		if title == t.detailsSection {
+			selected = i
+			break
+		}
+	}
+	t.detailsSidebarTop = windowStart(len(t.detailsSections), selected, height)
+	end := min(t.detailsSidebarTop+height, len(t.detailsSections))
+	for _, title := range t.detailsSections[t.detailsSidebarTop:end] {
+		label := "  " + ansi.Truncate(title, max(t.detailsSidebarW-4, 1), "…")
+		label = padDisplayWidth(label, t.detailsSidebarW)
+		if title == t.detailsSection {
+			label = styleSelected.Render("› " + strings.TrimPrefix(label, "  "))
+		} else {
+			label = styleDim.Render(label)
+		}
+		lines = append(lines, label)
+	}
+	if t.detailsSidebarTop == 0 && end == len(t.detailsSections) && len(lines)+3 <= height {
+		lines = append(lines, "", styleDim.Render("  ↑/↓ select"), styleDim.Render("  pgup/pgdn scroll"))
+	}
+	return lines
 }
 
 func (t *taskView) detailLines(width int) []string {

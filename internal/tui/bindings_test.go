@@ -252,10 +252,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"down": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
-			v.detailsCount, v.detailsH = 10, 2
+			v.renderDetails(100, 24)
 			v.updateKey(registryKey(t, "down"))
-			if v.detailsTop != 1 {
-				t.Fatalf("down scrolled details to %d, want 1", v.detailsTop)
+			if v.detailsSection != "Overview" {
+				t.Fatalf("down selected %q, want Overview", v.detailsSection)
 			}
 		},
 	},

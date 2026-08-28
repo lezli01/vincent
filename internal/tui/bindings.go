@@ -135,7 +135,7 @@ var bindings = []binding{
 	// Task details.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskDetails, hint: "[/] views", priority: 2},
-	{key: "down", label: "scroll the task metadata (↑/↓; pgup/pgdn page it)", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ scroll", priority: 3},
+	{key: "down", label: "select a task-detail section (↑/↓); pgup/pgdn scrolls that section", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ sections", priority: 3},
 
 	// Output pane.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},

@@ -176,7 +176,10 @@ to its output.
 fields, state, project, workflow and its recorded origin, branch and worktree,
 priority, tokens and cost, lifecycle timestamps, queue/block information,
 pending input, fan-out/loop metadata, captured GitHub issue, available actions,
-and the task's workflow-step snapshot. It scrolls without editing anything.
+and the task's workflow-step snapshot. Its left sidebar selects one section at
+a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
+the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
+the inspector never edits anything.
 
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
@@ -226,7 +229,8 @@ output. It is the sentence that decides whether to open the transcript.
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
-| `↑`/`↓` | Select an attempt, scroll details/output, or move between diff files — according to the active tab |
+| `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
+| `pgup`/`pgdn` | Scroll the selected Task Details section |
 
 ### Reading the whole transcript
 

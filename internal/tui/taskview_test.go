@@ -48,13 +48,15 @@ func TestTaskWorkspaceDefaultsToStepsAndCyclesFourFullViewTabs(t *testing.T) {
 	v.updateKey(tea.KeyPressMsg{Code: '2', Text: "2"})
 	got := v.render(100, 80)
 	for _, value := range []string{
-		"Task Details", "A complete description", "ticket", "OPS-42",
-		"project workflow.yaml", "vincent/7-task-workspace", "Workflow snapshot",
-		"implement", "write the change",
+		"Task Details", "A complete description", "Description", "Overview",
+		"Execution", "Fields", "Lifecycle", "Workflow snapshot",
 	} {
 		if !strings.Contains(got, value) {
 			t.Errorf("details tab misses %q:\n%s", value, got)
 		}
+	}
+	if strings.Contains(got, "OPS-42") {
+		t.Errorf("details tab rendered an unselected section:\n%s", got)
 	}
 
 	v.updateKey(tea.KeyPressMsg{Code: '3', Text: "3"})
@@ -135,26 +137,26 @@ func TestTaskDetailsUsesAiryResponsiveFactGroups(t *testing.T) {
 	v := newTaskView(d)
 	v.tab = taskTabDetails
 
-	wide := ansi.Strip(v.render(110, 80))
+	v.render(130, 80) // lays out the dynamic sidebar before keys address it
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	wide := ansi.Strip(v.render(130, 80))
 	lines := strings.Split(wide, "\n")
-	overview := -1
 	pairedFacts := false
-	for i, line := range lines {
-		if strings.Contains(line, "Overview") {
-			overview = i
-		}
+	for _, line := range lines {
 		if strings.Contains(line, "state") && strings.Contains(line, "project") {
 			pairedFacts = true
 		}
 	}
-	if overview < 0 || overview+1 >= len(lines) || strings.TrimSpace(lines[overview+1]) != "" {
-		t.Fatalf("Overview does not have a quiet row before its facts:\n%s", wide)
-	}
 	if !pairedFacts {
 		t.Fatalf("wide details did not arrange overview facts in two columns:\n%s", wide)
 	}
+	if strings.Contains(wide, "platform operations") {
+		t.Fatalf("Overview leaked the unselected Fields content:\n%s", wide)
+	}
 
-	narrow := ansi.Strip(strings.Join(v.detailLines(60), "\n"))
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyDown}) // Execution
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyDown}) // Fields
+	narrow := ansi.Strip(v.renderDetails(60, 100))
 	for _, value := range []string{"deployment_environment_owner", "platform operations"} {
 		if !strings.Contains(narrow, value) {
 			t.Errorf("narrow details lost wrapped field content %q:\n%s", value, narrow)
@@ -167,6 +169,57 @@ func TestTaskDetailsUsesAiryResponsiveFactGroups(t *testing.T) {
 		if got := ansi.StringWidth(line); got > 60 {
 			t.Errorf("narrow detail line is %d cells wide, want at most 60: %q", got, line)
 		}
+	}
+}
+
+func TestTaskDetailsSidebarSelectsOneSectionAtATime(t *testing.T) {
+	d := taskDetailFixture(t)
+	d.task.Warnings = []string{"review the generated lockfile"}
+	v := newTaskView(d)
+	v.tab = taskTabDetails
+
+	got := ansi.Strip(v.renderDetails(100, 30))
+	if v.detailsSection != "Description" || !strings.Contains(got, "A complete description") {
+		t.Fatalf("default section = %q, want visible Description:\n%s", v.detailsSection, got)
+	}
+	if !strings.Contains(got, "Warnings") || strings.Contains(got, "review the generated lockfile") {
+		t.Fatalf("dynamic Warnings section was missing or leaked its content:\n%s", got)
+	}
+
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnd})
+	got = ansi.Strip(v.renderDetails(100, 30))
+	if v.detailsSection != "Workflow snapshot" || !strings.Contains(got, "write the change") {
+		t.Fatalf("end selected %q, want Workflow snapshot:\n%s", v.detailsSection, got)
+	}
+	if strings.Contains(got, "A complete description") {
+		t.Fatalf("Workflow snapshot leaked Description content:\n%s", got)
+	}
+}
+
+func TestTaskDetailsSidebarSupportsMouseSelection(t *testing.T) {
+	v := newTaskView(taskDetailFixture(t))
+	v.tab = taskTabDetails
+	v.bodyY = 3
+	v.renderDetails(100, 30)
+
+	fields := -1
+	for i, title := range v.detailsSections {
+		if title == "Fields" {
+			fields = i
+			break
+		}
+	}
+	if fields < 0 {
+		t.Fatal("Fields is missing from the detail sidebar")
+	}
+	v.updateClick(tea.MouseClickMsg{
+		X: 3,
+		Y: v.bodyY + v.detailsSidebarY + fields - v.detailsSidebarTop,
+	})
+
+	got := ansi.Strip(v.renderDetails(100, 30))
+	if v.detailsSection != "Fields" || !strings.Contains(got, "OPS-42") {
+		t.Fatalf("mouse selected %q, want visible Fields:\n%s", v.detailsSection, got)
 	}
 }
 

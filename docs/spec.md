@@ -4310,9 +4310,11 @@ stream for the live tail.
    first) stands unchanged, and this column is why the status did not go there.
 2. **Task detail.** *Amended 2026-08-28 (task 049): task detail is a separate
    full-screen workspace with four full-view tabs. **Steps & Attempts** is the
-   default and renders the existing step/attempt timeline. **Task Details** is
-   a read-only, scrollable inspector for the title, description, declared
-   fields, project, workflow and recorded origin, branch/worktree, state,
+	   default and renders the existing step/attempt timeline. **Task Details** is
+	   a read-only inspector with a section sidebar: only the selected section is
+	   rendered, `↑`/`↓` or a mouse click selects another, and `pgup`/`pgdn`
+	   scrolls long section content. Its sections cover the title, description, declared
+	   fields, project, workflow and recorded origin, branch/worktree, state,
    priority, usage/cost, lifecycle timestamps, holds/blocks, pending input,
    fan-out/loop state, captured issue, available actions and workflow snapshot.
 	   **Output** renders the selected attempt's live or historical transcript and

@@ -70,6 +70,8 @@ moving between tabs cannot select a different attempt.
 - [x] **044.7** Refine Steps & Attempts and Task Details with clearer visual
   hierarchy, responsive fact groups, breathing room, and lossless wrapping for
   long metadata. ✓ 2026-08-28
+- [x] **044.8** Replace the all-at-once Task Details document with a selectable
+  section sidebar and an independently scrollable content pane. ✓ 2026-08-28
 
 ## What the tests prove
 
@@ -80,6 +82,8 @@ moving between tabs cannot select a different attempt.
   changes both the named attempt and the displayed transcript.
 - Step groups remain visibly separated, detail facts use two columns only when
   they fit, and narrow or unbroken values wrap without losing content.
+- Task Details exposes every available section in its sidebar, renders only the
+  selected section, and supports keyboard, wheel, and mouse selection.
 - Task Details exposes the description, fields, workflow provenance, branch,
   lifecycle and workflow snapshot and scrolls when it exceeds the terminal.
 - The real transcript/API/SSE seam still joins catch-up and live output without
