@@ -22,15 +22,16 @@ func resolveSelection(step workflow.Step, defaults workflow.Defaults, task *stor
 	)
 }
 
-// resolvePermission resolves the step's permission mode (§9.4): step field,
-// then workflow defaults, then full-auto.
-func resolvePermission(step workflow.Step, defaults workflow.Defaults) agent.PermissionMode {
-	switch firstNonEmpty(step.PermissionMode, defaults.PermissionMode) {
-	case workflow.PermissionRestricted:
+// resolvePermission resolves the step's permission mode (§9.4) and maps it
+// onto the adapter vocabulary. The resolution itself lives in
+// workflow.PermissionMode: the API refuses a restricted step on an adapter
+// that cannot restrict here (task 040), and a gate that resolved the field
+// differently from the engine would refuse the wrong tasks.
+func resolvePermission(wf *workflow.Workflow, step workflow.Step) agent.PermissionMode {
+	if wf.PermissionMode(step) == workflow.PermissionRestricted {
 		return agent.Restricted
-	default:
-		return agent.FullAuto
 	}
+	return agent.FullAuto
 }
 
 // resolveInputPolicy resolves the step's reaction to an input request

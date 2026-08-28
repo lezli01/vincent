@@ -65,7 +65,7 @@ func (r *Runner) runAgentStep(
 		WorkDir:        env.task.WorktreePath,
 		Model:          sel.Model,
 		Effort:         sel.Effort,
-		PermissionMode: resolvePermission(env.step, env.wf.Defaults),
+		PermissionMode: resolvePermission(env.wf, env.step),
 		OnInput:        onInput,
 		// Always explicit, even when the policy inherits everything (T4.23).
 		// Passing nil would hand the adapter the ambient environment again,
@@ -107,7 +107,7 @@ func (r *Runner) runAgentStep(
 			"agent":           sel.Agent,
 			"model":           sel.Model,
 			"effort":          sel.Effort,
-			"permission_mode": string(resolvePermission(env.step, env.wf.Defaults)),
+			"permission_mode": string(resolvePermission(env.wf, env.step)),
 			"on_input":        string(onInput),
 			"workdir":         env.task.WorktreePath,
 			"argv":            handle.Argv(),

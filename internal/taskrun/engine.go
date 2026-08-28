@@ -41,6 +41,12 @@ const (
 	// restrict on this platform (§9.4). Distinct from agent_unavailable on
 	// purpose: the CLI is installed and healthy, so "not found" would send
 	// the user to reinstall something that is already there.
+	//
+	// Task creation refuses these (task 040), so reaching it here means the
+	// task and its daemon parted company: a data directory carried to
+	// Windows, or a workflow edited after the task was queued. It stays as
+	// the backstop for exactly that — running a step full-auto because
+	// restricting was unavailable would invert the choice the step made.
 	ReasonRestrictedUnsupported = "restricted_unsupported"
 	// ReasonTranscriptLimit is an attempt whose transcript passed
 	// `transcript_max_bytes` (§12.3, §18). The run is killed rather than
