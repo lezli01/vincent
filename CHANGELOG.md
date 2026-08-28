@@ -200,6 +200,19 @@ list with the user-facing context a commit subject cannot carry.
   needs its own issue, not a side effect of turning a linter on.
   ([#147](https://github.com/lezli01/vincent/issues/147))
 
+### Fixed
+
+- **`vincent doctor` no longer times out instead of answering.** The report asks
+  the daemon to probe every agent CLI, and each probe carries that adapter's own
+  deadline — up to 145 seconds in total, with cursor's model catalog being an
+  authenticated network call. The client gave up after ten, so on a machine
+  where a probe was merely slow the command printed `context deadline exceeded`
+  rather than the report that would have named the adapter holding it up. The
+  two calls whose cost is that probe walk — `vincent doctor` and a forced
+  refresh of the agent picker — now wait longer than the adapters can, so the
+  diagnosis reaches you. Every other call still gives up after ten seconds: a
+  daemon that cannot answer a cached read that fast is wedged.
+
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
 ### Added

@@ -16,13 +16,31 @@ import (
 // so a slow response means a wedged daemon, not a slow network.
 const requestTimeout = 10 * time.Second
 
+// probeTimeout bounds the two calls whose server-side work is not loopback at
+// all: GET /v1/doctor with probe=true and GET /v1/agents?refresh=true both ask
+// the daemon to spawn an agent CLI per adapter (§9.5, §9.6). The daemon walks
+// the adapters serially and each subprocess carries the adapter's own deadline
+// — 45 s for claude (--version plus --help), 40 s for codex (--version plus
+// `login status`), 60 s for cursor, whose model catalog is an authenticated
+// network call — so the honest ceiling for these two is that sum, not loopback
+// latency.
+//
+// It has to *exceed* the sum rather than merely be generous. The report is the
+// thing that names which adapter hung; a client that gives up first replaces
+// that diagnosis with "context deadline exceeded", which is the one answer
+// `vincent doctor` must never give. Every other call keeps requestTimeout: a
+// wedged daemon is still caught in ten seconds everywhere it means anything.
+const probeTimeout = 3 * time.Minute
+
 // Client talks to one vincent daemon. It is safe for concurrent use.
 type Client struct {
 	baseURL string
 	token   string
 	// rest carries request/response calls and enforces requestTimeout;
+	// probes carries the adapter-probing calls and enforces probeTimeout;
 	// stream has no timeout because SSE responses never end on their own.
 	rest   *http.Client
+	probes *http.Client
 	stream *http.Client
 }
 
@@ -33,6 +51,7 @@ func New(baseURL, token string) *Client {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		rest:    &http.Client{Timeout: requestTimeout},
+		probes:  &http.Client{Timeout: probeTimeout},
 		stream:  &http.Client{},
 	}
 }
@@ -86,12 +105,19 @@ func (c *Client) Health(ctx context.Context) (Health, error) {
 // get performs an authenticated GET and decodes the JSON response into out.
 // Non-2xx responses come back as *Error.
 func (c *Client) get(ctx context.Context, path string, out any) error {
+	return c.getVia(ctx, c.rest, path, out)
+}
+
+// getVia is get over a caller-chosen http.Client, so a request whose cost is
+// the daemon's adapter probes can be held to probeTimeout instead of the
+// loopback deadline the rest of the surface is held to.
+func (c *Client) getVia(ctx context.Context, hc *http.Client, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("build request %s: %w", path, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.rest.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
@@ -132,4 +158,14 @@ func decodeError(resp *http.Response) error {
 		Code:    "unexpected_response",
 		Message: fmt.Sprintf("unexpected status %s", resp.Status),
 	}
+}
+
+// probeClient picks the deadline a request is held to: probeTimeout when the
+// daemon will spawn an agent CLI per adapter to answer it, requestTimeout when
+// it answers from its §9.6 cache and the call really is loopback-fast.
+func (c *Client) probeClient(probing bool) *http.Client {
+	if probing {
+		return c.probes
+	}
+	return c.rest
 }

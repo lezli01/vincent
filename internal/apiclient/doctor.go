@@ -90,8 +90,10 @@ func (c *Client) Doctor(ctx context.Context, probe bool) (*DoctorReport, error) 
 	if !probe {
 		path += "?probe=false"
 	}
+	// A probing report costs one agent-CLI subprocess per adapter, so it is
+	// the adapters' own deadlines that bound it, not loopback (probeTimeout).
 	var rep DoctorReport
-	if err := c.get(ctx, path, &rep); err != nil {
+	if err := c.getVia(ctx, c.probeClient(probe), path, &rep); err != nil {
 		return nil, err
 	}
 	return &rep, nil
