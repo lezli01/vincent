@@ -24,13 +24,14 @@ const (
 type bindingContext string
 
 const (
-	ctxTasks     bindingContext = "task table"
-	ctxTimeline  bindingContext = "timeline"
-	ctxOutput    bindingContext = "output"
-	ctxDiff      bindingContext = "diff"
-	ctxNewTask   bindingContext = "new task"
-	ctxProjects  bindingContext = "projects"
-	ctxWorkflows bindingContext = "workflows"
+	ctxTasks       bindingContext = "task table"
+	ctxTimeline    bindingContext = "timeline"
+	ctxTaskDetails bindingContext = "task details"
+	ctxOutput      bindingContext = "output"
+	ctxDiff        bindingContext = "diff"
+	ctxNewTask     bindingContext = "new task"
+	ctxProjects    bindingContext = "projects"
+	ctxWorkflows   bindingContext = "workflows"
 	// ctxWorkflowGraph is the graph sub-layer of the workflows takeover. It
 	// is its own context because its keys are entirely different from the
 	// list's, and the footer and the ? overlay must say which set is live.
@@ -79,7 +80,7 @@ var bindings = []binding{
 	// Global chrome.
 	{key: ":", label: "open the command palette", scope: scopeGlobal, noPalette: true},
 	{key: "?", label: "toggle this help", scope: scopeGlobal},
-	{key: "tab", label: "move focus between the panels; commits a filter (shift+tab goes back)", scope: scopeGlobal},
+	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
 	{key: "!", label: "jump to the next task needing a human", scope: scopeGlobal},
 	{key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// Paste is normally the terminal's own (Cmd+V, Ctrl+Shift+V, middle
@@ -118,7 +119,7 @@ var bindings = []binding{
 
 	// Task table.
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
-	{key: "enter", label: "open the selected task — or its answer form when it is asking", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1},
+	{key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1},
 	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2},
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
@@ -126,10 +127,18 @@ var bindings = []binding{
 	{key: "L", label: "drill into the selected fan-out's lanes, or back out (lanes are hidden from the board otherwise)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
 
 	// Timeline.
-	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 1},
+	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
+	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTimeline, hint: "[/] views", priority: 2},
+	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
+
+	// Task details.
+	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
+	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskDetails, hint: "[/] views", priority: 2},
+	{key: "down", label: "scroll the task metadata (↑/↓; pgup/pgdn page it)", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ scroll", priority: 3},
 
 	// Output pane.
-	{key: "]", label: "switch the tab between output and diff ([/], d kept as an alias)", scope: scopePanel, context: ctxOutput, hint: "[/] tabs", priority: 1},
+	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
+	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxOutput, hint: "[/] views", priority: 2},
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: compact → normal → verbose (reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
@@ -139,7 +148,8 @@ var bindings = []binding{
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
 	// things on the two tabs and a single row could only describe one of them.
 	// `]` is repeated here because the way back must stay on screen.
-	{key: "]", label: "switch the tab between output and diff ([/], d kept as an alias)", scope: scopePanel, context: ctxDiff, hint: "[/] tabs", priority: 1},
+	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab views", priority: 1},
+	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxDiff, hint: "[/] views", priority: 2},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
@@ -201,12 +211,12 @@ var bindings = []binding{
 	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 }
 
-// isHomeContext reports whether a context is one of the home shell's panels —
-// the surfaces a task's actions and the answer form belong to, as opposed to a
-// takeover screen.
+// isHomeContext reports whether a context belongs to the board/task daily loop
+// — the surfaces a task's actions and forms belong to, as opposed to a
+// management takeover.
 func isHomeContext(ctx bindingContext) bool {
 	switch ctx {
-	case ctxTasks, ctxTimeline, ctxOutput, ctxDiff:
+	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff:
 		return true
 	default:
 		return false

@@ -138,12 +138,14 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
 	case selectTaskMsg:
-		// A caller asked to open a task explicitly — task creation, and the
-		// live tests. The home shell selects the row and opens the detail
-		// panels without waiting out a settle window.
+		// The board keeps the row selected while the dedicated task workspace
+		// loads the authoritative detail snapshot.
 		m.selectedTask = msg.id
-		cmd := m.deliver(viewHome, msg)
-		return m, tea.Batch(cmd, m.switchTo(viewHome))
+		return m, tea.Batch(
+			m.deliver(viewHome, msg),
+			m.deliver(viewTask, msg),
+			m.switchTo(viewTask),
+		)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
 	case taskCreatedMsg:
@@ -267,7 +269,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		// The top layers of the §15 esc stack that the root owns: the help
 		// overlay, then a takeover screen's own layers (the views handle
-		// those, ending in leave-to-home). The home shell owns the filter
+		// those, ending in leave-to-home). The board owns the filter
 		// layer, and the bottom is a no-op — esc never quits.
 		if m.help {
 			m.help = false
@@ -317,34 +319,38 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // openPalette builds the palette for the active surface.
 func (m *root) openPalette() {
-	ctx, s := m.activeContext()
+	ctx := m.activeContext()
 	target := taskActions{}
 	editable := false
-	if s != nil {
+	if s, ok := m.views[m.active].(*shell); ok {
 		target = s.board.target()
 		editable = s.detail.stepEditable()
+	} else if t, ok := m.views[m.active].(*taskView); ok {
+		target = t.target()
+		editable = t.detail.stepEditable()
 	}
 	m.palette = newPalette(paletteEntries(ctx, target, editable, m.phase == phaseConnected))
 }
 
-// activeContext names the focused surface for the registry, and returns the
-// home shell when that surface is one of its panels.
-func (m *root) activeContext() (bindingContext, *shell) {
+// activeContext names the active surface for the binding registry.
+func (m *root) activeContext() bindingContext {
 	switch m.active {
+	case viewTask:
+		return m.views[viewTask].(*taskView).bindingContext()
 	case viewNewTask:
-		return ctxNewTask, nil
+		return ctxNewTask
 	case viewProjects:
-		return ctxProjects, nil
+		return ctxProjects
 	case viewWorkflows:
 		if c, ok := m.views[viewWorkflows].(contextual); ok {
-			return c.bindingContext(), nil
+			return c.bindingContext()
 		}
-		return ctxWorkflows, nil
+		return ctxWorkflows
 	case viewDaemon:
-		return ctxDaemon, nil
+		return ctxDaemon
 	default:
 		s := m.views[viewHome].(*shell)
-		return s.focusedContext(), s
+		return s.focusedContext()
 	}
 }
 
@@ -406,10 +412,13 @@ func (m *root) openNewTask() tea.Cmd {
 // advisory finding is not lost on a board row.
 func (m *root) updateTaskCreated(msg taskCreatedMsg) (tea.Model, tea.Cmd) {
 	m.selectedTask = msg.task.ID
+	selectMsg := selectTaskMsg{id: msg.task.ID, state: msg.task.State}
 	cmds := []tea.Cmd{
-		m.deliver(viewHome, selectTaskMsg{id: msg.task.ID}),
+		m.deliver(viewHome, selectMsg),
 		m.deliver(viewHome, msg),
-		m.switchTo(viewHome),
+		m.deliver(viewTask, selectMsg),
+		m.deliver(viewTask, msg),
+		m.switchTo(viewTask),
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -601,7 +610,7 @@ func (m *root) body() string {
 	if m.help {
 		// The sheet describes the surface it was opened over, framed like
 		// every other surface (T3.8 findings).
-		ctx, _ := m.activeContext()
+		ctx := m.activeContext()
 		h := m.bodyHeight()
 		if m.width < 4 || h < 3 {
 			return helpText(ctx)
@@ -614,14 +623,17 @@ func (m *root) body() string {
 	if m.active == viewDaemon && m.phase != phaseConnected {
 		return m.framedView(viewDaemon)
 	}
-	// The home panels stay on screen while the daemon is unreachable, marked
-	// stale behind the shell's banner (§15 Disconnected) — provided there was
+	// The board and an already-loaded task stay on screen while the daemon is
+	// unreachable, marked stale (§15 Disconnected) — provided there was
 	// ever anything to show; before the first connection a stale empty board
 	// would be a lie, not information (PR P decision). The takeovers are
 	// forms against a live daemon and stay behind the screens below.
-	if m.active == viewHome && m.homeLoaded() &&
+	if (m.active == viewHome && m.homeLoaded() || m.active == viewTask && m.taskLoaded()) &&
 		(m.phase == phaseReconnecting || m.phase == phaseFailed) {
-		return m.views[viewHome].render(m.width, m.bodyHeight())
+		if m.active == viewHome {
+			return m.views[viewHome].render(m.width, m.bodyHeight())
+		}
+		return m.framedView(viewTask)
 	}
 	switch m.phase {
 	case phaseProbing:
@@ -681,12 +693,17 @@ func (m *root) quitReminder() (string, bool) {
 		n, noun), true
 }
 
-// homeLoaded reports whether the home shell ever loaded a task list — the
+// homeLoaded reports whether the board ever loaded a task list — the
 // difference between "stale panels are information" and "there is nothing
 // to mark stale".
 func (m *root) homeLoaded() bool {
 	s, ok := m.views[viewHome].(*shell)
 	return ok && s.board.loaded
+}
+
+func (m *root) taskLoaded() bool {
+	t, ok := m.views[viewTask].(*taskView)
+	return ok && t.detail.loaded
 }
 
 // footerLine is the §15 contextual footer, rendered from the registry and
@@ -697,23 +714,44 @@ func (m *root) footerLine() string {
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
 	}
-	ctx, s := m.activeContext()
+	ctx := m.activeContext()
 	var (
 		bar       *actionBar
 		target    taskActions
 		attention int
 	)
-	if s != nil {
-		bar = s.bar
+	if s, ok := m.views[viewHome].(*shell); ok {
 		attention = countAttention(s.board.tasks)
+	}
+	if s, ok := m.views[m.active].(*shell); ok {
+		bar = s.bar
 		if m.phase == phaseConnected {
 			target = s.board.target()
+			// Answer is opened from the task workspace. On the board, enter
+			// crosses that screen boundary; advertising it as an immediate
+			// answer would describe the second press rather than this one.
+			target.actions = withoutAction(target.actions, apiclient.ActionAnswer)
+		}
+	} else if t, ok := m.views[m.active].(*taskView); ok {
+		bar = t.detail.actions
+		if m.phase == phaseConnected {
+			target = t.target()
 		}
 	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	line, hits := buildFooter(m.width, bindingsFor(ctx), bar, target, attention, retry)
 	m.footerHits = hits
 	return line
+}
+
+func withoutAction(actions []string, drop string) []string {
+	out := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action != drop {
+			out = append(out, action)
+		}
+	}
+	return out
 }
 
 // bodyHeight is the space left for the active view: total minus header,

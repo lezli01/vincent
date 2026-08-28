@@ -4,10 +4,8 @@
 // daemon in the background when unreachable (§12.1).
 //
 // The root owns connection management, the /v1/events subscription, screen
-// routing and the global keys. The home screen (shell.go) fuses §15's board
-// and task detail into one persistent three-panel layout — task table on
-// top, step timeline and output|diff side by side below — with layout.go's
-// pure layout function deciding the accordion, the single-panel fallback
-// and the too-small floor (T3.10). The remaining §15 surfaces (new task,
-// projects, workflows, daemon) stay full-screen takeovers.
+// routing and the global keys. The home screen (shell.go) is the board alone;
+// enter opens task detail (taskview.go) as a full-screen workspace with Steps &
+// Attempts, Task Details, Output and Diff tabs. The remaining §15 surfaces
+// (new task, projects, workflows, daemon) are full-screen takeovers too.
 package tui

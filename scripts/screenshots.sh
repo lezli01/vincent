@@ -583,17 +583,13 @@ do_capture() {
   daemon_attach
   mkdir -p "$TAPES" "$GIFS" "$OUT"
 
-  # The three panels — task table, timeline, output — with a running task
-  # open. Filtered to the running tasks so the table is short enough that the
-  # timeline and the live tail get the room the layout is about.
+  # The board-only home screen, filtered to one running task.
   tape tui-board 1250 '
 Type "/"
 Sleep 500ms
 Type "harden"
 Sleep 1s
 Tab
-Sleep 1s
-Enter
 Sleep 6s
 Screenshot "'"$OUT"'/tui-board.png"
 '
@@ -623,9 +619,7 @@ Tab
 Sleep 1s
 Enter
 Sleep 3s
-Tab
-Sleep 1s
-Type "]"
+Type "4"
 Sleep 4s
 Down 1
 Sleep 500ms

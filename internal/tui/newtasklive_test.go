@@ -343,12 +343,12 @@ func TestNewTaskFlowCreatesRunnableTask(t *testing.T) {
 
 	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	// The shell lands on the new task, and the daemon runs it.
+	// Creation lands in the new task's workspace, and the daemon runs it.
 	h.p.until(20*time.Second, "the form to create the task", func() bool {
 		return h.m.selectedTask != 0
 	})
-	if h.m.active != viewHome {
-		t.Errorf("active view = %v, want the home screen on the new task", h.m.active)
+	if h.m.active != viewTask {
+		t.Errorf("active view = %v, want the task workspace on the new task", h.m.active)
 	}
 	id := h.m.selectedTask
 

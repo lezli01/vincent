@@ -78,7 +78,7 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 	if form == nil {
 		t.Fatal("R did not open the repair form")
 	}
-	if !h.m.views[viewHome].(*shell).popup {
+	if !h.m.views[viewTask].(*taskView).popup {
 		t.Fatal("the repair form did not take the popup")
 	}
 	if !strings.Contains(content(h.m), "Repair") {
@@ -112,7 +112,7 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 
 	// The form closes on the reply, so the popup goes with it.
 	h.p.until(30*time.Second, "the submitted form to close", func() bool {
-		return detailOf(h.m).repair == nil && !h.m.views[viewHome].(*shell).popup
+		return detailOf(h.m).repair == nil && !h.m.views[viewTask].(*taskView).popup
 	})
 }
 

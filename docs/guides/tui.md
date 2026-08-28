@@ -33,19 +33,19 @@ is the longer version.
 
 ## Layout
 
-Two of the six views — the board and task detail, the daily loop — share one
-persistent screen of three panels:
+The home screen is the task board and nothing else:
 
-![The board filtered to one running task, with the timeline of its attempts on
-the left and the live output of its current step on the right](../assets/tui-board.png)
+![The board filtered to one running task](../assets/tui-board.png)
 
-The task table is always full width, and it drives everything below it: moving
-the selection moves the timeline and the output pane with it. `tab` moves focus
-between panels; `shift+tab` goes back.
+`enter` opens the selected task in a separate full-screen workspace. That
+workspace has four full-view tabs — **Steps & Attempts**, **Task Details**,
+**Output**, and **Diff** — so the surface being read gets the whole terminal.
+`tab` advances through them, `shift+tab` goes back, and `1`–`4` jump directly.
+`esc` returns to the board.
 
-The other four views — new task, projects, workflows, daemon — are full-screen
-takeovers. `esc` closes one layer at a time (popup → screen → selection →
-filter) and **never quits**.
+New task, projects, workflows, and daemon are full-screen takeovers too. `esc`
+closes one layer at a time (popup → task/screen → selection → filter) and
+**never quits**.
 
 At **128×24 and above**, New task, Projects, and Workflows use that room as a
 guided two-pane surface: progress or resources stay in a narrow rail, and the
@@ -81,7 +81,7 @@ Three behaviors matter:
   brake: admission is unchanged and nothing is withheld.
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
-clears it.
+clears it, and `enter` opens the selected task.
 
 A wide terminal also gets a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
@@ -166,12 +166,19 @@ The rest of the behavior follows from what a selection is:
 
 ## Task detail
 
-`enter` opens the selected task. The **timeline** on the left lists every
-attempt of every step with its duration, tokens and cost; the **output pane** on
-the right shows the live tail of the running step.
+`enter` opens the selected task on **Steps & Attempts**, the default tab. It
+lists every attempt of every step with its duration, tokens and cost. Selecting
+an attempt chooses what the separate **Output** tab shows; the selection stays
+put while you move between tabs.
 
-Selecting an attempt in the timeline *is* how you read scrollback — that is why
-the two panels are side by side and both always visible.
+**Task Details** is the complete task inspector: title, description, declared
+fields, state, project, workflow and its recorded origin, branch and worktree,
+priority, tokens and cost, lifecycle timestamps, queue/block information,
+pending input, fan-out/loop metadata, captured GitHub issue, available actions,
+and the task's workflow-step snapshot. It scrolls without editing anything.
+
+**Output** gives the selected attempt's live tail or historical transcript the
+entire view. **Diff** gives the task's file-grouped git diff the entire view.
 
 The header names the task's workflow and, in brackets, where that definition
 came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
@@ -208,11 +215,13 @@ output. It is the sentence that decides whether to open the transcript.
 
 | Key | Does |
 |---|---|
-| `]` | Switch the output pane tab: Output ⇄ Diff (`[`, `]` and `d` all work) |
+| `tab` / `shift+tab` | Next / previous task tab |
+| `]` / `[` | Next / previous task tab |
+| `1`–`4` | Steps & Attempts / Task Details / Output / Diff |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
-| `↑`/`↓` | Scroll the output; scrolling up pauses follow (on the Diff tab they move between files — see [The Diff tab](#the-diff-tab)) |
+| `↑`/`↓` | Select an attempt, scroll details/output, or move between diff files — according to the active tab |
 
 ### Reading the whole transcript
 
@@ -259,7 +268,7 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
-| `]` | Back to the Output tab (`[`, `]` and `d` all work) |
+| `[` | Back to the Output tab (`]` advances to Steps & Attempts) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
 leaves it open. The mouse wheel scrolls whichever tab is on screen.
@@ -642,7 +651,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 |---|---|
 | `:` | Command palette |
 | `?` | Toggle help |
-| `tab` / `shift+tab` | Move focus between panels; commits a filter |
+| `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
 | `!` | Jump to the next task needing a human |
 | `n` | New task |
 | `M` | Toggle the mouse |

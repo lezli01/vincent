@@ -31,13 +31,13 @@ type (
 	jumpAttentionMsg struct{}
 )
 
-// shell is the fused home screen (§15 layout): the task table, the step
-// timeline and the output|diff pane as three panels of one persistent
-// screen. It owns layout, focus and the accordion; the board and detail
-// sub-models own everything they always did, just rendered into boxes.
+// shell is the board screen. The legacy three-panel composition remains behind
+// boardOnly=false for the focused component tests; routed TUI instances set
+// boardOnly and give the detail sub-model to taskView.
 type shell struct {
-	board  *board
-	detail *detail
+	board     *board
+	detail    *detail
+	boardOnly bool
 	// bar is the one §6 action bar both sub-models drive and the footer
 	// renders (T3.12).
 	bar *actionBar
@@ -96,6 +96,9 @@ func (s *shell) title() string { return "Board" }
 // setClient wires both sub-models to a connected daemon; called again on
 // reconnect.
 func (s *shell) setClient(c *apiclient.Client) tea.Cmd {
+	if s.boardOnly {
+		return s.board.setClient(c)
+	}
 	return tea.Batch(s.board.setClient(c), s.detail.setClient(c))
 }
 
@@ -110,6 +113,9 @@ func (s *shell) hintedProject() int64 { return s.board.hintedProject() }
 // popup, or the focused panel's own capture (§15: the shell consults the
 // focused panel only).
 func (s *shell) capturesInput() bool {
+	if s.boardOnly {
+		return s.board.capturesInput()
+	}
 	if s.popup {
 		return true
 	}
@@ -120,6 +126,9 @@ func (s *shell) capturesInput() bool {
 // popup is open — the answer form's free-text field or the repair form's
 // prompt — or the task filter while it is being typed.
 func (s *shell) paste(text string) tea.Cmd {
+	if s.boardOnly {
+		return s.board.paste(text)
+	}
 	if s.popup {
 		if f := s.detail.followUp; f != nil {
 			return f.paste(text)
@@ -145,6 +154,9 @@ func (s *shell) focusedCaptures() bool {
 }
 
 func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
+	if s.boardOnly {
+		return s.updateBoardOnly(msg)
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.termW, s.termH = msg.Width, msg.Height
@@ -195,6 +207,86 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 	// have moved its cursor (a refresh that dropped the selected row), so
 	// the selection is reconciled after.
 	return s, tea.Batch(s.forward(msg), s.checkSelection())
+}
+
+// updateBoardOnly routes the home screen as one task table. Opening a row emits
+// selectTaskMsg; the root performs the screen transition so task navigation is
+// governed by the same router as every other takeover.
+func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		s.termW, s.termH = msg.Width, msg.Height
+		_, cmd := s.board.update(msg)
+		return s, cmd
+	case tea.KeyPressMsg:
+		if s.board.filtering && (msg.String() == "tab" || msg.String() == "shift+tab") {
+			s.board.commitFilter()
+			return s, nil
+		}
+		if msg.String() == "enter" && !s.board.capturesInput() {
+			if id, ok := s.board.selected(); ok {
+				state := s.stateOf(id)
+				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+			}
+		}
+		if msg.String() == "esc" && s.board.hasMarks() {
+			s.board.clearMarks()
+			return s, nil
+		}
+		_, cmd := s.board.update(msg)
+		return s, cmd
+	case tea.MouseClickMsg:
+		// One outer frame, then the board's header/table chrome.
+		line := msg.Y - s.bannerLines - 1 - s.board.firstRowLine()
+		if line >= 0 {
+			s.board.clickRow(line)
+		}
+		return s, nil
+	case tea.MouseWheelMsg:
+		delta := 1
+		if msg.Button == tea.MouseWheelUp {
+			delta = -1
+		}
+		s.board.wheelMove(delta)
+		return s, nil
+	case jumpAttentionMsg:
+		s.selectAttention()
+		return s, nil
+	case selectTaskMsg:
+		s.board.selectedID = msg.id
+		s.board.restoreSelection(s.board.rows())
+		return s, nil
+	case viewActivatedMsg, viewDeactivatedMsg:
+		return s, nil
+	}
+	v, cmd := s.board.update(msg)
+	s.board = v.(*board)
+	return s, cmd
+}
+
+// selectAttention advances the board cursor without opening the task. The home
+// screen is a navigation surface now; enter is the explicit boundary into the
+// task workspace.
+func (s *shell) selectAttention() {
+	var attention []int64
+	for _, t := range s.board.visible() {
+		if needsAttention(t.State) {
+			attention = append(attention, t.ID)
+		}
+	}
+	if len(attention) == 0 {
+		return
+	}
+	cur, _ := s.board.selected()
+	next := attention[0]
+	for i, id := range attention {
+		if id == cur && i+1 < len(attention) {
+			next = attention[i+1]
+			break
+		}
+	}
+	s.board.selectedID = next
+	s.board.restoreSelection(s.board.rows())
 }
 
 // forward hands one message to both sub-models and keeps the popup honest:
@@ -538,6 +630,9 @@ func (s *shell) jumpAttention() tea.Cmd {
 // follow and verbosity against folds and file navigation — and a footer
 // offering the other tab's would be a footer that lies.
 func (s *shell) focusedContext() bindingContext {
+	if s.boardOnly {
+		return ctxTasks
+	}
 	switch s.focus {
 	case panelTimeline:
 		return ctxTimeline
@@ -568,6 +663,9 @@ func (s *shell) render(width, height int) string {
 	}
 	if height > 0 {
 		s.bodyH = height
+	}
+	if s.boardOnly {
+		return s.renderBoardOnly()
 	}
 
 	areaH := s.bodyH
@@ -607,6 +705,28 @@ func (s *shell) render(width, height int) string {
 		out = s.overlayPopup(out)
 	}
 	return out
+}
+
+func (s *shell) renderBoardOnly() string {
+	areaH := s.bodyH
+	var parts []string
+	s.bannerLines = 0
+	if !s.connected {
+		parts = append(parts, styleWarn.Render(" ⚠ daemon unreachable — board shows the last known state · ")+
+			styleKey.Render("r")+styleWarn.Render(" retry"))
+		areaH--
+		s.bannerLines = 1
+	}
+	if s.bodyW < 4 || areaH < 3 {
+		parts = append(parts, s.board.render(s.bodyW, areaH))
+		return strings.Join(parts, "\n")
+	}
+	title := s.panelTitle(panelTasks)
+	if !s.connected {
+		title += styleDim.Render(" · stale")
+	}
+	parts = append(parts, frame(title, s.board.render(s.bodyW-2, areaH-2), s.bodyW, areaH, true))
+	return strings.Join(parts, "\n")
 }
 
 func (s *shell) renderBox(b box) string {

@@ -82,6 +82,19 @@ func diffTabDetail(t *testing.T) *detail {
 	return d
 }
 
+func tabbedTaskFixture(t *testing.T, tab taskViewTab) *taskView {
+	t.Helper()
+	d := newTestDetail(t)
+	d.taskID = 4
+	loadDetail(d, []apiclient.StepRun{
+		attempt(1, 0, 1, "implement", "failed", false),
+		attempt(2, 0, 2, "implement", "succeeded", false),
+	})
+	v := newTaskView(d)
+	v.tab = tab
+	return v
+}
+
 // repairFormFixture is a repair popup as `R` on a blocked task opens it.
 func repairFormFixture() *repairForm {
 	return newRepairForm(7, "check_failed", "build")
@@ -182,6 +195,20 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTimeline: {
+		"tab": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabSteps)
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != taskTabDetails {
+				t.Fatalf("tab moved to %v, want Task Details", v.tab)
+			}
+		},
+		"]": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabSteps)
+			v.updateKey(registryKey(t, "]"))
+			if v.tab != taskTabDetails {
+				t.Fatalf("] moved to %v, want Task Details", v.tab)
+			}
+		},
 		"down": func(t *testing.T) {
 			d := newTestDetail(t)
 			d.taskID = 4
@@ -198,7 +225,39 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxTaskDetails: {
+		"tab": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDetails)
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != taskTabOutput {
+				t.Fatalf("tab moved to %v, want Output", v.tab)
+			}
+		},
+		"]": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDetails)
+			v.updateKey(registryKey(t, "]"))
+			if v.tab != taskTabOutput {
+				t.Fatalf("] moved to %v, want Output", v.tab)
+			}
+		},
+		"down": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDetails)
+			v.detailsCount, v.detailsH = 10, 2
+			v.updateKey(registryKey(t, "down"))
+			if v.detailsTop != 1 {
+				t.Fatalf("down scrolled details to %d, want 1", v.detailsTop)
+			}
+		},
+	},
+
 	ctxOutput: {
+		"tab": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOutput)
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != taskTabDiff {
+				t.Fatalf("tab moved to %v, want Diff", v.tab)
+			}
+		},
 		// The T4.18 defect itself: promised by the registry, handled nowhere.
 		"]": func(t *testing.T) {
 			d := newTestDetail(t)
@@ -264,6 +323,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxDiff: {
+		"tab": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDiff)
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != taskTabSteps {
+				t.Fatalf("tab moved to %v, want Steps & Attempts", v.tab)
+			}
+		},
 		// The way back off the tab has to stay on screen, so `]` is a row here
 		// too — and a row is only a promise until something presses it.
 		"]": func(t *testing.T) {

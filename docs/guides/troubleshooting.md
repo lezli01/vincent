@@ -681,7 +681,7 @@ By design: `esc` closes one layer (popup → screen → filter). `q` quits.
 ### The screen looks wrong after a resize
 
 Re-render with any key. If a pane is genuinely unusable, the terminal is likely
-too small for the three-panel layout — the board alone needs a reasonable width
+too small for the TUI layout — the board alone needs a reasonable width
 to show state and step columns.
 
 ## Reading the log

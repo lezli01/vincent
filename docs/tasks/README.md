@@ -62,6 +62,7 @@ the living engineering specification records implementation contracts.
 | [046](046-notify-hook.md) | A notify hook: letting the daemon signal a human outside the TUI | ✅ done (6/6) |
 | [047](047-cli-logs-and-transcripts.md) | `vincent daemon logs` and `vincent task transcript` | ✅ done (5/5) |
 | [048](048-cli-human-actions.md) | A command line for every §6 human action | ✅ done (6/6) |
+| [049](049-full-screen-task-workspace.md) | Board-only home and full-screen task workspace | ✅ done (5/5) |
 
 ## How to add and update a task document
 

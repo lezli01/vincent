@@ -10,15 +10,15 @@ operator's attention becomes the only thing connecting them.
 
 Vincent's TUI is designed around workloads rather than sessions.
 
-![The task board with a selected task's timeline and live output](../assets/tui-board.png)
+![The full-screen task board](../assets/tui-board.png)
 
 The board shows every task's state, current step, elapsed time, reported cost
 when available, and the status message supplied by the running step. Filtering
 and grouping answer operational questions such as “what is blocked?” or “which
 project is consuming the queue?” without visiting every process individually.
 
-Selecting a task keeps its attempt timeline beside its live output. A failed
-attempt remains visible after a retry. The diff is another tab on the same task,
+Opening a task gives its steps, metadata, output, and diff separate full-screen
+tabs. A failed attempt remains visible after a retry. The diff is another tab on the same task,
 and the complete transcript can open in an editor when the summarized result is
 not enough. The interface preserves the distinction between vincent's fixed
 failure reason and the free-text status the step reported about itself.

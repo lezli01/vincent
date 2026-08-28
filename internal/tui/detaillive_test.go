@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -47,6 +49,10 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 
 	// Open the task: the shell routes, the view fetches and subscribes.
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
+	h.p.push(cmd)
+	// Steps & Attempts is the default task tab; output is a separate full-screen
+	// tab, so select it before asserting the transcript seam on screen.
+	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the transcript window to render", func() bool {
 		return strings.Contains(content(h.m), "line-two")

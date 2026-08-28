@@ -355,7 +355,7 @@ func actionLabel(t taskActions, action string) string {
 // render draws the bar: the pending question if there is one, otherwise the
 // keys this task accepts — or, under a selection, the keys the marked tasks
 // accept — plus whatever the last action reported.
-func (a *actionBar) render(t taskActions, extra ...string) string {
+func (a *actionBar) render(t taskActions) string {
 	if a.pending != "" {
 		return styleWarn.Render(" " + a.confirmPrompt(t))
 	}
@@ -365,9 +365,6 @@ func (a *actionBar) render(t taskActions, extra ...string) string {
 			parts = append(parts, styleKey.Render(o.key)+" "+actionLabel(t, o.action))
 		}
 	}
-	// `answer` has no key: it is the form, and where the form lives differs
-	// per view, so each view supplies that hint itself.
-	parts = append(parts, extra...)
 	line := " " + strings.Join(parts, styleDim.Render(" · "))
 	if len(parts) == 0 {
 		line = styleDim.Render(" no actions available")

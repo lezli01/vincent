@@ -242,12 +242,18 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 		t.Fatal("enter on the board produced no command")
 	}
 	h.p.push(cmd)
-	s := h.m.views[viewHome].(*shell)
-	if s.focus != panelTimeline {
-		t.Fatalf("focus = %v, want the timeline panel after enter", s.focus)
+	h.p.until(10*time.Second, "the task workspace to open", func() bool {
+		return h.m.active == viewTask
+	})
+	if h.m.active != viewTask {
+		t.Fatalf("active view = %v, want the task workspace after enter", h.m.active)
 	}
-	if s.detail.taskID != task.ID {
-		t.Fatalf("detail task = %d, want %d", s.detail.taskID, task.ID)
+	taskView := h.m.views[viewTask].(*taskView)
+	if taskView.tab != taskTabSteps {
+		t.Fatalf("task tab = %v, want Steps & Attempts", taskView.tab)
+	}
+	if taskView.detail.taskID != task.ID {
+		t.Fatalf("detail task = %d, want %d", taskView.detail.taskID, task.ID)
 	}
 	// The open fetches immediately, so the header naming the task is also
 	// proof the hand-off reached a sub-model with a working client.

@@ -33,7 +33,7 @@
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/tui-board.png" alt="The vincent TUI: task board, step timeline, and live agent output" width="900">
+<img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/tui-board.png" alt="The vincent TUI task board" width="900">
 </p>
 
 <p align="center">
