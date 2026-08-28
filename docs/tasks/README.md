@@ -61,6 +61,7 @@ the living engineering specification records implementation contracts.
 | [045](045-cli-task-fields-file.md) | Task fields from a file or stdin in `vincent task add` | ✅ done (4/4) |
 | [046](046-notify-hook.md) | A notify hook: letting the daemon signal a human outside the TUI | ✅ done (6/6) |
 | [047](047-cli-logs-and-transcripts.md) | `vincent daemon logs` and `vincent task transcript` | ✅ done (5/5) |
+| [048](048-cli-human-actions.md) | A command line for every §6 human action | ✅ done (6/6) |
 
 ## How to add and update a task document
 

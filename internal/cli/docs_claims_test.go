@@ -116,8 +116,9 @@ func TestDocsClaimsTaskListShowsBranch(t *testing.T) {
 
 // TestDocsClaimsTUIActionsHaveSubcommands: README, quickstart and the
 // scripting guide state that everything the TUI does is also a subcommand.
-// The TUI offers every §6 human action; `vincent task` exposes cancel alone
-// of the nine (#89).
+// The TUI offers every §6 human action; `vincent task` exposed cancel alone of
+// the ten until task 048 filled the gap (#89), and this is what keeps the two
+// from drifting apart again.
 func TestDocsClaimsTUIActionsHaveSubcommands(t *testing.T) {
 	parity := regexp.MustCompile(`(?i)everything the tui (?:does|can do) is (?:also )?a subcommand`)
 	collapse := regexp.MustCompile(`\s+`)
@@ -143,7 +144,10 @@ func TestDocsClaimsTUIActionsHaveSubcommands(t *testing.T) {
 				continue
 			}
 			seen[action] = true
-			if !have[string(action)] {
+			// The API spells an action in snake_case and the command tree in
+			// kebab-case — `follow_up` is `vincent task follow-up`. The same
+			// action either way, so the comparison is on the CLI's spelling.
+			if !have[strings.ReplaceAll(string(action), "_", "-")] {
 				missing = append(missing, string(action))
 			}
 		}

@@ -338,6 +338,26 @@ vincent project ls [--json]
 
 Lists registered projects with their ids, paths and defaults.
 
+### `vincent project rm`
+
+```sh
+vincent project rm <id> [--force] [--json]
+```
+
+Removes the project registration and its task rows. It never prompts: `--force`
+is the whole confirmation story, because this tree exists to be scripted.
+
+Two refusals reach you intact, and they want opposite things:
+
+| Refusal | What to do |
+|---|---|
+| `project has N non-archived task(s)` | Archive or cancel them, or pass `--force` to archive them on the way out |
+| `task N is running; cancel it before deleting the project` | Cancel that task. `--force` cannot help — it is refused either way |
+
+`--json` emits `{"id": N, "removed": true}`. The endpoint answers `204`, so
+there is no task to print, and an empty stdout would be a parse error in
+whatever wraps this.
+
 ## `vincent task`
 
 ### `vincent task add`
@@ -504,6 +524,25 @@ same name, so this is what tells a repository's own `adhoc.yaml` from the
 built-in `adhoc` long after the fact. It is captured once, at creation, and
 never updated.
 
+An `awaiting_input` task prints the request it is parked on, numbered. Those
+numbers are what [`vincent task answer`](#vincent-task-answer) takes — the wire
+format is keyed by question *text*, and nobody should have to retype a sentence:
+
+```
+actions   answer, cancel
+
+awaiting input: question
+  1. Which database?
+     suggested: postgres, sqlite
+  2. deploy: Which regions?  (one or more)
+     suggested: eu, us
+  answer with `vincent task answer 7 --answer 1=<value>`
+```
+
+The `actions` row is the daemon's own `available_actions`, so a script reads
+what is legal instead of probing for `409`s. Every name in it is a
+`vincent task <action>` subcommand.
+
 The step table's last two columns are different kinds of thing and should not be
 read as one. `REASON` is vincent's own `failure_reason`, a closed set of
 constants. `STATUS` is what the step said about *itself* through
@@ -591,7 +630,7 @@ anything else. When it ends the task returns to the state it came from: `done`
 to `done`, `aborted` to `aborted`, whatever the run did. A follow-up never
 changes a task's verdict, and it is repeatable.
 
-This is the one human action with a command line, and it has one because
+It was the first human action to get a command line, and it got one because
 batches want one:
 
 ```sh
@@ -600,9 +639,138 @@ for id in 41 42 43 44 45 46; do
 done
 ```
 
-The remaining human actions — approve, reject, retry, repair, skip, pause,
-resume, answer, archive — are TUI and API operations; see
-[the API reference](api.md#tasks).
+The rest followed (task 048); they are documented below.
+
+### `vincent task pause`
+
+```sh
+vincent task pause <id> [--json]
+vincent task resume <id> [--json]
+```
+
+`pause` holds the task at the **next step boundary** — a running step finishes
+first, it is not killed. Valid from `queued` and `running`. `resume` returns a
+paused task to the queue, where the scheduler admits it like any other; valid
+from `paused`.
+
+### `vincent task approve`
+
+```sh
+vincent task approve <id> [--json]
+vincent task reject <id> [--json]
+vincent task skip <id> [--json]
+```
+
+`approve` passes the manual gate the task is waiting on and the workflow
+continues. `reject` fails it, and the task blocks with reason `gate_rejected`.
+Both are valid from `awaiting_gate` only.
+
+`skip` abandons the step the task is sitting on and advances to the next one.
+It is valid from `awaiting_gate` **and** from `blocked` — skipping a step that
+failed is how a workflow gets past a check the run does not need.
+
+### `vincent task retry`
+
+```sh
+vincent task retry <id> [--branch NAME] [--prompt TEXT | --prompt-file FILE]
+                        [--run CMD | --run-file FILE] [--json]
+```
+
+Re-runs the step the task blocked on. Valid from `blocked`. With no flags it is
+a plain retry; the flags change what gets re-run, and each one is a different
+kind of recovery:
+
+| Flag | What it does |
+|---|---|
+| `--branch NAME` | Renames the task's branch **before** the retry re-admits it. This is the [`branch_exists`](task-lifecycle.md) recovery: the task, its id and its transcripts all survive, which deleting and re-creating it would not |
+| `--prompt` / `--run` | Edit+retry. The text replaces that step's prompt or command in **this task's** workflow snapshot, and in no other task's — the registry file is untouched |
+| `--prompt-file` / `--run-file` | The same, read from a file, or from stdin with `-`. A replacement prompt is usually several lines, which argv is a poor place for |
+
+`--prompt` with `--prompt-file` (or `--run` with `--run-file`) is a usage error:
+they are two spellings of one value, so it exits 1 before any request is sent.
+
+```sh
+vincent task retry 7 --prompt-file - <<'EOF'
+The check failed because the fixture path is wrong on Windows.
+Use filepath.Join rather than a slash-separated literal.
+EOF
+```
+
+### `vincent task repair`
+
+```sh
+vincent task repair <id> (--prompt TEXT | --prompt-file FILE)
+                         [--agent NAME] [--model M] [--effort E] [--json]
+```
+
+Runs one ad-hoc agent with this prompt in the blocked task's **existing**
+worktree. Valid from `blocked`. Whatever the agent does, the task returns to
+`blocked` at the same step with the same reason: a repair changes the worktree,
+and a human still decides whether to retry.
+
+A prompt is required — `--prompt` and `--prompt-file` are mutually exclusive and
+one of them must be given, and `-` reads stdin. `--agent`, `--model` and
+`--effort` apply to this run only, standing in for the step level of §8.6's
+chain; a value no catalog recognizes is a warning on stderr, not a failure.
+
+### `vincent task archive`
+
+```sh
+vincent task archive <id> [--force] [--json]
+```
+
+Archives a finished task and removes its worktree. Valid from `done` and
+`aborted`. When
+[`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)
+is on, a branch carrying no commits past its base is deleted too, and what
+happened to it is printed under the state line — and carried in `--json` as
+`branch`.
+
+A worktree with **uncommitted changes** is refused with exit 1 and
+`details.reason: "worktree_dirty"`; the command says so and names the way out.
+`--force` is the confirmation, and it discards those changes:
+
+```
+Error: worktree has uncommitted changes
+  pass --force to archive it anyway, discarding those changes
+```
+
+### `vincent task answer`
+
+```sh
+vincent task answer <id> (--answer N=VALUE... | --allow | --deny |
+                          --body FILE) [--json]
+```
+
+Answers the input request an `awaiting_input` task is parked on; the run resumes
+in place. There are two ways in, and they do not mix — the flags below are
+mutually exclusive, and one of them is required.
+
+**By number, for a person.** `N` is the position
+[`vincent task show`](#vincent-task-show) prints the question under. Repeat the
+flag for one index to give a multi-select several values; everything after the
+**first** `=` is the value, so a URL or a regex needs no escaping:
+
+```sh
+vincent task answer 7 --answer 1=postgres --answer 2=eu --answer 2=us
+```
+
+The wire format is keyed by question *text* (§13.2) and stays that way — the
+numbering is a CLI convenience that never reaches the daemon. The command reads
+the pending request first, maps the numbers onto it, and checks the answer
+locally before posting: a wrong number or a missing answer costs no round trip.
+The daemon validates it again and remains the authority.
+
+A **permission** request is decided, not answered: `--allow` or `--deny`, and
+`--answer` on one is refused.
+
+**By payload, for a script.** `--body FILE` posts a §13.2 answer payload
+verbatim, with `-` reading stdin and no per-flag reconstruction:
+
+```sh
+jq -n '{answers: {"Which database?": ["postgres"]}}' |
+  vincent task answer 7 --body -
+```
 
 ## `vincent status`
 

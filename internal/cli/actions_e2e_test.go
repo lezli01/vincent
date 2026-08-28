@@ -14,7 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// TestHumanActionCommands is task 044's done-when, and issue #89's: every §6
+// TestHumanActionCommands is task 048's done-when, and issue #89's: every §6
 // human action driven through the real binary against a real daemon, with no
 // TTY and no curl — a blocked task taken back to `running`, a gate approved
 // and rejected, an archive refused and then forced, and a project removed.

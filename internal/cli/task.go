@@ -598,7 +598,7 @@ func taskID(arg string) (int64, error) {
 
 // printTaskAction renders the daemon's post-action view of a task. Every §6
 // action command ends here, and none of them predicts the transition: what is
-// printed is the state the daemon reported *after* it acted (task 044).
+// printed is the state the daemon reported *after* it acted (task 048).
 func printTaskAction(cmd *cobra.Command, t apiclient.Task) error {
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), t)

@@ -101,6 +101,28 @@ list with the user-facing context a commit subject cannot carry.
   [scripting guide](docs/guides/scripting.md) and
   [troubleshooting](docs/guides/troubleshooting.md).
 
+- **Every human action on a task now has a command line.** `vincent task` grew
+  `pause`, `resume`, `skip`, `approve`, `reject`, `retry`, `repair`, `archive`
+  and `answer`, and `vincent project` grew `rm` — so a blocked task can be
+  rescued from a shell loop, a cron job or an SSH session with no usable
+  terminal, instead of only from the TUI or hand-assembled `curl`. This matters
+  most when an agent credential expires: every task that reaches an agent step
+  blocks on `agent_unauthenticated` once its retry budget is spent, waiting
+  fixes nothing, and until now that board could not be cleared from a script.
+  `vincent task ls --state blocked --json | jq -r '.[].id'` piped into
+  `vincent task retry` now does it. Each action takes one id, carries `--json`,
+  and prints the daemon's own post-action view of the task rather than a guess.
+  `retry` takes `--branch` (the `branch_exists` recovery: the task keeps its id
+  and its transcripts) and `--prompt`/`--run` for edit+retry, each with a
+  `-file` twin that reads stdin from `-`; `repair` takes a required `--prompt`
+  plus `--agent`/`--model`/`--effort`; `archive` takes `--force` and tells you
+  so when it refuses a dirty worktree; `answer` takes `--answer <n>=<value>`
+  against the questions `vincent task show` numbers, `--allow`/`--deny` for a
+  permission request, or `--body` to post a payload verbatim. `vincent task
+  show` now prints the pending input request and the actions the daemon will
+  accept right now, so a script can read what is legal instead of probing for
+  errors. Documented in the [CLI reference](docs/reference/cli.md#vincent-task)
+  and [Scripting vincent](docs/guides/scripting.md).
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a

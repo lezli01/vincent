@@ -1,16 +1,34 @@
 # Scripting vincent
 
-Everything the TUI does goes through the same localhost API, and its data
-commands are subcommands too — `task add/ls/show/cancel/follow-up`, `project`,
-`workflow`, `daemon`. The human actions that act on a running task (approve,
-reject, retry, repair, skip, pause, resume, answer, archive) have no subcommand
-yet ([#89](https://github.com/lezli01/vincent/issues/89)), so a script reaches
-those over the API; the [CLI reference](../reference/cli.md) is the full tree.
+Everything the TUI does is a subcommand, and everything either does is the same
+localhost API. That includes the actions that act on a *live* task — approve,
+reject, retry, repair, skip, pause, resume, answer, archive — so a blocked task
+can be rescued from a shell loop, a cron job or an SSH session with no usable
+terminal. The [CLI reference](../reference/cli.md) is the full tree.
 
-[`task follow-up`](../reference/cli.md#vincent-task-follow-up) is the exception,
-and it is one because the thing it is for is a batch — running one more agent
-prompt, shell command or workflow in each of several finished tasks' own
-worktrees, before they are archived:
+The shape is always the same: one id per invocation, `--json` if you want the
+task back as data, and the daemon's own post-action view of the task printed
+rather than a guess about where it went.
+
+```sh
+vincent task ls --state blocked --json |
+  jq -r '.[].id' |
+  while read -r id; do
+    vincent task retry "$id"
+  done
+```
+
+That loop is the answer to the failure this guide exists for. An agent
+credential expires, every task that reaches an agent step fails its retry budget
+and blocks on `agent_unauthenticated`, and no amount of waiting helps: someone
+has to fix the login and then move each task. (`usage_limit` is deliberately
+*not* this case — it is a queued reason, never a block reason, and the scheduler
+re-admits on its own.)
+
+The same loop with a different verb does the other batches — archiving a day's
+finished work, or running one more command in each of several finished tasks'
+own worktrees with
+[`task follow-up`](../reference/cli.md#vincent-task-follow-up):
 
 ```sh
 vincent task ls --state done --json |
@@ -109,6 +127,13 @@ Two guarantees make it safe to pipe into `jq`:
 ```sh
 vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 ```
+
+`vincent task show <id> --json` carries two fields worth knowing about:
+`available_actions`, which is what the daemon will accept right now — read it
+instead of probing for `409`s, and every name in it is a `vincent task <action>`
+subcommand — and `pending_input`, the §7.4 request an `awaiting_input` task is
+parked on. The human rendering numbers those questions, and
+`vincent task answer <id> --answer <n>=<value>` takes the numbers.
 
 ## Supplying task fields
 
@@ -353,17 +378,33 @@ set -euo pipefail
 
 id=$(vincent task add --project 1 --workflow feature-pr \
        --title "$1" --json | jq -r .id)
+retried=0
 
 while :; do
   state=$(vincent task show "$id" --json | jq -r .state)
   case "$state" in
-    done)                     echo "✓ task $id done";        exit 0 ;;
-    blocked|aborted)          echo "✗ task $id $state" >&2;  exit 1 ;;
-    awaiting_gate)            echo "task $id needs approval"; exit 0 ;;
-    *)                        sleep 5 ;;
+    done)          echo "✓ task $id done";                  exit 0 ;;
+    aborted)       echo "✗ task $id aborted" >&2;           exit 1 ;;
+    awaiting_gate) vincent task approve "$id" >/dev/null ;;
+    blocked)
+      # One retry, then hand it to a human. A script that retries a
+      # blocked task forever burns tokens on the same failure.
+      if [ "$retried" -eq 0 ]; then
+        retried=1
+        vincent task retry "$id" >/dev/null
+      else
+        echo "✗ task $id blocked: $(vincent task show "$id" --json | jq -r .block_reason)" >&2
+        exit 1
+      fi
+      ;;
+    *) sleep 5 ;;
   esac
 done
 ```
+
+Approving from a script is a real decision, not a formality: a `manual` gate is
+there because someone wanted a person to look. Approve unattended only where the
+gate is a pacing device rather than a review.
 
 For anything longer-lived, replace the poll loop with the `/v1/events` stream —
 the states are the same, the latency is not.

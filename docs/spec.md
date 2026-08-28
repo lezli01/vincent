@@ -2737,9 +2737,10 @@ One Go binary, `vincent`:
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
-| `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->` |
 | `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
+| `vincent project add <path> / ls / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting |
+| `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
@@ -2822,6 +2823,19 @@ TUI-and-API only, and stay that way; the reason to break with them here is that
 wants a shell loop rather than six visits to a form. The unevenness that leaves
 is accepted rather than papered over — giving every human action a command line
 is separate work.
+
+*Amended 2026-08-28 (task 048).* That separate work is this one, and "stay that
+way" no longer holds: every §6 human action has a command line. The reasoning
+above is kept rather than deleted because it is what lost. What it did not
+weigh is that the actions it left out are the ones a **blocked** task needs, so
+the recovery half of the product was reachable from exactly one client — the
+heavyweight interactive one — which contradicts §2's own claim that the daemon
+owns the work and clients are disposable. An agent auth outage is the case that
+settles it: `agent_unauthenticated` blocks each task once the retry budget is
+spent (§7.2), waiting fixes nothing, and a board full of those blocks could not
+be cleared from a script. `follow-up` remains the action whose *motivation* was
+a batch; the rest are here because a client that cannot unblock work is not a
+client.
 
 *Added 2026-08-25 (task 030).* `daemon restore` is a **stated exception** to
 "clients never touch the DB" (§4), and is written down here rather than left to

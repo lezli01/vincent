@@ -164,6 +164,14 @@ nothing binding on it.
     `ls`, `show` and `cancel`; retry, skip and approve are already TUI-and-API
     only, and repair follows them.
 
+    *Superseded 2026-08-28 by [task 048](048-cli-human-actions.md).* `vincent
+    task repair` ships, along with every other §6 human action. This decision
+    reasoned from the company repair kept — retry, skip and approve — and none
+    of them had a command line either. What it did not weigh is that those four
+    are exactly the actions a **blocked** task needs, so the recovery half of
+    the product was reachable from one client only. Task 027 decision 11 broke
+    ranks for `follow_up` and named this follow-on work by name; 048 is it.
+
 ## Work
 
 - [x] **025.1 — Store: migration `0010_repair.sql`, `RepairRequest`, the
