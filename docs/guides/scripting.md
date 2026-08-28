@@ -281,6 +281,38 @@ scrollback. Omit it for the raw file, byte for byte. `X-Next-Offset` on the
 response is where a follow-up fetch resumes — always on a record boundary, never
 mid-line.
 
+### Being told without holding a connection open
+
+A long-lived SSE reader is the right tool for a dashboard and the wrong one for
+"text me when something blocks". For that, let the daemon spawn your script:
+
+```yaml
+# config.yaml
+notify:
+  on: [blocked, awaiting_gate, awaiting_input]
+  command: ["/usr/local/bin/vincent-notify"]
+```
+
+The daemon runs that command on every matching transition and writes a JSON
+envelope — task id and title, `from`/`to`, `block_reason`, project, workflow,
+step cursor, branch, worktree path, and the agent's question on
+`awaiting_input` — to its standard input. No token, no cursor, no reconnect
+loop, and nothing to keep alive: the daemon is already the process with the
+supervised lifetime.
+
+```sh
+#!/bin/sh
+# /usr/local/bin/vincent-notify
+jq -r '"vincent: #\(.task_id) \(.title) → \(.to) \(.block_reason)"' \
+  | xargs -I{} curl -fsS -XPOST -d "text={}" "$SLACK_WEBHOOK"
+```
+
+`command` is argv, not a shell line, and there is a fixed 10-second budget per
+run. See [`notify`](../reference/configuration.md#notify) for the full envelope
+and the delivery guarantees, and the
+[security model](../security-model.md) for what it means that the daemon runs
+it as you.
+
 ## A worked example
 
 Create a task, wait for it to leave `running`, and report what happened:

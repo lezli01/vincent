@@ -32,6 +32,12 @@ Omitted keys keep their built-in defaults, so a partial file is fine.
 This is what first start writes, verbatim:
 
 ```yaml
+# vincent daemon configuration (spec §12.3).
+# Generated with defaults on first start. Edit freely: the daemon watches this
+# file and hot-reloads valid changes. Invalid edits are logged and rejected,
+# and the last good configuration stays active. Changes to "listen" take
+# effect on the next daemon restart.
+
 # Address the HTTP API binds to. Loopback only. Port 0 picks an ephemeral
 # port, published for clients in {data_dir}/daemon.json.
 listen: 127.0.0.1:0
@@ -41,6 +47,8 @@ listen: 127.0.0.1:0
 max_parallel_tasks: 3
 
 # Fallback step timeouts, used when a workflow step declares none.
+# input_timeout bounds each wait for an answer to an agent's input request
+# (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
@@ -61,33 +69,53 @@ delete_remote_branch_on_archive: false
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 
-# Per-attempt transcript cap.
+# Per-attempt transcript cap. A step whose transcript passes this fails with
+# transcript_limit rather than filling the disk.
 transcript_max_bytes: 512MB
 
-# Ceiling on what one task may spend, in US dollars. 0 disables it.
+# Ceiling on what one task may spend, in US dollars, summed over every attempt
+# of every step it runs. Past it the task blocks with cost_limit at the next
+# attempt boundary, so expect to overshoot by at most one attempt; raise this
+# and retry to carry on. 0 disables it, which is the default.
+#
+# It counts one task. Each fan_out lane is its own task and gets its own
+# budget, so a tree of twenty lanes may spend twenty times this. Only agents
+# that report cost are counted — codex and cursor report none, so the cap is
+# inert on them.
 max_task_cost_usd: 0
 
-# How long a quota-stopped task waits when the agent CLI named no reset time.
+# How long a task waits before trying again after its agent reported that the
+# usage quota for the window is spent, when the CLI named no reset time. When
+# it does name one, that wins and this is unused. The task keeps its place in
+# the queue and holds no slot while it waits.
 usage_limit_recheck_interval: 15m
-
-# Sub-steps of one `parallel` step group running at once.
-parallel:
-  max_parallel: 4
-
-# Bounds on a `type: fan_out` tree, checked at task creation.
-fan_out:
-  max_depth: 3
-  max_tasks: 64
-
-# Ceiling on a `type: loop` step's iterations.
-loop:
-  max_iterations: 10
 
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
-# Record how every step was actually invoked in its transcript.
+# Record how every step was actually invoked in its transcript: resolved
+# agent/model/effort, permission mode, working directory, and the full argv.
+# Turn this on when a run does something you cannot explain, then paste the
+# transcript. Off by default because argv includes the rendered prompt.
 debug: false
+
+# What child processes — agent steps, command steps and their checks —
+# inherit from the daemon (T4.23). Resolved in one order: inherit, then
+# unset, then set. Command steps layer the VINCENT_* variables and their own
+# "env:" on top, so those are never affected.
+#
+# The default inherits everything, which is what the daemon always did
+# implicitly. Pin it when a run has to be reproducible, or drop a single
+# variable that breaks a CLI — on Windows, a daemon started from Git Bash
+# carries MSYSTEM, which blocks every cursor tool call.
+#
+# Values under "set" are literal: "$" is not special and nothing is expanded.
+environment:
+  inherit: all          # all | none | a list of names, e.g. [PATH, HOME]
+  # unset:
+  #   - MSYSTEM
+  # set:
+  #   LANG: C.UTF-8
 
 # Agent CLI locations. An empty path resolves the binary from PATH.
 agents:
@@ -95,6 +123,8 @@ agents:
     path: ""
   codex:
     path: ""
+  # cursor resolves the "cursor-agent" binary — not "cursor", which is the
+  # editor launcher (§9.7).
   cursor:
     path: ""
 
@@ -110,7 +140,41 @@ agents:
 github:
   enabled: true
 
-# What clients render, not what the daemon does.
+# Tell someone when a task needs them, without a client attached (task 046).
+# The daemon runs "command" whenever a task enters one of the states in "on",
+# and writes a JSON envelope describing the transition to the command's stdin
+# — task id and title, from/to, block_reason, project, workflow, step cursor,
+# branch and worktree path — so a one-line script can write a message without
+# calling back into the API.
+#
+# "command" is argv, not a shell line: nothing is expanded, quoted or split,
+# and there is no shell on any platform. Both keys are needed; either alone
+# loads and warns. Off by default.
+#
+# The states are the ones from §6, most usefully: blocked, awaiting_gate,
+# awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
+# and a twenty-lane tree would otherwise send twenty-one messages.
+#
+# It is fire-and-forget: at most 4 notifiers run at once, a child is killed
+# after 10 seconds, failures are logged and never retried, and nothing is
+# replayed for events that happened while the daemon was down.
+#
+# WARNING: this is arbitrary code the daemon runs as you, and its argv can
+# carry a secret (a webhook URL), which is part of why this file is
+# owner-only.
+#
+# notify:
+#   on: [blocked, awaiting_gate, awaiting_input]
+#   command: ["/usr/local/bin/notify-me"]
+
+# What clients render, not what the daemon does. The daemon validates these,
+# hot-reloads them and serves them on GET /v1/config; the TUI reads them from
+# there.
+#
+# group_by nests the task table under headers, outermost level first. Accepted
+# levels: project, workflow. Use [] for one flat list of tasks. A grouped
+# level drops its own column — the header already names it — and "g" cycles
+# the grouping for the session without touching this file.
 tui:
   board:
     group_by: [project, workflow]
@@ -631,6 +695,101 @@ your own host, enterprise and SSO configuration — and otherwise reads
 `GITHUB_TOKEN` or `GH_TOKEN` from the environment the daemon inherited. Both are
 described under [environment variables](#environment-variables), and
 `vincent doctor` reports which one is in play.
+
+### `notify`
+
+```yaml
+notify:
+  on: [blocked, awaiting_gate, awaiting_input, done]
+  command: ["/usr/local/bin/notify-me"]
+```
+
+Run a command when a task enters one of these states. **Off by default** — both
+keys are empty, and nothing is spawned.
+
+It exists because vincent's premise is that you start work and walk away, and
+the daemon is designed to run with no client attached. Without this, the only
+alert in the whole system is the TUI's terminal bell, which rings on
+`awaiting_input` and only while a board is open: a task could wait a full day
+for an answer, fail on the timeout, and the first you knew was the next time you
+looked.
+
+**`on`** is a list of [task states](task-lifecycle.md). Any of the ten is
+accepted; the four above are the ones worth waking up for. A name that is not a
+state **fails the load** and names the value, so the daemon keeps its last good
+configuration rather than silently never firing.
+
+**`command`** is **argv, not a shell line**. The first element is the program;
+the rest are passed through unchanged. Nothing is expanded, split, quoted or
+interpreted, and there is no shell on any platform — `command: ["notify.sh
+--urgent"]` looks for a program with a space in its name. Both keys are needed:
+either one alone loads, warns in the log, and never fires.
+
+#### The envelope
+
+The daemon writes one JSON object to the command's standard input and closes it.
+It is enriched on purpose: a notifier told only `{task_id, to}` would have to
+call back into the API with a bearer token to say anything useful, which defeats
+a one-line script.
+
+```json
+{
+  "event_id": 1841,
+  "ts": "2026-08-28T09:30:00Z",
+  "type": "task.state_changed",
+  "task_id": 42,
+  "title": "Fix the flaky gate",
+  "from": "running",
+  "to": "blocked",
+  "block_reason": "step_failed",
+  "queued_reason": "",
+  "current_step": 2,
+  "steps_total": 5,
+  "worktree_path": "/home/you/.local/share/vincent/worktrees/42",
+  "branch": "vincent/42-fix-the-flaky-gate",
+  "project_id": 7,
+  "project": "vincent",
+  "workflow": "review"
+}
+```
+
+`block_reason` is empty unless `to` is `blocked`. A transition into
+`awaiting_input` additionally carries the agent's question:
+
+```json
+  "input": { "kind": "question", "summary": "Which migration should I keep?" }
+```
+
+`steps_total` comes from the task's own workflow snapshot, so it is the count
+for *that run* even if the workflow file has been edited since.
+
+A one-liner that turns it into a desktop notification on macOS:
+
+```sh
+#!/bin/sh
+jq -r '"\(.title) → \(.to)"' | xargs -0 terminal-notifier -title vincent -message
+```
+
+#### What it does and does not promise
+
+| | |
+|---|---|
+| **Root tasks only** | A `fan_out` lane is a task of its own, so a twenty-lane tree would send twenty-one messages. Lanes are skipped; the parent's own transitions fire. |
+| **At most 4 at once** | Drained from a 64-entry queue. Five tasks blocking together all notify; only a genuinely full queue drops, and a drop is logged. |
+| **10 s per command** | Fixed, not configurable. Past it the command's whole process tree is killed and the failure is logged. |
+| **Never retried** | A failure is logged with the exit code and the tail of its stderr, and dropped. |
+| **Never replayed** | Only transitions the running daemon observes fire. A weekend of downtime does not produce a storm on the next start. |
+| **Never blocks a task** | A notifier that hangs, fails or is missing changes nothing about the task it was about. |
+
+The environment the command inherits is the one
+[`environment`](#environment) resolves, like every other process the daemon
+spawns. It gets **no** `VINCENT_*` variables — those belong to command steps —
+because the envelope on stdin is this hook's whole contract.
+
+Read per event, so a [reload](#reload-semantics) governs the next transition. It
+is not served on `GET /v1/config`: no client needs it, and `command` can
+reasonably hold a webhook URL with a token in it. See the
+[security model](../security-model.md) for what running it means.
 
 ### `tui`
 

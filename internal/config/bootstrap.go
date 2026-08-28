@@ -118,6 +118,33 @@ agents:
 github:
   enabled: true
 
+# Tell someone when a task needs them, without a client attached (task 046).
+# The daemon runs "command" whenever a task enters one of the states in "on",
+# and writes a JSON envelope describing the transition to the command's stdin
+# — task id and title, from/to, block_reason, project, workflow, step cursor,
+# branch and worktree path — so a one-line script can write a message without
+# calling back into the API.
+#
+# "command" is argv, not a shell line: nothing is expanded, quoted or split,
+# and there is no shell on any platform. Both keys are needed; either alone
+# loads and warns. Off by default.
+#
+# The states are the ones from §6, most usefully: blocked, awaiting_gate,
+# awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
+# and a twenty-lane tree would otherwise send twenty-one messages.
+#
+# It is fire-and-forget: at most 4 notifiers run at once, a child is killed
+# after 10 seconds, failures are logged and never retried, and nothing is
+# replayed for events that happened while the daemon was down.
+#
+# WARNING: this is arbitrary code the daemon runs as you, and its argv can
+# carry a secret (a webhook URL), which is part of why this file is
+# owner-only.
+#
+# notify:
+#   on: [blocked, awaiting_gate, awaiting_input]
+#   command: ["/usr/local/bin/notify-me"]
+
 # What clients render, not what the daemon does. The daemon validates these,
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.

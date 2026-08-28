@@ -51,6 +51,34 @@ list with the user-facing context a commit subject cannot carry.
   while staying safe to leave in a CI log. See
   [Scripting vincent](docs/guides/scripting.md#supplying-task-fields).
 
+- **vincent can now tell you it needs you, with nothing open.** Point
+  `notify.command` in `config.yaml` at a program and the daemon runs it whenever
+  a task enters one of the states you list in `notify.on` — `blocked`,
+  `awaiting_gate`, `awaiting_input`, `done`, or any other state from the task
+  lifecycle. It writes a JSON envelope to the command's standard input: task id
+  and title, the transition, `block_reason`, the project, the workflow, the step
+  cursor, the branch and worktree path, and on `awaiting_input` the agent's
+  question — enough for a one-line script to write a message without calling
+  back into the API. Until now the only alert in the whole system was the TUI's
+  terminal bell, which rings on `awaiting_input` and only while a board is open,
+  so a task could wait a full day for an answer, fail on the timeout, and the
+  first you knew was the next time you looked. `command` is argv, not a shell
+  line, so it composes with `terminal-notifier`, `notify-send`, `msg`, a Slack
+  `curl` or a file drop without vincent picking a notification stack. It is
+  **off unless you configure it**, it hot-reloads like everything else in the
+  file, and an unknown state name fails the load naming the value rather than
+  silently never firing. Delivery is deliberately modest: root tasks only (a
+  fan-out lane does not send its own message), at most four notifiers at once
+  drained from a bounded queue, a fixed 10-second budget after which the
+  command's process tree is killed, failures logged and never retried, and
+  nothing replayed for events that happened while the daemon was down. A
+  notifier that hangs or fails changes nothing about the task it was about.
+  Documented in the
+  [configuration reference](docs/reference/configuration.md#notify) and the
+  [security model](docs/security-model.md) — it is code the daemon runs as you,
+  and its argv can hold a webhook secret, which is why it is not readable back
+  through the API.
+
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a

@@ -55,11 +55,25 @@ if [[ "${VINCENT_GATE_AGENT:-fake}" == "claude" ]]; then
 else
   export FAKEAGENT_EDIT_FILE=README.md # give the diff something to show
 fi
-cat > "$CONFIG_DIR/config.yaml" <<EOF
+# The notify hook (task 046, §12.3). It is configured before the daemon starts
+# and set to a state nothing here reaches, so the legs above run untouched; the
+# leg at the bottom flips it and proves the reload.
+#
+# The notifier is argv only — there is no shell on any platform — and `git
+# config -f` is the same trick m6/m7 use to write a file from a step body: it
+# creates the file, appends one entry per call, and counts them back.
+NOTIFY_OUT="$(hostpath "$TMP/notify.ini")"
+write_config() { # write_config STATE
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
 agents:
   claude:
     path: "$AGENT_PATH"
+notify:
+  on: [$1]
+  command: ["git", "config", "-f", "$NOTIFY_OUT", "--add", "vincent.notify.fired", "yes"]
 EOF
+}
+write_config blocked
 
 echo "== start daemon"
 "$VINCENT" daemon start
@@ -204,6 +218,52 @@ jq -e '.error.code == "invalid_state" and .error.details.reason == "idempotency_
 $(cat "$TMP/idem.json")"
 COUNT="$(api GET /tasks | jq '[.[] | select(.title == "M1 different task")] | length' | tr -d '\r')"
 [[ "$COUNT" == "0" ]] || fail "the refused create made a task anyway"
+
+# The notify hook (task 046, §12.3, issue #90). It rides this gate because the
+# claim is about a daemon with **no client attached**, which is what every leg
+# above already is: curl makes a request and goes away.
+#
+# `notify.on` is `blocked` up to here and nothing in this script blocks, so the
+# tasks above must have fired nothing. Flipping it to `done` in config.yaml and
+# getting a notification for the next task — with no daemon restart — is the
+# hot-reload half.
+notify_count() { # prints how many times the hook has fired
+  local out="$TMP/notify.ini"
+  [[ -f "$out" ]] || { printf '0\n'; return; }
+  git config -f "$out" --get-all vincent.notify.fired | wc -l | tr -d ' \r'
+}
+
+echo "== nothing fired while notify.on listed a state no task reached"
+# Every task has to be settled before the selector changes, or one still
+# running would fire under the new one and be counted here.
+for _ in $(seq 1 120); do
+  BUSY="$(api GET /tasks | jq '[.[] | select(.state == "queued" or .state == "running")] | length' | tr -d '\r')"
+  [[ "$BUSY" == "0" ]] && break
+  sleep 1
+done
+[[ "$BUSY" == "0" ]] || fail "tasks still running; the notify leg cannot count fires"
+[[ "$(notify_count)" == "0" ]] || fail "the hook fired for a state it was not configured for"
+
+echo "== hot-reload notify.on to done"
+write_config done
+sleep 2  # the config watcher debounces a save for 100ms
+
+echo "== a finished task notifies with no client attached"
+NOTIFY_TASK="$(api POST /tasks "{\"project_id\":$PROJECT_ID,\"title\":\"M1 notify task\",\"description\":\"Say hello.\"}" | jq -r .id | tr -d '\r')"
+[[ "$NOTIFY_TASK" =~ ^[0-9]+$ ]] || fail "notify task creation returned no id"
+for _ in $(seq 1 120); do
+  STATE="$(api GET "/tasks/$NOTIFY_TASK" | jq -r .state | tr -d '\r')"
+  [[ "$STATE" == "done" ]] && break
+  [[ "$STATE" == "blocked" ]] && fail "notify task blocked"
+  sleep 1
+done
+[[ "$STATE" == "done" ]] || fail "notify task did not finish (state $STATE)"
+for _ in $(seq 1 30); do
+  [[ "$(notify_count)" == "0" ]] || break
+  sleep 1
+done
+FIRED="$(notify_count)"
+[[ "$FIRED" == "1" ]] || fail "the hook fired $FIRED times for one done transition, want 1"
 
 echo "== stop daemon"
 "$VINCENT" daemon stop

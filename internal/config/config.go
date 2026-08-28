@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/lezli01/vincent/internal/taskstate"
 )
 
 // FileName is the name of the daemon configuration file inside the config
@@ -243,6 +245,10 @@ type Config struct {
 	// It is read per use, so a hot reload reaches the next call rather than
 	// requiring a restart — the same rule the rest of §12.3 follows.
 	GitHub GitHub `yaml:"github"`
+	// Notify is the outward signal: a command the daemon spawns when a task
+	// enters one of the listed states (§12.3, task 046). Its zero value is
+	// off, so a daemon nobody configured spawns nothing.
+	Notify Notify `yaml:"notify"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -273,6 +279,88 @@ type GitHub struct {
 	// parse error the strict decoder already refuses — which is why
 	// validate() has no clause for this block.
 	Enabled bool `yaml:"enabled"`
+}
+
+// Notify configures the daemon's outward signal (spec §12.3 — task 046): a
+// command spawned when a task enters one of the listed states, with a JSON
+// envelope on its stdin.
+//
+// It exists because the daemon is designed to run with zero clients attached
+// (§2), and the one thing it could not do with zero clients attached was say
+// it needed a human: the only alert in the tree is the TUI's terminal bell,
+// which rings on `awaiting_input` and only while a board is open.
+//
+// The selector is target *states*, not event types: §13.3's durable
+// vocabulary has one transition event, `task.state_changed`, and this reads
+// its `to` field — exactly what the TUI bell keys off. No event type is
+// introduced for this.
+//
+// Global rather than per-project: projects are database rows, not YAML, so a
+// per-project override would need a column and API surface for a case nobody
+// has asked for.
+type Notify struct {
+	// On lists the states whose arrival fires Command. Empty — the default —
+	// fires nothing.
+	On []taskstate.State `yaml:"on"`
+	// Command is argv, never a shell string: there is no portable shell to
+	// assume, and a string would invite quoting bugs that differ per platform.
+	// Empty means the hook is off.
+	Command []string `yaml:"command"`
+}
+
+// Enabled reports whether the hook can fire at all.
+func (n Notify) Enabled() bool { return len(n.On) > 0 && len(n.Command) > 0 }
+
+// Fires reports whether a transition into s should spawn the command.
+func (n Notify) Fires(s taskstate.State) bool {
+	if len(n.Command) == 0 {
+		return false
+	}
+	for _, want := range n.On {
+		if want == s {
+			return true
+		}
+	}
+	return false
+}
+
+// validate rejects a state name that is not in §6's vocabulary, so a typo is
+// refused at load and the last good configuration stays active (§12.3).
+//
+// This is why internal/config imports internal/taskstate — the one internal
+// import this package has (task 046 decision 4). taskstate is itself a leaf
+// (it imports only `sort`), so there is no cycle, and the alternative is a
+// second copy of §6's ten state names drifting from the first. The
+// branch_template precedent of validating in internal/daemon does not apply:
+// that one exists because the branch-template context lives in
+// internal/worktree, a package with real dependencies.
+func (n Notify) validate() error {
+	seen := make(map[taskstate.State]bool, len(n.On))
+	for _, s := range n.On {
+		if !taskstate.Valid(s) {
+			return fmt.Errorf("notify.on: unknown task state %q; want one of %s",
+				s, strings.Join(stateNames(), ", "))
+		}
+		if seen[s] {
+			return fmt.Errorf("notify.on: %q listed twice", s)
+		}
+		seen[s] = true
+	}
+	for i, arg := range n.Command {
+		if strings.TrimSpace(arg) == "" {
+			return fmt.Errorf("notify.command: element %d is empty; argv elements must be non-empty", i)
+		}
+	}
+	return nil
+}
+
+// stateNames renders §6's vocabulary for an error message.
+func stateNames() []string {
+	out := make([]string, 0, len(taskstate.All))
+	for _, s := range taskstate.All {
+		out = append(out, string(s))
+	}
+	return out
 }
 
 // TUI holds the settings clients read for themselves (§15).
@@ -534,6 +622,9 @@ func (c Config) validate() error {
 	if err := c.TUI.Board.validate(); err != nil {
 		return err
 	}
+	if err := c.Notify.validate(); err != nil {
+		return err
+	}
 	return c.Environment.validate()
 }
 
@@ -553,6 +644,19 @@ func (c Config) Warnings() []string {
 		out = append(out, "delete_remote_branch_on_archive is true while "+
 			"delete_empty_branch_on_archive is false: the remote counterpart is only "+
 			"deleted after the local branch, so no remote branch will ever be deleted")
+	}
+	// Both halves of `notify:` are required for it to fire, and a half-written
+	// block looks exactly like a working one until a task blocks at 3am and
+	// nothing happens (task 046 decision 10). Neither refuses the file: a user
+	// commenting `command` out for an afternoon should not have the same save
+	// revert an unrelated log_level edit.
+	if len(c.Notify.Command) > 0 && len(c.Notify.On) == 0 {
+		out = append(out, "notify.command is set while notify.on is empty: "+
+			"no state fires the hook, so the command will never run")
+	}
+	if len(c.Notify.On) > 0 && len(c.Notify.Command) == 0 {
+		out = append(out, "notify.on lists states while notify.command is empty: "+
+			"there is nothing to run, so no notification will be delivered")
 	}
 	return out
 }

@@ -213,6 +213,27 @@ every rendered prompt and everything the agents did, plus your `config.yaml`.
 It does *not* carry the API token. Treat the file the way you would treat the
 data directory it came from.
 
+## The notify hook runs your code
+
+`notify.command` in `config.yaml` is a program the **daemon** runs, as you,
+whenever a task enters a state you listed. It is the same trust level as
+everything else on this page — an agent step already runs arbitrary commands as
+you — but it is worth stating rather than leaving implicit:
+
+- Nothing from a task, an agent or the API reaches its argv. It is exactly what
+  the owner of `config.yaml` wrote, and it is **argv, never a shell string** on
+  every platform, so a task title cannot be interpreted as a command.
+- **Its argv can hold a secret.** A webhook URL with a token in it is the
+  obvious case. That is a second reason `config.yaml` and its directory are
+  owner-only, and the reason `notify` is not served on `GET /v1/config` — a
+  client with a valid token still cannot read it back.
+- Whatever your notifier does with the envelope is outside vincent. The envelope
+  carries the task title and the agent's question summary, so a hook that posts
+  to a shared channel publishes both.
+
+It is off unless you configure it. See
+[`notify`](reference/configuration.md#notify).
+
 ## Tightening it
 
 In rough order of value:

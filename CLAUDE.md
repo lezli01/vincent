@@ -189,8 +189,12 @@ Requires bash, go, git, curl, jq.
 ## Architecture
 
 Dependency direction is one-way: `cli` → `tui`/`daemon`; `daemon` wires
-`store` + `workflow` + `scheduler` + `taskrun` + `events` + `api`; leaf packages
-(`taskstate`, `gitx`, `procx`, `version`, `config`) depend on nothing internal.
+`store` + `workflow` + `scheduler` + `taskrun` + `events` + `notify` + `api`;
+leaf packages (`taskstate`, `gitx`, `procx`, `version`, `config`) depend on
+nothing internal — with one deliberate exception: `config` imports `taskstate`,
+and only `taskstate`, to validate `notify.on` against §6's state vocabulary
+rather than keeping a second copy of it (task 046 decision 4). `taskstate` is
+itself a leaf, so the direction stays one-way.
 `internal/daemon/daemon.go:Run` is the single wiring point — read it first to see
 how the pieces connect.
 
@@ -234,6 +238,7 @@ is a correctness bug, not a style issue:
 | `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out`, `condition`, `loop` and `break` are structure, `check` is a *field* agent and command steps may carry, never a type, and `include` never arrives at all — it is spliced away at task creation (§7.9) — plus guards (`if:`, §7.7), loop iteration (§7.8), retries, timeouts, human actions, recovery, transcripts |
 | `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
+| `internal/notify` | The outward signal (§12.3, task 046): a broker subscriber that spawns `notify.command` when a task enters a state in `notify.on`, with an enriched JSON envelope on the child's stdin. Bounded queue, four workers, fixed 10 s per child, no replay |
 | `internal/tui` | Bubble Tea client: six views (board, detail, new-task, projects, workflows, daemon) routed by `viewID` |
 
 Adapters differ in what they *can* do, and the differences are documented, never
