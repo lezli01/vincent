@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	styleStepHeader = lipgloss.NewStyle().Bold(true)
+	styleStepHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	styleSelected   = lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true)
 	styleTool       = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	styleStderr     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true)
@@ -45,18 +45,18 @@ func (d *detail) timelinePanel(height int) string {
 		}
 		return d.headerLine()
 	}
-	var sb strings.Builder
-	sb.WriteString(d.headerLine())
-	used := 1
-	if line := d.errorLine(); line != "" && height > 2 {
-		sb.WriteString("\n")
-		sb.WriteString(line)
-		used++
+	lines := []string{d.headerLine()}
+	if line := d.errorLine(); line != "" && len(lines) < height-1 {
+		lines = append(lines, line)
 	}
-	sb.WriteString("\n")
-	sb.WriteString(d.renderTimeline(height - used))
-	d.timelineTop = used
-	return sb.String()
+	// A quiet row separates the task summary from the execution history when
+	// the viewport can afford it. Tiny panes still keep one line for a run.
+	if len(lines) < height-1 {
+		lines = append(lines, "")
+	}
+	d.timelineTop = len(lines)
+	lines = append(lines, d.renderTimeline(max(height-len(lines), 1)))
+	return strings.Join(lines, "\n")
 }
 
 // clickTimeline selects the attempt rendered at the given content line —
@@ -295,9 +295,13 @@ func (d *detail) renderTimeline(height int) string {
 		round := d.followUpRound(r.StepIndex)
 		grouped := (groups[r.StepIndex] || round > 0) && !looped
 		if r.StepIndex != lastStep {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+				ids = append(ids, 0)
+			}
 			lastStep = r.StepIndex
 			lastSub, lastIteration = "", 0
-			lines = append(lines, styleStepHeader.Render(d.timelineHeader(r, round, looped, grouped)))
+			lines = append(lines, d.timelineHeader(r, round, looped, grouped))
 			ids = append(ids, 0)
 		}
 		if looped && r.Iteration != lastIteration {
@@ -367,7 +371,8 @@ func (d *detail) renderTimeline(height int) string {
 // thing task 027 decision 1 refused to do.
 func (d *detail) timelineHeader(r apiclient.StepRun, round int, looped, grouped bool) string {
 	if round > 0 {
-		return fmt.Sprintf("  ↳ follow-up %d", round)
+		return styleStepHeader.Render(fmt.Sprintf("  ↳ follow-up %d", round)) +
+			styleDim.Render("  ──────────")
 	}
 	label := stepLabel(r)
 	switch {
@@ -376,14 +381,14 @@ func (d *detail) timelineHeader(r apiclient.StepRun, round int, looped, grouped 
 	case grouped:
 		label = d.structureLabel(r.StepIndex, "parallel")
 	}
-	header := fmt.Sprintf("  %d %s", r.StepIndex+1, label)
+	header := styleStepHeader.Render(fmt.Sprintf("  Step %d  %s", r.StepIndex+1, label))
 	if from := d.includedFrom(r.StepIndex); from != "" {
 		// A spliced step is an ordinary step in every other respect, so the
 		// only thing worth saying is where it was written (§7.9). The full
 		// chain is in the workflow graph's inspector.
 		header += styleDim.Render("  from " + from)
 	}
-	return header
+	return header + styleDim.Render("  ──────────")
 }
 
 // isRepairRun reports whether a row is an ad-hoc repair rather than an
@@ -532,15 +537,18 @@ func stepLabel(r apiclient.StepRun) string {
 // tier deeper because its sub-step header is already at the attempt's usual
 // indent.
 func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
-	mark := " "
+	mark := ""
 	if r.PromptOverride || r.RunOverride {
-		mark = editedBadge
+		mark = " " + editedBadge
 	}
 	indent := "    "
 	if indented {
 		indent = "      "
 	}
-	fields := []string{fmt.Sprintf("%sa%d %s %-9s", indent, r.Attempt, mark, r.State)}
+	fields := []string{
+		fmt.Sprintf("%s%s  Attempt %-2d%s", indent, attemptStateGlyph(r.State), r.Attempt, mark),
+		renderAttemptState(r.State),
+	}
 	if dur, ok := r.Duration(d.now()); ok {
 		fields = append(fields, formatElapsed(dur))
 	}
@@ -585,6 +593,43 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	return strings.Join(fields, " ")
 }
 
+func attemptStateGlyph(state string) string {
+	switch state {
+	case "succeeded":
+		return "✓"
+	case "running":
+		return "●"
+	case "failed":
+		return "×"
+	case "interrupted":
+		return "!"
+	case "skipped":
+		return "–"
+	case stepStateStopped:
+		return "■"
+	default:
+		return "○"
+	}
+}
+
+func renderAttemptState(state string) string {
+	label := fmt.Sprintf("%-11s", state)
+	switch state {
+	case "succeeded":
+		return styleOK.Render(label)
+	case "running":
+		return styleFocus.Render(label)
+	case "failed":
+		return styleBad.Render(label)
+	case "interrupted":
+		return styleWarn.Render(label)
+	case "skipped", stepStateStopped:
+		return styleDim.Render(label)
+	default:
+		return label
+	}
+}
+
 // statusGlyph marks a step-authored status message, so it reads as a quote
 // rather than as another of the daemon's own fields — and so the distinction
 // survives a monochrome terminal, where the colour does not.
@@ -611,7 +656,7 @@ func summaryLine(r apiclient.StepRun, indented bool) string {
 	if indented {
 		indent = "         "
 	}
-	return styleDim.Render(indent + strings.Join(strings.Fields(r.ResultSummary), " "))
+	return styleDim.Render(indent + "↳ " + strings.Join(strings.Fields(r.ResultSummary), " "))
 }
 
 func formatTokens(r apiclient.StepRun) string {

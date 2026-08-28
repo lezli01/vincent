@@ -461,119 +461,153 @@ func (t *taskView) detailLines(width int) []string {
 
 	task := d.task
 	out := []string{
-		styleTitle.Render(fmt.Sprintf("  #%d %s", task.ID, task.Title)),
-		"",
-		section("Description"),
+		styleTitle.Render(fmt.Sprintf("  #%d  %s", task.ID, task.Title)),
 	}
-	out = appendWrapped(out, task.Description, width)
-	out = append(out, "", section("Task"),
-		taskFact("state", task.State),
-		taskFact("project", fmt.Sprintf("%s (#%d)", valueOr(task.ProjectName, "unknown"), task.ProjectID)),
-		taskFact("workflow", task.Workflow),
-		taskFact("workflow origin", task.WorkflowOrigin.Display()),
-		taskFact("branch", valueOr(task.BranchName, "not created")),
-		taskFact("priority", strconv.Itoa(task.Priority)),
-		taskFact("current step", taskStep(task.Task)),
-		taskFact("cost", formatCost(task.CostUSD)),
-		taskFact("tokens", fmt.Sprintf("%d input · %d output", task.InputTokens, task.OutputTokens)),
-	)
+	meta := []string{renderDetailState(task.Task)}
+	if task.ProjectName != "" {
+		meta = append(meta, styleDim.Render(task.ProjectName))
+	}
+	if task.Workflow != "" {
+		meta = append(meta, styleDim.Render(task.Workflow))
+	}
+	out = append(out, "  "+strings.Join(meta, styleDim.Render("  ·  ")))
+
+	description := appendWrapped(nil, task.Description, width)
+	out = appendTaskDetailSection(out, "Description", description)
+
+	overview := []taskDetailFact{
+		{"state", task.State},
+		{"project", fmt.Sprintf("%s (#%d)", valueOr(task.ProjectName, "unknown"), task.ProjectID)},
+		{"workflow", task.Workflow},
+		{"priority", strconv.Itoa(task.Priority)},
+	}
+	paths := []taskDetailFact{
+		{"workflow origin", task.WorkflowOrigin.Display()},
+		{"branch", valueOr(task.BranchName, "not created")},
+	}
 	if task.WorktreePath != nil {
-		out = append(out, taskFact("worktree", *task.WorktreePath))
+		paths = append(paths, taskDetailFact{"worktree", *task.WorktreePath})
+	}
+	overviewLines := renderTaskDetailFacts(width, overview)
+	overviewLines = append(overviewLines, "")
+	overviewLines = append(overviewLines, renderTaskDetailFactList(width, paths)...)
+	out = appendTaskDetailSection(out, "Overview", overviewLines)
+
+	execution := []taskDetailFact{
+		{"current step", taskStep(task.Task)},
+		{"cost", formatCost(task.CostUSD)},
+		{"tokens", fmt.Sprintf("%d input · %d output", task.InputTokens, task.OutputTokens)},
+		{"pause requested", strconv.FormatBool(task.PauseRequested)},
 	}
 	if task.BlockReason != nil {
-		out = append(out, taskFact("block reason", *task.BlockReason))
+		execution = append(execution, taskDetailFact{"block reason", *task.BlockReason})
 	}
 	if task.StatusMessage != nil {
-		out = append(out, taskFact("status message", *task.StatusMessage))
+		execution = append(execution, taskDetailFact{"status message", *task.StatusMessage})
 	}
 	if reason, until, ok := task.Hold(); ok {
 		value := reason
 		if until != nil {
 			value += " until " + until.Format(time.RFC3339)
 		}
-		out = append(out, taskFact("queue hold", value))
+		execution = append(execution, taskDetailFact{"queue hold", value})
 	}
-	if task.ParentTaskID != nil {
-		out = append(out, taskFact("parent task", strconv.FormatInt(*task.ParentTaskID, 10)))
-	}
-	if task.LaneID != nil {
-		out = append(out, taskFact("fan-out lane", *task.LaneID))
-	}
-	if task.LaneOrder != nil {
-		out = append(out, taskFact("lane order", strconv.Itoa(*task.LaneOrder)))
-	}
-	if task.Loop != nil {
-		out = append(out, taskFact("loop", task.Loop.Display()))
-	}
-
-	out = append(out, "", section("Fields"))
-	if len(task.Fields) == 0 {
-		out = append(out, styleDim.Render("  none"))
-	} else {
-		keys := sortedStringKeys(task.Fields)
-		for _, key := range keys {
-			out = append(out, taskFact(key, task.Fields[key]))
-		}
-	}
-
-	out = append(out, "", section("Lifecycle"),
-		taskFact("created", formatTaskTime(task.CreatedAt)),
-		taskFact("updated", formatTaskTime(task.UpdatedAt)),
-		taskFact("started", formatOptionalTaskTime(task.StartedAt)),
-		taskFact("finished", formatOptionalTaskTime(task.FinishedAt)),
-		taskFact("archived", formatOptionalTaskTime(task.ArchivedAt)),
-		taskFact("pause requested", strconv.FormatBool(task.PauseRequested)),
-	)
 	actions := append([]string(nil), task.AvailableActions...)
 	sort.Strings(actions)
-	out = append(out, taskFact("available actions", valueOr(strings.Join(actions, ", "), "none")))
+	execution = append(execution, taskDetailFact{"available actions", valueOr(strings.Join(actions, ", "), "none")})
+	out = appendTaskDetailSection(out, "Execution", renderTaskDetailFacts(width, execution))
 
-	if len(task.Warnings) > 0 {
-		out = append(out, "", section("Warnings"))
-		for _, warning := range task.Warnings {
-			out = append(out, styleWarn.Render("  ⚠ "+warning))
-		}
+	relationships := make([]taskDetailFact, 0, 8)
+	if task.ParentTaskID != nil {
+		relationships = append(relationships, taskDetailFact{"parent task", strconv.FormatInt(*task.ParentTaskID, 10)})
 	}
-	if len(task.PendingInput) > 0 && string(task.PendingInput) != "null" {
-		out = append(out, "", section("Pending input"))
-		out = appendWrapped(out, prettyJSON(task.PendingInput), width)
+	if task.LaneID != nil {
+		relationships = append(relationships, taskDetailFact{"fan-out lane", *task.LaneID})
+	}
+	if task.LaneOrder != nil {
+		relationships = append(relationships, taskDetailFact{"lane order", strconv.Itoa(*task.LaneOrder)})
+	}
+	if task.Loop != nil {
+		relationships = append(relationships, taskDetailFact{"loop", task.Loop.Display()})
 	}
 	if task.Children != nil {
-		out = append(out, "", section("Fan-out children"),
-			taskFact("progress", fmt.Sprintf("%d/%d settled", task.Children.Settled, task.Children.Total)),
-			taskFact("blocked", joinInt64(task.Children.Blocked)),
-			taskFact("awaiting gate", joinInt64(task.Children.AwaitingGate)),
+		relationships = append(relationships,
+			taskDetailFact{"child progress", fmt.Sprintf("%d/%d settled", task.Children.Settled, task.Children.Total)},
+			taskDetailFact{"children blocked", joinInt64(task.Children.Blocked)},
+			taskDetailFact{"children at gate", joinInt64(task.Children.AwaitingGate)},
 		)
 		states := sortedStringKeys(task.Children.ByState)
 		for _, state := range states {
-			out = append(out, taskFact(state, strconv.Itoa(task.Children.ByState[state])))
+			relationships = append(relationships, taskDetailFact{"children " + state, strconv.Itoa(task.Children.ByState[state])})
 		}
 	}
-	if issue := task.GitHubIssue; issue != nil {
-		out = append(out, "", section("GitHub issue"),
-			taskFact("issue", fmt.Sprintf("%s#%d · %s", issue.Repo, issue.Number, issue.Title)),
-			taskFact("url", issue.URL),
-			taskFact("state", issue.State),
-			taskFact("labels", valueOr(issue.LabelList(), "none")),
-			taskFact("author", valueOr(issue.Author, "unknown")),
-			taskFact("assignee", valueOr(issue.Assignee, "none")),
-			taskFact("milestone", valueOr(issue.Milestone, "none")),
-			taskFact("captured", formatTaskTime(issue.FetchedAt)),
-		)
-		if issue.Body != "" {
-			out = append(out, styleDim.Render("  body"))
-			out = appendWrapped(out, issue.Body, width)
-		}
+	if len(relationships) > 0 {
+		out = appendTaskDetailSection(out, "Relationships", renderTaskDetailFacts(width, relationships))
 	}
 
-	out = append(out, "", section("Workflow snapshot"))
+	fieldFacts := make([]taskDetailFact, 0, len(task.Fields))
+	for _, key := range sortedStringKeys(task.Fields) {
+		fieldFacts = append(fieldFacts, taskDetailFact{key, task.Fields[key]})
+	}
+	fieldLines := renderTaskDetailFacts(width, fieldFacts)
+	if len(fieldLines) == 0 {
+		fieldLines = []string{styleDim.Render("  none")}
+	}
+	out = appendTaskDetailSection(out, "Fields", fieldLines)
+
+	lifecycle := []taskDetailFact{
+		{"created", formatTaskTime(task.CreatedAt)},
+		{"updated", formatTaskTime(task.UpdatedAt)},
+		{"started", formatOptionalTaskTime(task.StartedAt)},
+		{"finished", formatOptionalTaskTime(task.FinishedAt)},
+		{"archived", formatOptionalTaskTime(task.ArchivedAt)},
+	}
+	out = appendTaskDetailSection(out, "Lifecycle", renderTaskDetailFacts(width, lifecycle))
+
+	if len(task.Warnings) > 0 {
+		warnings := make([]string, 0, len(task.Warnings))
+		for _, warning := range task.Warnings {
+			warnings = append(warnings, styleWarn.Render("  ⚠  "+warning))
+		}
+		out = appendTaskDetailSection(out, "Warnings", warnings)
+	}
+	if len(task.PendingInput) > 0 && string(task.PendingInput) != "null" {
+		out = appendTaskDetailSection(out, "Pending input", appendWrapped(nil, prettyJSON(task.PendingInput), width))
+	}
+	if issue := task.GitHubIssue; issue != nil {
+		issueLines := renderTaskDetailFacts(width, []taskDetailFact{
+			{"issue", fmt.Sprintf("%s#%d · %s", issue.Repo, issue.Number, issue.Title)},
+			{"state", issue.State},
+			{"url", issue.URL},
+			{"labels", valueOr(issue.LabelList(), "none")},
+			{"author", valueOr(issue.Author, "unknown")},
+			{"assignee", valueOr(issue.Assignee, "none")},
+			{"milestone", valueOr(issue.Milestone, "none")},
+			{"captured", formatTaskTime(issue.FetchedAt)},
+		})
+		if issue.Body != "" {
+			issueLines = append(issueLines, "", styleDim.Render("  Body"), "")
+			issueLines = appendWrapped(issueLines, issue.Body, width)
+		}
+		out = appendTaskDetailSection(out, "GitHub issue", issueLines)
+	}
+
+	workflow := make([]string, 0, len(task.WorkflowSteps)*4)
 	if len(task.WorkflowSteps) == 0 {
-		out = append(out, styleDim.Render("  no steps recorded"))
+		workflow = append(workflow, styleDim.Render("  no steps recorded"))
 	} else {
-		for _, step := range task.WorkflowSteps {
-			out = append(out, fmt.Sprintf("  %d. %s · %s", step.Index+1, step.ID, step.Type))
+		for i, step := range task.WorkflowSteps {
+			if i > 0 {
+				workflow = append(workflow, "")
+			}
+			workflow = append(workflow,
+				styleTitle.Render(fmt.Sprintf("  %02d  %s", step.Index+1, step.ID))+
+					styleDim.Render("  ·  "+step.Type),
+			)
 			if len(step.ResolvedFrom) > 0 {
-				out = append(out, taskFact("resolved from", strings.Join(step.ResolvedFrom, " → ")))
+				workflow = append(workflow,
+					renderTaskDetailFacts(width, []taskDetailFact{{"resolved from", strings.Join(step.ResolvedFrom, " → ")}})...,
+				)
 			}
 			for _, body := range []struct{ label, value string }{
 				{"prompt", step.Prompt}, {"run", step.Run}, {"instructions", step.Instructions},
@@ -581,9 +615,148 @@ func (t *taskView) detailLines(width int) []string {
 				if body.value == "" {
 					continue
 				}
-				out = append(out, styleDim.Render("    "+body.label))
-				out = appendWrappedIndented(out, body.value, width, "      ")
+				workflow = append(workflow, "", styleDim.Render("      "+body.label))
+				workflow = appendWrappedIndented(workflow, body.value, width, "        ")
 			}
+		}
+	}
+	out = appendTaskDetailSection(out, "Workflow snapshot", workflow)
+	return out
+}
+
+type taskDetailFact struct {
+	label string
+	value string
+}
+
+func appendTaskDetailSection(lines []string, title string, body []string) []string {
+	if len(lines) > 0 && lines[len(lines)-1] != "" {
+		lines = append(lines, "")
+	}
+	lines = append(lines, section(title), "")
+	return append(lines, body...)
+}
+
+func renderTaskDetailFacts(width int, facts []taskDetailFact) []string {
+	if len(facts) == 0 {
+		return nil
+	}
+	if width < 88 {
+		return renderTaskDetailFactList(width, facts)
+	}
+
+	const gutter = 4
+	columnWidth := max((width-4-gutter)/2, 12)
+	out := make([]string, 0, len(facts))
+	for i := 0; i < len(facts); i += 2 {
+		left := taskDetailFactLines(facts[i], columnWidth)
+		var right []string
+		if i+1 < len(facts) {
+			right = taskDetailFactLines(facts[i+1], columnWidth)
+		}
+		rows := max(len(left), len(right))
+		for row := 0; row < rows; row++ {
+			leftLine := ""
+			if row < len(left) {
+				leftLine = left[row]
+			}
+			line := "  " + leftLine
+			if len(right) > 0 {
+				rightLine := ""
+				if row < len(right) {
+					rightLine = right[row]
+				}
+				line = "  " + padDisplayWidth(leftLine, columnWidth) + strings.Repeat(" ", gutter) + rightLine
+			}
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func renderTaskDetailFactList(width int, facts []taskDetailFact) []string {
+	out := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		for _, line := range taskDetailFactLines(fact, max(width-4, 12)) {
+			out = append(out, "  "+line)
+		}
+	}
+	return out
+}
+
+func taskDetailFactLines(fact taskDetailFact, width int) []string {
+	labelWidth := min(18, max(width-9, 8))
+	valueWidth := max(width-labelWidth-1, 8)
+	value := valueOr(fact.value, "none")
+	if ansi.StringWidth(fact.label) > labelWidth {
+		out := make([]string, 0, 3)
+		for _, labelLine := range wrapTaskDetailText(fact.label, width) {
+			out = append(out, styleDim.Render(labelLine))
+		}
+		for _, paragraph := range strings.Split(value, "\n") {
+			if paragraph == "" {
+				out = append(out, "")
+				continue
+			}
+			for _, valueLine := range wrapTaskDetailText(paragraph, max(width-2, 8)) {
+				out = append(out, "  "+valueLine)
+			}
+		}
+		return out
+	}
+	var values []string
+	for _, paragraph := range strings.Split(value, "\n") {
+		if paragraph == "" {
+			values = append(values, "")
+			continue
+		}
+		values = append(values, wrapTaskDetailText(paragraph, valueWidth)...)
+	}
+	if len(values) == 0 {
+		values = []string{"none"}
+	}
+
+	label := ansi.Truncate(fact.label, labelWidth, "…")
+	label += strings.Repeat(" ", max(labelWidth-ansi.StringWidth(label), 0))
+	indent := strings.Repeat(" ", labelWidth+1)
+	out := make([]string, len(values))
+	for i, valueLine := range values {
+		if i == 0 {
+			out[i] = styleDim.Render(label) + " " + valueLine
+		} else {
+			out[i] = indent + valueLine
+		}
+	}
+	return out
+}
+
+func padDisplayWidth(line string, width int) string {
+	return line + strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))
+}
+
+func wrapTaskDetailText(text string, width int) []string {
+	width = max(width, 1)
+	soft := wrapPlain(text, width)
+	out := make([]string, 0, len(soft))
+	for _, line := range soft {
+		if ansi.StringWidth(line) <= width {
+			out = append(out, line)
+			continue
+		}
+		var chunk strings.Builder
+		chunkWidth := 0
+		for _, r := range line {
+			runeWidth := ansi.StringWidth(string(r))
+			if chunkWidth > 0 && chunkWidth+runeWidth > width {
+				out = append(out, chunk.String())
+				chunk.Reset()
+				chunkWidth = 0
+			}
+			chunk.WriteRune(r)
+			chunkWidth += runeWidth
+		}
+		if chunk.Len() > 0 {
+			out = append(out, chunk.String())
 		}
 	}
 	return out

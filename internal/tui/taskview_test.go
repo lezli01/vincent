@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -122,6 +123,50 @@ func TestOutputTabSelectsWhichAttemptToShow(t *testing.T) {
 	v.updateKey(tea.KeyPressMsg{Code: 'h', Text: "h"})
 	if d.selectedRun != 101 || d.displayRun != 101 {
 		t.Fatalf("h selected/displayed %d/%d, want 101/101", d.selectedRun, d.displayRun)
+	}
+}
+
+func TestTaskDetailsUsesAiryResponsiveFactGroups(t *testing.T) {
+	d := taskDetailFixture(t)
+	worktree := "/tmp/vincent/worktrees/task-7"
+	d.task.WorktreePath = &worktree
+	d.task.Fields["deployment_environment_owner"] = "platform operations"
+	d.task.Fields["unbroken"] = strings.Repeat("§", 90)
+	v := newTaskView(d)
+	v.tab = taskTabDetails
+
+	wide := ansi.Strip(v.render(110, 80))
+	lines := strings.Split(wide, "\n")
+	overview := -1
+	pairedFacts := false
+	for i, line := range lines {
+		if strings.Contains(line, "Overview") {
+			overview = i
+		}
+		if strings.Contains(line, "state") && strings.Contains(line, "project") {
+			pairedFacts = true
+		}
+	}
+	if overview < 0 || overview+1 >= len(lines) || strings.TrimSpace(lines[overview+1]) != "" {
+		t.Fatalf("Overview does not have a quiet row before its facts:\n%s", wide)
+	}
+	if !pairedFacts {
+		t.Fatalf("wide details did not arrange overview facts in two columns:\n%s", wide)
+	}
+
+	narrow := ansi.Strip(strings.Join(v.detailLines(60), "\n"))
+	for _, value := range []string{"deployment_environment_owner", "platform operations"} {
+		if !strings.Contains(narrow, value) {
+			t.Errorf("narrow details lost wrapped field content %q:\n%s", value, narrow)
+		}
+	}
+	if got := strings.Count(narrow, "§"); got != 90 {
+		t.Errorf("narrow details kept %d/90 characters from an unbroken value", got)
+	}
+	for _, line := range strings.Split(narrow, "\n") {
+		if got := ansi.StringWidth(line); got > 60 {
+			t.Errorf("narrow detail line is %d cells wide, want at most 60: %q", got, line)
+		}
 	}
 }
 
