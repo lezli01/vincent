@@ -4315,7 +4315,10 @@ stream for the live tail.
    fields, project, workflow and recorded origin, branch/worktree, state,
    priority, usage/cost, lifecycle timestamps, holds/blocks, pending input,
    fan-out/loop state, captured issue, available actions and workflow snapshot.
-   **Output** renders the selected attempt's live or historical transcript.
+	   **Output** renders the selected attempt's live or historical transcript and
+	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
+	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
+	   on that attempt.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*

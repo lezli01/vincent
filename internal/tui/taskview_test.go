@@ -78,6 +78,53 @@ func TestTaskWorkspaceEscapeReturnsToBoard(t *testing.T) {
 	}
 }
 
+func TestStepsEnterOpensSelectedAttemptInOutput(t *testing.T) {
+	d := taskDetailFixture(t)
+	d.task.Steps = []apiclient.StepRun{
+		{ID: 101, StepIndex: 0, StepID: "implement", StepName: "Implement", Attempt: 1, State: "failed"},
+		{ID: 102, StepIndex: 0, StepID: "implement", StepName: "Implement", Attempt: 2, State: "succeeded"},
+	}
+	d.selectedRun = 101
+	v := newTaskView(d)
+
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if v.tab != taskTabOutput {
+		t.Fatalf("enter opened tab %v, want Output", v.tab)
+	}
+	if d.selectedRun != 101 {
+		t.Fatalf("enter changed selected attempt to %d, want 101", d.selectedRun)
+	}
+}
+
+func TestOutputTabSelectsWhichAttemptToShow(t *testing.T) {
+	d := taskDetailFixture(t)
+	d.task.Steps = []apiclient.StepRun{
+		{ID: 101, StepIndex: 0, StepID: "implement", StepName: "Implement", Attempt: 1, State: "failed"},
+		{ID: 102, StepIndex: 0, StepID: "implement", StepName: "Implement", Attempt: 2, State: "succeeded"},
+	}
+	d.selectedRun = 101
+	v := newTaskView(d)
+	v.tab = taskTabOutput
+
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyRight})
+
+	if d.selectedRun != 102 || d.displayRun != 102 {
+		t.Fatalf("right selected/displayed %d/%d, want 102/102", d.selectedRun, d.displayRun)
+	}
+	got := v.render(100, 28)
+	for _, value := range []string{"2/2", "step 1 Implement", "attempt 2", "succeeded", "←/→ select"} {
+		if !strings.Contains(got, value) {
+			t.Errorf("output attempt selector misses %q:\n%s", value, got)
+		}
+	}
+
+	v.updateKey(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	if d.selectedRun != 101 || d.displayRun != 101 {
+		t.Fatalf("h selected/displayed %d/%d, want 101/101", d.selectedRun, d.displayRun)
+	}
+}
+
 func taskDetailFixture(t *testing.T) *detail {
 	t.Helper()
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)

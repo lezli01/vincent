@@ -169,7 +169,8 @@ The rest of the behavior follows from what a selection is:
 `enter` opens the selected task on **Steps & Attempts**, the default tab. It
 lists every attempt of every step with its duration, tokens and cost. Selecting
 an attempt chooses what the separate **Output** tab shows; the selection stays
-put while you move between tabs.
+put while you move between tabs. Press `enter` on an attempt to jump straight
+to its output.
 
 **Task Details** is the complete task inspector: title, description, declared
 fields, state, project, workflow and its recorded origin, branch and worktree,
@@ -178,7 +179,9 @@ pending input, fan-out/loop metadata, captured GitHub issue, available actions,
 and the task's workflow-step snapshot. It scrolls without editing anything.
 
 **Output** gives the selected attempt's live tail or historical transcript the
-entire view. **Diff** gives the task's file-grouped git diff the entire view.
+entire view. Its selector names the attempt and its position in the task; use
+`←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
+**Diff** gives the task's file-grouped git diff the entire view.
 
 The header names the task's workflow and, in brackets, where that definition
 came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
@@ -218,6 +221,8 @@ output. It is the sentence that decides whether to open the transcript.
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
 | `1`–`4` | Steps & Attempts / Task Details / Output / Diff |
+| `enter` | From Steps & Attempts, open the selected attempt in Output |
+| `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |

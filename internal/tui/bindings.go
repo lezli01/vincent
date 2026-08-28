@@ -130,6 +130,7 @@ var bindings = []binding{
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTimeline, hint: "[/] views", priority: 2},
 	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
+	{key: "enter", label: "open the selected attempt in the Output tab", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
 
 	// Task details.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
@@ -143,6 +144,7 @@ var bindings = []binding{
 	{key: "v", label: "show more or less: compact → normal → verbose (reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
+	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different

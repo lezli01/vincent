@@ -38,6 +38,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
 		msg = tea.KeyPressMsg{Code: tea.KeyDown}
+	case "right":
+		msg = tea.KeyPressMsg{Code: tea.KeyRight}
 	case "space":
 		msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "ctrl+s":
@@ -223,6 +225,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("down did not move the timeline selection off the first attempt")
 			}
 		},
+		"enter": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabSteps)
+			selected := v.detail.selectedRun
+			v.updateKey(registryKey(t, "enter"))
+			if v.tab != taskTabOutput || v.detail.selectedRun != selected {
+				t.Fatalf("enter opened tab %v with run %d, want Output with run %d", v.tab, v.detail.selectedRun, selected)
+			}
+		},
 	},
 
 	ctxTaskDetails: {
@@ -318,6 +328,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if len(opened) != 1 || opened[0] != path {
 				t.Fatalf("e opened %v, want the attempt's transcript at %s", opened, path)
+			}
+		},
+		"right": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOutput)
+			v.detail.selectedRun = 1
+			v.updateKey(registryKey(t, "right"))
+			if v.detail.selectedRun != 2 {
+				t.Fatalf("right selected run %d, want 2", v.detail.selectedRun)
 			}
 		},
 	},

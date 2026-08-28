@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -178,6 +179,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.popup = true
 			return nil
 		}
+		if t.tab == taskTabSteps && t.detail.selectedRun != 0 {
+			return t.setTab(taskTabOutput)
+		}
 	case "R":
 		cmd := t.detail.update(msg)
 		if t.detail.repair != nil {
@@ -194,6 +198,14 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	if t.tab == taskTabDetails {
 		return t.updateDetailsKey(msg)
+	}
+	if t.tab == taskTabOutput {
+		switch msg.String() {
+		case "left", "h":
+			return t.detail.moveSelection(-1)
+		case "right", "l":
+			return t.detail.moveSelection(1)
+		}
 	}
 	if t.tab == taskTabSteps {
 		t.detail.focus = focusTimeline
@@ -384,8 +396,7 @@ func (t *taskView) renderTabBody(width, height int) string {
 	case taskTabOutput:
 		t.detail.focus = focusOutput
 		t.detail.tab = tabOutput
-		t.detail.width = width
-		return t.detail.renderOutputPane(height)
+		return t.renderOutput(width, height)
 	case taskTabDiff:
 		t.detail.focus = focusOutput
 		t.detail.tab = tabDiff
@@ -394,6 +405,39 @@ func (t *taskView) renderTabBody(width, height int) string {
 		t.detail.focus = focusTimeline
 		return t.detail.timelinePanel(height)
 	}
+}
+
+func (t *taskView) renderOutput(width, height int) string {
+	t.detail.width = width
+	selector := t.renderOutputAttemptSelector(width)
+	if height <= 1 {
+		return selector
+	}
+	return selector + "\n" + t.detail.renderOutputPane(height-1)
+}
+
+func (t *taskView) renderOutputAttemptSelector(width int) string {
+	runs := t.detail.attempts()
+	if len(runs) == 0 {
+		return ansi.Truncate("  Attempt  —  no attempts", max(width, 1), "…")
+	}
+	i := t.detail.runIndex(t.detail.selectedRun)
+	if i < 0 {
+		return ansi.Truncate("  Attempt  —  no attempt selected", max(width, 1), "…")
+	}
+	run := runs[i]
+	identity := fmt.Sprintf(
+		"%d/%d · step %d %s · attempt %d · %s",
+		i+1, len(runs), run.StepIndex+1, stepLabel(run), run.Attempt, run.State,
+	)
+	if run.Iteration > 0 {
+		identity = fmt.Sprintf(
+			"%d/%d · step %d %s · iteration %d · attempt %d · %s",
+			i+1, len(runs), run.StepIndex+1, stepLabel(run), run.Iteration, run.Attempt, run.State,
+		)
+	}
+	line := "  Attempt  " + styleSelected.Render(identity) + styleDim.Render("   ←/→ select")
+	return ansi.Truncate(line, max(width, 1), "…")
 }
 
 func (t *taskView) renderDetails(width, height int) string {

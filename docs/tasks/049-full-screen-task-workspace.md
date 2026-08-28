@@ -30,8 +30,10 @@ The order is Steps & Attempts (default), Task Details, Output, Diff. The attempt
 cursor stays in one detail sub-model, so choosing an attempt on the first tab
 still selects the transcript on the third without duplicating state. `tab` and
 `shift+tab` are primary, `[`/`]` are compact aliases, and `1`–`4` are direct
-jumps. Diff is fetched only when its tab opens, preserving the existing rule
-that live output cannot launch a git subprocess.
+jumps. `enter` on an attempt jumps directly to Output, whose selector can move
+between attempts with `←`/`→` or `h`/`l`. Diff is fetched only when its tab
+opens, preserving the existing rule that live output cannot launch a git
+subprocess.
 
 **3. Task Details is complete and read-only.** *(2026-08-28)*
 
@@ -63,12 +65,16 @@ moving between tabs cannot select a different attempt.
 - [x] **049.5** Amend §15 and the TUI-facing guides, update the screenshot
   capture flow, regenerate affected assets, and pass the full verification
   suite. ✓ 2026-08-28
+- [x] **044.6** Add the Output attempt selector and let `enter` open the
+  timeline's selected attempt there. ✓ 2026-08-28
 
 ## What the tests prove
 
 - The routed home renders board rows and none of the four task surfaces.
 - Enter opens the selected task, Steps & Attempts is first, all four tabs cycle
   in order, and `esc` returns to the board.
+- Enter on a selected attempt opens its Output, where left/right selection
+  changes both the named attempt and the displayed transcript.
 - Task Details exposes the description, fields, workflow provenance, branch,
   lifecycle and workflow snapshot and scrolls when it exceeds the terminal.
 - The real transcript/API/SSE seam still joins catch-up and live output without
