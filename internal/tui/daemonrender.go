@@ -284,9 +284,41 @@ func (d *daemonView) adapterLines() []string {
 			if !a.SupportsInput {
 				row += "  " + styleWarn.Render("no interactive input")
 			}
+			row += adapterVerdicts(a)
 			row += "  " + styleDim.Render(quotaNote(a.Quota, now))
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+// adapterVerdicts renders the task-040 health facets that trail an adapter
+// row: what vincent knows about this build, and whether the adapter can run a
+// `restricted` step on this host.
+//
+// They come after the version and path for the reason quotaNote does: the
+// blocking conditions lead, because rows carry absolute paths and elide to the
+// pane width, so whatever trails is what a narrow terminal loses first. None
+// of these refuses a step that is already running — the restricted one is
+// refused at task creation, before this view could have shown anything.
+//
+// A `tested` build says nothing at all. Every adapter would carry the same
+// green word on a healthy machine, and a row of them is what makes the one
+// warning invisible.
+func adapterVerdicts(a apiclient.AgentStatus) string {
+	out := ""
+	switch a.VersionVerdict {
+	case apiclient.VersionVerdictUntested:
+		note := "untested"
+		if a.TestedVersions != "" {
+			note += " (tested " + a.TestedVersions + ")"
+		}
+		out += "  " + styleDim.Render(note)
+	case apiclient.VersionVerdictIncompatible:
+		out += "  " + styleBad.Render("incompatible version")
+	}
+	if a.RestrictedVerdict == apiclient.RestrictedVerdictUnsupported {
+		out += "  " + styleWarn.Render("no restricted mode here")
 	}
 	return out
 }

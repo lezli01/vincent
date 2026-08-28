@@ -33,6 +33,21 @@ type Agent struct {
 	// means the daemon predates the field, which is treated as unknown —
 	// nothing is refused on the strength of a field that was never sent.
 	InputVerdict string `json:"input_verdict,omitempty"`
+	// VersionVerdict is the daemon's reading of this build: "tested",
+	// "untested" or "incompatible" (task 040). Empty means the daemon
+	// predates the field or has nothing installed to judge — either way, no
+	// judgement, which is what a renderer must show. It is advisory
+	// everywhere: no client should refuse anything on the strength of it.
+	VersionVerdict string `json:"version_verdict,omitempty"`
+	// TestedVersions is the build list the verdict was judged against, for a
+	// renderer that wants to say what "untested" means here.
+	TestedVersions string `json:"tested_versions,omitempty"`
+	// RestrictedVerdict is the daemon's verdict on backing a
+	// `permission_mode: restricted` step: "supported", "unsupported" or
+	// "unknown" (§9.4, task 040). Unlike the others it holds without an
+	// installed binary, and it is the one the daemon refuses task creation
+	// on.
+	RestrictedVerdict string `json:"restricted_verdict,omitempty"`
 	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5); false
 	// means installed but unauthenticated, which fails every run.
 	LoggedIn *bool `json:"logged_in"`
@@ -141,6 +156,26 @@ const (
 // a daemon too old to send one, both answer false, exactly as the daemon's own
 // gate does.
 func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUnsupported }
+
+// VersionVerdict values as GET /v1/agents reports them (task 040).
+const (
+	VersionVerdictTested       = "tested"
+	VersionVerdictUntested     = "untested"
+	VersionVerdictIncompatible = "incompatible"
+)
+
+// RestrictedVerdict values as GET /v1/agents reports them (§9.4, task 040).
+const (
+	RestrictedVerdictSupported   = "supported"
+	RestrictedVerdictUnsupported = "unsupported"
+	RestrictedVerdictUnknown     = "unknown"
+)
+
+// CannotRestrict reports an adapter the daemon would refuse for a step
+// running `permission_mode: restricted`. Only a positive verdict counts:
+// unknown, and a daemon too old to send one, both answer false, exactly as
+// the daemon's own gate does.
+func (a Agent) CannotRestrict() bool { return a.RestrictedVerdict == RestrictedVerdictUnsupported }
 
 // Unavailable reports whether name is a known adapter that is not usable
 // right now. An unknown name is not "unavailable" — the catalog simply has

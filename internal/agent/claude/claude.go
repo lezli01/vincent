@@ -95,10 +95,12 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 		return agent.Availability{Path: path, Error: err.Error()}, nil
 	}
 	return agent.Availability{
-		Found:         true,
-		Path:          path,
-		Version:       version,
-		SupportsInput: supportsInput(version),
+		Found:          true,
+		Path:           path,
+		Version:        version,
+		SupportsInput:  supportsInput(version),
+		VersionVerdict: versionVerdict(version),
+		TestedVersions: agent.TestedVersionList(testedVersions),
 	}, nil
 }
 

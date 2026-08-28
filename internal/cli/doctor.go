@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -377,9 +378,41 @@ func doctorAgentRows(agents []apiclient.DoctorAgent) [][]string {
 				parts = append(parts, a.Error)
 			}
 		}
+		parts = append(parts, doctorAgentVerdicts(a)...)
 		rows = append(rows, []string{a.Name, strings.Join(parts, "  ")})
 	}
 	return rows
+}
+
+// doctorAgentVerdicts renders the task-040 health facets that trail an
+// adapter row: what vincent knows about the build, and whether the adapter can
+// restrict on this host.
+//
+// They trail deliberately — the blocking conditions ("not found", "auth no")
+// lead, and a verdict is context, not a refusal. None of them is a Problem
+// either: an untested build is the normal state for a user on a current CLI,
+// and `vincent doctor` does not exit 1 over it (task 005 decision 7).
+//
+// The version verdict is skipped when empty, which is what an adapter with
+// nothing installed reports: there is no build to have an opinion about.
+// `tested` is skipped too — the row already names the version, and a line of
+// good news per adapter is what makes the bad one hard to see.
+func doctorAgentVerdicts(a apiclient.DoctorAgent) []string {
+	var parts []string
+	switch a.VersionVerdict {
+	case apiclient.VersionVerdictUntested:
+		note := "untested version"
+		if a.TestedVersions != "" {
+			note += " (tested: " + a.TestedVersions + ")"
+		}
+		parts = append(parts, note)
+	case apiclient.VersionVerdictIncompatible:
+		parts = append(parts, "incompatible version")
+	}
+	if a.RestrictedVerdict == apiclient.RestrictedVerdictUnsupported {
+		parts = append(parts, "no restricted mode on "+runtime.GOOS)
+	}
+	return parts
 }
 
 // doctorGitHubRows renders the GitHub issue integration row (task 035).

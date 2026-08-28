@@ -48,6 +48,9 @@ func mergeOptions(cliModels, cliEfforts []string) agent.Options {
 		// Detect answers (§9.3); the catalog only says the answer is worth
 		// asking, so §8.2 leaves a requiring step alone (task 013).
 		InputSupport: agent.InputDetected,
+		// `--allowedTools` is a flag every claude build has (§9.2), so
+		// restricted mode is available on every platform (task 040).
+		RestrictedSupport: agent.RestrictedAlways,
 	}
 }
 

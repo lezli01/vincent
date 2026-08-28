@@ -1,0 +1,37 @@
+Usage: claude [options] [command] [prompt]
+
+Claude Code - starts an interactive session by default, use -p/--print for
+non-interactive output
+
+Arguments:
+  prompt                          Your prompt
+
+Options:
+  -d, --debug [filter]            Enable debug mode with optional category
+                                  filtering
+  --verbose                       Override verbose mode setting from config
+  -p, --print                     Print response and exit (useful for pipes)
+  --output-format <format>        Output format (only works with --print):
+                                  "text" (default), "json" (single result),
+                                  or "stream-json" (realtime streaming)
+  --input-format <format>         Input format (only works with --print):
+                                  "text" (default), or "stream-json"
+                                  (realtime streaming input)
+  --include-partial-messages      Include partial message chunks as they
+                                  arrive (only works with --print and
+                                  --output-format=stream-json)
+  --primary-model <model>         Model for the current session. Provide an
+                                  alias for the latest model (e.g. 'sonnet'
+                                  or 'opus' or 'haiku') or a model's full
+                                  name (e.g.
+                                  'claude-sonnet-4-5-20250929')
+  --effort <effort>               Constrain how much reasoning effort the
+                                  model spends
+  --allowedTools <tools...>       Comma or space-separated list of tool names
+                                  to allow (e.g. "Bash(git:*) Edit")
+  --disallowedTools <tools...>    Comma or space-separated list of tool names
+                                  to deny (e.g. "Bash(git:*) Edit")
+  --dangerously-skip-permissions  Bypass all permission checks. Recommended
+                                  only for sandboxes with no internet access
+  -v, --version                   Output the version number
+  -h, --help                      Display help for command

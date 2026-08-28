@@ -69,9 +69,11 @@
 //	                      "cursor" the calver+sha style (run dialect is
 //	                      argv-driven; this only affects the version probe,
 //	                      which carries no dialect hint)
-//	FAKEAGENT_VERSION     claude dialect: version number --version reports
-//	                      (default 2.1.224) — lets tests drive the §7.4
-//	                      supports_input version gate
+//	FAKEAGENT_VERSION     version string --version reports, in every dialect
+//	                      (defaults: 2.1.224 claude, codex-cli 0.142.5,
+//	                      2026.08.04-fake000) — lets tests drive the §7.4
+//	                      supports_input version gate and the task-040
+//	                      version verdict
 //	FAKEAGENT_EDIT_FILE   success, ask-question (post-answer): append a line
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
@@ -139,13 +141,23 @@ func main() {
 	for _, a := range os.Args[1:] {
 		switch a {
 		case "--version", "-v", "-V":
+			// FAKEAGENT_VERSION overrides every dialect (task 040): the
+			// version verdict is judged per adapter, so each dialect needs a
+			// way to report a version the adapter has never been tested
+			// against. Unset keeps each dialect's own pinned default.
+			v := os.Getenv("FAKEAGENT_VERSION")
 			switch os.Getenv("FAKEAGENT_DIALECT") {
 			case "codex":
-				fmt.Println(codexVersion)
+				if v == "" {
+					v = codexVersion
+				}
+				fmt.Println(v)
 			case "cursor":
-				fmt.Println(cursorVersion)
+				if v == "" {
+					v = cursorVersion
+				}
+				fmt.Println(v)
 			default:
-				v := os.Getenv("FAKEAGENT_VERSION")
 				if v == "" {
 					v = defaultVersion
 				}

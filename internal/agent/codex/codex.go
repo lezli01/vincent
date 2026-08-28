@@ -90,10 +90,12 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 		version = raw
 	}
 	return agent.Availability{
-		Found:    true,
-		Path:     path,
-		Version:  version,
-		LoggedIn: a.loggedIn(ctx, path),
+		Found:          true,
+		Path:           path,
+		Version:        version,
+		LoggedIn:       a.loggedIn(ctx, path),
+		VersionVerdict: versionVerdict(version),
+		TestedVersions: agent.TestedVersionList(testedVersions),
 	}, nil
 }
 

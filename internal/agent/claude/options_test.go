@@ -95,3 +95,41 @@ func TestOptionsMissingBinary(t *testing.T) {
 		t.Errorf("curated catalog must still be served on probe failure, got %+v", opts)
 	}
 }
+
+// TestParseMutatedHelpDegrades is the CLI-drift case (issue #148 AC6): a
+// future claude that renames --model and drops the --effort enum. The parser
+// must find nothing rather than half a catalog, and the merged result must be
+// the curated one, complete and provenance-tagged — a probe that stops
+// understanding the output degrades, it does not block (§9.6).
+//
+// probe_error is deliberately *not* asserted here: §9.6 defines it as "the
+// option probe failed", and a --help that ran and printed something did not
+// fail. The failing-probe leg is TestCatalogCacheMissingBinaryDegrades in
+// internal/agent, which is where the entry that carries the field lives.
+func TestParseMutatedHelpDegrades(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "help_mutated.txt"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	models, efforts := parseHelp(string(raw))
+	if len(models) != 0 {
+		t.Errorf("models = %v from a renamed --model flag; want nothing", models)
+	}
+	if len(efforts) != 0 {
+		t.Errorf("efforts = %v from a --effort with no enum; want nothing", efforts)
+	}
+	opts := mergeOptions(models, efforts)
+	if len(opts.Models) != len(curatedModels) || len(opts.Efforts) != len(curatedEfforts) {
+		t.Errorf("degraded catalog incomplete: %+v", opts)
+	}
+	for _, o := range append(opts.Models, opts.Efforts...) {
+		if o.Source != agent.SourceCurated {
+			t.Errorf("option %q source = %q, want curated-only fallback", o.Value, o.Source)
+		}
+	}
+	// The static capability levels survive a help vincent cannot read: they
+	// are compiled in, not probed (task 013, task 040).
+	if opts.InputSupport != agent.InputDetected || opts.RestrictedSupport != agent.RestrictedAlways {
+		t.Errorf("capability levels lost on a degraded probe: %+v", opts)
+	}
+}

@@ -94,6 +94,14 @@ type AgentStatus struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// VersionVerdict, TestedVersions and RestrictedVerdict are the two health
+	// facets task 040 added beside the three /v1/info already carried
+	// (installed, authenticated, and the §7.4 protocol half of
+	// protocol-compatible). Both are advisory here; the restricted one is
+	// what task creation refuses on (§9.4).
+	VersionVerdict    string `json:"version_verdict"`
+	TestedVersions    string `json:"tested_versions,omitempty"`
+	RestrictedVerdict string `json:"restricted_verdict"`
 	// LoggedIn is null where the adapter has no cheap authentication probe
 	// (claude, whose CLI exposes no non-interactive auth surface) and a
 	// definite boolean where it has one (codex's `login status`, cursor's
@@ -312,14 +320,17 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			agents = append(agents, AgentStatus{
-				Name:          name,
-				Available:     e.Availability.Found,
-				Path:          e.Availability.Path,
-				Version:       e.Availability.Version,
-				SupportsInput: e.Availability.SupportsInput,
-				LoggedIn:      e.Availability.LoggedIn,
-				Error:         e.Availability.Error,
-				Quota:         quotas[name],
+				Name:              name,
+				Available:         e.Availability.Found,
+				Path:              e.Availability.Path,
+				Version:           e.Availability.Version,
+				SupportsInput:     e.Availability.SupportsInput,
+				VersionVerdict:    string(e.Availability.VersionVerdict),
+				TestedVersions:    e.Availability.TestedVersions,
+				RestrictedVerdict: string(e.RestrictedVerdict()),
+				LoggedIn:          e.Availability.LoggedIn,
+				Error:             e.Availability.Error,
+				Quota:             quotas[name],
 			})
 		}
 	}
