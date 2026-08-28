@@ -115,9 +115,12 @@ command.
 
 Two properties matter more than the mechanism:
 
-**An adapter that cannot restrict on your platform fails the step.** It never
-downgrades. Cursor on Windows returns a distinct error and vincent blocks the
-step with `restricted_unsupported`, under the normal retry policy. Falling back
+**An adapter that cannot restrict on your platform never runs the step.** It
+never downgrades. Vincent refuses to create a task whose restricted step
+resolves to cursor on Windows, answering `400` and naming the step and the
+agent — a fact about the adapter and the OS, so it holds even where the CLI is
+not installed. A task that reaches the engine anyway blocks with
+`restricted_unsupported`, under the normal retry policy. Falling back
 to full-auto was rejected outright: it would run wide-open a step that explicitly
 asked not to be, converting a safety choice into its opposite on exactly one OS —
 the failure mode nobody would think to check for.

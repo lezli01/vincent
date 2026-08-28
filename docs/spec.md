@@ -2158,6 +2158,8 @@ defaults:
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": null,
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226",
+    "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" }, { "value": "opus", "source": "cli" } ],
     "efforts": [ { "value": "low", "source": "cli" }, { "value": "max", "source": "cli" } ],
     "default_model": "", "default_effort": "",
@@ -3342,8 +3344,8 @@ GET    /v1/agents                       per-adapter availability + model/effort 
                                         ?refresh=true forces a re-probe.
                                         *Added 2026-08-28 (task 041):* the §9.5 health facets
                                         `version_verdict`, `tested_versions` and
-                                        `restricted_verdict`, siblings of `input_verdict`. The
-                                        first two also ride /v1/info's `agents[]` and
+                                        `restricted_verdict`, siblings of `input_verdict`. All
+                                        three also ride /v1/info's `agents[]` and
                                         /v1/doctor's `agents[]`, alongside `supports_input`, so
                                         a client reads one adapter the same way on all three
 GET    /v1/doctor                       the whole §17 diagnostic in one body: paths, daemon,

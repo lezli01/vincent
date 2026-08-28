@@ -183,7 +183,7 @@ Every key here is also settable per step, where it wins.
 | `agent` | `claude` \| `codex` \| `cursor` | daemon default | agent steps |
 | `model` | string | adapter default | agent steps |
 | `effort` | string | adapter default | agent steps (**ignored by cursor**) |
-| `permission_mode` | `full-auto` \| `restricted` | `full-auto` | agent steps |
+| `permission_mode` | `full-auto` \| `restricted` | `full-auto` | agent steps; `restricted` also gates which agents may run the step |
 | `on_input` | `wait` \| `deny` \| `require` | `wait` | agent steps; `require` also gates which agents may run the step |
 | `input_timeout` | duration | `24h` (config) | agent steps |
 | `max_retries` | int | `1` | all steps |
@@ -233,7 +233,7 @@ Runs an agent CLI headlessly in the worktree.
 | `agent` | string | | `claude`, `codex` or `cursor` |
 | `model` | string | | Adapter-native id or alias |
 | `effort` | string | | Adapter-native. Cursor has none — it lives in the model id |
-| `permission_mode` | string | | `full-auto` (default) or `restricted` |
+| `permission_mode` | string | | `full-auto` (default) or `restricted`. `restricted` needs an adapter that can restrict on this host — cursor cannot on Windows, and a task whose restricted step resolves there is refused at creation |
 | `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex or cursor; `require` refuses them |
 | `input_timeout` | duration | | Bounds each wait in `awaiting_input`, per request |
 | `check` | string | | Shell command that must exit 0 for the attempt to succeed |

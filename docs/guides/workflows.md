@@ -1592,7 +1592,7 @@ capability an adapter lacks is ignored at run time; it is never emulated.
 | Reports cost | ✅ | — | — |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | Model catalog | ✅ | — (account-dependent; free text) | ✅ (probed over the network) |
-| `restricted` on Windows | ✅ | ✅ | **—** (the step fails; it never downgrades) |
+| `restricted` on Windows | ✅ | ✅ | **—** (the task is refused at creation; it never downgrades) |
 
 `vincent workflow validate` catches a model or effort value belonging to
 *another* adapter's catalog — claude's `sonnet` or `max` reaching a codex step
@@ -1616,9 +1616,12 @@ documented design decision, not an oversight — see the
 `restricted` maps to each adapter's own confinement. Use it for steps that have
 no business running commands — a docs pass, a review. Two things to know:
 
-- An adapter that **cannot** restrict on your platform **fails the step** with
-  `restricted_unsupported` rather than running it unrestricted. A restricted
-  mode that quietly is not restricted is worse than none.
+- An adapter that **cannot** restrict on your platform never runs the step
+  unrestricted. Vincent knows this without asking the CLI, so **creating** such
+  a task is refused with a `400` naming the step and the agent; a task that
+  reaches the engine anyway — the workflow changed, or the data directory came
+  from another OS — fails it with `restricted_unsupported`. A restricted mode
+  that quietly is not restricted is worse than none.
 - It changes agent behaviour in ways that read as bugs if you did not ask for
   them: claude turns every non-allowlisted tool into a permission prompt. That
   is why the shipped examples are all `full-auto`.

@@ -573,6 +573,15 @@ which is the normal state, since no CLI can report remaining quota without
 actually running. This is the one view that says "unknown" out loud; its job is
 to list every fact about an adapter, including the ones nobody has.
 
+The row also trails with what vincent knows about the build itself: `untested`
+and the builds the adapter was judged against, `incompatible version` for a
+build known to break, and `no restricted mode here` where the adapter cannot
+honour `permission_mode: restricted` on this OS (see
+[Agent CLIs](agents.md)). None of them refuses anything from here — a
+`restricted` step on an adapter that cannot restrict is refused when the task is
+created — and a `tested` build says nothing at all, because one green word per
+adapter is what makes the one warning invisible.
+
 An **orphans** line appears in the identity block when the daemon has found
 directories under its data dir that no task claims, naming the count and
 `vincent gc`. It is a pointer, not a button: for the same reason this view does
