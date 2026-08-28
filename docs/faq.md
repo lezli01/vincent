@@ -29,8 +29,9 @@ per workflow, per step, or per task. See [Agent CLIs](guides/agents.md).
 ### Does it work on Windows?
 
 Yes — fully, and CI proves it on every pull request alongside macOS and Linux.
-The one genuine gap is that cursor's `restricted` mode requires macOS or Linux,
-where vincent fails the step rather than silently running it full-auto. See
+The one genuine gap is that cursor's `restricted` mode requires macOS or Linux;
+elsewhere vincent refuses the task at creation rather than silently running the
+step full-auto. See
 [Windows](platforms/windows.md).
 
 ### Is my repository safe? What does "full-auto" actually mean?

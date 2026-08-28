@@ -22,15 +22,34 @@ type agentResponse struct {
 	// a false there is "no" for an installed binary and "nobody can say" for
 	// an absent one — so the daemon publishes the verdict its own gate uses
 	// rather than leaving each client to re-derive the asymmetry.
-	InputVerdict  string         `json:"input_verdict"`
-	LoggedIn      *bool          `json:"logged_in"` // null = the adapter cannot tell (§9.5)
-	Error         string         `json:"error,omitempty"`
-	Models        []agent.Option `json:"models"`
-	Efforts       []agent.Option `json:"efforts"`
-	DefaultModel  string         `json:"default_model"`
-	DefaultEffort string         `json:"default_effort"`
-	ProbedAt      string         `json:"probed_at"`
-	ProbeError    *string        `json:"probe_error"`
+	InputVerdict string `json:"input_verdict"`
+	// VersionVerdict is what vincent knows about this build: "tested",
+	// "untested", "incompatible", or "" when nothing is installed to judge
+	// (task 041). It is advisory — nothing refuses a run on account of it —
+	// and "untested" is the normal answer for a user on a current CLI.
+	VersionVerdict string `json:"version_verdict"`
+	// TestedVersions is the build list version_verdict was judged against,
+	// so a client can say what "untested" is untested against.
+	TestedVersions string `json:"tested_versions,omitempty"`
+	// RestrictedVerdict is whether this adapter can run a `permission_mode:
+	// restricted` step on this host: "supported", "unsupported" or "unknown"
+	// (§9.4, §9.7, task 041). Unlike the others it needs no installed
+	// binary — it is a fact about the adapter and the OS — and it is the one
+	// verdict here that refuses anything: task creation rejects a restricted
+	// step bound for an adapter reported "unsupported".
+	//
+	// Model-catalog health is not a fourth field: it is `probe_error`, which
+	// §9.6 already defines as exactly "the option probe failed and you are
+	// reading the curated catalog".
+	RestrictedVerdict string         `json:"restricted_verdict"`
+	LoggedIn          *bool          `json:"logged_in"` // null = the adapter cannot tell (§9.5)
+	Error             string         `json:"error,omitempty"`
+	Models            []agent.Option `json:"models"`
+	Efforts           []agent.Option `json:"efforts"`
+	DefaultModel      string         `json:"default_model"`
+	DefaultEffort     string         `json:"default_effort"`
+	ProbedAt          string         `json:"probed_at"`
+	ProbeError        *string        `json:"probe_error"`
 	// Quota is what the daemon has watched happen to this adapter's usage
 	// window (task 026); null when nothing has ever been observed for it.
 	// There is no probe behind it — no CLI vincent ships can report remaining
@@ -58,20 +77,23 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		resp := agentResponse{
-			Name:          name,
-			Available:     e.Availability.Found,
-			Path:          e.Availability.Path,
-			Version:       e.Availability.Version,
-			SupportsInput: e.Availability.SupportsInput,
-			InputVerdict:  string(e.InputVerdict()),
-			LoggedIn:      e.Availability.LoggedIn,
-			Error:         e.Availability.Error,
-			Models:        e.Options.Models,
-			Efforts:       e.Options.Efforts,
-			DefaultModel:  e.Options.DefaultModel,
-			DefaultEffort: e.Options.DefaultEffort,
-			ProbedAt:      e.ProbedAt.UTC().Format(time.RFC3339),
-			Quota:         quotas[name],
+			Name:              name,
+			Available:         e.Availability.Found,
+			Path:              e.Availability.Path,
+			Version:           e.Availability.Version,
+			SupportsInput:     e.Availability.SupportsInput,
+			InputVerdict:      string(e.InputVerdict()),
+			VersionVerdict:    string(e.Availability.VersionVerdict),
+			TestedVersions:    e.Availability.TestedVersions,
+			RestrictedVerdict: string(e.RestrictedVerdict()),
+			LoggedIn:          e.Availability.LoggedIn,
+			Error:             e.Availability.Error,
+			Models:            e.Options.Models,
+			Efforts:           e.Options.Efforts,
+			DefaultModel:      e.Options.DefaultModel,
+			DefaultEffort:     e.Options.DefaultEffort,
+			ProbedAt:          e.ProbedAt.UTC().Format(time.RFC3339),
+			Quota:             quotas[name],
 		}
 		if resp.Models == nil {
 			resp.Models = []agent.Option{}

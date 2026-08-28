@@ -183,7 +183,8 @@ Adapters differ in what they can do, and the differences are **documented, never
 faked**. A capability an adapter lacks is stated and ignored at run time rather
 than emulated: codex ships no model catalog and no mid-run input; cursor has no
 effort concept at all (it lives in the model id) and cannot honor `restricted`
-on Windows, where the step fails rather than quietly running full-auto.
+on Windows, where the task is refused at creation rather than quietly running
+the step full-auto.
 
 See [Agent CLIs](../guides/agents.md).
 

@@ -12,6 +12,13 @@ type AgentStatus struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// VersionVerdict, TestedVersions and RestrictedVerdict are the task-041
+	// health facets: what vincent knows about this build, the builds it was
+	// judged against, and whether this adapter can restrict on this host.
+	// Empty means a daemon that predates them, which renders as no judgement.
+	VersionVerdict    string `json:"version_verdict,omitempty"`
+	TestedVersions    string `json:"tested_versions,omitempty"`
+	RestrictedVerdict string `json:"restricted_verdict,omitempty"`
 	// LoggedIn is nil when the adapter cannot cheaply tell (§9.5). Renderers
 	// must distinguish nil from false: "unknown" is the normal state for
 	// claude and codex, while false means every run will fail at the API.

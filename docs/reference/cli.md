@@ -80,7 +80,7 @@ One report answering "why is nothing running?". Eight groups:
 | Daemon | running / not running / unresponsive, pid, port, version, uptime |
 | Log | daemon log path, size, mtime, and the last 20 lines |
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
-| Agents | per adapter: found, path, version, and `logged_in` |
+| Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -102,7 +102,16 @@ with *tasks can still be created without an issue*. The token row names the
 **variable** (`GITHUB_TOKEN` or `GH_TOKEN`), never its value: a diagnostic is
 something people paste into issues.
 
-A missing or logged-out agent CLI is reported and deliberately does
+An adapter row also ends with what vincent knows about the build itself:
+`untested version` and the builds it was judged against, `incompatible version`
+for a build known to break, and `no restricted mode on <os>` where the adapter
+cannot honour `permission_mode: restricted` here (cursor on Windows). `untested`
+is the normal answer for anyone on a current CLI and is not a defect — agent
+CLIs ship far more often than vincent does. A `tested` build prints nothing:
+one line of good news per adapter would bury the one warning.
+
+A missing or logged-out agent CLI — or an untested, incompatible or
+cannot-restrict one — is reported and deliberately does
 *not* set the exit code — most machines have one of three adapters installed,
 and a doctor that exits `1` almost everywhere is no use in a script. Neither do
 task *counts*: twelve blocked tasks is information, not a defect.

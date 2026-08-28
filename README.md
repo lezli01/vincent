@@ -163,7 +163,8 @@ Three things to know about the Cursor adapter specifically:
   running a cursor step overwrites the model you last picked in an
   interactive `cursor-agent` session.
 - **`restricted` permission mode needs macOS or Linux.** Cursor's sandbox is
-  unavailable on Windows, so a restricted cursor step fails there with
+  unavailable on Windows, so vincent refuses to create a task whose restricted
+  step would run there — and a task that reaches the engine anyway fails with
   `restricted_unsupported` rather than silently running full-auto. That is
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.

@@ -29,6 +29,38 @@ list with the user-facing context a commit subject cannot carry.
   do not send one, they do not retry a create, and two identical sends still make
   two tasks — which is what pressing enter twice means. Documented in the
   [API reference](docs/reference/api.md#replaying-a-create).
+- **Vincent now tells you whether it has ever been tested against the agent CLI
+  you have installed.** Each adapter carries the list of builds its parsers were
+  captured against, and `GET /v1/agents`, `GET /v1/info`, `vincent doctor` and
+  the TUI's daemon view report a `version_verdict` for the build you are running:
+  `tested`, `untested`, or `incompatible` for a build vincent knows breaks. It is
+  **advisory and blocks nothing** — `untested` is the normal, expected answer a
+  few weeks after any vincent release, and it changes nothing about how a step
+  runs. The `incompatible` list ships empty for all three adapters, because no
+  such build has been observed. Adapter health is now five separately reported
+  facets: installed, authenticated, protocol-compatible (`supports_input` plus
+  the version verdict), permission-compatible (`restricted_verdict`), and
+  model-catalog health, which is the existing `probe_error` and is not
+  duplicated. ([#148](https://github.com/lezli01/vincent/issues/148))
+
+### Changed
+
+- **A `restricted` step bound for an agent that cannot restrict on this machine
+  is now refused when you create the task, not when it runs.** Cursor's
+  restricted mode needs its CLI sandbox, which exists on macOS and Linux only;
+  on Windows such a step used to reach the engine, start nothing, and fail
+  `restricted_unsupported` after spending a worktree, an admission and a retry.
+  `POST /v1/tasks` now answers `400 validation_failed` naming the step and the
+  agent, and the daemon publishes the `restricted_verdict` its gate uses. The
+  answer needs no installed binary — it is a fact about the adapter and the
+  operating system — so it is correct even on a machine where the CLI is
+  missing. Nothing is downgraded to full-auto, then or now: a restricted mode
+  that silently is not restricted is worse than none. The engine's
+  `restricted_unsupported` failure stays exactly as it was, for a task whose
+  daemon changed underneath it — a data directory carried to Windows, or a
+  workflow edited after the task was queued. Retries are not gated; that
+  backstop is what catches them.
+  ([#148](https://github.com/lezli01/vincent/issues/148))
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 

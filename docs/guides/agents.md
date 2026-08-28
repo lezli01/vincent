@@ -30,14 +30,17 @@ silently drops.
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
-| `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **fails on Windows** |
+| `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
+| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | — | — | — |
 
 `vincent daemon status`, the TUI's daemon view, and `GET /v1/agents` all report
-what vincent actually resolved on your machine — path, version, and the model
-and effort options it discovered.
+what vincent actually resolved on your machine — path, version, the model and
+effort options it discovered, and the health verdicts below: whether the build
+you have is one vincent has been tested against, and whether the adapter can
+restrict anything on this operating system.
 
 ## Claude Code
 
@@ -172,9 +175,12 @@ lands on cursor's own default rather than on wherever the last task left it.
 ### 3. `restricted` needs macOS or Linux
 
 `--sandbox enabled` exits 1 on Windows with *"Sandbox requires macOS or
-Linux"* before doing any work. A restricted cursor step therefore **fails to
-start on Windows**, with block reason `restricted_unsupported`, under the normal
-retry policy.
+Linux"* before doing any work. Vincent therefore **refuses to create a task**
+whose restricted step resolves to cursor on Windows: `POST /v1/tasks` answers
+`400` naming the step and the agent, and the TUI shows that message on the
+new-task form. A task that reaches the engine anyway — a data directory carried
+to Windows, or a workflow edited after the task was queued — fails to start with
+block reason `restricted_unsupported`, under the normal retry policy.
 
 Falling back to `--force` was rejected outright: it would run full-auto a step
 that explicitly asked not to be, turning a safety choice into its opposite on
@@ -248,6 +254,53 @@ about the binary changes when you log in — so past five minutes vincent re-ask
 that one question and leaves the option catalog alone. A re-ask that fails keeps
 the previous answer rather than downgrading it, for the same reason the probe
 never guesses.
+
+### Was this build ever tested?
+
+Every adapter carries the list of CLI builds vincent's parsers were captured
+against, and reports a verdict on the one you have installed:
+
+| Verdict | Meaning | What it changes |
+|---|---|---|
+| `tested` | your build is one vincent has fixtures for | nothing |
+| `untested` | anything else | **nothing** |
+| `incompatible` | a build vincent knows breaks | nothing today |
+
+`untested` is the normal, expected answer. Agent CLIs ship far more often than
+vincent does, so a few weeks after any release most people are on a build newer
+than the fixtures — and it is expected to work. The verdict is **advisory
+everywhere**: no run is refused, no task is blocked, and `vincent doctor` does
+not exit 1 over it. It exists so that when something *does* look wrong, you can
+tell at a glance whether you are on ground vincent has walked.
+
+Comparison is exact: cursor's version is `2026.08.04-aaa8809`, calver plus a
+commit sha, which no version range can order — so rather than have one adapter
+answer a different question from the other two, all three compare whole strings.
+The `incompatible` list ships empty for all three, because no such build has
+been observed.
+
+`vincent doctor` and the TUI's daemon view print the verdict beside each
+adapter, along with the builds it was judged against;
+[`GET /v1/agents`](../reference/api.md) carries it as `version_verdict` and
+`tested_versions`.
+
+### Can this agent restrict anything here?
+
+`restricted_verdict` answers whether an adapter can honour
+`permission_mode: restricted` **on this machine**. Cursor answers `unsupported`
+on Windows and `supported` everywhere else; claude and codex answer `supported`
+everywhere.
+
+This is the one health verdict that refuses something. A task whose restricted
+step resolves to an adapter that cannot restrict here is rejected at creation
+with a `400` naming the step and the agent, rather than being allowed to spend a
+worktree and a retry to fail with `restricted_unsupported`. The answer does not
+depend on the installed binary — it is a fact about the adapter and the
+operating system — so it is correct even where the CLI is missing entirely.
+
+The step failure still exists as a backstop, for a task whose daemon changed
+underneath it: a data directory carried to Windows, or a workflow edited after
+the task was queued.
 
 ### Nobody can tell you how much quota is left
 

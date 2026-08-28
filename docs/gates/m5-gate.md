@@ -18,7 +18,7 @@ VINCENT_GATE_SCENARIO=2 ./scripts/m5-gate.sh     # one scenario, for debugging
 | 1 | A `agent: cursor` workflow runs to done; the step records `agent=cursor`, tokens, **no** cost and **no** effort; the transcript carries cursor-shaped lines; the branch carries the edit | yes |
 | 2 | A model the CLI rejects fails with the **stderr tail** in the step record — cursor emits no `result` event on that path (§9.7, §18) | yes |
 | 3 | An installed-but-unauthenticated CLI reports `logged_in: false` while staying `available: true`, on both `/v1/agents` and `/v1/info`; adapters that cannot tell report `null` (§9.5) | no — it would mean signing you out |
-| 4 | A `restricted` step is refused with `restricted_unsupported` where cursor's sandbox is unavailable, and **no process is spawned**; elsewhere the same workflow simply runs (§9.4) | no — asserts vincent's own behavior |
+| 4 | A `restricted` step is refused where cursor's sandbox is unavailable, never downgraded to full-auto; elsewhere the same workflow simply runs (§9.4) | no — asserts vincent's own behavior |
 
 ## Prerequisite (Windows, when the daemon is parented by Git Bash)
 
@@ -150,6 +150,25 @@ is the only OS where cursor's sandbox is unavailable, so it is the only place
 the refusal is real rather than forced. It passed above. The corresponding
 "restricted actually runs" leg needs macOS or Linux; CI covers it with
 fakeagent on both.
+
+**Amended 2026-08-28 (task 041): where scenario 4's refusal happens moved.**
+The Windows refusal is now `POST /v1/tasks` answering `400 validation_failed`
+and naming the step and the agent, because the daemon can tell from the adapter
+and `GOOS` alone that the step could never run restricted (§9.4). The engine's
+`restricted_unsupported` block reason survives as the backstop for a task whose
+daemon changed underneath it, so what the walkthrough proves is unchanged in
+substance — a restricted step is refused, never downgraded — but the surface it
+is proved on is the create call rather than the block reason. The POSIX leg is
+untouched: cursor can restrict there, so the task is created and simply runs.
+
+`scripts/m5-gate.sh` asserts the new surface. Scenario 4's Windows leg posts
+the create call through `try_api` — `api` without the non-2xx exit, since the
+expected answer *is* a refusal — and requires `400`, a `validation_failed`
+envelope, a message naming both the step and the agent, and that `GET /v1/tasks`
+is left with no task. The engine's `restricted_unsupported` backstop is not
+scripted, because the only way to reach it is a daemon that changed under an
+existing task, which a gate cannot stage; the Go tests cover it. The POSIX leg
+is unchanged.
 
 **M5 is complete (2026-08-12).** Scenario 1 passed against the real CLI on
 Windows and on macOS; macOS also carried scenario 4's "restricted actually runs"

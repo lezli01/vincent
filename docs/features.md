@@ -233,7 +233,8 @@ See the [new-task form](guides/tui.md), the
 
 `vincent doctor` produces one report covering paths, configuration, daemon
 health, the recent log tail, the database's footprint, row counts and integrity,
-agent availability and login state, the GitHub integration, disk use, worktrees,
+agent availability, login state and whether the installed CLI build is one
+vincent has been tested against, the GitHub integration, disk use, worktrees,
 and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.

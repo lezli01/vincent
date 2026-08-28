@@ -138,6 +138,8 @@ are long-lived by contract and no write deadline is set.
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": null,
+    "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226",
+    "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
     "efforts": [ { "value": "max",    "source": "cli" } ],
     "default_model": "", "default_effort": "",
@@ -154,6 +156,32 @@ surface) and a definite boolean where it does (**codex** via `login status`,
 **cursor** via `status`) — because an installed-but-unauthenticated CLI probes
 as healthy and then fails every run. It is never guessed: a probe that times out
 or cannot be spawned reports `null`, not `false`.
+
+Adapter health is five separate facets, and each has exactly one field:
+
+| Facet | Field | Notes |
+|---|---|---|
+| installed | `available`, `path` | |
+| authenticated | `logged_in` | `null` = the adapter cannot tell; never a guess |
+| protocol-compatible | `supports_input`, `version_verdict` | |
+| permission-compatible | `restricted_verdict` | |
+| model-catalog | `probe_error` | non-null = you are reading the curated catalog |
+
+`version_verdict` is `tested`, `untested`, `incompatible`, or `""` when nothing
+is installed to judge, and `tested_versions` is the build list it was compared
+against — whole-string equality, since cursor's calver-plus-sha version admits
+no range. It is **advisory**: no endpoint refuses anything on account of it, and
+`untested` is the normal answer for a current CLI.
+
+`restricted_verdict` is `supported`, `unsupported` or `unknown`, and it is the
+one verdict here that refuses something: `POST /v1/tasks` answers `400
+validation_failed` when a step running `permission_mode: restricted` resolves to
+an adapter reported `unsupported` (cursor on Windows). It needs no installed
+binary — it is a fact about the adapter and the operating system — so it is
+answered even for a CLI that is missing.
+
+`version_verdict`, `tested_versions` and `restricted_verdict` also ride
+`GET /v1/info`'s and `GET /v1/doctor`'s `agents[]`, beside `supports_input`.
 
 ### Backup
 
@@ -255,7 +283,10 @@ endpoints can never disagree. Changes are announced by the
                 "oldest_event_at": "2025-06-02T09:11:04Z",
                 "workflow_snapshot_bytes": 2179072 },
   "agents":   [ { "name": "codex", "available": true, "path": "…",
-                  "version": "0.147.0", "logged_in": true } ],
+                  "version": "0.147.0", "logged_in": true,
+                  "supports_input": false, "version_verdict": "tested",
+                  "tested_versions": "0.142.5, 0.147.0",
+                  "restricted_verdict": "supported" } ],
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
                 "disk_total_bytes": 494384795648,
                 "worktree_count": 3, "worktree_bytes": 8412736,

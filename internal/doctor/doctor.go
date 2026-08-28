@@ -182,6 +182,28 @@ type Agent struct {
 	// — claude today (§9.5). It is never a guess.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
+	// The remaining fields are the five §9.5 health facets task 041 named,
+	// minus the two this row already carried (installed, authenticated):
+	// SupportsInput and VersionVerdict are the protocol-compatible pair, and
+	// RestrictedVerdict is permission-compatible. Model-catalog health is
+	// deliberately absent — it is `probe_error` on GET /v1/agents (§9.6), and
+	// doctor does not run an option probe at all.
+	//
+	// None of them is a Problem. Doctor's unhealthy set stays closed (task
+	// 005 decision 7): an untested build, an incompatible one, an adapter
+	// that cannot restrict here and one that is missing entirely are all rows
+	// in this group, and none of them changes `vincent doctor`'s exit code.
+	SupportsInput bool `json:"supports_input"`
+	// VersionVerdict is "tested", "untested", "incompatible", or empty when
+	// there is no build to judge (task 041).
+	VersionVerdict string `json:"version_verdict"`
+	// TestedVersions is what the verdict was judged against.
+	TestedVersions string `json:"tested_versions,omitempty"`
+	// RestrictedVerdict is "supported", "unsupported" or "unknown" (§9.4,
+	// §9.7). It comes from the curated catalog, so it is answered for an
+	// adapter with nothing installed — the answer does not depend on a
+	// binary.
+	RestrictedVerdict string `json:"restricted_verdict"`
 }
 
 // GitHub is the §12.1 row for the GitHub issue integration (task 035). It
@@ -435,12 +457,19 @@ func DetectAgents(ctx context.Context, cfg config.Config) []Agent {
 			av = agent.Availability{Error: err.Error()}
 		}
 		out = append(out, Agent{
-			Name:      name,
-			Available: av.Found,
-			Path:      av.Path,
-			Version:   av.Version,
-			LoggedIn:  av.LoggedIn,
-			Error:     av.Error,
+			Name:           name,
+			Available:      av.Found,
+			Path:           av.Path,
+			Version:        av.Version,
+			LoggedIn:       av.LoggedIn,
+			Error:          av.Error,
+			SupportsInput:  av.SupportsInput,
+			VersionVerdict: string(av.VersionVerdict),
+			TestedVersions: av.TestedVersions,
+			// Curated() rather than Options(): the restricted verdict is a
+			// static fact and doctor must not spawn an option probe to read
+			// it (task 041).
+			RestrictedVerdict: string(agent.RestrictedVerdictFor(a.Curated())),
 		})
 	}
 	return out

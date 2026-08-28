@@ -135,6 +135,21 @@ api() { # api METHOD PATH [JSON_BODY] — prints the body, fails loudly on non-2
   printf '%s' "$out"
 }
 
+# try_api is api without the non-2xx exit, for a leg whose expected answer *is*
+# a refusal: it prints the status code on line 1 and the body on the rest, so
+# the caller can assert on both. api() itself cannot be used for that — it
+# calls fail, which exits the script. (Same reason try_wait_for_state exists.)
+#
+# The status is read back with `head -n1` on a *here-string* rather than a
+# pipe, so the early exit cannot SIGPIPE a producer — see m7 scenario 4's note.
+try_api() { # try_api METHOD PATH [JSON_BODY] — prints "STATUS\nBODY"
+  local method="$1" path="$2" body="${3:-}" out
+  local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" -w $'\n%{http_code}')
+  [[ -n "$body" ]] && args+=(-H "Content-Type: application/json" -d "$body")
+  out="$(curl "${args[@]}" "$BASE$path")" || fail "curl $method $path failed"
+  printf '%s\n%s' "${out##*$'\n'}" "${out%$'\n'*}"
+}
+
 make_repo() { # make_repo PATH — init a commit-ready repo on main
   git init -q -b main "$1"
   git -C "$1" config user.name gate
@@ -434,25 +449,40 @@ EOF
 
   local repo="$TMP/s4/repo"
   make_repo "$repo"
-  local project_id task_id
+  local project_id create_body
   project_id="$(register_project "$repo")"
-  task_id="$(api POST /tasks "{\"project_id\":$project_id,\"workflow\":\"m5-restricted\",\"title\":\"M5 restricted\"}" | jq -r .id)"
+  create_body="{\"project_id\":$project_id,\"workflow\":\"m5-restricted\",\"title\":\"M5 restricted\"}"
 
   if (( WINDOWS )); then
-    echo "== windows: expect a refusal with its own reason"
-    wait_for_state "$task_id" blocked 180
-    local reason row
-    reason="$(api GET "/tasks/$task_id" | jq -r .block_reason)"
-    [[ "$reason" == "restricted_unsupported" ]] \
-      || fail "block reason = $reason, want restricted_unsupported (not agent_unavailable — the CLI is fine)"
-    row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "careful")][-1]')"
-    [[ "$(jq -r .failure_reason <<<"$row")" == "restricted_unsupported" ]] \
-      || fail "step failure reason is not restricted_unsupported: $row"
-    # The refusal must be *before* the process: nothing may have run.
-    jq -e '.pid == null' <<<"$row" >/dev/null \
-      || fail "a process was spawned for a refused restricted step: $row"
+    # Task 041 moved this refusal from the engine to task creation: the daemon
+    # can tell from the adapter and GOOS alone that the step could never run
+    # restricted, so it never spends a worktree, an admission and a retry to
+    # learn it (§9.4). The engine's `restricted_unsupported` block reason
+    # survives as the backstop for a task whose daemon changed underneath it,
+    # which no gate can drive — hence the create call is what is asserted here.
+    echo "== windows: expect the create call itself to refuse"
+    local resp status body message
+    resp="$(try_api POST /tasks "$create_body")"
+    status="$(head -n 1 <<<"$resp" | tr -d '\r')"
+    body="$(sed -n '2,$p' <<<"$resp")"
+    [[ "$status" == "400" ]] \
+      || fail "creating a restricted cursor task returned HTTP $status, want 400: $body"
+    jq -e '.error.code == "validation_failed"' <<<"$body" >/dev/null \
+      || fail "the refusal is not a validation_failed envelope: $body"
+    # Both halves have to be named: which step asked to restrict, and which
+    # agent cannot. "validation failed" alone sends someone to the spec.
+    message="$(jq -r '.error.message' <<<"$body")"
+    grep -q 'careful' <<<"$message" && grep -q 'cursor' <<<"$message" \
+      || fail "the refusal names neither the step nor the agent: $message"
+    # The refusal must be *before* the task: nothing may have been created,
+    # which is the whole point of moving it ahead of admission.
+    local count
+    count="$(api GET /tasks | jq '[.[] | select(.title == "M5 restricted")] | length' | tr -d '\r')"
+    [[ "$count" == "0" ]] || fail "the refused create left $count task(s) behind"
   else
     echo "== posix: the sandbox exists, so the same workflow must simply run"
+    local task_id
+    task_id="$(api POST /tasks "$create_body" | jq -r .id)"
     wait_for_state "$task_id" done 300
   fi
 

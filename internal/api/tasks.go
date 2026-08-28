@@ -580,6 +580,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
 		return
 	}
+	// The `permission_mode: restricted` gate (§9.4, task 041), last of the
+	// three capability checks for the same reason the input one is second:
+	// the model and the input policy are fields the human just typed, and a
+	// platform fact is the least surprising thing to be told about.
+	if mismatch := s.restrictedMismatch(wf, &t); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
+		return
+	}
 	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
 	// Resolve before the insert so a bad name is a 400 rather than a task that
 	// blocks later, and so the git-side checks run with no transaction open.
@@ -701,6 +709,31 @@ func (s *Server) laneLookup(projectID int64) workflow.LookupFunc {
 		}
 		return entry.Workflow, true
 	}
+}
+
+// restrictedMismatch applies the `permission_mode: restricted` gate to a task
+// about to be created (§9.4, task 041): every step that runs restricted must
+// resolve to an adapter that can restrict on this host.
+//
+// Unlike inputMismatch it reads the *static* catalog rather than a probe, so
+// it spawns nothing and answers the same on a machine with no CLI installed:
+// cursor cannot restrict on Windows whether or not cursor-agent is there
+// (§9.7). Only a positive "cannot" refuses; an unregistered agent and an
+// adapter that states no level both let the task through.
+//
+// Retries are deliberately not gated. The decision was creation-time
+// enforcement, not creation-plus-admission: a retry that would reproduce the
+// condition is caught by the engine's restricted_unsupported backstop, which
+// is what makes the pair defence in depth rather than one check written twice.
+func (s *Server) restrictedMismatch(wf *workflow.Workflow, t *store.Task) string {
+	if s.deps.Catalog == nil || wf == nil {
+		return ""
+	}
+	catalogs := s.deps.Catalog.Catalogs()
+	override := agent.Level{Agent: t.AgentOverride, Model: t.ModelOverride, Effort: t.EffortOverride}
+	return wf.RestrictedMismatch(override, func(name string) bool {
+		return !catalogs.RestrictedPossible(name)
+	})
 }
 
 func (s *Server) inputMismatch(ctx context.Context, wf *workflow.Workflow, t *store.Task) string {

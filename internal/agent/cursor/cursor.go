@@ -97,11 +97,14 @@ func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	// Recorded verbatim: the version is calver plus a commit sha
 	// (2026.08.04-aaa8809), not semver. No gate parses it, and the sha is
 	// part of the binary's identity (spec §9.7).
+	version := strings.TrimSpace(string(out))
 	return agent.Availability{
-		Found:    true,
-		Path:     path,
-		Version:  strings.TrimSpace(string(out)),
-		LoggedIn: a.loggedIn(ctx, path),
+		Found:          true,
+		Path:           path,
+		Version:        version,
+		LoggedIn:       a.loggedIn(ctx, path),
+		VersionVerdict: versionVerdict(version),
+		TestedVersions: agent.TestedVersionList(testedVersions),
 	}, nil
 }
 

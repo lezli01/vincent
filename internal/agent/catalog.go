@@ -67,6 +67,20 @@ func (c Catalogs) InputEverPossible(name string) bool {
 	return opts.InputEverPossible()
 }
 
+// RestrictedPossible reports whether the named adapter could ever run a
+// `permission_mode: restricted` step on this host (task 041). It reads the
+// static catalog level only, so it never probes and never needs an installed
+// binary — the answer does not depend on one. An adapter missing from the
+// catalogs answers true: unknown agents are someone else's check, the same
+// rule Check and InputEverPossible apply.
+func (c Catalogs) RestrictedPossible(name string) bool {
+	opts, known := c[name]
+	if !known {
+		return true
+	}
+	return opts.RestrictedEverPossible()
+}
+
 // ownerOf names an adapter other than exclude whose catalog contains value.
 func (c Catalogs) ownerOf(list func(Options) []Option, value, exclude string) string {
 	for name, opts := range c {
@@ -158,6 +172,49 @@ func (e CatalogEntry) InputVerdict() InputVerdict {
 		return InputSupported
 	default:
 		return InputUnsupported
+	}
+}
+
+// RestrictedVerdict is what the daemon knows about an adapter's ability to
+// run a `restricted` step on this host (task 041) — the
+// permission-compatibility facet of §9.5 health.
+type RestrictedVerdict string
+
+// Restricted verdicts (task 041).
+const (
+	// RestrictedUnknown is "nobody can say": the adapter is not registered,
+	// or its catalog states no level. Callers must let the work through.
+	RestrictedUnknown RestrictedVerdict = "unknown"
+	// RestrictedSupported is an adapter that can restrict here.
+	RestrictedSupported RestrictedVerdict = "supported"
+	// RestrictedUnsupported is a positive no — cursor on Windows is the one
+	// case vincent has (§9.7). Only this verdict refuses anything.
+	RestrictedUnsupported RestrictedVerdict = "unsupported"
+)
+
+// RestrictedVerdict is this entry's answer to "can this adapter run a
+// restricted step here" (task 041).
+//
+// Unlike InputVerdict it never consults Availability: restricted support is a
+// fact about the adapter and the OS, so an absent binary changes nothing about
+// the answer. That is what makes the creation-time refusal safe on a machine
+// where nothing is installed — the same argument that makes InputNever
+// decisive without a binary.
+func (e CatalogEntry) RestrictedVerdict() RestrictedVerdict {
+	return RestrictedVerdictFor(e.Options)
+}
+
+// RestrictedVerdictFor is the verdict for a catalog on its own, for callers
+// that hold one without a cache entry — `vincent doctor`, which reads
+// Curated() and never runs an option probe.
+func RestrictedVerdictFor(o Options) RestrictedVerdict {
+	switch o.RestrictedSupport {
+	case RestrictedNever:
+		return RestrictedUnsupported
+	case RestrictedAlways:
+		return RestrictedSupported
+	default:
+		return RestrictedUnknown
 	}
 }
 
