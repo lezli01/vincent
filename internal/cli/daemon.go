@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"time"
 
@@ -77,7 +79,7 @@ func newDaemonCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
 		"detach from the console the OS allocated for this process (Windows only; no-op elsewhere)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd(),
-		newDaemonBackupCmd(), newDaemonRestoreCmd())
+		newDaemonLogsCmd(), newDaemonBackupCmd(), newDaemonRestoreCmd())
 	return cmd
 }
 
@@ -249,6 +251,136 @@ func newDaemonStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// logTailDefault matches the TUI daemon view's window (tui.logTailLines): the
+// two surfaces answer the same question and disagreeing about how much of the
+// log that takes would be a difference with no reason behind it.
+const logTailDefault = 500
+
+// logFollowInterval paces `--follow`, on the TUI's cadence.
+const logFollowInterval = 2 * time.Second
+
+// newDaemonLogsCmd prints the daemon log **from disk**, not over the API, and
+// needs no daemon at all — which is the point rather than a shortcut, and the
+// reason daemon.LogPath is exported for clients to derive: the log is worth
+// reading exactly when the daemon is not there to serve it. It is one of the
+// few subcommands that can never exit 2 (task 047 decision).
+func newDaemonLogsCmd() *cobra.Command {
+	var (
+		lines  int
+		follow bool
+	)
+	cmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Print the daemon log from disk",
+		Long: "Print the tail of {data_dir}/logs/daemon.log (§17). It reads the file " +
+			"directly and never contacts the daemon, so it still answers when the " +
+			"daemon is the thing that is broken. The directory is resolved the way " +
+			"every other subcommand resolves it: $VINCENT_DATA_DIR, else the platform " +
+			"default (§12.2).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dirs, err := config.ResolveDirs()
+			if err != nil {
+				return err
+			}
+			path := daemon.LogPath(dirs.Data)
+			out := cmd.OutOrStdout()
+			// An absent or unreadable file is an error naming the path; an
+			// empty log prints nothing and succeeds. TailFile already draws
+			// that distinction, and the two facts are not the same.
+			tail, err := daemon.TailFile(path, lines)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			if err := writeLines(out, tail); err != nil {
+				return err
+			}
+			if !follow {
+				return nil
+			}
+			return followLog(cmd.Context(), out, path, lastLine(tail), logFollowInterval)
+		},
+	}
+	cmd.Flags().IntVarP(&lines, "lines", "n", logTailDefault, "Number of trailing lines to print")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false,
+		"Keep printing lines as they are appended (Ctrl-C to stop)")
+	return cmd
+}
+
+// followLog re-reads the file on a timer and prints only what was appended
+// since the previous read — never the window again.
+//
+// Every read opens, reads and closes, because lumberjack rotates by renaming
+// the live file and on Windows renaming a file another process holds open
+// fails: a follower that kept a handle would break the daemon's own log
+// rotation for as long as it was watching. A rotation between two reads is
+// therefore ordinary here — the file may be briefly absent, which is waited
+// out rather than reported, and the fresh file's lines are all new.
+// The poll interval is a parameter so a test can drive the loop faster than a
+// human would wait; the command always passes logFollowInterval.
+func followLog(ctx context.Context, out io.Writer, path, seen string, every time.Duration) error {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		// n=0 is the whole tail window: -n bounds the opening print, not how
+		// much a single poll may pick up, or a busy daemon's lines would be
+		// dropped between polls.
+		cur, err := daemon.TailFile(path, 0)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		fresh := appendedAfter(cur, seen)
+		if len(fresh) == 0 {
+			continue
+		}
+		if err := writeLines(out, fresh); err != nil {
+			return err
+		}
+		seen = lastLine(fresh)
+	}
+}
+
+// appendedAfter returns the lines of a fresh read that follow the last line
+// already printed. The seam is found by matching that line's *last*
+// occurrence: log records carry a timestamp, so an identical line later in
+// the same window is the newer one. A window that no longer contains it at
+// all is a rotated or truncated file, whose lines are all new.
+func appendedAfter(lines []string, seen string) []string {
+	if seen == "" {
+		return lines
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == seen {
+			return lines[i+1:]
+		}
+	}
+	return lines
+}
+
+func lastLine(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[len(lines)-1]
+}
+
+func writeLines(w io.Writer, lines []string) error {
+	for _, l := range lines {
+		if _, err := fmt.Fprintln(w, l); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // exitError carries a specific process exit code out of a RunE without

@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -241,4 +243,33 @@ func runTaskLs(t *testing.T, args ...string) string {
 		t.Fatalf("task ls: %v (%s)", err, buf.String())
 	}
 	return buf.String()
+}
+
+// TestDocsClaimsEveryCommandIsOnTheCLIPage: `docs/reference/cli.md` tracks the
+// cobra tree (CLAUDE.md's documentation model). A command the tree grows and
+// the page never mentions is the drift this file exists to catch — task 047
+// added two, and this is what keeps the next two from arriving unannounced.
+//
+// It asks only that the page names the command, not how: `vincent service
+// install` earns its mention inside a shell block rather than a heading, and
+// that is a legitimate way to document three sibling commands at once.
+func TestDocsClaimsEveryCommandIsOnTheCLIPage(t *testing.T) {
+	page, ok := docPages(t)["docs/reference/cli.md"]
+	if !ok {
+		t.Fatal("docs/reference/cli.md is missing")
+	}
+	var missing []string
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		if c.CommandPath() != "vincent" && !strings.Contains(page, c.CommandPath()) {
+			missing = append(missing, c.CommandPath())
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(newRootCmd())
+	if len(missing) > 0 {
+		t.Errorf("the CLI reference never mentions %v", missing)
+	}
 }

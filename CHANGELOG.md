@@ -79,6 +79,28 @@ list with the user-facing context a commit subject cannot carry.
   and its argv can hold a webhook secret, which is why it is not readable back
   through the API.
 
+- **The daemon log and step transcripts now have command lines.** Both were
+  reachable only from the TUI, or by knowing where the files live and reaching
+  for `tail` — which is no help over SSH, and none at all when the daemon is what
+  is broken. `vincent daemon logs [-n N] [-f]` prints the tail of
+  `{data_dir}/logs/daemon.log`, 500 lines by default, `-f` following it. It reads
+  the file **from disk and never contacts the daemon**, so it answers when no
+  daemon does; that also means it never exits 2, a missing file is an error
+  naming the path, and an empty log prints nothing and succeeds. Following is
+  safe for the daemon's own rotation: every poll opens, reads and closes the
+  file. `vincent task transcript <id> [--step RUN] [-f]` prints one attempt's
+  transcript — the complete record `vincent task show` only names the file of.
+  `--step` takes the `RUN` column's step_run id, which is unambiguous across
+  retries; omitted, it picks the running attempt, else the newest. Output is
+  rendered as text for a human, `--json` gives the normalized records as NDJSON
+  for `jq`, and `--raw` gives the agent's own JSONL byte for byte. `-f` opens on
+  the tail and resumes from the record boundary, ending when that attempt stops
+  running. A manual gate, which records nothing, says so and exits 0; a
+  transcript whose file was pruned exits 1. Documented in the
+  [CLI reference](docs/reference/cli.md), the
+  [scripting guide](docs/guides/scripting.md) and
+  [troubleshooting](docs/guides/troubleshooting.md).
+
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a

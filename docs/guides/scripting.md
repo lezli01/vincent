@@ -171,6 +171,36 @@ task 62 created: Release OPS-42 (release, branch vincent/62-release-ops-42)
 That line is safe to leave in a CI log, and it still catches the mistake worth
 catching — a name typed wrong, which a count alone would hide.
 
+## Reading transcripts and the daemon log
+
+`vincent task transcript <id>` prints one attempt's transcript. Its `--json` is
+**NDJSON in vincent's own vocabulary** — one normalized record per line,
+including vincent's `vincent.*` annotations — so `jq` reads it a line at a time:
+
+```sh
+# every tool the last attempt ran
+vincent task transcript 7 --json | jq -r 'select(.type == "agent.tool_use") | .tools[].name'
+
+# what a specific attempt's step said on stderr
+vincent task transcript 7 --step 12 --json |
+  jq -r 'select(.stream == "stderr") | .text'
+```
+
+`--raw` is the other machine route: the agent's own JSONL, byte for byte, for
+when you want the dialect rather than vincent's reading of it. Without either
+flag the records are rendered as text for a human, with a command step's stderr
+tagged `[stderr]` on stdout — stdout carries the transcript, stderr carries the
+command's own diagnostics.
+
+The daemon log has a command too, and it is the one that still works when the
+daemon does not — it reads `{data_dir}/logs/daemon.log` off disk and never calls
+the API:
+
+```sh
+vincent daemon logs -n 200
+vincent daemon logs -f | grep -i error
+```
+
 ## Validating workflows in CI
 
 `vincent workflow validate` runs **entirely locally**: no daemon, no network, no

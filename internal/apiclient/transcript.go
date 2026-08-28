@@ -87,8 +87,8 @@ type TranscriptOptions struct {
 	Tail int64
 }
 
-func (o TranscriptOptions) query() string {
-	q := url.Values{"format": {"normalized"}}
+func (o TranscriptOptions) query(format string) string {
+	q := url.Values{"format": {format}}
 	switch {
 	case o.Tail > 0:
 		q.Set("tail", strconv.FormatInt(o.Tail, 10))
@@ -105,25 +105,63 @@ func (o TranscriptOptions) query() string {
 func (c *Client) Transcript(
 	ctx context.Context, taskID, runID int64, opts TranscriptOptions,
 ) (records []TranscriptRecord, nextOffset int64, err error) {
-	path := fmt.Sprintf("/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query())
+	resp, nextOffset, err := c.transcript(ctx, taskID, runID, opts, "normalized")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	records, err = decodeTranscript(resp.Body)
+	return records, nextOffset, err
+}
+
+// TranscriptRaw fetches the same byte range in the agent's own dialect,
+// returning the file's bytes unaltered plus the offset to resume from.
+//
+// It deliberately does not go through decodeTranscript, which *drops* a line
+// it cannot parse: tolerating a bad record is right for a renderer and wrong
+// here, where the caller asked for what the file says.
+func (c *Client) TranscriptRaw(
+	ctx context.Context, taskID, runID int64, opts TranscriptOptions,
+) (data []byte, nextOffset int64, err error) {
+	resp, nextOffset, err := c.transcript(ctx, taskID, runID, opts, "raw")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read transcript: %w", err)
+	}
+	return data, nextOffset, nil
+}
+
+// transcript performs the request both forms share and hands back the open
+// body; the caller closes it.
+func (c *Client) transcript(
+	ctx context.Context, taskID, runID int64, opts TranscriptOptions, format string,
+) (resp *http.Response, nextOffset int64, err error) {
+	path := fmt.Sprintf("/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query(format))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("build transcript request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.rest.Do(req)
+	resp, err = c.rest.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("GET transcript: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, 0, decodeError(resp)
+		// Closed here rather than deferred: this function's success path
+		// hands the open body to its caller, so a deferred close would run
+		// against the nil response this path returns.
+		apiErr := decodeError(resp)
+		_ = resp.Body.Close()
+		return nil, 0, apiErr
 	}
 	if v := resp.Header.Get("X-Next-Offset"); v != "" {
 		nextOffset, _ = strconv.ParseInt(v, 10, 64)
 	}
-	records, err = decodeTranscript(resp.Body)
-	return records, nextOffset, err
+	return resp, nextOffset, nil
 }
 
 // decodeTranscript reads NDJSON records, tolerating a record it cannot parse

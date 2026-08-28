@@ -2733,11 +2733,13 @@ One Go binary, `vincent`:
 | `vincent` | Launches the TUI; auto-starts the daemon in the background if unreachable |
 | `vincent daemon` | Runs the daemon in the foreground (logs to stderr; for debugging/service managers). `--config-dir`/`--data-dir` pin the §12.2 directories for a manager with no per-process environment |
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
+| `vincent daemon logs [-n N] [-f]` | *Added 2026-08-28 (task 047).* Prints the tail of `{data_dir}/logs/daemon.log` (§17), 500 lines by default, `-f` following it on a two-second cadence. It reads the file **from disk and never calls the API**, so it needs no daemon and starts none — it cannot exit 2. A missing file is an error naming the path; an empty one prints nothing and succeeds |
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->` |
+| `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
@@ -2771,6 +2773,33 @@ per-field bounds are the API's, and declaring `fields:` still does **not** close
 the map (§8.1.2). Without `--json`, creation confirms the recorded fields by
 **name and count, never value**, read off the response so a field prefilled from
 `--github-issue` is confirmed with the rest.
+
+*Added 2026-08-28 (task 047).* The two artifacts a failure is diagnosed from —
+the daemon log and a step's transcript — had no command line at all: both were
+reachable only from the TUI, or by knowing where the files live. `daemon logs`
+and `task transcript` close that, and they close it on opposite sides of the
+API boundary, deliberately.
+
+`daemon logs` reads the log off disk rather than through an endpoint, because
+an endpoint cannot serve the log in the failure mode that most often sends a
+reader to it — a daemon that will not start, or one that is wedged. That is the
+same reasoning `LogPath` already carries for clients deriving the path
+themselves. `GET /v1/daemon/logs` is **left unbuilt on purpose**: it becomes
+right for the first client that is not on the daemon's machine, at which point
+the CLI can prefer it and keep the disk read as the fallback. Adding it now
+would mean the one client that exists reads the log through the process that
+may be what is broken.
+
+`task transcript` is a thin API client like the rest, and needs no daemon-side
+change: the endpoint already serves `format=raw|normalized`, `offset`/`tail`
+and a record-boundary `X-Next-Offset`. It follows by **polling that endpoint**
+rather than subscribing to §13.3's live output stream, and the reason is an
+ownership invariant rather than simplicity: live chunks are dropped for a slow
+subscriber because the transcript file is the durable copy, and a CLI writing
+into a slow pipe is exactly that subscriber — the stream would silently lose
+output in the case the command exists for. Reading a transcript is also not a
+§6 human action, so task 025's decision that `retry`, `repair`, `skip` and
+`approve` stay TUI-and-API only is untouched: that decision is about writes.
 
 *Amended 2026-08-15 (task 005).* `gc` breaks this table's noun-verb pattern
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the
