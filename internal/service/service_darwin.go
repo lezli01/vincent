@@ -76,7 +76,10 @@ func install(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// G301: ~/Library/LaunchAgents is a directory launchd itself expects to find
+	// with the conventional mode; the plist in it is world-readable by design
+	// (see the WriteFile below).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: see above
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(renderPlist(o)), 0o644); err != nil { //nolint:gosec // a plist is world-readable by design

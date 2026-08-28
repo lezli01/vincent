@@ -61,6 +61,19 @@ list with the user-facing context a commit subject cannot carry.
   workflow edited after the task was queued. Retries are not gated; that
   backstop is what catches them.
   ([#148](https://github.com/lezli01/vincent/issues/148))
+- **gosec now runs on every build, as part of the existing lint gate.** The
+  security linter is enabled inside the golangci-lint the `go.mod` tool directive
+  already pins, so `go run mage.go lint` is still one command and still the
+  byte-identical one CI runs on Linux, macOS and Windows — a new unsuppressed
+  finding now fails the build. Every one of the 39 current findings in production
+  code was read individually and either fixed or suppressed with a reason at the
+  site; the reasoning is recorded in
+  [task 042](docs/tasks/042-gosec-static-analysis.md), and
+  [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) explain how
+  gosec and govulncheck divide the work. No runtime behaviour changed and no file
+  or directory permission moved: tightening one is a user-visible change that
+  needs its own issue, not a side effect of turning a linter on.
+  ([#147](https://github.com/lezli01/vincent/issues/147))
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 

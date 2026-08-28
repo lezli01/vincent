@@ -78,7 +78,9 @@ func install(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// G301: ~/.config/systemd/user takes the conventional mode; the unit file in
+	// it is world-readable by design (see the WriteFile below).
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: see above
 		return fmt.Errorf("create systemd user dir: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(renderUnit(o)), 0o644); err != nil { //nolint:gosec // a unit file is world-readable by design

@@ -9,6 +9,7 @@ linters:
     - copyloopvar
     - errorlint
     - gocritic
+    - gosec
     - intrange
     - misspell
     - nolintlint
@@ -16,6 +17,38 @@ linters:
     - sqlclosecheck
     - unconvert
     - unparam
+  exclusions:
+    rules:
+      # Tests, the fake CLIs and the test helpers are out of gosec's scope by
+      # configuration rather than by ~74 inline directives (task 042). These
+      # paths deliberately mirror real-world permissions, deliberately exec
+      # `go build`, `git` and their own compiled fixtures, and ship in no
+      # binary; annotating each site would be noise every new test file has to
+      # re-earn.
+      - linters: [gosec]
+        path: (_test\.go|^cmd/fakeagent/|^cmd/fakegh/|^internal/testrepo/|^internal/agent/agenttest/|^internal/github/githubtest/)
+
+      # gosec analyses one GOOS at a time, so a suppression can be required on
+      # one platform and stale on another — and nolintlint (deliberately kept
+      # strict, so that stale directives stay visible for every other linter)
+      # would then fail the platform where it is stale. A platform-divergent
+      # finding is therefore excluded here instead of //nolint-ed at the site,
+      # which keeps its reason in the code as an ordinary comment. See
+      # docs/tasks/042-gosec-static-analysis.md.
+      #
+      # disk_unix.go: Statfs_t.Bsize is int64 on Linux (G115 on the uint64
+      # conversion) and uint32 on Darwin (no finding). A block size is never
+      # negative.
+      - linters: [gosec]
+        path: ^internal/doctor/disk_unix\.go$
+        text: "G115"
+
+issues:
+  # gosec is a per-platform gate (task 042): a truncated report is worse than
+  # none, because *which* findings survive the default max-issues-per-linter:
+  # 50 / max-same-issues: 3 caps varies between runs of the identical command.
+  max-issues-per-linter: 0
+  max-same-issues: 0
 
 formatters:
   enable:

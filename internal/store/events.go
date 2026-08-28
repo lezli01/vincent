@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -101,7 +100,8 @@ func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) 
 	q := `SELECT id, ts, type, task_id, project_id, payload_json FROM events WHERE id > ?`
 	args := []any{f.AfterID}
 	if len(f.Types) > 0 {
-		q += ` AND type IN (` + strings.Repeat("?,", len(f.Types)-1) + `?)`
+		//nolint:gosec // G202: placeholders() emits bind markers; the types bind below
+		q += ` AND type IN ` + placeholders(len(f.Types))
 		for _, t := range f.Types {
 			args = append(args, t)
 		}

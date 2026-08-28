@@ -15,7 +15,9 @@ func StartDetached() (pid int, err error) {
 	if err != nil {
 		return 0, fmt.Errorf("resolve own executable: %w", err)
 	}
-	cmd := exec.Command(exe, "daemon")
+	// G204: exe is os.Executable() — this binary re-executing itself with a
+	// fixed argument. No shell is involved.
+	cmd := exec.Command(exe, "daemon") //nolint:gosec // G204: see above
 	cmd.SysProcAttr = detachSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("spawn detached daemon: %w", err)

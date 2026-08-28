@@ -106,6 +106,9 @@ func ownsConsole() bool {
 	// too small — so a two-element buffer distinguishes "just us" from "more
 	// than us" without asking how many more.
 	var pids [2]uint32
+	// G103: unsafe.Pointer is how a Win32 out-parameter is passed. pids is a
+	// stack array whose length is handed over in the same call.
+	//nolint:gosec // G103: see above
 	n, _, _ := procGetConsoleProcessList.Call(
 		uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
 	return n == 1

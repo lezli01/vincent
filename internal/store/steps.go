@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -425,14 +424,15 @@ func (s *Store) TaskRollups(ctx context.Context, ids []int64) (map[int64]TaskRol
 	if len(ids) == 0 {
 		return out, nil
 	}
-	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	inList := placeholders(len(ids))
 	args := make([]any, 0, len(ids))
 	for _, id := range ids {
 		args = append(args, id)
 	}
+	//nolint:gosec // G202: inList is placeholders(); the ids bind as arguments
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT task_id, SUM(cost_usd), SUM(input_tokens), SUM(output_tokens)
-		FROM step_runs WHERE task_id IN (`+placeholders+`) GROUP BY task_id`, args...)
+		FROM step_runs WHERE task_id IN `+inList+` GROUP BY task_id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("roll up task metrics: %w", err)
 	}

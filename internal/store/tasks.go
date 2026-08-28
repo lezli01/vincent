@@ -31,7 +31,7 @@ var slotStates, slotPlaceholders = func() ([]any, string) {
 			args = append(args, string(s))
 		}
 	}
-	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
+	return args, placeholders(len(args))
 }()
 
 // BranchClaimedError reports that another unarchived task in the same project
@@ -460,6 +460,10 @@ func (s *Store) CountSlotHoldersByProject(ctx context.Context, projectID int64) 
 // admitting a task changes the tallies, and a single statement cannot see
 // its own in-flight admissions.
 func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
+	// G202: both interpolations are package-internal and value-free —
+	// prefixed() alias-qualifies the taskColumns constant, slotPlaceholders is
+	// placeholders(). The states themselves bind as arguments.
+	//nolint:gosec // G202: see above; no caller value reaches the query text
 	q := `SELECT ` + prefixed("t", taskColumns) + `,
 			(SELECT COUNT(*) FROM tasks o
 			  WHERE o.project_id = t.project_id AND o.state IN ` + slotPlaceholders + `),
@@ -511,7 +515,7 @@ var unreconcilableStates, unreconcilablePlaceholders = func() ([]any, string) {
 	args := []any{
 		string(TaskQueued), string(TaskDone), string(TaskAborted), string(TaskArchived),
 	}
-	return args, "(?" + strings.Repeat(", ?", len(args)-1) + ")"
+	return args, placeholders(len(args))
 }()
 
 // UnreconciledTasks returns every task whose state and step runs contradict
@@ -520,6 +524,7 @@ var unreconcilableStates, unreconcilablePlaceholders = func() ([]any, string) {
 // task was never reconciled and the scheduler is refusing to admit it.
 func (s *Store) UnreconciledTasks(ctx context.Context) ([]Unreconciled, error) {
 	args := append([]any{string(StepRunning)}, unreconcilableStates...)
+	//nolint:gosec // G202: unreconcilablePlaceholders is placeholders(); states bind
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.state, COUNT(r.id)
 		FROM tasks t JOIN step_runs r ON r.task_id = t.id AND r.state = ?

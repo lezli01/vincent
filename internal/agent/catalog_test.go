@@ -108,7 +108,7 @@ func (s *stubAdapter) Start(context.Context, RunSpec) (RunHandle, error) {
 func fakeBinary(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "agent-bin")
-	if err := os.WriteFile(path, []byte("v1"), 0o755); err != nil { //nolint:gosec // test binary stand-in
+	if err := os.WriteFile(path, []byte("v1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

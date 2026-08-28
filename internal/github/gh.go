@@ -137,7 +137,9 @@ func parseGHIssue(out []byte, repo Repo, now time.Time) (Issue, error) {
 // carrying a named reason plus the stderr as *detail* — which reaches the
 // daemon log and nothing else (decision 1).
 func (c *Client) runGH(ctx context.Context, path string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, path, args...)
+	// G204: path is the configured or PATH-resolved `gh`, args are an argument
+	// slice built by this package. Never a shell string.
+	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204: see above
 	hideConsole(cmd)
 	// GH_PAGER and NO_COLOR are not set here: `--json` output is neither
 	// paged nor colored by gh, and inheriting the user's environment is the

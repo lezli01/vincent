@@ -922,7 +922,7 @@ func TestNewTaskEditorSeedsTheFileWithWhatIsTyped(t *testing.T) {
 	n := loadedForm(t)
 	var seen string
 	n.exec = fakeExec(t, func(path string) error {
-		b, err := os.ReadFile(path) //nolint:gosec // the test's own temp file
+		b, err := os.ReadFile(path)
 		seen = string(b)
 		return err
 	}, nil)

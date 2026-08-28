@@ -39,7 +39,10 @@ type Store struct {
 // connection pragmas (WAL, busy timeout, foreign keys), and runs any pending
 // embedded migrations. The parent directory is created if missing.
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// G301: the data dir keeps the platform-default mode. Tightening it is a
+	// user-visible change to an existing installation and needs its own spec
+	// amendment; task 040 records it as follow-up rather than smuggling it in.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: see above
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 	db, err := sql.Open("sqlite", dsn(path))
@@ -175,4 +178,16 @@ func nullString(s string) any {
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
+}
+
+// placeholders renders the parenthesised bind-marker list for an n-value SQL
+// `IN` clause: `(?)`, `(?, ?)`, and so on. n must be positive; callers return
+// early on an empty set, since `IN ()` is not valid SQLite.
+//
+// Every `IN` list in this package goes through here, which is what makes the
+// gosec G202 suppressions at the query sites checkable: the result is
+// punctuation and bind markers only, derived from a count and never from a
+// value, so the values themselves still travel as query arguments.
+func placeholders(n int) string {
+	return "(?" + strings.Repeat(", ?", n-1) + ")"
 }

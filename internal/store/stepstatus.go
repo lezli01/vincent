@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // ErrStepNotRunning reports that no *running* step run of the task carries
@@ -34,17 +33,18 @@ func (s *Store) LatestStepStatuses(ctx context.Context, ids []int64) (map[int64]
 	if len(ids) == 0 {
 		return out, nil
 	}
-	placeholders := strings.Repeat("?,", len(ids)-1) + "?"
+	inList := placeholders(len(ids))
 	args := make([]any, 0, len(ids))
 	for _, id := range ids {
 		args = append(args, id)
 	}
 	// The join picks each task's highest row id and reads that row's message;
 	// MAX(id) with a bare column would pair a maximum with an arbitrary row.
+	//nolint:gosec // G202: inList is placeholders(); the ids bind as arguments
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.task_id, r.status_message FROM step_runs r
 		JOIN (SELECT task_id, MAX(id) AS id FROM step_runs
-			WHERE task_id IN (`+placeholders+`) GROUP BY task_id) m
+			WHERE task_id IN `+inList+` GROUP BY task_id) m
 		ON r.id = m.id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read step statuses: %w", err)

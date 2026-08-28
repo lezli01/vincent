@@ -30,7 +30,9 @@ func LogPath(dataDir string) string {
 // different fact from a log with nothing in it — an empty file returns no
 // lines and no error.
 func TailFile(path string, n int) ([]string, error) {
-	f, err := os.Open(path)
+	// G304: LogPath() under the daemon's own data dir; the API exposes the tail,
+	// never the path to tail.
+	f, err := os.Open(path) //nolint:gosec // G304: see above
 	if err != nil {
 		return nil, err
 	}
