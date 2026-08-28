@@ -12,8 +12,9 @@ binary supports every listed feature. Establish the target before writing:
 1. Inside a vincent source checkout, prefer its current
    `docs/reference/workflow-schema.md`.
 2. Run `vincent version` and record the exact output when a binary is available.
-3. Run that binary's `vincent workflow validate`; its result is the final local
-   compatibility verdict.
+3. Run that binary's `vincent workflow validate`, then its
+   `vincent workflow render`; together they are the final local compatibility
+   verdict — the first parses the templates, the second executes them.
 
 If the validator rejects a referenced feature, report the mismatch and ask
 whether to upgrade vincent or author against the installed version. A generic
@@ -294,12 +295,25 @@ Run locally without a daemon, network, or agent installation:
 vincent version
 vincent workflow validate .vincent/workflows/example.yaml
 vincent workflow validate .vincent/workflows/example.yaml --json
+vincent workflow render .vincent/workflows/example.yaml
 ```
 
 Exit 0 means valid; exit 1 means invalid. Validation checks known keys and
 types, templates, ids, durations, agent/model compatibility, nesting, bounds,
 and platform tokens. Unknown model values can be warnings because the live CLI
 is the final authority. Include resolution is deferred until task creation.
+
+`validate` only checks that a template **parses**. `render` executes every
+template — `prompt`, `run`, `check`, `instructions`, `if`, `for_each` — against
+a preview context and prints what each step would send, with the resolved
+agent/model/effort triple. Because templates render with `missingkey=error`, a
+typo'd field or a `.Task.Fields` key nothing supplies fails there and nowhere
+else short of a real task. It runs without a daemon too; `--field k=v`,
+`--title` and `--description` supply a hypothetical task, and `--task ID` binds
+a real one. Values a run discovers appear as placeholders (`<worktree>`,
+`<steps.plan.result>`); a field the workflow declares `required` binds to
+`<field.NAME>`, an optional one stays absent so a non-defensive read is
+reported. Exit 0 clean, 1 a template that does not execute.
 
 Treat a warning as a review item. The file being syntactically valid YAML is
 not evidence that vincent accepts or safely executes it. Report the exact

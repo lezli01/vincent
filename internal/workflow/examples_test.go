@@ -51,6 +51,12 @@ func TestShippedExamplesValidate(t *testing.T) {
 			if wf.Name == "" || len(wf.Steps) == 0 {
 				t.Errorf("parsed to an empty workflow: %+v", wf)
 			}
+			// Parsing is syntax; §8.4 renders with missingkey=error, so an
+			// example whose templates do not *execute* fails on a reader's
+			// first task rather than here. That is the gap task 044's
+			// `vincent workflow render` closes, and this is the same
+			// assertion one layer down.
+			renderAll(t, wf)
 		})
 	}
 	if found == 0 {

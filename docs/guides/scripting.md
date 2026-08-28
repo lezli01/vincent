@@ -113,12 +113,16 @@ vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 
 `vincent workflow validate` runs **entirely locally**: no daemon, no network, no
 agent CLI installed. It parses the file and checks it against the built-in
-adapter catalogs. That makes it the one command safe to put in a pre-commit hook
-or a CI job on a machine that has never seen an agent.
+adapter catalogs. `vincent workflow render` is local in the same way and goes
+one step further: it *executes* every template the file declares, which is where
+a typo'd `{{.Task.Titel}}` or a `.Task.Fields` key nothing supplies surfaces.
+Both are safe in a pre-commit hook or a CI job on a machine that has never seen
+an agent.
 
 ```sh
 for f in .vincent/workflows/*.yaml; do
   vincent workflow validate "$f" || exit 1
+  vincent workflow render   "$f" || exit 1
 done
 ```
 

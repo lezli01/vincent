@@ -191,6 +191,7 @@ vincent task cancel 7
 vincent workflow init my-flow              # or --from feature-pr, --project 1
 vincent workflow ls
 vincent workflow validate .vincent/workflows/feature-pr.yaml
+vincent workflow render .vincent/workflows/feature-pr.yaml
 ```
 
 Every subcommand takes `--json` for scripting. Exit codes are `0` success,
@@ -200,10 +201,11 @@ Every subcommand takes `--json` for scripting. Exit codes are `0` success,
 parsing stderr. The subcommands never auto-start a daemon; only the TUI does,
 because that is an interactive session you asked for.
 
-`vincent workflow validate` runs entirely locally against the built-in agent
-catalogs — no daemon, no installed agent CLI — which makes it usable from CI
-and pre-commit hooks. So does `vincent workflow init`, except for `--project`,
-which needs a daemon only to resolve the id to a repository.
+`vincent workflow validate` and `vincent workflow render` run entirely locally
+against the built-in agent catalogs — no daemon, no installed agent CLI — which
+makes them usable from CI and pre-commit hooks; `validate` checks that every
+template parses, `render` executes them. So does `vincent workflow init`, except
+for `--project`, which needs a daemon only to resolve the id to a repository.
 
 `vincent service install` registers the daemon with your OS so it starts at
 login and survives reboot — a launchd user agent, a systemd user unit, or a

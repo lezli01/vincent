@@ -1597,7 +1597,10 @@ steps:
 
 `POST /v1/resolve` answers "what does this resolve to, and which level won" for
 every step in a workflow. That is what the TUI's new-task form renders; no
-client re-derives it.
+client re-implements the precedence. For a file you are still editing —
+which the registry has frequently not picked up yet —
+`vincent workflow render <file>` prints the same triple offline, from the same
+resolver.
 
 ### 9.2 What each adapter can do
 
@@ -1894,6 +1897,9 @@ business running commands; the mode says so and the adapter enforces it.
 ## 13. Reviewing a workflow before you commit it
 
 - [ ] `vincent workflow validate <file>` passes with **no warnings**.
+- [ ] `vincent workflow render <file>` renders every step. Validation only
+      checks that a template parses; this runs it, which is where a typo'd
+      `{{.Task.Titel}}` or an unsupplied `.Task.Fields` key surfaces.
 - [ ] Every step that produces something checkable has a `check:`.
 - [ ] Prompts say what "done" means, not just what to attempt.
 - [ ] Any step that pushes, publishes or deletes sits **after** a `manual` gate
@@ -1905,10 +1911,11 @@ business running commands; the mode says so and the adapter enforces it.
 - [ ] Step ids read like nouns you would want to see in a timeline.
 - [ ] The file name matches the `name:` field.
 
-Wiring it into CI is one line, and it needs no daemon:
+Wiring it into CI is two lines, and neither needs a daemon:
 
 ```sh
 for f in .vincent/workflows/*.yaml; do vincent workflow validate "$f" || exit 1; done
+for f in .vincent/workflows/*.yaml; do vincent workflow render   "$f" || exit 1; done
 ```
 
 ## 14. Troubleshooting

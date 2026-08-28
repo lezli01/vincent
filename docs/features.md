@@ -189,7 +189,9 @@ localhost API.
   response can be re-sent without making a second task.
 - Server-sent events provide durable state replay and live per-task output.
 - `vincent workflow validate` works without a daemon or installed agent CLI, so
-  it fits pre-commit hooks and CI.
+  it fits pre-commit hooks and CI. `vincent workflow render` belongs there too:
+  it executes a workflow's templates against a preview context, so a reference
+  no task would satisfy is caught before a task is created.
 
 Start with [Scripting vincent](guides/scripting.md), then use the complete
 [HTTP API reference](reference/api.md) when you need direct integration.

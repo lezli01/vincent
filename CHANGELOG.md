@@ -13,6 +13,26 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`vincent workflow render <file>` dry-runs a workflow's templates.**
+  `workflow validate` only checks that a template *parses*, so
+  `{{.Task.Titel}}`, `{{.Task.Fields.ticket}}` on a task that sets no `ticket`,
+  and `{{.Steps.plan.Reslt}}` all passed validation and then failed the moment
+  the step rendered — findable only by creating a task and watching it fail.
+  `render` executes every template a file declares — `prompt`, `run`, `check`,
+  `instructions`, `if` and `for_each` — and prints what each step would send,
+  with the resolved agent/model/effort triple and the level that supplied each
+  field. It needs no daemon, so it belongs in the same pre-commit hook as
+  `validate`. Values a run discovers appear as visible placeholders
+  (`<worktree>`, `<steps.plan.result>`), so the output reads as a preview rather
+  than as the literal prompt an agent will receive; a field the workflow
+  declares `required` binds, an optional one stays absent so a non-defensive
+  read is reported. `--title`, `--description`, `--field k=v` and
+  `--agent`/`--model`/`--effort` describe a hypothetical task; `--task ID` and
+  `--project ID` bind a real one and resolve `include` steps and named fan-out
+  lanes through the registry. Exit `0` clean, `1` a template that does not
+  execute, `2` no daemon answered a `--task`/`--project`. See
+  [the CLI reference](docs/reference/cli.md#vincent-workflow-render).
+
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a

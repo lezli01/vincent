@@ -385,9 +385,13 @@ re-rendering the same template against the same context cannot answer
 differently. Fix the workflow file and retry the task — the guard is
 re-evaluated from scratch, as it is on every pass.
 
-`vincent workflow validate <file>` catches a guard that does not *parse*, but
-not one that parses and renders the wrong thing — that needs the task's
-context, which only exists at run time.
+`vincent workflow validate <file>` catches a guard that does not *parse*.
+`vincent workflow render <file>` goes one step further and executes it against
+a preview context, so a guard that references a field nothing supplies shows up
+there — it prints what each guard renders to, and warns when that is neither
+`true` nor `false`. Neither can tell you the guard renders the *wrong* answer
+for a particular task: that needs the task's own context, which only exists at
+run time.
 
 ### `loop_limit`
 

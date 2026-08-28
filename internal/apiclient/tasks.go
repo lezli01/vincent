@@ -318,9 +318,18 @@ func (r *ChildrenRollup) Summary() string {
 // step it has run.
 type TaskDetail struct {
 	Task
-	Description  string          `json:"description"`
-	WorktreePath *string         `json:"worktree_path"`
-	PendingInput json.RawMessage `json:"pending_input,omitempty"`
+	Description string `json:"description"`
+	// BaseBranch and the three overrides have always been on the wire; only
+	// this struct dropped them. `vincent workflow render --task` binds a real
+	// task's §8.4 context and its §8.6 level-2 override from exactly these
+	// four, and re-deriving either client-side is what task 044 declined to
+	// do.
+	BaseBranch     string          `json:"base_branch"`
+	AgentOverride  *string         `json:"agent_override"`
+	ModelOverride  *string         `json:"model_override"`
+	EffortOverride *string         `json:"effort_override"`
+	WorktreePath   *string         `json:"worktree_path"`
+	PendingInput   json.RawMessage `json:"pending_input,omitempty"`
 	// GitHubIssue is the issue this task was created from (task 035); nil for
 	// a task created without one. It is the snapshot as captured, never
 	// refreshed — a client renders it as the task's history, not as the

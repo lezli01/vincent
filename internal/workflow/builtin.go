@@ -204,8 +204,8 @@ const createWorkflowFooter = `
       ## When you are done
 
       Deliver the skill's own design summary as your final message, with the
-      path you wrote, the validator's verdict, and the questions and
-      assumptions rule 1 above asks for.
+      path you wrote, the validator's and the renderer's verdicts, and the
+      questions and assumptions rule 1 above asks for.
 `
 
 // CreateWorkflowSource is the built-in workflow-authoring workflow: one agent
@@ -334,6 +334,14 @@ steps:
         this version has a feature at all: write a candidate to a temporary
         path outside this worktree, validate it there, and never leave a probe
         file in the repository.
+      - "vincent workflow render <file>" is the other half of that verdict, and
+        also needs no daemon. Validation only checks that a template parses;
+        render executes every one of them, which is the only way a typo'd
+        "{{"{{"}}.Task.Titel}}" or a ".Task.Fields" key nothing supplies is
+        caught before someone creates a task. Run it on every file you write,
+        and read the rendered prompts — they are what an agent will actually be
+        sent, with placeholders such as <worktree> standing in for what a run
+        discovers.
       - If this repository is a vincent checkout, its own
         docs/reference/workflow-schema.md is the exact reference for the
         version it builds. Read it before you rely on anything below.
@@ -456,9 +464,11 @@ const updateWorkflowsFooter = `
         if asking were possible;
       - the validator's verdict for every file you touched.
 
-      Every workflow file must pass "vincent workflow validate" before you
-      finish. A later step validates all of them again, and one that fails
-      there blocks the task.
+      Every workflow file must pass "vincent workflow validate" and
+      "vincent workflow render" before you finish. A later step runs both over
+      all of them again, and one that fails there blocks the task. Render is
+      the one that catches a template that parses and then does not execute,
+      which is a class of bug validation cannot see.
   - id: relist
     name: Relist the workflow files
     type: command
@@ -477,6 +487,14 @@ const updateWorkflowsFooter = `
         type: command
         max_retries: 0
         run: 'vincent workflow validate "{{ .Loop.Item }}"'
+      - id: rendered
+        type: command
+        max_retries: 0
+        # Validation parses templates; this executes them (§8.4). A file whose
+        # prompt reads a field nothing supplies passes the step above and
+        # fails on a reviewer's first task, which is exactly what this pass is
+        # for. Daemon-free like the validator, so it runs in the same loop.
+        run: 'vincent workflow render "{{ .Loop.Item }}"'
   - id: changes
     name: Record what changed
     type: command
