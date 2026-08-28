@@ -21,10 +21,12 @@ import (
 func newTaskCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "task",
-		Short: "Create, inspect and cancel tasks",
+		Short: "Create, inspect and act on tasks",
 	}
 	cmd.AddCommand(newTaskAddCmd(), newTaskLsCmd(), newTaskShowCmd(), newTaskCancelCmd(),
-		newTaskFollowUpCmd(), newTaskTranscriptCmd())
+		newTaskFollowUpCmd(), newTaskTranscriptCmd(), newTaskPauseCmd(), newTaskResumeCmd(),
+		newTaskSkipCmd(), newTaskApproveCmd(), newTaskRejectCmd(), newTaskRetryCmd(),
+		newTaskRepairCmd(), newTaskArchiveCmd(), newTaskAnswerCmd())
 	return cmd
 }
 
@@ -371,9 +373,9 @@ func newTaskShowCmd() *cobra.Command {
 		Short: "Show a task and its step runs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := strconv.ParseInt(args[0], 10, 64)
+			id, err := taskID(args[0])
 			if err != nil {
-				return fmt.Errorf("task id must be a number: %q", args[0])
+				return err
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				t, err := c.GetTask(ctx, id)
@@ -402,6 +404,13 @@ func newTaskShowCmd() *cobra.Command {
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})
 				}
+				// What may happen next, from the daemon rather than from a
+				// guess: a script reads this instead of probing for 409s, and
+				// every name in it is a `vincent task <action>` subcommand.
+				if len(t.AvailableActions) > 0 {
+					fields = append(fields,
+						[2]string{"actions", strings.Join(t.AvailableActions, ", ")})
+				}
 				if t.InputTokens > 0 || t.OutputTokens > 0 {
 					fields = append(fields, [2]string{
 						"tokens",
@@ -417,6 +426,13 @@ func newTaskShowCmd() *cobra.Command {
 					if _, err := fmt.Fprintf(out, "%-9s %s\n", f[0], f[1]); err != nil {
 						return err
 					}
+				}
+				// The pending request is printed before the description because
+				// it is the thing that needs doing: `task answer` numbers its
+				// questions off exactly this list, and indexed answers are
+				// unusable if the questions are invisible from here.
+				if err := printPendingRequest(out, t); err != nil {
+					return err
 				}
 				if t.Description != "" {
 					if _, err := fmt.Fprintf(out, "\n%s\n", strings.TrimRight(t.Description, "\n")); err != nil {
@@ -492,9 +508,9 @@ func newTaskFollowUpCmd() *cobra.Command {
 			"--workflow says what to run. The task returns to the state it came from.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := strconv.ParseInt(args[0], 10, 64)
+			id, err := taskID(args[0])
 			if err != nil {
-				return fmt.Errorf("task id must be a number: %q", args[0])
+				return err
 			}
 			in := apiclient.FollowUpInput{
 				Prompt: prompt, Run: run, Workflow: workflow,
@@ -544,9 +560,9 @@ func newTaskCancelCmd() *cobra.Command {
 		Short: "Cancel a task",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := strconv.ParseInt(args[0], 10, 64)
+			id, err := taskID(args[0])
 			if err != nil {
-				return fmt.Errorf("task id must be a number: %q", args[0])
+				return err
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				t, err := c.Cancel(ctx, id)
@@ -567,4 +583,485 @@ func newTaskCancelCmd() *cobra.Command {
 	}
 	jsonFlag(cmd)
 	return cmd
+}
+
+// taskID parses the single <id> argument every task subcommand takes. A
+// non-numeric id is a usage error, not a rejected request: it never reaches
+// the daemon.
+func taskID(arg string) (int64, error) {
+	id, err := strconv.ParseInt(arg, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("task id must be a number: %q", arg)
+	}
+	return id, nil
+}
+
+// printTaskAction renders the daemon's post-action view of a task. Every §6
+// action command ends here, and none of them predicts the transition: what is
+// printed is the state the daemon reported *after* it acted (task 044).
+func printTaskAction(cmd *cobra.Command, t apiclient.Task) error {
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), t)
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "task %d is now %s\n", t.ID, t.State)
+	return err
+}
+
+// newTaskActionCmd builds one of the §6 human actions that takes nothing but
+// an id. The error shape is `task cancel`'s: a 409 is the FSM refusing the
+// action for the state the task is actually in, which is a rejected request
+// rather than a broken one, so it exits 1 carrying the daemon's own wording.
+func newTaskActionCmd(name, short, long string,
+	act func(context.Context, *apiclient.Client, int64) (apiclient.Task, error),
+) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   name + " <id>",
+		Short: short,
+		Long:  long,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := taskID(args[0])
+			if err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				t, err := act(ctx, c, id)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				return printTaskAction(cmd, t)
+			})
+		},
+	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+func newTaskPauseCmd() *cobra.Command {
+	return newTaskActionCmd("pause", "Hold a task at its next step boundary",
+		"Requests a pause. A running step finishes first — the task pauses at the next "+
+			"step boundary rather than mid-step. Valid from queued and running.",
+		func(ctx context.Context, c *apiclient.Client, id int64) (apiclient.Task, error) {
+			return c.Pause(ctx, id)
+		})
+}
+
+func newTaskResumeCmd() *cobra.Command {
+	return newTaskActionCmd("resume", "Re-queue a paused task",
+		"Returns a paused task to the queue; the scheduler admits it like any other. "+
+			"Valid from paused.",
+		func(ctx context.Context, c *apiclient.Client, id int64) (apiclient.Task, error) {
+			return c.Resume(ctx, id)
+		})
+}
+
+func newTaskSkipCmd() *cobra.Command {
+	return newTaskActionCmd("skip", "Mark the current step skipped and advance",
+		"Abandons the step the task is sitting on and advances to the next one. "+
+			"Valid from blocked and awaiting_gate.",
+		func(ctx context.Context, c *apiclient.Client, id int64) (apiclient.Task, error) {
+			return c.Skip(ctx, id)
+		})
+}
+
+func newTaskApproveCmd() *cobra.Command {
+	return newTaskActionCmd("approve", "Pass a manual gate",
+		"Passes the manual gate the task is waiting on and continues the workflow. "+
+			"Valid from awaiting_gate.",
+		func(ctx context.Context, c *apiclient.Client, id int64) (apiclient.Task, error) {
+			return c.Approve(ctx, id)
+		})
+}
+
+func newTaskRejectCmd() *cobra.Command {
+	return newTaskActionCmd("reject", "Fail a manual gate, blocking the task",
+		"Fails the manual gate the task is waiting on; the task blocks with reason "+
+			"gate_rejected. Valid from awaiting_gate.",
+		func(ctx context.Context, c *apiclient.Client, id int64) (apiclient.Task, error) {
+			return c.Reject(ctx, id)
+		})
+}
+
+func newTaskRetryCmd() *cobra.Command {
+	var branch, prompt, promptFile, run, runFile string
+	cmd := &cobra.Command{
+		Use:   "retry <id>",
+		Short: "Re-run the step a task blocked on",
+		Long: "Re-runs the step the task blocked on. With no flags this is a plain retry.\n" +
+			"--prompt and --run are edit+retry: the text replaces that step's prompt or\n" +
+			"command in this task's workflow snapshot, and in no other task's. --branch\n" +
+			"renames the task's branch before the retry re-admits it, which is how a\n" +
+			"branch_exists block is cleared without losing the task or its transcripts.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := taskID(args[0])
+			if err != nil {
+				return err
+			}
+			ov := apiclient.Override{Branch: branch}
+			if ov.Prompt, err = flagText(cmd, prompt, promptFile); err != nil {
+				return err
+			}
+			if ov.Run, err = flagText(cmd, run, runFile); err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				t, err := c.Retry(ctx, id, ov)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				return printTaskAction(cmd, t)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&branch, "branch", "",
+		"Rename the task's branch first — the branch_exists recovery path (§10, §18)")
+	cmd.Flags().StringVar(&prompt, "prompt", "", "Replace the failed step's prompt (edit+retry)")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "",
+		"Read the replacement prompt from this file, or from stdin with -")
+	cmd.Flags().StringVar(&run, "run", "", "Replace the failed step's command (edit+retry)")
+	cmd.Flags().StringVar(&runFile, "run-file", "",
+		"Read the replacement command from this file, or from stdin with -")
+	// The literal and the file are two spellings of one value, so cobra
+	// refuses the pair locally rather than letting one silently win.
+	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
+	cmd.MarkFlagsMutuallyExclusive("run", "run-file")
+	jsonFlag(cmd)
+	return cmd
+}
+
+func newTaskRepairCmd() *cobra.Command {
+	var prompt, promptFile, agent, model, effort string
+	cmd := &cobra.Command{
+		Use:   "repair <id>",
+		Short: "Run a one-off agent in a blocked task's worktree",
+		Long: "Runs one ad-hoc agent with this prompt in the blocked task's existing\n" +
+			"worktree (task 025). Whatever the agent does, the task returns to blocked at\n" +
+			"the same step with the same reason: a repair changes the worktree, and a\n" +
+			"human still decides whether to retry. Valid from blocked.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := taskID(args[0])
+			if err != nil {
+				return err
+			}
+			in := apiclient.RepairInput{Agent: agent, Model: model, Effort: effort}
+			if in.Prompt, err = flagText(cmd, prompt, promptFile); err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				t, warnings, err := c.Repair(ctx, id, in)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if err := printTaskAction(cmd, t); err != nil {
+					return err
+				}
+				// The §8.2 catalog warnings the selection raised, on stderr for
+				// the reason `task add`'s are: the run is queued and will
+				// happen, so this is not a failure, and stdout stays pipeable.
+				for _, w := range warnings {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&prompt, "prompt", "", "What the repair agent should do (required)")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "",
+		"Read the prompt from this file, or from stdin with -")
+	cmd.Flags().StringVar(&agent, "agent", "", "Agent for this run (§8.6, request level)")
+	cmd.Flags().StringVar(&model, "model", "", "Model for this run (§8.6, request level)")
+	cmd.Flags().StringVar(&effort, "effort", "", "Effort for this run (§8.6, request level)")
+	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
+	// A repair with no instructions is a 400 from the daemon; saying so here
+	// costs no round trip and names the flags rather than the JSON field.
+	cmd.MarkFlagsOneRequired("prompt", "prompt-file")
+	jsonFlag(cmd)
+	return cmd
+}
+
+func newTaskArchiveCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "archive <id>",
+		Short: "Archive a finished task and remove its worktree",
+		Long: "Archives the task and removes its worktree. When\n" +
+			"delete_empty_branch_on_archive is on, a branch carrying no commits past its\n" +
+			"base is deleted too. A worktree with uncommitted changes is refused until\n" +
+			"--force is passed — force is the confirmation. Valid from done and aborted.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := taskID(args[0])
+			if err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				t, branch, err := c.Archive(ctx, id, force)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					// The one refusal that is a question rather than a failure
+					// (§6): the reason lives in details, not in the message, so
+					// flattening the error to its prose would lose both the
+					// discriminator and the way out.
+					if isDirtyWorktreeErr(err) {
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
+							"  pass --force to archive it anyway, discarding those changes")
+					}
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					// The daemon's own shape: the task's fields at the top
+					// level beside `branch`, so a script reads the branch
+					// outcome here rather than only from the human line.
+					return emitJSON(cmd.OutOrStdout(), struct {
+						apiclient.Task
+						Branch *apiclient.BranchOutcome `json:"branch,omitempty"`
+					}{Task: t, Branch: branchOutcome(branch)})
+				}
+				out := cmd.OutOrStdout()
+				if _, err := fmt.Fprintf(out, "task %d is now %s\n", t.ID, t.State); err != nil {
+					return err
+				}
+				if summary := branch.Summary(); summary != "" {
+					_, err = fmt.Fprintln(out, "  "+summary)
+				}
+				return err
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false,
+		"Archive even when the worktree has uncommitted changes, discarding them")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// branchOutcome renders the archive's branch result for --json. A zero value
+// means the branch step never ran — the setting is off, or the task had no
+// branch of its own — which is `null`, not an object full of empty strings.
+func branchOutcome(o apiclient.BranchOutcome) *apiclient.BranchOutcome {
+	if o == (apiclient.BranchOutcome{}) {
+		return nil
+	}
+	return &o
+}
+
+// isDirtyWorktreeErr reports the daemon refused an archive because the
+// worktree has uncommitted changes. `details.reason` is the discriminator the
+// TUI branches on too (§13.1); the message alone is prose.
+func isDirtyWorktreeErr(err error) bool {
+	var apiErr *apiclient.Error
+	return errors.As(err, &apiErr) && apiErr.Details["reason"] == "worktree_dirty"
+}
+
+func newTaskAnswerCmd() *cobra.Command {
+	var (
+		answers  []string
+		allow    bool
+		deny     bool
+		bodyFile string
+	)
+	cmd := &cobra.Command{
+		Use:   "answer <id>",
+		Short: "Answer the input request a task is waiting on",
+		Long: "Answers the §7.4 request an awaiting_input task is parked on; the run\n" +
+			"resumes in place. Questions are answered by the number `vincent task show`\n" +
+			"prints them under — repeat --answer for one index to give a multi-select\n" +
+			"several values — and a permission request takes --allow or --deny. --body\n" +
+			"passes an answer payload straight through for a script that already has one.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := taskID(args[0])
+			if err != nil {
+				return err
+			}
+			if bodyFile != "" {
+				payload, err := flagText(cmd, "", bodyFile)
+				if err != nil {
+					return err
+				}
+				if !json.Valid([]byte(payload)) {
+					return fmt.Errorf("--body %s is not valid JSON", bodyFile)
+				}
+				return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+					t, err := c.AnswerRaw(ctx, id, json.RawMessage(payload))
+					if err != nil {
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+						return exitError{code: 1}
+					}
+					return printTaskAction(cmd, t)
+				})
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				// The request has to be read before it can be answered: the
+				// wire format is keyed by question *text* (§13.2), and the
+				// index exists only so nobody retypes quoted prose.
+				detail, err := c.GetTask(ctx, id)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				req, ok, err := detail.PendingRequest()
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return fmt.Errorf("task %d is %s and is not waiting for input", id, detail.State)
+				}
+				resp, err := answerResponse(req, answers, allow, deny)
+				if err != nil {
+					return err
+				}
+				// Local validation is a convenience, never the authority: the
+				// daemon checks the same rules and its answer is the one that
+				// counts. Failing here just saves a round trip to be told the
+				// obvious.
+				if err := req.Validate(resp); err != nil {
+					return err
+				}
+				t, err := c.Answer(ctx, id, resp)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				return printTaskAction(cmd, t)
+			})
+		},
+	}
+	// No backquotes in a flag's usage string: cobra reads the first
+	// backquoted word as the argument placeholder, so "`task show`" would
+	// render the flag as `--answer task show`.
+	cmd.Flags().StringArrayVar(&answers, "answer", nil,
+		"Answer as <n>=<value>, n being the question number 'vincent task show' prints; repeat for more")
+	cmd.Flags().BoolVar(&allow, "allow", false, "Allow a permission request")
+	cmd.Flags().BoolVar(&deny, "deny", false, "Deny a permission request")
+	cmd.Flags().StringVar(&bodyFile, "body", "",
+		"Read the §13.2 answer payload from this file, or from stdin with -, and post it verbatim")
+	// One way of answering per invocation: allow and deny contradict each
+	// other, a question is not a permission, and --body is the escape hatch
+	// that reconstructs neither.
+	cmd.MarkFlagsMutuallyExclusive("answer", "allow", "deny", "body")
+	cmd.MarkFlagsOneRequired("answer", "allow", "deny", "body")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// answerResponse maps the CLI's flags onto the §13.2 answer payload.
+//
+// --answer is indexed because the wire format is keyed by question text, and
+// that text is a sentence: indexing off `task show` keeps the format intact
+// without making anyone retype it. Values split on the *first* '=', the rule
+// parseFieldFlags already documents, so a URL or a regex needs no escaping,
+// and a repeated index is a multi-select's several values.
+func answerResponse(req apiclient.InputRequest, answers []string, allow, deny bool) (apiclient.InputResponse, error) {
+	var resp apiclient.InputResponse
+	switch {
+	case allow:
+		v := true
+		resp.Allow = &v
+	case deny:
+		v := false
+		resp.Allow = &v
+	}
+	if len(answers) == 0 {
+		return resp, nil
+	}
+	if req.Kind == apiclient.InputKindPermission {
+		return apiclient.InputResponse{},
+			errors.New("this is a permission request: answer it with --allow or --deny")
+	}
+	resp.Answers = make(map[string][]string, len(answers))
+	for _, a := range answers {
+		index, value, ok := strings.Cut(a, "=")
+		n, convErr := strconv.Atoi(strings.TrimSpace(index))
+		if !ok || convErr != nil {
+			return apiclient.InputResponse{},
+				fmt.Errorf("answer must be <number>=<value>, got %q", a)
+		}
+		if n < 1 || n > len(req.Questions) {
+			return apiclient.InputResponse{},
+				fmt.Errorf("no question %d: the task is asking %d, numbered as `vincent task show` prints them",
+					n, len(req.Questions))
+		}
+		text := req.Questions[n-1].Text
+		resp.Answers[text] = append(resp.Answers[text], value)
+	}
+	return resp, nil
+}
+
+// flagText resolves a --x / --x-file flag pair to one string. Cobra has
+// already refused the combination, so at most one is set here. "-" reads
+// stdin, which is what makes a multi-line replacement prompt something a
+// pipe can carry rather than something argv has to quote.
+func flagText(cmd *cobra.Command, literal, file string) (string, error) {
+	if file == "" {
+		return literal, nil
+	}
+	if file == "-" {
+		b, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return "", fmt.Errorf("read stdin: %w", err)
+		}
+		return string(b), nil
+	}
+	// G304: a path the user of this CLI typed, read with that user's own
+	// privileges — the whole purpose of the flag.
+	b, err := os.ReadFile(file) //nolint:gosec // G304: see above
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// printPendingRequest renders the §7.4 request an awaiting_input task is
+// parked on. The numbering is the contract `task answer --answer <n>=<value>`
+// reads: question 1 is the first question the daemon sent, in the order it
+// sent them. A task waiting on nothing prints nothing.
+func printPendingRequest(w io.Writer, t apiclient.TaskDetail) error {
+	req, ok, err := t.PendingRequest()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "\nawaiting input: %s\n", req.Kind); err != nil {
+		return err
+	}
+	if req.Kind == apiclient.InputKindPermission {
+		if req.Permission == nil {
+			return nil
+		}
+		_, err := fmt.Fprintf(w, "  tool     %s\n  summary  %s\n"+
+			"  answer with `vincent task answer %d --allow` or `--deny`\n",
+			req.Permission.Tool, req.Permission.Summary, t.ID)
+		return err
+	}
+	for i, q := range req.Questions {
+		text := q.Text
+		if q.Header != "" {
+			text = q.Header + ": " + text
+		}
+		if q.MultiSelect {
+			text += "  (one or more)"
+		}
+		if _, err := fmt.Fprintf(w, "  %d. %s\n", i+1, text); err != nil {
+			return err
+		}
+		// Options are suggestions, never an enum — §7.4 accepts free text for
+		// any question — so they are listed as such rather than as a menu.
+		if len(q.Options) > 0 {
+			if _, err := fmt.Fprintf(w, "     suggested: %s\n", strings.Join(q.Options, ", ")); err != nil {
+				return err
+			}
+		}
+	}
+	if len(req.Questions) == 0 {
+		return nil
+	}
+	_, err = fmt.Fprintf(w, "  answer with `vincent task answer %d --answer 1=<value>`\n", t.ID)
+	return err
 }
