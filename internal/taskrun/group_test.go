@@ -49,10 +49,10 @@ func subRuns(runs []store.StepRun) map[string][]store.StepRun {
 }
 
 // TestParallelGroupRunsConcurrently is the point of the feature: three
-// one-second sub-steps finish in about a second, not three. It also pins the
-// row shape — one row per sub-step, all sharing the group's step_index, told
-// apart by step_id (task 014 decision 16) — and that the group itself writes
-// no row of its own (decision 17).
+// one-second sub-steps overlap in time rather than queueing behind each other.
+// It also pins the row shape — one row per sub-step, all sharing the group's
+// step_index, told apart by step_id (task 014 decision 16) — and that the group
+// itself writes no row of its own (decision 17).
 func TestParallelGroupRunsConcurrently(t *testing.T) {
 	h := newEngineHarness(t)
 	h.start(t)
@@ -63,22 +63,40 @@ func TestParallelGroupRunsConcurrently(t *testing.T) {
 	)
 	task := h.createTask(t, snapshot)
 
-	started := time.Now()
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
-	elapsed := time.Since(started)
 	if done.State != store.TaskDone {
 		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
-	}
-	// Serial execution takes at least three seconds. The margin is wide
-	// because CI is shared, but it cannot reach three without the sub-steps
-	// having queued behind each other.
-	if elapsed > 2500*time.Millisecond {
-		t.Errorf("group took %s for 3x1s sub-steps, want well under the 3s a serial run costs", elapsed)
 	}
 
 	runs := h.stepRuns(t, task.ID)
 	if len(runs) != 3 {
 		t.Fatalf("step runs = %d, want 3 — one per sub-step and none for the group", len(runs))
+	}
+	// Concurrency is read off the recorded intervals, not off the wall clock.
+	// The obvious test — "the whole task took under 2.5s" — measures the
+	// sub-steps *plus* three shell spawns, and on a loaded Windows runner
+	// under -race those spawns alone can cost more than the second of work
+	// they wrap, so it failed at 2.57s on a run that was perfectly
+	// concurrent. Overlap says exactly what the feature claims and says it
+	// independently of how slow the host is: if the three had queued, each
+	// would have started after the previous one finished, so the latest start
+	// would land at or past the earliest finish. Any pause of the intervals
+	// therefore proves they ran at once.
+	latestStart, earliestFinish := runs[0].StartedAt, time.Time{}
+	for _, r := range runs {
+		if r.FinishedAt == nil {
+			t.Fatalf("sub-step %q has no finished_at; concurrency cannot be judged", r.StepID)
+		}
+		if r.StartedAt.After(latestStart) {
+			latestStart = r.StartedAt
+		}
+		if earliestFinish.IsZero() || r.FinishedAt.Before(earliestFinish) {
+			earliestFinish = *r.FinishedAt
+		}
+	}
+	if !latestStart.Before(earliestFinish) {
+		t.Errorf("sub-step intervals do not overlap: last start %s is not before first finish %s — the group ran serially",
+			latestStart.Format(time.RFC3339Nano), earliestFinish.Format(time.RFC3339Nano))
 	}
 	for _, r := range runs {
 		if r.StepIndex != 0 {
