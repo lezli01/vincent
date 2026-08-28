@@ -655,7 +655,7 @@ func renderTaskDetailFacts(width int, facts []taskDetailFact) []string {
 			right = taskDetailFactLines(facts[i+1], columnWidth)
 		}
 		rows := max(len(left), len(right))
-		for row := 0; row < rows; row++ {
+		for row := range rows {
 			leftLine := ""
 			if row < len(left) {
 				leftLine = left[row]
@@ -760,10 +760,6 @@ func wrapTaskDetailText(text string, width int) []string {
 		}
 	}
 	return out
-}
-
-func taskFact(label, value string) string {
-	return "  " + styleDim.Render(fmt.Sprintf("%-18s", label)) + " " + valueOr(value, "none")
 }
 
 func taskStep(task apiclient.Task) string {

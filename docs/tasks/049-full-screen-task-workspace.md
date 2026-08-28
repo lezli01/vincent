@@ -67,6 +67,9 @@ moving between tabs cannot select a different attempt.
   suite. ✓ 2026-08-28
 - [x] **044.6** Add the Output attempt selector and let `enter` open the
   timeline's selected attempt there. ✓ 2026-08-28
+- [x] **044.7** Refine Steps & Attempts and Task Details with clearer visual
+  hierarchy, responsive fact groups, breathing room, and lossless wrapping for
+  long metadata. ✓ 2026-08-28
 
 ## What the tests prove
 
@@ -75,6 +78,8 @@ moving between tabs cannot select a different attempt.
   in order, and `esc` returns to the board.
 - Enter on a selected attempt opens its Output, where left/right selection
   changes both the named attempt and the displayed transcript.
+- Step groups remain visibly separated, detail facts use two columns only when
+  they fit, and narrow or unbroken values wrap without losing content.
 - Task Details exposes the description, fields, workflow provenance, branch,
   lifecycle and workflow snapshot and scrolls when it exceeds the terminal.
 - The real transcript/API/SSE seam still joins catch-up and live output without
