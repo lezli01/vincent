@@ -42,7 +42,7 @@ const (
 	// purpose: the CLI is installed and healthy, so "not found" would send
 	// the user to reinstall something that is already there.
 	//
-	// Task creation refuses these (task 040), so reaching it here means the
+	// Task creation refuses these (task 041), so reaching it here means the
 	// task and its daemon parted company: a data directory carried to
 	// Windows, or a workflow edited after the task was queued. It stays as
 	// the backstop for exactly that — running a step full-auto because

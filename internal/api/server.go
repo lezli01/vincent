@@ -95,7 +95,7 @@ type AgentStatus struct {
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
 	// VersionVerdict, TestedVersions and RestrictedVerdict are the two health
-	// facets task 040 added beside the three /v1/info already carried
+	// facets task 041 added beside the three /v1/info already carried
 	// (installed, authenticated, and the §7.4 protocol half of
 	// protocol-compatible). Both are advisory here; the restricted one is
 	// what task creation refuses on (§9.4).

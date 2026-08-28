@@ -72,7 +72,7 @@
 //	FAKEAGENT_VERSION     version string --version reports, in every dialect
 //	                      (defaults: 2.1.224 claude, codex-cli 0.142.5,
 //	                      2026.08.04-fake000) — lets tests drive the §7.4
-//	                      supports_input version gate and the task-040
+//	                      supports_input version gate and the task-041
 //	                      version verdict
 //	FAKEAGENT_EDIT_FILE   success, ask-question (post-answer): append a line
 //	                      to this worktree-relative tracked file, so gate
@@ -141,7 +141,7 @@ func main() {
 	for _, a := range os.Args[1:] {
 		switch a {
 		case "--version", "-v", "-V":
-			// FAKEAGENT_VERSION overrides every dialect (task 040): the
+			// FAKEAGENT_VERSION overrides every dialect (task 041): the
 			// version verdict is judged per adapter, so each dialect needs a
 			// way to report a version the adapter has never been tested
 			// against. Unset keeps each dialect's own pinned default.

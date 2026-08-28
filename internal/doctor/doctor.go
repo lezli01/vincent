@@ -182,7 +182,7 @@ type Agent struct {
 	// — claude today (§9.5). It is never a guess.
 	LoggedIn *bool  `json:"logged_in"`
 	Error    string `json:"error,omitempty"`
-	// The remaining fields are the five §9.5 health facets task 040 named,
+	// The remaining fields are the five §9.5 health facets task 041 named,
 	// minus the two this row already carried (installed, authenticated):
 	// SupportsInput and VersionVerdict are the protocol-compatible pair, and
 	// RestrictedVerdict is permission-compatible. Model-catalog health is
@@ -195,7 +195,7 @@ type Agent struct {
 	// in this group, and none of them changes `vincent doctor`'s exit code.
 	SupportsInput bool `json:"supports_input"`
 	// VersionVerdict is "tested", "untested", "incompatible", or empty when
-	// there is no build to judge (task 040).
+	// there is no build to judge (task 041).
 	VersionVerdict string `json:"version_verdict"`
 	// TestedVersions is what the verdict was judged against.
 	TestedVersions string `json:"tested_versions,omitempty"`
@@ -468,7 +468,7 @@ func DetectAgents(ctx context.Context, cfg config.Config) []Agent {
 			TestedVersions: av.TestedVersions,
 			// Curated() rather than Options(): the restricted verdict is a
 			// static fact and doctor must not spawn an option probe to read
-			// it (task 040).
+			// it (task 041).
 			RestrictedVerdict: string(agent.RestrictedVerdictFor(a.Curated())),
 		})
 	}

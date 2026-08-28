@@ -384,7 +384,7 @@ func doctorAgentRows(agents []apiclient.DoctorAgent) [][]string {
 	return rows
 }
 
-// doctorAgentVerdicts renders the task-040 health facets that trail an
+// doctorAgentVerdicts renders the task-041 health facets that trail an
 // adapter row: what vincent knows about the build, and whether the adapter can
 // restrict on this host.
 //

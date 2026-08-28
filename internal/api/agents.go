@@ -25,7 +25,7 @@ type agentResponse struct {
 	InputVerdict string `json:"input_verdict"`
 	// VersionVerdict is what vincent knows about this build: "tested",
 	// "untested", "incompatible", or "" when nothing is installed to judge
-	// (task 040). It is advisory — nothing refuses a run on account of it —
+	// (task 041). It is advisory — nothing refuses a run on account of it —
 	// and "untested" is the normal answer for a user on a current CLI.
 	VersionVerdict string `json:"version_verdict"`
 	// TestedVersions is the build list version_verdict was judged against,
@@ -33,7 +33,7 @@ type agentResponse struct {
 	TestedVersions string `json:"tested_versions,omitempty"`
 	// RestrictedVerdict is whether this adapter can run a `permission_mode:
 	// restricted` step on this host: "supported", "unsupported" or "unknown"
-	// (§9.4, §9.7, task 040). Unlike the others it needs no installed
+	// (§9.4, §9.7, task 041). Unlike the others it needs no installed
 	// binary — it is a fact about the adapter and the OS — and it is the one
 	// verdict here that refuses anything: task creation rejects a restricted
 	// step bound for an adapter reported "unsupported".

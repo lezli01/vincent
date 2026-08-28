@@ -12,7 +12,7 @@ type AgentStatus struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
-	// VersionVerdict, TestedVersions and RestrictedVerdict are the task-040
+	// VersionVerdict, TestedVersions and RestrictedVerdict are the task-041
 	// health facets: what vincent knows about this build, the builds it was
 	// judged against, and whether this adapter can restrict on this host.
 	// Empty means a daemon that predates them, which renders as no judgement.

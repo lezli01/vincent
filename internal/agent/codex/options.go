@@ -39,7 +39,7 @@ func (a *Adapter) Curated() agent.Options {
 		// against this adapter at load time (task 013).
 		InputSupport: agent.InputNever,
 		// codex restricts through its own sandbox flags, which it has on
-		// every platform it runs on (§9.3) — task 040.
+		// every platform it runs on (§9.3) — task 041.
 		RestrictedSupport: agent.RestrictedAlways,
 	}
 }

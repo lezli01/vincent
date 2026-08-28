@@ -151,7 +151,7 @@ the refusal is real rather than forced. It passed above. The corresponding
 "restricted actually runs" leg needs macOS or Linux; CI covers it with
 fakeagent on both.
 
-**Amended 2026-08-28 (task 040): where scenario 4's refusal happens moved.**
+**Amended 2026-08-28 (task 041): where scenario 4's refusal happens moved.**
 The Windows refusal is now `POST /v1/tasks` answering `400 validation_failed`
 and naming the step and the agent, because the daemon can tell from the adapter
 and `GOOS` alone that the step could never run restricted (§9.4). The engine's

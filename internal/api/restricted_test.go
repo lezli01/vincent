@@ -78,7 +78,7 @@ const restrictedWorkflow = "name: careful\n" +
 	"  - {id: locked, type: agent, permission_mode: restricted, prompt: read only}\n"
 
 // TestTaskCreateRefusesAgentThatCannotRestrict is the §9.4 gate moving from
-// the engine to task creation (task 040): the same run used to reach an
+// the engine to task creation (task 041): the same run used to reach an
 // adapter, start nothing, and fail the step `restricted_unsupported`.
 func TestTaskCreateRefusesAgentThatCannotRestrict(t *testing.T) {
 	t.Cleanup(cursor.SetSandboxAvailable(false))

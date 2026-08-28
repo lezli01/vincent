@@ -103,7 +103,7 @@ type Availability struct {
 	SupportsInput bool   // mid-run input requests (spec §7.4)
 	LoggedIn      *bool  // nil = unknown (best effort; always nil in v1 for claude)
 	Error         string // why not found / not probed
-	// VersionVerdict is what vincent knows about this *build* (task 040):
+	// VersionVerdict is what vincent knows about this *build* (task 041):
 	// tested, untested, or a build known to break. It rides here rather than
 	// behind a new Adapter method because this is where the version already
 	// is, and because claude's SupportsInput gate is computed from the same
@@ -362,7 +362,7 @@ type Options struct {
 	// a test or a future adapter never gates a workflow by accident.
 	InputSupport InputSupport
 	// RestrictedSupport is the adapter's static `permission_mode:
-	// restricted` capability on this host (task 040). It rides in the
+	// restricted` capability on this host (task 041). It rides in the
 	// catalog for the reason InputSupport does — §8.2 validation and the
 	// creation-time gate read Curated() and must not probe — and it is
 	// static for a stronger reason: it depends on adapter identity and GOOS,

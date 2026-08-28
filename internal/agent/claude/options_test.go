@@ -128,7 +128,7 @@ func TestParseMutatedHelpDegrades(t *testing.T) {
 		}
 	}
 	// The static capability levels survive a help vincent cannot read: they
-	// are compiled in, not probed (task 013, task 040).
+	// are compiled in, not probed (task 013, task 041).
 	if opts.InputSupport != agent.InputDetected || opts.RestrictedSupport != agent.RestrictedAlways {
 		t.Errorf("capability levels lost on a degraded probe: %+v", opts)
 	}

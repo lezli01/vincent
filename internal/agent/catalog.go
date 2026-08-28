@@ -68,7 +68,7 @@ func (c Catalogs) InputEverPossible(name string) bool {
 }
 
 // RestrictedPossible reports whether the named adapter could ever run a
-// `permission_mode: restricted` step on this host (task 040). It reads the
+// `permission_mode: restricted` step on this host (task 041). It reads the
 // static catalog level only, so it never probes and never needs an installed
 // binary — the answer does not depend on one. An adapter missing from the
 // catalogs answers true: unknown agents are someone else's check, the same
@@ -176,11 +176,11 @@ func (e CatalogEntry) InputVerdict() InputVerdict {
 }
 
 // RestrictedVerdict is what the daemon knows about an adapter's ability to
-// run a `restricted` step on this host (task 040) — the
+// run a `restricted` step on this host (task 041) — the
 // permission-compatibility facet of §9.5 health.
 type RestrictedVerdict string
 
-// Restricted verdicts (task 040).
+// Restricted verdicts (task 041).
 const (
 	// RestrictedUnknown is "nobody can say": the adapter is not registered,
 	// or its catalog states no level. Callers must let the work through.
@@ -193,7 +193,7 @@ const (
 )
 
 // RestrictedVerdict is this entry's answer to "can this adapter run a
-// restricted step here" (task 040).
+// restricted step here" (task 041).
 //
 // Unlike InputVerdict it never consults Availability: restricted support is a
 // fact about the adapter and the OS, so an absent binary changes nothing about

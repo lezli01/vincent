@@ -2,7 +2,7 @@ package codex
 
 import "github.com/lezli01/vincent/internal/agent"
 
-// Version compatibility for the codex CLI (spec §9.3, task 040).
+// Version compatibility for the codex CLI (spec §9.3, task 041).
 
 // testedVersions are the builds vincent's parsers were captured against:
 // 0.142.5 is the invocation pinned in §9.3, and reasoning_0.147.0.jsonl pins

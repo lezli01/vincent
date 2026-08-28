@@ -34,7 +34,7 @@ type Agent struct {
 	// nothing is refused on the strength of a field that was never sent.
 	InputVerdict string `json:"input_verdict,omitempty"`
 	// VersionVerdict is the daemon's reading of this build: "tested",
-	// "untested" or "incompatible" (task 040). Empty means the daemon
+	// "untested" or "incompatible" (task 041). Empty means the daemon
 	// predates the field or has nothing installed to judge — either way, no
 	// judgement, which is what a renderer must show. It is advisory
 	// everywhere: no client should refuse anything on the strength of it.
@@ -44,7 +44,7 @@ type Agent struct {
 	TestedVersions string `json:"tested_versions,omitempty"`
 	// RestrictedVerdict is the daemon's verdict on backing a
 	// `permission_mode: restricted` step: "supported", "unsupported" or
-	// "unknown" (§9.4, task 040). Unlike the others it holds without an
+	// "unknown" (§9.4, task 041). Unlike the others it holds without an
 	// installed binary, and it is the one the daemon refuses task creation
 	// on.
 	RestrictedVerdict string `json:"restricted_verdict,omitempty"`
@@ -157,14 +157,14 @@ const (
 // gate does.
 func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUnsupported }
 
-// VersionVerdict values as GET /v1/agents reports them (task 040).
+// VersionVerdict values as GET /v1/agents reports them (task 041).
 const (
 	VersionVerdictTested       = "tested"
 	VersionVerdictUntested     = "untested"
 	VersionVerdictIncompatible = "incompatible"
 )
 
-// RestrictedVerdict values as GET /v1/agents reports them (§9.4, task 040).
+// RestrictedVerdict values as GET /v1/agents reports them (§9.4, task 041).
 const (
 	RestrictedVerdictSupported   = "supported"
 	RestrictedVerdictUnsupported = "unsupported"

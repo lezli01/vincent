@@ -76,7 +76,7 @@ func mergeOptions(cliModels []string) agent.Options {
 		// (§9.7); no version of it can stop to ask (task 013).
 		InputSupport: agent.InputNever,
 		// Restricted mode is cursor's CLI sandbox, which exists on macOS and
-		// Linux only (§9.7, task 040). The level follows sandboxAvailable so
+		// Linux only (§9.7, task 041). The level follows sandboxAvailable so
 		// the Windows leg is a value tests can set on any host, and so the
 		// creation-time gate answers the same question buildArgs does.
 		RestrictedSupport: restrictedSupport(),
@@ -86,7 +86,7 @@ func mergeOptions(cliModels []string) agent.Options {
 // restrictedSupport maps the platform sandbox fact onto the catalog level.
 // It is a positive "never" on Windows rather than silence: refusing a
 // restricted step there is safe with no binary installed at all, because the
-// answer does not depend on the binary (task 040).
+// answer does not depend on the binary (task 041).
 func restrictedSupport() agent.RestrictedSupport {
 	if sandboxAvailable {
 		return agent.RestrictedAlways

@@ -292,7 +292,7 @@ func (d *daemonView) adapterLines() []string {
 	return out
 }
 
-// adapterVerdicts renders the task-040 health facets that trail an adapter
+// adapterVerdicts renders the task-041 health facets that trail an adapter
 // row: what vincent knows about this build, and whether the adapter can run a
 // `restricted` step on this host.
 //

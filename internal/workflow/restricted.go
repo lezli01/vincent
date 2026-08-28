@@ -1,6 +1,6 @@
 package workflow
 
-// The `permission_mode: restricted` gate (spec §9.4, §8.2 — task 040). A step
+// The `permission_mode: restricted` gate (spec §9.4, §8.2 — task 041). A step
 // that asks to run restricted runs only on an adapter that can restrict on
 // this host; this file owns the resolution and the mismatch clause every
 // enforcement point embeds, the way input.go owns the §7.4 one and
@@ -43,7 +43,7 @@ func (w *Workflow) StepRequiresRestricted(step Step) bool {
 //
 // incapable answers "this adapter is known not to restrict on this host" — a
 // *positive* no, and one that needs no installed binary, because the answer
-// depends on adapter identity and GOOS rather than on the build (task 040).
+// depends on adapter identity and GOOS rather than on the build (task 041).
 func (w *Workflow) RestrictedMismatch(override agent.Level, incapable func(string) bool) string {
 	if w == nil || incapable == nil {
 		return ""

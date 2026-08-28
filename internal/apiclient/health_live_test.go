@@ -7,7 +7,7 @@ import (
 )
 
 // TestAgentHealthFacetsRoundTrip wires the client to the real handlers and
-// asserts the five §9.5 health facets task 040 named arrive on both endpoints
+// asserts the five §9.5 health facets task 041 named arrive on both endpoints
 // that carry them. It is the drift guard: the server DTOs are unexported, so
 // nothing but a live round-trip catches a field renamed on one side.
 //

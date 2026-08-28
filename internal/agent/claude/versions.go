@@ -2,7 +2,7 @@ package claude
 
 import "github.com/lezli01/vincent/internal/agent"
 
-// Version compatibility for the Claude Code CLI (spec §9.2, task 040).
+// Version compatibility for the Claude Code CLI (spec §9.2, task 041).
 
 // testedVersions are the builds vincent's parsers were captured against:
 // help_2.1.224.txt is what the option probe is parsed from, and the

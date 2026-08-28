@@ -2,7 +2,7 @@ package agent
 
 import "strings"
 
-// Adapter version compatibility (spec §9.2, §9.3, §9.7 — task 040).
+// Adapter version compatibility (spec §9.2, §9.3, §9.7 — task 041).
 //
 // A verdict is advisory everywhere: it is reported on /v1/agents, /v1/info,
 // /v1/doctor and in both UIs, and it refuses nothing. The issue asked for a
@@ -17,13 +17,13 @@ import "strings"
 // invocation visibly, which is a different thing from judging the adapter.
 
 // VersionVerdict is what vincent knows about the installed CLI build itself
-// (task 040). It is the protocol-compatibility facet of adapter health that
+// (task 041). It is the protocol-compatibility facet of adapter health that
 // `input_verdict` does not cover: `input_verdict` answers "can this build
 // hold a conversation", this answers "has this build ever been run against
 // vincent's parsers".
 type VersionVerdict string
 
-// Version verdicts (task 040).
+// Version verdicts (task 041).
 const (
 	// VersionUnknown is "nobody can say": the binary is not installed, or
 	// the version probe did not answer. It is the zero value, so an
@@ -74,7 +74,7 @@ func JudgeVersion(version string, tested, incompatible []string) VersionVerdict 
 func TestedVersionList(tested []string) string { return strings.Join(tested, ", ") }
 
 // RestrictedSupport is what an adapter can *ever* do about `permission_mode:
-// restricted` on this host, known without probing (task 040). It is the
+// restricted` on this host, known without probing (task 041). It is the
 // permission-compatibility facet of adapter health, and it mirrors
 // InputSupport exactly: it rides the catalog rather than an Adapter method so
 // §8.2 validation and the creation-time gate can read it without spawning
@@ -85,7 +85,7 @@ func TestedVersionList(tested []string) string { return strings.Join(tested, ", 
 // (§9.7), which is what makes a refusal safe on a machine with no CLI at all.
 type RestrictedSupport string
 
-// Restricted support levels (task 040). The zero value is deliberately
+// Restricted support levels (task 041). The zero value is deliberately
 // neither: an adapter that says nothing is unjudged, so a catalog built by a
 // test or a future adapter never refuses a task by accident.
 const (

@@ -580,7 +580,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
 		return
 	}
-	// The `permission_mode: restricted` gate (§9.4, task 040), last of the
+	// The `permission_mode: restricted` gate (§9.4, task 041), last of the
 	// three capability checks for the same reason the input one is second:
 	// the model and the input policy are fields the human just typed, and a
 	// platform fact is the least surprising thing to be told about.
@@ -712,7 +712,7 @@ func (s *Server) laneLookup(projectID int64) workflow.LookupFunc {
 }
 
 // restrictedMismatch applies the `permission_mode: restricted` gate to a task
-// about to be created (§9.4, task 040): every step that runs restricted must
+// about to be created (§9.4, task 041): every step that runs restricted must
 // resolve to an adapter that can restrict on this host.
 //
 // Unlike inputMismatch it reads the *static* catalog rather than a probe, so

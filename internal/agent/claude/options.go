@@ -49,7 +49,7 @@ func mergeOptions(cliModels, cliEfforts []string) agent.Options {
 		// asking, so §8.2 leaves a requiring step alone (task 013).
 		InputSupport: agent.InputDetected,
 		// `--allowedTools` is a flag every claude build has (§9.2), so
-		// restricted mode is available on every platform (task 040).
+		// restricted mode is available on every platform (task 041).
 		RestrictedSupport: agent.RestrictedAlways,
 	}
 }

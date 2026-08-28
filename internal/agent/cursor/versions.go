@@ -2,7 +2,7 @@ package cursor
 
 import "github.com/lezli01/vincent/internal/agent"
 
-// Version compatibility for the cursor-agent CLI (spec §9.7, task 040).
+// Version compatibility for the cursor-agent CLI (spec §9.7, task 041).
 
 // testedVersions are the builds vincent's parsers were captured against, in
 // the form cursor-agent prints them: calver plus a commit sha. That form is
