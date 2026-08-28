@@ -430,21 +430,3 @@ func waitForState(t *testing.T, dataDir, cfgDir, id, want string) {
 	}
 	t.Fatalf("task %s is %s after 90s, want %s", id, last, want)
 }
-
-// runVincentStdin is runVincent with something on stdin, for the `-` forms of
-// --prompt-file, --run-file and --body.
-func runVincentStdin(t *testing.T, dataDir, cfgDir, stdin string, args ...string) (string, int) {
-	t.Helper()
-	cmd := exec.Command(vincentBin, args...)
-	cmd.Env = append(hermeticEnv(),
-		config.EnvDataDir+"="+dataDir,
-		config.EnvConfigDir+"="+cfgDir,
-	)
-	cmd.Stdin = strings.NewReader(stdin)
-	out, err := cmd.CombinedOutput()
-	code := cmd.ProcessState.ExitCode()
-	if err != nil && code < 0 {
-		t.Fatalf("vincent %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-	return string(out), code
-}
