@@ -600,8 +600,9 @@ vincent task cancel <id> [--json]
 
 Aborts the task, killing any running process (graceful termination, then a kill
 after 10 seconds). Valid from `queued`, `running`, `awaiting_input`,
-`awaiting_gate`, `blocked` and `paused`; anything else exits 1 with the state it
-actually found.
+`awaiting_gate`, `awaiting_children`, `blocked` and `paused`; anything else exits
+1 with the state it actually found. From `awaiting_children` it cascades to every
+unfinished lane.
 
 ### `vincent task follow-up`
 
