@@ -26,6 +26,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/notify"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -316,6 +317,27 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			sched.Wake()
 		}
 	})
+	// The outward signal (§12.3, task 046): a third internal subscriber that
+	// spawns `notify.command` when a task enters a state listed in
+	// `notify.on`. It reads currentConfig() per event, so a hot reload
+	// governs the next transition with no extra wiring here, and it does no
+	// database work on this goroutine — the hook only enqueues.
+	notifier := notify.New(notify.Deps{
+		Store:  st,
+		Config: currentConfig,
+		Logger: logger,
+		// The honest `n` for this run: the task's own snapshot, not the
+		// registry, which may have been edited since the task was created.
+		StepCount: func(snapshot string) int {
+			wf, _, err := workflow.Parse([]byte(snapshot), workflow.Options{})
+			if err != nil {
+				return 0
+			}
+			return len(wf.Steps)
+		},
+	})
+	notifier.Start(ctx)
+	broker.OnEvent(notifier.OnEvent)
 	// Registry reloads become durable workflow.registry_changed events
 	// (§13.3). Registered after the initial loads so boot churn stays out of
 	// the event log.
@@ -438,6 +460,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Error("http server failed", "error", err)
 		sched.Stop()
 		runner.Stop()
+		notifier.Stop()
 		broker.Close()
 		return fmt.Errorf("http server: %w", err)
 	}
@@ -452,6 +475,9 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 	sched.Stop()
 	runner.StopGraceful(processGrace)
+	// Before broker.Close(): the broker is what feeds the notifier's hook, and
+	// a notification for a shutdown-time transition is one a person wants.
+	notifier.Stop()
 	broker.Close()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

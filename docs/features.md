@@ -13,7 +13,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
-| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks |
+| Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue, prefilled and editable; issue details in templates; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
@@ -138,6 +138,16 @@ Human oversight is part of the workflow instead of an informal terminal habit:
   from inside an agent or command step reports a line that shows live on the
   board and stays on the finished attempt as the step's own account of how it
   went. It is opt-in per workflow — vincent never asks an agent for it.
+
+- **Be told when you are needed, with nothing open.** Point `notify.command` at
+  a script and the daemon runs it whenever a task enters a state you listed —
+  `blocked`, `awaiting_gate`, `awaiting_input`, `done` — writing a JSON envelope
+  with the task, the transition, the reason and the agent's question to its
+  standard input. It composes with whatever you already use:
+  `terminal-notifier`, `notify-send`, `msg`, a Slack `curl`, a file drop. That
+  is the point of walking away: the daemon is designed to run with no client
+  attached, and this is how it says it needs you. See
+  [`notify`](reference/configuration.md#notify).
 
 The daemon computes the actions valid in each state and sends that list to
 every client, so the TUI, CLI, and API agree on what can happen next. See the

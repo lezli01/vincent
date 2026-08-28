@@ -59,6 +59,7 @@ the living engineering specification records implementation contracts.
 | [043](043-workflow-origin.md) | Persisting where a task's workflow definition came from | ✅ done (6/6) |
 | [044](044-workflow-render-preview.md) | `vincent workflow render` — a template dry run | ✅ done (6/6) |
 | [045](045-cli-task-fields-file.md) | Task fields from a file or stdin in `vincent task add` | ✅ done (4/4) |
+| [046](046-notify-hook.md) | A notify hook: letting the daemon signal a human outside the TUI | ✅ done (6/6) |
 
 ## How to add and update a task document
 

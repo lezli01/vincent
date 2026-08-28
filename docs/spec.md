@@ -70,7 +70,15 @@ amendments in this specification record superseded boundaries, while
 
 - Web UI (the API is designed for it; it is not built in v1).
 - Multi-user / remote access / multi-host orchestration.
-- OS desktop notifications.
+- OS desktop notifications. *Amended 2026-08-28 (task 046, issue #90): the
+  **platform-native notification stack** is still deferred — three backends and
+  a packaging story for one hard-coded delivery channel. What was never decided
+  here is that the daemon may not signal outward at all, and that is what
+  `notify:` (§12.3) now does: it runs a command of the user's choosing when a
+  task enters a state they named, which reaches `terminal-notifier`,
+  `notify-send` and `msg` as easily as it reaches Slack, mail or a file drop.
+  The exec hook is the reason the native stack is now cheap to leave deferred
+  rather than the reason to build it.*
 - LLM-as-judge step verification.
 - Workflow branching or conditionals within one task. *Amended 2026-08-17
   (task 014): parallel steps and step fan-out are no longer deferred —
@@ -105,7 +113,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 19 | Name | `vincent` |
 | 20 | v1 scope | Everything above, both agent adapters |
 | 21 | Agent/model/effort selection | Adapter-native values; per-step resolution `step > task override > workflow defaults > adapter default` with agent-scoped inheritance; options probed ad hoc from the installed CLIs, merged with a curated catalog, free text always allowed (§8.6, §9.6) |
-| 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15) |
+| 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15). *Narrowed 2026-08-28 (task 046, issue #90): "TUI-level alerts only" decided how one agent question is normalized, surfaced and answered **inside a client** — it did not decide that the daemon may never signal outward, and it never spoke to `blocked` or `awaiting_gate` at all. The daemon-side `notify:` hook (§12.3) signals on any §6 state and leaves the TUI bell exactly as it was.* |
 
 | 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
@@ -3048,6 +3056,9 @@ agents:
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 github:
   enabled: true                # read GitHub issues, so a task can be created from one (§13.2)
+notify:                        # run a command when a task enters one of these states (task 046)
+  on: []                       # §6 state names; [] (the default) fires nothing
+  command: []                  # argv, never a shell string; the envelope arrives on stdin
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
@@ -3115,6 +3126,74 @@ costs nothing unasked for. Setting it to `false` stops the daemon reading
 GitHub entirely: the TUI's issue row disappears, `GET
 /v1/projects/{id}/github` answers `disabled`, and `github_issue` on `POST
 /v1/tasks` is refused.
+
+**`notify` (task 046, added 2026-08-28; issue #90).** The daemon's outward
+signal. When a task enters one of the states in `on`, the daemon runs `command`
+and writes a JSON envelope describing the transition to the child's stdin.
+
+It exists because §2's third goal is a daemon that runs with **zero clients
+attached**, and the one thing it could not do with zero clients attached was say
+it needed a human: the only alert in the tree is the TUI's terminal bell (§15),
+which rings on a transition into `awaiting_input` and only while a board is
+open. A task could sit in `awaiting_input` for the whole 24-hour `input_timeout`
+(§7.4), fail on expiry, and the first anyone knew was the next time they opened
+the board. `blocked` and `awaiting_gate` had no alert at all.
+
+*The selector is target **states**, not event types.* `on` lists §6 state names,
+matched against the `to` field of `task.state_changed` — exactly what the TUI
+bell keys off. No event type is introduced for this (§13.3). A name outside §6's
+vocabulary **fails the load**, naming the offending value, so a typo is refused
+whole and the watcher keeps the last good configuration.
+
+*The payload is an enriched envelope, assembled by the daemon*, not the raw
+`events` row: a notifier handed `{task_id, to}` cannot write a message without
+calling back into the API with a bearer token, which defeats the point of a
+one-line script. One JSON object, on stdin: `event_id`, `ts`, `type` (always
+`task.state_changed`); `task_id`, `title`, `from`, `to`, `block_reason` (empty
+unless `to` is `blocked` — §14's rule that a block reason means "set while
+blocked"), `queued_reason`, `current_step`, `steps_total`, `worktree_path`,
+`branch`; `project_id`, `project`, `workflow`; and `input` (`{kind, summary}`)
+on a transition into `awaiting_input`, taken from what that §7.4 transition
+already carries. `steps_total` comes from the task's own workflow snapshot,
+which is the honest *n* for that run.
+
+*Global, not per-project, and hot-reloading.* Projects are database rows, not
+YAML, so a per-project override would need a column and API surface for a case
+nobody has asked for. The hook reads the current configuration per event, so an
+edit takes effect on the next transition with no restart.
+
+*Only **root** tasks notify.* A `fan_out` lane is an ordinary task row (§7.6),
+so a twenty-lane tree reaching `done` would otherwise produce twenty child
+notifications on top of the parent's. A task whose `parent_task_id` is non-null
+is skipped: the parent's own `awaiting_children` → `running` → `done` is the
+human-meaningful signal, a lane that blocks blocks its parent's join, and a lane
+finishing is machinery. There is deliberately no `include_children` key.
+
+*Delivery is fire-and-forget, bounded, and does not replay.* At most **4**
+notifier processes run at once, drained from a bounded **64**-entry FIFO;
+`command` is argv and never a shell string, because there is no portable shell
+to assume; a child gets a **fixed 10 s** and then its whole process tree is
+killed. The timeout is not configurable, and that is the same posture as
+transcript pruning: a daemon that stops serving because a notifier hung has its
+priorities backwards. Only a full *queue* drops — the ordinary burst of five
+tasks blocking at once, which is exactly when the feature earns its keep, is
+lossless. Failures are logged and never retried, nothing is persisted, and
+**nothing is replayed on restart**: a weekend of downtime must not produce a
+notification storm on the next start.
+
+Children inherit the `environment` policy above like every other process the
+daemon spawns, and get **no** `VINCENT_*` variables — those are §8.5's contract
+for command steps, and the envelope on stdin is this hook's.
+
+Both keys are needed. `command` with an empty `on`, and `on` with no `command`,
+both load, take effect and can never fire; each is a startup/reload **warning**
+rather than a load failure, for the reason
+`delete_remote_branch_on_archive`'s is: commenting `command` out for an
+afternoon should not revert every unrelated edit in the same save.
+
+`notify` is deliberately **not** exposed on `GET /v1/config`: that response is a
+curated DTO for clients (§13.2), no client needs this, and `command` can
+reasonably carry a webhook URL with a token in its argv (§16).
 
 There is deliberately **no token key here**. Vincent stores no credential of
 its own: it drives `gh` when that is installed and authenticated, and otherwise
@@ -3834,6 +3913,12 @@ Two kinds of streams:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.status_changed`, `task.children_changed`, `project.*`,
    `workflow.registry_changed`, `agent.quota_changed`, `daemon.shutting_down`.
+   *Amended 2026-08-28 (task 046, issue #90): the `notify:` hook (§12.3)
+   introduces **no new event type**. Its selector reads the `to` field of
+   `task.state_changed`, the way the TUI bell does; `task.blocked` and
+   `task.gate_pending` do not exist and were not invented for it. The hook is a
+   daemon-side subscriber on this same post-commit fan-out, one hop downstream
+   of the store's event hook, and it never blocks the publishing goroutine.*
    (`task.created` — *amended 2026-08-28, task 043* — carries
    `workflow_origin` beside `workflow`: the scope, scope-relative file and
    source digest the task's workflow name resolved to (§5.3), omitted only for
@@ -4154,7 +4239,11 @@ stream for the live tail.
    a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
    with a distinct badge, and the TUI rings the terminal bell when a task enters
    `awaiting_input` — most terminals flash/badge the window even unfocused
-   (§7.4). OS desktop notifications remain out of v1 (§20).
+   (§7.4). OS desktop notifications remain out of v1 (§20). *Amended 2026-08-28
+   (task 046): the bell is **unchanged** — it is still the in-client alert and
+   still rings only on `awaiting_input`. Signalling outside a client is the
+   daemon's `notify:` hook (§12.3), which is independent of it in both
+   directions.*
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
@@ -4751,6 +4840,18 @@ currently true to show (§15 view 6).
   `--dangerously-skip-permissions` (claude),
   `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
   Cursor's reads mildest and is not; the first-run notice covers all three.
+- **`notify.command` is arbitrary code the daemon runs as the invoking user.**
+  *Added 2026-08-28 (task 046, issue #90).* It is spawned by the daemon, not by
+  an agent or a task, and nothing from a task, an agent or the API reaches its
+  argv — it is exactly what the owner of `config.yaml` wrote. That is consistent
+  with the posture above rather than a new risk: an agent step already runs
+  arbitrary commands as this user. Two consequences are worth stating rather
+  than leaving implicit. Its argv can carry a **secret** — a webhook URL with a
+  token in it is the obvious use — which is a second reason `config.yaml` and
+  its directory are owner-only (§12.2, the 2026-08-25 amendment above), and it
+  is why `notify` is not served on `GET /v1/config`. And it is argv, never a
+  shell string, on every platform: nothing is expanded, split or quoted, so a
+  task title cannot reach a shell through it.
 - **Vincent writes to one CLI's own config**: a cursor step passes `--model`,
   which cursor persists to `~/.cursor/cli-config.json` (§9.7). It is not a
   secret and not an escalation, but it is the one place vincent mutates state
@@ -4844,6 +4945,20 @@ currently true to show (§15 view 6).
   scans and ride the deliberately cold one (§13.2). Every figure is the daemon's —
   only it opens SQLite (§4), so a client with no daemon reports them **unknown**
   rather than opening the file itself, exactly as the existing database rows do.
+
+**What the notify hook logs (task 046, added 2026-08-28).** The `notify:` hook
+(§12.3) is invisible by construction — it runs a process that reports to
+somewhere else — so the daemon log is the only place its behaviour surfaces. A
+fire is logged at **debug**, with the task, the target state, the event id and
+`command[0]`; the command's arguments are not logged, because argv can carry a
+webhook secret (§16). Four things are logged at **warn**, each once and never
+retried: a non-zero exit, with the exit code and a truncated tail of the
+child's stderr; a child killed at the 10 s timeout; an event dropped because
+the queue was full, with the capacity; and a task the notification could not be
+read for. A skipped `fan_out` lane is debug, not warn — it is the designed
+behaviour, not a fault. Nothing here touches task state, a step run or the exit
+code of anything: a notifier that fails loses one notification and nothing
+else.
 
 ## 18. Edge cases and errors
 
@@ -5088,7 +5203,13 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 ## 20. Future work (explicitly out of v1)
 
 - Web UI on the same API; auth story for non-loopback exposure.
-- OS desktop notifications (blocked / gate / awaiting input / done) — natural M4+1.
+- ~~OS desktop notifications (blocked / gate / awaiting input / done)~~ —
+  **the outward-signalling half is done, 2026-08-28** (§12.3 `notify:`, task
+  046, issue #90): the daemon runs a command of the user's choosing on any §6
+  state, with an enriched envelope on stdin. The **platform-native** stack —
+  three OS backends and the packaging that comes with them — stays deferred,
+  and the exec hook is why that is now cheap: `terminal-notifier`,
+  `notify-send` and `msg` are all one `command:` line away.
 - ~~More adapters~~ — **Cursor promoted out of future work to M5, 2026-08-11**
   (§9.7). Gemini CLI, opencode, and adapter capability flags remain here.
 - ~~parallel steps and step fan-out~~ — **promoted out of future work,

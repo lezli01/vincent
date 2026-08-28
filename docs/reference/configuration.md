@@ -632,6 +632,101 @@ your own host, enterprise and SSO configuration — and otherwise reads
 described under [environment variables](#environment-variables), and
 `vincent doctor` reports which one is in play.
 
+### `notify`
+
+```yaml
+notify:
+  on: [blocked, awaiting_gate, awaiting_input, done]
+  command: ["/usr/local/bin/notify-me"]
+```
+
+Run a command when a task enters one of these states. **Off by default** — both
+keys are empty, and nothing is spawned.
+
+It exists because vincent's premise is that you start work and walk away, and
+the daemon is designed to run with no client attached. Without this, the only
+alert in the whole system is the TUI's terminal bell, which rings on
+`awaiting_input` and only while a board is open: a task could wait a full day
+for an answer, fail on the timeout, and the first you knew was the next time you
+looked.
+
+**`on`** is a list of [task states](task-lifecycle.md). Any of the ten is
+accepted; the four above are the ones worth waking up for. A name that is not a
+state **fails the load** and names the value, so the daemon keeps its last good
+configuration rather than silently never firing.
+
+**`command`** is **argv, not a shell line**. The first element is the program;
+the rest are passed through unchanged. Nothing is expanded, split, quoted or
+interpreted, and there is no shell on any platform — `command: ["notify.sh
+--urgent"]` looks for a program with a space in its name. Both keys are needed:
+either one alone loads, warns in the log, and never fires.
+
+#### The envelope
+
+The daemon writes one JSON object to the command's standard input and closes it.
+It is enriched on purpose: a notifier told only `{task_id, to}` would have to
+call back into the API with a bearer token to say anything useful, which defeats
+a one-line script.
+
+```json
+{
+  "event_id": 1841,
+  "ts": "2026-08-28T09:30:00Z",
+  "type": "task.state_changed",
+  "task_id": 42,
+  "title": "Fix the flaky gate",
+  "from": "running",
+  "to": "blocked",
+  "block_reason": "step_failed",
+  "queued_reason": "",
+  "current_step": 2,
+  "steps_total": 5,
+  "worktree_path": "/Users/you/.local/share/vincent/worktrees/42",
+  "branch": "vincent/42-fix-the-flaky-gate",
+  "project_id": 7,
+  "project": "vincent",
+  "workflow": "review"
+}
+```
+
+`block_reason` is empty unless `to` is `blocked`. A transition into
+`awaiting_input` additionally carries the agent's question:
+
+```json
+  "input": { "kind": "question", "summary": "Which migration should I keep?" }
+```
+
+`steps_total` comes from the task's own workflow snapshot, so it is the count
+for *that run* even if the workflow file has been edited since.
+
+A one-liner that turns it into a desktop notification on macOS:
+
+```sh
+#!/bin/sh
+jq -r '"\(.title) → \(.to)"' | xargs -0 terminal-notifier -title vincent -message
+```
+
+#### What it does and does not promise
+
+| | |
+|---|---|
+| **Root tasks only** | A `fan_out` lane is a task of its own, so a twenty-lane tree would send twenty-one messages. Lanes are skipped; the parent's own transitions fire. |
+| **At most 4 at once** | Drained from a 64-entry queue. Five tasks blocking together all notify; only a genuinely full queue drops, and a drop is logged. |
+| **10 s per command** | Fixed, not configurable. Past it the command's whole process tree is killed and the failure is logged. |
+| **Never retried** | A failure is logged with the exit code and the tail of its stderr, and dropped. |
+| **Never replayed** | Only transitions the running daemon observes fire. A weekend of downtime does not produce a storm on the next start. |
+| **Never blocks a task** | A notifier that hangs, fails or is missing changes nothing about the task it was about. |
+
+The environment the command inherits is the one
+[`environment`](#environment) resolves, like every other process the daemon
+spawns. It gets **no** `VINCENT_*` variables — those belong to command steps —
+because the envelope on stdin is this hook's whole contract.
+
+Read per event, so a [reload](#reload-semantics) governs the next transition. It
+is not served on `GET /v1/config`: no client needs it, and `command` can
+reasonably hold a webhook URL with a token in it. See the
+[security model](../security-model.md) for what running it means.
+
 ### `tui`
 
 ```yaml
