@@ -24,7 +24,7 @@ func newTaskCmd() *cobra.Command {
 		Short: "Create, inspect and cancel tasks",
 	}
 	cmd.AddCommand(newTaskAddCmd(), newTaskLsCmd(), newTaskShowCmd(), newTaskCancelCmd(),
-		newTaskFollowUpCmd())
+		newTaskFollowUpCmd(), newTaskTranscriptCmd())
 	return cmd
 }
 
@@ -447,8 +447,10 @@ func newTaskShowCmd() *cobra.Command {
 					return err
 				}
 				// The transcript is the complete record of what the agent did
-				// (§17); the TUI shows only its tail. Naming the file is what
-				// lets someone diagnose a failed step at all right now.
+				// (§17). `vincent task transcript <id> --step RUN` prints it
+				// as of task 047; the paths stay because a file is still the
+				// thing you grep, copy or attach to a bug report, and the RUN
+				// column above is the id that command takes.
 				var paths []string
 				for _, s := range t.Steps {
 					if p := deref(s.TranscriptPath); p != "" {

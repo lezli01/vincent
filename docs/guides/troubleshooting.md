@@ -112,7 +112,8 @@ write one.
 
 ### The daemon starts and immediately exits
 
-Read `{data_dir}/logs/daemon.log`. An invalid `config.yaml` at startup is fatal
+Read the log — `vincent daemon logs`, which reads `{data_dir}/logs/daemon.log`
+from disk and so still answers here. An invalid `config.yaml` at startup is fatal
 and says which key and line. (An invalid config on *hot reload* is not fatal —
 the last good config keeps running and the rejection is logged.)
 
@@ -685,12 +686,19 @@ to show state and step columns.
 
 ## Reading the log
 
+```sh
+vincent daemon logs          # the last 500 lines
+vincent daemon logs -n 50    # fewer
+vincent daemon logs -f       # keep printing as it is written
+```
+
 ```
 {data_dir}/logs/daemon.log
 ```
 
-Rotated and size-capped. The TUI's daemon view tails it — and reads it **from
-disk**, so it still works when the daemon is the thing that died.
+Rotated and size-capped. `vincent daemon logs` and the TUI's daemon view both
+read it **from disk** rather than through the API, so both still work when the
+daemon is the thing that died — which is when you want the log.
 
 Turn up detail in [`config.yaml`](../reference/configuration.md):
 
@@ -713,10 +721,11 @@ Include:
   directory paths and the tail of the daemon log
 - `vincent version` output, for the build details doctor does not carry
 - your OS and terminal
-- the relevant slice of `{data_dir}/logs/daemon.log`
+- the relevant slice of the daemon log (`vincent daemon logs -n 200`, or
+  `{data_dir}/logs/daemon.log`)
 - the workflow YAML, if a step misbehaved
-- the step's transcript if you can share it — **read it first**, it contains the
-  prompt and everything the agent did
+- the step's transcript if you can share it (`vincent task transcript <id> --step
+  RUN`) — **read it first**, it contains the prompt and everything the agent did
 
 [Open an issue](https://github.com/lezli01/vincent/issues/new/choose). Security
 issues go through

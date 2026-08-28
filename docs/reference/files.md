@@ -76,7 +76,7 @@ Project-scoped workflows live in the repository instead, at
 | `daemon.json` | How clients find the daemon: port, pid, start time. Written atomically, removed on graceful shutdown |
 | `daemon.lock` | Single-instance enforcement; releases automatically when the process dies |
 | `tui.json` | TUI-local state, including the first-run full-auto acknowledgment |
-| `logs/daemon.log` | The daemon log, rotated and size-capped. Tailed by the TUI's daemon view — read from disk, so it still works when the daemon is what died |
+| `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
 
 ## Worktrees and branches
 

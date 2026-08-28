@@ -214,6 +214,33 @@ vincent daemon status [--json]
 Reports whether the daemon is running, its identity, and which agent CLIs it
 resolved. Exit `0` healthy, `1` not running, `2` unresponsive.
 
+### `vincent daemon logs`
+
+```sh
+vincent daemon logs [-n N] [-f]
+```
+
+Prints the tail of `{data_dir}/logs/daemon.log` — 500 lines by default, the same
+window the TUI's daemon view shows. `-f` keeps printing lines as they are
+appended, on a two-second cadence, until Ctrl-C.
+
+It reads the file **from disk and never contacts the daemon**, which is the
+point rather than a shortcut: the log is worth reading exactly when the daemon
+is not there to serve it. So this is one of the few subcommands that can never
+exit `2` — no daemon is needed and none is started. A log file that is not there
+is an error naming the path, exit `1`; a log with nothing in it prints nothing
+and exits `0`.
+
+The data directory is resolved the way every subcommand resolves it —
+`VINCENT_DATA_DIR`, else the platform default. There is no `--data-dir` flag
+here; the one on `vincent daemon` itself exists for the Windows Scheduled Task,
+whose action carries no environment.
+
+Following is rotation-safe: each poll opens, reads and closes the file, because
+the daemon rotates by renaming it and a follower holding a handle would break
+that rotation on Windows. A rotation mid-follow is waited out and the fresh file
+picked up.
+
 ### `vincent daemon backup`
 
 ```sh
@@ -488,6 +515,41 @@ RUN  STEP       STATE      AGENT   REASON        STATUS
 1    implement  succeeded  claude  -             wired the adapter
 2    verify     failed     -       check_failed  3 tests red in internal/store
 ```
+
+### `vincent task transcript`
+
+```sh
+vincent task transcript <id> [--step RUN] [-f] [--json | --raw]
+```
+
+Prints one attempt's transcript — the complete record of what it did, which
+`task show` only names the file of.
+
+`--step` takes a **step_run id**: the `RUN` column `task show` prints, which is
+unambiguous across retries where every attempt is its own run. Omitted, it
+selects the running attempt if there is one, and otherwise the newest attempt by
+run id (creation order — which, unlike the step order, stays chronological when a
+task has parallel steps or fan-out lanes).
+
+| Output | What it is |
+|---|---|
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: assistant output, tool calls and their outcomes, command output, vincent's own annotations. Token usage is dropped — `task show` carries it |
+| `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
+| `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
+
+Everything a reader reads goes to **stdout**, including a command step's stderr,
+which is tagged `[stderr]` rather than split onto the other file descriptor: a
+transcript is one interleaved stream and two descriptors would scramble the
+ordering that makes it readable. The command's own diagnostics go to stderr, so
+stdout stays pipeable.
+
+`-f` opens on the tail and then resumes from the record boundary the daemon
+reports, printing records as the attempt writes them. It ends when that attempt
+stops running — it does not wait for a later retry, which is a different run.
+
+A step run that never had a transcript — a manual gate — prints a line saying so
+on stderr and exits `0`; nothing failed. A transcript whose file is gone (pruned
+by `transcript_retention_days`, or deleted) exits `1`.
 
 ### `vincent task cancel`
 
