@@ -870,16 +870,21 @@ func TestBuiltinUpdateWorkflowsIsValid(t *testing.T) {
 	}
 
 	loop := steps[4]
-	if loop.Type != StepLoop || len(loop.ForEach) == 0 || len(loop.Steps) != 1 {
-		t.Fatalf("validate = %+v, want a for_each loop with one body step", loop)
+	if loop.Type != StepLoop || len(loop.ForEach) == 0 || len(loop.Steps) != 2 {
+		t.Fatalf("validate = %+v, want a for_each loop with two body steps", loop)
 	}
 	// The list is relisted after the pass rather than reused from the probe,
 	// so a file the pass added is validated too.
 	if !strings.Contains(loop.ForEach[0], `"relist"`) {
 		t.Errorf("validate for_each = %q, want it driven by the relist step", loop.ForEach[0])
 	}
-	if body := loop.Steps[0]; body.Type != StepCommand || !strings.Contains(body.Run, "workflow validate") {
-		t.Errorf("loop body = %+v, want a command step running the validator", body)
+	// Both verdicts, per file: validation parses each template, render
+	// executes it (task 044). A file that only passes the first fails on a
+	// reviewer's first task, which is what this pass exists to prevent.
+	for i, want := range []string{"workflow validate", "workflow render"} {
+		if body := loop.Steps[i]; body.Type != StepCommand || !strings.Contains(body.Run, want) {
+			t.Errorf("loop body %d = %+v, want a command step running %q", i, body, want)
+		}
 	}
 }
 

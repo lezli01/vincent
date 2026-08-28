@@ -22,9 +22,10 @@ func newWorkflowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "workflow",
 		Aliases: []string{"wf"},
-		Short:   "Create, list and validate workflows",
+		Short:   "Create, list, validate and render workflows",
 	}
-	cmd.AddCommand(newWorkflowLsCmd(), newWorkflowValidateCmd(), newWorkflowInitCmd())
+	cmd.AddCommand(newWorkflowLsCmd(), newWorkflowValidateCmd(),
+		newWorkflowRenderCmd(), newWorkflowInitCmd())
 	return cmd
 }
 

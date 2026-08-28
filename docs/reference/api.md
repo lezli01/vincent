@@ -628,7 +628,11 @@ An empty value with source `adapter` means the adapter names no default of its
 own and the CLI decides at run time — which the TUI renders as "CLI default"
 rather than inventing a model name.
 
-**Resolution is server-side only.** Clients report it; they never re-derive it.
+**Resolution has one implementation.** Clients report it; they never
+re-implement the precedence. `vincent workflow render` resolves a **file** —
+one this endpoint cannot serve, since it takes a workflow *name* the registry
+has frequently not picked up yet — by calling that one implementation directly,
+and reports the same `{value, source}`.
 
 ## Tasks
 

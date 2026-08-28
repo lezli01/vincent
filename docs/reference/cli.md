@@ -25,7 +25,7 @@ localhost API.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | The request was rejected — either the daemon answered no (bad id, invalid state transition), or one of the daemon-free commands refused it (`workflow validate` on an invalid file, `workflow init` on a name already taken) |
+| `1` | The request was rejected — either the daemon answered no (bad id, invalid state transition), or one of the daemon-free commands refused it (`workflow validate` on an invalid file, `workflow render` on a template that does not execute, `workflow init` on a name already taken) |
 | `2` | No daemon answered |
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
@@ -625,6 +625,66 @@ tolerating its absence.)
 
 Exit `0` valid, `1` invalid. Warnings (a model in no catalog) print but do not
 fail the command.
+
+It checks that each template **parses**. It never runs one — see
+[`vincent workflow render`](#vincent-workflow-render) for that.
+
+### `vincent workflow render`
+
+```sh
+vincent workflow render <file> [--task ID] [--project ID]
+                               [--title S] [--description S] [--field k=v]...
+                               [--agent A] [--model M] [--effort E] [--json]
+```
+
+Executes every template the file declares — `prompt`, `run`, `check`,
+`instructions`, `if` and `for_each` — and prints what each step would send,
+with the [agent/model/effort triple](workflows.md) it resolves to and the level
+that supplied each field.
+
+`validate` parses a template; this **runs** it. That is the difference that
+matters, because templates render with `missingkey=error`: `{{.Task.Titel}}`,
+`{{.Task.Fields.ticket}}` on a task that sets no `ticket`, and
+`{{.Steps.plan.Reslt}}` all validate cleanly and fail at run time. Before this
+command the only way to find out was to create a task and watch a step fail.
+
+```
+$ vincent workflow render .vincent/workflows/review.yaml
+steps[0] plan (agent)
+  agent: claude (adapter)  model: sonnet (workflow)  effort: - (adapter)
+  prompt:
+    Review <task.title> on branch <branch>
+steps[1] verify (command)
+  run:
+    go test ./...
+.vincent/workflows/review.yaml: ok — review, 2 step(s) rendered, 0 warning(s)
+```
+
+**It needs no daemon**, so it belongs in the same pre-commit hook as
+`validate`. Values a run discovers — the worktree, a previous step's result, a
+previous attempt's failure — bind to visible placeholders such as `<worktree>`
+and `<steps.plan.result>`, so the output reads as a preview and never as the
+literal prompt an agent will receive. A field a workflow declares
+[`required`](workflow-schema.md) binds too, because a real task is guaranteed
+to carry it; an optional or undeclared field stays absent, so reading one
+without `{{ with index .Task.Fields "x" }}` is reported — which is exactly the
+bug a real run would hit.
+
+Supply the rest yourself: `--title`, `--description`, repeated `--field k=v`,
+and `--agent`/`--model`/`--effort` for a task-level override. `--task ID` binds
+a real task's title, description, fields, branch and override triple instead,
+and `--project ID` binds that project's facts; both need a daemon, and both
+also resolve `include` steps and named fan-out lanes through the registry.
+Without one, those steps are reported as unresolved and every other step still
+renders.
+
+Exit `0` clean, `1` a template that does not execute, `2` no daemon answered a
+`--task`/`--project`. A guard that renders to something other than `true`/`false`
+is a warning, not a failure: a preview placeholder can legitimately make one
+non-boolean.
+
+`.Host` is the machine running the command, not a remote daemon — the only
+honest answer offline, and the one place a preview and a real run can differ.
 
 ## `vincent github`
 

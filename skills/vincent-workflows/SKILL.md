@@ -158,17 +158,22 @@ human-triggered retry.
    prompt's claim of success is not verification.
 4. Make loops bounded, concurrent writes disjoint, fan-out lanes independent,
    and platform assumptions explicit.
-5. Run `vincent version`, then `vincent workflow validate <file>`. Use `--json`
-   when structured output helps. Resolve warnings as design findings, not just
-   syntax noise.
-6. If the binary is unavailable, say validation was not run; do not substitute
+5. Run `vincent version`, then `vincent workflow validate <file>`, then
+   `vincent workflow render <file>`. Use `--json` when structured output helps.
+   Resolve warnings as design findings, not just syntax noise.
+6. `validate` parses templates; `render` executes them, which is the only way a
+   typo'd `{{.Task.Titel}}`, an unsupplied `{{.Task.Fields.ticket}}` or a
+   `{{.Steps.plan.Reslt}}` is caught before a task is created. Both run without
+   a daemon. Read the rendered prompts: placeholders such as `<worktree>` and
+   `<steps.plan.result>` are the preview, not what the agent receives.
+7. If the binary is unavailable, say validation was not run; do not substitute
    a generic YAML parser or claim the workflow is valid.
-7. Calculate and review the maximum automatic agent-session envelope.
+8. Calculate and review the maximum automatic agent-session envelope.
 
 Return a compact design summary with:
 
 - the created or edited path;
-- vincent version, schema source, and validator result;
+- vincent version, schema source, and the validate and render results;
 - every retained agent step's necessity, check, and maximum automatic sessions;
 - the workflow's total session envelope and any unknown dynamic contribution;
 - task fields, binary manual gates, and live interaction separately;

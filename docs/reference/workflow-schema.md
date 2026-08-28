@@ -967,7 +967,9 @@ a codex step.
 
 `POST /v1/resolve` answers "what does this resolve to, and which level won" for
 every step — that is what the TUI's new-task form renders, and no client
-re-derives it.
+re-derives it. For a file the registry has not picked up yet,
+`vincent workflow render <file>` answers the same question offline, from the
+same resolver.
 
 ## Validation rules
 
@@ -988,6 +990,13 @@ cycle — so includes are resolved and checked when a task is created, and a
 `400` there is the report.
 
 Exit status is 1 for an invalid file; `--json` emits the findings structurally.
+
+**Validation parses templates; it never runs them.** A `{{.Task.Titel}}`, or a
+`{{.Task.Fields.ticket}}` on a task that sets no `ticket`, is valid YAML with a
+valid template in it and fails when the step renders.
+[`vincent workflow render <file>`](cli.md#vincent-workflow-render) executes
+them against a preview context — locally, with no daemon either — and is the
+other half of the same pre-commit check.
 
 - `steps` non-empty; step `id`s unique **across the whole file**, sub-steps
   of a `parallel` group included; `type` known.

@@ -57,6 +57,7 @@ the living engineering specification records implementation contracts.
 | [041](041-adapter-compatibility-health.md) | Adapter version compatibility and protocol health | ✅ done (5/5) |
 | [042](042-gosec-static-analysis.md) | gosec in the normal static-analysis gate, with reviewed suppressions | ✅ done (5/5) |
 | [043](043-workflow-origin.md) | Persisting where a task's workflow definition came from | ✅ done (6/6) |
+| [044](044-workflow-render-preview.md) | `vincent workflow render` — a template dry run | ✅ done (6/6) |
 
 ## How to add and update a task document
 

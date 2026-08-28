@@ -1693,6 +1693,31 @@ an agent to report on itself writes the instruction into their own prompt, and
 `.Steps.<id>` deliberately does not gain the status message — it means what a
 completed step *produced*, and `Status` there already means the run state.
 
+*Added 2026-08-28 (task 044).* **The preview binding.** `vincent workflow
+render` (§12.1) executes these same templates with no task, no worktree and no
+completed step, so every value a run discovers is bound to a visible sentinel
+rather than to empty: binding them empty under `missingkey=error` would report
+every legitimate `{{ .Steps.plan.Result }}` as a failure a real run would not
+hit, and printing empty would make a preview read as the literal prompt an
+agent will receive. The vocabulary is:
+
+| Binding | Preview value |
+|---|---|
+| `.Task.ID` | `0`, following `.Loop.Index`'s precedent |
+| `.Task.Title` / `.Description` / `.BranchName` / `.BaseBranch` | `<task.title>`, `<task.description>`, `<branch>`, `<base_branch>` |
+| `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to `<field.NAME>`. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
+| `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>` |
+| `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included, each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
+| `.Step.Attempt` | `1`, and the `<previous-attempt-failure>` block above is not appended |
+| `.Loop` | the zero value outside a loop; `{Index: 1, Item: <loop.item>, IsFirst: true}` for a step inside one |
+| `.Issue` | the zero value, so `{{ if .Issue.Number }}` takes the unlinked branch |
+| `.Worktree.Path` / `.LastFailure` | `<worktree>`, `{<last_failure.reason>, <last_failure.output>}` |
+| `.Conflicts` | one element, `<conflicts[0]>`, on an `on_conflict: agent` resolver step; empty everywhere else |
+| `.Host` | the **CLI host's** real GOOS/GOARCH — the only honest offline answer, and the one place a preview and a remote daemon can differ |
+
+A guard is rendered and shown but not judged against `true`/`false`: a sentinel
+can legitimately make one non-boolean, so that is a warning, never an error.
+
 ### 8.5 Environment for command, check and agent steps
 
 *Retitled 2026-08-26 (task 036): this block now reaches `agent` steps too. It
@@ -2702,7 +2727,7 @@ One Go binary, `vincent`:
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force` |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
-| `vincent workflow ls / validate [file] / init <name>` | Registry listing / YAML validation / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope |
+| `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2) |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
@@ -3529,6 +3554,19 @@ POST   /v1/resolve                      { workflow, project_id?, agent?, model?,
                                         of its own — the CLI decides at run time.
                                         Resolution is server-side only: clients report it,
                                         never re-derive it (§8.6).
+                                        *Amended 2026-08-28 (task 044):* the rule is
+                                        "§8.6 has one implementation", not "only the
+                                        server may call it". `vincent workflow render`
+                                        resolves a **file** — one the registry has
+                                        frequently not picked up yet, which is why this
+                                        endpoint, which takes a workflow *name*, does not
+                                        serve it — by calling the same
+                                        agent.ResolveWithSources this handler calls, and
+                                        reports the same {value, source}. That is what PR L
+                                        was protecting; `workflow validate` has resolved
+                                        levels 1 and 3 locally against the curated catalogs
+                                        since it shipped. No client re-implements the
+                                        precedence.
 
 GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=
                                         list rows additionally carry the §15 board fields:
@@ -4828,7 +4866,7 @@ currently true to show (§15 view 6).
 | User wants a copy of daemon state | *Added 2026-08-25 (task 030).* `vincent daemon backup <path.tar.gz>` — one archive holding a `VACUUM INTO` copy of the database (§14), `transcripts/`, `config.yaml`, `workflows/` and a manifest. It needs a **running** daemon and refuses without one, in `doctor --fix`'s words: only the daemon opens the database. It needs no quiet daemon, so a backup may be taken while tasks run. `vincent daemon restore` is the reverse and needs a **stopped** daemon; it refuses a manifest whose schema version exceeds the binary's, and an occupied destination without `--force`, which moves the displaced state aside as `<name>.bak-<ts>` rather than deleting it — the same posture as the row below |
 | DB corruption | Startup fails loudly, points at the file, never auto-deletes. *Amended 2026-08-25 (task 030):* what rescues this case is an **earlier** good copy, which is what `vincent daemon backup` is for; a fresh copy of the damage is not a remedy, and taking one is not offered as a cold-copy mode |
 | Agent emits gigabytes of output | Transcript writes are streamed to disk; SSE output chunks are rate-limited/coalesced (~10 Hz); per-run transcript size cap (`transcript_max_bytes`, default 512 MB) fails the step past the cap with `transcript_limit` |
-| Template references missing field | Step fails at render time (before any process starts) with the template error |
+| Template references missing field | Step fails at render time (before any process starts) with the template error. *Amended 2026-08-28 (task 044):* this outcome is now reachable without creating a task — `vincent workflow render <file>` executes the same templates against the §8.4 preview context and names the step and the field |
 | A step's `if:` does not render, or renders something that is not `true`/`false` | *Added 2026-08-18 (task 015).* The step blocks with `condition_error` and records one `failed` row naming it. The only reason in this table that does **not** run the §7.2 retry budget: a guard is evaluated before the step becomes an attempt, so there is no attempt to retry, and re-rendering an unchanged template cannot answer differently (§7.7). A human `retry` re-evaluates it |
 | A guard skips a step | *Added 2026-08-18 (task 015).* A `skipped` row with `skip_reason: condition`, visible in `.Steps`; the workflow carries on. The same guard on a fan-out lane or a group sub-step subsets the set instead — the others still run |
 | A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered. *Amended 2026-08-18 (task 016):* inside a `loop` body the same step ends **that iteration** and the loop carries on — the sequence it ends is the body's (§7.8) |
