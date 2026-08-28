@@ -26,6 +26,7 @@ needs to react rather than poll.
 
 - [Exit codes](#exit-codes)
 - [JSON output](#json-output)
+- [Supplying task fields](#supplying-task-fields)
 - [Validating workflows in CI](#validating-workflows-in-ci)
 - [Talking to the API directly](#talking-to-the-api-directly)
 - [Reacting to events](#reacting-to-events)
@@ -41,7 +42,7 @@ Every subcommand uses the same three:
 | Code | Meaning | What a script should do |
 |---|---|---|
 | `0` | Success | Continue |
-| `1` | The daemon answered and rejected the request | Fix the request — a bad id, an action the task's state does not allow |
+| `1` | The request was rejected — by the daemon, or by the client before it sent one | Fix the request — a bad id, an action the task's state does not allow, a `--fields-file` that is not one JSON object of strings |
 | `2` | No daemon answered | Start one (`vincent daemon start`) and retry |
 
 That split is the point: a script can tell "start the daemon" from "fix your
