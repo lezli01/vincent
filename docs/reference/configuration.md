@@ -32,6 +32,12 @@ Omitted keys keep their built-in defaults, so a partial file is fine.
 This is what first start writes, verbatim:
 
 ```yaml
+# vincent daemon configuration (spec §12.3).
+# Generated with defaults on first start. Edit freely: the daemon watches this
+# file and hot-reloads valid changes. Invalid edits are logged and rejected,
+# and the last good configuration stays active. Changes to "listen" take
+# effect on the next daemon restart.
+
 # Address the HTTP API binds to. Loopback only. Port 0 picks an ephemeral
 # port, published for clients in {data_dir}/daemon.json.
 listen: 127.0.0.1:0
@@ -41,6 +47,8 @@ listen: 127.0.0.1:0
 max_parallel_tasks: 3
 
 # Fallback step timeouts, used when a workflow step declares none.
+# input_timeout bounds each wait for an answer to an agent's input request
+# (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
 defaults:
   agent_timeout: 60m
   command_timeout: 15m
@@ -61,33 +69,53 @@ delete_remote_branch_on_archive: false
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 
-# Per-attempt transcript cap.
+# Per-attempt transcript cap. A step whose transcript passes this fails with
+# transcript_limit rather than filling the disk.
 transcript_max_bytes: 512MB
 
-# Ceiling on what one task may spend, in US dollars. 0 disables it.
+# Ceiling on what one task may spend, in US dollars, summed over every attempt
+# of every step it runs. Past it the task blocks with cost_limit at the next
+# attempt boundary, so expect to overshoot by at most one attempt; raise this
+# and retry to carry on. 0 disables it, which is the default.
+#
+# It counts one task. Each fan_out lane is its own task and gets its own
+# budget, so a tree of twenty lanes may spend twenty times this. Only agents
+# that report cost are counted — codex and cursor report none, so the cap is
+# inert on them.
 max_task_cost_usd: 0
 
-# How long a quota-stopped task waits when the agent CLI named no reset time.
+# How long a task waits before trying again after its agent reported that the
+# usage quota for the window is spent, when the CLI named no reset time. When
+# it does name one, that wins and this is unused. The task keeps its place in
+# the queue and holds no slot while it waits.
 usage_limit_recheck_interval: 15m
-
-# Sub-steps of one `parallel` step group running at once.
-parallel:
-  max_parallel: 4
-
-# Bounds on a `type: fan_out` tree, checked at task creation.
-fan_out:
-  max_depth: 3
-  max_tasks: 64
-
-# Ceiling on a `type: loop` step's iterations.
-loop:
-  max_iterations: 10
 
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
-# Record how every step was actually invoked in its transcript.
+# Record how every step was actually invoked in its transcript: resolved
+# agent/model/effort, permission mode, working directory, and the full argv.
+# Turn this on when a run does something you cannot explain, then paste the
+# transcript. Off by default because argv includes the rendered prompt.
 debug: false
+
+# What child processes — agent steps, command steps and their checks —
+# inherit from the daemon (T4.23). Resolved in one order: inherit, then
+# unset, then set. Command steps layer the VINCENT_* variables and their own
+# "env:" on top, so those are never affected.
+#
+# The default inherits everything, which is what the daemon always did
+# implicitly. Pin it when a run has to be reproducible, or drop a single
+# variable that breaks a CLI — on Windows, a daemon started from Git Bash
+# carries MSYSTEM, which blocks every cursor tool call.
+#
+# Values under "set" are literal: "$" is not special and nothing is expanded.
+environment:
+  inherit: all          # all | none | a list of names, e.g. [PATH, HOME]
+  # unset:
+  #   - MSYSTEM
+  # set:
+  #   LANG: C.UTF-8
 
 # Agent CLI locations. An empty path resolves the binary from PATH.
 agents:
@@ -95,6 +123,8 @@ agents:
     path: ""
   codex:
     path: ""
+  # cursor resolves the "cursor-agent" binary — not "cursor", which is the
+  # editor launcher (§9.7).
   cursor:
     path: ""
 
@@ -110,7 +140,41 @@ agents:
 github:
   enabled: true
 
-# What clients render, not what the daemon does.
+# Tell someone when a task needs them, without a client attached (task 046).
+# The daemon runs "command" whenever a task enters one of the states in "on",
+# and writes a JSON envelope describing the transition to the command's stdin
+# — task id and title, from/to, block_reason, project, workflow, step cursor,
+# branch and worktree path — so a one-line script can write a message without
+# calling back into the API.
+#
+# "command" is argv, not a shell line: nothing is expanded, quoted or split,
+# and there is no shell on any platform. Both keys are needed; either alone
+# loads and warns. Off by default.
+#
+# The states are the ones from §6, most usefully: blocked, awaiting_gate,
+# awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
+# and a twenty-lane tree would otherwise send twenty-one messages.
+#
+# It is fire-and-forget: at most 4 notifiers run at once, a child is killed
+# after 10 seconds, failures are logged and never retried, and nothing is
+# replayed for events that happened while the daemon was down.
+#
+# WARNING: this is arbitrary code the daemon runs as you, and its argv can
+# carry a secret (a webhook URL), which is part of why this file is
+# owner-only.
+#
+# notify:
+#   on: [blocked, awaiting_gate, awaiting_input]
+#   command: ["/usr/local/bin/notify-me"]
+
+# What clients render, not what the daemon does. The daemon validates these,
+# hot-reloads them and serves them on GET /v1/config; the TUI reads them from
+# there.
+#
+# group_by nests the task table under headers, outermost level first. Accepted
+# levels: project, workflow. Use [] for one flat list of tasks. A grouped
+# level drops its own column — the header already names it — and "g" cycles
+# the grouping for the session without touching this file.
 tui:
   board:
     group_by: [project, workflow]
@@ -681,7 +745,7 @@ a one-line script.
   "queued_reason": "",
   "current_step": 2,
   "steps_total": 5,
-  "worktree_path": "/Users/you/.local/share/vincent/worktrees/42",
+  "worktree_path": "/home/you/.local/share/vincent/worktrees/42",
   "branch": "vincent/42-fix-the-flaky-gate",
   "project_id": 7,
   "project": "vincent",
