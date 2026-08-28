@@ -175,3 +175,48 @@ func TestPruneRunHonoursContextCancel(t *testing.T) {
 		t.Fatal("Run did not return after its context was canceled")
 	}
 }
+
+// keyTask creates a task carrying an idempotency key recorded ago in the past,
+// and returns the key's identifier.
+func (h *pruneHarness) keyTask(t *testing.T, title string, ago time.Duration) string {
+	t.Helper()
+	task := &store.Task{
+		ProjectID: h.projectID, Title: title, WorkflowName: "adhoc",
+		State: store.TaskQueued, WorkflowSnapshot: "name: adhoc\nsteps: []\n",
+		BranchName: "vincent/" + title,
+	}
+	key := &store.IdempotencyKey{
+		Method: "POST", Path: "/v1/tasks", Key: title, RequestSHA: "sha",
+		CreatedAt: time.Now().Add(-ago),
+	}
+	if err := h.store.CreateTaskWithKey(t.Context(), task, nil, key); err != nil {
+		t.Fatalf("CreateTaskWithKey: %v", err)
+	}
+	return title
+}
+
+// TestPruneKeysDropsExpiredOnly: the 24-hour pass also expires idempotency
+// keys (task 040). The window is fixed rather than read from
+// TranscriptRetentionDays, so a harness configured to keep transcripts forever
+// still expires keys.
+func TestPruneKeysDropsExpiredOnly(t *testing.T) {
+	h := newPruneHarness(t, 0) // transcripts kept forever; keys are not
+	expired := h.keyTask(t, "expired", 25*time.Hour)
+	live := h.keyTask(t, "live", time.Hour)
+
+	n, err := h.pruner.PruneKeys(t.Context(), time.Now())
+	if err != nil || n != 1 {
+		t.Fatalf("first pass: removed %d, err %v; want 1, nil", n, err)
+	}
+	if _, err := h.store.GetIdempotencyKey(t.Context(), "POST", "/v1/tasks", expired); err == nil {
+		t.Error("a key past the window survived the pass")
+	}
+	if _, err := h.store.GetIdempotencyKey(t.Context(), "POST", "/v1/tasks", live); err != nil {
+		t.Errorf("a key inside the window was pruned: %v", err)
+	}
+	// The ticker runs this every 24 h forever, so a second pass over
+	// already-pruned rows must be a no-op rather than an error.
+	if n, err := h.pruner.PruneKeys(t.Context(), time.Now()); err != nil || n != 0 {
+		t.Fatalf("second pass: removed %d, err %v; want 0, nil", n, err)
+	}
+}

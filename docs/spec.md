@@ -3181,6 +3181,47 @@ long-lived by contract and a server-wide write deadline would sever every one of
 them. The read deadline covers reading the *request*, so it does not shorten an
 SSE response.
 
+*Amended 2026-08-28 (task 040, issue #146).* A request may carry an optional
+**`Idempotency-Key`** header, and exactly one route acts on it:
+`POST /v1/tasks`. That route is the only one in §13.2 where a replayed request
+produces a second side effect — it inserts a row, claims a branch and wakes the
+scheduler, none of which is a compare-and-swap, so a client that times out
+*after* the commit and re-sends gets a second task, a second worktree and a
+second agent run against the same repository. Every other mutating route is
+already safe and ignores the header: the §6 actions are a compare-and-swap on
+the state the request read (amended 2026-08-24), `POST /v1/projects` refuses an
+already-registered path, and the `PATCH`es, `DELETE /v1/projects/{id}`,
+`POST /v1/maintenance/gc` and `POST /v1/doctor/fix` are desired-state
+operations that reach the same end state when re-sent.
+
+- **The key** is at most 255 bytes of printable ASCII; anything else is `400`
+  `validation_failed` naming the field and the limit, like every other §13.1
+  field bound. It is scoped `(method, path, key)`, which is the whole of what
+  exists to scope by: there is one daemon, one token and no caller identity.
+- **The digest** is taken over the *decoded* request, canonically re-marshalled
+  — not over the bytes as they arrived — so whitespace and JSON key order
+  cannot manufacture a conflict. It is taken **before** the `github_issue`
+  prefill mutates the request, so an issue edited between two identical sends
+  cannot either.
+- **Same key, same digest** replays: `201` carrying the task the first request
+  created. The stored row is a *reference*, not a recorded response body, and
+  the replay renders the task **as it is now** — so a task the scheduler has
+  since admitted replays as `state: running` under a `201`. Persisting the
+  rendered JSON instead would put a workflow snapshot under this section's
+  4 MiB bound into a table that grows with every create.
+- **Same key, a different digest** is `409` `invalid_state` with
+  `details.reason = "idempotency_key_reused"`, and no task is created. It is
+  deliberately **not** a new error code: this section fixes every `409` at
+  `invalid_state` with the specific reason in `details`, and that rule holds.
+- **Retention** is a fixed **24 hours**, pruned by the daemon's existing
+  retention pass (§17). Fixed the way this section's body bounds are fixed: a
+  key exists to cover a transport retry, which happens in seconds.
+- **No client sends it.** `internal/apiclient` has no REST retry — a create
+  that times out is reported to the person, who looks at the board and decides —
+  so there is no retry for a key to survive, and minting one per composed form
+  would fight the rule that a new explicit user action is a new operation. The
+  header is for external callers.
+
 ### 13.2 Endpoints
 
 ```
@@ -3431,6 +3472,12 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         An unusable integration is the same **409** with
                                         `details.reason` the issues endpoint returns; a request
                                         without github_issue makes no GitHub call at all
+                                        *Added 2026-08-28 (task 040):* accepts an optional
+                                        `Idempotency-Key` header. Same key + same request →
+                                        `201` with the task the first send created; same key +
+                                        a different request → `409` with
+                                        `details.reason = "idempotency_key_reused"`; no header
+                                        → unchanged. §13.1 has the rules
 GET    /v1/tasks/{id}                   full task incl. step runs summary and pending_input (§7.4).
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
@@ -3820,6 +3867,17 @@ CREATE TABLE agent_quota (
   source             TEXT NOT NULL       -- 'observed'; the seam a probe would fill
 );
 
+CREATE TABLE idempotency_keys (       -- §13.1 replay protection (task 040)
+  method       TEXT NOT NULL,
+  path         TEXT NOT NULL,
+  key          TEXT NOT NULL,
+  request_sha  TEXT NOT NULL,          -- digest of the decoded request, canonically re-marshalled
+  task_id      INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (method, path, key)
+);
+CREATE INDEX idx_idempotency_keys_created_at ON idempotency_keys(created_at);
+
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
@@ -3860,6 +3918,23 @@ backwards. The row is written by `internal/taskrun` alongside the §11 hold and
 deleted by the next successful agent step on that adapter; the daemon remains
 the single writer and the row is agent-scoped rather than task-scoped, so no
 taskrun or scheduler ownership invariant moves.
+
+*Added 2026-08-28 (task 040, issue #146).* `idempotency_keys` stores a
+**reference**, not a response: a replay re-reads `task_id` and renders the task
+as it is now. Persisting the rendered `201` would mean storing a workflow
+snapshot per create, under §13.1's 4 MiB body bound, in the one table that grows
+with every task created — exactly the storage surface task 029 was opened to
+measure. The primary key is `(method, path, key)` rather than `key` alone so a
+later route joins the table with no migration, even though `POST /v1/tasks` is
+the only writer today. `ON DELETE CASCADE` because a key whose task has been
+destroyed has nothing left to replay: force-deleting a project deletes its
+tasks, foreign keys are enforced on every connection, and the key goes with
+them, so a send inside the remaining window creates a fresh task. That beat
+`ON DELETE SET NULL` plus a `410`, which adds a status and an error code for a
+case only a deliberate destructive act inside a 24-hour window can reach. The
+key row is written **in the same transaction as the task**, so the two commit
+together or not at all; a concurrent duplicate loses on the primary key, rolls
+its task insert back, and replays the winner's.
 
 ## 15. TUI
 
@@ -4493,7 +4568,14 @@ currently true to show (§15 view 6).
 - **Daemon log:** structured (slog), rotated; scheduler decisions at debug level.
 - **Retention:** transcripts of archived tasks pruned after
   `transcript_retention_days` (default 90); DB rows kept indefinitely (rows are small,
-  history is valuable).
+  history is valuable). *Amended 2026-08-28 (task 040):* one exception —
+  §13.1's `idempotency_keys` rows are pruned after a **fixed 24 hours** by the
+  same pass, with no config knob and independent of
+  `transcript_retention_days`' "zero keeps everything". A key is opaque,
+  small, and useless once the retry window it covers has passed, so there is no
+  operator reason to keep one. The table is counted in
+  `GET /v1/doctor`'s `database.table_rows` like every other, by enumeration
+  rather than by name.
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took

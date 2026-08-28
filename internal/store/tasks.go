@@ -71,7 +71,24 @@ func (e *BranchClaimedError) Error() string {
 // It is the one-task spelling of CreateTasks, which is where the transaction
 // lives.
 func (s *Store) CreateTask(ctx context.Context, t *Task, resolveBranch func(id int64) (string, error)) error {
-	return s.CreateTasks(ctx, []*Task{t}, resolveBranch)
+	return s.createTasks(ctx, []*Task{t}, resolveBranch, nil)
+}
+
+// CreateTaskWithKey is CreateTask with an idempotency key written in the same
+// transaction as the row (task 040, issue #146). Either the task and its key
+// both commit or neither does, which is what makes a replayed create find the
+// key exactly when the task it names exists.
+//
+// A key already recorded for this `(method, path, key)` returns
+// ErrIdempotencyKeyExists with the whole insert rolled back — the concurrent
+// duplicate — and the caller replays the winner's task instead.
+//
+// k is the only caller-supplied part; the task id and, when unset, the
+// timestamp are filled in from the insert.
+func (s *Store) CreateTaskWithKey(
+	ctx context.Context, t *Task, resolveBranch func(id int64) (string, error), k *IdempotencyKey,
+) error {
+	return s.createTasks(ctx, []*Task{t}, resolveBranch, k)
 }
 
 // CreateTasks inserts several tasks in **one** transaction, resolving each
@@ -92,6 +109,18 @@ func (s *Store) CreateTask(ctx context.Context, t *Task, resolveBranch func(id i
 // transaction, so two lanes resolving to the same name collide here exactly
 // as a lane colliding with an existing task does.
 func (s *Store) CreateTasks(ctx context.Context, tasks []*Task, resolveBranch func(id int64) (string, error)) error {
+	return s.createTasks(ctx, tasks, resolveBranch, nil)
+}
+
+// createTasks is the shared body. k, when non-nil, is the idempotency key
+// recorded for the *first* task in the batch — which in practice means the
+// single task CreateTaskWithKey passes, since the fan-out path never carries
+// one (task 040): a lane spawn is the engine's own work, not a request a
+// client could replay.
+func (s *Store) createTasks(
+	ctx context.Context, tasks []*Task,
+	resolveBranch func(id int64) (string, error), k *IdempotencyKey,
+) error {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -99,10 +128,15 @@ func (s *Store) CreateTasks(ctx context.Context, tasks []*Task, resolveBranch fu
 	events := make([]*Event, 0, len(tasks))
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		events = events[:0]
-		for _, t := range tasks {
+		for i, t := range tasks {
 			ev, err := insertTaskTx(ctx, tx, t, now, resolveBranch)
 			if err != nil {
 				return err
+			}
+			if i == 0 && k != nil {
+				if err := insertIdempotencyKeyTx(ctx, tx, k, t.ID, now); err != nil {
+					return err
+				}
 			}
 			events = append(events, ev)
 		}

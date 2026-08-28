@@ -169,6 +169,42 @@ $GC"
 git -C "$REPO" rev-parse --verify "refs/heads/$BRANCH" >/dev/null \
   || fail "gc deleted branch $BRANCH — branches are never deleted"
 
+# Idempotency keys (§13.1, task 040). It rides this gate because the two things
+# it asserts — that a replayed create does not make a second task, and that a
+# reused key with a new body is refused — are only true over the wire, against a
+# real daemon that committed the first one.
+#
+# The api() helper above is `curl -f`, which exits non-zero on the 409 this leg
+# has to read, so the conflict goes through a status-capturing variant instead.
+idem() { # idem KEY METHOD PATH JSON_BODY — a request carrying an Idempotency-Key
+  curl -sS -f -X "$2" "${auth[@]}" -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $1" -d "$4" "$BASE$3"
+}
+idem_status() { # idem_status KEY METHOD PATH JSON_BODY — prints the status, body in $TMP/idem.json
+  curl -sS -o "$TMP/idem.json" -w '%{http_code}' -X "$2" "${auth[@]}" \
+    -H "Content-Type: application/json" -H "Idempotency-Key: $1" -d "$4" "$BASE$3"
+}
+
+echo "== replay a create carrying an Idempotency-Key"
+IDEM_BODY="{\"project_id\":$PROJECT_ID,\"title\":\"M1 idempotent task\",\"description\":\"Say hello.\"}"
+IDEM_FIRST="$(idem m1-gate-key POST /tasks "$IDEM_BODY" | jq -r .id | tr -d '\r')"
+[[ "$IDEM_FIRST" =~ ^[0-9]+$ ]] || fail "keyed task creation returned no id"
+IDEM_SECOND="$(idem m1-gate-key POST /tasks "$IDEM_BODY" | jq -r .id | tr -d '\r')"
+[[ "$IDEM_SECOND" == "$IDEM_FIRST" ]] \
+  || fail "the replay created task $IDEM_SECOND rather than replaying $IDEM_FIRST"
+COUNT="$(api GET /tasks | jq '[.[] | select(.title == "M1 idempotent task")] | length' | tr -d '\r')"
+[[ "$COUNT" == "1" ]] || fail "the replayed create left $COUNT tasks, want 1"
+
+echo "== the same key with a different body is a 409"
+IDEM_OTHER="{\"project_id\":$PROJECT_ID,\"title\":\"M1 different task\",\"description\":\"Say hello.\"}"
+STATUS="$(idem_status m1-gate-key POST /tasks "$IDEM_OTHER" | tr -d '\r')"
+[[ "$STATUS" == "409" ]] || fail "reusing a key with a new body returned $STATUS, want 409"
+jq -e '.error.code == "invalid_state" and .error.details.reason == "idempotency_key_reused"' \
+  "$TMP/idem.json" >/dev/null || fail "the conflict body is not the §13.1 envelope:
+$(cat "$TMP/idem.json")"
+COUNT="$(api GET /tasks | jq '[.[] | select(.title == "M1 different task")] | length' | tr -d '\r')"
+[[ "$COUNT" == "0" ]] || fail "the refused create made a task anyway"
+
 echo "== stop daemon"
 "$VINCENT" daemon stop
 
