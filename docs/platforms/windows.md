@@ -162,11 +162,15 @@ because a machine-wide service is machine-wide. Afterwards
 This is the one place a vincent capability is genuinely platform-dependent, and
 it is stated rather than discovered.
 
-**A cursor step with `permission_mode: restricted` fails on Windows.**
+**A cursor step with `permission_mode: restricted` is refused on Windows.**
 `cursor-agent --sandbox enabled` exits 1 with *"Sandbox mode is enabled but not
 available on this system. Sandbox requires macOS or Linux"* before doing any
-work. Vincent surfaces that as block reason `restricted_unsupported`, under the
-normal retry policy.
+work. Vincent knows this without asking the CLI — it is a fact about the adapter
+and the operating system — so **creating** such a task is refused with a `400`
+naming the step and the agent, rather than letting it spend a worktree and a
+retry. A task that reaches the engine anyway, because the workflow changed or
+the data directory came from another OS, blocks with reason
+`restricted_unsupported` under the normal retry policy.
 
 Falling back to `--force` was rejected outright: it would run full-auto a step
 that explicitly asked not to be, converting a safety choice into its opposite on
@@ -191,7 +195,7 @@ step and must run on Windows, use one of those for that step.
 
 | Thing | Status |
 |---|---|
-| Cursor `restricted` mode | **Unavailable** — the step fails, it never downgrades |
+| Cursor `restricted` mode | **Unavailable** — task creation refuses it, and a task that gets past that fails; it never downgrades |
 | Authenticode code signing | Not done — SmartScreen prompts once |
 | Boot-time start (no logon) | Not supported — the task is logon-triggered |
 | Windows Service backend | Removed in favor of a Scheduled Task, deliberately |

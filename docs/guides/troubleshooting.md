@@ -170,9 +170,29 @@ The step asked for `permission_mode: restricted` and the adapter cannot restrict
 on this platform. Today that is **cursor on Windows**: its sandbox requires macOS
 or Linux.
 
+Most of the time you will not see this reason at all, because **task creation
+refuses it first**: creating a task whose restricted step resolves to such an
+adapter answers `400` naming the step and the agent. Seeing the block reason
+means the task and its daemon parted company after creation — a data directory
+carried to Windows, or a workflow edited after the task was queued.
+
 The step fails rather than running unrestricted, which is deliberate — a
 restricted mode that quietly isn't restricted is worse than none. Use claude or
 codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
+
+### "untested version" beside an adapter
+
+Not a fault, and nothing to fix. Vincent pins the CLI builds its parsers were
+captured against; anything else reads `untested`, which is the normal state a few
+weeks after any vincent release because agent CLIs ship far more often than
+vincent does. It changes nothing: no run is refused, and `vincent doctor` does
+not exit `1` over it.
+
+It is worth knowing when something else is already wrong — a stream that parses
+oddly, a flag the adapter stopped finding — because it tells you whether you are
+on ground vincent has walked. `incompatible version` is different: that is a
+build vincent knows breaks. No such build has been observed for any adapter, so
+that list currently ships empty.
 
 ### A workflow is listed but cannot be selected — `platform_unsupported`
 
@@ -470,7 +490,7 @@ The block reason names what happened:
 | `template_error` | A template failed to render (see above) |
 | `condition_error` | A step's `if:` guard rendered nothing usable (see below) |
 | `loop_limit` | A `loop` has more iterations to run than it is allowed (see below) |
-| `restricted_unsupported` | The adapter cannot restrict on this platform |
+| `restricted_unsupported` | The adapter cannot restrict on this platform; refused at task creation, so this is a workflow or machine that changed afterwards |
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |

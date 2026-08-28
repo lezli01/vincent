@@ -1979,6 +1979,17 @@ every consumer that assumed two adapters.
   already classifies, recorded per adapter and served as `quota` on §9.6
   (task 026).
 
+*Amended 2026-08-28 (task 041).* The builds this adapter's parsers were
+captured against are now a machine-readable list, not prose alone:
+`2.1.224` (the `--help` fixture the option probe is parsed from) and `2.1.226`
+(the §7.4 control-protocol stream fixtures). `Detect` compares the probed
+version against it and reports `version_verdict` (§9.5) — `tested` for an exact
+match, `untested` for anything else. `untested` is the normal answer for a user
+on a current CLI and **changes no behaviour whatsoever**. The separate
+`supports_input` family gate `[2.1.0, 3.0.0)` is untouched: it gates one
+capability and degrades the invocation visibly, which is a different question
+from whether vincent has ever seen this build.
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -2019,6 +2030,10 @@ every consumer that assumed two adapters.
   contributes no observations either, and its `quota` is `null` on §9.6 until
   that changes.
 
+*Amended 2026-08-28 (task 041).* Verified builds: `0.142.5` (the invocation
+pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
+`version_verdict` against that list, advisory in exactly the way §9.2 records.
+
 ### 9.4 Permission modes
 
 - `full-auto` (default): permission prompts are bypassed. This is the point of
@@ -2038,6 +2053,26 @@ every consumer that assumed two adapters.
   implementation.
 
 Set at workflow `defaults` or per step; there is no daemon-global hardcoded policy.
+
+*Amended 2026-08-28 (task 041).* The refusal moves forward: **task creation
+rejects a `restricted` step whose resolved adapter cannot restrict on this
+host**, with a `400 validation_failed` naming the step and the agent, built as
+an exact mirror of task 013's `on_input: require` gate. It is the one
+security-sensitive capability gap vincent has — every other missing capability
+degrades visibly, while running a step full-auto because restricting was
+unavailable inverts the choice the step made — and it is the only one that can
+be judged with no binary installed, because the answer depends on adapter
+identity and `GOOS` rather than on the build. The verdict is published as
+`restricted_verdict` (§9.5, §9.6) and is resolved from `workflow.PermissionMode`,
+the same function the engine runs under, so the gate and the run cannot disagree
+about what a step's `permission_mode` resolves to.
+
+`agent.ErrRestrictedUnsupported` and the `restricted_unsupported` reason stay
+exactly where they are, as the backstop for a task whose daemon has changed
+underneath it — a data directory carried to Windows, or a workflow edited after
+the task was queued (§18). Retries are deliberately **not** gated: the decision
+was creation-time enforcement, not creation-plus-admission, and a retry that
+would reproduce the condition is caught by that backstop.
 
 ### 9.5 Detection
 
@@ -2076,6 +2111,43 @@ a claim about a CLI, not a gap in an adapter:
 There is still **no pre-flight refusal** on `logged_in: false` (§18, task 003
 decision 4). This makes the state visible, not blocking.
 
+*Amended 2026-08-28 (task 041).* Adapter health is **five separate facets**,
+reported separately and never emulated:
+
+| Facet | Field |
+|---|---|
+| installed | `available` / `path` |
+| authenticated | `logged_in` (tri-state, never a guess) |
+| protocol-compatible | `input_verdict` (§7.4) **and** `version_verdict` |
+| permission-compatible | `restricted_verdict` |
+| model-catalog | `probe_error` (§9.6) |
+
+`Availability` gains `version_verdict` — `tested` / `untested` / `incompatible`,
+empty when there is no build to judge — and `tested_versions`, the list it was
+judged against, so a row saying `untested` can say what it is untested against.
+Comparison is **exact string equality**, because cursor's version is calver plus
+a commit sha and admits no range (§9.7); a range that worked for two adapters of
+three would answer a different question depending on which one you asked. The
+`incompatible` list ships **empty for all three adapters** — vincent has
+observed no such build — and is wired, rendered and exercised by tests through
+an injected list, so the day one is found the change is one string in one table.
+
+`restricted_verdict` rides the *catalog* rather than `Availability`
+(`agent.Options.RestrictedSupport`, mirroring `InputSupport`), because it is
+static: it depends on adapter identity and `GOOS`, never on the installed
+binary. `Curated()` therefore answers it with no subprocess, which is what §8.2
+validation and the creation-time gate require.
+
+Model-catalog health is **not** a new field. §9.6 already defines `probe_error`
+as exactly "the option probe failed and you are reading the curated catalog";
+duplicating it as a verdict would give one fact two names.
+
+None of these verdicts blocks anything except `restricted_verdict`, and none of
+them is a `vincent doctor` problem (§17, task 005 decision 7): an untested build
+is the normal state of a healthy machine. There is still **no pre-flight refusal
+on `logged_in: false`** (task 003 decision 4) — this re-states that decision
+rather than reopening it.
+
 ### 9.6 Option discovery (`GET /v1/agents`)
 
 `GET /v1/agents` returns, per adapter, the availability data of §9.5 plus the
@@ -2100,6 +2172,15 @@ defaults:
   "nobody can say" for an absent one, and only the first refuses anything — so
   the daemon publishes the verdict its own gate uses rather than leaving each
   client to re-derive the asymmetry.
+
+- **`version_verdict`, `tested_versions`, `restricted_verdict`** (added
+  2026-08-28, task 041) ride alongside it as siblings, not as a nested `health`
+  object: nesting one of the five §9.5 facets while four stayed flat is worse
+  than five flat fields. `version_verdict` is advisory everywhere.
+  `restricted_verdict` is the one the daemon refuses task creation on (§9.4),
+  and the one that is answered even for an adapter with nothing installed.
+  Model-catalog health is `probe_error`, below — it is not repeated as a
+  verdict.
 
 - **Always dynamic, never slow:** probes run on demand and results are cached
   keyed by *binary identity* (resolved path + mtime + version). Help output is
@@ -2365,6 +2446,18 @@ would invalidate every one of them.
   window, no reset. It cannot answer "how much is left", so per §9.2's rule it
   is stated and not emulated. Like codex, cursor does not classify a quota stop
   (§18), so it contributes no observations to §9.6's `quota` either.
+- **Version verdict compares whole strings** (*added 2026-08-28, task 041*).
+  The verified builds are `2026.08.04-aaa8809` and `2026.08.11-e8db854`, and the
+  comparison is exact string equality — calver plus a commit sha has no ordering
+  to range over, and the sha is part of the binary's identity, not decoration.
+  Rather than let one adapter answer a version question differently from the
+  other two, **all three** adapters compare exact strings (§9.5).
+- **Restricted verdict is a static platform fact** (*added 2026-08-28, task
+  041*). `restricted_verdict` is `unsupported` on Windows and `supported`
+  elsewhere, derived from the same `sandboxAvailable` value `buildArgs` refuses
+  on, so the creation-time gate (§9.4) and the run cannot disagree. It needs no
+  installed binary: cursor cannot restrict on Windows whether or not
+  `cursor-agent` is there, which is what makes refusing at creation safe.
 
 ## 10. Worktree management
 
@@ -3246,7 +3339,13 @@ GET    /v1/info                         daemon version, uptime, agent availabili
                                         SQLite connection is not that. Nothing here is cached
 GET    /v1/config                       effective global config (read-only)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
-                                        ?refresh=true forces a re-probe
+                                        ?refresh=true forces a re-probe.
+                                        *Added 2026-08-28 (task 041):* the §9.5 health facets
+                                        `version_verdict`, `tested_versions` and
+                                        `restricted_verdict`, siblings of `input_verdict`. The
+                                        first two also ride /v1/info's `agents[]` and
+                                        /v1/doctor's `agents[]`, alongside `supports_input`, so
+                                        a client reads one adapter the same way on all three
 GET    /v1/doctor                       the whole §17 diagnostic in one body: paths, daemon,
                                         log (stat + tail), database (size, schema version,
                                         integrity_check), agents, storage (disk free, worktree
@@ -4125,6 +4224,14 @@ stream for the live tail.
    named separately: a failed fetch keeps the last-good counts behind the dim stale
    line, a disconnected daemon says unavailable, and a report with `known: false`
    says unknown rather than zero.
+   **Adapter verdicts (task 041, added 2026-08-28):** each adapter row trails
+   with its §9.5 health facets — `untested` and the builds it was judged
+   against, `incompatible`, and "no restricted mode here" where the adapter
+   cannot restrict on this host. They trail deliberately: rows carry absolute
+   binary paths and elide to the pane width, so the blocking conditions ("not
+   found", "not logged in", a spent usage window) keep leading and a verdict is
+   what a narrow terminal loses first. A `tested` build says nothing at all —
+   one green word per adapter is what makes the one warning invisible.
    The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
    at launch has no business killing it. The log tail is read straight from
@@ -4657,7 +4764,7 @@ currently true to show (§15 view 6).
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
 | Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
-| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there |
+| `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest |
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
