@@ -176,12 +176,12 @@ the two panels are side by side and both always visible.
 The header names the task's workflow and, in brackets, where that definition
 came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
 `release (global workflows/release.yaml)`, `api (derived from task 41)` for a
-fan-out lane, or `(unknown)` for a task created before vincent recorded it.
-A project or global file shadows a built-in of the same name, so the name on its
-own does not say which one ran.
+fan-out lane, or `adhoc (unknown)` for a task created before vincent recorded
+it. A project or global file shadows a built-in of the same name, so the name on
+its own does not say which one ran.
 
-It sits at the end of the header, after the branch, so a narrow pane truncates
-it before anything that was there already —
+It sits late in the header — after the branch, before the run's cost — so a
+narrow pane truncates it early;
 [`vincent task show`](../reference/cli.md#vincent-task-show) prints the same
 thing plus the source digest, and is where an audit is actually done.
 

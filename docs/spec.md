@@ -3599,6 +3599,15 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         Every task representation carries `available_actions`
                                         (the §6 human actions valid right now) and
                                         `pause_requested`, so clients never restate the FSM.
+                                        *Added 2026-08-28 (task 043):* every task
+                                        representation also carries `workflow_origin` —
+                                        the scope that won §5.2's shadowing walk, the
+                                        source file relative to that scope's root and a
+                                        digest of the bytes it was loaded from, or
+                                        `derived` naming a fan-out lane's parent (§5.3).
+                                        null for a task created before origin was
+                                        recorded, which is *not recorded* and never a
+                                        re-lookup of today's registry
                                         Detail-only: `workflow_steps[]` — the task's snapshot
                                         as { index, id, type, prompt?, run?, instructions?,
                                         resolved_from[]? }, which is what edit+retry prefills

@@ -2,7 +2,7 @@
 
 **Status:** ✅ done (6/6)
 **Issue:** [#145](https://github.com/lezli01/vincent/issues/145)
-**Spec:** amends §5.2, §5.3, §13.3, §14
+**Spec:** amends §5.2, §5.3, §13.2, §13.3, §14
 
 ## Problem
 
@@ -170,7 +170,7 @@ task, not something the issue addresses.
   `internal/apiclient`.
 - [x] **043.4** `internal/taskrun/fanout.go` sets the derived origin on a lane.
 - [x] **043.5** `vincent task show`'s `origin` row and the TUI detail header.
-- [x] **043.6** Spec amendments (§5.2, §5.3, §13.3, §14), the API/CLI reference
+- [x] **043.6** Spec amendments (§5.2, §5.3, §13.2, §13.3, §14), the API/CLI reference
   pages, the workflows and TUI guides, and the changelog entry.
 
 ## What the tests prove
