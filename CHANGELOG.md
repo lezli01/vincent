@@ -33,6 +33,24 @@ list with the user-facing context a commit subject cannot carry.
   execute, `2` no daemon answered a `--task`/`--project`. See
   [the CLI reference](docs/reference/cli.md#vincent-workflow-render).
 
+- **`vincent task add` can take its task fields from a JSON file or from
+  stdin.** `--fields-file ./inputs.json` — or `--fields-file -` to read the
+  document a `jq` pipeline just produced — fills the same
+  [task field map](docs/guides/workflows.md#54-task-fields) that repeatable
+  `--field name=value` fills, without every newline, quote and space having to
+  survive the shell first. The two combine and `--field` wins the names it
+  names, so one generated document can be reused across runs that vary a single
+  input. The values must all be JSON strings; a number, boolean, `null`, array
+  or object is refused with a message naming the **key** and never the value, as
+  are an empty name, anything after the first JSON object, and a read over the
+  API's own 4 MiB body bound. Everything else stays the daemon's call —
+  required fields, `type`, `pattern` and the per-field limits — and names the
+  workflow never declared are still accepted, exactly as before. Creating a task
+  without `--json` now also confirms what it carries by **name and count and
+  never by value** (`fields: notes, ticket (2)`), which catches a mistyped name
+  while staying safe to leave in a CI log. See
+  [Scripting vincent](docs/guides/scripting.md#supplying-task-fields).
+
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a

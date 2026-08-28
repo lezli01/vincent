@@ -26,6 +26,7 @@ needs to react rather than poll.
 
 - [Exit codes](#exit-codes)
 - [JSON output](#json-output)
+- [Supplying task fields](#supplying-task-fields)
 - [Validating workflows in CI](#validating-workflows-in-ci)
 - [Talking to the API directly](#talking-to-the-api-directly)
 - [Reacting to events](#reacting-to-events)
@@ -41,7 +42,7 @@ Every subcommand uses the same three:
 | Code | Meaning | What a script should do |
 |---|---|---|
 | `0` | Success | Continue |
-| `1` | The daemon answered and rejected the request | Fix the request — a bad id, an action the task's state does not allow |
+| `1` | The request was rejected — by the daemon, or by the client before it sent one | Fix the request — a bad id, an action the task's state does not allow, a `--fields-file` that is not one JSON object of strings |
 | `2` | No daemon answered | Start one (`vincent daemon start`) and retry |
 
 That split is the point: a script can tell "start the daemon" from "fix your
@@ -108,6 +109,67 @@ Two guarantees make it safe to pipe into `jq`:
 ```sh
 vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 ```
+
+## Supplying task fields
+
+A workflow reads its inputs from `.Task.Fields`, an open `map[string]string`
+supplied when the task is created (see
+[task fields](workflows.md#54-task-fields)). Two flags fill it.
+
+For a handful of short values, repeat `--field`:
+
+```sh
+vincent task add --project 1 --workflow release --title "Release 2.0" \
+  --field ticket=OPS-42 --field owner=ana
+```
+
+Everything after the **first** `=` is the value, so URLs and regexes need no
+escaping, and a repeated name takes its last value.
+
+For generated input — or anything with newlines, quotes or spaces — pass a JSON
+object of strings instead. `--fields-file -` reads it from stdin, which is what
+makes `jq` the natural producer:
+
+```sh
+jq -n --arg ticket "$TICKET" --arg notes "$(cat release-notes.md)" \
+     '{ticket: $ticket, notes: $notes}' |
+  vincent task add --project 1 --workflow release --title "Release 2.0" \
+    --fields-file - --json
+```
+
+The two combine, and **`--field` wins the names it names**. That is what lets a
+script keep one generated document and vary a single input per run:
+
+```sh
+for ticket in OPS-42 OPS-43; do
+  vincent task add --project 1 --workflow release --title "Release $ticket" \
+    --fields-file ./base-inputs.json --field "ticket=$ticket" --json
+done
+```
+
+Everything checked locally is checked before the daemon is called, and exits
+`1` like any other rejected request: a value that is not a JSON string (the
+message names the key, never the value), an empty name, anything after the
+first JSON object, and a document over 4 MiB — the API's own body bound,
+applied to the read so a pipe cannot be unbounded.
+
+Everything else stays **daemon-authoritative**, because the CLI is not the only
+client: required fields, `type`, `pattern`, and the per-field size bounds are
+checked by `POST /v1/tasks` and reported through the same exit `1`. Names the
+workflow never declared are still accepted — declaring `fields:` does not close
+the map — so a script may attach its own metadata to a task without touching
+the workflow.
+
+Without `--json`, the created task is confirmed with the field **names and a
+count and no values**:
+
+```
+task 62 created: Release OPS-42 (release, branch vincent/62-release-ops-42)
+  fields: notes, ticket (2)
+```
+
+That line is safe to leave in a CI log, and it still catches the mistake worth
+catching — a name typed wrong, which a count alone would hide.
 
 ## Validating workflows in CI
 

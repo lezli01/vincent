@@ -112,11 +112,12 @@ func TestGitHubIssueCommandsAgainstLiveDaemon(t *testing.T) {
 			config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 		_, _ = cmd.CombinedOutput()
 	})
-	// No adapter: this test never runs a step.
-	if err := os.WriteFile(filepath.Join(cfgDir, config.FileName), []byte(
-		"agents:\n  claude:\n    path: \"/nonexistent/claude\"\n"), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	// No adapter: this test never runs a step. All three are pointed at
+	// nothing, not just claude, because the doctor subtest below probes every
+	// adapter — and cursor's probe is an authenticated network call (§9.7), so
+	// a machine with cursor-agent installed would make the request that the
+	// report is composed from take longer than the client's 10s budget.
+	pointAgentsAtNothing(t, cfgDir)
 	if out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "success", "daemon", "start"); code != 0 {
 		t.Fatalf("daemon start: code %d, out %q", code, out)
 	}
@@ -285,10 +286,9 @@ func TestGitHubUnusableLeavesTaskCreationAlone(t *testing.T) {
 			config.EnvDataDir+"="+dataDir, config.EnvConfigDir+"="+cfgDir)
 		_, _ = cmd.CombinedOutput()
 	})
-	if err := os.WriteFile(filepath.Join(cfgDir, config.FileName), []byte(
-		"agents:\n  claude:\n    path: \"/nonexistent/claude\"\n"), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	// Every adapter, for the reason given in the test above: this one reads
+	// doctor too.
+	pointAgentsAtNothing(t, cfgDir)
 	if out, code := runVincentGH(t, dataDir, cfgDir, ghDir, "logged-out",
 		"daemon", "start"); code != 0 {
 		t.Fatalf("daemon start: code %d, out %q", code, out)
