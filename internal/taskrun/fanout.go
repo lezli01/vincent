@@ -294,6 +294,16 @@ func (r *Runner) laneTask(env *stepEnv, lane workflow.Lane, order int) (*store.T
 		ParentStepIndex: &index,
 		LaneID:          lane.ID,
 		LaneOrder:       order,
+		// A lane's steps come from the parent's snapshot, resolved at the
+		// *parent's* creation (§7.6) — the child never reads a registry. So
+		// its origin is `derived` naming the parent, not a copy of the
+		// parent's file and digest, which would claim these steps came from a
+		// file they did not come from. Leaving it NULL is not an option
+		// either: that reads as a pre-0017 row (task 043 decision 6).
+		WorkflowOrigin: &store.WorkflowOrigin{
+			Scope:        store.WorkflowScopeDerived,
+			ParentTaskID: &env.task.ID,
+		},
 	}
 	// A lane spec overrides the inheritance for its own subtree.
 	if lane.Agent != "" {

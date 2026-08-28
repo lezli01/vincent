@@ -42,6 +42,21 @@ list with the user-facing context a commit subject cannot carry.
   the version verdict), permission-compatible (`restricted_verdict`), and
   model-catalog health, which is the existing `probe_error` and is not
   duplicated. ([#148](https://github.com/lezli01/vincent/issues/148))
+- **Every task now records which workflow definition it actually ran.** A
+  project or global workflow file shadows a built-in of the same name — that is
+  by design, and it includes the `adhoc` a task falls back to when you create it
+  without naming a workflow. Until now the task recorded only the *name*, so a
+  repository's own `.vincent/workflows/adhoc.yaml` standing in for the built-in
+  was invisible on the task forever afterwards. Tasks created from here on carry
+  a `workflow_origin`: the scope that won (`builtin`, `global`, `project`, or
+  `derived` for a fan-out lane), the source file relative to that scope's root,
+  and a SHA-256 of the file's bytes as the registry loaded them. It appears as
+  the `origin` row in `vincent task show`, beside the workflow name in the TUI's
+  task-detail header, as `workflow_origin` on every task the API serves, and in
+  the `task.created` event. It is captured once, at creation, and never
+  recomputed, so editing a workflow file does not rewrite the history of tasks
+  that already ran it. Tasks created before this change report `unknown` — the
+  honest answer; vincent does not look the name up again to invent one.
 
 ### Changed
 

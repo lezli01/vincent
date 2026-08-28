@@ -252,6 +252,11 @@ func newTaskShowCmd() *cobra.Command {
 					{"state", t.State},
 					{"project", t.ProjectName},
 					{"workflow", t.Workflow},
+					// Which definition that name resolved to (task 043). Always
+					// printed, including `unknown` for a task created before the
+					// record: "no provenance" is the honest answer for those, and
+					// silently omitting the row would read like the built-in.
+					{"origin", t.WorkflowOrigin.Display()},
 					{"step", progress(t.Task)},
 					{"branch", t.BranchName},
 				}

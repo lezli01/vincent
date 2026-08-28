@@ -242,6 +242,21 @@ A file rejected by either bound becomes an **invalid registry entry** naming the
 and the violated type or bound — the same treatment as a file that fails to parse, so
 its valid siblings in the scope stay available.
 
+*Amended 2026-08-28 (task 043, issue #145).* Built-in shadowing **stands**. A
+global or project file named `adhoc`, `create-workflow` or `update-workflows`
+still wins the lookup, including for a task created without naming a workflow —
+the phase 2 reasoning holds: creation is one uniform path and `workflow` stays
+optional. There is no reserved namespace, no `builtin:` selector and no
+`allow_shadow_builtin` declaration; a qualified name would be a new grammar
+four resolution sites would have to honour at once, and the current name
+pattern admits no colon.
+
+What changes is that the substitution is no longer **invisible**. Every task
+records a `workflow_origin` beside `workflow_snapshot` (§5.3) saying which
+scope won the walk, which file it was, and a digest of that file's bytes, so a
+task created six months ago can still be told apart from one created against
+the built-in of the same name.
+
 ### 5.3 Task
 
 A unit of work delivered by running a workflow against a project.
@@ -264,6 +279,7 @@ A unit of work delivered by running a workflow against a project.
 | `current_step` | index into the snapshot's step list |
 | `pending_input` | normalized InputRequest (§7.4) while state is `awaiting_input`; cleared on answer, timeout, or process exit |
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
+| `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
 
 
@@ -3752,6 +3768,12 @@ Two kinds of streams:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.status_changed`, `task.children_changed`, `project.*`,
    `workflow.registry_changed`, `agent.quota_changed`, `daemon.shutting_down`.
+   (`task.created` — *amended 2026-08-28, task 043* — carries
+   `workflow_origin` beside `workflow`: the scope, scope-relative file and
+   source digest the task's workflow name resolved to (§5.3), omitted only for
+   a task whose origin was not recorded. The name alone cannot tell a project
+   `adhoc.yaml` from the built-in it shadows, and a consumer that never fetches
+   the task should not have to.)
    (`task.status_changed` — *added 2026-08-26, task 036* — carries
    `{task_id, step_id, message}` and announces that a running step changed what
    it says about itself (§5.4). It is on the **durable** side deliberately: the
@@ -3881,6 +3903,15 @@ CREATE TABLE tasks (
                                               -- index, no generated column — so a linked task costs the same
                                               -- as any other on every board query. A fan_out lane inherits
                                               -- its parent's copy verbatim (§7.6)
+  workflow_origin_json TEXT,                  -- where workflow_name's definition came from (§5.2/§5.3, task 043,
+                                              -- migration 0017); NULL = origin not recorded, reported as `unknown`.
+                                              -- {scope, file, digest} for a registry-backed task and
+                                              -- {scope:"derived", parent_task_id} for a fan_out lane. `file` is
+                                              -- relative to its scope root, because an absolute path is where a
+                                              -- checkout happens to live rather than provenance. Frozen at
+                                              -- creation and never recomputed, so it names the file version the
+                                              -- task came from, not the bytes the engine runs. Nothing queries
+                                              -- inside it — no index, no generated column
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   started_at          TEXT,

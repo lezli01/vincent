@@ -1,0 +1,27 @@
+-- 0017_workflow_origin: where a task's workflow definition came from (task
+-- 040, spec §5.2/§5.3/§14).
+--
+-- One nullable JSON column, the shape 0012's pending_follow_up_json and 0014's
+-- github_issue_json already set: NULL means the task was created before origin
+-- was recorded, and clients render that as `unknown` rather than synthesizing a
+-- scope. Nothing queries inside it — no index, no generated column — so a task
+-- carrying one costs the same as any other on every board query.
+--
+-- The payload is {scope, file, digest} for a task created from the registry and
+-- {scope: "derived", parent_task_id} for a fan-out lane. `scope` is builtin,
+-- global, project or derived; `file` is the source path **relative to its scope
+-- root** (`.vincent/workflows/x.yaml`, `workflows/x.yaml`), because an absolute
+-- path is where this checkout happens to live rather than provenance; `digest`
+-- is sha256 over the registry entry's source bytes as loaded.
+--
+-- It is a **snapshot**, like workflow_snapshot and github_issue_json beside it.
+-- The digest names the file version the task was created from, not the bytes the
+-- engine executes: include expansion (§7.9) and fan-out resolution (§7.6)
+-- re-marshal the snapshot at creation, and `edit + retry` rewrites a step inside
+-- it afterwards. Nothing recomputes this column, which is exactly what makes it
+-- answer "which definition did this task come from" months later.
+--
+-- No backfill. A pre-0017 task genuinely has no recorded origin, and re-looking
+-- up today's registry to invent one would report the substitution this column
+-- exists to catch as though it had always been there.
+ALTER TABLE tasks ADD COLUMN workflow_origin_json TEXT; -- NULL = origin not recorded

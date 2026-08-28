@@ -173,6 +173,18 @@ the right shows the live tail of the running step.
 Selecting an attempt in the timeline *is* how you read scrollback — that is why
 the two panels are side by side and both always visible.
 
+The header names the task's workflow and, in brackets, where that definition
+came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
+`release (global workflows/release.yaml)`, `api (derived from task 41)` for a
+fan-out lane, or `(unknown)` for a task created before vincent recorded it.
+A project or global file shadows a built-in of the same name, so the name on its
+own does not say which one ran.
+
+It sits at the end of the header, after the branch, so a narrow pane truncates
+it before anything that was there already —
+[`vincent task show`](../reference/cli.md#vincent-task-show) prints the same
+thing plus the source digest, and is where an audit is actually done.
+
 A structure step gets a tier of its own. A `parallel` group's sub-steps share
 the group's index, so the group is one header and each sub-step sits beneath
 it. A `loop` (§7.8) goes one further: its body's rows are grouped **by

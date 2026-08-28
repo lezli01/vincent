@@ -170,6 +170,24 @@ a sibling in the same scope already declaring that `name:`, is refused. Taking a
 name from a *lower* scope is the shadowing above working as intended, so it
 warns and writes.
 
+**Which definition actually ran.** Shadowing means a name is not, on its own,
+an answer — a repository's `.vincent/workflows/adhoc.yaml` wins over the
+built-in `adhoc`, including for tasks created without naming a workflow at all.
+Every task therefore records where its definition came from, and
+[`vincent task show`](../reference/cli.md#vincent-task-show) prints it as
+`origin`:
+
+```
+workflow  adhoc
+origin    project .vincent/workflows/adhoc.yaml sha256:0f4a1c1e…
+```
+
+The scope, the file relative to that scope's root, and a digest of the bytes the
+registry loaded. It is captured at creation and never updated, so editing the
+file afterwards does not rewrite the history of tasks that already ran it. The
+TUI's task-detail header carries the same thing without the digest, and the API
+serves it as `workflow_origin`.
+
 That is the offline route: instant, free, and always the same file.
 `create-workflow` above is the other one — it *designs* a workflow from a
 description, at the cost of a daemon, an agent CLI, tokens, wall-clock time and

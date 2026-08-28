@@ -30,6 +30,16 @@ func firstNonBlank(values ...string) string {
 	return ""
 }
 
+// taskOrigin records which definition a task was created from (§5.3, task
+// 043). The entry is the one Lookup's shadowing walk just returned, so this
+// costs no second registry read, and the value is frozen here: nothing
+// recomputes it afterwards, which is what lets it still answer "did a project
+// `adhoc.yaml` stand in for the built-in" months later.
+func taskOrigin(entry workflow.Entry, projectPath, globalDir string) *store.WorkflowOrigin {
+	o := entry.Origin(projectPath, globalDir)
+	return &store.WorkflowOrigin{Scope: string(o.Scope), File: o.File, Digest: o.Digest}
+}
+
 // ptrValue dereferences an optional string field, treating nil as empty.
 func ptrValue(p *string) string {
 	if p == nil {
@@ -101,6 +111,12 @@ type taskResponse struct {
 	// captured and never refreshed — clients render it as history, not as the
 	// issue's current state.
 	GitHubIssue *github.Issue `json:"github_issue"`
+	// WorkflowOrigin is where the task's workflow definition came from (§5.3,
+	// task 043): scope, scope-relative file and source digest, or `derived`
+	// naming the parent of a fan-out lane. Null for a task created before the
+	// origin was recorded, which clients render as `unknown` — never as a
+	// synthesized scope, and never re-derived from today's registry.
+	WorkflowOrigin *store.WorkflowOrigin `json:"workflow_origin"`
 	// AvailableActions are the §6 human actions valid from the current
 	// state. Derived, never stored: clients render an action bar from this
 	// rather than restating the state machine.
@@ -186,6 +202,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
 		GitHubIssue:      t.GitHubIssue,
+		WorkflowOrigin:   t.WorkflowOrigin,
 		PauseRequested:   t.PauseRequested,
 		AvailableActions: availableActions(t.State),
 		CreatedAt:        t.CreatedAt.UTC().Format(time.RFC3339),
@@ -550,6 +567,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		Title:            title,
 		WorkflowName:     entry.Name,
 		WorkflowSnapshot: snapshot,
+		WorkflowOrigin:   taskOrigin(entry, project.Path, s.deps.Workflows.GlobalDir()),
 		BaseBranch:       baseBranch,
 		Fields:           req.Fields,
 		AgentOverride:    agentOverride,

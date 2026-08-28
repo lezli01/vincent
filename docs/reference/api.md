@@ -702,6 +702,36 @@ a later step renders through
 `github_issue` makes no GitHub call at all. An unusable integration is the same
 409 with `details.reason` the GitHub endpoints return.
 
+Every task representation also carries `workflow_origin`: which definition the
+`workflow` name resolved to at creation.
+
+```json
+"workflow": "adhoc",
+"workflow_origin": {
+  "scope": "project",
+  "file": ".vincent/workflows/adhoc.yaml",
+  "digest": "sha256:0f4a1c1e…"
+}
+```
+
+A project or global workflow **shadows** a built-in of the same name, including
+the `adhoc` a task created without a `workflow` falls back to. That is by
+design, and this field is how you see it happened: `scope` is `builtin`,
+`global`, `project` or `derived`, `file` is the source path relative to that
+scope's root (absent for a built-in), and `digest` is a SHA-256 of the file's
+bytes as the registry loaded them.
+
+It is frozen at creation and never recomputed, so editing the workflow file
+afterwards does not rewrite an existing task's origin — and the digest names the
+file the task came from, not the (expanded, possibly `edit + retry`-rewritten)
+`workflow_snapshot` the engine executes. A `fan_out` lane reports
+`{"scope": "derived", "parent_task_id": 41}`: its steps came from its parent's
+snapshot, not from a registry file. A task created before vincent recorded this
+has `"workflow_origin": null`, which means *not recorded* — vincent will not
+look the name up again to invent one.
+
+The `task.created` event carries the same object under `workflow_origin`.
+
 Human actions, all `POST /v1/tasks/{id}/…`:
 
 | Path | Valid from | Body |
