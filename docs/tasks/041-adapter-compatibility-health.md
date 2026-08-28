@@ -119,10 +119,21 @@ refusal.
 
 ## Verification
 
-No gate script. The one case a gate could drive is cursor + `restricted`, and
-on the POSIX runners cursor genuinely can restrict; forcing the other leg needs
-the Go test seam, which a bash gate cannot reach. `docs/gates/m5-gate.md`'s
-manual leg is where the real-Windows walkthrough is recorded.
+No **new** gate script, but an existing one had to move with the change:
+`scripts/m5-gate.sh` scenario 4 is cursor + `restricted`, and it runs on the
+Windows runner, where cursor genuinely cannot restrict. That leg used to post
+the task and wait for a `restricted_unsupported` block; under decision 3 the
+create call answers `400` instead, so the leg now asserts the refusal there —
+the status, the `validation_failed` envelope, the step and agent named in the
+message, and that no task was left behind. The POSIX legs are untouched, since
+cursor can restrict there and the workflow simply runs.
+
+This is the correction to a claim made when the task was first written — that
+no gate could reach the incapable leg. It is true that no gate can *force* the
+incapable answer on a capable host, which still needs the Go seam; it was not
+true that no gate reaches it at all, because CI runs this one on Windows.
+`docs/gates/m5-gate.md`'s manual leg remains where the real-Windows walkthrough
+is recorded.
 
 The Go tests cover: all three verdicts per adapter through `cmd/fakeagent`'s
 `FAKEAGENT_VERSION` (now honored in every dialect); cursor's

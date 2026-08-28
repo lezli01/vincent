@@ -161,11 +161,14 @@ substance — a restricted step is refused, never downgraded — but the surface
 is proved on is the create call rather than the block reason. The POSIX leg is
 untouched: cursor can restrict there, so the task is created and simply runs.
 
-`scripts/m5-gate.sh` has **not** been updated for this: its scenario 4 still
-posts the task expecting a `2xx` and then waits for `blocked` with
-`restricted_unsupported`, which the new `400` fails on the Windows runner
-before any assertion is reached. The Windows leg of this gate should be
-re-walked once the script asserts the refusal at creation.
+`scripts/m5-gate.sh` asserts the new surface. Scenario 4's Windows leg posts
+the create call through `try_api` — `api` without the non-2xx exit, since the
+expected answer *is* a refusal — and requires `400`, a `validation_failed`
+envelope, a message naming both the step and the agent, and that `GET /v1/tasks`
+is left with no task. The engine's `restricted_unsupported` backstop is not
+scripted, because the only way to reach it is a daemon that changed under an
+existing task, which a gate cannot stage; the Go tests cover it. The POSIX leg
+is unchanged.
 
 **M5 is complete (2026-08-12).** Scenario 1 passed against the real CLI on
 Windows and on macOS; macOS also carried scenario 4's "restricted actually runs"
