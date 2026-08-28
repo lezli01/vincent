@@ -163,7 +163,9 @@ an omission.
   guards, unresolved composition, exit codes, a `--task` live test against the
   real handlers, and a render pass over every shipped example and built-in.
 - [x] **044.6** Spec amendments (§8.4, §12.1, §13.2, §18), the CLI, API and
-  workflow-schema references, the workflows guide, and the changelog entry.
+  workflow-schema references, the workflows, scripting and troubleshooting
+  guides, the features page, the README's daemon-free paragraph, and the
+  changelog entry.
 
 ## What the tests prove
 

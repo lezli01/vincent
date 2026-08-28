@@ -967,7 +967,7 @@ a codex step.
 
 `POST /v1/resolve` answers "what does this resolve to, and which level won" for
 every step — that is what the TUI's new-task form renders, and no client
-re-derives it. For a file the registry has not picked up yet,
+re-implements the precedence. For a file the registry has not picked up yet,
 `vincent workflow render <file>` answers the same question offline, from the
 same resolver.
 
