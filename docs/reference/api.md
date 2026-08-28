@@ -27,6 +27,14 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - **Discovery:** read `{data_dir}/daemon.json` for the port, then
   `GET /v1/health`.
 - **Versioning:** path-prefixed (`/v1`), additive changes only within a version.
+- **`Idempotency-Key`** (optional, `POST /v1/tasks` only) makes a create
+  replayable: if the daemon committed the task but you never saw the response,
+  re-sending the *same body* under the *same key* returns that task instead of
+  making a second one. Up to 255 bytes of printable ASCII; anything else is
+  `400 validation_failed`. Keys are scoped to the route and kept for **24
+  hours**, which is fixed rather than configurable. Every other mutating route
+  is already replay-safe and ignores the header — see
+  [`POST /v1/tasks`](#tasks) for what a replay returns.
 
 ```sh
 DATA_DIR=${VINCENT_DATA_DIR:-$HOME/.local/share/vincent}
@@ -47,6 +55,12 @@ Codes are stable `snake_case` strings; HTTP status codes are used properly.
 `details` is optional and carries values a client should branch on rather than
 parse out of prose — an invalid state transition is always `409` with
 `details.state` set to the state actually found. It is omitted when empty.
+
+Every `409` carries the code `invalid_state`; what varies is `details`. A
+conflict that is not about a task's state names itself in `details.reason` —
+`idempotency_key_reused` when an `Idempotency-Key` is re-sent with a different
+body, and the GitHub integration's reasons on the issue routes. Branch on
+`details`, not on a per-case code.
 
 ## Request bodies
 
@@ -590,11 +604,49 @@ rather than inventing a model name.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue? }` — `branch_name` is used verbatim and wins over any template |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue? }` — `branch_name` is used verbatim and wins over any template. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
+
+### Replaying a create
+
+`POST /v1/tasks` is the one route where re-sending a request does something
+twice: it inserts a task, claims a branch and wakes the scheduler. Send an
+`Idempotency-Key` header to make the retry safe.
+
+```sh
+KEY=$(uuidgen)
+curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"project_id":1,"title":"Add login page"}'
+# lost the response? send exactly that again — same key, same body.
+```
+
+- **Same key, same body** → `201` with the task the first request created. The
+  body is the task **as it is now**, not a recording of the original response,
+  so a task the scheduler has already admitted replays as `"state": "running"`
+  under a `201`. The task exists, and this is it.
+- **Same key, a different body** → `409 invalid_state` with
+  `details.reason: "idempotency_key_reused"`, and no task is created. Use a new
+  key for a new operation.
+- **No key** → exactly the behaviour vincent has always had. Two identical
+  sends make two tasks, which is what a person pressing enter twice means.
+
+The body is compared by a digest of the decoded request, so reformatting your
+JSON or reordering its keys between the two sends is not a difference. It is
+taken before the `github_issue` prefill runs, so an issue edited in between does
+not turn a genuine retry into a conflict.
+
+Keys live for 24 hours and are then pruned; they are also deleted along with the
+task they name, so a key whose task was destroyed by a forced project delete
+creates a fresh task on the next send. `vincent doctor` counts them under
+`database.table_rows.idempotency_keys`.
+
+The CLI and the TUI do not send the header: neither retries a create, so a
+failed create is reported to you and what to do next is your call.
 
 On `POST /v1/tasks`, the daemon validates the selected root workflow's
 declared fields before inserting the task. Missing required values and invalid

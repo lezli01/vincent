@@ -40,6 +40,12 @@ const (
 	maxFieldValueBytes  = 64 << 10 // one fields/answers value
 	maxFieldCount       = 100      // fields/answers entries in one request
 	maxValueCount       = 100      // values in one answer
+	// maxIdempotencyKeyBytes bounds the Idempotency-Key header (task 040). A
+	// header rather than a body field, but persisted and compared byte for
+	// byte on a later request like any other, so it is bounded alongside them.
+	// 255 B is the size the header is conventionally given elsewhere and is
+	// generous for the UUID a client actually sends.
+	maxIdempotencyKeyBytes = 255
 )
 
 // The two key bounds differ because the two keys are different kinds of thing

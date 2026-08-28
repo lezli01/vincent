@@ -378,6 +378,24 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Replay protection (§13.1, task 040). The digest is taken here, over the
+	// request as it arrived and before applyIssuePrefill mutates it below, so
+	// an issue edited between two identical sends cannot manufacture a 409.
+	idemKey, ok := readIdempotencyKey(w, r)
+	if !ok {
+		return
+	}
+	var idemSHA string
+	if idemKey != "" {
+		var derr error
+		if idemSHA, derr = idempotencyDigest(&req); derr != nil {
+			s.internalError(w, "digest task create request", derr)
+			return
+		}
+		if s.replayTaskCreate(w, r, idemKey, idemSHA) {
+			return
+		}
+	}
 	ctx := r.Context()
 	project, err := s.deps.Store.GetProject(ctx, req.ProjectID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -593,15 +611,32 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		t.BranchName = preview.Name
 	}
-	if err := s.deps.Store.CreateTask(ctx, &t, resolveBranch); err != nil {
+	var key *store.IdempotencyKey
+	if idemKey != "" {
+		key = &store.IdempotencyKey{
+			Method: r.Method, Path: idempotencyRoute, Key: idemKey, RequestSHA: idemSHA,
+		}
+	}
+	if err := s.deps.Store.CreateTaskWithKey(ctx, &t, resolveBranch, key); err != nil {
 		var claimed *store.BranchClaimedError
-		if errors.As(err, &claimed) {
+		switch {
+		case errors.As(err, &claimed):
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				fmt.Sprintf("branch %q is already claimed by task %d",
 					claimed.Branch, claimed.TaskID))
-			return
+		case errors.Is(err, store.ErrIdempotencyKeyExists):
+			// The concurrent duplicate: another request carrying this key
+			// committed while this one was doing its work. The store's single
+			// writer serialized the two transactions, this one's task insert
+			// rolled back with the key insert that lost, and the winner's task
+			// is the answer. replayTaskCreate cannot come back false here —
+			// the row it looks for is the one that just rejected this insert.
+			if !s.replayTaskCreate(w, r, idemKey, idemSHA) {
+				s.internalError(w, "replay idempotent create", err)
+			}
+		default:
+			s.internalError(w, "create task", err)
 		}
-		s.internalError(w, "create task", err)
 		return
 	}
 	if s.deps.WakeRunner != nil {

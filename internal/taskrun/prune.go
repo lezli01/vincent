@@ -19,10 +19,25 @@ import (
 // it no longer has (PR V decision).
 const PruneInterval = 24 * time.Hour
 
-// TranscriptPruner deletes transcripts of tasks archived longer ago than the
-// retention window (§17). It owns no state: each pass reads the current
-// config, so a retention change takes effect on the next tick without a
-// restart.
+// IdempotencyRetention is how long a recorded Idempotency-Key stays replayable
+// (§17, task 040). Fixed, not configurable, the way §13.1's body bounds are
+// fixed: a key exists to absorb a transport retry, which happens in seconds,
+// so a day is three orders of magnitude of headroom and a knob here would be
+// config surface to document and defend forever for a number nobody would tune.
+//
+// It is independent of TranscriptRetentionDays, including that setting's
+// "zero keeps everything" escape: keys are small, opaque and useless once the
+// retry window has passed, so there is no operator reason to keep them.
+const IdempotencyRetention = 24 * time.Hour
+
+// TranscriptPruner runs the daemon's retention pass (§17): it deletes
+// transcripts of tasks archived longer ago than the configured window, and —
+// since task 040 — idempotency keys past their fixed 24-hour window. It owns
+// no state: each pass reads the current config, so a retention change takes
+// effect on the next tick without a restart.
+//
+// It keeps its name: transcripts are the retention story, and the keys are a
+// few rows a day riding the ticker that already runs at their expiry interval.
 type TranscriptPruner struct {
 	deps Deps
 }
@@ -61,6 +76,26 @@ func (p *TranscriptPruner) once(ctx context.Context) {
 	default:
 		p.deps.Logger.Debug("prune transcripts: nothing to do")
 	}
+	// Idempotency keys ride the same pass rather than getting a ticker of
+	// their own: it already runs at exactly the interval they expire on, and a
+	// second goroutine to delete a handful of rows a day would be machinery
+	// for nothing. A failure here is logged and dropped for the same reason
+	// the transcript failure above is.
+	switch keys, err := p.PruneKeys(ctx, time.Now()); {
+	case err != nil:
+		p.deps.Logger.Error("prune idempotency keys", "error", err)
+	case keys > 0:
+		p.deps.Logger.Info("pruned idempotency keys", "keys", keys)
+	}
+}
+
+// PruneKeys deletes idempotency keys older than IdempotencyRetention,
+// returning how many went. A second pass over the same rows removes nothing
+// and is not an error — the ticker runs this forever (PR V decision).
+//
+// now is a parameter so tests can age rows without sleeping.
+func (p *TranscriptPruner) PruneKeys(ctx context.Context, now time.Time) (int64, error) {
+	return p.deps.Store.PruneIdempotencyKeys(ctx, now.Add(-IdempotencyRetention))
 }
 
 // Prune deletes the transcript directory of every task archived before

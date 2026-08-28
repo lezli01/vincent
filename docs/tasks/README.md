@@ -53,6 +53,7 @@ the living engineering specification records implementation contracts.
 | [037](037-update-workflows-builtin.md) | `update-workflows`, a built-in that maintains the ones you have | ✅ done (5/5) |
 | [038](038-release-signing-posture.md) | Release signing posture for an MIT project | ⚠ blocked on the owner (1/7) |
 | [039](039-unsigned-releases-by-default.md) | A missing certificate must not destroy a release | ⚠ verification blocked (6/7) |
+| [040](040-api-idempotency-keys.md) | Idempotency keys for `POST /v1/tasks` | ✅ done (7/7) |
 
 ## How to add and update a task document
 

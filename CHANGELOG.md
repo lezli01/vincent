@@ -9,6 +9,27 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **Creating a task can now be retried safely.** If the daemon commits your task
+  but you never see the response — a timeout, a dropped connection, a script
+  that dies mid-`curl` — re-sending the request used to create a second task, a
+  second worktree and a second agent run against the same repository. Send an
+  `Idempotency-Key` header on `POST /v1/tasks` and the retry returns the task the
+  first request created instead. Same key with a *different* body is refused with
+  a `409` carrying `details.reason: "idempotency_key_reused"`, so a key
+  accidentally reused for a second operation cannot silently answer with the
+  wrong task. Two requests racing with the same key commit exactly one task. The
+  key and the task are written in one transaction, so neither can exist without
+  the other. Keys are kept for 24 hours and then pruned, they are deleted along
+  with the task they name, and `vincent doctor` counts them under
+  `database.table_rows`. Nothing changes without the header: the CLI and the TUI
+  do not send one, they do not retry a create, and two identical sends still make
+  two tasks — which is what pressing enter twice means. Documented in the
+  [API reference](docs/reference/api.md#replaying-a-create).
+
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
 ### Added
