@@ -125,7 +125,10 @@ Quote a `run` scalar containing a colon:
 An agent step supports `agent` (`claude`, `codex`, or `cursor`), `model`,
 `effort`, `permission_mode` (`full-auto` or `restricted`), `on_input` (`wait`,
 `deny`, or `require`), `input_timeout`, `check`, and `check_timeout`. Cursor
-ignores `effort`. Every attempt is a fresh agent session.
+ignores `effort`. `permission_mode: restricted` needs an adapter that can
+restrict on the host — Cursor cannot on Windows, and a task whose restricted
+step resolves there is refused when it is created. Every attempt is a fresh
+agent session.
 
 Success requires a successful process and terminal event plus a successful
 `check`, when present. A retry receives `.LastFailure` automatically, but does
