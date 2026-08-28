@@ -153,8 +153,20 @@ Creating a task:
 ```sh
 curl -s -X POST "http://127.0.0.1:$PORT/v1/tasks" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"project_id":1,"workflow":"feature-pr","title":"Add a health endpoint"}' | jq
 ```
+
+`Idempotency-Key` is optional, and this is the one request worth setting it on.
+Creating a task inserts a row, claims a branch and wakes the scheduler, so a
+create that commits and then loses its response — a timeout, a dropped
+connection, a script killed mid-`curl` — makes a second task, a second worktree
+and a second agent run on the same repository when the script re-sends it. Under
+a key, re-sending the same body returns the task the first send created;
+re-sending a *different* body under that key is a `409` rather than a wrong
+answer. Keys last 24 hours, no other route needs one, and without the header
+nothing changes — two identical sends make two tasks. The rules are in
+[Replaying a create](../reference/api.md#replaying-a-create).
 
 Errors come back in a stable envelope with `snake_case` codes:
 

@@ -301,6 +301,11 @@ reboots rather than only on the restarts it no longer has.
 
 Task and step rows are **never** deleted — only the transcript files.
 
+That same pass also drops
+[idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This
+setting does not govern them: `0` keeps every transcript, and expired keys still
+go.
+
 ### `transcript_max_bytes`
 
 ```yaml

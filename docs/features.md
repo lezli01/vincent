@@ -185,6 +185,8 @@ localhost API.
 - Every subcommand supports `--json` for machine-readable output.
 - Stable exit codes distinguish a rejected request from an unavailable daemon.
 - REST endpoints cover projects, workflows, tasks, actions, output, and diffs.
+- Creating a task takes an optional idempotency key, so a create that loses its
+  response can be re-sent without making a second task.
 - Server-sent events provide durable state replay and live per-task output.
 - `vincent workflow validate` works without a daemon or installed agent CLI, so
   it fits pre-commit hooks and CI.
