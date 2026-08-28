@@ -540,8 +540,10 @@ awaiting input: question
 ```
 
 The `actions` row is the daemon's own `available_actions`, so a script reads
-what is legal instead of probing for `409`s. Every name in it is a
-`vincent task <action>` subcommand.
+what is legal instead of probing for `409`s. Every name in it has a
+`vincent task <action>` subcommand, under the tree's spelling: the API says
+`follow_up` where the command is `follow-up`, so a script turning one into the
+other replaces `_` with `-`.
 
 The step table's last two columns are different kinds of thing and should not be
 read as one. `REASON` is vincent's own `failure_reason`, a closed set of
@@ -662,8 +664,9 @@ vincent task skip <id> [--json]
 ```
 
 `approve` passes the manual gate the task is waiting on and the workflow
-continues. `reject` fails it, and the task blocks with reason `gate_rejected`.
-Both are valid from `awaiting_gate` only.
+continues. `reject` fails it, and the task blocks with reason
+[`rejected`](task-lifecycle.md#failure-reasons). Both are valid from
+`awaiting_gate` only.
 
 `skip` abandons the step the task is sitting on and advances to the next one.
 It is valid from `awaiting_gate` **and** from `blocked` — skipping a step that
@@ -731,9 +734,12 @@ A worktree with **uncommitted changes** is refused with exit 1 and
 `--force` is the confirmation, and it discards those changes:
 
 ```
-Error: worktree has uncommitted changes
+Error: worktree_dirty: worktree ~/.local/share/vincent/worktrees/7 has local changes (untracked included); confirm with force
   pass --force to archive it anyway, discarding those changes
 ```
+
+The first line is the daemon's, printed as it stands; the second is the
+command's own.
 
 ### `vincent task answer`
 

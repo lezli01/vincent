@@ -130,8 +130,9 @@ vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 
 `vincent task show <id> --json` carries two fields worth knowing about:
 `available_actions`, which is what the daemon will accept right now — read it
-instead of probing for `409`s, and every name in it is a `vincent task <action>`
-subcommand — and `pending_input`, the §7.4 request an `awaiting_input` task is
+instead of probing for `409`s, and every name in it has a `vincent task <action>`
+subcommand once `_` is replaced with `-` (the API says `follow_up`, the tree says
+`follow-up`) — and `pending_input`, the §7.4 request an `awaiting_input` task is
 parked on. The human rendering numbers those questions, and
 `vincent task answer <id> --answer <n>=<value>` takes the numbers.
 
