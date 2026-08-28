@@ -251,6 +251,15 @@ and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.
 
+`vincent daemon logs` and `vincent task transcript` put the two artifacts a
+failure is diagnosed from on the command line, so neither needs the TUI. The log
+command reads `{data_dir}/logs/daemon.log` **from disk and never contacts the
+daemon**, so it still answers when the daemon is the thing that is broken; `-f`
+follows it. The transcript command prints one attempt's complete record — the
+file `vincent task show` only names — rendered as text for a person, as NDJSON
+for `jq`, or as the agent's own dialect byte for byte, with `-f` following an
+attempt while it is still running.
+
 `vincent gc` focuses on orphaned worktrees and transcripts. It supports a dry
 run, refuses to remove dirty or unknown work without an explicit force, and
 never deletes a branch or anything outside vincent's data roots. The daemon

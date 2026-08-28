@@ -546,8 +546,8 @@ log_level: info
 ```
 
 One of `debug`, `info`, `warn`, `error`. The log lives at
-`{data_dir}/logs/daemon.log`, is size-capped and rotated, and is tailed by the
-TUI's daemon view.
+`{data_dir}/logs/daemon.log`, is size-capped and rotated, and is read by
+[`vincent daemon logs`](cli.md#vincent-daemon-logs) and the TUI's daemon view.
 
 ### `debug`
 
