@@ -230,6 +230,14 @@ func (d *detail) headerLine() string {
 	if t.BranchName != "" {
 		parts = append(parts, styleDim.Render(t.BranchName))
 	}
+	// The workflow and where its definition came from (task 043). A name on
+	// its own cannot tell a project `adhoc.yaml` from the built-in it shadows,
+	// which is the whole point of recording an origin. The digest is left to
+	// `vincent task show` and the API: this line is a glance, and half a hash
+	// compares against nothing anyway.
+	if t.Workflow != "" {
+		parts = append(parts, styleDim.Render(t.Workflow+" ("+t.WorkflowOrigin.Source()+")"))
+	}
 	parts = append(parts, formatCost(t.CostUSD))
 	return strings.Join(parts, styleDim.Render(" · "))
 }

@@ -160,6 +160,24 @@ Details that matter in practice:
 `vincent workflow ls` prints the merged registry with a scope badge per entry;
 `--project <id>` includes that repository's own files.
 
+**Which definition actually ran.** Shadowing means a name is not, on its own,
+an answer — a repository's `.vincent/workflows/adhoc.yaml` wins over the
+built-in `adhoc`, including for tasks created without naming a workflow at all.
+Every task therefore records where its definition came from, and
+[`vincent task show`](../reference/cli.md#vincent-task-show) prints it as
+`origin`:
+
+```
+workflow  adhoc
+origin    project .vincent/workflows/adhoc.yaml sha256:0f4a1c1e…
+```
+
+The scope, the file relative to that scope's root, and a digest of the bytes the
+registry loaded. It is captured at creation and never updated, so editing the
+file afterwards does not rewrite the history of tasks that already ran it. The
+TUI's task-detail header carries the same thing without the digest, and the API
+serves it as `workflow_origin`.
+
 **Getting a file into one of those directories.**
 [`vincent workflow init <name>`](../reference/cli.md#vincent-workflow-init)
 writes one and prints the path — the skeleton by default, or a shipped example

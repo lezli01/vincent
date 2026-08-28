@@ -415,6 +415,16 @@ vincent task show <id> [--json]
 Shows one task with its step runs, the actions valid right now, and any pending
 input request.
 
+The `origin` row says which definition the task's workflow name resolved to —
+`built-in`, `project .vincent/workflows/adhoc.yaml`, `global
+workflows/release.yaml`, `derived from task 41` for a fan-out lane, or `unknown`
+for a task created before vincent recorded it. A registry-backed origin is
+followed by a `sha256:` digest of the source it was loaded from; `derived` and
+`unknown` carry none. A project or global workflow shadows a built-in of the
+same name, so this is what tells a repository's own `adhoc.yaml` from the
+built-in `adhoc` long after the fact. It is captured once, at creation, and
+never updated.
+
 The step table's last two columns are different kinds of thing and should not be
 read as one. `REASON` is vincent's own `failure_reason`, a closed set of
 constants. `STATUS` is what the step said about *itself* through

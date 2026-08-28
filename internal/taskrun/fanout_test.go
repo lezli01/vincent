@@ -95,6 +95,22 @@ func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 		if !strings.Contains(lane.Title, lane.LaneID) {
 			t.Errorf("lane title %q does not name the lane", lane.Title)
 		}
+		// Provenance (task 043 decision 6): a lane's steps came from the
+		// parent's snapshot, not from a registry file, so it records `derived`
+		// naming the parent. Copying the parent's file and digest would claim
+		// a source these steps never had; leaving it NULL would read as a task
+		// created before origins were recorded.
+		origin := lane.WorkflowOrigin
+		if origin == nil || origin.Scope != store.WorkflowScopeDerived {
+			t.Errorf("lane %q origin = %+v, want scope %q", lane.LaneID, origin, store.WorkflowScopeDerived)
+			continue
+		}
+		if origin.ParentTaskID == nil || *origin.ParentTaskID != task.ID {
+			t.Errorf("lane %q origin parent = %v, want %d", lane.LaneID, origin.ParentTaskID, task.ID)
+		}
+		if origin.File != "" || origin.Digest != "" {
+			t.Errorf("lane %q origin claims a file or digest: %+v", lane.LaneID, origin)
+		}
 	}
 
 	done := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskDone, store.TaskBlocked)

@@ -17,7 +17,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
-	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
+	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, workflow_origin_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -172,18 +172,24 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	originJSON, err := marshalWorkflowOrigin(t.WorkflowOrigin)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 			state, current_step, block_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
+			workflow_origin_json,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
+		originJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -210,9 +216,16 @@ func insertTaskTx(
 	if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(map[string]any{
+	// `workflow_origin` rides beside `workflow` (task 043): the name alone
+	// cannot tell a shadowed `adhoc` from the built-in, and an event consumer
+	// that never fetches the task should not have to.
+	created := map[string]any{
 		"state": string(t.State), "title": t.Title, "workflow": t.WorkflowName,
-	})
+	}
+	if t.WorkflowOrigin != nil {
+		created["workflow_origin"] = t.WorkflowOrigin
+	}
+	payload, err := json.Marshal(created)
 	if err != nil {
 		return nil, fmt.Errorf("marshal task.created event: %w", err)
 	}
@@ -870,6 +883,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		laneID                         sql.NullString
 		laneOrder                      sql.NullInt64
 		githubIssue                    sql.NullString
+		workflowOrigin                 sql.NullString
 		created, updated               string
 		started, finished, archived    sql.NullString
 	)
@@ -879,7 +893,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
-		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue,
+		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue, &workflowOrigin,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -928,6 +942,16 @@ func scanTask(r rowScanner) (*Task, error) {
 		}
 		t.GitHubIssue = &issue
 	}
+	// A NULL column stays nil rather than becoming a zero-valued origin: "not
+	// recorded" and "recorded as an empty scope" are different claims, and only
+	// the first one is true of a pre-0017 row (task 043 decision 4).
+	if workflowOrigin.Valid && workflowOrigin.String != "" {
+		var origin WorkflowOrigin
+		if err := json.Unmarshal([]byte(workflowOrigin.String), &origin); err != nil {
+			return nil, fmt.Errorf("workflow_origin_json: %w", err)
+		}
+		t.WorkflowOrigin = &origin
+	}
 	if err := json.Unmarshal([]byte(fields), &t.Fields); err != nil {
 		return nil, fmt.Errorf("fields_json: %w", err)
 	}
@@ -969,6 +993,20 @@ func marshalGitHubIssue(issue *github.Issue) (any, error) {
 	b, err := json.Marshal(issue)
 	if err != nil {
 		return nil, fmt.Errorf("marshal github issue: %w", err)
+	}
+	return string(b), nil
+}
+
+// marshalWorkflowOrigin renders a task's workflow provenance for storage; no
+// origin is SQL NULL, the same shape marshalGitHubIssue uses for its column
+// (task 043 decision 4).
+func marshalWorkflowOrigin(origin *WorkflowOrigin) (any, error) {
+	if origin == nil || origin.Scope == "" {
+		return nil, nil
+	}
+	b, err := json.Marshal(origin)
+	if err != nil {
+		return nil, fmt.Errorf("marshal workflow origin: %w", err)
 	}
 	return string(b), nil
 }

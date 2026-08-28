@@ -126,8 +126,13 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 		// The project name is included deliberately: `task show` printed a
 		// blank project row until the detail endpoint learned to carry it
 		// (T4.4 walkthrough finding).
+		// `origin` is asserted for the same reason `project` is: this task was
+		// created without naming a workflow, so it ran the built-in adhoc, and
+		// the row is what says so rather than leaving the name ambiguous
+		// (task 043).
 		for _, want := range []string{
 			"cli e2e task", "created by the CLI test", created.BranchName, filepath.Base(repo),
+			"origin", "built-in sha256:",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("task show is missing %q:\n%s", want, out)

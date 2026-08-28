@@ -23,6 +23,12 @@ type Task struct {
 	State       string            `json:"state"`
 	Priority    int               `json:"priority"`
 
+	// WorkflowOrigin is where the task's workflow definition came from (§5.3,
+	// task 043). Nil for a task created before origin was recorded; the
+	// renderers below say `unknown` for that rather than guessing, because a
+	// guess is exactly the silent substitution this field exists to expose.
+	WorkflowOrigin *WorkflowOrigin `json:"workflow_origin,omitempty"`
+
 	// BranchName is the task's branch (§5.3). It belongs on the list row and
 	// not on TaskDetail alone: with configurable names (task 001) a
 	// `vincent/*` glob no longer finds every branch vincent made, so the
@@ -329,6 +335,56 @@ type TaskDetail struct {
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.
 	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`
+}
+
+// WorkflowOrigin is a task's recorded workflow provenance (§5.3, task 043):
+// which scope of the registry won the shadowing walk, the source file relative
+// to that scope's root, and a digest of the bytes it was created from. A
+// fan-out lane instead carries `derived` naming its parent, whose snapshot its
+// steps came from (§7.6).
+//
+// It is frozen at creation. The digest names the file version the task was
+// created from, not the bytes the engine ran: include expansion, fan-out
+// resolution and `edit + retry` all rewrite the snapshot afterwards.
+type WorkflowOrigin struct {
+	Scope        string `json:"scope"`
+	File         string `json:"file,omitempty"`
+	Digest       string `json:"digest,omitempty"`
+	ParentTaskID *int64 `json:"parent_task_id,omitempty"`
+}
+
+// Source names where the definition came from, without the digest: `built-in`,
+// `project .vincent/workflows/adhoc.yaml`, `derived from task 41`, or `unknown`
+// for a task that predates the record. A nil receiver is the unrecorded case,
+// so a caller never has to guard.
+func (o *WorkflowOrigin) Source() string {
+	if o == nil || o.Scope == "" {
+		return "unknown"
+	}
+	switch o.Scope {
+	case "builtin":
+		return "built-in"
+	case "derived":
+		if o.ParentTaskID != nil {
+			return fmt.Sprintf("derived from task %d", *o.ParentTaskID)
+		}
+		return "derived"
+	}
+	if o.File == "" {
+		return o.Scope
+	}
+	return o.Scope + " " + o.File
+}
+
+// Display is Source plus the digest — the full audit line. The digest is
+// printed whole rather than abbreviated: it is the part a reader compares
+// against a file, and half of a hash compares against nothing.
+func (o *WorkflowOrigin) Display() string {
+	src := o.Source()
+	if o == nil || o.Digest == "" {
+		return src
+	}
+	return src + " " + o.Digest
 }
 
 // WorkflowStep is one step of the task's snapshot (§13.2).

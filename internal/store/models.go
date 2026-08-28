@@ -153,11 +153,59 @@ type Task struct {
 	// which is why a step render still cannot fail for an external reason
 	// (§8.4). A fan-out lane inherits its parent's copy verbatim.
 	GitHubIssue *github.Issue
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	StartedAt   *time.Time
-	FinishedAt  *time.Time
-	ArchivedAt  *time.Time
+	// WorkflowOrigin is where this task's workflow definition came from
+	// (§5.3, task 043), captured once at creation beside WorkflowSnapshot.
+	// nil means the origin was not recorded — a task created before migration
+	// 0017 — and is reported as `unknown`, never re-derived from today's
+	// registry: a re-lookup would report the shadowing this field exists to
+	// make visible as though it had always been so.
+	WorkflowOrigin *WorkflowOrigin
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	ArchivedAt     *time.Time
+}
+
+// Workflow origin scopes (task 043). The first three mirror workflow.Scope —
+// the shadowing walk's three registry scopes — and `derived` is the one a
+// registry can never produce: a fan-out lane's steps come from its parent's
+// snapshot, resolved at the *parent's* creation (§7.6), so the lane never reads
+// a registry at all.
+const (
+	WorkflowScopeBuiltin = "builtin"
+	WorkflowScopeGlobal  = "global"
+	WorkflowScopeProject = "project"
+	WorkflowScopeDerived = "derived"
+)
+
+// WorkflowOrigin is a task's recorded workflow provenance (§5.3, task 043),
+// stored as the JSON of `workflow_origin_json`.
+//
+// It is deliberately its own type rather than workflow.Origin: that one
+// describes a registry *entry*, and this one describes a *task*, whose origin
+// may be `derived` — a scope no entry has. The registry-backed shapes are
+// converted from workflow.Origin at task creation.
+//
+// Frozen at creation and never recomputed. The digest therefore identifies the
+// file version the task was created from, not the bytes the engine executes:
+// include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all
+// rewrite WorkflowSnapshot afterwards, and `edit + retry` is independently
+// audited through step_runs.prompt_override / run_override.
+type WorkflowOrigin struct {
+	// Scope is one of the WorkflowScope* constants above.
+	Scope string `json:"scope"`
+	// File is the source path relative to its scope root, forward-slashed —
+	// `.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`. Empty for
+	// `builtin` and `derived`.
+	File string `json:"file,omitempty"`
+	// Digest is `sha256:<hex>` over the registry entry's source bytes as
+	// loaded. Empty for `derived`.
+	Digest string `json:"digest,omitempty"`
+	// ParentTaskID names the task whose fan_out step spawned this lane; set
+	// only for `derived`. Inheriting the parent's file and digest instead
+	// would claim the lane's steps came from a file they did not come from.
+	ParentTaskID *int64 `json:"parent_task_id,omitempty"`
 }
 
 // StepRun is one attempt at executing one step of one task; history is
