@@ -173,12 +173,17 @@ func writeWorkflowFile(cmd *cobra.Command, t initTarget) error {
 	}
 	shadows := shadowedBy(t)
 
-	if err := os.MkdirAll(t.dir, 0o755); err != nil {
+	// G301/G302: a scaffolded workflow is a repository file. `.vincent/workflows`
+	// is committed and read by everyone who clones the project, so it takes the
+	// ordinary repository modes rather than owner-only ones. In the global scope
+	// the parent is the 0700 config dir (§16), which is what actually bounds it.
+	if err := os.MkdirAll(t.dir, 0o755); err != nil { //nolint:gosec // G301: see above
 		return fmt.Errorf("create %s: %w", t.dir, err)
 	}
 	// O_EXCL makes "never clobber" a syscall guarantee rather than a
 	// stat-then-write race: nothing this command does can overwrite a file a
 	// user wrote by hand.
+	//nolint:gosec // G302/G304: repository file modes, path built from the scope dir above
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -236,7 +241,8 @@ func nameTakenIn(dir, name string, except ...string) (string, bool) {
 		if slices.Contains(except, path) {
 			continue
 		}
-		src, err := os.ReadFile(path)
+		// G304: a directory entry of the workflow dir this command just scanned.
+		src, err := os.ReadFile(path) //nolint:gosec // G304: see above
 		if err != nil {
 			continue
 		}

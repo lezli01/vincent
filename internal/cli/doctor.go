@@ -486,6 +486,9 @@ func doctorStorageRows(s apiclient.DoctorStorage) [][]string {
 		free = s.DiskError
 	} else if s.DiskTotalBytes > 0 {
 		free = fmt.Sprintf("%s free of %s",
+			// G115: a filesystem large enough to overflow int64 bytes (8 EiB) does not
+			// exist, and this is a line of human-readable text either way.
+			//nolint:gosec // G115: see above
 			humanBytes(int64(s.DiskFreeBytes)), humanBytes(int64(s.DiskTotalBytes)))
 	}
 	rows := [][]string{

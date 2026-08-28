@@ -361,3 +361,41 @@ func TestGroupSummaryReadsAsASetting(t *testing.T) {
 		t.Errorf("summary of no grouping = %q, want it to say the list is flat", got)
 	}
 }
+
+// TestGroupingEqualAndHas pins the two set predicates directly. Everywhere
+// else in this file `equal` is the assertion rather than the subject, so a
+// rewrite of it could silently take the assertions with it — which is exactly
+// what task 042's `slices.Equal` change does.
+func TestGroupingEqualAndHas(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b grouping
+		want bool
+	}{
+		{"identical", grouping{groupProject, groupWorkflow}, grouping{groupProject, groupWorkflow}, true},
+		{"both empty", grouping{}, grouping{}, true},
+		{"empty and nil", grouping{}, nil, true},
+		{"shorter prefix", grouping{groupProject}, grouping{groupProject, groupWorkflow}, false},
+		{"longer", grouping{groupProject, groupWorkflow}, grouping{groupProject}, false},
+		{"same length, different element", grouping{groupProject}, grouping{groupWorkflow}, false},
+		{"same set, reversed", grouping{groupProject, groupWorkflow}, grouping{groupWorkflow, groupProject}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.a.equal(tc.b); got != tc.want {
+				t.Errorf("%v.equal(%v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+
+	g := grouping{groupProject}
+	if !g.has(groupProject) {
+		t.Error("has(groupProject) = false on a grouping that holds it")
+	}
+	if g.has(groupWorkflow) {
+		t.Error("has(groupWorkflow) = true on a grouping that does not hold it")
+	}
+	if (grouping{}).has(groupProject) {
+		t.Error("has = true on a flat grouping")
+	}
+}

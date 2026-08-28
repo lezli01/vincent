@@ -55,6 +55,7 @@ the living engineering specification records implementation contracts.
 | [039](039-unsigned-releases-by-default.md) | A missing certificate must not destroy a release | ⚠ verification blocked (6/7) |
 | [040](040-api-idempotency-keys.md) | Idempotency keys for `POST /v1/tasks` | ✅ done (7/7) |
 | [041](041-adapter-compatibility-health.md) | Adapter version compatibility and protocol health | ✅ done (5/5) |
+| [042](042-gosec-static-analysis.md) | gosec in the normal static-analysis gate, with reviewed suppressions | ✅ done (5/5) |
 
 ## How to add and update a task document
 

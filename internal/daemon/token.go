@@ -35,7 +35,7 @@ func ReadToken(dataDir string) (string, error) {
 // its permissions are re-tightened to 0600.
 func EnsureToken(dataDir string) (string, error) {
 	path := TokenPath(dataDir)
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: TokenPath() under the daemon's own data dir
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read token: %w", err)
 	}

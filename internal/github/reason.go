@@ -21,7 +21,7 @@ const (
 	// ReasonNoCredential: neither `gh` nor a GITHUB_TOKEN/GH_TOKEN in the
 	// daemon's environment can authenticate. This is the row `vincent doctor`
 	// exists to explain.
-	ReasonNoCredential = "no_credential"
+	ReasonNoCredential = "no_credential" //nolint:gosec // G101: a block reason, not a credential
 	// ReasonUnauthorized: the credential was rejected (HTTP 401, `gh` reports
 	// a bad token).
 	ReasonUnauthorized = "unauthorized"
@@ -50,7 +50,7 @@ const (
 // reasonMessages are the one-line explanations clients render. Keeping them
 // here rather than at each call site is what makes "no leg leaks its own
 // error text" enforceable: the API has nothing else to print.
-var reasonMessages = map[string]string{
+var reasonMessages = map[string]string{ //nolint:gosec // G101: these are the reasons' own explanations, not credentials
 	ReasonDisabled:     "the GitHub integration is disabled in config.yaml",
 	ReasonNotGitHub:    "this project's origin remote is not a github.com repository",
 	ReasonNoCredential: "no GitHub credential: gh is not installed or not authenticated, and neither GITHUB_TOKEN nor GH_TOKEN is set",

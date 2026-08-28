@@ -59,7 +59,9 @@ type Displaced struct {
 // first, so this decompresses one block rather than the whole file — which is
 // what makes a schema check affordable before a multi-gigabyte extraction.
 func ReadManifest(archive string) (Manifest, error) {
-	f, err := os.Open(archive)
+	// G304: the archive the user named on the command line. Reading a file the
+	// invoking user can already read crosses no boundary (§16).
+	f, err := os.Open(archive) //nolint:gosec // G304: see above
 	if err != nil {
 		return Manifest{}, fmt.Errorf("open %s: %w", archive, err)
 	}
@@ -160,7 +162,7 @@ func Restore(archive string, dirs Dirs, force bool) (Report, error) {
 		}
 	}
 
-	f, err := os.Open(archive)
+	f, err := os.Open(archive) //nolint:gosec // G304: the archive the user named, as in ReadManifest
 	if err != nil {
 		return rep, fmt.Errorf("open %s: %w", archive, err)
 	}
@@ -275,7 +277,11 @@ func extractFile(dest string, r io.Reader) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(dest), dirMode); err != nil {
 		return 0, fmt.Errorf("create %s: %w", filepath.Dir(dest), err)
 	}
-	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, entryMode)
+	// G304: dest is *not* trusted input — it is derived from a tar header, which
+	// an attacker-supplied archive controls. It is safe because target() above
+	// has already refused any entry that does not resolve inside one of the two
+	// roots, checking the entry name and the joined path separately.
+	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, entryMode) //nolint:gosec // G304: see above
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", dest, err)
 	}

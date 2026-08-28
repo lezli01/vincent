@@ -332,7 +332,7 @@ func TestRepairPromptReachesTheAgentLiterally(t *testing.T) {
 		t.Fatalf("repair row = %s/%q, want a prompt that rendered as prose",
 			row.State, row.FailureReason)
 	}
-	body, err := os.ReadFile(row.TranscriptPath) //nolint:gosec // this test's own transcript
+	body, err := os.ReadFile(row.TranscriptPath)
 	if err != nil {
 		t.Fatalf("read repair transcript: %v", err)
 	}

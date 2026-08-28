@@ -355,6 +355,7 @@ func (s *Store) SetTaskProgress(ctx context.Context, id int64, currentStep *int,
 		}
 		args = append(args, id)
 		res, err := tx.ExecContext(ctx,
+			//nolint:gosec // G202: sets holds only the literals assigned above; values bind
 			`UPDATE tasks SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
 		if err != nil {
 			return fmt.Errorf("set task %d progress: %w", id, err)

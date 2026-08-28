@@ -304,7 +304,9 @@ func taskWriteDenied() bool {
 	if root == "" {
 		return false
 	}
-	f, err := os.OpenFile(filepath.Join(root, "System32", "Tasks", Label), os.O_WRONLY, 0)
+	// G304: %SystemRoot%\System32\Tasks joined with this package's own Label
+	// constant — a probe for write permission, not a user-named path.
+	f, err := os.OpenFile(filepath.Join(root, "System32", "Tasks", Label), os.O_WRONLY, 0) //nolint:gosec // G304: see above
 	if err == nil {
 		_ = f.Close()
 		return false
@@ -415,7 +417,9 @@ func utf16LE(s string) []byte {
 	b := make([]byte, 0, 2+len(units)*2)
 	b = append(b, 0xFF, 0xFE) // BOM
 	for _, u := range units {
-		b = append(b, byte(u), byte(u>>8))
+		// G115: splitting a UTF-16 code unit into its two little-endian bytes is
+		// the point; both halves are kept, so nothing is lost.
+		b = append(b, byte(u), byte(u>>8)) //nolint:gosec // G115: see above
 	}
 	return b
 }

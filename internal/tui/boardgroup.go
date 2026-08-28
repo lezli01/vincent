@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -68,26 +69,11 @@ func (g grouping) next() grouping {
 	return cycle[0]
 }
 
-func (g grouping) has(k groupKey) bool {
-	for _, level := range g {
-		if level == k {
-			return true
-		}
-	}
-	return false
-}
+func (g grouping) has(k groupKey) bool { return slices.Contains(g, k) }
 
-func (g grouping) equal(other grouping) bool {
-	if len(g) != len(other) {
-		return false
-	}
-	for i := range g {
-		if g[i] != other[i] {
-			return false
-		}
-	}
-	return true
-}
+// equal compares levels in order: two groupings with the same levels in a
+// different order are different views, not the same one.
+func (g grouping) equal(other grouping) bool { return slices.Equal(g, other) }
 
 // label names the grouping for the panel title.
 func (g grouping) label() string {

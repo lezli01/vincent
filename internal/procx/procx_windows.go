@@ -35,12 +35,19 @@ func attach(cmd *exec.Cmd) (platformProc, error) {
 			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 		},
 	}
+	// G103/G115: the Win32 calling convention — a pointer to the struct plus its
+	// size. unsafe.Sizeof of a fixed struct is a compile-time constant far below
+	// uint32, and info outlives the call.
+	//nolint:gosec // G103/G115: see above
 	if _, err := windows.SetInformationJobObject(job,
 		windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		_ = windows.CloseHandle(job)
 		return nil, fmt.Errorf("configure job object: %w", err)
 	}
+	// G115: a Windows PID is a DWORD that os/exec widened to int; narrowing it
+	// back is what the syscall takes.
+	//nolint:gosec // G115: see above
 	proc, err := windows.OpenProcess(
 		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
 	if err != nil {
@@ -84,6 +91,7 @@ func (j *jobKill) release() {
 // the belt-and-braces path for a root process found still alive. A PID that
 // is already gone is success.
 func KillPID(pid int) error {
+	//nolint:gosec // G115: a Windows PID is a DWORD widened to int; this narrows it back
 	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {

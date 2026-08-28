@@ -101,7 +101,11 @@ type Result struct {
 // be restored is worse than no archive, because it is the one a user reaches
 // for on the day they need it.
 func Create(dst string, src Source) (Result, error) {
-	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, entryMode)
+	// G304: dst is the path the API caller asked for (`POST /v1/backup`), not a
+	// daemon-owned one. That is by design — the trust boundary is the OS user
+	// (§16), and a backup is only useful if the user picks where it lands.
+	// O_EXCL is what keeps it from clobbering something that is already there.
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, entryMode) //nolint:gosec // G304: see above
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return Result{}, fmt.Errorf("%s: %w", dst, ErrDestinationExists)
@@ -194,7 +198,9 @@ func writeManifest(tw *tar.Writer, m Manifest) error {
 // fs.ErrNotExist from a missing source is returned unwrapped enough for
 // errors.Is, so a caller can decide whether absence is a failure.
 func writeRegular(tw *tar.Writer, name, src string) (int64, error) {
-	f, err := os.Open(src)
+	// G304: writeRegular is called only with paths the daemon resolved itself —
+	// the staged database copy and the config file under its own config dir.
+	f, err := os.Open(src) //nolint:gosec // G304: see above
 	if err != nil {
 		return 0, fmt.Errorf("open %s: %w", src, err)
 	}
@@ -248,7 +254,8 @@ func writeTree(tw *tar.Writer, root, prefix string) (int64, error) {
 			// is not restorable state.
 			return nil
 		}
-		f, err := os.Open(p)
+		// G304: p is a WalkDir result under one of the daemon's own data roots.
+		f, err := os.Open(p) //nolint:gosec // G304: see above
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil

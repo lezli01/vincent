@@ -69,6 +69,7 @@ func openTranscript(dataDir string, taskID int64, stepIndex, iteration, attempt 
 		name = fmt.Sprintf("%d-%s-%d.jsonl", stepIndex, subStepID, attempt)
 	}
 	path := filepath.Join(dir, name)
+	//nolint:gosec // G304: path is built here from the daemon's transcript dir and the step's own indices
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create transcript: %w", err)

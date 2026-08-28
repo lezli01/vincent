@@ -152,6 +152,7 @@ func EnsureDefaultFile(dir string) (created bool, err error) {
 	if err := os.MkdirAll(dir, DirPerm); err != nil {
 		return false, fmt.Errorf("create config dir: %w", err)
 	}
+	//nolint:gosec // G304: path is ConfigPath() under the dir resolved above, never caller input
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, FilePerm)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {

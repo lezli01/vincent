@@ -70,7 +70,10 @@ func New() *Git { return &Git{path: "git"} }
 // Run executes git with args in dir and returns trimmed stdout. Failures are
 // returned as *Error with stderr captured.
 func (g *Git) Run(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, g.path, args...)
+	// G204: g.path is "git" (or a test's stand-in) and args is an argument
+	// slice assembled by callers in this repository — no shell, so no quoting
+	// or metacharacter question arises for the branch and path values in it.
+	cmd := exec.CommandContext(ctx, g.path, args...) //nolint:gosec // G204: see above
 	hideConsole(cmd)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer

@@ -454,7 +454,10 @@ func Default() Config {
 // default values; unknown keys are rejected (strict decoding).
 func Load(path string) (Config, error) {
 	cfg := Default()
-	raw, err := os.ReadFile(path)
+	// G304: Load is called with ConfigPath(), or with a path a test chose. The
+	// config file belongs to the invoking user, so reading it crosses no
+	// boundary (§16); the file is what says who the user is, not the reverse.
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: see above
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil
 	}

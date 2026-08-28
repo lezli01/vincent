@@ -63,6 +63,26 @@ go run mage.go lint      # golangci-lint (pinned via go.mod tool directive)
 go run mage.go vuln      # govulncheck across linux, darwin and windows
 ```
 
+`lint` and `vuln` are two different questions and neither substitutes for the
+other. **gosec**, which runs inside `lint`, reads *this repository's* source for
+insecure patterns — subprocess construction, file paths, permissions, SQL
+building, integer conversions — and runs on every pull request, on all three
+platforms, as part of the same command you run locally. **govulncheck**, which is
+`vuln`, reads the *dependency graph* for published advisories that actually reach
+code you call; it sweeps the three target platforms weekly in
+[`vuln.yml`](.github/workflows/vuln.yml) and can go red without a line of vincent
+changing.
+
+A gosec finding is evidence, not a verdict: read the site, and either fix it or
+suppress it with a `//nolint:gosec // ...` whose comment says *why it is safe
+here*. `nolintlint` is strict, so a suppression that stops applying is reported
+rather than left to rot — and a reason that merely asserts a path is
+daemon-owned, when repository or request input reaches it, is worse than no
+suppression at all. Tests, the fake CLIs and the test helpers are already out of
+scope by configuration in `.golangci.yml`; do not re-annotate them. The
+per-finding rationale for the existing baseline is in
+[task 042](docs/tasks/042-gosec-static-analysis.md).
+
 To use the tree you are working on as your everyday `vincent` — the binary on
 PATH, with the same release build flags and version symbols, so `vincent
 version` names your checkout:

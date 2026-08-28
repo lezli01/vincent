@@ -27,6 +27,7 @@ func StartTime(pid int) (time.Time, error) {
 // raw 100 ns unit.
 func creationTime(pid int) (windows.Filetime, error) {
 	var creation, exit, kernel, user windows.Filetime
+	//nolint:gosec // G115: a Windows PID is a DWORD widened to int; this narrows it back
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
