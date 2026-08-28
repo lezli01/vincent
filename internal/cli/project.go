@@ -13,9 +13,9 @@ import (
 func newProjectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Register and inspect projects",
+		Short: "Register, inspect and remove projects",
 	}
-	cmd.AddCommand(newProjectAddCmd(), newProjectLsCmd())
+	cmd.AddCommand(newProjectAddCmd(), newProjectLsCmd(), newProjectRmCmd())
 	return cmd
 }
 
@@ -105,6 +105,50 @@ func newProjectLsCmd() *cobra.Command {
 			})
 		},
 	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+func newProjectRmCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "rm <id>",
+		Short: "Remove a project registration",
+		Long: "Removes the project and its task rows. A project still holding\n" +
+			"non-archived tasks is refused until --force is passed — force is the\n" +
+			"confirmation, and it archives them on the way out. A project holding a\n" +
+			"*running* task is refused either way: cancel it first.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("project id must be a number: %q", args[0])
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				if err := c.DeleteProject(ctx, id, force); err != nil {
+					// Two different 409s reach here — "N non-archived task(s)"
+					// and one naming a running task — and they want opposite
+					// things from the caller, so the daemon's own wording is
+					// printed rather than a summary that would blur them.
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					// The endpoint answers 204, so there is no task to print.
+					// A `--json` caller still gets an object: an empty stdout
+					// is a parse error in every wrapper that pipes this.
+					return emitJSON(cmd.OutOrStdout(), struct {
+						ID      int64 `json:"id"`
+						Removed bool  `json:"removed"`
+					}{ID: id, Removed: true})
+				}
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "project %d removed\n", id)
+				return err
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false,
+		"Remove even when the project still holds non-archived tasks, archiving them")
 	jsonFlag(cmd)
 	return cmd
 }
