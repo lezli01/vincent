@@ -319,7 +319,8 @@ Lists registered projects with their ids, paths and defaults.
 vincent task add --project ID (--title TITLE | --github-issue N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
-                 [--effort E] [--field NAME=VALUE]... [--json]
+                 [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
+                 [--json]
 ```
 
 Creates a task. It is `queued` immediately — there is no draft state.
@@ -333,6 +334,7 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
 | `--priority` | Higher runs first; default 0 |
 | `--field name=value` | Task field; repeat for more. Everything after the first `=` is the value, and a repeated name uses the last value |
+| `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
 | `--github-issue N` | Create the task from GitHub issue `N`. See below |
 
@@ -343,6 +345,56 @@ remain valid and are recorded on the same open field map:
 vincent task add --project 1 --workflow release --title "Release 2.0" \
   --field ticket=OPS-42 --field owner=ana
 ```
+
+```
+task 62 created: Release 2.0 (release, branch vincent/62-release-2-0)
+  fields: owner, ticket (2)
+```
+
+The confirmation line lists **names and a count, never values** — a field can
+carry a ticket key or a customer name, and this line ends up in scrollback and
+CI logs. It is read off the created task, so a field the daemon filled in from
+`--github-issue` is listed too. `--json` prints the task instead, values and
+all.
+
+#### Fields from a file or stdin
+
+`--fields-file` takes one JSON object whose values are all strings — the form a
+generator produces, and the one that carries spaces, newlines and quotes
+without shell escaping:
+
+```sh
+vincent task add --project 1 --workflow release --title "Release 2.0" \
+  --fields-file ./release-inputs.json
+
+jq -n '{ticket: $t, notes: $n}' --arg t OPS-42 --arg n "$(cat notes.md)" |
+  vincent task add --project 1 --workflow release --title "Release 2.0" \
+    --fields-file -
+```
+
+The two flags **combine**: the file is the base map and each `--field`
+overrides its own name, which is the same last-wins rule `--field` already
+follows, one level out.
+
+```sh
+vincent task add --project 1 --workflow release --title "Release 2.0" \
+  --fields-file ./release-inputs.json --field ticket=OPS-43   # ticket is OPS-43
+```
+
+Rejected locally with exit 1, before the daemon is called:
+
+| | |
+|---|---|
+| A value that is not a JSON string | A number, boolean, `null`, array or object. The message names the **key** and never the value |
+| An empty or all-whitespace name | The same rule `--field` applies |
+| Anything after the first JSON object | One document per file; a second is never silently discarded |
+| More than 4 MiB | The API's own body bound (§13.1), applied to the read so a pipe cannot be unbounded |
+
+A name repeated *inside* the JSON object takes its last value, which is what a
+JSON decoder does. Names the workflow never declared stay valid either way —
+declaring `fields:` does not close the map — and everything the daemon
+validates (required, `type`, `pattern`, per-field size) is still checked by the
+daemon.
 
 Model and effort **only inherit from a level whose agent matches**, so switching
 agent without setting them resets them to the new adapter's default rather than

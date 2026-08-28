@@ -1,8 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -34,6 +41,7 @@ func newTaskAddCmd() *cobra.Command {
 		model       string
 		effort      string
 		fields      []string
+		fieldsFile  string
 		githubIssue int
 	)
 	cmd := &cobra.Command{
@@ -41,10 +49,17 @@ func newTaskAddCmd() *cobra.Command {
 		Short: "Create a task",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fieldMap, err := parseFieldFlags(fields)
+			flagFields, err := parseFieldFlags(fields)
 			if err != nil {
 				return err
 			}
+			var fileFields map[string]string
+			if cmd.Flags().Changed("fields-file") {
+				if fileFields, err = readFieldsFile(fieldsFile, cmd.InOrStdin()); err != nil {
+					return err
+				}
+			}
+			fieldMap := mergeTaskFields(fileFields, flagFields)
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				req := apiclient.CreateTaskRequest{ProjectID: projectID, Title: title, Fields: fieldMap}
 				for _, f := range []struct {
@@ -100,6 +115,15 @@ func newTaskAddCmd() *cobra.Command {
 						return err
 					}
 				}
+				// Which fields the task actually carries, confirmed by name.
+				// Read off the *response*, not off what was sent, so a field
+				// the daemon prefilled from --github-issue (task 035) is
+				// confirmed here too.
+				if summary := fieldsSummary(t.Fields); summary != "" {
+					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
+						return err
+					}
+				}
 				// Warnings are advisory — a catalog-unknown model, say. The
 				// task exists and will run, so this is not an error exit; but
 				// it goes to stderr so `--json` piping stays clean and a human
@@ -124,6 +148,9 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort override (§8.6 level 2)")
 	cmd.Flags().StringArrayVar(&fields, "field", nil,
 		"Task field as name=value; repeat for additional fields")
+	cmd.Flags().StringVar(&fieldsFile, "fields-file", "",
+		"Read task fields from a JSON object of strings in this file, or `-` for stdin; "+
+			"a --field of the same name wins")
 	cmd.Flags().IntVar(&githubIssue, "github-issue", 0,
 		"Create the task from this GitHub issue; explicit flags win over what it would fill in")
 	_ = cmd.MarkFlagRequired("project")
@@ -152,6 +179,118 @@ func parseFieldFlags(values []string) (map[string]string, error) {
 		fields[name] = fieldValue
 	}
 	return fields, nil
+}
+
+// maxFieldsFileBytes bounds what --fields-file reads, at the same 4 MiB the
+// API bounds a large request body at (§13.1). Stdin can be an unbounded pipe,
+// so the read is capped rather than slurped: refusing here gives the caller
+// the answer the daemon would have given them, sooner, and without buffering
+// an arbitrary file first. Nothing is re-checked client-side beyond this —
+// the per-field bounds and the workflow's declared field contract stay
+// daemon-authoritative (§8.1.2), because the CLI is not the only client.
+const maxFieldsFileBytes = 4 << 20
+
+// readFieldsFile reads one JSON object of string values from path, or from in
+// when path is "-".
+//
+// Values must be JSON strings: `.Task.Fields` is a map[string]string (§8.1.2),
+// and quietly stringifying a number or a boolean would make `{"retries": 3}`
+// and `{"retries": "3"}` the same document while a workflow declaring
+// `type: integer` can tell them apart. A rejection names the **key only** —
+// never the value — for the same reason the human confirmation line does: a
+// field can carry a token, and an error message is scrollback and CI logs.
+//
+// A key repeated inside the object resolves last-wins, which is what
+// encoding/json does; it is documented rather than detected, matching the
+// rule --field already follows.
+func readFieldsFile(path string, in io.Reader) (map[string]string, error) {
+	src := "--fields-file " + path
+	r := in
+	if path != "-" {
+		// G304: the path this command's own operator typed after --fields-file.
+		f, err := os.Open(path) //nolint:gosec // G304: see above
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", src, err)
+		}
+		defer func() { _ = f.Close() }()
+		r = f
+	}
+	// One byte past the bound, so a document that exactly fills it still
+	// parses and one byte more is caught rather than silently truncated.
+	data, err := io.ReadAll(io.LimitReader(r, maxFieldsFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", src, err)
+	}
+	if len(data) > maxFieldsFileBytes {
+		return nil, fmt.Errorf("%s must be at most %d bytes", src, maxFieldsFileBytes)
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var raw map[string]json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return nil, fmt.Errorf("%s must be one JSON object of string values: %w", src, err)
+	}
+	// A second document is never silently discarded, the rule §5.5 applies at
+	// the API: a caller who concatenated two objects meant something by both.
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%s must contain one JSON object and nothing after it", src)
+	}
+	if raw == nil { // a literal `null`, which decodes without error
+		return nil, fmt.Errorf("%s must be one JSON object of string values, got null", src)
+	}
+
+	fields := make(map[string]string, len(raw))
+	for name, value := range raw {
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("%s has an empty field name", src)
+		}
+		// The leading quote is checked before unmarshalling because a JSON
+		// `null` unmarshals into a string without error, and silently
+		// recording an absent value as "" is exactly the confusion this
+		// rejects everywhere else.
+		text := bytes.TrimSpace(value)
+		if len(text) == 0 || text[0] != '"' {
+			return nil, fmt.Errorf("%s: field %q must be a JSON string", src, name)
+		}
+		var s string
+		if err := json.Unmarshal(text, &s); err != nil {
+			return nil, fmt.Errorf("%s: field %q must be a JSON string", src, name)
+		}
+		fields[name] = s
+	}
+	return fields, nil
+}
+
+// mergeTaskFields lays the --field values over the --fields-file ones, key by
+// key. The two combine rather than excluding each other (task 045 decision 2):
+// a script that wants to change one key should not have to regenerate the
+// whole document, and the flag typed on the same command line is the more specific
+// of the two — the same last-wins rule --field already documents, one level
+// out. Both nil stays nil, so a task created with neither flag sends exactly
+// what it sent before.
+func mergeTaskFields(file, flags map[string]string) map[string]string {
+	if file == nil {
+		return flags
+	}
+	merged := make(map[string]string, len(file)+len(flags))
+	maps.Copy(merged, file)
+	maps.Copy(merged, flags)
+	return merged
+}
+
+// fieldsSummary confirms what a created task carries by field **name and
+// count, never value** (task 045 decision 4): a field can hold a ticket key or
+// a customer name, and this line lands in scrollback, screenshots and CI logs.
+// A count on its own was not enough — the mistake worth catching is the
+// mistyped key, and only the names catch that. Empty renders as "" so a task
+// with no fields prints nothing extra.
+func fieldsSummary(fields map[string]string) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	names := slices.Sorted(maps.Keys(fields))
+	return fmt.Sprintf("fields: %s (%d)", strings.Join(names, ", "), len(names))
 }
 
 func newTaskLsCmd() *cobra.Command {

@@ -2729,7 +2729,7 @@ One Go binary, `vincent`:
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent project add <path> / ls` | Thin API clients for scripting |
-| `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2) |
+| `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->` |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
@@ -2744,6 +2744,25 @@ different tasks from the same issue. Every other flag still wins over what the
 issue would have filled in, and `--title` becomes optional when it is given —
 requiring both would make the flag a decoration on a title the user had to
 retype.
+
+*Added 2026-08-28 (task 045).* `vincent task add --fields-file <path>` reads the
+§8.1.2 field map from one JSON object of **string** values, and `-` reads it from
+standard input. It combines with `--field`, which wins name by name: the file is
+the base map and the flag typed on the same command line is the more specific of
+the two, which is the last-wins rule `--field` already follows extended one level
+out. Making them mutually exclusive was rejected — it forces a script that varies
+one input to regenerate the whole document.
+
+The client rejects, with exit 1 and before any request is made, a value that is
+not a JSON string (naming the **key** and never the value), an empty name,
+anything after the first JSON object, and a read over §13.1's 4 MiB large-body
+bound — the read is bounded because standard input can be an unbounded pipe, and
+answering locally gives the caller the answer the daemon would have given them.
+Everything else stays daemon-authoritative: required, `type`, `pattern` and the
+per-field bounds are the API's, and declaring `fields:` still does **not** close
+the map (§8.1.2). Without `--json`, creation confirms the recorded fields by
+**name and count, never value**, read off the response so a field prefilled from
+`--github-issue` is confirmed with the rest.
 
 *Amended 2026-08-15 (task 005).* `gc` breaks this table's noun-verb pattern
 (`project add`, `task ls`) knowingly: `git gc` is the idiom users already have, and the

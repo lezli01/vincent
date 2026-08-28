@@ -1002,6 +1002,11 @@ vincent task add --project 1 --workflow feature-pr --title "Ship it" \
 Here `ticket` may be declared and validated while `owner` is additional
 metadata; both are stored as strings in `.Task.Fields`.
 
+Generated input, or a value with newlines in it, goes in as a JSON object
+instead — `--fields-file PATH`, or `-` for stdin. A `--field` of the same name
+still wins, so one document can be reused across runs that vary one input; see
+[Supplying task fields](scripting.md#supplying-task-fields).
+
 Because rendering is strict, an **optional** field must be read defensively or
 the step fails:
 
