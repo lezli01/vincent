@@ -230,7 +230,7 @@ func readFieldsFile(path string, in io.Reader) (map[string]string, error) {
 	if err := dec.Decode(&raw); err != nil {
 		return nil, fmt.Errorf("%s must be one JSON object of string values: %w", src, err)
 	}
-	// A second document is never silently discarded, the rule §5.5 applies at
+	// A second document is never silently discarded, the rule §13.1 applies at
 	// the API: a caller who concatenated two objects meant something by both.
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
