@@ -1,6 +1,7 @@
 package apiclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -65,6 +66,15 @@ func (r InputResponse) body() any {
 		Allow   *bool               `json:"allow,omitempty"`
 	}{Answers: r.Answers, Allow: r.Allow}
 	return out
+}
+
+// AnswerRaw delivers an answer payload the caller assembled itself, passed to
+// the daemon as it stands (§13.2). It exists for `vincent task answer --body`,
+// where a script already holds the object: decoding it through InputResponse
+// and re-encoding it would put this client between a caller and a document the
+// daemon is the authority on, for no gain.
+func (c *Client) AnswerRaw(ctx context.Context, id int64, payload json.RawMessage) (Task, error) {
+	return c.action(ctx, id, ActionAnswer, payload)
 }
 
 // Validate checks an answer against the request it answers, using §7.4's

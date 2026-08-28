@@ -176,7 +176,9 @@ which it was not before follow-ups existed.
 
 In the TUI these are the action bar keys (`a`, `x`, `r`, `R`, `E`, `s`, `p`,
 `c`, `A`, `F`); over the API they are `POST /v1/tasks/{id}/{action}`; from the
-CLI, `vincent task cancel` and `vincent task follow-up`.
+CLI, [`vincent task <action> <id>`](cli.md#vincent-task) — one subcommand each,
+spelled in kebab-case (`follow_up` is `vincent task follow-up`). `set priority`
+is the exception: it is a `PATCH`, and has no subcommand.
 
 An action the current state does not allow returns `409` with `details.state`
 set to the state actually found — so a client branches on a value rather than

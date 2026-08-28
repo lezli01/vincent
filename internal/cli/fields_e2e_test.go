@@ -122,7 +122,8 @@ func TestTaskFieldsReachATemplate(t *testing.T) {
 }
 
 // runVincentStdin is runVincent with a body on standard input, which is the
-// only way to exercise `--fields-file -`.
+// only way to exercise `--fields-file -` and the `-` forms of --prompt-file,
+// --run-file and --body.
 func runVincentStdin(t *testing.T, dataDir, cfgDir, stdin string, args ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command(vincentBin, args...)

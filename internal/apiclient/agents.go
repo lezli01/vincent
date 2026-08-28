@@ -203,7 +203,9 @@ func (c *Client) ListAgents(ctx context.Context, refresh bool) (Agents, error) {
 	var body struct {
 		Agents Agents `json:"agents"`
 	}
-	if err := c.get(ctx, path, &body); err != nil {
+	// refresh is the same subprocess-per-adapter walk /v1/doctor?probe=true
+	// makes, and is bounded the same way.
+	if err := c.getVia(ctx, c.probeClient(refresh), path, &body); err != nil {
 		return nil, err
 	}
 	return body.Agents, nil

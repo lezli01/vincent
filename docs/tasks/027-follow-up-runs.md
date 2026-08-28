@@ -156,6 +156,12 @@ recorded; the rest are followed.
     repair not — is accepted rather than papered over; filling the gap for every
     human action is a separate piece of work and out of scope here.
 
+    *Superseded 2026-08-28 by [task 048](048-cli-human-actions.md)*, which is
+    that separate piece of work: every §6 human action now has a subcommand, so
+    the unevenness this decision accepted is gone. The reason recorded here
+    stands for `follow-up` itself — its motivation was a batch — and 048's is
+    different: a client that cannot unblock work is not a client (§2).
+
 12. **2026-08-25 — Agent, model and effort resolve request > task override >
     workflow `defaults` > adapter default**, §8.6's chain with the request
     standing in for the step level, exactly as `repair` applies it. For the

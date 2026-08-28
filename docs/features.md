@@ -98,8 +98,11 @@ stray file to drop. A **follow-up run** does that work inside vincent: give a
 workflow, and it runs on that task's own branch in that task's own worktree,
 recorded in its own ledger with a transcript and cost accounting. It is
 repeatable, and it never changes the task's verdict — a done task comes back
-`done` and an aborted one comes back `aborted`. It is the one human action with
-a command line, because "rebase these six finished branches" is a batch.
+`done` and an aborted one comes back `aborted`. It was the first human action to
+get a command line, because "rebase these six finished branches" is a batch;
+every other one — approve, reject, retry, repair, skip, pause, resume, answer,
+archive — is a subcommand now too, so a board full of blocked tasks can be
+cleared from a shell loop.
 
 Every state transition is persisted before execution. If the daemon dies
 mid-step, restart recovery finalizes the interrupted attempt, verifies and

@@ -322,7 +322,7 @@ type TaskDetail struct {
 	// BaseBranch and the three overrides have always been on the wire; only
 	// this struct dropped them. `vincent workflow render --task` binds a real
 	// task's §8.4 context and its §8.6 level-2 override from exactly these
-	// four, and re-deriving either client-side is what task 044 declined to
+	// four, and re-deriving either client-side is what task 048 declined to
 	// do.
 	BaseBranch     string          `json:"base_branch"`
 	AgentOverride  *string         `json:"agent_override"`
