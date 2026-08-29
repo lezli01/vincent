@@ -27,7 +27,9 @@ import (
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/notify"
+	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/scheduler"
+	"github.com/lezli01/vincent/internal/selfupdate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
@@ -363,28 +365,43 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// still runs and still does nothing, so switching it back on needs no
 	// restart.
 	go NewPullReconciler(st, currentConfig, git, githubClient, logger).Run(ctx)
+	// The release check (task 055, §12.3), the same shape again: one
+	// goroutine, config per tick, quiet failure. It is the daemon's first
+	// standing outbound call that fires for **every** install rather than
+	// only for projects hosted on github.com, which is why it has its own
+	// switch — `update.check: false` or `update.poll_interval: 0` and the
+	// daemon makes no request for it at all.
+	updateCheck := NewUpdateCheck(currentConfig, release.New(release.Options{}), logger)
+	go updateCheck.Run(ctx)
+	// Windows cannot delete a running image, so a `vincent update` swap
+	// renames the old binary aside and leaves it. This is the "next start"
+	// the swap defers it to; off Windows it is a no-op (task 055).
+	if exe, err := os.Executable(); err == nil {
+		selfupdate.CleanLeftovers(exe)
+	}
 
 	srv := api.New(api.Deps{
-		Token:       token,
-		Config:      currentConfig,
-		StartedAt:   startedAt,
-		ListenAddr:  ln.Addr().String(),
-		Dirs:        dirs,
-		LogPath:     LogPath(dirs.Data),
-		TailLog:     TailFile,
-		RequestStop: requestStop,
-		Logger:      logger,
-		Store:       st,
-		Git:         git,
-		GitHub:      githubClient,
-		Worktrees:   worktrees,
-		Agents:      agents,
-		Catalog:     catalog,
-		Workflows:   workflows,
-		Runner:      runner,
-		WakeRunner:  sched.Wake,
-		Broker:      broker,
-		Reclaimer:   reclaimer,
+		Token:        token,
+		Config:       currentConfig,
+		StartedAt:    startedAt,
+		ListenAddr:   ln.Addr().String(),
+		Dirs:         dirs,
+		LogPath:      LogPath(dirs.Data),
+		TailLog:      TailFile,
+		RequestStop:  requestStop,
+		Logger:       logger,
+		Store:        st,
+		Git:          git,
+		GitHub:       githubClient,
+		Worktrees:    worktrees,
+		Agents:       agents,
+		Catalog:      catalog,
+		Workflows:    workflows,
+		Runner:       runner,
+		WakeRunner:   sched.Wake,
+		Broker:       broker,
+		Reclaimer:    reclaimer,
+		UpdateStatus: updateCheck.Result,
 		OnProjectsChanged: func() {
 			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
