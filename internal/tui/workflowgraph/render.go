@@ -2,6 +2,7 @@ package workflowgraph
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -93,9 +94,13 @@ type Theme struct {
 	EdgeLabel lipgloss.Style
 }
 
-// ViewState is what the viewer knows that the diagram does not.
+// ViewState is what the viewer knows that the diagram does not: which node is
+// selected, and — for a task's graph rather than a registry entry's — what
+// each node's step actually did (task 051). A zero Run is the definition
+// viewer the workflows screen still opens.
 type ViewState struct {
 	Selected string
+	Run      Overlay
 }
 
 // Render returns the scene as one string per row, unwrapped and uncropped —
@@ -110,7 +115,7 @@ func Render(d Diagram, s Scene, st ViewState, th Theme) []string {
 	}
 	for _, grp := range s.Groups {
 		c.frame(grp, g)
-		c.captions(byGroup[grp.ID], s)
+		c.captions(byGroup[grp.ID], s, st.Run)
 	}
 	for _, e := range s.Edges {
 		c.edge(e, g)
@@ -121,7 +126,7 @@ func Render(d Diagram, s Scene, st ViewState, th Theme) []string {
 		byID[n.ID] = n
 	}
 	for _, pn := range s.Nodes {
-		c.node(pn, byID[pn.ID], pn.ID == st.Selected, g)
+		c.node(pn, byID[pn.ID], pn.ID == st.Selected, st.Run.Nodes[pn.ID], g)
 	}
 	c.paintLabels()
 	return c.lines(th)
@@ -231,7 +236,7 @@ func (c *canvas) frame(g PlacedGroup, gl glyphSet) {
 // captions names a fan_out's lanes above their columns. A lane is a thing the
 // workflow language names and may guard — a child task of its own — so its id
 // and its `if` belong on screen rather than only in the inspector.
-func (c *canvas) captions(g Group, s Scene) {
+func (c *canvas) captions(g Group, s Scene, run Overlay) {
 	if g.Kind != GroupFanOut {
 		return
 	}
@@ -251,8 +256,26 @@ func (c *canvas) captions(g Group, s Scene) {
 		if len(col.Badges) > 0 {
 			text += " " + strings.Join(col.Badges, " ")
 		}
+		// A lane's run state lands here rather than on its inline steps: they
+		// run in a child task, so the parent holds no step_run for them
+		// (task 051 decision 1).
+		if rs, ok := run.Lanes[col.Key]; ok {
+			text = laneCaption(text, rs)
+		}
 		c.text(first.X, frame.Y+1, truncate(text, first.W), styleFrame)
 	}
+}
+
+// laneCaption appends a lane's child task and its state to the caption that
+// already carries the lane id and its guard.
+func laneCaption(text string, rs RunState) string {
+	if rs.ChildTaskID > 0 {
+		text += " #" + strconv.FormatInt(rs.ChildTaskID, 10)
+	}
+	if rs.State != "" {
+		text += " " + rs.State
+	}
+	return text
 }
 
 func placedGroup(s Scene, id string) (PlacedGroup, bool) {
@@ -416,7 +439,7 @@ func (c *canvas) free(x, y, width int) bool {
 	return true
 }
 
-func (c *canvas) node(p PlacedNode, n Node, selected bool, gl glyphSet) {
+func (c *canvas) node(p PlacedNode, n Node, selected bool, rs RunState, gl glyphSet) {
 	tl, tr, bl, br := gl.nodeTopLeft, gl.nodeTopRight, gl.nodeBottomLeft, gl.nodeBottomRight
 	h, v := gl.nodeH, gl.nodeV
 	style := styleNode
@@ -448,8 +471,42 @@ func (c *canvas) node(p PlacedNode, n Node, selected bool, gl glyphSet) {
 	if inner < 1 {
 		return
 	}
-	c.text(p.X+2, p.Y+1, truncate(n.Label, inner), style)
+	c.text(p.X+2, p.Y+1, labelLine(n, rs, inner), style)
 	c.text(p.X+2, p.Y+2, kindLine(n, inner), style)
+}
+
+// labelLine is a node's first row: its marker and label on the left, its run
+// state pushed to the right. Without an overlay it is the label alone, which
+// is what the workflows screen has always drawn.
+//
+// When both cannot fit, the *state* wins and the label truncates — the
+// opposite of kindLine's trade, and for the opposite reason: a truncated
+// label is recoverable by selecting the node, while a state that fell off the
+// row is the one thing this surface exists to say.
+func labelLine(n Node, rs RunState, width int) string {
+	glyph := stateGlyph(rs)
+	label := n.Label
+	if glyph != "" {
+		label = glyph + " " + label
+	}
+	// The qualifiers give way before the state does, and the state gives way
+	// before the marker glyph does: `try 3` is recoverable from the
+	// inspector, and a node showing nothing but its state has stopped being
+	// a node a reader can find again.
+	words := stateWords(rs)
+	for len(words) > 1 && ansi.StringWidth(strings.Join(words, " ")) > width-4 {
+		words = words[:len(words)-1]
+	}
+	joined := strings.Join(words, " ")
+	if joined == "" {
+		return truncate(label, width)
+	}
+	ww := ansi.StringWidth(joined)
+	if ww >= width-2 {
+		return truncate(glyph+" "+joined, width)
+	}
+	label = truncate(label, width-ww-1)
+	return label + strings.Repeat(" ", width-ansi.StringWidth(label)-ww) + joined
 }
 
 // kindLine is a node's second row: its type on the left, its badges pushed to

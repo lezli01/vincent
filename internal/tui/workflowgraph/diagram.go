@@ -55,6 +55,14 @@ const (
 	GroupParallel GroupKind = "parallel"
 	GroupFanOut   GroupKind = "fan_out"
 	GroupLoop     GroupKind = "loop"
+	// GroupOffGraph frames the attempts a task ran that its snapshot does not
+	// declare — a follow-up round's step, which `internal/api/actions.go`
+	// calls one that "is not part of the snapshot", and a repair's rewrite
+	// (task 051 decision 3). It hangs below the single END node, which task
+	// 017 decision 16 reserved as the runtime overlay's anchor for *reached*:
+	// these attempts are neither dropped nor smuggled into the topology as if
+	// the workflow had declared them.
+	GroupOffGraph GroupKind = "off-graph"
 )
 
 // EdgeKind is why an edge exists, which is what decides how it is drawn and
@@ -81,13 +89,32 @@ const (
 	syntheticPrefix = "#"
 	// EndNodeID is the id of the single terminal node.
 	EndNodeID = "#end"
+	// offGroupID frames the runs no node answers for (decision 3).
+	offGroupID = syntheticPrefix + "group:off"
 )
 
 func mergeNodeID(stepID string) string { return syntheticPrefix + "merge:" + stepID }
 func refNodeID(stepID, lane string) string {
 	return syntheticPrefix + "ref:" + stepID + ":" + lane
 }
-func groupID(stepID string) string { return syntheticPrefix + "group:" + stepID }
+func groupID(stepID string) string   { return syntheticPrefix + "group:" + stepID }
+func offNodeID(stepID string) string { return syntheticPrefix + "off:" + stepID }
+
+// LaneKey names one fan_out lane across the whole diagram: a lane id alone is
+// unique only within its own step, the same way a lane's step ids are
+// (task 014 decision 4). It is the key a runtime overlay hangs a lane's child
+// task off (task 051 decision 1).
+func LaneKey(fanOutNodeID, laneID string) string { return fanOutNodeID + "." + laneID }
+
+// lanePrefix namespaces a lane's inline step ids. Step-id uniqueness is *per
+// body*, so a top-level `build` and a lane's `build` are two different steps
+// — and were, until task 051, two nodes answering to one id, which made the
+// selection ambiguous and would have made a parent `step_run` paint both
+// (decision 2). Node.StepID keeps the raw id, which is what a join against
+// `step_run.step_id` still compares.
+func lanePrefix(fanOutNodeID, laneID string) string {
+	return LaneKey(fanOutNodeID, laneID) + "/"
+}
 
 // Synthetic reports whether an id names a structural artifact rather than an
 // authored step. A builder uses it to know what it may not edit.
@@ -154,7 +181,12 @@ type Group struct {
 // parallel member and a loop body leave them empty, because neither is a
 // thing the workflow language names.
 type Column struct {
-	ID     string
+	ID string
+	// Key is the lane's diagram-wide name — LaneKey(header, ID) — because a
+	// lane id is unique only inside its own fan_out. It is what a runtime
+	// overlay keys a lane's child task by; empty for the columns nothing
+	// names.
+	Key    string
 	Label  string
 	Badges []string
 	Nodes  []string
@@ -181,6 +213,58 @@ func Build(wf *apiclient.WorkflowBody) Diagram {
 	return b.d
 }
 
+// OffGraphRun is one attempt the task ran that the snapshot does not declare
+// (task 051 decision 3): a follow-up round's step, or a repair's rewrite.
+type OffGraphRun struct {
+	// StepID is the run's `step_id`, which is what names the node.
+	StepID string
+	// Label is what the box prints — the run's step name, else its id.
+	Label string
+	// Type is the run's `step_type`, printed as the node's kind so an
+	// off-snapshot command and an off-snapshot agent still read apart.
+	Type string
+}
+
+// AttachOffGraph hangs runs that no node in d answers for under the single
+// END node, as a frame of their own. It re-derives nothing else: the returned
+// diagram is d with nodes and one group added, so every authored node keeps
+// its identity and a re-layout keeps a selection (decision 3 of task 017).
+//
+// The frame is anchored on END rather than linked to it by an edge: these
+// attempts did not flow out of the workflow's last step, they happened after
+// the authored flow was over, and drawing a connector would claim otherwise.
+func AttachOffGraph(d Diagram, runs []OffGraphRun) Diagram {
+	if len(runs) == 0 {
+		return d
+	}
+	col := Column{}
+	nodes := make([]Node, 0, len(runs))
+	for _, r := range runs {
+		id := offNodeID(r.StepID)
+		label := r.Label
+		if label == "" {
+			label = r.StepID
+		}
+		kind := NodeKind(r.Type)
+		if kind == "" {
+			kind = KindAgent
+		}
+		nodes = append(nodes, Node{
+			ID: id, Kind: kind, Label: label, StepID: r.StepID,
+			Group:  offGroupID,
+			Detail: []DetailField{{Label: "id", Value: r.StepID}, {Label: "type", Value: r.Type}, {Label: "off-snapshot", Value: "ran outside the authored flow"}},
+		})
+		col.Nodes = append(col.Nodes, id)
+	}
+	out := d
+	out.Nodes = append(append([]Node{}, d.Nodes...), nodes...)
+	out.Groups = append(append([]Group{}, d.Groups...), Group{
+		ID: offGroupID, Kind: GroupOffGraph, Label: "off-snapshot",
+		Header: EndNodeID, Columns: []Column{col},
+	})
+	return out
+}
+
 // flow is the context a sequence is built in: where its guarded departures
 // go. There is no "next" here — succession inside a sequence is known from
 // the step list, and where the sequence *itself* goes is the caller's to
@@ -201,7 +285,14 @@ type flow struct {
 	brk string
 	// group is the enclosing group id.
 	group string
+	// prefix namespaces the node ids of the body being built. Only a fan_out
+	// lane sets one: a lane's inline steps are their own step-id namespace
+	// (§7.6), every other body shares its parent's (decision 2).
+	prefix string
 }
+
+// id is the node id an authored step gets in this body.
+func (f flow) id(stepID string) string { return f.prefix + stepID }
 
 type builder struct {
 	d Diagram
@@ -236,13 +327,13 @@ func (b *builder) sequence(steps []apiclient.WorkflowStepDef, f flow) (entry str
 		// name the step after the loop.
 		sf := f
 		if i+1 < len(steps) {
-			sf.next = steps[i+1].ID
+			sf.next = f.id(steps[i+1].ID)
 		}
 		stepExits := b.step(st, sf)
 		if i == 0 {
-			entry = st.ID
+			entry = f.id(st.ID)
 		} else {
-			b.linkAll(prev, st.ID, EdgeFlow)
+			b.linkAll(prev, f.id(st.ID), EdgeFlow)
 		}
 		prev = stepExits
 	}
@@ -264,12 +355,12 @@ func (b *builder) step(st apiclient.WorkflowStepDef, f flow) []string {
 		b.add(b.plainNode(st, f))
 		// False ends the sequence (§7.7). True is the exits, drawn by the
 		// caller, and labelled there.
-		b.link(st.ID, f.end, EdgeBranch, "false")
-		return []string{st.ID}
+		b.link(f.id(st.ID), f.end, EdgeBranch, "false")
+		return []string{f.id(st.ID)}
 	case KindBreak:
 		b.add(b.plainNode(st, f))
-		b.link(st.ID, f.brk, EdgeBranch, "true")
-		return []string{st.ID}
+		b.link(f.id(st.ID), f.brk, EdgeBranch, "true")
+		return []string{f.id(st.ID)}
 	case KindInclude:
 		// One collapsed node labelled with the workflow it splices in. The
 		// graph draws the file as authored, and as authored this *is* one
@@ -278,29 +369,32 @@ func (b *builder) step(st apiclient.WorkflowStepDef, f flow) []string {
 		n := b.plainNode(st, f)
 		n.Kind, n.Label = KindWorkflowRef, st.Workflow
 		b.add(n)
-		return []string{st.ID}
+		return []string{f.id(st.ID)}
 	default:
 		b.add(b.plainNode(st, f))
-		return []string{st.ID}
+		return []string{f.id(st.ID)}
 	}
 }
 
 func (b *builder) parallel(st apiclient.WorkflowStepDef, f flow) []string {
 	b.add(b.plainNode(st, f))
+	header := f.id(st.ID)
 	g := Group{
-		ID:     groupID(st.ID),
+		ID:     groupID(header),
 		Kind:   GroupParallel,
 		Label:  st.DisplayName(),
-		Header: st.ID,
+		Header: header,
 		Parent: f.group,
 	}
-	inner := flow{next: f.next, end: f.end, brk: f.brk, group: g.ID}
+	// A parallel group's members share their parent's step-id namespace, so
+	// the prefix carries straight through.
+	inner := flow{next: f.next, end: f.end, brk: f.brk, group: g.ID, prefix: f.prefix}
 	var exits []string
 	for _, member := range st.Steps {
 		memberExits := b.step(member, inner)
-		b.link(st.ID, member.ID, EdgeFlow, "")
+		b.link(header, inner.id(member.ID), EdgeFlow, "")
 		exits = append(exits, memberExits...)
-		g.Columns = append(g.Columns, Column{Nodes: []string{member.ID}})
+		g.Columns = append(g.Columns, Column{Nodes: []string{inner.id(member.ID)}})
 	}
 	b.d.Groups = append(b.d.Groups, g)
 	// A parallel group's join is the members finishing, not an operation, so
@@ -311,26 +405,35 @@ func (b *builder) parallel(st apiclient.WorkflowStepDef, f flow) []string {
 
 func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 	b.add(b.plainNode(st, f))
-	merge := mergeNodeID(st.ID)
+	header := f.id(st.ID)
+	merge := mergeNodeID(header)
 	g := Group{
-		ID:     groupID(st.ID),
+		ID:     groupID(header),
 		Kind:   GroupFanOut,
 		Label:  st.DisplayName(),
-		Header: st.ID,
+		Header: header,
 		Parent: f.group,
 	}
-	inner := flow{next: merge, end: merge, brk: "", group: g.ID}
 	for _, lane := range st.Lanes {
-		col := Column{ID: lane.ID, Label: lane.ID, Detail: laneDetail(lane)}
+		col := Column{
+			ID: lane.ID, Key: LaneKey(header, lane.ID),
+			Label: lane.ID, Detail: laneDetail(lane),
+		}
 		if lane.If != "" {
 			col.Badges = append(col.Badges, "if")
+		}
+		// Each lane is its own step-id namespace (§7.6, task 014 decision 4),
+		// so each gets its own node-id namespace.
+		inner := flow{
+			next: merge, end: merge, brk: "", group: g.ID,
+			prefix: lanePrefix(header, lane.ID),
 		}
 		var entry string
 		var exits []string
 		if lane.Workflow != "" {
 			// A named lane is one collapsed node. Its body is another
 			// workflow's, resolved at task creation, and 017 does not open it.
-			id := refNodeID(st.ID, lane.ID)
+			id := refNodeID(header, lane.ID)
 			b.add(Node{
 				ID: id, Kind: KindWorkflowRef, Label: lane.Workflow,
 				Group: g.ID, Detail: laneDetail(lane),
@@ -340,10 +443,10 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 		} else {
 			entry, exits = b.sequence(lane.Steps, inner)
 			for _, s := range lane.Steps {
-				col.Nodes = append(col.Nodes, s.ID)
+				col.Nodes = append(col.Nodes, inner.id(s.ID))
 			}
 		}
-		b.link(st.ID, entry, EdgeFlow, "")
+		b.link(header, entry, EdgeFlow, "")
 		b.linkAll(exits, merge, EdgeFlow)
 		g.Columns = append(g.Columns, col)
 	}
@@ -359,11 +462,12 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 
 func (b *builder) loop(st apiclient.WorkflowStepDef, f flow) []string {
 	b.add(b.plainNode(st, f))
+	header := f.id(st.ID)
 	g := Group{
-		ID:     groupID(st.ID),
+		ID:     groupID(header),
 		Kind:   GroupLoop,
 		Label:  st.DisplayName(),
-		Header: st.ID,
+		Header: header,
 		Parent: f.group,
 	}
 	// Inside the body, a false `condition` ends the iteration, which is what
@@ -371,23 +475,23 @@ func (b *builder) loop(st apiclient.WorkflowStepDef, f flow) []string {
 	// body's own end routes. A `break` leaves the loop entirely: it goes
 	// where the loop itself goes, never back to the header, which would draw
 	// the one thing a break means not to happen.
-	inner := flow{next: st.ID, end: st.ID, brk: f.next, group: g.ID}
+	inner := flow{next: header, end: header, brk: f.next, group: g.ID, prefix: f.prefix}
 	entry, exits := b.sequence(st.Steps, inner)
-	b.link(st.ID, entry, EdgeFlow, "")
-	b.linkAll(exits, st.ID, EdgeBack)
+	b.link(header, entry, EdgeFlow, "")
+	b.linkAll(exits, header, EdgeBack)
 	col := Column{}
 	for _, s := range st.Steps {
-		col.Nodes = append(col.Nodes, s.ID)
+		col.Nodes = append(col.Nodes, inner.id(s.ID))
 	}
 	g.Columns = []Column{col}
 	b.d.Groups = append(b.d.Groups, g)
 	// The loop exits where it decides not to iterate again: at the header.
-	return []string{st.ID}
+	return []string{header}
 }
 
 func (b *builder) plainNode(st apiclient.WorkflowStepDef, f flow) Node {
 	return Node{
-		ID:     st.ID,
+		ID:     f.id(st.ID),
 		Kind:   NodeKind(st.Type),
 		Label:  st.DisplayName(),
 		StepID: st.ID,

@@ -3864,6 +3864,17 @@ POST   /v1/tasks/{id}/archive          { force? } or ?force        (done/aborted
                                         run, and never affects the status code: an archive is
                                         never failed by a branch problem (§10, task 008)
 
+GET    /v1/tasks/{id}/workflow          this task's own workflow snapshot as a full definition
+                                        (task 051, 2026-08-29): { task_id, name, definition,
+                                        errors?, warnings?, error }. `definition` is the same
+                                        body GET /v1/workflows/definition serves, so one DTO
+                                        describes a registry entry and a snapshot alike — but
+                                        the registry envelope's `scope`, `file`, `platforms`
+                                        and `platform_supported` are absent, because a snapshot
+                                        has none of them and a task's provenance is its
+                                        `workflow_origin` instead. A snapshot that does not
+                                        parse is a 200 with findings and a null `definition`,
+                                        never a 4xx — the same rule the definition endpoint has
 GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         (task 015, 2026-08-18: each carries `skip_reason`
                                         — "condition" for a false `if:`, null for the human
@@ -4364,6 +4375,13 @@ stream for the live tail.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*
+   *Amended 2026-08-29 (task 051): a fifth tab, **Workflow**, draws this task's
+   own workflow snapshot as the control-flow graph of *Workflow graph* below,
+   with a per-node run-state overlay. It is appended after Diff, so `1`–`4`
+   keep the tabs they had and `5` selects it; `tab`/`shift+tab` and `[`/`]`
+   cycle through it. Inside that tab `tab` stays the workspace's tab cycle and
+   does **not** walk the graph's nodes in source order — the graph component's
+   own `tab` binding stands down there rather than shadowing the workspace's.*
    *Amended 2026-08-26 (task 036): the attempt line gains two
    fields.* The step's own **status message** (§5.4) renders last on the line,
    in its own style and behind a glyph, so it reads as a quotation from the step
@@ -4529,7 +4547,8 @@ stream for the live tail.
 
 The list above is also the screen contract. View 1 is the board-only home
 screen. `enter` on its selected row opens view 2, the full-screen task workspace;
-`esc` returns. The workspace's four tabs each take its whole body. Views 3–6 are
+`esc` returns. The workspace's five tabs each take its whole body (four until
+task 051, 2026-08-29, added the Workflow tab). Views 3–6 are
 full-screen takeovers reached from the command palette.
 
 **Guided takeovers (task 020, added 2026-08-20).** At a terminal size of at
@@ -4541,18 +4560,18 @@ filter, open picker or form, expansion, or graph. The split introduces no new
 daemon state and no capability that exists only at one size.
 
 ```
-┌─ Tasks ──────────────────────────────────────────────┐
-│  #12  api    add rate limiting   running   3/5  …    │
-│  #13  web    fix flaky test      ● gate    2/4  …    │
-│                                                       │
-└───────────────────────────────────────────────────────┘
+┌─ Tasks ────────────────────────────────────────────────────┐
+│  #12  api    add rate limiting   running   3/5  …          │
+│  #13  web    fix flaky test      ● gate    2/4  …          │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
  enter open · / filter                    : commands  ? help  q quit
 
-┌─ Task #12 ───────────────────────────────────────────┐
-│ Steps & Attempts │ Task Details │ Output │ Diff       │
-│  1 ✓ plan                                      1m2s   │
-│  2 ▸ implement                                 4m9s   │
-└───────────────────────────────────────────────────────┘
+┌─ Task #12 ─────────────────────────────────────────────────┐
+│ Steps & Attempts │ Task Details │ Output │ Diff │ Workflow │
+│  1 ✓ plan                                      1m2s        │
+│  2 ▸ implement                                 4m9s        │
+└────────────────────────────────────────────────────────────┘
  tab views · ↑/↓ attempts · esc board      : commands  ? help  q quit
 ```
 
@@ -4801,6 +4820,52 @@ exactly when someone is editing files in this view.
 
 An entry that does not parse has no graph, and `g` says so instead of opening a
 layer that would repeat the findings already on screen.
+
+**The task workspace's Workflow tab (task 051, added 2026-08-29).** The same
+pipeline draws a second surface: the fifth tab of view 2 (§15 above), showing
+the workflow **this task** ran with what each step did on it.
+
+What it draws is the task's own §5.3 **snapshot**, served by
+`GET /v1/tasks/{id}/workflow`, and never the registry entry of the same name.
+The snapshot is what ran — includes already spliced (§7.9), any `edit + retry`
+rewrite reflected (§6) — while the registry's copy is whatever the file says
+now. A spliced include therefore shows as the *N* flat steps it expanded into,
+each attributed by `resolved_from` in the inspector, where the workflows screen
+shows one collapsed node for the same file.
+
+Topology is unchanged by the overlay. A loop still draws once with a
+back-edge and a fan_out still draws its authored lanes: nothing unrolls, because
+re-laying out on every discovered iteration would move nodes under a reader
+watching a running task. Applying an overlay changes no coordinate and loses no
+selection.
+
+The overlay is words and glyphs first, colour second — the whole picture still
+reads with every style stripped:
+
+- **A node carries its newest attempt's state**, its iteration and its attempt
+  number when there is room, and nothing at all when the task never reached it.
+  A false `if:` guard (§7.7) reads `skipped if`; the human `skip` action (§6)
+  reads `skipped`; a node never reached is bare. Those are three different
+  things and they never render alike.
+- **A parked task says where it is parked.** `blocked`, `awaiting_input` or
+  `paused` lands on the step that owns it, with its §12.2 `block_reason`.
+- **A `fan_out` lane's state rides on its lane caption**, with the child task's
+  id — never on the lane's inline step nodes. Those steps run in the child
+  task, so the parent holds no `step_run` for them and cannot honestly paint
+  them. The lane rollup comes from `GET /v1/tasks?parent_id=`.
+- **An attempt no node answers for is drawn off-graph**, in a frame below the
+  single END node: a follow-up round runs a step that is not part of the
+  snapshot, and a repair rewrites one. They are neither dropped nor drawn as if
+  the workflow had declared them.
+
+Node ids inside a `fan_out` lane are namespaced by the lane (`<fanout>.<lane>/<step>`)
+because step-id uniqueness is per body (§7.6): a top-level `build` and a lane's
+`build` are two steps, and were two nodes answering to one id before this. The
+node keeps the raw step id as its `step_id`, which is what a `step_run` row is
+joined on.
+
+`e` and `R` are absent from this tab: a snapshot has no file to open and no
+registry entry to re-read.
 
 ### Discovery
 

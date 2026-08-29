@@ -15,9 +15,10 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// taskViewTab names the four full-screen task surfaces. Steps is deliberately
+// taskViewTab names the five full-screen task surfaces. Steps is deliberately
 // first: entering a task lands on the execution history people most often came
-// to inspect.
+// to inspect. Workflow is deliberately last (task 051): appending it leaves
+// 1-4 bound to the tabs task 049 built the muscle memory on.
 type taskViewTab int
 
 const (
@@ -25,6 +26,7 @@ const (
 	taskTabDetails
 	taskTabOutput
 	taskTabDiff
+	taskTabWorkflow
 	taskTabCount
 )
 
@@ -40,6 +42,11 @@ type taskView struct {
 	detail *detail
 	tab    taskViewTab
 	popup  bool
+	// workflow is the §15 workflow-graph tab (task 051). It is a sub-model
+	// rather than more fields here because it owns a viewport and a
+	// selection, and because the graph component is shared with the
+	// workflows screen.
+	workflow *workflowTab
 
 	connected bool
 	width     int
@@ -58,7 +65,7 @@ type taskView struct {
 }
 
 func newTaskView(detail *detail) *taskView {
-	return &taskView{detail: detail, connected: true}
+	return &taskView{detail: detail, connected: true, workflow: newWorkflowTab()}
 }
 
 func (t *taskView) title() string {
@@ -109,6 +116,8 @@ func (t *taskView) bindingContext() bindingContext {
 		return ctxOutput
 	case taskTabDiff:
 		return ctxDiff
+	case taskTabWorkflow:
+		return ctxTaskWorkflow
 	default:
 		return ctxTimeline
 	}
@@ -123,6 +132,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return t, t.detail.update(msg)
 	case selectTaskMsg:
 		t.tab = taskTabSteps
+		t.workflow = newWorkflowTab()
 		t.detailsTop = 0
 		t.detailsSection = ""
 		t.popup = false
@@ -147,6 +157,12 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return t, t.updateClick(msg)
 	case tea.MouseWheelMsg:
 		return t, t.updateWheel(msg)
+	case taskWorkflowMsg:
+		t.applyWorkflow(msg)
+		return t, nil
+	case taskLanesMsg:
+		t.applyLanes(msg)
+		return t, nil
 	}
 	cmd := t.detail.update(msg)
 	if t.popup && t.detail.form == nil && t.detail.repair == nil && t.detail.followUp == nil {
@@ -173,6 +189,8 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.setTab(taskTabOutput)
 	case "4":
 		return t.setTab(taskTabDiff)
+	case "5":
+		return t.setTab(taskTabWorkflow)
 	case "d":
 		if t.tab == taskTabDiff {
 			return t.setTab(taskTabOutput)
@@ -204,6 +222,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	if t.tab == taskTabDetails {
 		return t.updateDetailsKey(msg)
+	}
+	if t.tab == taskTabWorkflow {
+		return t.updateWorkflowKey(msg)
 	}
 	if t.tab == taskTabOutput {
 		switch msg.String() {
@@ -270,6 +291,9 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 	}
 	if tab == taskTabOutput || tab == taskTabSteps {
 		t.detail.tab = tabOutput
+	}
+	if tab == taskTabWorkflow {
+		return t.openWorkflowTab()
 	}
 	return nil
 }
@@ -346,6 +370,10 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		}
 	case taskTabDiff:
 		t.detail.diff.clickRow(msg.Y - t.bodyY)
+	case taskTabWorkflow:
+		if t.workflow != nil {
+			t.workflow.graph.ClickAt(msg.X-1, msg.Y-t.bodyY)
+		}
 	}
 	return nil
 }
@@ -373,6 +401,10 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		t.detail.syncFollowToViewport()
 	case taskTabDiff:
 		t.detail.diff.scroll(delta)
+	case taskTabWorkflow:
+		if t.workflow != nil {
+			t.workflow.graph.Scroll(delta)
+		}
 	}
 	return nil
 }
@@ -411,7 +443,7 @@ func (t *taskView) render(width, height int) string {
 }
 
 func (t *taskView) renderTabs() string {
-	names := []string{"Steps & Attempts", "Task Details", "Output", "Diff"}
+	names := []string{"Steps & Attempts", "Task Details", "Output", "Diff", "Workflow"}
 	t.tabHits = t.tabHits[:0]
 	var b strings.Builder
 	b.WriteString("  ")
@@ -426,7 +458,7 @@ func (t *taskView) renderTabs() string {
 		b.WriteString(tabLabel(name, t.tab == tab))
 		x += len(name)
 	}
-	b.WriteString(styleDim.Render("   tab/⇧tab or 1–4"))
+	b.WriteString(styleDim.Render("   tab/⇧tab or 1–5"))
 	return b.String()
 }
 
@@ -442,6 +474,8 @@ func (t *taskView) renderTabBody(width, height int) string {
 		t.detail.focus = focusOutput
 		t.detail.tab = tabDiff
 		return t.detail.diff.render(width, height)
+	case taskTabWorkflow:
+		return t.renderWorkflow(width, height)
 	default:
 		t.detail.focus = focusTimeline
 		t.detail.width = width

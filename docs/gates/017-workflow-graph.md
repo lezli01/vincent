@@ -208,6 +208,30 @@ These cannot be asserted from a test, which is why the gate exists.
 | 6 | Set your terminal to a monochrome profile, or `NO_COLOR=1` | Every distinction above is still readable: frame weights, type words, `true`/`false`, the selected node's heavier border |
 | 7 | Click a node; scroll the wheel | The click selects it; the wheel scrolls the canvas |
 
+## The runtime leg (task 051, added 2026-08-29)
+
+The Workflow tab of the task workspace draws the same picture for a task that
+is *running*, so what is judged is the same thing: whether it reads correctly.
+There is no script here for 017 decision 21's reason.
+
+Create a task on each of the corpus workflows and open the task with `enter`,
+then `5`.
+
+| # | Do | Expect |
+|---|---|---|
+| 1 | Open `5` on a `queued` task | Every node bare — no state, no marker. A queued task has run nothing |
+| 2 | Watch a task on `sequence.yaml` run to the end | The marker advances one node at a time; finished nodes read `succeeded`; nothing below the cursor is painted |
+| 3 | Run `guarded.yaml` with the guard false, then skip a step by hand | `skipped if` on the guarded one, a bare `skipped` on the one you skipped. They must not read alike |
+| 4 | Park a task on a gate, then block one on a failed check | `awaiting_input` and `blocked` land on the step that owns them, with the block reason |
+| 5 | Watch `loop.yaml` run three iterations | The loop still draws **once**, with its back-edge. The iteration badge advances. No node moves |
+| 6 | Watch `spread.yaml` fan out | Each lane caption carries its child task's `#id` and state; the lane's inline step boxes stay bare |
+| 7 | Select a node, then let a step finish | The selection is still on the same node, at the same place on screen |
+| 8 | `F` a follow-up round on a finished task, then reopen `5` | The follow-up's step appears in a frame below `END`, not inside the flow |
+| 9 | Press `tab` on the Workflow tab | The workspace moves to the next tab. The graph selection does **not** move |
+| 10 | Press `?` on the Workflow tab | The help lists this tab's keys — no `e`, no `R` |
+| 11 | `NO_COLOR=1`, then repeat 2–6 | Every state above is still readable as words and glyphs |
+| 12 | Narrow the terminal below ~26 columns | The tab says so rather than drawing a flattened shape |
+
 ## Runs
 
 | Date | Version | Platform | By | Result |

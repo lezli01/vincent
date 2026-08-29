@@ -38,10 +38,10 @@ The home screen is the task board and nothing else:
 ![The board filtered to one running task](../assets/tui-board.png)
 
 `enter` opens the selected task in a separate full-screen workspace. That
-workspace has four full-view tabs — **Steps & Attempts**, **Task Details**,
-**Output**, and **Diff** — so the surface being read gets the whole terminal.
-`tab` advances through them, `shift+tab` goes back, and `1`–`4` jump directly.
-`esc` returns to the board.
+workspace has five full-view tabs — **Steps & Attempts**, **Task Details**,
+**Output**, **Diff**, and **Workflow** — so the surface being read gets the
+whole terminal. `tab` advances through them, `shift+tab` goes back, and `1`–`5`
+jump directly. `esc` returns to the board.
 
 New task, projects, workflows, and daemon are full-screen takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
@@ -206,7 +206,10 @@ the inspector never edits anything.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-**Diff** gives the task's file-grouped git diff the entire view.
+**Diff** gives the task's file-grouped git diff the entire view. **Workflow**
+draws the workflow this task ran as a control-flow graph with its run state on
+it; it is documented beside the workflows screen's graph, under *Workflows*
+below.
 
 The header names the task's workflow and, in brackets, where that definition
 came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
@@ -245,7 +248,7 @@ output. It is the sentence that decides whether to open the transcript.
 |---|---|
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
-| `1`–`4` | Steps & Attempts / Task Details / Output / Diff |
+| `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
 | `enter` | From Steps & Attempts, open the selected attempt in Output |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
@@ -299,7 +302,7 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
-| `[` | Back to the Output tab (`]` advances to Steps & Attempts) |
+| `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
 leaves it open. The mouse wheel scrolls whichever tab is on screen.
@@ -609,6 +612,49 @@ graph bigger than the terminal is panned, never reflowed.
 
 A workflow that does not parse has no graph — `g` says so, and the errors are
 already under `enter`.
+
+#### The same picture for a running task — the Workflow tab
+
+The workflows screen shows what a workflow *is*. The task workspace's fifth
+tab — `5`, or `tab` round to it — shows what one task is *doing* with it.
+
+A list of steps can name a `fan_out`; it cannot show that two lanes are running
+side by side, which branch of a `condition` was taken, or that a task is on the
+second pass of a loop. That is the gap this tab closes, and it bites hardest on
+a task that has been parked for hours: the board says it is `blocked`, and this
+says *where*.
+
+It draws **this task's own workflow**, not the registry's copy — includes
+already spliced flat, and any `edit + retry` rewrite reflected. If someone edits
+the workflow file while the task runs, this tab keeps showing what actually ran.
+
+The overlay reads with color off, like the rest of the picture:
+
+| You see | It means |
+|---|---|
+| `▶ running` | The step is running now |
+| `✔ succeeded`, `✖ failed` | How its newest attempt ended |
+| `⊘ skipped if` | A false `if:` guard skipped it |
+| `⊘ skipped` | You skipped it by hand |
+| Nothing on the node | The task never reached that step |
+| `blocked`, `awaiting_input`, `paused` | Where the task is parked, with the reason |
+| `it 2`, `try 3` | Which loop pass, and which attempt |
+| `api #42 running` on a lane caption | That fan-out lane's child task and its state |
+| A frame below `END` | Attempts that ran outside the workflow — a follow-up round, a repair |
+
+A loop still draws **once**, with its back-edge: nothing unrolls as it runs, so
+the picture never moves under you while you are reading it.
+
+| Key | Does |
+|---|---|
+| `↑` `↓` `←` `→` or `hjkl` | Move the selection — the view follows it |
+| `shift` + arrows | Pan the canvas |
+| `pgup` `pgdn` | Page it |
+| `esc` | Back to the board |
+
+`tab` here is the workspace's tab cycle, not the graph's node walk — the arrows
+select nodes. There is no `e` or `R`: a snapshot has no file to open and no
+registry entry to re-read.
 
 ### Daemon
 

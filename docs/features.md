@@ -163,13 +163,14 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
 - A filterable, grouped task board shows state, current step, elapsed time,
   reported cost, and — on a wide terminal — the step's own status message.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
-  Output, and Diff tabs; each tab uses the whole view.
+  Output, Diff, and Workflow tabs; each tab uses the whole view.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
   details on wider terminals and fall back to compact layouts when needed.
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
-  conditions, loops, guards, checks, and nested includes.
+  conditions, loops, guards, checks, and nested includes — and, on a task's own
+  Workflow tab, what each step of that task did on it, live.
 
 The screenshots in the main [README](../README.md#tui-tour) are real renders
 using representative workloads. [Using the TUI](guides/tui.md) documents every

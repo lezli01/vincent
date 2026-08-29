@@ -30,14 +30,14 @@ func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
 	}
 }
 
-func TestTaskWorkspaceDefaultsToStepsAndCyclesFourFullViewTabs(t *testing.T) {
+func TestTaskWorkspaceDefaultsToStepsAndCyclesEveryFullViewTab(t *testing.T) {
 	d := taskDetailFixture(t)
 	v := newTaskView(d)
 
 	if v.tab != taskTabSteps {
 		t.Fatalf("initial tab = %v, want Steps & Attempts", v.tab)
 	}
-	want := []taskViewTab{taskTabDetails, taskTabOutput, taskTabDiff, taskTabSteps}
+	want := []taskViewTab{taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabSteps}
 	for _, tab := range want {
 		v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
 		if v.tab != tab {
