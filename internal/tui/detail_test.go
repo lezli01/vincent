@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -45,6 +46,47 @@ func loadDetail(d *detail, steps []apiclient.StepRun) {
 			Steps: steps,
 		},
 	})
+}
+
+func TestDetailHeaderWrapsLongIdentityFields(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 78
+	d.width = 48
+	d.applyLoaded(detailLoadedMsg{
+		id: d.taskID,
+		task: apiclient.TaskDetail{
+			Task: apiclient.Task{
+				ID: d.taskID, State: "done", ProjectName: "vincent",
+				Title:       "#90 Notify hook: the daemon has no way to signal a human outside the TUI",
+				CurrentStep: 24, StepTotal: 24,
+				BranchName: "vincent/78-90-notify-hook-the-daemon-has-no-way-to",
+				Workflow:   "github-resolver",
+				WorkflowOrigin: &apiclient.WorkflowOrigin{
+					Scope: "project", File: ".vincent/workflows/github-resolver.yaml",
+				},
+			},
+			Steps: []apiclient.StepRun{attempt(1006, 23, 1, "Confirm the merge", "succeeded", false)},
+		},
+	})
+
+	got := d.timelinePanel(24)
+	for i, line := range strings.Split(got, "\n") {
+		if width := ansi.StringWidth(line); width > d.width {
+			t.Errorf("timeline line %d is %d cells wide, want <= %d: %q", i, width, d.width, line)
+		}
+	}
+	plain := ansi.Strip(got)
+	for _, want := range []string{
+		"outside the TUI", "branch", "vincent/78-90", "as-no-way-to",
+		"workflow", ".vincent/workflows/github-resolver.y", "aml)", "Confirm the merge",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("wrapped task header is missing %q:\n%s", want, got)
+		}
+	}
+	if d.timelineTop < 6 {
+		t.Errorf("task header used only %d rows; want a wrapped identity block", d.timelineTop)
+	}
 }
 
 // TestDetailTimelineRendersAttempts covers what §15 asks a timeline to show,

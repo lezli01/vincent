@@ -44,10 +44,17 @@ func (d *detail) timelinePanel(height int) string {
 			// The collapsed band has no header above it to indent under.
 			return d.attemptLine(run, false)
 		}
-		return d.headerLine()
+		return d.headerLines()[0]
 	}
-	lines := []string{d.headerLine()}
-	if line := d.errorLine(); line != "" && len(lines) < height-1 {
+	header := d.headerLines()
+	// Even a very short task view keeps one physical row for the timeline.
+	// The richer header yields its least important lower rows first.
+	header = header[:min(len(header), max(height-1, 1))]
+	lines := append([]string(nil), header...)
+	for _, line := range d.errorLines() {
+		if len(lines) >= height-1 {
+			break
+		}
 		lines = append(lines, line)
 	}
 	// A quiet row separates the task summary from the execution history when
@@ -215,12 +222,54 @@ func (d *detail) headerLine() string {
 		return styleDim.Render(" loading task…")
 	}
 	t := d.task
-	parts := []string{
-		styleTitle.Render(fmt.Sprintf(" #%d %s", t.ID, t.Title)),
-		renderDetailState(t.Task),
+	parts := []string{styleTitle.Render(fmt.Sprintf(" #%d %s", t.ID, t.Title))}
+	parts = append(parts, d.headerOverviewParts()...)
+	if t.BranchName != "" {
+		parts = append(parts, styleDim.Render(t.BranchName))
 	}
+	if t.Workflow != "" {
+		parts = append(parts, styleDim.Render(t.Workflow+" ("+t.WorkflowOrigin.Source()+")"))
+	}
+	return strings.Join(parts, styleDim.Render(" · "))
+}
+
+// headerLines turns the task's one-line identity into a small readable block:
+// title first, scan-friendly state next, and the two potentially long
+// provenance values on labeled rows of their own. Task 78 has both a long
+// title and branch, and is the case that exposed the old overflow.
+func (d *detail) headerLines() []string {
+	if !d.loaded || d.width <= 0 {
+		return []string{d.headerLine()}
+	}
+	t := d.task
+	lines := wrappedHeaderValue(
+		fmt.Sprintf(" #%d ", t.ID),
+		valueOr(t.Title, "untitled task"), d.width, styleTitle,
+	)
+
+	overview := d.headerOverviewParts()
+	if len(overview) > 0 {
+		lines = append(lines, wrapHeaderOverview(overview, d.width)...)
+	}
+	if t.BranchName != "" {
+		lines = append(lines, wrappedHeaderValue(
+			"  branch  ", t.BranchName, d.width, styleDim,
+		)...)
+	}
+	if t.Workflow != "" {
+		workflow := t.Workflow + " (" + t.WorkflowOrigin.Source() + ")"
+		lines = append(lines, wrappedHeaderValue(
+			"  workflow  ", workflow, d.width, styleDim,
+		)...)
+	}
+	return lines
+}
+
+func (d *detail) headerOverviewParts() []string {
+	t := d.task
+	parts := []string{renderDetailState(t.Task)}
 	if k, n, ok := t.StepDisplay(); ok {
-		parts = append(parts, fmt.Sprintf("%d/%d", k, n))
+		parts = append(parts, styleDim.Render("step")+" "+fmt.Sprintf("%d/%d", k, n))
 	}
 	if loop := t.Loop.Display(); loop != "" {
 		parts = append(parts, loop)
@@ -228,19 +277,45 @@ func (d *detail) headerLine() string {
 	if t.ProjectName != "" {
 		parts = append(parts, styleDim.Render(t.ProjectName))
 	}
-	if t.BranchName != "" {
-		parts = append(parts, styleDim.Render(t.BranchName))
+	parts = append(parts, styleDim.Render("cost")+" "+formatCost(t.CostUSD))
+	return parts
+}
+
+func wrapHeaderOverview(fields []string, width int) []string {
+	if len(fields) == 0 {
+		return nil
 	}
-	// The workflow and where its definition came from (task 043). A name on
-	// its own cannot tell a project `adhoc.yaml` from the built-in it shadows,
-	// which is the whole point of recording an origin. The digest is left to
-	// `vincent task show` and the API: this line is a glance, and half a hash
-	// compares against nothing anyway.
-	if t.Workflow != "" {
-		parts = append(parts, styleDim.Render(t.Workflow+" ("+t.WorkflowOrigin.Source()+")"))
+	const indent = "  "
+	separator := styleDim.Render(" · ")
+	line := indent + fields[0]
+	lines := make([]string, 0, 2)
+	for _, field := range fields[1:] {
+		candidate := line + separator + field
+		if ansi.StringWidth(candidate) <= width {
+			line = candidate
+			continue
+		}
+		lines = append(lines, ansi.Truncate(line, width, "…"))
+		line = indent + field
 	}
-	parts = append(parts, formatCost(t.CostUSD))
-	return strings.Join(parts, styleDim.Render(" · "))
+	return append(lines, ansi.Truncate(line, width, "…"))
+}
+
+func wrappedHeaderValue(prefix, value string, width int, style lipgloss.Style) []string {
+	prefixWidth := ansi.StringWidth(prefix)
+	wrapped := wrapTaskDetailText(value, max(width-prefixWidth, 1))
+	if len(wrapped) == 0 {
+		wrapped = []string{""}
+	}
+	lines := make([]string, len(wrapped))
+	for i, line := range wrapped {
+		linePrefix := prefix
+		if i > 0 {
+			linePrefix = strings.Repeat(" ", prefixWidth)
+		}
+		lines[i] = ansi.Truncate(style.Render(linePrefix+line), width, "…")
+	}
+	return lines
 }
 
 // errorLine surfaces a stale view without tearing it down: a failed refresh
@@ -254,6 +329,23 @@ func (d *detail) errorLine() string {
 	default:
 		return ""
 	}
+}
+
+func (d *detail) errorLines() []string {
+	line := d.errorLine()
+	if line == "" {
+		return nil
+	}
+	if d.width <= 0 || ansi.StringWidth(line) <= d.width {
+		return []string{line}
+	}
+	plain := ansi.Strip(line)
+	wrapped := wrapTaskDetailText(plain, d.width)
+	lines := make([]string, len(wrapped))
+	for i, part := range wrapped {
+		lines[i] = styleBad.Render(part)
+	}
+	return lines
 }
 
 // renderTimeline draws every attempt grouped under its step, windowed around
