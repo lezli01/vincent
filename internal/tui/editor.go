@@ -285,3 +285,33 @@ func (d *detail) openTranscript() tea.Cmd {
 		return transcriptOpenedMsg{err: err}
 	})
 }
+
+// editCreatePRBody opens the compare-URL editor's focused row in $EDITOR
+// (task 052.6). Same argument as the two above: a pull-request body is prose
+// of a length nobody chose, and the popup's field is three lines. It opens
+// nothing — what the editor leaves goes back into the form, and the human
+// still has to press ctrl+s.
+func (d *detail) editCreatePRBody(text string) tea.Cmd {
+	path, err := writeEditorFile(fmt.Sprintf("task%d-pr", d.taskID), ".md", text)
+	if err != nil {
+		return func() tea.Msg { return createPREditMsg{taskID: d.taskID, err: err} }
+	}
+	argv := append(editorCommand(), path)
+	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the editor is the user's own choice
+	taskID := d.taskID
+	return d.exec(cmd, func(runErr error) tea.Msg {
+		defer func() { _ = os.Remove(path) }()
+		msg := createPREditMsg{taskID: taskID}
+		if runErr != nil {
+			msg.err = runErr
+			return msg
+		}
+		edited, readErr := os.ReadFile(path) //nolint:gosec // path is this process's temp file
+		if readErr != nil {
+			msg.err = readErr
+			return msg
+		}
+		msg.text = string(edited)
+		return msg
+	})
+}

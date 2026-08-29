@@ -4598,6 +4598,16 @@ stream for the live tail.
 	   fields, project, workflow and recorded origin, branch/worktree, state,
    priority, usage/cost, lifecycle timestamps, holds/blocks, pending input,
    fan-out/loop state, captured issue, available actions and workflow snapshot.
+	   *Amended 2026-08-29 (task 052.6): a **GitHub pull request** section follows
+	   the captured issue, from `GET /v1/tasks/{id}/github/pull` — a linked pull
+	   request with its live state, the named reason when the integration is
+	   unusable, or the compare-URL offer when nothing is linked. It carries two
+	   keys, and the narrowing is to this section rather than to the tab: `o`
+	   opens the linked pull request in a browser and `P` opens the compare-URL
+	   editor. Both only reach a browser; neither writes anything in vincent,
+	   which is the sense in which "read-only inspector" was written. Link and
+	   unlink — the two actions that do write vincent's own column — live only in
+	   view 7.*
 	   **Output** renders the selected attempt's live or historical transcript and
 	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
 	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
@@ -4773,13 +4783,61 @@ stream for the live tail.
    show while disconnected. See *Disconnected* below for what the rest of the UI
    does in that state.
 
+7. **Pull requests.** *Added 2026-08-29 (task 052.6).* Every available project's
+   **open** pull requests, grouped by project, from
+   `GET /v1/projects/{id}/github/pulls` — one call per project, issued
+   concurrently on open. The screen answers the cross-project question, "what is
+   open across everything I run", which one project at a time cannot. Rows carry
+   the number, the folded status word (merged beats closed beats draft beats
+   open, §13.2), the title, the head branch and the task that claims the row with
+   its `link_source`. A project whose listing answers 409 renders as a failed
+   group carrying that reason's message and does not affect the others: each
+   group holds its own error.
+
+   **Availability.** The entry is a keyless nav row like Projects, Workflows and
+   Daemon, and it is present only when at least one registered project answers
+   `GET /v1/projects/{id}/github` with `available: true`. There is no stored
+   notion of a GitHub project — it is derived from `origin` plus a credential
+   probe, which is why §13.2 keeps it off the project DTO — so the TUI issues one
+   probe per project as the connection comes up, concurrently, and again on
+   reconnect, where the daemon's short cache absorbs the repeat cost. While every
+   answer is unavailable, **including while they are all still in flight**, the
+   row is withheld from the palette, the `?` overlay and the footer alike, and
+   the view is unreachable. This is the `fold` precedent (task 054) applied to a
+   nav row: a row whose screen would have nothing on it is withheld rather than
+   shown dead.
+
+   **Actions.** `o` opens the selected pull request in a browser. `enter` opens
+   the workspace of the task that claims it, and is inert on a row no task
+   claims — the link key is its own, and a key that means two unrelated things
+   depending on the row is worse than one that sometimes does nothing. A link key
+   opens a task picker **scoped to the row's own project**: `POST
+   /v1/tasks/{id}/github/pull` takes a bare number and the daemon resolves the
+   repository from the task's project, so offering a task from elsewhere would
+   link that project's repository to a number that means something else there. An
+   unlink key asks first, and the confirmation says the refusal is sticky and the
+   reconciler will not re-apply it — which is what `DELETE` does, and a UI that
+   said "clear" would be lying. `R` re-lists, `/` filters, `↑`/`↓` move.
+   The view subscribes to nothing of its own: the root broadcasts every event to
+   every view, so a `task.github_pull_changed` tick re-renders it with no
+   keypress.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
 screen. `enter` on its selected row opens view 2, the full-screen task workspace;
 `esc` returns. The workspace's five tabs each take its whole body (four until
-task 051, 2026-08-29, added the Workflow tab). Views 3–6 are
-full-screen takeovers reached from the command palette.
+task 051, 2026-08-29, added the Workflow tab). Views 3–7 are
+full-screen takeovers reached from the command palette (view 7 added
+2026-08-29 by task 052.6).
+
+**Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
+URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
+unixes, the shell's protocol handler on Windows — and to nothing else. Only
+`http` and `https` are opened. Unlike the clipboard fallback, which is silent
+by design because the terminal's own paste is the working path, this one
+**fails visibly**: a human pressed a key expecting a browser, and silence is
+indistinguishable from a browser that opened on another desktop.
 
 **Guided takeovers (task 020, added 2026-08-20).** At a terminal size of at
 least **128 columns by 24 rows**, New task, Projects and Workflows use a
@@ -5014,7 +5072,7 @@ cursor's is the entire turn concatenated. The text is kept when the attempt
 rendered no output at all — a codex turn with no `agent_message` — and always
 on an error, where it is the error and may be the only content there is.
 
-Views 3–6 stay full-screen because they are forms and lists, not observations: the
+Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are for
 small things — the palette, confirmations, and the answer form.

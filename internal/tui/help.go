@@ -28,7 +28,7 @@ func helpFooter(width int) string {
 // work *here*: the focused surface's own, the global ones, the task actions,
 // and the palette's navigation. Printing all eight surfaces' sections at
 // once meant reading past seven irrelevant ones (T3.8 finding).
-func helpText(ctx bindingContext) string {
+func helpText(ctx bindingContext, github bool) string {
 	var b strings.Builder
 	writeSection := func(title string, rows []binding) {
 		if len(rows) == 0 {
@@ -49,7 +49,7 @@ func helpText(ctx bindingContext) string {
 	}
 
 	var global, nav, actions []binding
-	for _, r := range bindings {
+	for _, r := range withoutGitHub(bindings, github) {
 		switch {
 		case r.nav:
 			nav = append(nav, r)
@@ -61,7 +61,7 @@ func helpText(ctx bindingContext) string {
 	}
 	// This surface first: it is the answer to "what can I do here".
 	if ctx != "" {
-		writeSection(string(ctx), bindingsFor(ctx))
+		writeSection(string(ctx), withoutGitHub(bindingsFor(ctx), github))
 	}
 	if isHomeContext(ctx) {
 		writeSection("task actions (on the selected task, offered only when valid)", actions)

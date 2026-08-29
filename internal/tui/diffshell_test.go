@@ -43,7 +43,7 @@ func TestDiffTabIsItsOwnSurface(t *testing.T) {
 			t.Errorf("the diff footer does not mention %q:\n%s", want, line)
 		}
 	}
-	if help := helpText(ctxDiff); !strings.Contains(help, "expand every file") ||
+	if help := helpText(ctxDiff, true); !strings.Contains(help, "expand every file") ||
 		!strings.Contains(help, "approve the gate") {
 		t.Errorf("? on the diff tab lost the tab's own keys or the task's actions:\n%s", help)
 	}

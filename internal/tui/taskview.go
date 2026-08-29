@@ -48,6 +48,16 @@ type taskView struct {
 	// workflows screen.
 	workflow *workflowTab
 
+	// pull is this task's pull-request row (task 052.6), refetched rather
+	// than snapshotted: draft, state and merged status are live by nature.
+	// createPR is the compare-URL editor, open only while a human has it up.
+	pull        apiclient.GitHubTaskPull
+	pullLoaded  bool
+	pullErr     string
+	pullNote    string
+	pullNoteBad bool
+	createPR    *createPRForm
+
 	connected bool
 	width     int
 	height    int
@@ -96,6 +106,9 @@ func (t *taskView) paste(text string) tea.Cmd {
 	if !t.popup {
 		return nil
 	}
+	if f := t.createPR; f != nil {
+		return f.paste(text)
+	}
 	if f := t.detail.followUp; f != nil {
 		return f.paste(text)
 	}
@@ -109,6 +122,9 @@ func (t *taskView) paste(text string) tea.Cmd {
 }
 
 func (t *taskView) bindingContext() bindingContext {
+	if t.createPR != nil {
+		return ctxCreatePR
+	}
 	switch t.tab {
 	case taskTabDetails:
 		return ctxTaskDetails
@@ -136,14 +152,17 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.detailsTop = 0
 		t.detailsSection = ""
 		t.popup = false
+		t.createPR = nil
+		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
+		t.pullNote, t.pullNoteBad = "", false
 		t.detail.active = true
-		return t, t.detail.open(msg.id, msg.state)
+		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
 		}
 		t.detail.active = true
-		return t, tea.Batch(t.detail.loadCmd(), t.detail.syncStream())
+		return t, tea.Batch(t.detail.loadCmd(), t.detail.syncStream(), t.pullCmd())
 	case viewDeactivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
@@ -163,9 +182,39 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case taskLanesMsg:
 		t.applyLanes(msg)
 		return t, nil
+	case taskPullMsg:
+		t.applyPull(msg)
+		return t, nil
+	case createPREditMsg:
+		if t.createPR != nil {
+			t.createPR.applyEdit(msg)
+		}
+		return t, nil
+	case openedURLMsg:
+		// Every view sees this; only the one a human is looking at should
+		// speak for it.
+		if !t.detail.active {
+			return t, nil
+		}
+		if msg.err != nil {
+			t.pullNote, t.pullNoteBad = openFailure(msg), true
+		} else {
+			t.pullNote, t.pullNoteBad = "", false
+		}
+		return t, nil
+	case noteMsg:
+		// A reconciler tick that linked or unlinked this task's pull request
+		// re-reads the section; the detail sub-model still sees the note.
+		cmd := t.detail.update(msg)
+		if ev, ok := msg.note.(apiclient.EventNote); ok &&
+			ev.Event.Type == eventTaskGitHubPullChanged {
+			return t, tea.Batch(cmd, t.pullCmd())
+		}
+		return t, cmd
 	}
 	cmd := t.detail.update(msg)
-	if t.popup && t.detail.form == nil && t.detail.repair == nil && t.detail.followUp == nil {
+	if t.popup && t.detail.form == nil && t.detail.repair == nil &&
+		t.detail.followUp == nil && t.createPR == nil {
 		t.popup = false
 	}
 	return t, cmd
@@ -249,6 +298,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (t *taskView) updatePopupKey(msg tea.KeyPressMsg) tea.Cmd {
+	if f := t.createPR; f != nil {
+		cmd, exit := f.update(msg)
+		if exit {
+			t.createPR, t.popup = nil, false
+		}
+		return cmd
+	}
 	if f := t.detail.followUp; f != nil {
 		cmd, exit := f.update(msg, t.detail.client)
 		if exit {
@@ -309,6 +365,12 @@ func (t *taskView) updateDetailsKey(msg tea.KeyPressMsg) tea.Cmd {
 		t.detailsTop -= page
 	case "pgdown":
 		t.detailsTop += page
+	case "o":
+		// The pull-request section's two keys (decision 2). Both only reach
+		// a browser, which is what keeps the tab a read-only inspector.
+		return t.openPullCmd()
+	case "P":
+		return t.openCreatePR()
 	case "home", "g":
 		t.selectDetailsSection(0)
 	case "end", "G":
@@ -427,7 +489,8 @@ func (t *taskView) render(width, height int) string {
 	body := t.renderTabBody(t.width, max(bodyH, 1))
 	lines = append(lines, body)
 	out := strings.Join(lines, "\n")
-	if t.popup && (t.detail.form != nil || t.detail.repair != nil || t.detail.followUp != nil) {
+	if t.popup && (t.detail.form != nil || t.detail.repair != nil ||
+		t.detail.followUp != nil || t.createPR != nil) {
 		// overlay clips to the background it is given. The root adds visual
 		// padding only after this render returns, so give the popup the full
 		// content height here or a short timeline would clip it away.
@@ -436,8 +499,12 @@ func (t *taskView) render(width, height int) string {
 			padded = append(padded, "")
 		}
 		out = strings.Join(padded, "\n")
-		host := shell{detail: t.detail, bodyW: t.width, bodyH: t.height}
-		out = host.overlayPopup(out)
+		if t.createPR != nil {
+			out = t.overlayCreatePR(out)
+		} else {
+			host := shell{detail: t.detail, bodyW: t.width, bodyH: t.height}
+			out = host.overlayPopup(out)
+		}
 	}
 	return out
 }
@@ -599,6 +666,7 @@ var taskDetailSectionOrder = []string{
 	"Warnings",
 	"Pending input",
 	"GitHub issue",
+	"GitHub pull request",
 	"Workflow snapshot",
 }
 
@@ -800,6 +868,7 @@ func (t *taskView) detailLines(width int) []string {
 		}
 		out = appendTaskDetailSection(out, "GitHub issue", issueLines)
 	}
+	out = appendTaskDetailSection(out, "GitHub pull request", t.pullSectionLines(width))
 
 	workflow := make([]string, 0, len(task.WorkflowSteps)*4)
 	if len(task.WorkflowSteps) == 0 {
@@ -1049,4 +1118,19 @@ func joinInt64(values []int64) string {
 		out[i] = strconv.FormatInt(value, 10)
 	}
 	return strings.Join(out, ", ")
+}
+
+// overlayCreatePR draws the compare-URL editor over the workspace, on the
+// same geometry the shell's popups use — the popup is the same kind of thing
+// and should not sit somewhere else on the screen.
+func (t *taskView) overlayCreatePR(bg string) string {
+	pw := min(t.width-6, 120)
+	if pw < 20 {
+		pw = t.width
+	}
+	inner := pw - 2
+	ph := min(t.createPR.height(inner)+2, max(t.height-4, 6))
+	popup := frame("Open a pull request — #"+strconv.FormatInt(t.detail.taskID, 10),
+		t.createPR.render(inner, ph-2), pw, ph, true)
+	return overlay(bg, popup, max((t.width-pw)/2, 0), max((t.height-ph)/3, 1))
 }

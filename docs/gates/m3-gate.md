@@ -64,7 +64,7 @@ gate unless they blocked Section A.
 
 | ID | §19 phrase | Look at |
 |---|---|---|
-| **S1** | "All six views" | All six §15 surfaces render, none blank or panicking: the home panels plus the four takeovers reached from the `:` palette; `?` lists the keys each surface actually has, straight from the registry. |
+| **S1** | "All six views" | The six §15 surfaces this seed has render, none blank or panicking: the home panels plus the four takeovers reached from the `:` palette; `?` lists the keys each surface actually has, straight from the registry. *(§15 gained a seventh view, Pull requests, in task 052.6 — its nav row is withheld unless a project's `origin` is a github.com repository vincent can authenticate to, and none of this seed's are, so four takeovers is what a walker should see here.)* |
 | **S2** | "live tail" | Covered by L7; additionally, a tail left open across a task's completion ends cleanly rather than hanging on "following". |
 | **S3** | "diff view" | `d` on a task with no commits yet, on a finished task, and on an archived one (worktree removed) — three different situations, three intelligible messages. On a task with a multi-file change (task 012): every file collapsed on arrival, `↑`/`↓` walking the list, `enter` folding one, `O`/`C` the lot, the summary line's totals matching the per-file counts. |
 | **S4** | "all actions" | `p` pause/resume a running task · `c` cancel (asks first) · `s` skip a step · `r` retry a blocked task · `E` edit the failing step in `$EDITOR` and retry · `x` reject a gate. Each offered only when valid for that task's state. |

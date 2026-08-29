@@ -28,7 +28,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 	contexts := []bindingContext{
 		ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
 		ctxNewTask, ctxProjects, ctxWorkflows, ctxWorkflowGraph, ctxTaskWorkflow,
-		ctxDaemon,
+		ctxDaemon, ctxPullRequests,
 	}
 	for _, b := range bindings {
 		if b.noPalette {
@@ -36,7 +36,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		}
 		found := false
 		for _, ctx := range contexts {
-			for _, e := range paletteEntries(ctx, everyAction, true, true) {
+			for _, e := range paletteEntries(ctx, everyAction, true, true, true) {
 				if e.label == b.label {
 					found = true
 				}
@@ -55,7 +55,7 @@ func TestPaletteOmitsInvalidActions(t *testing.T) {
 		apiclient.ActionApprove, apiclient.ActionReject,
 	}}
 	labels := strings.Builder{}
-	for _, e := range paletteEntries(ctxTasks, target, false, true) {
+	for _, e := range paletteEntries(ctxTasks, target, false, true, true) {
 		labels.WriteString(e.label + "\n")
 	}
 	got := labels.String()
@@ -73,7 +73,7 @@ func TestPaletteOmitsInvalidActions(t *testing.T) {
 // to edit — a gate has none, so the palette must not offer it.
 func TestPaletteEditGate(t *testing.T) {
 	target := taskActions{id: 3, state: stateBlocked, actions: []string{apiclient.ActionRetry}}
-	for _, e := range paletteEntries(ctxTasks, target, false, true) {
+	for _, e := range paletteEntries(ctxTasks, target, false, true, true) {
 		if strings.Contains(e.label, "edit the step's prompt") {
 			t.Fatal("palette offers edit+retry on a step with nothing to edit")
 		}
@@ -84,7 +84,7 @@ func TestPaletteEditGate(t *testing.T) {
 // nothing can act on a task, but `:` is how §15 says the daemon view stays
 // reachable — navigation and panel commands survive.
 func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
-	entries := paletteEntries(ctxTasks, everyAction, true, false)
+	entries := paletteEntries(ctxTasks, everyAction, true, false, true)
 	var nav, actions int
 	for _, e := range entries {
 		if e.nav {
@@ -97,8 +97,8 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	if actions != 0 {
 		t.Errorf("palette offers %d task actions while disconnected, want 0", actions)
 	}
-	if nav != 4 {
-		t.Errorf("palette lists %d navigation entries while disconnected, want all 4", nav)
+	if nav != 5 {
+		t.Errorf("palette lists %d navigation entries while disconnected, want all 5", nav)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 // wall — and navigation needs its own section, since reaching the takeover
 // screens is why the digits could be retired.
 func TestPaletteSectionsAreVisiblySeparate(t *testing.T) {
-	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true))
+	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true, true))
 	out := p.render(60, 18)
 	plain := ansi.Strip(out)
 
@@ -190,7 +190,7 @@ func TestPaletteSearchNarrowsAndEscCloses(t *testing.T) {
 // TestHelpRendersFromRegistry: the ? overlay is generated, not hand-written
 // — a registry row's label must appear verbatim.
 func TestHelpRendersFromRegistry(t *testing.T) {
-	got := helpText(ctxTasks)
+	got := helpText(ctxTasks, true)
 	for _, want := range []string{
 		"jump to the next task needing a human",
 		"open the command palette",
@@ -208,7 +208,7 @@ func TestHelpRendersFromRegistry(t *testing.T) {
 // here", so it carries the focused surface's keys — not all eight
 // surfaces' sections at once.
 func TestHelpIsContextual(t *testing.T) {
-	tasks := helpText(ctxTasks)
+	tasks := helpText(ctxTasks, true)
 	if !strings.Contains(tasks, "filter by id") {
 		t.Error("the task table's help lacks its own filter key")
 	}
@@ -218,7 +218,7 @@ func TestHelpIsContextual(t *testing.T) {
 		}
 	}
 
-	projects := helpText(ctxProjects)
+	projects := helpText(ctxProjects, true)
 	if !strings.Contains(projects, "register a repository") {
 		t.Error("the projects help lacks its own add key")
 	}
@@ -231,12 +231,12 @@ func TestHelpIsContextual(t *testing.T) {
 	if strings.Contains(projects, "approve the gate") {
 		t.Error("the projects help offers task actions")
 	}
-	if !strings.Contains(helpText(ctxTasks), "approve the gate") {
+	if !strings.Contains(helpText(ctxTasks, true), "approve the gate") {
 		t.Error("the task table's help omits the task actions")
 	}
 	// The globals are everywhere, because they work everywhere.
 	for _, ctx := range []bindingContext{ctxTasks, ctxProjects, ctxDaemon, ctxNewTask} {
-		if !strings.Contains(helpText(ctx), "quit the TUI") {
+		if !strings.Contains(helpText(ctx, true), "quit the TUI") {
 			t.Errorf("%s help omits the global keys", ctx)
 		}
 	}

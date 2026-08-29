@@ -170,6 +170,9 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
   details on wider terminals and fall back to compact layouts when needed.
+- A pull-requests screen lists what is open across every GitHub-based project at
+  once, with the task claiming each one, and is where a link is made or removed
+  by hand. It is offered only when at least one project qualifies.
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   conditions, loops, guards, checks, and nested includes — and, on a task's own
   Workflow tab, what each step of that task did on it, live. `enter` opens any
@@ -259,11 +262,14 @@ default — the daemon lists each GitHub-based project's **open** pull requests
 and links the ones whose head branch is a task's own branch. It never overwrites
 a link you made by hand, and a link you removed is never re-applied.
 
-`vincent github prs --project ID` prints a project's open pull requests with the
-task each one belongs to. Only the *link* is stored: a pull request's title,
-state, draft and merged status are re-read every time it is shown, which is what
-lets a task still name a pull request that has since merged and dropped off the
-open listing. A task with no pull request is offered a prefilled compare URL
+The TUI's pull-requests screen shows every GitHub-based project's listing at
+once and carries the two human actions — link a pull request the head-branch
+rule missed, unlink one it got wrong — and a task's own workspace shows its
+pull request beside its branch. `vincent github prs --project ID` prints one
+project's open pull requests with the task each one belongs to. Only the *link*
+is stored: a pull request's title, state, draft and merged status are re-read
+every time it is shown, which is what lets a task still name a pull request that
+has since merged and dropped off the open listing. A task with no pull request is offered a prefilled compare URL
 instead — GitHub's own "open a pull request" page, carrying the task's title and
 description, and `Closes #N` when the task came from an issue.
 
@@ -275,7 +281,8 @@ whose `origin` is a github.com repository, so a daemon with no such project neve
 makes it. It writes nothing to GitHub either — the compare URL is built, never
 fetched, and a human presses GitHub's button.
 
-See the [CLI reference](reference/cli.md#vincent-github-prs) and the
+See the [pull-requests screen](guides/tui.md#pull-requests), the
+[CLI reference](reference/cli.md#vincent-github-prs) and the
 [API reference](reference/api.md#github-pull-requests).
 
 ## Diagnose and maintain it

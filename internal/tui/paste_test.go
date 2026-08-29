@@ -148,7 +148,7 @@ func enterKey() tea.KeyPressMsg {
 // TestPasteIsDocumented keeps the fallback discoverable: ? renders from the
 // registry, so a key that is not a row is a key nobody finds.
 func TestPasteIsDocumented(t *testing.T) {
-	if !strings.Contains(helpText(ctxProjects), "ctrl+v") {
+	if !strings.Contains(helpText(ctxProjects, true), "ctrl+v") {
 		t.Error("ctrl+v is not in the help overlay")
 	}
 }
