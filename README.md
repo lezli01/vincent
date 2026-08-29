@@ -151,6 +151,14 @@ or per task (`agent: claude` / `codex` / `cursor`).
 | Codex | `codex` | Non-interactive once started; reports no cost |
 | Cursor | **`cursor-agent`** | Non-interactive; reports no cost |
 
+> [!WARNING]
+> **Known limitation in Claude restricted mode:** it does not currently provide
+> a complete boundary against arbitrary command execution. Do not use it for
+> untrusted tasks or repositories. Until this is resolved, run Claude jobs only
+> in environments you trust or inside an additional OS-level sandbox or VM. The
+> underlying details are being handled through the private security-advisory
+> process.
+
 Three things to know about the Cursor adapter specifically:
 
 - **Reasoning effort lives in the model id**, not in the `effort` field —
