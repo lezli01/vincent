@@ -11,53 +11,6 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 
-
-### Features
-
-* **agents:** report version and restricted health verdicts ([ff0f741](https://github.com/lezli01/vincent/commit/ff0f741ddb4b3fa75dd1216c500ba28eeb82ce3c))
-* **api:** accept an Idempotency-Key on task creation ([17b36bc](https://github.com/lezli01/vincent/commit/17b36bc8b92cffb0336208c0da31dbe0d6130836))
-* **api:** refuse a restricted step on an adapter that cannot restrict ([c592593](https://github.com/lezli01/vincent/commit/c59259384c268022c41f878d99ce7218ad2def41))
-* **api:** serve the step status message, and accept one ([4aaef4c](https://github.com/lezli01/vincent/commit/4aaef4c89fe4d0810ccb38956b273fc980eda3d2))
-* **cli:** a subcommand for every §6 human action ([bbc0e94](https://github.com/lezli01/vincent/commit/bbc0e94a5626cc5c1345d0a00eec7313fe341abc))
-* **cli:** add `vincent daemon logs` and `vincent task transcript` ([c415498](https://github.com/lezli01/vincent/commit/c41549834538dd6b1eec0607185d61aadd84a559))
-* **cli:** add `vincent workflow init` to write a workflow file ([84dca03](https://github.com/lezli01/vincent/commit/84dca032cbad3b8b9e0dec86cb870190e7f7c76b))
-* **cli:** add vincent project rm ([d06460a](https://github.com/lezli01/vincent/commit/d06460ad2f0897010205e23bc90340f94371522c))
-* **cli:** add vincent status ([c5b939d](https://github.com/lezli01/vincent/commit/c5b939d0238016715b55fa823d436fa228bc5a09))
-* **cli:** read task fields from a file or stdin in `task add` ([5b87208](https://github.com/lezli01/vincent/commit/5b8720886ec0bad792e2feed446bf384d6fb8fe6))
-* **github:** create a task from a GitHub issue ([d963a2c](https://github.com/lezli01/vincent/commit/d963a2cab90f0f29ec00efde53ddbdf5c68ec19e))
-* **github:** give the issue number a task field of its own ([ca3fc32](https://github.com/lezli01/vincent/commit/ca3fc326575a241fc62283abef538189fbc6b3a7))
-* **notify:** run a command when a task enters a configured state ([146a5c3](https://github.com/lezli01/vincent/commit/146a5c3a182b9a359f5ad04c0028712f088765ad))
-* **recovery:** guard PID reuse with an exact native process identity ([1bd8a56](https://github.com/lezli01/vincent/commit/1bd8a56355449d9dd872fea908294fdf3316ac1e))
-* **release:** sign, notarize and staple the macOS artifacts ([bbf7a81](https://github.com/lezli01/vincent/commit/bbf7a810c1f71349140eb4f5519f1972e40d4fdf))
-* **store:** record what a step says about itself ([ca28e4d](https://github.com/lezli01/vincent/commit/ca28e4d9ce913093778d84513d786d869dc31845))
-* **taskrun:** accept a step's status, and give agent steps the VINCENT_* env ([0ac9a11](https://github.com/lezli01/vincent/commit/0ac9a11b2c10f3cf0d40ee031b52f80418df9855))
-* **taskrun:** cap what one task may spend, enforced at attempt boundaries ([8fd5763](https://github.com/lezli01/vincent/commit/8fd576366101ef40839340cced9c31c407c307cf)), closes [#97](https://github.com/lezli01/vincent/issues/97)
-* **tui:** add separate task workspace ([8a63491](https://github.com/lezli01/vincent/commit/8a63491922ea73454e7fa8dcf9be86098f8849e3))
-* **tui:** add task details sidebar ([52ed3c4](https://github.com/lezli01/vincent/commit/52ed3c449d5700929a80eedf6b12faef8bae02c2))
-* **tui:** select output attempts ([a5575a9](https://github.com/lezli01/vincent/commit/a5575a9a9d5db45513b55d5a7b91c754876ece2f))
-* **tui:** show a step's own status, and finally show the result summary ([e72f2f0](https://github.com/lezli01/vincent/commit/e72f2f0f2bc8bd5fba6ba82c50a7fdd8c4498326))
-* **workflow:** add `vincent workflow render`, a template dry run ([c1165b6](https://github.com/lezli01/vincent/commit/c1165b6fb0c6465a3c35bef65ba54ea31cfc31fd))
-* **workflow:** record where a task's workflow definition came from ([db3a88c](https://github.com/lezli01/vincent/commit/db3a88cda460d35cbe3618f50a690ec0f6e58e69))
-* **workflows:** add the prepare-release workflow ([7f05e9b](https://github.com/lezli01/vincent/commit/7f05e9bef81e6e9171aaa4d8ae81fe5134e9b1bb))
-* **workflows:** add the update-workflows built-in ([0f1a88e](https://github.com/lezli01/vincent/commit/0f1a88e2e9a99532223163a62403d2c62fb29d30))
-* **workflows:** block a release on either changelog, and stop thrashing on pending checks ([69d5a3f](https://github.com/lezli01/vincent/commit/69d5a3fb98b87bd9c432d3883faa1964a92c8a65))
-* **workflows:** report step status from the project workflows ([c6ef8f8](https://github.com/lezli01/vincent/commit/c6ef8f82c59fd0505088be1539cab6d41ec46089))
-
-
-### Bug Fixes
-
-* **api:** bound an answers key as question text, not as an identifier ([0b6fd68](https://github.com/lezli01/vincent/commit/0b6fd681ab706547089167edf6ae5525a30d00f3)), closes [#197](https://github.com/lezli01/vincent/issues/197)
-* **apiclient:** bound the probing calls by the adapters, not by loopback ([ff9866d](https://github.com/lezli01/vincent/commit/ff9866d2d1af8fa8e3689547df553a5c44569c9f))
-* **gates:** assert m5 scenario 4's restricted refusal at task creation ([85419e8](https://github.com/lezli01/vincent/commit/85419e886b83c1760e7fa2927b53b44d9c7a5315))
-* **procx:** end every native identity in the PID it names ([41d2a25](https://github.com/lezli01/vincent/commit/41d2a2598a95fe3f6e9703130693852164979ef0))
-* **release:** ship unsigned macOS artifacts instead of failing the tag ([f1aa2ab](https://github.com/lezli01/vincent/commit/f1aa2abcd9063421b2f6a8c368c8b3cfe10b3998))
-* **store:** renumber the step-status migration to 0015 ([1c6f767](https://github.com/lezli01/vincent/commit/1c6f767eaf21e35be56bde2e5d7a20b614919003))
-* **tui:** wrap attempt timeline previews ([32b7bc0](https://github.com/lezli01/vincent/commit/32b7bc0d39cff74eadd13ef5e5b14e60cd6aeed9))
-* **tui:** wrap task timeline header ([f3a002d](https://github.com/lezli01/vincent/commit/f3a002de1e7be3edc12e883b12838e271d55782b))
-* **workflows:** pace every retry and poll, and stop a blip from ending a wait ([1f679f4](https://github.com/lezli01/vincent/commit/1f679f462a73db7560d988e3b0cf4345b456c707))
-
-## [Unreleased]
-
 ### Added
 
 - **The TUI now opens tasks in a dedicated full-screen workspace.** The home
@@ -69,43 +22,39 @@ list with the user-facing context a commit subject cannot carry.
   messages, and failed-attempt summaries wrap within the terminal instead of
   overflowing. `esc` returns to the board. See [Using the TUI](docs/guides/tui.md).
 
-- **`vincent workflow render <file>` dry-runs a workflow's templates.**
-  `workflow validate` only checks that a template *parses*, so
-  `{{.Task.Titel}}`, `{{.Task.Fields.ticket}}` on a task that sets no `ticket`,
-  and `{{.Steps.plan.Reslt}}` all passed validation and then failed the moment
-  the step rendered — findable only by creating a task and watching it fail.
-  `render` executes every template a file declares — `prompt`, `run`, `check`,
-  `instructions`, `if` and `for_each` — and prints what each step would send,
-  with the resolved agent/model/effort triple and the level that supplied each
-  field. It needs no daemon, so it belongs in the same pre-commit hook as
-  `validate`. Values a run discovers appear as visible placeholders
-  (`<worktree>`, `<steps.plan.result>`), so the output reads as a preview rather
-  than as the literal prompt an agent will receive; a field the workflow
-  declares `required` binds, an optional one stays absent so a non-defensive
-  read is reported. `--title`, `--description`, `--field k=v` and
-  `--agent`/`--model`/`--effort` describe a hypothetical task; `--task ID` and
-  `--project ID` bind a real one and resolve `include` steps and named fan-out
-  lanes through the registry. Exit `0` clean, `1` a template that does not
-  execute, `2` no daemon answered a `--task`/`--project`. See
-  [the CLI reference](docs/reference/cli.md#vincent-workflow-render).
-
-- **`vincent task add` can take its task fields from a JSON file or from
-  stdin.** `--fields-file ./inputs.json` — or `--fields-file -` to read the
-  document a `jq` pipeline just produced — fills the same
-  [task field map](docs/guides/workflows.md#54-task-fields) that repeatable
-  `--field name=value` fills, without every newline, quote and space having to
-  survive the shell first. The two combine and `--field` wins the names it
-  names, so one generated document can be reused across runs that vary a single
-  input. The values must all be JSON strings; a number, boolean, `null`, array
-  or object is refused with a message naming the **key** and never the value, as
-  are an empty name, anything after the first JSON object, and a read over the
-  API's own 4 MiB body bound. Everything else stays the daemon's call —
-  required fields, `type`, `pattern` and the per-field limits — and names the
-  workflow never declared are still accepted, exactly as before. Creating a task
-  without `--json` now also confirms what it carries by **name and count and
-  never by value** (`fields: notes, ticket (2)`), which catches a mistyped name
-  while staying safe to leave in a CI log. See
-  [Scripting vincent](docs/guides/scripting.md#supplying-task-fields).
+- **A step can now say what it is doing, in its own words.** A `run:` body — or
+  an agent whose prompt asks for it — calls `vincent status "<message>"`, and
+  that line becomes the step's live status: on the board on a wide terminal, on
+  the attempt line in the task view as a cyan `» …`, and as `status_message` on
+  every step run the API serves. The last line written before an attempt ends
+  stays on the finished row as the step's own account of how it went. That is
+  **not** a failure reason: `failure_reason` is a closed set of daemon-authored
+  constants and vincent's own verdict, while this is free text the step chose,
+  possibly long before it died — a step killed on a timeout may still be
+  carrying a line it wrote half an hour earlier, so it is rendered as the last
+  status and never as the cause of anything. The producer is the API rather than
+  a sentinel line on stdout, deliberately (task 033 decision 1): a marker forces
+  a strip-or-keep choice over the transcript and `result_summary` that has no
+  good answer, it cannot see the obvious agent spelling at all — an agent that
+  runs `echo` through its Bash tool produces a tool-use event, never step output
+  — and it would make every step's stdout a control channel, so any program that
+  happened to print the marker would change daemon state. `vincent status`
+  addresses its own step from §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`,
+  and the route is keyed by step id rather than by task because a `parallel`
+  group's sub-steps share one task id and run concurrently (§7.5). That carried
+  one prerequisite, which is the second user-visible change here: **agent steps
+  now get the §8.5 `VINCENT_*` block**, which command and check steps already
+  had and agent steps did not — useful on its own, and what makes `vincent
+  status` reachable from an agent's shell tool. The message is bounded like
+  state and not like output: flattened to one line, stripped of control
+  characters and invalid UTF-8, and truncated on a rune boundary at 256 bytes
+  rather than refused, since failing a status write would turn a display nicety
+  into a step failure. Writes are paced rather than rejected, a value identical
+  to the stored one appends no event, and a write against a step that is not
+  running is a `409` rather than a silent drop. The task view also now shows an
+  unsuccessful attempt's **result summary** — the agent's final message, or the
+  tail of a command's output — on a dim line beneath it: the sentence that
+  decides whether to open the transcript.
 
 - **vincent can now tell you it needs you, with nothing open.** Point
   `notify.command` in `config.yaml` at a program and the daemon runs it whenever
@@ -179,6 +128,114 @@ list with the user-facing context a commit subject cannot carry.
   accept right now, so a script can read what is legal instead of probing for
   errors. Documented in the [CLI reference](docs/reference/cli.md#vincent-task)
   and [Scripting vincent](docs/guides/scripting.md).
+
+- **A task can now be created from a GitHub issue.** On a project whose `origin`
+  remote points at github.com, with `github.enabled` on, the daemon lists that
+  repository's issues and prefills a task from the one you pick: the title from
+  the issue title; the description from its body followed by a `GitHub issue #N:
+  <url>` link line as its own trailing block, so a task read on its own still
+  points back; and workflow-declared `fields:` (§8.1.2) matched by **exact name
+  only** — no aliases, no case folding — against `labels`, `assignee`,
+  `milestone` and `issue`. A name is offered only when the declaration's `type`
+  and `pattern` would accept the value, so a declared `integer` milestone gets
+  the number and a `string` gets the title, and anything that would fail
+  validation is left empty rather than pre-filling a value the create call would
+  then reject. Every value lands in an ordinary editable row: nothing is locked,
+  so a guess is reviewed before the task exists rather than applied silently at
+  run time. The list endpoint *previews* the prefill and `POST /v1/tasks`
+  applies it, from the same code — which is what makes "`vincent task add
+  --github-issue N` produces the same stored task as the TUI path" a tested
+  claim rather than a coincidence, and why the CLI flag is resolved daemon-side.
+  The issue is fetched **once**, at creation, and stored on the task row, so
+  every later step renders from that snapshot: a run stays reproducible, no
+  network call can enter the render path, and an issue edited on GitHub
+  afterwards is deliberately not reflected. It reaches §8.4 templates as a new
+  top-level `.Issue`, zero-valued when nothing is linked the way `.Loop`'s
+  `Index: 0` is, so `{{ if .Issue.Number }}` tells the two apart and one
+  template serves both linked and unlinked tasks; fan-out lanes inherit the
+  parent's snapshot verbatim, as they already inherit its `Fields`. Because a
+  step body receives §8.5's environment and not §8.4's context, `issue` is a
+  prefilled field name of its own, so a `run:` can act on the number without
+  parsing it back out of the task title.
+
+- **One task's spend can now be capped.** Cost was measured and never acted on:
+  `cost_usd` is written from the adapter's terminal `result` line, rolled up
+  across every attempt, and rendered on the board and the detail view — and
+  nothing in the engine, the scheduler or the store ever read it to decide
+  anything. That left a gap between the two guards that do exist.
+  `agent_timeout` bounds one attempt's wall clock and `transcript_max_bytes`
+  bounds its bytes on disk; an agent that loops *productively* — quick turns,
+  modest output, no hang — trips neither, and can spend its full timeout per
+  attempt across the whole retry budget with nothing but a human noticing to
+  stop it. The new top-level `max_task_cost_usd` is one ceiling on one task's
+  rolled-up spend, checked at **every attempt boundary** rather than between
+  top-level steps: a `loop` is one such position and a `parallel` group is
+  reduced to one, so a check there would let a fifty-iteration loop, or a step's
+  whole `max_retries` budget, run before the cap was consulted once. Crossing it
+  **blocks** the task with a new `cost_limit` reason rather than failing the
+  step: the finished attempt keeps its own state and its own reason, no retry is
+  consumed, and a retry that was already due does not run — spending more money
+  to arrive at the same wall is not a repair. Zero is the default and means no
+  cap, so nothing changes for anyone who does not ask; a negative value fails
+  the load; and it hot-reloads like everything else in the file.
+  ([#97](https://github.com/lezli01/vincent/issues/97))
+
+- **`vincent workflow init <name>` writes a valid workflow file into the right
+  directory.** Nothing in the binary helped you write your first workflow. The
+  CLI's workflow surface was `ls` and `validate`, neither of which creates
+  anything, and the TUI deliberately does not either, so anything past a one-step
+  ad-hoc run meant reading the schema reference, finding `examples/`, copying
+  one, working out which of the two scope directories it belongs in, and
+  validating in hope. `init` writes the file, prints the path, and refuses to
+  damage anything already there. `--from <example>` hands over one of the
+  shipped examples **with its comments intact**: only the top-level `name:` line
+  is rewritten, and as text, because a round trip through the YAML library would
+  drop exactly the comments that make an example worth handing over. Both the
+  accepted values and the list in the error for an unknown one are read from the
+  embedded examples at run time, so a sixth example is offered the day it lands.
+  The default (global) scope resolves `{config_dir}/workflows/` with **no daemon
+  at all**; only `--project N` contacts one, to resolve the id to a repository
+  root, and it exits `2` without writing when none answers. See
+  [the CLI reference](docs/reference/cli.md#vincent-workflow-init).
+
+- **`vincent workflow render <file>` dry-runs a workflow's templates.**
+  `workflow validate` only checks that a template *parses*, so
+  `{{.Task.Titel}}`, `{{.Task.Fields.ticket}}` on a task that sets no `ticket`,
+  and `{{.Steps.plan.Reslt}}` all passed validation and then failed the moment
+  the step rendered — findable only by creating a task and watching it fail.
+  `render` executes every template a file declares — `prompt`, `run`, `check`,
+  `instructions`, `if` and `for_each` — and prints what each step would send,
+  with the resolved agent/model/effort triple and the level that supplied each
+  field. It needs no daemon, so it belongs in the same pre-commit hook as
+  `validate`. Values a run discovers appear as visible placeholders
+  (`<worktree>`, `<steps.plan.result>`), so the output reads as a preview rather
+  than as the literal prompt an agent will receive; a field the workflow
+  declares `required` binds, an optional one stays absent so a non-defensive
+  read is reported. `--title`, `--description`, `--field k=v` and
+  `--agent`/`--model`/`--effort` describe a hypothetical task; `--task ID` and
+  `--project ID` bind a real one and resolve `include` steps and named fan-out
+  lanes through the registry. Exit `0` clean, `1` a template that does not
+  execute, `2` no daemon answered a `--task`/`--project`. See
+  [the CLI reference](docs/reference/cli.md#vincent-workflow-render).
+
+- **`vincent task add` can take its task fields from a JSON file or from
+  stdin.** `--fields-file ./inputs.json` — or `--fields-file -` to read the
+  document a `jq` pipeline just produced — fills the same
+  [task field map](docs/guides/workflows.md#54-task-fields) that repeatable
+  `--field name=value` fills, without every newline, quote and space having to
+  survive the shell first. The two combine and `--field` wins the names it
+  names, so one generated document can be reused across runs that vary a single
+  input. The values must all be JSON strings; a number, boolean, `null`, array
+  or object is refused with a message naming the **key** and never the value, as
+  are an empty name, anything after the first JSON object, and a read over the
+  API's own 4 MiB body bound. Everything else stays the daemon's call —
+  required fields, `type`, `pattern` and the per-field limits — and names the
+  workflow never declared are still accepted, exactly as before. Creating a task
+  without `--json` now also confirms what it carries by **name and count and
+  never by value** (`fields: notes, ticket (2)`), which catches a mistyped name
+  while staying safe to leave in a CI log. See
+  [Scripting vincent](docs/guides/scripting.md#supplying-task-fields).
+
 - **Creating a task can now be retried safely.** If the daemon commits your task
   but you never see the response — a timeout, a dropped connection, a script
   that dies mid-`curl` — re-sending the request used to create a second task, a
@@ -195,6 +252,7 @@ list with the user-facing context a commit subject cannot carry.
   do not send one, they do not retry a create, and two identical sends still make
   two tasks — which is what pressing enter twice means. Documented in the
   [API reference](docs/reference/api.md#replaying-a-create).
+
 - **Vincent now tells you whether it has ever been tested against the agent CLI
   you have installed.** Each adapter carries the list of builds its parsers were
   captured against, and `GET /v1/agents`, `GET /v1/info`, `vincent doctor` and
@@ -208,6 +266,7 @@ list with the user-facing context a commit subject cannot carry.
   the version verdict), permission-compatible (`restricted_verdict`), and
   model-catalog health, which is the existing `probe_error` and is not
   duplicated. ([#148](https://github.com/lezli01/vincent/issues/148))
+
 - **Every task now records which workflow definition it actually ran.** A
   project or global workflow file shadows a built-in of the same name — that is
   by design, and it includes the `adhoc` a task falls back to when you create it
@@ -224,7 +283,82 @@ list with the user-facing context a commit subject cannot carry.
   that already ran it. Tasks created before this change report `unknown` — the
   honest answer; vincent does not look the name up again to invent one.
 
+- **The `update-workflows` built-in brings a project's own workflows up to date
+  with the features a release added.** A workflow written against 0.3 is still
+  valid against 0.7 — unknown keys are errors, unused features are not — so a
+  registry ages silently. Fan-out, conditions, loops, includes, fields,
+  `.Issue`, `retry_backoff` and `vincent status` all shipped after the first
+  workflows anyone wrote, and nothing in the product ever suggested reaching for
+  them. Task 024's `create-workflow` closed the "I have no workflows" gap; this
+  closes the other end. Six steps: a `git ls-files --error-unmatch` probe that is
+  both the file list and the "this project versions none" signal, a `condition`
+  that ends the run `done` when there are none, one agent step carrying the same
+  embedded `vincent-workflows` skill `create-workflow` carries plus a checklist
+  of what a workflow can be behind on, then a relist and a `for_each` loop
+  running `vincent workflow validate` over every file — including one the pass
+  added. Its deliverable is the task's **own worktree and branch**, not the live
+  registry: these files already exist and are already versioned, so the change
+  becomes real through review rather than by being written underneath you. This
+  repository's own workflows were brought to the same bar in the same change and
+  now report status between the phases of a long `run:`, and `prepare-release`,
+  the workflow that walks a Release Please pull request to mergeable, replaces
+  the release workflow it supersedes.
+
+- **"Why vincent is awesome" — ten linked articles on the ideas behind the
+  product.** They cover the repeated workflow that inspired vincent,
+  command-first cost effectiveness, deterministic verification, human control,
+  durable execution, recovery, worktree isolation, executable team knowledge,
+  agent portability and workload visibility. The documentation site gained
+  unique per-page titles and descriptions, canonical URLs, Open Graph and
+  Twitter metadata, structured data, a sitemap, `robots.txt`, a custom 404 page,
+  deterministic 1200×630 social cards and previous/next navigation across the
+  series. The product-name convention is now recorded and applied throughout:
+  lowercase `vincent` everywhere except where it begins a complete sentence,
+  with case-sensitive identifiers preserved exactly.
+
 ### Changed
+
+- **vincent is MIT-licensed again.** The separate commercial license is gone —
+  from the repository, the documentation, the release archives and the
+  package-manager metadata alike — and release validation was updated to match.
+  The historical licensing records are preserved rather than deleted, with the
+  old packaging decision marked superseded.
+
+- **Releases ship unsigned by design, and a missing certificate can no longer
+  destroy one.** macOS code signing, notarization and a stapled
+  `vincent_*_darwin_universal.pkg` are implemented and wired into the release:
+  darwin binaries are `codesign`ed in a GoReleaser build hook, because the
+  signature lives *inside* the Mach-O and so must land before the archive is
+  assembled and before `checksums.txt` is computed; the archives are notarized
+  with `notarytool submit --wait`, which modifies nothing and only gates
+  publication; and the universal `.pkg` is the one artifact that can carry a
+  stapled ticket, and therefore the only one whose first launch works offline.
+  None of it runs today. The Apple Developer Program membership was never
+  bought, and the first `v*` tag to try it died at its first signing step,
+  because `MACOS_SIGN_REQUIRED` was keyed on the tag rather than on the
+  certificates. It is keyed on the certificates now: with them installed a tag
+  still cannot publish an unsigned macOS artifact, and without them every
+  signing step warns and the release ships unsigned. Half-configured secrets,
+  and certificates without a notary key, keep their hard error — an unnotarized
+  Developer ID signature makes Gatekeeper refuse the file anyway, which is worse
+  than shipping plainly unsigned. Consequently the Homebrew cask's
+  quarantine-stripping `postflight` hook is back, the smoke job's Gatekeeper
+  assessment is skipped on an unsigned release rather than softened into an
+  assertion that would prove nothing on a signed one, and nine user-facing pages
+  that claimed the macOS artifacts were signed — one of which told you *not* to
+  run `xattr -d com.apple.quarantine`, which against a real release leaves a
+  binary that will not start — now document the unsigned path. deb and rpm ship
+  unsigned by decision rather than by omission: vincent publishes no APT or YUM
+  repository, `apt` does not verify a per-package signature on a `.deb`
+  downloaded from a release page at all, and signing only the rpm half would
+  trade this project's keyless supply chain for a long-lived secret with
+  publication and rotation duty. Windows Authenticode is reopened on one new
+  fact — free-for-OSS programs exist and vincent is unambiguously OSI-licensed —
+  and stops at an application; nothing else lands until a certificate exists.
+  cosign signatures and build provenance are unchanged, always present, and are
+  not a substitute for either.
+  ([#150](https://github.com/lezli01/vincent/issues/150),
+  [#207](https://github.com/lezli01/vincent/issues/207))
 
 - **A `restricted` step bound for an agent that cannot restrict on this machine
   is now refused when you create the task, not when it runs.** Cursor's
@@ -242,6 +376,7 @@ list with the user-facing context a commit subject cannot carry.
   workflow edited after the task was queued. Retries are not gated; that
   backstop is what catches them.
   ([#148](https://github.com/lezli01/vincent/issues/148))
+
 - **gosec now runs on every build, as part of the existing lint gate.** The
   security linter is enabled inside the golangci-lint the `go.mod` tool directive
   already pins, so `go run mage.go lint` is still one command and still the
@@ -258,6 +393,47 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Crash recovery can no longer kill a process that merely inherited a PID.**
+  The guard compared two different clocks: a spawn journaled the daemon's own
+  wall clock into `step_runs.proc_started_at`, recovery compared that against
+  kernel bookkeeping, and anything inside a five-second tolerance counted as the
+  same process — so in a narrow crash-and-reuse window an unrelated process
+  could be killed as an orphan. A spawn now journals a **platform-native process
+  identity** beside the PID, in the same write, and recovery compares it
+  exactly: an opaque versioned token whose contract is *compare, never parse* —
+  the boot id joined with the start ticks from `/proc/<pid>/stat` on Linux, the
+  `kinfo_proc` fork stamp on macOS, the creation `FILETIME` on Windows. Keeping
+  the Linux value a count *since boot* rather than an absolute instant is what
+  makes it immune to an NTP step or a suspend/resume, and the boot id makes a
+  reboot a guaranteed mismatch rather than an arithmetic coincidence. A row with
+  **no** identity — written before this migration, or by a spawn whose identity
+  read failed, which is real rather than hypothetical — keeps the ±5 s
+  comparison unchanged, so no installation is worse off than it was. "Cannot
+  prove, do not kill" holds in both branches: an identity that cannot be read
+  during recovery, when one was journaled, is never a kill, and a mismatch is a
+  log line and nothing else — the task re-queues normally, with no new block
+  reason and no doctor problem.
+
+- **A question longer than 256 bytes can now be answered.** A task parked in
+  `awaiting_input` on a long question refused every answer with `400
+  validation_failed: answers key must be at most 256 bytes`, then sat holding
+  its concurrency slot until it was cancelled or `input_timeout` — 24 hours by
+  default — expired and failed the step. The daemon parked on, persisted and
+  rendered a question it would then refuse every answer to. One constant was
+  serving two unrelated kinds of key. A `fields` key is a caller-chosen
+  identifier a human or a workflow author types (§8.1.2), and 256 bytes is
+  generous for one; an `answers` key is not chosen by the caller at all — it is
+  the agent's verbatim question text, which §7.4 makes the lookup key and §9.2
+  writes back to the CLI under the same text, so no layer between the agent and
+  the answer is permitted to shorten it. The asymmetry was the tell: the answer
+  *value* bound is 64 KiB, so a 438-byte answer was fine while the 438-byte
+  question it belonged to was not. `answers` keys now take their own bound,
+  sized like the value they arrive beside rather than like an identifier, and
+  `fields` keys keep theirs. Nothing became unbounded: the route still reads at
+  4 MiB and still applies the field and value counts. Mid-run input exists only
+  on the claude adapter, which is exactly where questions over 256 bytes are
+  routine. ([#197](https://github.com/lezli01/vincent/issues/197))
+
 - **`vincent doctor` no longer times out instead of answering.** The report asks
   the daemon to probe every agent CLI, and each probe carries that adapter's own
   deadline — up to 145 seconds in total, with cursor's model catalog being an
@@ -268,6 +444,12 @@ list with the user-facing context a commit subject cannot carry.
   refresh of the agent picker — now wait longer than the adapters can, so the
   diagnosis reaches you. Every other call still gives up after ten seconds: a
   daemon that cannot answer a cached read that fast is wedged.
+
+- **The first `v0.7.0` tag was withdrawn, and this is the re-cut release.** That
+  tag build died at its first signing step, before GoReleaser ran, and produced
+  no archives, no deb or rpm, no attestations and no Homebrew, Scoop or WinGet
+  metadata. The tag and its empty GitHub release were removed; nothing was ever
+  published under it, and the cause is fixed above.
 
 ## [0.6.0](https://github.com/lezli01/vincent/compare/v0.5.0...v0.6.0) (2026-08-25)
 
