@@ -554,3 +554,53 @@ func TestReconnectDoesNotRereadTheFolds(t *testing.T) {
 		t.Errorf("a reconnect re-read the file over the folds on screen: %v", b.folds)
 	}
 }
+
+// TestFoldingAWrappedBoard is where this feature meets task 050's wrapping,
+// which is the one place the two can disagree. Folding runs *before* wrapping
+// (board.rows): a wrapped task is several rows carrying the same task, so a
+// fold applied afterwards would count each of its lines as another marked
+// task and report a collapsed group as holding more work than it does. The
+// collapsed header is also a row the cursor rests on, so it must stay one
+// line at a height where tasks take three.
+func TestFoldingAWrappedBoard(t *testing.T) {
+	long := strings.Repeat("a very long task title ", 6)
+	b := groupedBoard(
+		task(1, stateBlocked, inProject("api"), inWorkflow("build"), withTitle(long)),
+		task(2, stateQueued, inProject("api"), inWorkflow("build"), withTitle(long)),
+		task(3, stateQueued, inProject("web"), inWorkflow("build"), withTitle(long)),
+	)
+	b.render(90, 30)
+	b.marks = b.marks.add(1, 2)
+
+	// The fixture only means anything if it wraps: without continuation rows
+	// this is TestCollapsedHeaderCountsWhatItHides a second time.
+	var conts int
+	for _, r := range b.rows() {
+		if r.line > 0 {
+			conts++
+		}
+	}
+	if conts == 0 {
+		t.Fatalf("no row wrapped at 90 columns; the fixture no longer tests anything")
+	}
+
+	b.folds = b.folds.with(foldPath{"api"})
+	rows := b.rows()
+	r := rows[0]
+	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {
+		t.Fatalf("collapsed header = %+v, want 2 tasks, 1 needing attention, 2 marked", r)
+	}
+	if r.line != 0 || !r.selectable() {
+		t.Errorf("collapsed header is not a landable single-line row: %+v", r)
+	}
+	// Nothing from inside the fold survived as a continuation.
+	for _, row := range rows {
+		if !row.header && row.task.ProjectName == "api" {
+			t.Errorf("row for a folded-away task is still on the board: %+v", row)
+		}
+	}
+	// And the header is one line: the row after it is the next group's.
+	if len(rows) < 2 || !rows[1].header || rows[1].label != "web" {
+		t.Errorf("rows after the collapsed header = %v, want the web header next", rowLabels(rows))
+	}
+}
