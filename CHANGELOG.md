@@ -9,6 +9,53 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
+
+
+### Features
+
+* **agents:** report version and restricted health verdicts ([ff0f741](https://github.com/lezli01/vincent/commit/ff0f741ddb4b3fa75dd1216c500ba28eeb82ce3c))
+* **api:** accept an Idempotency-Key on task creation ([17b36bc](https://github.com/lezli01/vincent/commit/17b36bc8b92cffb0336208c0da31dbe0d6130836))
+* **api:** refuse a restricted step on an adapter that cannot restrict ([c592593](https://github.com/lezli01/vincent/commit/c59259384c268022c41f878d99ce7218ad2def41))
+* **api:** serve the step status message, and accept one ([4aaef4c](https://github.com/lezli01/vincent/commit/4aaef4c89fe4d0810ccb38956b273fc980eda3d2))
+* **cli:** a subcommand for every §6 human action ([bbc0e94](https://github.com/lezli01/vincent/commit/bbc0e94a5626cc5c1345d0a00eec7313fe341abc))
+* **cli:** add `vincent daemon logs` and `vincent task transcript` ([c415498](https://github.com/lezli01/vincent/commit/c41549834538dd6b1eec0607185d61aadd84a559))
+* **cli:** add `vincent workflow init` to write a workflow file ([84dca03](https://github.com/lezli01/vincent/commit/84dca032cbad3b8b9e0dec86cb870190e7f7c76b))
+* **cli:** add vincent project rm ([d06460a](https://github.com/lezli01/vincent/commit/d06460ad2f0897010205e23bc90340f94371522c))
+* **cli:** add vincent status ([c5b939d](https://github.com/lezli01/vincent/commit/c5b939d0238016715b55fa823d436fa228bc5a09))
+* **cli:** read task fields from a file or stdin in `task add` ([5b87208](https://github.com/lezli01/vincent/commit/5b8720886ec0bad792e2feed446bf384d6fb8fe6))
+* **github:** create a task from a GitHub issue ([d963a2c](https://github.com/lezli01/vincent/commit/d963a2cab90f0f29ec00efde53ddbdf5c68ec19e))
+* **github:** give the issue number a task field of its own ([ca3fc32](https://github.com/lezli01/vincent/commit/ca3fc326575a241fc62283abef538189fbc6b3a7))
+* **notify:** run a command when a task enters a configured state ([146a5c3](https://github.com/lezli01/vincent/commit/146a5c3a182b9a359f5ad04c0028712f088765ad))
+* **recovery:** guard PID reuse with an exact native process identity ([1bd8a56](https://github.com/lezli01/vincent/commit/1bd8a56355449d9dd872fea908294fdf3316ac1e))
+* **release:** sign, notarize and staple the macOS artifacts ([bbf7a81](https://github.com/lezli01/vincent/commit/bbf7a810c1f71349140eb4f5519f1972e40d4fdf))
+* **store:** record what a step says about itself ([ca28e4d](https://github.com/lezli01/vincent/commit/ca28e4d9ce913093778d84513d786d869dc31845))
+* **taskrun:** accept a step's status, and give agent steps the VINCENT_* env ([0ac9a11](https://github.com/lezli01/vincent/commit/0ac9a11b2c10f3cf0d40ee031b52f80418df9855))
+* **taskrun:** cap what one task may spend, enforced at attempt boundaries ([8fd5763](https://github.com/lezli01/vincent/commit/8fd576366101ef40839340cced9c31c407c307cf)), closes [#97](https://github.com/lezli01/vincent/issues/97)
+* **tui:** add separate task workspace ([8a63491](https://github.com/lezli01/vincent/commit/8a63491922ea73454e7fa8dcf9be86098f8849e3))
+* **tui:** add task details sidebar ([52ed3c4](https://github.com/lezli01/vincent/commit/52ed3c449d5700929a80eedf6b12faef8bae02c2))
+* **tui:** select output attempts ([a5575a9](https://github.com/lezli01/vincent/commit/a5575a9a9d5db45513b55d5a7b91c754876ece2f))
+* **tui:** show a step's own status, and finally show the result summary ([e72f2f0](https://github.com/lezli01/vincent/commit/e72f2f0f2bc8bd5fba6ba82c50a7fdd8c4498326))
+* **workflow:** add `vincent workflow render`, a template dry run ([c1165b6](https://github.com/lezli01/vincent/commit/c1165b6fb0c6465a3c35bef65ba54ea31cfc31fd))
+* **workflow:** record where a task's workflow definition came from ([db3a88c](https://github.com/lezli01/vincent/commit/db3a88cda460d35cbe3618f50a690ec0f6e58e69))
+* **workflows:** add the prepare-release workflow ([7f05e9b](https://github.com/lezli01/vincent/commit/7f05e9bef81e6e9171aaa4d8ae81fe5134e9b1bb))
+* **workflows:** add the update-workflows built-in ([0f1a88e](https://github.com/lezli01/vincent/commit/0f1a88e2e9a99532223163a62403d2c62fb29d30))
+* **workflows:** block a release on either changelog, and stop thrashing on pending checks ([69d5a3f](https://github.com/lezli01/vincent/commit/69d5a3fb98b87bd9c432d3883faa1964a92c8a65))
+* **workflows:** report step status from the project workflows ([c6ef8f8](https://github.com/lezli01/vincent/commit/c6ef8f82c59fd0505088be1539cab6d41ec46089))
+
+
+### Bug Fixes
+
+* **api:** bound an answers key as question text, not as an identifier ([0b6fd68](https://github.com/lezli01/vincent/commit/0b6fd681ab706547089167edf6ae5525a30d00f3)), closes [#197](https://github.com/lezli01/vincent/issues/197)
+* **apiclient:** bound the probing calls by the adapters, not by loopback ([ff9866d](https://github.com/lezli01/vincent/commit/ff9866d2d1af8fa8e3689547df553a5c44569c9f))
+* **gates:** assert m5 scenario 4's restricted refusal at task creation ([85419e8](https://github.com/lezli01/vincent/commit/85419e886b83c1760e7fa2927b53b44d9c7a5315))
+* **procx:** end every native identity in the PID it names ([41d2a25](https://github.com/lezli01/vincent/commit/41d2a2598a95fe3f6e9703130693852164979ef0))
+* **release:** ship unsigned macOS artifacts instead of failing the tag ([f1aa2ab](https://github.com/lezli01/vincent/commit/f1aa2abcd9063421b2f6a8c368c8b3cfe10b3998))
+* **store:** renumber the step-status migration to 0015 ([1c6f767](https://github.com/lezli01/vincent/commit/1c6f767eaf21e35be56bde2e5d7a20b614919003))
+* **tui:** wrap attempt timeline previews ([32b7bc0](https://github.com/lezli01/vincent/commit/32b7bc0d39cff74eadd13ef5e5b14e60cd6aeed9))
+* **tui:** wrap task timeline header ([f3a002d](https://github.com/lezli01/vincent/commit/f3a002de1e7be3edc12e883b12838e271d55782b))
+* **workflows:** pace every retry and poll, and stop a blip from ending a wait ([1f679f4](https://github.com/lezli01/vincent/commit/1f679f462a73db7560d988e3b0cf4345b456c707))
+
 ## [Unreleased]
 
 ### Added
