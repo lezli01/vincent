@@ -134,7 +134,7 @@ cleared — cycling back to a grouped view restores what was folded.
 
 ## Tasks
 
-- [x] **050.1** Fold the board's groups: `foldPath`/`foldSet`, `applyFolds` and
+- [x] **054.1** Fold the board's groups: `foldPath`/`foldSet`, `applyFolds` and
   the four key handlers in `internal/tui/boardfold.go`; `←`/`→`/`C`/`O` in the
   binding registry; the cursor rule for a collapsed header and the count,
   attention badge and marked count on its cell; `!` and the incoming
