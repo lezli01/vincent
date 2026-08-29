@@ -162,6 +162,8 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
 
 - A filterable, grouped task board shows state, current step, elapsed time,
   reported cost, and — on a wide terminal — the step's own status message.
+  Groups fold away, and a folded one still carries its task count and its
+  needs-attention badge.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
   Output, Diff, and Workflow tabs; each tab uses the whole view.
 - Guided task creation exposes project, workflow, declared fields, git and

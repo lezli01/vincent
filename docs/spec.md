@@ -4746,7 +4746,10 @@ get to bend:
   around that, `→` opens one level, `C` and `O` do the whole table. A *collapsed*
   header stands in for tasks that are not on screen, so it **is** a row: the
   cursor rests on it, and it shows `▸` rather than `▾`, its task count, its
-  attention badge and how many of its tasks the bulk selection holds. Folding is
+  attention badge and how many of its tasks the bulk selection holds. It is a
+  row and not a task: it has no state and no `available_actions`, so the §6
+  action keys, `space`, `enter` and `L` do nothing while the cursor is on one
+  and the detail panels hold the last task rather than blanking. Folding is
   a view over the same band sort — the rows that remain are in the order they
   were. It is never refused: what protects the failure the original rule named is
   that the header keeps its badge, that `!` opens whatever group it lands in, and

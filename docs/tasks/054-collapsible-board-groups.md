@@ -132,6 +132,16 @@ With `group_by: []` there are no headers, so the four keys are inert and their
 footer hints are dropped (`shell.liveBindings`). The saved set is **not**
 cleared — cycling back to a grouped view restores what was folded.
 
+## Tasks
+
+- [x] **050.1** Fold the board's groups: `foldPath`/`foldSet`, `applyFolds` and
+  the four key handlers in `internal/tui/boardfold.go`; `←`/`→`/`C`/`O` in the
+  binding registry; the cursor rule for a collapsed header and the count,
+  attention badge and marked count on its cell; `!` and the incoming
+  `awaiting_input` transition opening a fold; the set persisted, pruned and
+  fail-open through `{data_dir}/tui.json`; the §15 and §12.2 amendments and
+  009's superseding note. ✓ 2026-08-29
+
 ## Implementation notes
 
 Everything is in `internal/tui` plus documentation. No daemon, API, store,
