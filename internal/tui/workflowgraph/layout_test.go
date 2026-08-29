@@ -47,6 +47,7 @@ func corpus() map[string]*apiclient.WorkflowBody {
 		"loopbreak":  fixtureLoopBreak(),
 		"nested":     fixtureNested(),
 		"wide":       fixtureWideLabels(),
+		"laneshadow": fixtureLaneShadow(),
 	}
 }
 
@@ -112,7 +113,8 @@ func TestLayoutFanOutFramesLanesAboveTheMerge(t *testing.T) {
 	if frame.W == 0 {
 		t.Fatal("no fan_out frame was placed")
 	}
-	for _, id := range []string{"api_impl", "api_test", refNodeID("spread", "web")} {
+	lane := lanePrefix("spread", "api")
+	for _, id := range []string{lane + "api_impl", lane + "api_test", refNodeID("spread", "web")} {
 		n := placed(t, s, id)
 		if n.X <= frame.X || n.X+n.W >= frame.X+frame.W ||
 			n.Y <= frame.Y || n.Y+n.H >= frame.Y+frame.H {
@@ -126,7 +128,7 @@ func TestLayoutFanOutFramesLanesAboveTheMerge(t *testing.T) {
 	}
 	// The lanes hang below the header and the merge hangs below them, so the
 	// two lane sequences do not share a column.
-	api := placed(t, s, "api_impl")
+	api := placed(t, s, lane+"api_impl")
 	web := placed(t, s, refNodeID("spread", "web"))
 	if api.X == web.X {
 		t.Error("both lanes were placed in one column")

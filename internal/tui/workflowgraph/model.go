@@ -39,6 +39,21 @@ type Model struct {
 	selected string
 	width    int
 	height   int
+
+	// body is the definition the diagram was built from, kept so an overlay
+	// that discovers an off-snapshot attempt can rebuild without the host
+	// having to refetch (task 050 decision 3).
+	body *apiclient.WorkflowBody
+	// run is the runtime overlay, empty for the definition viewer.
+	run Overlay
+	// off names the off-snapshot runs currently attached, so an overlay that
+	// discovers none new is applied without touching the layout at all.
+	off []OffGraphRun
+	// sourceWalk is whether tab/shift+tab walk the nodes in source order.
+	// Inside the task workspace they do not: `tab` is the workspace's tab
+	// cycle there, and shadowing it would break the muscle memory task 049
+	// built (task 050 decision 5).
+	sourceWalk bool
 }
 
 // New returns an empty graph sized to nothing. The viewport's own arrow
@@ -54,8 +69,14 @@ func New() Model {
 	km.Left = key.NewBinding()
 	km.Right = key.NewBinding()
 	vp.KeyMap = km
-	return Model{opts: DefaultOptions(), vp: vp, mode: ModeView}
+	return Model{opts: DefaultOptions(), vp: vp, mode: ModeView, sourceWalk: true}
 }
+
+// SetSourceWalk decides whether tab/shift+tab walk the nodes in source order.
+// A host that owns `tab` for something else turns it off rather than having
+// the component shadow a key the surrounding screen already binds (task 050
+// decision 5).
+func (m *Model) SetSourceWalk(on bool) { m.sourceWalk = on }
 
 // SetTheme sets the styles. Colour is decoration: the picture reads without
 // it (decision 6).
@@ -70,7 +91,33 @@ func (m *Model) Mode() Mode { return m.mode }
 // SetDefinition points the graph at a workflow, keeping the selected node if
 // that node still exists and falling back to the entry otherwise.
 func (m *Model) SetDefinition(wf *apiclient.WorkflowBody) {
-	m.diagram = Build(wf)
+	m.body = wf
+	m.rebuild()
+}
+
+// SetOverlay lands a task's run state on the graph it already has.
+//
+// It does not re-lay-out. Coordinates and selection survive, which is the
+// whole point on a surface that is refreshed live: a reader watching a
+// running task must not have the picture move under them (task 017 decisions
+// 3 and 5). The one exception is an attempt no node answers for — a
+// follow-up round, a repair rewrite — which is a *new node*, so the diagram
+// is rebuilt exactly when the set of them changes and never otherwise.
+func (m *Model) SetOverlay(o Overlay) {
+	m.run = o
+	if sameOffGraph(m.off, o.Off) {
+		m.sync()
+		return
+	}
+	m.rebuild()
+}
+
+// Overlay reports the applied run state, for a host rendering an inspector.
+func (m *Model) Overlay() Overlay { return m.run }
+
+func (m *Model) rebuild() {
+	m.off = append([]OffGraphRun{}, m.run.Off...)
+	m.diagram = AttachOffGraph(Build(m.body), m.off)
 	m.scene = Layout(m.diagram, m.opts)
 	if _, ok := m.scene.Node(m.selected); !ok {
 		m.selected = m.firstNode()
@@ -79,12 +126,24 @@ func (m *Model) SetDefinition(wf *apiclient.WorkflowBody) {
 	m.reveal()
 }
 
+func sameOffGraph(a, b []OffGraphRun) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // sync repaints the canvas into the viewport. It runs eagerly rather than at
 // the next View because the viewport cannot scroll content it does not have:
 // every offset it computes clamps against the content's size, so a reveal or
 // a wheel event arriving before the first paint would silently do nothing.
 func (m *Model) sync() {
-	lines := Render(m.diagram, m.scene, ViewState{Selected: m.selected}, m.theme)
+	lines := Render(m.diagram, m.scene, ViewState{Selected: m.selected, Run: m.run}, m.theme)
 	m.vp.SetContent(strings.Join(lines, "\n"))
 }
 
@@ -163,8 +222,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case "right", "l":
 		m.move(1, 0)
 	case "tab":
+		if !m.sourceWalk {
+			return m, nil
+		}
 		m.step(1)
 	case "shift+tab":
+		if !m.sourceWalk {
+			return m, nil
+		}
 		m.step(-1)
 	case "shift+up":
 		m.vp.ScrollUp(1)
@@ -310,4 +375,23 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+// Nodes is the diagram's nodes in source order, for a host that has to join
+// runtime rows onto them. It returns the slice the model holds: callers read
+// it, and the package's own pipeline never mutates a node in place.
+func (m *Model) Nodes() []Node { return m.diagram.Nodes }
+
+// Lanes is every fan_out lane in the diagram, in source order. A lane is what
+// a runtime overlay hangs a child task off, and its Key is the name to use —
+// a lane id alone is unique only inside its own fan_out.
+func (m *Model) Lanes() []Column {
+	var out []Column
+	for _, g := range m.diagram.Groups {
+		if g.Kind != GroupFanOut {
+			continue
+		}
+		out = append(out, g.Columns...)
+	}
+	return out
 }
