@@ -108,6 +108,10 @@ agents:
 		// 035 opt-out default survives: enabled, with task 052's reconciler
 		// interval.
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
+		// And for `update:` — the release check is on by default (task 055)
+		// and stays on through a config that overrides everything else, which
+		// is what "opt-out" has to mean for it to be true.
+		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
 		TUI:    TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -319,5 +323,43 @@ func TestEnsureDefaultFile(t *testing.T) {
 	}
 	if string(raw) != custom {
 		t.Error("EnsureDefaultFile overwrote an existing config file")
+	}
+}
+
+// The release check is an opt-out with two independent switches, and each
+// must work on its own: `check: false` keeps a poll interval a user may want
+// back, and `poll_interval: 0` keeps the check legible while stopping it
+// (task 055).
+func TestUpdateCheckSwitches(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		yaml  string
+		polls bool
+	}{
+		{"default", "listen: 127.0.0.1:7777\n", true},
+		{"check false", "listen: 127.0.0.1:7777\nupdate:\n  check: false\n", false},
+		{"interval zero", "listen: 127.0.0.1:7777\nupdate:\n  poll_interval: 0\n", false},
+		{"both", "listen: 127.0.0.1:7777\nupdate:\n  check: false\n  poll_interval: 0\n", false},
+		{"explicit interval", "listen: 127.0.0.1:7777\nupdate:\n  poll_interval: 1h\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, tc.yaml)
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.Update.Polls(); got != tc.polls {
+				t.Errorf("Update.Polls() = %v, want %v (%+v)", got, tc.polls, cfg.Update)
+			}
+		})
+	}
+}
+
+// A negative interval is a typo that would otherwise round to "do not poll"
+// and look like it worked, so it refuses the file.
+func TestUpdateNegativePollIntervalRefused(t *testing.T) {
+	path := writeConfig(t, "listen: 127.0.0.1:7777\nupdate:\n  poll_interval: -1h\n")
+	if _, err := Load(path); err == nil {
+		t.Fatal("a negative update.poll_interval loaded")
 	}
 }

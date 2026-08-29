@@ -140,12 +140,35 @@ agents:
 #
 # poll_interval is how often the daemon reconciles the link between a task and
 # its pull request, by matching an open pull request's head branch against the
-# task's branch (task 052). It is the only background network traffic vincent
-# makes: set it to 0 to switch the reconciler off and keep the rest of the
-# integration, which then calls GitHub only when you ask it to.
+# task's branch (task 052). It is one of vincent's two standing background
+# calls — the other is the release check below — and it fires only for
+# projects hosted on github.com: set it to 0 to switch the reconciler off and
+# keep the rest of the integration, which then calls GitHub only when you ask
+# it to.
 github:
   enabled: true
   poll_interval: 5m
+
+# Check whether a newer vincent has been released (task 055). The daemon asks
+# GitHub for the project's latest stable release once a day, caches the answer
+# in memory and serves it on GET /v1/update; "vincent doctor" and "vincent
+# daemon status" show it. Prereleases are never reported.
+#
+# It is one unauthenticated GET. Nothing identifying is sent: no token, no
+# telemetry, no machine or install identifier — vincent asks GitHub a public
+# question and reads the answer.
+#
+# Unlike the GitHub reconciler above, this one fires for every install, which
+# is why it has its own switch. With check: false the daemon makes no request
+# for it at all; only running "vincent update" does, and that command makes
+# its own call rather than going through the daemon. poll_interval: 0 has the
+# same effect and keeps the key visible.
+#
+# Nothing is ever downloaded or installed by the check. "vincent update"
+# applies one, and only when you run it.
+update:
+  check: true
+  poll_interval: 24h
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
@@ -694,9 +717,12 @@ every time, because a snapshot of them would go stale and lie.
 
 `poll_interval` is how often the daemon reconciles those links: it lists each
 GitHub-based project's open pull requests and links the ones whose head branch
-equals a task's branch. It is vincent's **only** standing outbound network
-traffic, which is why it has its own key — set it to `0` and the reconciler
-stops while the rest of the integration keeps working on demand. A link a human
+equals a task's branch. It is one of vincent's **two** standing outbound calls
+— the other is [`update`](#update)'s release check — and it is the one that
+fires only for projects hosted on github.com, so a daemon with no GitHub-origin
+project makes no call under this key at all. That is why it has its own key —
+set it to `0` and the reconciler stops while the rest of the integration keeps
+working on demand. A link a human
 made by hand is never overwritten by it, and a link a human removed is never
 re-applied.
 
@@ -716,6 +742,39 @@ your own host, enterprise and SSO configuration — and otherwise reads
 `GITHUB_TOKEN` or `GH_TOKEN` from the environment the daemon inherited. Both are
 described under [environment variables](#environment-variables), and
 `vincent doctor` reports which one is in play.
+
+### `update`
+
+```yaml
+update:
+  check: true
+  poll_interval: 24h
+```
+
+Whether the daemon checks for a newer vincent release. It is an **opt-out**: on
+by default, once a day.
+
+The check is **one unauthenticated GET** of the project's latest-release feed.
+Nothing identifying is sent — no token, no telemetry, no machine or install
+identifier. Prereleases are never reported. The answer is cached in memory (a
+restart re-polls, and nothing here is written to the database) and served on
+[`GET /v1/update`](api.md#get-v1update); `vincent doctor` and `vincent daemon
+status` render it.
+
+Unlike [`github.poll_interval`](#github), which fires only for projects hosted
+on github.com, this one fires for **every** install — which is why it has its
+own switch. With `check: false` the daemon makes no request for it at all, and
+only running [`vincent update`](cli.md#vincent-update) does; that command makes
+its own call rather than going through the daemon, which is also why it works
+before the first poll and with no daemon running.
+
+`poll_interval: 0` has the same effect and keeps the key visible. A negative
+interval is refused rather than rounded to zero. Read per tick, so a
+[reload](#reload-semantics) governs the next one, including a reload that
+switches the check back on.
+
+**Nothing is ever downloaded or installed by the check.** Applying an update is
+[`vincent update`](cli.md#vincent-update), which you run.
 
 ### `notify`
 

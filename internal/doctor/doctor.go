@@ -14,8 +14,10 @@ import (
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
+	"github.com/lezli01/vincent/internal/version"
 )
 
 // DefaultLogTail is how many trailing daemon-log lines a report carries. Wide
@@ -59,7 +61,16 @@ type Report struct {
 	// token was inherited instead. It is a **row, not a problem**: task
 	// creation without an issue is unaffected by every "no" it can report, so
 	// nothing here makes `vincent doctor` exit 1.
-	GitHub  GitHub  `json:"github"`
+	GitHub GitHub `json:"github"`
+	// Update is the release check (task 055): what the daemon last learned
+	// from the release feed, and whether the running daemon is older than the
+	// binary on disk after a swap.
+	//
+	// Following task 035's precedent for the GitHub row, these are **rows,
+	// not problems**: neither a newer release nor a stale daemon changes the
+	// exit code, because both leave everything working. A user who declines
+	// to update should not have a diagnostic that exits 1 forever.
+	Update  Update  `json:"update"`
 	Storage Storage `json:"storage"`
 	Tasks   Tasks   `json:"tasks"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
@@ -220,6 +231,38 @@ type GitHub struct {
 	Message string `json:"message,omitempty"`
 }
 
+// Update is the §12.1 row for the release check (task 055). It answers two
+// questions with one group: is there a newer vincent, and is the daemon that
+// is running the same build as the binary that just answered.
+type Update struct {
+	// Enabled is `update.check` as the daemon has it loaded — or, in a local
+	// report with no daemon, as this process reads config.yaml.
+	Enabled bool `json:"enabled"`
+	// CheckedAt is when a poll last succeeded; nil means none has, which is
+	// the truth for a daemon that just started and for every local report.
+	CheckedAt *time.Time `json:"checked_at"`
+	// LatestVersion is the newest stable release seen, empty when unknown.
+	LatestVersion string `json:"latest_version,omitempty"`
+	ReleaseURL    string `json:"release_url,omitempty"`
+	// UpdateAvailable compares LatestVersion against BinaryVersion. A `dev`
+	// build is never behind.
+	UpdateAvailable bool `json:"update_available"`
+	// BinaryVersion is the build of the binary that produced this report;
+	// DaemonVersion is the build of the daemon that answered, empty when none
+	// did.
+	BinaryVersion string `json:"binary_version"`
+	DaemonVersion string `json:"daemon_version,omitempty"`
+	// DaemonOutdated is the post-swap state `vincent update` warns about: the
+	// binary on disk is newer than the daemon still running the old image.
+	// Nothing is broken — the daemon keeps its old code until it is restarted
+	// — which is why this is a row and not a problem.
+	DaemonOutdated bool `json:"daemon_outdated"`
+	// Error is why the last poll failed, empty when it worked. A silently
+	// failing check looks exactly like one with nothing to report, and this
+	// row is where a user asks which it is.
+	Error string `json:"error,omitempty"`
+}
+
 // Storage is the data dir's footprint (§17) and the §10 residue.
 type Storage struct {
 	// WorktreesDir is {data_dir}/worktrees, which the count and byte total
@@ -327,6 +370,11 @@ type Options struct {
 	// so the report says orphans are unknown rather than guessing from
 	// directory names.
 	ScanOrphans func(ctx context.Context) ([]Orphan, error)
+	// Update is the daemon's cached release check (task 055). It arrives as a
+	// value for the reason Daemon does: the daemon holds the cache and this
+	// package must not import it. A zero value is the honest answer for a
+	// local report with no daemon — nothing has been checked.
+	Update release.Status
 }
 
 // Compose builds every group this package can answer without a database and
@@ -349,6 +397,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 		r.Agents = DetectAgents(ctx, cfg)
 	}
 	r.GitHub = DetectGitHub(ctx, cfg)
+	r.Update = updateRow(cfg, opts.Update, r.Daemon.Version)
 	r.Storage = inspectStorage(ctx, opts)
 	r.Evaluate()
 	return r
@@ -493,6 +542,32 @@ func DetectGitHub(ctx context.Context, cfg config.Config) GitHub {
 	if !out.Usable {
 		out.Message = github.Message(detection.Reason)
 	}
+	return out
+}
+
+// updateRow renders the release check. The comparison is against **this
+// binary's** version rather than the daemon's, because the question a user is
+// asking is "should I download a newer vincent", and the answer is about the
+// file on disk.
+func updateRow(cfg config.Config, st release.Status, daemonVersion string) Update {
+	current := version.Version()
+	out := Update{
+		Enabled:         cfg.Update.Check,
+		LatestVersion:   st.Latest.Version,
+		ReleaseURL:      st.Latest.URL,
+		UpdateAvailable: st.UpdateAvailable(current),
+		BinaryVersion:   current,
+		DaemonVersion:   daemonVersion,
+		Error:           st.Error,
+	}
+	if !st.CheckedAt.IsZero() {
+		t := st.CheckedAt.UTC()
+		out.CheckedAt = &t
+	}
+	// Strictly older, not merely different: a `dev` binary talking to a
+	// released daemon is a developer's own doing and not a finding, and
+	// release.IsNewer already refuses to call `dev` a version.
+	out.DaemonOutdated = release.IsNewer(daemonVersion, current)
 	return out
 }
 

@@ -13,6 +13,8 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/release"
+	"github.com/lezli01/vincent/internal/version"
 )
 
 const (
@@ -248,6 +250,16 @@ func newDaemonStatusCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(out, "daemon is running (pid %d, port %d, version %s, started %s)\n",
 				ri.PID, ri.Port, h.Version, ri.StartedAt.Local().Format(time.RFC3339))
+			// The post-swap mismatch (task 055). `vincent update` replaces the
+			// binary and nothing else — it drains nothing and kills nothing —
+			// so a daemon started before the swap keeps its old code until it
+			// is restarted. Nothing is broken, which is why this is a line and
+			// not an exit code: the status is still healthy.
+			if release.IsNewer(h.Version, version.Version()) {
+				_, _ = fmt.Fprintf(out,
+					"this binary is %s — the running daemon is older; restart it to pick the new build up\n",
+					version.Version())
+			}
 			return nil
 		},
 	}

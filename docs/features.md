@@ -267,10 +267,13 @@ open listing. A task with no pull request is offered a prefilled compare URL
 instead — GitHub's own "open a pull request" page, carrying the task's title and
 description, and `Closes #N` when the task came from an issue.
 
-This is the one thing vincent does on the network without being asked, so it has
-its own switch: `github.poll_interval: 0` stops the background listing and
-leaves everything else working on demand. It writes nothing to GitHub either —
-the compare URL is built, never fetched, and a human presses GitHub's button.
+This is one of two things vincent does on the network without being asked — the
+other is the release check under [Run it on your platform](#run-it-on-your-platform)
+— and it has its own switch: `github.poll_interval: 0` stops the background
+listing and leaves everything else working on demand. It fires only for projects
+whose `origin` is a github.com repository, so a daemon with no such project never
+makes it. It writes nothing to GitHub either — the compare URL is built, never
+fetched, and a human presses GitHub's button.
 
 See the [CLI reference](reference/cli.md#vincent-github-prs) and the
 [API reference](reference/api.md#github-pull-requests).
@@ -280,8 +283,9 @@ See the [CLI reference](reference/cli.md#vincent-github-prs) and the
 `vincent doctor` produces one report covering paths, configuration, daemon
 health, the recent log tail, the database's footprint, row counts and integrity,
 agent availability, login state and whether the installed CLI build is one
-vincent has been tested against, the GitHub integration, disk use, worktrees,
-and task counts. It supports JSON output for bug
+vincent has been tested against, the GitHub integration, whether a newer vincent
+has been released and whether the running daemon is older than the binary you
+just ran, disk use, worktrees, and task counts. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.
 
@@ -323,6 +327,13 @@ as archives plus platform-friendly packages:
 - WinGet or Scoop on Windows
 - deb and rpm packages on Linux
 - mise or release archives on all platforms
+
+The daemon asks GitHub once a day whether a newer **stable** release exists and
+`vincent doctor` shows the answer; `vincent update --check` asks on demand, and
+`vincent update` applies one — verifying the download, and never touching a
+binary a package manager owns. The check is an opt-out
+([`update.check: false`](reference/configuration.md#update)); applying is always
+something you run.
 
 Release archives are checksummed, the checksum manifest is signed with cosign,
 and builds carry GitHub attestations. There is no OS code signing on either

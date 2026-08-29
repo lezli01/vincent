@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
@@ -84,6 +85,16 @@ type Deps struct {
 	// (task 005, §10). Nil is tolerated (tests without a data dir) — the
 	// maintenance endpoints then answer 500 and /v1/info reports no orphans.
 	Reclaimer *taskrun.Reclaimer
+	// UpdateStatus returns the daemon's cached release check (task 055,
+	// §13.2). It serves **only** the cache: GET /v1/update never makes an
+	// outbound call, which is what keeps `update.check: false` a literal
+	// promise — a request-triggered refresh would have the daemon making
+	// exactly the call the user disabled. `vincent update --check` asks
+	// GitHub itself instead (decision 3).
+	//
+	// Nil is tolerated (tests without a poller); the endpoint then reports
+	// the never-polled, disabled state, which is the truth for that daemon.
+	UpdateStatus func() release.Status
 }
 
 // AgentStatus is one adapter's availability as reported by /v1/info
@@ -189,6 +200,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
 	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
+	rt.handle(http.MethodGet, "/v1/update", s.handleUpdate)
 	rt.handle(http.MethodPost, "/v1/doctor/fix", s.handleDoctorFix)
 	rt.handle(http.MethodPost, "/v1/daemon/stop", s.handleStop)
 	rt.handle(http.MethodPost, "/v1/daemon/backup", s.handleBackup)

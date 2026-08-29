@@ -40,6 +40,9 @@ type DoctorAgent = doctor.Agent
 // DoctorGitHub is the report's GitHub issue integration row (task 035).
 type DoctorGitHub = doctor.GitHub
 
+// DoctorUpdate is the report's release-check row (task 055).
+type DoctorUpdate = doctor.Update
+
 // DoctorStorage is the report's disk and worktree group.
 type DoctorStorage = doctor.Storage
 

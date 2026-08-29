@@ -14,6 +14,7 @@ localhost API.
 - [`vincent project`](#vincent-project)
 - [`vincent task`](#vincent-task)
 - [`vincent status`](#vincent-status)
+- [`vincent update`](#vincent-update)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
@@ -30,7 +31,8 @@ localhost API.
 
 `vincent daemon status` overloads them usefully: `0` healthy, `1` not running,
 `2` running but unresponsive. `vincent doctor` follows the same shape: `0`
-healthy, `1` problems found, `2` no daemon answered.
+healthy, `1` problems found, `2` no daemon answered. So does
+[`vincent update`](#vincent-update) — see its own table.
 
 ## Global behavior
 
@@ -72,7 +74,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Eight groups:
+One report answering "why is nothing running?". Nine groups:
 
 | Group | Rows |
 |---|---|
@@ -82,6 +84,7 @@ One report answering "why is nothing running?". Eight groups:
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
+| Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
 
@@ -95,6 +98,9 @@ are present, or a task is **unreconciled** — `queued` (or finished) while one 
 its step runs is still marked `running`, which means crash recovery could not
 close the previous attempt and admission will not run that task until it does
 ([Troubleshooting](../guides/troubleshooting.md#start-here-vincent-doctor)).
+The **Update** rows never set it either: a newer release and a daemon still
+running the previous build both leave everything working, so both are stated as
+facts with the command that acts on them — never as problems.
 The **GitHub** rows never set the exit code either, and they say why: every "no"
 they can report — the toggle off, `gh` missing, `gh` logged out, no token —
 leaves task creation without an issue working exactly as before, so the row ends
@@ -213,6 +219,11 @@ vincent daemon status [--json]
 
 Reports whether the daemon is running, its identity, and which agent CLIs it
 resolved. Exit `0` healthy, `1` not running, `2` unresponsive.
+
+If the binary you just ran is newer than the daemon that answered — which is
+what you have right after [`vincent update`](#vincent-update) — it says so and
+tells you to restart it. That is a line, not a failure: the running daemon keeps
+its old code until it is restarted, and everything keeps working meanwhile.
 
 ### `vincent daemon logs`
 
@@ -824,6 +835,71 @@ Details worth knowing:
 The status is never a `failure_reason`: nothing renders it as the cause of a
 failure, because a step killed on a timeout can be carrying a line it wrote
 half an hour earlier.
+
+## `vincent update`
+
+```sh
+vincent update [--check] [--dry-run] [--require-signature] [--json]
+```
+
+Asks GitHub for the latest **stable** release and, unless `--check` is given,
+installs it over this binary. A prerelease is never offered.
+
+This command talks to the release feed directly rather than through the daemon,
+so it works with no daemon running and before the daemon's own background check
+has ever polled. That is also what makes
+[`update.check: false`](configuration.md#update) a literal promise: with the
+background check off, the daemon makes no request, and only running this
+command does.
+
+**It only replaces a binary vincent owns** — a direct-download archive, or one
+you placed by hand. For an install a package manager owns it changes nothing
+and prints that channel's command:
+
+| Channel | Printed |
+|---|---|
+| Homebrew | `brew upgrade vincent` |
+| Scoop | `scoop update vincent` |
+| WinGet | `winget upgrade --id lezli01.Vincent --exact` |
+| mise | `mise upgrade vincent` |
+| `go install` | `go install github.com/lezli01/vincent/cmd/vincent@latest` |
+| deb / rpm | the release page, to fetch the new package |
+| not identifiable | the release page — treated as package-managed |
+
+**What is verified before anything runs.** The release signs `checksums.txt`,
+not each asset, so the chain is the one the release notes tell you to run by
+hand: the cosign signature over `checksums.txt` against the project's identity
+and issuer, then the downloaded archive's SHA-256 against that verified file.
+On any mismatch nothing is replaced and the old binary is left byte-identical.
+
+`cosign` is used when it is on your `PATH` and is not bundled. Without it the
+checksum check runs alone and the command says plainly that the signature was
+**not** verified; `--require-signature` makes a missing `cosign` fatal instead.
+
+There is no prompt — running the command is the decision, and this tree does
+not prompt because its purpose is scripting. Use `--dry-run` to see what would
+happen. After a successful swap the running daemon still has the old build, and
+the command prints the restart for your install.
+
+Exit codes:
+
+| | `0` | `1` | `2` |
+|---|---|---|---|
+| `--check` | up to date | the check failed (offline, rate-limited) | an update is available |
+| no flag | nothing to do, **or** swapped successfully | verification or the swap failed; the binary is untouched | an update exists but a package manager owns this install |
+
+`--json` carries `swapped`, which is what separates the two `0`s.
+
+```sh
+vincent update --check --json
+{
+  "current_version": "v0.4.1",
+  "latest_version": "v0.5.0",
+  "update_available": true,
+  "published_at": "2026-08-21T09:31:07Z",
+  "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0"
+}
+```
 
 ## `vincent workflow`
 
