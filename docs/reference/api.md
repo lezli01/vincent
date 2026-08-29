@@ -450,8 +450,8 @@ false the body carries a `reason` and a human-readable `message`:
 | `not_github` | No `origin`, or one that is not a github.com repository |
 | `no_credential` | `gh` is absent or logged out, and neither `GITHUB_TOKEN` nor `GH_TOKEN` is set |
 | `unauthorized` | GitHub rejected the credential |
-| `forbidden` | Authenticated, but not permitted to read this repository's issues |
-| `not_found` | No such repository or issue |
+| `forbidden` | Authenticated, but not permitted to read this repository's issues or pull requests |
+| `not_found` | No such repository, issue or pull request |
 | `rate_limited` | The API rate limit is spent |
 | `timeout` | GitHub did not answer in time |
 | `unreachable` | The call failed, or the API answered something with no more specific meaning |
@@ -581,8 +581,9 @@ GitHub-based project's open pull requests and links the ones whose head branch
 equals a task's branch, marking them `auto`. It never overwrites a `human` link
 and never un-suppresses one. Set the interval to `0` to switch it off.
 
-Either endpoint answers **409** when the integration is not usable, carrying the
-reason a client can branch on:
+The two listings, `POST /v1/tasks` naming a `github_issue`, and `POST
+/v1/tasks/{id}/github/pull` answer **409** when the integration is not usable,
+carrying the reason a client can branch on:
 
 ```json
 { "error": { "code": "invalid_state",
@@ -1148,6 +1149,7 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 ```
 task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
+task.github_pull_changed
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1181,6 +1183,13 @@ they need.
   retires an observation — never on a re-observation identical to what is
   already stored, and never merely because a window lapsed. Re-fetch
   [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
+- `task.github_pull_changed` carries `{ repo, number, source, suppressed }` —
+  empty when the link was cleared — and says a task's pull-request link changed:
+  the daemon's reconciler matched one, or a human linked or unlinked one. It is
+  **not** a transition: the task's state is unchanged and its `updated_at` is
+  untouched, because the link is a fact about GitHub rather than about the
+  task's own progress. Re-fetch
+  [`/v1/tasks/{id}/github/pull`](#github-pull-requests) when you see one.
 
 ### Live output — ephemeral
 

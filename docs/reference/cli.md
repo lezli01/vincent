@@ -1015,9 +1015,11 @@ PR     STATE  TITLE                                        BRANCH               
 
 `STATE` is `open`, `draft`, `closed` or `merged`; the listing itself is
 open-only, so `closed` and `merged` appear only through a task's own link.
-`TASK` is the board task whose branch this pull request is from — the daemon
-links those in the background, every
-[`github.poll_interval`](configuration.md#github).
+`TASK` is the board task this pull request is linked to. The daemon makes that
+link in the background every
+[`github.poll_interval`](configuration.md#github), matching a pull request's
+head branch against a task's own branch; a link made or removed by hand over
+[the API](api.md#github-pull-requests) wins over it.
 
 ### `vincent github status`
 
