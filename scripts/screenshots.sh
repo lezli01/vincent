@@ -698,6 +698,34 @@ Type "g"
 Sleep 4s
 Screenshot "'"$OUT"'/tui-workflow-graph.png"
 '
+
+  # The same graph with the step-detail popup open on a node: the prompt in
+  # full, and the values inherited from the file'"'"'s defaults block marked as
+  # inherited. The graph beneath is the shot above and is unchanged, which is
+  # why this is a second tape rather than a replacement.
+  #
+  # `enter` is pressed *outside* a Hide block and the tape does not end on the
+  # Screenshot: keys inside Hide never reach a screenshot, and a Screenshot is
+  # written on the next captured frame, so a tape ending on one records
+  # nothing.
+  tape tui-workflow-step 1400 '
+Type ":"
+Sleep 1s
+Type "workflows"
+Sleep 1s
+Enter
+Sleep 3s
+Down 3
+Sleep 1s
+Type "g"
+Sleep 4s
+Down 1
+Sleep 1s
+Enter
+Sleep 3s
+Screenshot "'"$OUT"'/tui-workflow-step.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

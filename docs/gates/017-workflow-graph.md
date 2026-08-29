@@ -186,7 +186,62 @@ steps:
 ellipsis, and **no column drift** on the rows below them. This is the one that
 catches a renderer measuring runes instead of display width.
 
-### 10. Anything larger than your terminal
+### 10. `detail.yaml` — a step the strip cannot hold
+
+```yaml
+name: detail
+description: read one step in full, from the graph
+fields:
+  - {name: branch, type: string, required: true}
+defaults:
+  agent: claude
+  model: opus
+  timeout: 30m
+steps:
+  - id: integrate
+    name: Run the integration suite on the merged branch
+    type: agent
+    model: sonnet
+    if: '{{ .Fields.branch }}'
+    prompt: |
+      Merge {{ .Fields.branch }} into the release branch.
+
+      Then run the whole suite, and say for every failure whether it is
+      caused by the merge or was already failing on the branch before it.
+    check: make test
+    check_timeout: 20m
+    max_retries: 2
+
+  - id: publish
+    type: command
+    run: |
+      make build
+      make publish
+    shell: sh
+    env:
+      RELEASE_CHANNEL: stable
+      SOURCE_DATE_EPOCH: "0"
+    timeout: 10m
+
+  - id: announce
+    type: manual
+    instructions: |
+      Post the release note in the channel, then approve this step.
+```
+
+**Look for:** the node box truncating that long name and the strip below
+dropping fields off its second line — then press `enter`. The popup shows the
+whole prompt wrapped, `check`, `check_timeout`, `max_retries` and `if`, and
+`agent  claude  (inherited from defaults)` beside `model  sonnet` with no
+marker, because the step authors the model and not the agent. `timeout  30m` is
+inherited on `integrate` and authored on `publish`. Move to `publish` and
+`announce` for the `run:` body, the `env` block and the instructions.
+
+**Also look for:** `esc` closing the popup back to the graph with the same node
+still selected, the graph underneath unchanged, and `?` listing the popup's
+keys rather than the graph's while it is open (task 053).
+
+### 11. Anything larger than your terminal
 
 Use `spread.yaml` in a window about 40 columns wide.
 
@@ -207,6 +262,9 @@ These cannot be asserted from a test, which is why the gate exists.
 | 5 | Press `?` with the graph open | The help lists the graph's keys, not the list's |
 | 6 | Set your terminal to a monochrome profile, or `NO_COLOR=1` | Every distinction above is still readable: frame weights, type words, `true`/`false`, the selected node's heavier border |
 | 7 | Click a node; scroll the wheel | The click selects it; the wheel scrolls the canvas |
+| 8 | Press `enter` on every kind of node in `spread.yaml`: a step, the `fan_out` header, a lane's collapsed `seq`, the merge, `END` | Each opens a popup that says something true about that node. None opens an empty one |
+| 9 | With the popup open on a step, press `e`, change that step's prompt, save, quit the editor | The popup redraws with the new prompt. Delete the step instead and it closes back to the graph |
+| 10 | Open a popup taller than the terminal (`detail.yaml`, `integrate`) and page it | It scrolls; the graph behind it does not move, and the selection does not either |
 
 ## The runtime leg (task 051, added 2026-08-29)
 
@@ -237,6 +295,10 @@ then `5`.
 | Date | Version | Platform | By | Result |
 |---|---|---|---|---|
 | — | — | — | — | not yet walked |
+
+Legs 8–10 and corpus entry 10 were added on 2026-08-29 with task 053 (the
+step-detail popup) and have not been walked either; the automated half of that
+work is in `internal/tui` and `internal/tui/workflowgraph`.
 
 Add a row per walk. A gate that has never been walked on a platform is not
 known to pass there.

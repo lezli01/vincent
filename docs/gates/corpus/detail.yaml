@@ -1,0 +1,45 @@
+# 11 — a step carrying more than the inspector strip can hold (task 053). The
+# strip packs two lines and stops; this step has a name too long for a node
+# box, a multi-line prompt, an env block, a check, a timeout and a value it
+# does not set at all — `agent`, which comes from the defaults block below.
+#
+# It exists to be opened: select `integrate` and press `enter`. What the modal
+# shows and the strip cannot is the point of the walk.
+name: detail
+description: read one step in full, from the graph
+fields:
+  - {name: branch, type: string, required: true}
+defaults:
+  agent: claude
+  model: opus
+  timeout: 30m
+steps:
+  - id: integrate
+    name: Run the integration suite on the merged branch
+    type: agent
+    model: sonnet
+    if: '{{ .Fields.branch }}'
+    prompt: |
+      Merge {{ .Fields.branch }} into the release branch.
+
+      Then run the whole suite, and say for every failure whether it is
+      caused by the merge or was already failing on the branch before it.
+    check: make test
+    check_timeout: 20m
+    max_retries: 2
+
+  - id: publish
+    type: command
+    run: |
+      make build
+      make publish
+    shell: sh
+    env:
+      RELEASE_CHANNEL: stable
+      SOURCE_DATE_EPOCH: "0"
+    timeout: 10m
+
+  - id: announce
+    type: manual
+    instructions: |
+      Post the release note in the channel, then approve this step.

@@ -1,6 +1,7 @@
 package workflowgraph
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -146,13 +147,31 @@ type Node struct {
 	// Group is the enclosing group, empty at the top level.
 	Group  string
 	Detail []DetailField
+	// Full is everything the DTO says about this node, for the step-detail
+	// modal (task 053). Detail is the glance view and stays the two-line
+	// strip's; Full is never truncated and never empty — every node opens
+	// something.
+	Full []DetailSection
 }
 
-// DetailField is one inspector row. The renderer prints them; nothing here
-// knows how wide the strip is.
+// DetailField is one detail row. The renderer prints them; nothing here knows
+// how wide the strip or the modal is, which is why a multi-line value
+// (a prompt, a `run:` body) is carried unwrapped.
 type DetailField struct {
 	Label string
 	Value string
+	// Inherited marks a value the step itself does not author: the workflow's
+	// §8.1 `defaults` block supplies it. The two are kept apart because the
+	// DTO keeps them apart, and folding a default into the step it was
+	// inherited by destroys the distinction §8.6 rests on (decision 12).
+	Inherited bool
+}
+
+// DetailSection is one titled block of a node's Full detail. Sections with no
+// fields are dropped at build time, so a renderer prints what it is given.
+type DetailSection struct {
+	Title  string
+	Fields []DetailField
 }
 
 // Edge is one connection. From and To are node ids.
@@ -200,10 +219,14 @@ func Build(wf *apiclient.WorkflowBody) Diagram {
 	if wf == nil {
 		return b.d
 	}
+	// The defaults block travels with the builder because a node's full
+	// detail has to say which of its values the step authored and which it
+	// inherits (§8.6) — a question only the whole file can answer.
+	b.defaults = wf.Defaults
 	_, exits := b.sequence(wf.Steps, flow{next: EndNodeID, end: EndNodeID})
 	// END is appended last so Nodes reads in source order, which is the
 	// deterministic fallback order keyboard navigation falls back to.
-	b.add(Node{ID: EndNodeID, Kind: KindEnd, Label: "END"})
+	b.add(Node{ID: EndNodeID, Kind: KindEnd, Label: "END", Full: endSections()})
 	b.linkAll(exits, EndNodeID, EdgeFlow)
 	b.d.Root = make([]string, 0, len(wf.Steps)+1)
 	for _, st := range wf.Steps {
@@ -295,7 +318,8 @@ type flow struct {
 func (f flow) id(stepID string) string { return f.prefix + stepID }
 
 type builder struct {
-	d Diagram
+	d        Diagram
+	defaults apiclient.WorkflowDefaults
 }
 
 func (b *builder) add(n Node) { b.d.Nodes = append(b.d.Nodes, n) }
@@ -436,7 +460,7 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 			id := refNodeID(header, lane.ID)
 			b.add(Node{
 				ID: id, Kind: KindWorkflowRef, Label: lane.Workflow,
-				Group: g.ID, Detail: laneDetail(lane),
+				Group: g.ID, Detail: laneDetail(lane), Full: laneSections(lane),
 			})
 			entry, exits = id, []string{id}
 			col.Nodes = []string{id}
@@ -455,7 +479,7 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 		// The join is named for the step it belongs to: "merge / merge" says
 		// the same thing twice, while "spread / merge" says whose join it is.
 		ID: merge, Kind: KindMerge, Label: st.DisplayName(), Group: f.group,
-		Badges: mergeBadges(st), Detail: mergeDetail(st),
+		Badges: mergeBadges(st), Detail: mergeDetail(st), Full: b.mergeSections(st),
 	})
 	return []string{merge}
 }
@@ -498,6 +522,7 @@ func (b *builder) plainNode(st apiclient.WorkflowStepDef, f flow) Node {
 		Group:  f.group,
 		Badges: badges(st),
 		Detail: stepDetail(st),
+		Full:   b.stepSections(st),
 	}
 }
 
@@ -609,4 +634,271 @@ func mergeDetail(st apiclient.WorkflowStepDef) []DetailField {
 		}
 	}
 	return append([]DetailField{{Label: "on_conflict", Value: policy}}, out...)
+}
+
+// The full detail is the modal's data (task 053): every field of
+// WorkflowStepDef, WorkflowLaneDef and WorkflowMergeDef that applies to a
+// node, sectioned, unwrapped and untruncated. Three rules hold it together:
+//
+//   - A field nothing sets does not appear. A value authored on the step shows
+//     unmarked; a value the step leaves empty and `defaults` supplies shows the
+//     effective value marked as inherited; a field neither sets is omitted —
+//     never the daemon's own run-time fallback, which is not in this file and
+//     would read here as though it were (decision 12, decision 18).
+//   - Multi-line values travel unwrapped. Wrapping is the renderer's job, at a
+//     width only it knows.
+//   - Every node produces something. `enter` is never inert.
+type sections []DetailSection
+
+// fieldSet accumulates one section. It is a value the caller fills and hands
+// back, so a section that gathered nothing can be dropped rather than printed
+// as an empty heading.
+type fieldSet struct {
+	title  string
+	fields []DetailField
+}
+
+func (f *fieldSet) add(label, value string) {
+	if value != "" {
+		f.fields = append(f.fields, DetailField{Label: label, Value: value})
+	}
+}
+
+func (f *fieldSet) addStr(label string, value *string) { f.add(label, derefString(value)) }
+
+func (f *fieldSet) addInt(label string, value *int) {
+	if value != nil {
+		f.add(label, strconv.Itoa(*value))
+	}
+}
+
+// inherit prints the authored value, else the defaults block's marked as
+// inherited, else nothing.
+func (f *fieldSet) inherit(label, value, fallback string) {
+	switch {
+	case value != "":
+		f.add(label, value)
+	case fallback != "":
+		f.fields = append(f.fields, DetailField{Label: label, Value: fallback, Inherited: true})
+	}
+}
+
+func (f *fieldSet) inheritStr(label string, value, fallback *string) {
+	f.inherit(label, derefString(value), derefString(fallback))
+}
+
+func (f *fieldSet) inheritInt(label string, value, fallback *int) {
+	switch {
+	case value != nil:
+		f.add(label, strconv.Itoa(*value))
+	case fallback != nil:
+		f.fields = append(f.fields, DetailField{
+			Label: label, Value: strconv.Itoa(*fallback), Inherited: true,
+		})
+	}
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func (s sections) with(f fieldSet) sections {
+	if len(f.fields) == 0 {
+		return s
+	}
+	return append(s, DetailSection{Title: f.title, Fields: f.fields})
+}
+
+// runsAnAgent reports whether a step type actually starts an agent, which is
+// what decides whether the agent-shaped defaults (agent, model, effort,
+// permission mode, input handling) are inherited by it at all. Printing
+// `agent: claude (inherited)` on a `command` step would state something the
+// run will never do.
+func runsAnAgent(typ string) bool { return NodeKind(typ) == KindAgent }
+
+// runsWork reports whether a step is something that runs and can therefore
+// retry or time out (§7.2) — as opposed to the structure steps, which the
+// engine walks rather than executes.
+func runsWork(typ string) bool {
+	switch NodeKind(typ) {
+	case KindAgent, KindCommand, KindManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// stepSections is one authored step in full.
+func (b *builder) stepSections(st apiclient.WorkflowStepDef) []DetailSection {
+	return b.stepSectionsTitled(st, "Step")
+}
+
+func (b *builder) stepSectionsTitled(st apiclient.WorkflowStepDef, title string) []DetailSection {
+	var out sections
+
+	step := fieldSet{title: title}
+	step.add("id", st.ID)
+	step.add("type", st.Type)
+	step.add("name", st.Name)
+	step.add("if", st.If)
+	if st.AllowFailure {
+		step.add("allow_failure", "true")
+	}
+	// An authored include says what it will splice in; a step in a task's
+	// snapshot says what it was spliced *through* (§7.9).
+	step.add("workflow", st.Workflow)
+	if NodeKind(st.Type) == KindInclude {
+		step.add("becomes", "steps spliced into this task at creation")
+	}
+	if len(st.ResolvedFrom) > 0 {
+		step.add("from", strings.Join(st.ResolvedFrom, " → "))
+	}
+	out = out.with(step)
+
+	if runsAnAgent(st.Type) {
+		agent := fieldSet{title: "Agent"}
+		agent.inherit("agent", st.Agent, b.defaults.Agent)
+		agent.inherit("model", st.Model, b.defaults.Model)
+		agent.inherit("effort", st.Effort, b.defaults.Effort)
+		agent.inherit("permission_mode", st.PermissionMode, b.defaults.PermissionMode)
+		agent.inherit("on_input", st.OnInput, b.defaults.OnInput)
+		agent.inheritStr("input_timeout", st.InputTimeout, b.defaults.InputTimeout)
+		agent.add("prompt", st.Prompt)
+		out = out.with(agent)
+	}
+
+	command := fieldSet{title: "Command"}
+	command.add("run", st.Run)
+	command.add("shell", st.Shell)
+	command.add("env", envValue(st.Env))
+	out = out.with(command)
+
+	manual := fieldSet{title: "Manual"}
+	manual.add("instructions", st.Instructions)
+	out = out.with(manual)
+
+	// `check` is a field an agent or command step may carry, never a type
+	// (§7.3), so it is its own section wherever it appears.
+	check := fieldSet{title: "Check"}
+	check.add("check", st.Check)
+	// check_timeout has no `defaults` entry to inherit from: §8.1 does not
+	// carry one, and the daemon's config-level fallback is not in this file.
+	check.addStr("check_timeout", st.CheckTimeout)
+	out = out.with(check)
+
+	limits := fieldSet{title: "Retries and timeout"}
+	if runsWork(st.Type) {
+		limits.inheritInt("max_retries", st.MaxRetries, b.defaults.MaxRetries)
+		limits.inheritStr("retry_backoff", st.RetryBackoff, b.defaults.RetryBackoff)
+		limits.inheritStr("timeout", st.Timeout, b.defaults.Timeout)
+	} else {
+		// A structure step is walked rather than executed, so it inherits
+		// neither retries nor a timeout — but it may still author one, and a
+		// field the file sets is a field the modal shows.
+		limits.addInt("max_retries", st.MaxRetries)
+		limits.addStr("retry_backoff", st.RetryBackoff)
+		limits.addStr("timeout", st.Timeout)
+	}
+	out = out.with(limits)
+
+	structure := fieldSet{title: "Structure"}
+	structure.addInt("max_parallel", st.MaxParallel)
+	structure.addInt("count", st.Count)
+	if len(st.ForEach) > 0 {
+		structure.add("for_each", strings.Join(st.ForEach, "\n"))
+	}
+	structure.addInt("max_iterations", st.MaxIterations)
+	if n := len(st.Steps); n > 0 {
+		structure.add("steps", plural(n, "step")+" drawn inside the frame")
+	}
+	if n := len(st.Lanes); n > 0 {
+		structure.add("lanes", plural(n, "lane")+" drawn as the frame's columns")
+	}
+	if st.Merge != nil {
+		structure.add("merge", "the join below the frame")
+	}
+	out = out.with(structure)
+
+	return out
+}
+
+// envValue prints an env block sorted by key: a map has no order, and a detail
+// that reordered itself between two renders of the same file would read as a
+// change to the file.
+func envValue(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	lines := make([]string, 0, len(keys))
+	for _, k := range keys {
+		lines = append(lines, k+"="+env[k])
+	}
+	return strings.Join(lines, "\n")
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return strconv.Itoa(n) + " " + unit + "s"
+}
+
+// laneSections is a fan_out lane's collapsed workflow reference: what it
+// stands for, and that it becomes a task of its own rather than steps here.
+func laneSections(lane apiclient.WorkflowLaneDef) []DetailSection {
+	var out sections
+	f := fieldSet{title: "Lane"}
+	f.add("lane", lane.ID)
+	f.add("workflow", lane.Workflow)
+	if lane.Workflow != "" {
+		f.add("becomes", "a child task running that workflow")
+	}
+	f.add("from", lane.ResolvedFrom)
+	f.add("if", lane.If)
+	f.add("agent", lane.Agent)
+	f.add("model", lane.Model)
+	f.add("effort", lane.Effort)
+	f.addInt("priority", lane.Priority)
+	f.add("fields", envValue(lane.Fields))
+	if n := len(lane.Steps); n > 0 {
+		f.add("steps", plural(n, "step")+" drawn in this column")
+	}
+	out = out.with(f)
+	return out
+}
+
+// mergeSections is a fan_out's join: its conflict policy, and the resolver
+// agent in full when one is set — a step in its own right (§7.6), and the one
+// place an agent may resolve a conflict nobody read (§16).
+func (b *builder) mergeSections(st apiclient.WorkflowStepDef) []DetailSection {
+	var out sections
+	f := fieldSet{title: "Merge"}
+	f.add("join", st.ID)
+	policy := "block"
+	if st.Merge != nil {
+		policy = st.Merge.ConflictPolicy()
+	}
+	f.add("on_conflict", policy)
+	f.add("merges", plural(len(st.Lanes), "lane"))
+	out = out.with(f)
+	if st.Merge != nil && st.Merge.Agent != nil {
+		out = append(out, b.stepSectionsTitled(*st.Merge.Agent, "Resolver")...)
+	}
+	return out
+}
+
+// endSections says the workflow ends there. It is one sentence rather than
+// nothing, because a node that opened an empty modal would read as a bug.
+func endSections() []DetailSection {
+	return []DetailSection{{Title: "End", Fields: []DetailField{
+		{Label: "end", Value: "the workflow finishes here"},
+	}}}
 }

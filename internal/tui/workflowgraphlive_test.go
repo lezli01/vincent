@@ -198,3 +198,62 @@ func TestGraphLayerHonoursProjectScope(t *testing.T) {
 		t.Error("the layer did not record which file it drew")
 	}
 }
+
+// The step-detail modal over the wire: what the endpoint serves is what the
+// modal shows, including a value the step inherits from the file's `defaults`
+// block (§8.6) — the distinction the DTO keeps two blocks for.
+func TestStepModalShowsALiveDefinition(t *testing.T) {
+	w, _, _ := liveGraphView(t, liveGraphYAML)
+	openLiveGraph(t, w)
+	w.render(120, 44)
+	w.updateKey(registryKey(t, "enter"))
+	if w.graph.modal == nil {
+		t.Fatal("enter opened no detail on a live definition")
+	}
+	out := strings.Join(w.modalLines(80), "\n")
+	for _, want := range []string{
+		"fan out and merge", // the workflow-level header
+		"plan it",           // the prompt, which nothing else in the TUI shows
+		"go build ./...",    // the check
+		"claude",            // inherited from defaults
+		"inherited",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the modal does not show %q:\n%s", want, out)
+		}
+	}
+}
+
+// A live registry reload re-renders an open modal from the new definition, and
+// closes it back to the graph when the node it was reading is gone.
+func TestStepModalFollowsALiveReload(t *testing.T) {
+	w, reg, path := liveGraphView(t, liveGraphLoopYAML)
+	openLiveGraph(t, w)
+	w.render(120, 44)
+	w.graph.graph.Select("plan")
+	w.updateKey(registryKey(t, "enter"))
+
+	writeFile(t, path, liveGraphYAML)
+	reg.ReloadGlobal()
+	msg, ok := runCmd(t, w.definitionCmd(w.graph.key), 10*time.Second).(workflowDefinitionMsg)
+	if !ok {
+		t.Fatal("the refetch did not return a definition message")
+	}
+	w.applyDefinition(msg)
+	if w.graph.modal == nil {
+		t.Fatal("the reload closed a modal whose node still exists")
+	}
+	if out := strings.Join(w.modalLines(80), "\n"); !strings.Contains(out, "fan out and merge") {
+		t.Errorf("the modal still shows the old definition:\n%s", out)
+	}
+
+	// `repeat` is gone from the edited file, so a modal reading it closes.
+	w.graph.modal.node = "repeat"
+	w.applyDefinition(msg)
+	if w.graph == nil {
+		t.Fatal("the reload closed the graph as well")
+	}
+	if w.graph.modal != nil {
+		t.Error("the modal survived a node the file no longer has")
+	}
+}

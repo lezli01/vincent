@@ -421,6 +421,14 @@ feature is for; `R` refetches this one definition, which is the layer's only
 recovery from a failed fetch. Both register in the binding registry under a
 new `ctxWorkflowGraph` context, so the footer and the `?` overlay stay honest.
 
+*Superseded in part 2026-08-29 by [task 053](053-workflow-step-detail.md):* the
+step-detail modal adds the third Escape layer this decision did not want in the
+same change as the first two — modal, then graph, then list, then home. It is
+the layer the global `esc` contract already describes (popup → screen →
+selection → filter), and the existing popups establish the shape. Everything
+else here stands: the graph is still a sub-layer of the list, `e` and `R` still
+carry into it, and the text expansion is still untouched.
+
 **Beat:** a new `viewID` takeover routed by the root. It would add a screen to
 the view table that the command palette cannot offer and that is reachable
 only from the workflows list — a routed screen that is not routable.
@@ -466,6 +474,14 @@ meaning, and their edges are labelled `true` and `false`.
 The strip deliberately does *not* show prompts or `run:` bodies. They are in
 the DTO for the builder's read path (decision 12), and the escape hatch for
 reading them is `e`, which the non-goals keep as the editing path.
+
+*Superseded in part 2026-08-29 by [task 053](053-workflow-step-detail.md):*
+`enter` opens a step-detail modal that shows prompts and `run:` bodies in full,
+so `e` is the *editing* path and no longer the way to read one. The reasoning
+retired with it is the two-line strip's width budget, which a popup does not
+share. The substance of this decision is not superseded: presence stays on the
+node and content stays off it — the node boxes gain no ink, and the strip
+renders byte for byte as it did.
 
 **Beat:** a right-hand inspector pane. Horizontal columns are the scarcest
 resource for a top-to-bottom graph in an 80-column terminal, and a pane would

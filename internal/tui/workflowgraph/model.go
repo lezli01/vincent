@@ -366,6 +366,18 @@ func (m *Model) Detail() []DetailField {
 	return append([]DetailField{{Label: "name", Value: n.Label}}, n.Detail...)
 }
 
+// FullDetail is the selected node in full — every field of the DTO that
+// applies to it, sectioned, with inherited values marked (task 053). It is
+// the modal's data; Detail stays the strip's, and the two are separate
+// because the strip is a glance and this is a reading.
+func (m *Model) FullDetail() []DetailSection {
+	n, ok := m.SelectedNode()
+	if !ok {
+		return nil
+	}
+	return n.Full
+}
+
 // ScrollPercent is how far down the canvas the viewport sits, for a host that
 // wants to show it.
 func (m *Model) ScrollPercent() float64 { return m.vp.ScrollPercent() }

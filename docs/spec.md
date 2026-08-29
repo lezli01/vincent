@@ -4894,6 +4894,31 @@ pager keys page. A terminal too narrow to draw a node readably says so rather
 than flattening the graph into a shape that is not true; a graph larger than
 the terminal is cropped and panned, never reflowed.
 
+*Amended 2026-08-29 (task 053).* **`enter` opens the selected node in full**, as
+a bordered popup over the graph. It shows every field of the DTO that applies to
+that node — including the ones nothing else in the TUI shows: the `prompt`, the
+`run:` body, `env`, `instructions`, `permission_mode`, the input and check
+timeouts, `max_parallel`, a loop's `count`/`for_each` and `max_iterations` —
+above a header naming the workflow the node sits in: its description, declared
+fields, platforms and file. Long values wrap and the popup scrolls; nothing in
+it is truncated.
+
+A value the step authors is shown as authored. A value the step leaves empty
+and the file's `defaults` block supplies is shown as the effective value and
+**marked as inherited** (§8.6); a field neither sets is omitted, and the
+daemon's own run-time fallback is never printed here — the modal shows the
+file. Every node opens something: a merge shows its conflict policy and its
+resolver agent, a collapsed reference names the workflow it stands for and
+whether it becomes a child task or spliced steps, a group header shows its
+bounds, and END says the workflow ends there.
+
+While the modal is open it owns the keyboard — scroll and pager keys move it,
+`e` and `R` still carry through — so the Escape ladder is now modal, then
+graph, then the takeover. A terminal below the minimum width has no node drawn
+and `enter` opens nothing. The picture itself is unchanged: node boxes and the
+inspector strip keep truncating exactly as they did, and the strip stays the
+glance view the selection follows without a keystroke.
+
 `e` and `R` work inside the layer: `e` opens the graphed workflow's own file,
 and a save redraws the graph in place through the same live reload the list
 uses — the selected node survives it, because a node's identity is its step id

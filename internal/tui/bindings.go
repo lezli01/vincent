@@ -43,6 +43,11 @@ const (
 	// snapshot, and because `tab` belongs to the workspace's tab cycle here
 	// rather than to the graph's source-order walk (decision 5).
 	ctxTaskWorkflow bindingContext = "task workflow"
+	// ctxWorkflowStep is the step-detail modal over the graph (task 053). Its
+	// own context for the reason the popups have theirs: while it is open it
+	// owns the keyboard, and a row shared with the graph could only describe
+	// one of the two.
+	ctxWorkflowStep bindingContext = "step detail"
 	ctxDaemon       bindingContext = "daemon"
 	ctxForm         bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
@@ -192,6 +197,17 @@ var bindings = []binding{
 	{key: "tab", label: "walk the nodes in source order (shift+tab goes back)", scope: scopePanel, context: ctxWorkflowGraph, hint: "tab next", priority: 3},
 	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4},
 	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5},
+	{key: "enter", label: "open the selected node in full — every field it carries, including the prompt or run body", scope: scopePanel, context: ctxWorkflowGraph, hint: "enter detail", priority: 2},
+
+	// The step-detail modal (task 053): these exist only while the popup owns
+	// the keyboard, and the popup prints them itself — they are here so ?
+	// stays complete. `e` and `R` carry one layer further for the reason they
+	// carried into the graph: editing is the path from wherever you are
+	// reading, and R is the layer's only recovery.
+	{key: "down", label: "scroll the detail (↑/↓; pgup/pgdn page it)", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
+	{key: "e", label: "open the workflow file in $EDITOR (the detail redraws when you save)", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
+	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
+	{key: "esc", label: "close the detail, back to the graph with the same node selected", scope: scopePanel, context: ctxWorkflowStep, noPalette: true},
 
 	// The task workspace's workflow tab (task 051). The graph is this task's
 	// own snapshot with its run state on it; `tab` cycles the workspace's

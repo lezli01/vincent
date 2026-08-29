@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
 func (w *workflowsView) render(width, height int) string {
@@ -18,10 +19,16 @@ func (w *workflowsView) render(width, height int) string {
 	}
 	if w.graph != nil {
 		w.sizeGraph()
+		var out string
 		if guidedTakeover(w.width, w.height) {
-			return w.renderGuidedGraph()
+			out = w.renderGuidedGraph()
+		} else {
+			out = w.renderGraph(width, height)
 		}
-		return w.renderGraph(width, height)
+		if w.graph.modal != nil {
+			return w.overlayStepModal(out)
+		}
+		return out
 	}
 	if guidedTakeover(w.width, w.height) {
 		return w.renderGuidedList()
@@ -470,4 +477,159 @@ func findingText(f apiclient.WorkflowFinding) string {
 		return fmt.Sprintf("line %d: %s", f.Line, f.Message)
 	}
 	return f.Message
+}
+
+// The step-detail modal (task 053). It is a bordered popup over the graph at
+// the geometry the answer, repair and follow-up popups already use, composed
+// on top of renderGraph's output rather than woven into it: with no modal open
+// the layer renders byte for byte as it did before, which is what the
+// inspector strip's "unchanged, bytes included" decision rests on.
+//
+// Everything the DTO carries about the node is here, unwrapped by the diagram
+// stage and wrapped here, at the width only this side knows.
+
+// modalLabelWidth is the label column. A wider one would buy alignment for
+// `permission_mode` at the cost of a column of reading width on every prompt
+// line, and prompts are the reason the modal exists.
+const modalLabelWidth = 15
+
+// modalWidth is the popup's outer width — the same reading measure §15's
+// popups use: nearly the whole body, capped where a line stops being
+// comfortable to scan.
+func (w *workflowsView) modalWidth() int {
+	pw := min(w.width-6, 120)
+	if pw < 20 {
+		pw = max(w.width, 1)
+	}
+	return pw
+}
+
+// modalHeight is the popup's outer height: as tall as its content, capped so
+// the graph it was opened from stays visible around it. Two of the inner rows
+// are the frame's and one is the key line.
+func (w *workflowsView) modalHeight(lines int) int {
+	return min(lines+3, max(w.height-4, 6))
+}
+
+// syncModal re-lays the open modal at the current size. It runs eagerly, the
+// way the graph's own canvas does: a viewport clamps every offset against
+// content it does not have yet, so a scroll arriving before the first paint
+// would silently do nothing.
+func (w *workflowsView) syncModal() {
+	if w.graph == nil || w.graph.modal == nil {
+		return
+	}
+	m := w.graph.modal
+	pw := w.modalWidth()
+	lines := w.modalLines(max(pw-4, 8))
+	ph := w.modalHeight(len(lines))
+	m.vp.SetWidth(max(pw-2, 1))
+	m.vp.SetHeight(max(ph-3, 1))
+	m.vp.SetContent(strings.Join(lines, "\n"))
+}
+
+// overlayStepModal draws the popup over the layer's own render.
+func (w *workflowsView) overlayStepModal(bg string) string {
+	m := w.graph.modal
+	pw := w.modalWidth()
+	ph := m.vp.Height() + 3
+	body := m.vp.View() + "\n" +
+		styleDim.Render("  esc close · ↑/↓ scroll · pgup/pgdn page · e edit · R reload")
+	popup := frame("Step · "+m.title, body, pw, ph, true)
+	x := max((w.width-pw)/2, 0)
+	y := max((w.height-ph)/3, 1)
+	return overlay(bg, popup, x, y)
+}
+
+// modalLines is the modal's content: the workflow the node sits in, then the
+// node's own sections. It returns plain rows the viewport crops; nothing here
+// truncates a value.
+func (w *workflowsView) modalLines(width int) []string {
+	g := w.graph
+	out := []string{""}
+	out = append(out, w.modalHeaderLines(width)...)
+	for _, sec := range g.graph.FullDetail() {
+		out = append(out, "", section(sec.Title))
+		for _, f := range sec.Fields {
+			out = append(out, modalFieldLines(f, width)...)
+		}
+	}
+	return append(out, "")
+}
+
+// modalHeaderLines is the workflow the node belongs to: the context a step
+// read on its own does not carry.
+func (w *workflowsView) modalHeaderLines(width int) []string {
+	g := w.graph
+	out := []string{section("Workflow")}
+	out = append(out, modalRow("name", g.key.name, false, width)...)
+	if b := g.body; b != nil {
+		out = append(out, modalRow("description", b.Description, false, width)...)
+		out = append(out, modalRow("platforms", strings.Join(b.Platforms, ", "), false, width)...)
+		out = append(out, modalRow("fields", workflowFieldsSummary(b.Fields), false, width)...)
+	}
+	out = append(out, modalRow("scope", g.scope, false, width)...)
+	out = append(out, modalRow("file", firstNonEmpty(g.file, "built-in"), false, width)...)
+	return out
+}
+
+// workflowFieldsSummary names the inputs the workflow declares, marking the
+// required ones — the same `*` the new-task form uses.
+func workflowFieldsSummary(fields []apiclient.WorkflowField) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		name := f.Name
+		if f.Required {
+			name += "*"
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// modalFieldLines is one detail row, wrapped, with an inherited value marked
+// as inherited rather than folded in silently (§8.6).
+func modalFieldLines(f workflowgraph.DetailField, width int) []string {
+	return modalRow(f.Label, f.Value, f.Inherited, width)
+}
+
+// modalRow lays a label and a value out in two columns, wrapping the value —
+// including a multi-line one, a `prompt` or a `run:` body — under itself
+// rather than cutting it. An empty value prints nothing at all: a field
+// nothing sets is absent from the modal, never an em dash.
+func modalRow(label, value string, inherited bool, width int) []string {
+	if value == "" {
+		return nil
+	}
+	// The value column starts past the two-space indent, the label and the
+	// space after it; a continuation line is padded to the same column.
+	indent := modalLabelWidth + 3
+	valueWidth := max(width-indent, 8)
+	var wrapped []string
+	for _, para := range strings.Split(value, "\n") {
+		if para == "" {
+			wrapped = append(wrapped, "")
+			continue
+		}
+		wrapped = append(wrapped, wrapPlain(para, valueWidth)...)
+	}
+	if inherited {
+		// The marker rides the last line so a long inherited value keeps its
+		// own shape and the mark still reads as belonging to it.
+		last := len(wrapped) - 1
+		wrapped[last] += styleDim.Render("  (inherited from defaults)")
+	}
+	out := make([]string, 0, len(wrapped))
+	pad := strings.Repeat(" ", indent)
+	for i, line := range wrapped {
+		if i == 0 {
+			out = append(out, "  "+styleDim.Render(fmt.Sprintf("%-*s", modalLabelWidth, label))+" "+line)
+			continue
+		}
+		out = append(out, pad+line)
+	}
+	return out
 }
