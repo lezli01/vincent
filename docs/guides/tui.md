@@ -249,12 +249,23 @@ open one. Two keys work there, and both only reach a browser:
 | `P` | Open a pull request for this task's branch — the prefilled title and body are editable first, and nothing is sent to GitHub from here |
 
 `P` opens a small popup with the title and body vincent guessed from the task,
-both editable. `ctrl+s` opens GitHub's own new-pull-request page with whatever
-you left there; `esc` closes the popup and discards the draft. vincent builds
-that URL and never fetches it — nothing is created on GitHub until you press
-the button on GitHub's own page. Both keys are absent unless the project's
-GitHub integration is usable. Linking and unlinking live on the pull-requests
-screen below.
+both editable:
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between the title and the body |
+| `enter` | Edit the row under the cursor |
+| `e` | Write that row in `$EDITOR` instead |
+| `ctrl+s` | Open GitHub's own new-pull-request page with this prefill |
+| `esc` | Close without opening anything — the draft is discarded |
+
+Inside a field `enter` is a newline (a pull-request body usually wants more than
+one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
+`ctrl+s` without one says so rather than opening a page GitHub cannot use.
+vincent builds that URL and never fetches it — nothing is created on GitHub
+until you press the button on GitHub's own page. `o` and `P` are absent unless
+at least one registered project's GitHub integration is usable. Linking and
+unlinking live on the pull-requests screen below.
 
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
@@ -821,8 +832,7 @@ reading.
 to every screen, and every task action the daemon currently offers. Type to
 filter, `enter` to run, `esc` to close.
 
-The palette exists so the four takeover screens do not need memorized number
-keys. If you cannot remember a binding, `:` and `?` are the two keys worth
+The palette exists so the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
 
 ## Every key

@@ -78,7 +78,7 @@ and design choices that made a durable orchestrator feel necessary.
 |---|---|
 | [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the nine step types, control flow, templates, checks, retries, agents, portability |
 | [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
-| [Using the TUI](guides/tui.md) | The board, task detail, the four takeover screens, every key |
+| [Using the TUI](guides/tui.md) | The board, task detail, the five takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
 | [Running at login](guides/running-at-login.md) | `vincent service install` on launchd, systemd and Task Scheduler |
 | [Troubleshooting](guides/troubleshooting.md) | The failures people actually hit, and what each one means |
