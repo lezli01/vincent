@@ -20,13 +20,16 @@ import (
 const (
 	QueryTimeout    = 30 * time.Second
 	WorktreeTimeout = 5 * time.Minute
-	// RemoteTimeout bounds a git call that talks to a network remote — today
-	// only `push --delete` on archive (§10, task 008). It is its own constant
+	// RemoteTimeout bounds a git call that talks to a network remote:
+	// `push --delete` on archive (§10, task 008) and the base-branch `fetch`
+	// that precedes a worktree creation (§10, task 056). It is its own constant
 	// because neither of the others fits: a query timeout is sized for a local
 	// object-database read and would fail every push over a slow link, while a
 	// worktree timeout would park the archive's caller behind an unreachable
 	// host for five minutes. A remote that does not answer inside this is
-	// logged and the branch survives, which is the pre-008 behaviour.
+	// logged and the branch survives, which is the pre-008 behaviour; a fetch
+	// that does not answer inside it is logged and the task is created from
+	// the local base, which is the pre-056 behaviour.
 	RemoteTimeout = 60 * time.Second
 )
 

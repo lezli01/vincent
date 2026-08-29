@@ -420,7 +420,7 @@ func (r *Runner) deleteArchivedBranch(
 	// The remote leg is attended-only by §10, and this is the attended path:
 	// every caller of Archive is a human asking for this one task.
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, task.BranchName, cfg.DeleteRemoteBranchOnArchive)
+		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive)
 	if err != nil {
 		log.Warn("archive: branch kept", "result", out.Result, "error", err)
 		return out

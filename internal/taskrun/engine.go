@@ -657,17 +657,25 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// CreateAndClaim rather than Create: the directory exists before the row
 	// names it, and a gc scan slipping into that window would delete a live
 	// task's working tree (task 005). The claim is what closes it.
-	path, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, task.ID,
-		task.BranchName, task.BaseBranch, func(p string) error {
+	// Read per admission, not cached: a hot reload then reaches the next task
+	// admitted, the way usage_limit_recheck_interval reaches the next hold.
+	fetch := r.deps.Config().FetchBaseBranch
+	created, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, task.ID,
+		task.BranchName, task.BaseBranch, fetch, func(c worktree.Created) error {
 			// A failed persist is logged and the run continues, as it always
 			// has: the worktree is real and the step can use it. What it
 			// leaves behind is an unclaimed directory, which is precisely the
 			// crash case `vincent gc` reclaims.
-			if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &p); err != nil {
+			var sha *string
+			if c.BaseSHA != "" {
+				sha = &c.BaseSHA
+			}
+			if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &c.Path, sha); err != nil {
 				log.Error("persist worktree path", "error", err)
 			}
 			return nil
 		})
+	logBaseFetch(log, task.BaseBranch, created.Fetch)
 	if err != nil {
 		if ctx.Err() != nil {
 			// A shutdown mid-create is an interruption, not a git failure.
@@ -681,8 +689,27 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 		r.fail(task, reason, log, "create worktree", err)
 		return err
 	}
-	task.WorktreePath = path
+	task.WorktreePath = created.Path
+	task.BaseSHA = created.BaseSHA
 	return nil
+}
+
+// logBaseFetch reports what the base-branch fetch did (§10, task 056). Only a
+// failure is a warning: no upstream is the correct and expected answer for a
+// repository with no remote, a branch that never left the machine, and every
+// fan_out lane, whose base is its parent's branch (§7.6) — warning on those
+// would cry wolf on normal operation.
+func logBaseFetch(log *slog.Logger, base string, out worktree.FetchOutcome) {
+	switch out.Result {
+	case worktree.FetchDone:
+		log.Debug("fetched the base branch before creating the worktree",
+			"base", base, "remote", out.Remote, "ref", out.Ref)
+	case worktree.FetchNoUpstream:
+		log.Debug("base branch has no upstream; branching from the local ref", "base", base)
+	case worktree.FetchFailed:
+		log.Warn("base branch fetch failed; branching from the local ref, which may be stale",
+			"base", base, "remote", out.Remote, "ref", out.Ref, "error", out.Error)
+	}
 }
 
 // runStepWithRetries runs one step until it succeeds, is interrupted, or
@@ -952,7 +979,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 // names (§12.4).
 func (r *Runner) persistStepCursor(ctx context.Context, task *store.Task, log *slog.Logger) {
 	next := task.CurrentStep
-	if err := r.deps.Store.SetTaskProgress(ctx, task.ID, &next, nil); err != nil {
+	if err := r.deps.Store.SetTaskProgress(ctx, task.ID, &next, nil, nil); err != nil {
 		log.Error("persist step advance", "error", err)
 	}
 }

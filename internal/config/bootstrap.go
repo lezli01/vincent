@@ -44,6 +44,18 @@ delete_empty_branch_on_archive: true
 # unless delete_empty_branch_on_archive is also on.
 delete_remote_branch_on_archive: false
 
+# Refresh a task's base branch from its remote before the task's worktree is
+# created, and start the task branch at the fetched commit rather than at
+# whatever your local base happened to be. Your own checkout is never touched:
+# the local branch keeps its SHA and its working tree, so "git log <base>" in
+# your checkout will no longer match what tasks build on.
+#
+# The remote comes from the base branch's own upstream configuration, never
+# from a guess at the name "origin". A branch with no upstream, a repository with no
+# remote, an unreachable host and a fan_out lane based on its parent's branch
+# all fall back to the local base and create the task normally.
+fetch_base_branch: true
+
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 

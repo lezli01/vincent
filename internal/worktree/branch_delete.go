@@ -94,6 +94,13 @@ type upstream struct {
 // still an ancestor — and costs one cheap git call. Any git failure is read as
 // *cannot judge* and leaves the branch alone.
 //
+// baseSHA is the commit the task branch was actually cut from, when the task
+// recorded one (§5.3, task 056), and it wins over base. Without it a task that
+// wrote nothing but started at a fetched upstream tip is *ahead* of the local
+// base branch, the answer flips to BranchHasCommits, and
+// delete_empty_branch_on_archive silently stops firing for every project whose
+// local base is behind its remote.
+//
 // It never fails a caller: the error is returned for logging, and the outcome
 // says what the repository now looks like. Archive has already happened by the
 // time this runs, and a branch problem must not be able to reverse it.
@@ -103,7 +110,7 @@ type upstream struct {
 // other people share is unrecoverable and outward-facing, so the unattended
 // paths never pass true.
 func (m *Manager) DeleteEmptyBranch(
-	ctx context.Context, projectPath, base, branch string, deleteRemote bool,
+	ctx context.Context, projectPath, base, baseSHA, branch string, deleteRemote bool,
 ) (BranchOutcome, error) {
 	out := BranchOutcome{Branch: branch}
 	if branch == "" {
@@ -117,7 +124,7 @@ func (m *Manager) DeleteEmptyBranch(
 		out.Result, out.Error = BranchUnknown, e.Error()
 		return out, e
 	}
-	empty, err := m.branchIsEmpty(ctx, projectPath, base, branch)
+	empty, err := m.branchIsEmpty(ctx, projectPath, baseRev(base, baseSHA), branch)
 	if err != nil {
 		out.Result, out.Error = BranchUnknown, err.Error()
 		return out, err
@@ -136,7 +143,9 @@ func (m *Manager) DeleteEmptyBranch(
 	if deleteRemote {
 		up, hasUpstream = m.branchUpstream(ctx, projectPath, branch)
 	}
-	if err := m.deleteLocalBranch(ctx, projectPath, branch); err != nil {
+	// Forced only when baseSHA answered the emptiness question, and see
+	// deleteLocalBranch for why that is not the weakening it looks like.
+	if err := m.deleteLocalBranch(ctx, projectPath, branch, baseSHA != ""); err != nil {
 		out.Result, out.Error = BranchDeleteFailed, err.Error()
 		return out, err
 	}
@@ -157,45 +166,68 @@ func (m *Manager) DeleteEmptyBranch(
 	return out, nil
 }
 
-// branchIsEmpty reports whether branch's tip is an ancestor of base. Both refs
-// are named in full: an ambiguous short name (a tag sharing the branch's name,
-// a deleted base branch with a surviving remote-tracking ref) must read as
-// *cannot judge* rather than resolve to something else and answer confidently.
-func (m *Manager) branchIsEmpty(ctx context.Context, repo, base, branch string) (bool, error) {
+// branchIsEmpty reports whether branch's tip is an ancestor of baseRev. Both
+// revisions are unambiguous — baseRev is either a full `refs/heads/` name or a
+// resolved object name — because an ambiguous short name (a tag sharing the
+// branch's name, a deleted base branch with a surviving remote-tracking ref)
+// must read as *cannot judge* rather than resolve to something else and answer
+// confidently.
+func (m *Manager) branchIsEmpty(ctx context.Context, repo, baseRev, branch string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
 	defer cancel()
 	out, err := m.git.Run(ctx, repo, "rev-list", "-n", "1",
-		"refs/heads/"+base+"..refs/heads/"+branch)
+		baseRev+"..refs/heads/"+branch)
 	if err != nil {
 		return false, &Error{
 			Reason:  ReasonGitError,
-			Message: fmt.Sprintf("git rev-list %s..%s failed", base, branch), Err: err,
+			Message: fmt.Sprintf("git rev-list %s..%s failed", baseRev, branch), Err: err,
 		}
 	}
 	return out == "", nil
 }
 
-// deleteLocalBranch runs `git branch -d`, never `-D`. The lower-case form
-// carries its own merged-into-HEAD check, which is a second belt behind the
-// rev-list, and its refusal is what covers a branch still checked out in
-// another worktree — the case where a force delete would corrupt somebody's
-// working tree.
-func (m *Manager) deleteLocalBranch(ctx context.Context, repo, branch string) error {
+// deleteLocalBranch runs `git branch -d`, and `-D` only when the caller
+// already proved the branch empty against the commit it was actually cut from.
+//
+// `-d` was task 008's only form, as a second belt behind the rev-list. Its own
+// check is "merged into HEAD, or into this branch's upstream" — and HEAD in the
+// project repository is the human's local base branch, which is behind the
+// remote in precisely the situation task 056's fetch exists for. A task branch
+// cut from a fetched upstream tip that wrote *nothing* is still ahead of local
+// HEAD, so `-d` refuses it and delete_empty_branch_on_archive stops firing for
+// every project whose local base is stale. The rev-list against the recorded
+// base SHA is the better authority there: it asks the question `-d` is
+// approximating, against the right commit.
+//
+// What is not given up is the guard that matters. git refuses to delete a
+// branch checked out in any worktree with `-D` exactly as with `-d`, so the
+// working-tree corruption case is still covered — by git, not by the flag.
+// Without a recorded base SHA nothing has been proved against the right
+// commit, so `-d` stays, exactly as task 008 wrote it.
+func (m *Manager) deleteLocalBranch(ctx context.Context, repo, branch string, force bool) error {
 	ctx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
-	if _, err := m.git.Run(ctx, repo, "branch", "-d", branch); err != nil {
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	if _, err := m.git.Run(ctx, repo, "branch", flag, branch); err != nil {
 		return &Error{
 			Reason:  ReasonGitError,
-			Message: fmt.Sprintf("git branch -d %s failed", branch), Err: err,
+			Message: fmt.Sprintf("git branch %s %s failed", flag, branch), Err: err,
 		}
 	}
 	return nil
 }
 
-// branchUpstream reads the branch's configured push target. Both halves must be
-// present: a `branch.{name}.remote` with no `branch.{name}.merge` names no ref
-// to delete, and guessing the remote name from the local one is exactly the
-// kind of inference that deletes the wrong ref on somebody else's forge.
+// branchUpstream reads the branch's configured remote and ref. Both halves must
+// be present: a `branch.{name}.remote` with no `branch.{name}.merge` names no
+// ref, and guessing the remote name from the local one is exactly the kind of
+// inference that deletes the wrong ref on somebody else's forge.
+//
+// Two callers now: archive's remote leg, which it was written for, and the
+// base-branch fetch in fetch.go, which asks the same question of the *base*
+// branch and needs the same refusal to guess (task 056).
 func (m *Manager) branchUpstream(ctx context.Context, repo, branch string) (upstream, bool) {
 	remote, ok := m.gitConfig(ctx, repo, "branch."+branch+".remote")
 	if !ok {

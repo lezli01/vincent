@@ -164,7 +164,7 @@ func TestBoardRendersLiveFromSSE(t *testing.T) {
 	})
 
 	step := 1
-	if err := h.st.SetTaskProgress(ctx, task.ID, &step, nil); err != nil {
+	if err := h.st.SetTaskProgress(ctx, task.ID, &step, nil, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
 	// The step name travels with the counter, so the board says what is

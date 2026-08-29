@@ -10,6 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -327,4 +328,70 @@ func (h *engineHarness) firstStepEnv(t *testing.T, task *store.Task, snapshot st
 		step: wf.Steps[0], index: 0,
 		log: slog.New(slog.DiscardHandler),
 	}
+}
+
+// TestFanOutLanesInheritTheParentBranchWithoutFetching wires task 056 through
+// the engine end to end. The parent's base is a branch whose remote has moved
+// on, so it starts at the fetched tip and records the SHA; each lane's base is
+// the parent's own branch (§7.6), which has no upstream and never will, so no
+// fetch is attempted and no base SHA is recorded for it.
+func TestFanOutLanesInheritTheParentBranchWithoutFetching(t *testing.T) {
+	h := newEngineHarness(t)
+	remoteTip := advanceRemoteMain(t, h.repo)
+	h.start(t)
+	task := h.createTask(t, fanOutSnapshot([2]string{"api", "api.txt"}))
+
+	h.waitForChildren(t, task.ID, 1)
+	done := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("parent state = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	// Read after the run: base_sha is written on admission, not at spawn.
+	if done.BaseSHA != remoteTip {
+		t.Errorf("parent base_sha = %q, want the fetched tip %s", done.BaseSHA, remoteTip)
+	}
+	lanes, err := h.store.ListChildren(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("ListChildren: %v", err)
+	}
+	lane := lanes[0]
+	if lane.BaseBranch != done.BranchName {
+		t.Fatalf("lane base_branch = %q, want the parent's branch %q", lane.BaseBranch, done.BranchName)
+	}
+	if lane.BaseSHA != "" {
+		t.Errorf("lane base_sha = %q; a lane's base has no upstream to fetch", lane.BaseSHA)
+	}
+	// And the lane really forked from the parent's branch, not from the remote
+	// tip it would have landed on had the parent's upstream been inherited.
+	if base := h.mergeBase(t, lane.BranchName, done.BranchName); base == remoteTip {
+		t.Errorf("lane forked at the remote tip %s, not from the parent's branch", remoteTip)
+	}
+}
+
+// advanceRemoteMain gives repo a remote whose main is one commit ahead of the
+// local ref, and returns that commit.
+func advanceRemoteMain(t *testing.T, repo string) string {
+	t.Helper()
+	remote := testrepo.InitBare(t)
+	testrepo.Run(t, repo, "remote", "add", "origin", remote)
+	testrepo.Run(t, repo, "push", "-q", "-u", "origin", "main")
+	testrepo.Run(t, repo, "checkout", "-q", "-b", "upstream-work")
+	testrepo.WriteFile(t, repo, "upstream.txt", "somebody else's merged work\n")
+	testrepo.Run(t, repo, "add", ".")
+	testrepo.Run(t, repo, "commit", "-q", "-m", "upstream commit")
+	tip := testrepo.Run(t, repo, "rev-parse", "HEAD")
+	testrepo.Run(t, repo, "push", "-q", "origin", "upstream-work:refs/heads/main")
+	testrepo.Run(t, repo, "checkout", "-q", "main")
+	testrepo.Run(t, repo, "branch", "-q", "-D", "upstream-work")
+	return tip
+}
+
+// mergeBase resolves the fork point of two branches in the project repository.
+func (h *engineHarness) mergeBase(t *testing.T, a, b string) string {
+	t.Helper()
+	out, err := h.git().Run(t.Context(), h.repo, "merge-base", "refs/heads/"+a, "refs/heads/"+b)
+	if err != nil {
+		t.Fatalf("merge-base %s %s: %v", a, b, err)
+	}
+	return out
 }

@@ -1167,8 +1167,9 @@ Because normalization runs **on read**, enriching a parser improves transcripts
 already on disk.
 
 `GET …/diff` is a unified diff of the worktree against the merge-base with the
-base branch, including uncommitted changes. Untracked files are excluded — a
-documented limitation.
+commit the task was cut from — its recorded `base_sha`, and the base branch by
+name for a task that has none — including uncommitted changes. Untracked files
+are excluded — a documented limitation.
 
 ## Events (SSE)
 

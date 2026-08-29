@@ -205,7 +205,7 @@ func TestClaimedDirectoryIsNeverAnOrphanOverTheWire(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	dir := h.plant(t, "worktrees", strconv.FormatInt(task.ID, 10))
-	if err := h.st.SetTaskProgress(ctx, task.ID, nil, &dir); err != nil {
+	if err := h.st.SetTaskProgress(ctx, task.ID, nil, &dir, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
 

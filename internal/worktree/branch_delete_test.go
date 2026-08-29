@@ -44,7 +44,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "no commits past base is deleted",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 1, "vincent/1-empty", "main"); err != nil {
+				if _, err := m.Create(t.Context(), repo, 1, "vincent/1-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				if err := m.Remove(t.Context(), repo, m.Path(1), false); err != nil {
@@ -58,7 +58,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "one commit past base survives",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				path, err := m.Create(t.Context(), repo, 2, "vincent/2-work", "main")
+				path, err := m.Create(t.Context(), repo, 2, "vincent/2-work", "main", false)
 				if err != nil {
 					t.Fatalf("create: %v", err)
 				}
@@ -75,7 +75,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "base moving forward afterwards still reads as empty",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 3, "vincent/3-empty", "main"); err != nil {
+				if _, err := m.Create(t.Context(), repo, 3, "vincent/3-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				if err := m.Remove(t.Context(), repo, m.Path(3), false); err != nil {
@@ -93,7 +93,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "base branch that no longer resolves cannot be judged",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 4, "vincent/4-empty", "main"); err != nil {
+				if _, err := m.Create(t.Context(), repo, 4, "vincent/4-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				if err := m.Remove(t.Context(), repo, m.Path(4), false); err != nil {
@@ -109,7 +109,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
 				// The worktree is deliberately *not* removed: `git branch -d`
 				// is the belt that covers this, and it must refuse.
-				if _, err := m.Create(t.Context(), repo, 5, "vincent/5-live", "main"); err != nil {
+				if _, err := m.Create(t.Context(), repo, 5, "vincent/5-live", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				return "main", "vincent/5-live"
@@ -126,7 +126,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			name: "a ref hierarchy neighbour is not collaterally removed",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
 				for id, name := range map[int64]string{6: "feat/foo/bar", 7: "feat/foo/baz"} {
-					if _, err := m.Create(t.Context(), repo, id, name, "main"); err != nil {
+					if _, err := m.Create(t.Context(), repo, id, name, "main", false); err != nil {
 						t.Fatalf("create %s: %v", name, err)
 					}
 					if err := m.Remove(t.Context(), repo, m.Path(id), false); err != nil {
@@ -146,7 +146,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			m := newManager(t)
 			base, branch := tt.setup(t, m, repo)
 
-			out, err := m.DeleteEmptyBranch(t.Context(), repo, base, branch, false)
+			out, err := m.DeleteEmptyBranch(t.Context(), repo, base, "", branch, false)
 			if tt.wantErr && err == nil {
 				t.Fatalf("DeleteEmptyBranch(%s..%s) returned no error", base, branch)
 			}
@@ -183,7 +183,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 	repo := testrepo.Init(t, "main")
 	m := newManager(t)
-	path, err := m.Create(t.Context(), repo, 1, "vincent/1-work", "main")
+	path, err := m.Create(t.Context(), repo, 1, "vincent/1-work", "main", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 		t.Fatalf("remove: %v", err)
 	}
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "vincent/1-work", false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-work", false)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 func TestDeleteEmptyBranchMissingProjectPath(t *testing.T) {
 	m := newManager(t)
 	out, err := m.DeleteEmptyBranch(
-		t.Context(), filepath.Join(t.TempDir(), "not-here"), "main", "vincent/1-x", false)
+		t.Context(), filepath.Join(t.TempDir(), "not-here"), "main", "", "vincent/1-x", false)
 	wantReason(t, err, ReasonProjectPathMissing)
 	if out.Result != BranchUnknown {
 		t.Errorf("result = %q, want %q", out.Result, BranchUnknown)
@@ -227,7 +227,7 @@ func TestDeleteEmptyBranchMissingProjectPath(t *testing.T) {
 func TestDeleteEmptyBranchNoBranch(t *testing.T) {
 	repo := testrepo.Init(t, "main")
 	m := newManager(t)
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "", false)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -245,7 +245,7 @@ func pushedRepo(t *testing.T, m *Manager, branch string) (repo, remote string) {
 	remote = testrepo.InitBare(t)
 	testrepo.Run(t, repo, "remote", "add", "origin", remote)
 	testrepo.Run(t, repo, "push", "-q", "-u", "origin", "main")
-	path, err := m.Create(t.Context(), repo, 1, branch, "main")
+	path, err := m.Create(t.Context(), repo, 1, branch, "main", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDeleteEmptyBranchRemote(t *testing.T) {
 		t.Fatalf("fixture is wrong: %s never reached the remote", branch)
 	}
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", branch, true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestDeleteEmptyBranchRemoteNoUpstream(t *testing.T) {
 	testrepo.Run(t, repo, "remote", "add", "origin", remote)
 	testrepo.Run(t, repo, "push", "-q", "origin", "main")
 	m := newManager(t)
-	if _, err := m.Create(t.Context(), repo, 1, "vincent/1-local", "main"); err != nil {
+	if _, err := m.Create(t.Context(), repo, 1, "vincent/1-local", "main", false); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := m.Remove(t.Context(), repo, m.Path(1), false); err != nil {
@@ -302,7 +302,7 @@ func TestDeleteEmptyBranchRemoteNoUpstream(t *testing.T) {
 	// this branch's upstream.
 	testrepo.Run(t, remote, "branch", "vincent/1-local", "main")
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "vincent/1-local", true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-local", true)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestDeleteEmptyBranchRemoteRejected(t *testing.T) {
 	// unreachable remote there is, and needs no network.
 	testrepo.Run(t, repo, "remote", "set-url", "origin", filepath.Join(remote, "..", "vanished.git"))
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", branch, true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true)
 	if err == nil {
 		t.Fatal("a failed push reported no error")
 	}

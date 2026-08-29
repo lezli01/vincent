@@ -318,9 +318,10 @@ starting.
 
 ### The Diff tab
 
-The **Diff** tab is `git diff` against the merge-base with the base branch,
-including uncommitted changes, syntax-highlighted. It is fetched when you
-activate the tab and on an explicit refresh, never on every output chunk.
+The **Diff** tab is `git diff` against the merge-base with the commit the task
+was cut from, including uncommitted changes, syntax-highlighted. It is fetched
+when you activate the tab and on an explicit refresh, never on every output
+chunk.
 
 It is **grouped by file**, and every file starts **collapsed** — so the first
 thing you see is what the task touched, not the first eighty lines of whichever

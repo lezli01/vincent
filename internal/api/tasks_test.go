@@ -507,3 +507,75 @@ func TestInfoReportsAgents(t *testing.T) {
 		t.Errorf("agents = %+v, want claude available + codex not", info.Agents)
 	}
 }
+
+// advanceRemoteBase pushes a commit to the remote's copy of branch without
+// moving the local ref, which is what a merged pull request looks like from a
+// daemon whose human has not pulled since (task 056).
+func advanceRemoteBase(t *testing.T, repo, branch string) {
+	t.Helper()
+	remote := testrepo.InitBare(t)
+	testrepo.Run(t, repo, "remote", "add", "origin", remote)
+	testrepo.Run(t, repo, "push", "-q", "-u", "origin", branch)
+	testrepo.Run(t, repo, "checkout", "-q", "-b", "upstream-work")
+	testrepo.WriteFile(t, repo, "upstream.txt", "somebody else's merged work\n")
+	testrepo.Run(t, repo, "add", ".")
+	testrepo.Run(t, repo, "commit", "-q", "-m", "upstream commit")
+	testrepo.Run(t, repo, "push", "-q", "origin", "upstream-work:refs/heads/"+branch)
+	testrepo.Run(t, repo, "checkout", "-q", branch)
+	testrepo.Run(t, repo, "branch", "-q", "-D", "upstream-work")
+}
+
+// TestTaskDiffUsesTheRecordedBaseSHA: once a task branch starts at a fetched
+// upstream tip, merge-base against `base_branch` resolves to the *stale* local
+// commit, and the reviewer reads every upstream change the fetch brought in as
+// the task's own work. Both halves are asserted — the recorded SHA gives the
+// task's own diff, and clearing it reproduces the fault the column fixes.
+func TestTaskDiffUsesTheRecordedBaseSHA(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	stored, err := h.store.GetTask(t.Context(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	advanceRemoteBase(t, h.repo, stored.BaseBranch)
+
+	created, err := h.wt.CreateAndClaim(t.Context(), h.repo, task.ID,
+		stored.BranchName, stored.BaseBranch, true, nil)
+	if err != nil {
+		t.Fatalf("CreateAndClaim: %v", err)
+	}
+	if created.BaseSHA == "" {
+		t.Fatal("fixture is wrong: no base SHA was recorded")
+	}
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &created.Path, &created.BaseSHA); err != nil {
+		t.Fatalf("record worktree: %v", err)
+	}
+	testrepo.WriteFile(t, created.Path, "task-work.txt", "what the agent wrote\n")
+	testrepo.Run(t, created.Path, "add", ".")
+	testrepo.Run(t, created.Path, "commit", "-q", "-m", "the task's own commit")
+
+	resp, body := h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/diff", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("diff: %d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "task-work.txt") {
+		t.Errorf("diff is missing the task's own file:\n%s", body)
+	}
+	if strings.Contains(string(body), "upstream.txt") {
+		t.Errorf("diff presents upstream work as the task's:\n%s", body)
+	}
+
+	// The pre-056 row shape: no recorded base, so the branch name is the fork
+	// point again — and the reviewer sees the upstream commit.
+	var none string
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, nil, &none); err != nil {
+		t.Fatalf("clear base_sha: %v", err)
+	}
+	resp, body = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/tasks/%d/diff", task.ID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("diff: %d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "upstream.txt") {
+		t.Errorf("without a base SHA the stale merge-base should reappear:\n%s", body)
+	}
+}

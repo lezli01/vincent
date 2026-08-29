@@ -328,16 +328,24 @@ func transitionTaskTx(
 	return t, e, nil
 }
 
-// SetTaskProgress writes the step cursor and worktree path without changing
-// state — the engine advancing through steps, and recording the worktree it
-// created (§10). Nil fields are left unchanged.
+// SetTaskProgress writes the step cursor, worktree path and base SHA without
+// changing state — the engine advancing through steps, and recording what it
+// created on first admission (§10). Nil fields are left unchanged.
+//
+// baseSHA rides with worktreePath because they are written at the same
+// instant, inside the same claim callback, and are two halves of one fact:
+// where the task's work lives and where it started (§5.3, task 056). It stays
+// nil when no fetch resolved a commit, which leaves `base_branch` as the fork
+// point.
 //
 // Moving the cursor appends a task.step_advanced event in the same
 // transaction, so a client watching the stream sees k/n track a run instead
 // of freezing at the step the task started on. A worktree-path-only write
 // emits nothing: it is bookkeeping no client renders.
-func (s *Store) SetTaskProgress(ctx context.Context, id int64, currentStep *int, worktreePath *string) error {
-	if currentStep == nil && worktreePath == nil {
+func (s *Store) SetTaskProgress(
+	ctx context.Context, id int64, currentStep *int, worktreePath, baseSHA *string,
+) error {
+	if currentStep == nil && worktreePath == nil && baseSHA == nil {
 		return nil
 	}
 	var ev *Event
@@ -352,6 +360,10 @@ func (s *Store) SetTaskProgress(ctx context.Context, id int64, currentStep *int,
 		if worktreePath != nil {
 			sets = append(sets, "worktree_path = ?")
 			args = append(args, nullString(*worktreePath))
+		}
+		if baseSHA != nil {
+			sets = append(sets, "base_sha = ?")
+			args = append(args, nullString(*baseSHA))
 		}
 		args = append(args, id)
 		res, err := tx.ExecContext(ctx,

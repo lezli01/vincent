@@ -431,7 +431,7 @@ func TestProjectDelete(t *testing.T) {
 		p := h.mustCreate(t, map[string]any{"path": repo, "name": "forced"})
 		id := int64(p["id"].(float64))
 		taskID := insertTask(t, h.store, id, store.TaskQueued)
-		wtPath, err := h.wt.Create(ctx, repo, taskID, "vincent/"+itoa(taskID)+"-x", "main")
+		wtPath, err := h.wt.Create(ctx, repo, taskID, "vincent/"+itoa(taskID)+"-x", "main", false)
 		if err != nil {
 			t.Fatalf("worktree create: %v", err)
 		}

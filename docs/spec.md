@@ -175,7 +175,7 @@ A registered local git repository.
 | `id` | integer, auto-increment |
 | `name` | display name, unique; defaults to repo directory name |
 | `path` | absolute path to the repo root; must contain a `.git` |
-| `default_branch` | base branch for new tasks (auto-detected from `origin/HEAD`, falls back to `main`/`master`; editable) |
+| `default_branch` | base branch for new tasks. Detected **once, at registration**, from `origin/HEAD`, falling back to `main`/`master`; editable afterwards, and never re-detected. *Amended 2026-08-29 (task 056):* what is refreshed at run time is the branch's *content*, not this name — see `fetch_base_branch` (§10, §12.3) |
 | `default_workflow` | optional workflow name preselected in task creation |
 | `max_parallel_tasks` | per-project cap; `null` = no per-project limit (global cap still applies) |
 | `branch_template` | *added 2026-08-13 (task 001).* Optional branch-naming template for this project; `null` inherits `config.yaml`'s `branch_template`, and an unset config means the built-in name. Parsed when written, so a broken template fails at `PATCH /v1/projects/{id}` rather than at every task creation |
@@ -282,6 +282,7 @@ A unit of work delivered by running a workflow against a project.
 | `base_branch` | defaults to project `default_branch` |
 | `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one |
 | `worktree_path` | assigned when the worktree is created |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `state` | §6 |
@@ -2517,8 +2518,43 @@ would invalidate every one of them.
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
   watchers and repo tooling in the main checkout are never disturbed.
 - **Creation** (when the scheduler first admits the task):
-  `git -C {project.path} worktree add {worktree_path} -b {branch_name} {base_branch}`.
+  `git -C {project.path} worktree add {worktree_path} -b {branch_name} --no-track {start}`.
   If `base_branch` doesn't resolve locally, task creation fails fast with a clear error.
+
+  *Amended 2026-08-29 (task 056).* `{start}` used to be `base_branch` itself, which
+  meant every task built on whatever the human's last `git pull` left behind — on a
+  daemon that runs for days over projects receiving merged pull requests, arbitrarily
+  stale. With **`fetch_base_branch` (§12.3), default true,** creation first runs
+  `git fetch {remote} {ref}` — bounded by the same 60s remote timeout archive's
+  `push --delete` uses — and `{start}` is the commit `FETCH_HEAD` resolved to, which
+  is also recorded as the task's `base_sha` (§5.3).
+
+  - **The remote is the base branch's own** — `branch.{base}.remote` plus
+    `branch.{base}.merge`, the pair task 008 already refuses to guess. `origin` is
+    never assumed. A local `master` tracking `refs/heads/main` therefore fetches the
+    right ref, and "no remote at all", "a branch that never left the machine" and
+    "a `fan_out` lane whose base is its parent's branch (§7.6)" are one answer
+    rather than three special cases: no upstream, no fetch, today's behaviour.
+  - **Nothing local is mutated.** The user's base branch keeps its SHA and its
+    working tree; fast-forwarding it was rejected because it is frequently checked
+    out and often dirty, and would need its own refusal path. The visible cost is
+    that `git log {base}` in the human's checkout no longer matches what tasks build
+    on.
+  - **A fetch never blocks.** No remote, no upstream, an unreachable host, an auth
+    failure or a timeout all fall back to the local base with a log line. No new
+    `block_reason` exists for it, and no step can fail for a network reason — §26's
+    rule is untouched, since admission is outside the step path.
+  - **`--no-track` is not optional.** Under `branch.autoSetupMerge` git copies the
+    start point's upstream onto the new branch, and a task branch carrying one is a
+    live hazard: archive's remote leg would run
+    `git push --delete origin refs/heads/master`, deleting the project's default
+    branch on the forge, and a `fan_out` child would fetch that upstream instead of
+    inheriting its parent's branch. Starting from a resolved SHA already avoids it;
+    the flag is the belt behind the braces and also covers `autoSetupMerge = always`
+    on a local base.
+  - **`POST /v1/tasks` is unchanged.** Task creation stays entirely offline and still
+    400s on a `base_branch` with no local branch; a base that exists only on the
+    remote is not a case this serves.
 - **Branch naming:** `vincent/{task_id}-{slug}` by default. A pre-existing branch of
   the same name fails the task with a clear error rather than reusing it.
 
@@ -2583,6 +2619,17 @@ would invalidate every one of them.
     in the worktree until the worktree is gone, and an archive that has committed must
     not be reversible by a branch problem. A dirty worktree refused without `force`
     therefore never reaches the branch step at all.
+  - *Amended 2026-08-29 (task 056).* The check runs against `base_sha` when the task
+    has one, and against `base_branch` when it does not. Both halves matter: a task
+    that wrote nothing but started at a fetched upstream tip is *ahead* of the local
+    base branch, so reading the name answers "has commits" and the policy silently
+    stops firing for every project whose local base is behind. For the same reason
+    the delete is `git branch -D` — never `-d` — in exactly that case: `-d`'s own
+    check is "merged into HEAD or its upstream", and HEAD in the project repository
+    *is* the stale local base. The `rev-list` against the recorded fork point is the
+    better authority, and the guard that matters is unaffected — git refuses to
+    delete a branch checked out in any worktree under either flag. Without a recorded
+    `base_sha` nothing has been proved against the right commit, so `-d` stays.
   - **`delete_empty_branch_on_archive` (§12.3), default true,** is the standing policy;
     a per-archive flag beside `force` was rejected, since the project-delete path has
     no human to ask. Setting it false restores this bullet's pre-008 behaviour exactly.
@@ -3103,6 +3150,7 @@ defaults:
   input_timeout: 24h           # max wait in awaiting_input (§7.4)
 delete_empty_branch_on_archive: true   # archive deletes a branch with no commits past its base (§10)
 delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
+fetch_base_branch: true        # refresh base_branch from its upstream before cutting a worktree (§10)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 max_task_cost_usd: 0            # per-task spend ceiling (§17, §18); 0 = no cap
@@ -3232,6 +3280,18 @@ the multiplication is documented here rather than worked around. It is also
 inert on the adapters that report no cost: codex (§9.3) and cursor (§9.7) leave
 `cost_usd` unset, and the check is guarded by "some attempt reported a cost"
 rather than by arithmetic, so a cap must never be estimated from token counts.
+
+**`fetch_base_branch` (task 056, added 2026-08-29).** Refreshes a task's base branch
+from its own configured upstream before the worktree is created, and starts the task
+branch at the fetched commit (§10). Default **true**: without it every task builds on
+a base as stale as the human's last `git pull`, which is the failure this key exists
+to end, and default-on outbound traffic needs no separate argument — `github.enabled`
+already defaults true and §26 settled that posture; a fetch reads. `false` restores
+the pre-056 behaviour exactly — the local ref, and no `base_sha` recorded — for a
+repository where fetching is slow or needs interactive auth. Read per worktree
+creation, so a hot reload reaches the next admission. There is deliberately **no
+per-project override yet**: the global key is the escape hatch, and a per-project one
+is its own piece of work if a real repository needs the granularity.
 
 **`delete_empty_branch_on_archive` / `delete_remote_branch_on_archive` (task 008,
 added 2026-08-16).** The §10 branch-cleanup pair. The local key is the standing
@@ -4222,6 +4282,7 @@ CREATE TABLE tasks (
   base_branch         TEXT NOT NULL,
   branch_name         TEXT NOT NULL,
   worktree_path       TEXT,
+  base_sha            TEXT,                   -- commit branch_name was cut from (§5.3, task 056); NULL = base_branch is the fork point
   priority            INTEGER NOT NULL DEFAULT 0,
   agent_override      TEXT,                   -- task-level selection (§8.6); NULL = none
   model_override      TEXT,
@@ -5396,7 +5457,7 @@ else.
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |
-| Archive-time branch delete fails | *Added 2026-08-16 (task 008).* Checked out in another worktree (`git branch -d` refuses), the base branch renamed away so the emptiness test cannot run, a remote that rejects the push or never answers inside `RemoteTimeout` — none of it fails the archive. The worktree is already gone and the task must still reach `archived`. It is logged, reported on the response as `error`/`unknown`, and the branch survives, which is the pre-008 behaviour. The remote leg cannot even be reached without a local delete that succeeded first |
+| Archive-time branch delete fails | *Added 2026-08-16 (task 008).* Checked out in another worktree (git refuses, and refuses the same under `-d` and `-D`), the base branch renamed away so the emptiness test cannot run, a remote that rejects the push or never answers inside `RemoteTimeout` — none of it fails the archive. The worktree is already gone and the task must still reach `archived`. It is logged, reported on the response as `error`/`unknown`, and the branch survives, which is the pre-008 behaviour. The remote leg cannot even be reached without a local delete that succeeded first. *Amended 2026-08-29 (task 056):* the local delete is `git branch -D` when the task recorded a `base_sha` (§10), which is why the refusal above is stated of git rather than of the lower-case flag |
 | Worktree dir manually deleted | Next step fails → blocked with `worktree_missing`; retry recreates the worktree from the branch if it survives. *Amended 2026-08-15 (task 005):* the same mismatch found by a scan rather than by a step is **reported** — at daemon start and in `vincent gc`'s output — and no row is modified |
 | Orphaned directory under a data root | *Added 2026-08-15 (task 005).* An entry under `{data_dir}/worktrees` or `{data_dir}/transcripts` that no task row claims — left by a project delete whose worktree removal failed (the cascade drops the rows regardless, §10) or by a crash between `git worktree add` and the claim write. Daemon start logs one warning per orphan and raises `orphans` on `GET /v1/info`; it **never** deletes, for the same reason DB corruption never auto-deletes. `vincent gc` reclaims them, and only them — archive remains the only path that removes a *task's* worktree |
 | Dirtiness of an orphan cannot be determined | *Added 2026-08-15 (task 005).* An orphan's `.git` file points at `{repo}/.git/worktrees/{n}`, so a deleted or pruned repository makes `git status --porcelain` fail outright. Reported as `dirty_unknown` — distinct from `worktree_dirty`, because "git says you have local changes" and "nobody can tell what is in here" are different facts — and skipped until `vincent gc --force`. This is the *common* case where the projects really are gone, so a default run there reclaims little; that is the deliberate trade for never deleting work nobody can vouch for |

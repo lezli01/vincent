@@ -251,11 +251,11 @@ func TestArchiveDirtyWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch)
+	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path, nil); err != nil {
 		t.Fatalf("record worktree: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(path, "wip.txt"), []byte("x"), 0o600); err != nil {
@@ -307,11 +307,11 @@ func archivableTask(t *testing.T, h *taskHarness) *store.Task {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch)
+	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path, nil); err != nil {
 		t.Fatalf("record worktree: %v", err)
 	}
 	stored.WorktreePath = path

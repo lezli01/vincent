@@ -722,11 +722,11 @@ func (h *actionHarness) runs(t *testing.T, taskID int64) []store.StepRun {
 func (h *actionHarness) worktree(t *testing.T, task *store.Task) string {
 	t.Helper()
 	path, err := h.runner.deps.Worktrees.Create(
-		t.Context(), h.repo, task.ID, task.BranchName, task.BaseBranch)
+		t.Context(), h.repo, task.ID, task.BranchName, task.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &path, nil); err != nil {
 		t.Fatalf("record worktree: %v", err)
 	}
 	return path

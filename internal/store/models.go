@@ -85,13 +85,19 @@ type Task struct {
 	BaseBranch       string
 	BranchName       string
 	WorktreePath     string // "" until the worktree is created
-	Priority         int
-	AgentOverride    string // task-level selection (spec §8.6); "" = none
-	ModelOverride    string
-	EffortOverride   string
-	State            TaskState
-	CurrentStep      int
-	BlockReason      string // set while State == TaskBlocked
+	// BaseSHA is the commit BranchName was actually cut from, recorded when
+	// the worktree path fetched BaseBranch from its upstream (§5.3, §10 —
+	// task 056). "" means BaseBranch itself still names the fork point, which
+	// is every task created before the fetch existed or with
+	// `fetch_base_branch: false`.
+	BaseSHA        string
+	Priority       int
+	AgentOverride  string // task-level selection (spec §8.6); "" = none
+	ModelOverride  string
+	EffortOverride string
+	State          TaskState
+	CurrentStep    int
+	BlockReason    string // set while State == TaskBlocked
 	// PauseRequested is a pause accepted while running but not yet taken
 	// effect (spec §6). Persisted so a crash, which re-queues the task,
 	// cannot discard it.
