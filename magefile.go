@@ -35,8 +35,16 @@ func TestRace() error {
 }
 
 // Lint runs golangci-lint, pinned via the go.mod tool directive.
+//
+// --allow-parallel-runners because vincent's own workloads run this target
+// from several worktrees of this repository at once. golangci-lint otherwise
+// takes a machine-wide file lock and the losing instance exits 3 with
+// "parallel golangci-lint is running" — a lint failure that says nothing about
+// the code and that a rerun makes disappear. Its caches are per-analysis and
+// the shared one underneath is the go build cache, which is concurrency-safe.
+// CI runs one instance per job, so this changes nothing there.
 func Lint() error {
-	return sh.RunV("go", "tool", "golangci-lint", "run")
+	return sh.RunV("go", "tool", "golangci-lint", "run", "--allow-parallel-runners")
 }
 
 // Vuln reports known vulnerabilities reachable from this module's code, for
