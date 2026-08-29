@@ -42,8 +42,9 @@ func newPalette(entries []paletteEntry) *palette {
 // paletteEntries builds the palette for one surface. target is the selected
 // task as the action bar sees it; editable reports whether the current step
 // has text E could edit; connected gates the action group — nothing can act
-// on a task the daemon cannot see.
-func paletteEntries(ctx bindingContext, target taskActions, editable, connected bool) []paletteEntry {
+// on a task the daemon cannot see; github gates the rows that only mean
+// something when some project's integration is usable (task 052.6).
+func paletteEntries(ctx bindingContext, target taskActions, editable, connected, github bool) []paletteEntry {
 	out := make([]paletteEntry, 0, len(bindings))
 	if connected && (target.id != 0 || target.bulk()) {
 		// A selection is what the keys act on, so it is what the section is
@@ -66,7 +67,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected 
 	// Views get their own section: navigating to them is the reason the
 	// digits could be retired, so it must not read as one more command
 	// (T3.8 finding).
-	for _, b := range bindings {
+	for _, b := range withoutGitHub(bindings, github) {
 		if b.nav {
 			out = append(out, paletteEntry{
 				group: "views", label: b.label, key: b.key,
@@ -74,7 +75,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected 
 			})
 		}
 	}
-	for _, b := range bindingsFor(ctx) {
+	for _, b := range withoutGitHub(bindingsFor(ctx), github) {
 		if b.noPalette {
 			continue
 		}

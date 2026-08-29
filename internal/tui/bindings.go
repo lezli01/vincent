@@ -32,6 +32,8 @@ const (
 	ctxNewTask     bindingContext = "new task"
 	ctxProjects    bindingContext = "projects"
 	ctxWorkflows   bindingContext = "workflows"
+	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
+	ctxPullRequests bindingContext = "pull requests"
 	// ctxWorkflowGraph is the graph sub-layer of the workflows takeover. It
 	// is its own context because its keys are entirely different from the
 	// list's, and the footer and the ? overlay must say which set is live.
@@ -61,6 +63,10 @@ const (
 	// a chooser above its text, and a row shared with the others could only
 	// describe one of them.
 	ctxFollowUpForm bindingContext = "follow-up form"
+	// ctxCreatePR is the compare-URL editor (task 052.6). Its own context for
+	// the reason the other popups have theirs: while it is open it owns the
+	// keyboard, and its two rows are nothing like the form underneath.
+	ctxCreatePR bindingContext = "open a pull request"
 )
 
 // binding is one registry row.
@@ -78,6 +84,13 @@ type binding struct {
 	priority int
 	// action is the §6 action a scopeTaskAction row is gated on.
 	action string
+	// github marks a row that only means something when at least one
+	// registered project has a usable GitHub integration (§13.2). There is no
+	// stored notion of one, so the root's probe fan-out is the answer and the
+	// row is withheld until it says yes — including while the probes are
+	// still in flight. Mechanically this is `fold`'s precedent (task 054
+	// decision 5) applied to a nav row and to two workspace keys.
+	github bool
 	// fold marks a row whose key only means something while the board has
 	// groups. With `group_by: []` there are none, so shell.liveBindings drops
 	// these and the footer never names a press that does nothing (task 054
@@ -111,13 +124,14 @@ var bindings = []binding{
 	{key: "q", label: "quit the TUI (the daemon keeps running)", scope: scopeGlobal},
 	{key: "ctrl+c", label: "quit the TUI", scope: scopeGlobal, noPalette: true},
 
-	// Navigation: the four takeover screens (§15 views 3–6). Only new task
+	// Navigation: the five takeover screens (§15 views 3–7). Only new task
 	// keeps a direct key; the rest live here, in the palette — retiring
 	// 1..6 without substituting new memorized keys is the point.
 	{key: "n", label: "new task — for the project you are looking at", scope: scopeGlobal, nav: true, navTarget: viewNewTask},
 	{label: "projects — list, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
+	{label: "pull requests — what is open across every GitHub project", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -160,6 +174,11 @@ var bindings = []binding{
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskDetails, hint: "[/] views", priority: 2},
 	{key: "down", label: "select a task-detail section (↑/↓); pgup/pgdn scrolls that section", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ sections", priority: 3},
+	// The pull-request section's two keys (task 052.6, decision 2). Both only
+	// reach a browser: neither writes anything in vincent, which is what
+	// keeps §15's "read-only inspector" true in the sense it was written.
+	{key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskDetails, hint: "o pull request", priority: 4, github: true},
+	{key: "P", label: "open a pull request for this task's branch — the prefill is editable first, and nothing is sent to GitHub from here", scope: scopePanel, context: ctxTaskDetails, hint: "P open a PR", priority: 5, github: true},
 
 	// Output pane.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
@@ -228,6 +247,18 @@ var bindings = []binding{
 	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxTaskWorkflow, hint: "⇧ pan", priority: 2},
 	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, hint: "5 workflow", priority: 3},
 
+	// Pull requests (task 052.6). Link and unlink live only here: they are the
+	// two actions that write vincent's own column, and they belong on the one
+	// screen that can see a pull request no task claims — the case they exist
+	// for.
+	{key: "enter", label: "open the workspace of the task that claims this pull request", scope: scopePanel, context: ctxPullRequests, hint: "enter task", priority: 1},
+	{key: "o", label: "open the selected pull request in a browser", scope: scopePanel, context: ctxPullRequests, hint: "o browser", priority: 2},
+	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 3},
+	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 4},
+	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 5},
+	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 6},
+	{key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 7},
+
 	// Daemon.
 	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
@@ -253,6 +284,13 @@ var bindings = []binding{
 	{key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "ctrl+s", label: "start the follow-up run", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+
+	// The compare-URL editor (task 052.6). Same again: the popup owns the
+	// keyboard while it is open and prints its own key line.
+	{key: "enter", label: "edit the row under the cursor — the pull request's title or its body", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "e", label: "write the body in $EDITOR", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "ctrl+s", label: "open GitHub's own new-pull-request page with this prefill", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "esc", label: "close the popup without opening anything (the draft is discarded)", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 }
 
 // isHomeContext reports whether a context belongs to the board/task daily loop
@@ -272,6 +310,23 @@ func bindingsFor(ctx bindingContext) []binding {
 	out := make([]binding, 0, 8)
 	for _, b := range bindings {
 		if b.scope == scopePanel && b.context == ctx {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// withoutGitHub drops the rows that only mean something while a project's
+// GitHub integration is usable. It is applied at the root, where the probe
+// results live: shell.liveBindings is the wrong seam because it is
+// shell-scoped and the nav row is global.
+func withoutGitHub(rows []binding, available bool) []binding {
+	if available {
+		return rows
+	}
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if !b.github {
 			out = append(out, b)
 		}
 	}

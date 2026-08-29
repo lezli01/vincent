@@ -84,6 +84,16 @@ type root struct {
 	// reads it from the same message that sets it.
 	selectedTask int64
 
+	// github is the §13.2 capability probe per registered project, refreshed
+	// as the connection comes up and again on reconnect. It lives here rather
+	// than in the pull-requests view because the *nav row that reaches that
+	// view* is gated on it, and the nav rows are global (task 052.6).
+	//
+	// While every answer is unavailable — including while the probes are
+	// still in flight — the row is withheld everywhere: the palette, the ?
+	// overlay and the footer.
+	github []githubProject
+
 	width  int
 	height int
 }
@@ -148,6 +158,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case githubProbeMsg:
+		// The listing failing leaves the previous answer standing: a probe
+		// that could not be made is not an integration that stopped working,
+		// and dropping the nav row under a human mid-session on a transient
+		// error would be worse than a row that briefly outlives its project.
+		if msg.err == nil {
+			m.github = msg.available()
+		}
+		return m, m.broadcast(msg)
 	case taskCreatedMsg:
 		return m.updateTaskCreated(msg)
 	case connectedMsg:
@@ -329,7 +348,8 @@ func (m *root) openPalette() {
 		target = t.target()
 		editable = t.detail.stepEditable()
 	}
-	m.palette = newPalette(paletteEntries(ctx, target, editable, m.phase == phaseConnected))
+	m.palette = newPalette(paletteEntries(
+		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable()))
 }
 
 // activeContext names the active surface for the binding registry.
@@ -348,6 +368,8 @@ func (m *root) activeContext() bindingContext {
 		return ctxWorkflows
 	case viewDaemon:
 		return ctxDaemon
+	case viewPullRequests:
+		return ctxPullRequests
 	default:
 		s := m.views[viewHome].(*shell)
 		return s.focusedContext()
@@ -447,7 +469,7 @@ func (m *root) updateConnected(msg connectedMsg) (tea.Model, tea.Cmd) {
 	streamCtx, cancel := context.WithCancel(m.ctx)
 	m.stopStream = cancel
 	m.notes = m.client.StreamEvents(streamCtx, apiclient.StreamOptions{})
-	cmds := []tea.Cmd{waitNote(m.notes)}
+	cmds := []tea.Cmd{waitNote(m.notes), probeGitHubCmd(m.client)}
 	for i := range m.views {
 		if ca, ok := m.views[i].(clientAware); ok {
 			if cmd := ca.setClient(m.client); cmd != nil {
@@ -459,6 +481,7 @@ func (m *root) updateConnected(msg connectedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
+	var reprobe tea.Cmd
 	if m.notes == nil {
 		// A stale note from a stream torn down by retry; never re-arm on a
 		// nil channel — that receive would block forever.
@@ -468,6 +491,12 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 	case apiclient.ConnectedNote:
 		m.phase = phaseConnected
 		m.connErr = nil
+		if !m.streamLive {
+			// A reconnect: a project may have been registered, or a token may
+			// have expired, while the stream was down. The daemon's short
+			// cache absorbs the repeat cost.
+			reprobe = probeGitHubCmd(m.client)
+		}
 		// Distinct from phaseConnected, which only means the health probe
 		// answered: this is the event stream itself being established, and
 		// until it is, a committed event will not reach us (a stream with no
@@ -482,7 +511,7 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		m.setConnected(false)
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes))
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe)
 }
 
 // delegate routes a message to the active view.
@@ -612,10 +641,11 @@ func (m *root) body() string {
 		// every other surface (T3.8 findings).
 		ctx := m.activeContext()
 		h := m.bodyHeight()
+		text := helpText(ctx, m.githubAvailable())
 		if m.width < 4 || h < 3 {
-			return helpText(ctx)
+			return text
 		}
-		return frame(helpTitle(ctx), helpText(ctx), m.width, h, true)
+		return frame(helpTitle(ctx), text, m.width, h, true)
 	}
 	// The daemon view is the exception to the connection gate (§15): its log
 	// tail comes off the filesystem, and a daemon that is down is exactly
@@ -701,6 +731,11 @@ func (m *root) homeLoaded() bool {
 	return ok && s.board.loaded
 }
 
+// githubAvailable reports whether any registered project answered the §13.2
+// probe with available: true. It is what withholds the pull-requests nav row
+// and the workspace's two pull-request keys.
+func (m *root) githubAvailable() bool { return len(m.github) > 0 }
+
 func (m *root) taskLoaded() bool {
 	t, ok := m.views[viewTask].(*taskView)
 	return ok && t.detail.loaded
@@ -738,7 +773,7 @@ func (m *root) footerLine() string {
 			target = t.target()
 		}
 	}
-	rows := bindingsFor(ctx)
+	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
 	if s, ok := m.views[m.active].(*shell); ok {
 		rows = s.liveBindings(rows)
 	}

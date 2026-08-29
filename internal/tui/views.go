@@ -9,7 +9,7 @@ import (
 )
 
 // viewID indexes the root's routed screens: the board-only home screen, the
-// full-screen task workspace, and the four management takeovers (§15).
+// full-screen task workspace, and the five management takeovers (§15).
 type viewID int
 
 const (
@@ -19,6 +19,7 @@ const (
 	viewProjects
 	viewWorkflows
 	viewDaemon
+	viewPullRequests
 	viewCount
 )
 
@@ -111,5 +112,10 @@ func newViews(ctx context.Context) [viewCount]panel {
 		viewProjects:  newProjectsView(),
 		viewWorkflows: newWorkflowsView(),
 		viewDaemon:    newDaemonView(),
+		// The pull-requests takeover is constructed unconditionally and
+		// reached only when at least one project's §13.2 probe says yes: it
+		// is the *nav row* that is withheld, not the screen, so nothing here
+		// has to know the answer before the probes land.
+		viewPullRequests: newPullRequestsView(),
 	}
 }

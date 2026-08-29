@@ -320,6 +320,76 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("down selected %q, want Overview", v.detailsSection)
 			}
 		},
+		"o": func(t *testing.T) {
+			withFakeOpener(t, nil)
+			v := taskPullFixture(t, apiclient.GitHubTaskPull{
+				Linked: true, Repo: "octo/api", Number: 41,
+				Pull: &apiclient.GitHubPullRequest{URL: "https://github.com/octo/api/pull/41"},
+			})
+			if cmd := v.updateKey(registryKey(t, "o")); cmd == nil {
+				t.Fatal("o did not open the task's pull request")
+			}
+		},
+		"P": func(t *testing.T) {
+			v := taskPullFixture(t, apiclient.GitHubTaskPull{CompareURL: compareURLFixture})
+			v.updateKey(registryKey(t, "P"))
+			if v.createPR == nil {
+				t.Fatal("P did not open the compare-URL editor")
+			}
+		},
+	},
+
+	ctxPullRequests: {
+		"enter": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "claimed", claimedBy(7, "auto")))
+			if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+				t.Fatal("enter did not open the claiming task's workspace")
+			}
+		},
+		"o": func(t *testing.T) {
+			opened := withFakeOpener(t, nil)
+			v := pullRequestsFixture(testPull(11, "ship it"))
+			if _, cmd := v.updateKey(registryKey(t, "o")); cmd != nil {
+				drain(cmd)
+			}
+			if len(*opened) != 1 {
+				t.Fatalf("o opened %v, want the selected row", *opened)
+			}
+		},
+		"l": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "unclaimed"))
+			v.updateKey(registryKey(t, "l"))
+			if v.picker == nil {
+				t.Fatal("l did not open the task picker")
+			}
+		},
+		"u": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "claimed", claimedBy(8, "human")))
+			v.updateKey(registryKey(t, "u"))
+			if v.confirm == nil {
+				t.Fatal("u did not ask before unlinking")
+			}
+		},
+		"R": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "ship it"))
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not re-list")
+			}
+		},
+		"down": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "one"), testPull(12, "two"))
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor at %d, want 1", v.cursor)
+			}
+		},
+		"/": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "ship it"))
+			v.updateKey(registryKey(t, "/"))
+			if !v.filtering {
+				t.Fatal("/ did not open the filter")
+			}
+		},
 	},
 
 	ctxOutput: {
@@ -827,6 +897,43 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"esc": func(t *testing.T) {
 			f := newAnswerForm(questionRequest())
 			if _, exit := f.update(registryKey(t, "esc"), nil, 1); !exit {
+				t.Fatal("esc did not close the form")
+			}
+		},
+	},
+
+	ctxCreatePR: {
+		"enter": func(t *testing.T) {
+			f := createPRFixture(t)
+			f.update(registryKey(t, "enter"))
+			if !f.editing {
+				t.Fatal("enter did not open the row under the cursor")
+			}
+		},
+		"e": func(t *testing.T) {
+			f := createPRFixture(t)
+			called := false
+			f.openEditor = func(string) tea.Cmd { called = true; return nil }
+			f.update(registryKey(t, "e"))
+			if !called {
+				t.Fatal("e did not reach $EDITOR")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			opened := withFakeOpener(t, nil)
+			f := createPRFixture(t)
+			cmd, exit := f.update(registryKey(t, "ctrl+s"))
+			if !exit {
+				t.Fatal("ctrl+s did not close the popup")
+			}
+			drain(cmd)
+			if len(*opened) != 1 {
+				t.Fatalf("ctrl+s opened %v, want the compare URL", *opened)
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := createPRFixture(t)
+			if _, exit := f.update(registryKey(t, "esc")); !exit {
 				t.Fatal("esc did not close the form")
 			}
 		},
