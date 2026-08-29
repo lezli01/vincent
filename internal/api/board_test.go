@@ -105,7 +105,7 @@ func TestTaskListStepNamePastLastStep(t *testing.T) {
 	h := newActionHarness(t)
 	task := queuedTask(t, h)
 	step := 1 // adhoc has exactly one step, so index 1 is past the end
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, &step, nil); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, &step, nil, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
 

@@ -116,6 +116,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Tasks now start from the *current* base branch, not from whatever your last
+  `git pull` left behind.** Before a task's worktree is created, vincent fetches
+  its base branch from that branch's own remote and cuts the task branch from the
+  fetched commit. Nothing in your checkout moves: the local branch keeps its SHA
+  and its working tree, so `git log <base>` there no longer matches what tasks
+  build on. The remote is read from the base branch's upstream configuration and
+  `origin` is never assumed, so a repository with no remote, a branch that never
+  left your machine, and a `fan_out` lane based on its parent's branch all carry
+  on exactly as before. An unreachable remote or an auth failure is a warning and
+  the task is created from the local base — a fetch never blocks a task. Turn it
+  off with `fetch_base_branch: false`. See
+  [Configuration](docs/reference/configuration.md#fetch_base_branch).
+
 - **The board stops spending a wide terminal on the title column, and a cell
   too long for its column now wraps instead of vanishing.** `TITLE` used to
   take every cell the fixed columns left — 100 of them on a 200-column
@@ -132,6 +145,19 @@ list with the user-facing context a commit subject cannot carry.
   were being cut worst. See [Using the TUI](docs/guides/tui.md#the-board).
 
 ### Fixed
+
+- **`GET /v1/tasks/{id}/diff` measured the diff from the wrong commit once a task
+  started from a fetched base.** The merge-base was computed against the base
+  branch *by name*, so every upstream commit the fetch brought in was presented as
+  the task's own work. A task now records the commit it was actually cut from and
+  the diff is measured from that; tasks with nothing recorded — anything created
+  before this, or with `fetch_base_branch: false` — are read exactly as before.
+
+- **`delete_empty_branch_on_archive` stopped deleting anything for projects whose
+  local base branch was behind its remote.** A task that wrote nothing is still
+  *ahead* of a stale local base, so the "no commits past its base" check answered
+  "has commits" and quietly kept every branch. The check now runs against the
+  commit the task was cut from when one was recorded.
 
 - **Two nodes in a workflow graph could answer to one id.** A `fan_out` lane's
   inline steps have their own step-id namespace, so a lane's `build` and a

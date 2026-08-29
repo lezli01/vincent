@@ -43,7 +43,11 @@ vincent project ls
 
 `project add` detects the default branch (`origin/HEAD`, then a local `main` or
 `master`, then the current branch) and names the project after the directory.
-Both are overridable:
+The detection happens **once, here** — the name is stored and never looked up
+again. What is refreshed is the branch's *content*: each task fetches its base
+from that branch's remote before its worktree is cut, unless you turn
+[`fetch_base_branch`](../reference/configuration.md#fetch_base_branch) off. Both
+are overridable:
 
 ```sh
 vincent project add /path/to/repo --name api --default-branch develop

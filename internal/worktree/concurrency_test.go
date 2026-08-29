@@ -52,7 +52,7 @@ func TestConcurrentCreateInOneProject(t *testing.T) {
 				<-gate
 				id := int64(round*100 + i + 1)
 				_, errs[i] = m.CreateAndClaim(t.Context(), repo, id,
-					fmt.Sprintf("vincent/%d-lane", id), "main", nil)
+					fmt.Sprintf("vincent/%d-lane", id), "main", false, nil)
 			}()
 		}
 		close(gate)

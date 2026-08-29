@@ -171,7 +171,24 @@ type Config struct {
 	// effect while DeleteEmptyBranchOnArchive is false: the remote leg runs
 	// after a local delete that succeeded.
 	DeleteRemoteBranchOnArchive bool `yaml:"delete_remote_branch_on_archive"`
-	TranscriptRetentionDays     int  `yaml:"transcript_retention_days"`
+	// FetchBaseBranch refreshes a task's base branch from its own configured
+	// upstream before the worktree is created, and starts the task branch at
+	// the fetched commit (§10, task 056). Default true: without it every task
+	// builds on whatever the human's last `git pull` left behind, which on a
+	// daemon that runs for days over projects receiving merged pull requests
+	// is arbitrarily stale.
+	//
+	// Nothing local is mutated — the user's base branch keeps its SHA and its
+	// working tree — and nothing blocks: no remote, no upstream, an
+	// unreachable host or an auth failure all fall back to the local base with
+	// a log line. `false` restores the pre-056 behaviour exactly, for a
+	// repository where fetching is slow or needs interactive auth.
+	//
+	// A plain bool for the same reason its Delete* siblings are: Load
+	// unmarshals into Default(), so an absent key keeps true and an explicit
+	// `false` is honoured.
+	FetchBaseBranch         bool `yaml:"fetch_base_branch"`
+	TranscriptRetentionDays int  `yaml:"transcript_retention_days"`
 	// TranscriptMaxBytes caps one attempt's transcript (§12.3, §18). Past it
 	// the step fails `transcript_limit` rather than filling the disk. It sits
 	// at the top level beside its retention sibling, not under `defaults:`,
@@ -564,10 +581,13 @@ func Default() Config {
 		// Deliberately not defaulted true beside its local sibling: this one
 		// writes to a forge (§10, task 008).
 		DeleteRemoteBranchOnArchive: false,
-		TranscriptRetentionDays:     90,
-		TranscriptMaxBytes:          512 << 20, // 512MB (§12.3)
-		UsageLimitRecheckInterval:   Duration(15 * time.Minute),
-		LogLevel:                    "info",
+		// Default-on outbound traffic needs no separate argument: github.enabled
+		// already defaults true and §26 settled that posture. A fetch reads.
+		FetchBaseBranch:           true,
+		TranscriptRetentionDays:   90,
+		TranscriptMaxBytes:        512 << 20, // 512MB (§12.3)
+		UsageLimitRecheckInterval: Duration(15 * time.Minute),
+		LogLevel:                  "info",
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
 		Environment: Environment{Inherit: InheritAll()},

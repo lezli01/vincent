@@ -66,6 +66,18 @@ delete_empty_branch_on_archive: true
 # unless delete_empty_branch_on_archive is also on.
 delete_remote_branch_on_archive: false
 
+# Refresh a task's base branch from its remote before the task's worktree is
+# created, and start the task branch at the fetched commit rather than at
+# whatever your local base happened to be. Your own checkout is never touched:
+# the local branch keeps its SHA and its working tree, so "git log <base>" in
+# your checkout will no longer match what tasks build on.
+#
+# The remote comes from the base branch's own upstream configuration, never
+# from a guess at the name "origin". A branch with no upstream, a repository with no
+# remote, an unreachable host and a fan_out lane based on its parent's branch
+# all fall back to the local base and create the task normally.
+fetch_base_branch: true
+
 # Transcripts of archived tasks older than this many days are pruned.
 transcript_retention_days: 90
 
@@ -342,7 +354,7 @@ Three refusals are deliberate, and all of them keep the branch:
 |---|---|
 | The branch has commits | Kept, reported `has_commits` |
 | git cannot judge it — base branch renamed or deleted, repository gone | Kept, reported `unknown`, logged |
-| The delete itself fails — the branch is checked out in another worktree | Kept, reported `error`, logged. The delete is `git branch -d`, never `-D` |
+| The delete itself fails — the branch is checked out in another worktree | Kept, reported `error`, logged |
 
 A branch problem never fails an archive: the task reaches `archived` either way,
 and the branch simply survives, which is what always used to happen.
@@ -355,8 +367,55 @@ it is the last moment they exist. `vincent gc` and `vincent doctor --fix` delete
 branch at all: an orphaned directory has no task row, so there is no base branch to
 judge it against.
 
+The "no commits past its base" check is measured against the commit the task
+branch was actually cut from when `fetch_base_branch` recorded one, and against
+the base branch by name otherwise. That distinction is what keeps this key
+working once a task starts from a fetched remote tip: a task that wrote nothing
+is still *ahead* of your local base branch, so measuring against the name would
+answer "has commits" and quietly stop deleting anything.
+
 Set it to `false` to keep every branch on every path, which is what vincent did
 before this key existed. Read per archive, so a hot reload applies to the next one.
+
+### `fetch_base_branch`
+
+```yaml
+fetch_base_branch: true
+```
+
+Refresh a task's base branch from its remote just before the task's worktree is
+created, and start the task branch at the fetched commit. **On by default.**
+Without it, every task builds on whatever your local base branch was the last
+time *you* ran `git pull` — on a daemon left running for days over projects that
+keep receiving merged pull requests, that is arbitrarily stale, and the agent
+writes against code that has already moved.
+
+Your own checkout is never touched. The local branch keeps its SHA and its
+working tree and stays checked out where it was; vincent does not fast-forward
+it, because it is frequently checked out and often dirty. The visible cost is
+that `git log <base>` in your checkout no longer matches what tasks build on.
+
+The remote comes from the base branch's own configuration — `branch.<base>.remote`
+and `branch.<base>.merge` — so a local `master` that tracks `main` upstream fetches
+the right ref, and `origin` is never assumed. Anything without that pair simply
+does not fetch:
+
+| Situation | What happens |
+|---|---|
+| The repository has no remote | Created from the local base, logged at debug |
+| The base branch has no upstream | Created from the local base, logged at debug |
+| A `fan_out` lane, whose base is its parent's `vincent/…` branch | Created from the parent's branch, logged at debug |
+| The remote is unreachable, refuses auth, or does not answer within 60 seconds | Created from the local base, logged as a **warning** |
+
+A fetch never blocks a task and never introduces a block reason. Task creation
+itself stays offline: `POST /v1/tasks` still rejects a `base_branch` that does not
+exist locally, and the fetch happens later, when the scheduler first admits the
+task.
+
+Set it to `false` for a repository where fetching is slow or needs interactive
+auth; that restores the previous behaviour exactly. Read per worktree creation,
+so a hot reload applies to the next task admitted. There is no per-project
+override.
 
 ### `delete_remote_branch_on_archive`
 

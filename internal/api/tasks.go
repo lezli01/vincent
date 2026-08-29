@@ -1173,6 +1173,13 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 // handleTaskDiff implements GET /v1/tasks/{id}/diff: the worktree against
 // merge-base(base, HEAD) — committed + staged + unstaged tracked changes;
 // untracked files excluded (documented limitation, phase 1 decision).
+//
+// The base is the commit the task actually started at when the task recorded
+// one (§5.3, task 056), and the branch name only when it did not. A task cut
+// from a fetched upstream tip is *ahead* of the local base branch, so a
+// merge-base against the name resolves to the stale local commit and the
+// reviewer reads every upstream change the fetch brought in as the task's own
+// work.
 func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.taskFromPath(w, r)
 	if !ok {
@@ -1187,10 +1194,14 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	mergeBase, err := s.git(ctx, t.WorktreePath, "merge-base", t.BaseBranch, "HEAD")
+	base := t.BaseBranch
+	if t.BaseSHA != "" {
+		base = t.BaseSHA
+	}
+	mergeBase, err := s.git(ctx, t.WorktreePath, "merge-base", base, "HEAD")
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState,
-			fmt.Sprintf("cannot compute merge-base with %q: %v", t.BaseBranch, err))
+			fmt.Sprintf("cannot compute merge-base with %q: %v", base, err))
 		return
 	}
 	diff, err := s.git(ctx, t.WorktreePath, "diff", mergeBase)

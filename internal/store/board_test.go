@@ -26,7 +26,7 @@ func TestSetTaskProgressEmitsStepAdvanced(t *testing.T) {
 	})
 
 	step := 3
-	if err := s.SetTaskProgress(ctx, task.ID, &step, nil); err != nil {
+	if err := s.SetTaskProgress(ctx, task.ID, &step, nil, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
 	if got == nil {
@@ -87,7 +87,7 @@ func TestSetTaskProgressWorktreeOnlyIsSilent(t *testing.T) {
 	})
 
 	path := "/tmp/wt"
-	if err := s.SetTaskProgress(ctx, task.ID, nil, &path); err != nil {
+	if err := s.SetTaskProgress(ctx, task.ID, nil, &path, nil); err != nil {
 		t.Fatalf("SetTaskProgress: %v", err)
 	}
 	if fired != 0 {

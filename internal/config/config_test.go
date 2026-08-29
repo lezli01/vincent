@@ -81,9 +81,11 @@ agents:
 			InputTimeout:   Duration(36 * time.Hour),
 		},
 		// Same property as `environment:` below: the file names neither branch
-		// key, so the §10 defaults survive an otherwise fully-overriding config
-		// — on locally, off for the forge (task 008).
+		// key nor `fetch_base_branch`, so the §10 defaults survive an otherwise
+		// fully-overriding config — on locally, off for the forge (task 008),
+		// and fetching the base before a worktree is cut (task 056).
 		DeleteEmptyBranchOnArchive: true,
+		FetchBaseBranch:            true,
 		TranscriptRetentionDays:    7,
 		TranscriptMaxBytes:         32 << 20,
 		MaxTaskCostUSD:             12.5,

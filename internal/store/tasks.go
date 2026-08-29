@@ -14,7 +14,7 @@ import (
 )
 
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+	base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, github_pull_json,
@@ -183,14 +183,14 @@ func insertTaskTx(
 	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
-			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
+			base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
 			state, current_step, block_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
-		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
+		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
@@ -428,14 +428,14 @@ func (s *Store) UpdateTask(ctx context.Context, t *Task) error {
 	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE tasks SET title = ?, description = ?, fields_json = ?, workflow_name = ?,
-			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?,
+			workflow_snapshot = ?, base_branch = ?, branch_name = ?, worktree_path = ?, base_sha = ?,
 			priority = ?, agent_override = ?, model_override = ?, effort_override = ?,
 			state = ?, current_step = ?, block_reason = ?,
 			admit_not_before = ?, queued_reason = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ?`,
 		t.Title, t.Description, fields, t.WorkflowName,
-		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath),
+		t.WorkflowSnapshot, t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA),
 		t.Priority, nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
@@ -878,7 +878,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	var (
 		t                              Task
 		fields                         string
-		worktree, blockReason          sql.NullString
+		worktree, baseSHA, blockReason sql.NullString
 		agentOv, modelOv, effortOv     sql.NullString
 		retryCursor, pendingOv         sql.NullString
 		pendingRepair, pendingFollowUp sql.NullString
@@ -893,7 +893,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		started, finished, archived    sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
-		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &t.Priority,
+		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &worktree, &baseSHA, &t.Priority,
 		&agentOv, &modelOv, &effortOv,
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
@@ -913,6 +913,7 @@ func scanTask(r rowScanner) (*Task, error) {
 	t.LaneID = laneID.String
 	t.LaneOrder = int(laneOrder.Int64)
 	t.WorktreePath = worktree.String
+	t.BaseSHA = baseSHA.String
 	t.BlockReason = blockReason.String
 	t.PendingInputJSON = pendingInput.String
 	t.QueuedReason = queuedWhy.String

@@ -100,14 +100,14 @@ func (h *reclaimHarness) realWorktree(t *testing.T, title string) *store.Task {
 	t.Helper()
 	task := h.task(t, title)
 	branch := worktree.BranchName(task.ID, title)
-	path, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main",
-		func(p string) error {
-			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &p)
+	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main", false,
+		func(c worktree.Created) error {
+			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &c.Path, nil)
 		})
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
-	task.WorktreePath = path
+	task.WorktreePath = created.Path
 	task.BranchName = branch
 	return task
 }
@@ -243,7 +243,7 @@ func TestReclaimRemovesCleanOrphanAndKeepsTheBranch(t *testing.T) {
 	// Drop the claim only — the directory and the repo both stay, which is
 	// the one shape where git can still judge dirtiness.
 	empty := ""
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &empty); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &empty, nil); err != nil {
 		t.Fatalf("clear claim: %v", err)
 	}
 
@@ -274,7 +274,7 @@ func TestReclaimSkipsDirtyOrphanUntilForced(t *testing.T) {
 	task := h.realWorktree(t, "dirty")
 	testrepo.WriteFile(t, task.WorktreePath, "scratch.txt", "unsaved work\n")
 	empty := ""
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &empty); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &empty, nil); err != nil {
 		t.Fatalf("clear claim: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestReclaimRefusesPathsOutsideTheWorktreeRoot(t *testing.T) {
 	// And through the whole gc path, with a row claiming the outside
 	// directory so the scan has every excuse to touch it.
 	task := h.task(t, "outside-claim")
-	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &outside); err != nil {
+	if err := h.store.SetTaskProgress(t.Context(), task.ID, nil, &outside, nil); err != nil {
 		t.Fatalf("claim outside path: %v", err)
 	}
 	if _, err := h.rc.Reclaim(t.Context(), true, false); err != nil {
@@ -484,10 +484,10 @@ func TestScanCannotDeleteAWorktreeBeingCreated(t *testing.T) {
 	}()
 
 	branch := worktree.BranchName(task.ID, "racing")
-	path, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main",
-		func(p string) error {
+	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main", false,
+		func(c worktree.Created) error {
 			close(inClaim)
-			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &p)
+			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &c.Path, nil)
 		})
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
@@ -497,6 +497,7 @@ func TestScanCannotDeleteAWorktreeBeingCreated(t *testing.T) {
 	if scanErr != nil {
 		t.Fatalf("concurrent Reclaim: %v", scanErr)
 	}
+	path := created.Path
 	if o := find(scanRep, path); o != nil {
 		t.Fatalf("the scan saw a worktree being created as an orphan: %+v", o)
 	}

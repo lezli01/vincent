@@ -1,0 +1,25 @@
+-- 0019_base_sha: the commit a task's branch was actually cut from (task 056,
+-- spec §5.3/§10/§14).
+--
+-- Since task 056 the worktree path may fetch `base_branch` from its upstream
+-- and start the task branch at the fetched commit. `base_branch` is then a
+-- name that no longer resolves to where the task began, and two consumers read
+-- it as if it did: GET /v1/tasks/{id}/diff's merge-base, and task 008's
+-- empty-branch check at archive. Left alone, the first presents every upstream
+-- commit the fetch brought in as the task's own work, and the second stops
+-- deleting branches for every project whose local base is behind its remote.
+--
+-- NULL means "the branch name still is the fork point", and both consumers
+-- fall back to it. That is every task created before this migration and every
+-- task created with `fetch_base_branch: false`, so no existing row is
+-- stranded and turning the feature off restores the old reading exactly.
+--
+-- A SHA and not a remote-tracking ref: `{remote}/{base}` keeps moving under
+-- later fetches, so a task's recorded base would drift after the fact, and it
+-- does not exist at all for a fan_out lane, whose base is its parent's branch.
+--
+-- Written where `worktree_path` is written — inside the engine's claim
+-- callback on first admission — because that is the one moment the value is
+-- known. Nothing queries inside it and no index is added: it is read by id,
+-- for one task at a time.
+ALTER TABLE tasks ADD COLUMN base_sha TEXT; -- NULL = base_branch is the fork point

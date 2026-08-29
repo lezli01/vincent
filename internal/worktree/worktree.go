@@ -175,16 +175,39 @@ func (m *Manager) Path(taskID int64) string {
 	return filepath.Join(m.root, strconv.FormatInt(taskID, 10))
 }
 
+// Created is what one worktree creation produced.
+type Created struct {
+	// Path is the worktree directory.
+	Path string
+	// BaseSHA is the commit the task branch starts at, set only when a fetch
+	// resolved one (§5.3, task 056). Empty means the branch was cut from the
+	// local base and `base_branch` still names the fork point.
+	BaseSHA string
+	// Fetch says what the base-branch fetch did; the zero value means none
+	// was asked for.
+	Fetch FetchOutcome
+}
+
 // Create adds branch (from base) and a worktree for it, returning the
 // worktree path. It prunes stale worktree registrations first and never
 // deletes an existing directory (prune-then-fail decision).
 //
-// Callers that persist the path afterwards must use CreateAndClaim instead,
-// so the create-then-claim window is closed against a concurrent gc scan.
-func (m *Manager) Create(ctx context.Context, projectPath string, taskID int64, branch, base string) (string, error) {
+// fetch refreshes base from its configured upstream first and starts the
+// branch at the fetched commit (§10, task 056); see fetchBase. A fetch that
+// cannot happen or does not work never fails the creation.
+//
+// Callers that persist the result afterwards must use CreateAndClaim instead,
+// so the create-then-claim window is closed against a concurrent gc scan —
+// and because the base SHA the fetch resolved and the outcome worth logging
+// are things only a caller that records the creation has any use for. This
+// one deliberately drops both.
+func (m *Manager) Create(
+	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+) (string, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	return m.create(ctx, projectPath, taskID, branch, base)
+	c, err := m.create(ctx, projectPath, taskID, branch, base, fetch)
+	return c.Path, err
 }
 
 // CreateAndClaim creates the worktree and, still holding the claim lock,
@@ -196,21 +219,21 @@ func (m *Manager) Create(ctx context.Context, projectPath string, taskID int64, 
 // engine's own error path decides what happens to the task. The next scan
 // will see it as an orphan, which is precisely the crash case gc exists for.
 func (m *Manager) CreateAndClaim(
-	ctx context.Context, projectPath string, taskID int64, branch, base string,
-	claim func(path string) error,
-) (string, error) {
+	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+	claim func(c Created) error,
+) (Created, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	path, err := m.create(ctx, projectPath, taskID, branch, base)
+	c, err := m.create(ctx, projectPath, taskID, branch, base, fetch)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 	if claim != nil {
-		if err := claim(path); err != nil {
-			return path, err
+		if err := claim(c); err != nil {
+			return c, err
 		}
 	}
-	return path, nil
+	return c, nil
 }
 
 // RemoveAndRelease removes the worktree and then clears the claim, both under
@@ -237,49 +260,76 @@ func (m *Manager) WithReclaimLock(fn func() error) error {
 	return fn()
 }
 
-func (m *Manager) create(ctx context.Context, projectPath string, taskID int64, branch, base string) (string, error) {
+func (m *Manager) create(
+	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+) (Created, error) {
 	// Whole of create, not just the prune: the add is as unsafe against a
-	// peer add as it is against a peer prune (#126, see Manager.repos).
+	// peer add as it is against a peer prune (#126, see Manager.repos). The
+	// fetch and the FETCH_HEAD read that follows it are inside the same lock,
+	// so no peer admission into this repository can land between them.
 	unlock := m.lockRepo(projectPath)
 	defer unlock()
 
 	if _, err := os.Stat(projectPath); err != nil {
-		return "", &Error{
+		return Created{}, &Error{
 			Reason:  ReasonProjectPathMissing,
 			Message: fmt.Sprintf("project path %s does not exist", projectPath), Err: err,
 		}
 	}
+	// The local base is still required, and task creation is still offline
+	// (§10 fail-fast): a base that exists only on the remote is not a case
+	// this serves, and POST /v1/tasks rejects it before a task row exists.
 	if !m.localBranchExists(ctx, projectPath, base) {
-		return "", &Error{
+		return Created{}, &Error{
 			Reason:  ReasonBaseBranchMissing,
 			Message: fmt.Sprintf("base branch %q does not exist in %s", base, projectPath),
 		}
 	}
 	if m.localBranchExists(ctx, projectPath, branch) {
-		return "", &Error{
+		return Created{}, &Error{
 			Reason:  ReasonBranchExists,
 			Message: fmt.Sprintf("branch %q already exists in %s (never reused)", branch, projectPath),
 		}
 	}
 	if err := m.prune(ctx, projectPath); err != nil {
-		return "", err
+		return Created{}, err
 	}
 	target := m.Path(taskID)
 	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
-		return "", &Error{
+		return Created{}, &Error{
 			Reason:  ReasonWorktreePathOccupied,
 			Message: fmt.Sprintf("worktree path %s already exists and is not empty; remove it manually", target),
 		}
 	}
 	if err := os.MkdirAll(m.root, 0o700); err != nil {
-		return "", &Error{Reason: ReasonGitError, Message: "create worktrees dir", Err: err}
+		return Created{}, &Error{Reason: ReasonGitError, Message: "create worktrees dir", Err: err}
+	}
+	out := Created{Path: target, Fetch: FetchOutcome{Result: FetchDisabled}}
+	start := base
+	if fetch {
+		sha, fo := m.fetchBase(ctx, projectPath, base)
+		out.Fetch = fo
+		if sha != "" {
+			out.BaseSHA, start = sha, sha
+		}
 	}
 	addCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
-	if _, err := m.git.Run(addCtx, projectPath, "worktree", "add", target, "-b", branch, base); err != nil {
-		return "", &Error{Reason: ReasonGitError, Message: "git worktree add failed", Err: err}
+	// --no-track unconditionally, including when start is a local branch
+	// name. Under `branch.autoSetupMerge` git copies the start point's
+	// upstream onto the new branch, and a task branch that carries one is a
+	// live hazard: archive's remote leg pushes `--delete {remote} {merge-ref}`
+	// (§10, task 008), so an inherited `refs/heads/master` would delete the
+	// project's default branch on the forge, and a fan_out child would fetch
+	// that upstream and silently unmake §7.6's inheritance. Starting from a
+	// resolved SHA already avoids it; this is the belt behind the braces, and
+	// it also covers `autoSetupMerge = always` on a local base, which was
+	// always able to set one.
+	if _, err := m.git.Run(addCtx, projectPath,
+		"worktree", "add", target, "-b", branch, "--no-track", start); err != nil {
+		return Created{}, &Error{Reason: ReasonGitError, Message: "git worktree add failed", Err: err}
 	}
-	return target, nil
+	return out, nil
 }
 
 // ValidateBranchName reports whether branch is a legal branch name, returning a

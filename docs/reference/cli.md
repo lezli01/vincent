@@ -334,7 +334,7 @@ Registers a local git repository.
 | Flag | Default |
 |---|---|
 | `--name` | The directory name |
-| `--default-branch` | Detected: `origin/HEAD`, then local `main`, then `master`, then the current branch |
+| `--default-branch` | Detected **once, here**: `origin/HEAD`, then local `main`, then `master`, then the current branch. The name is stored and never re-detected; what is refreshed later is the branch's content, per task, when `fetch_base_branch` is on |
 | `--workflow` | None — tasks then name their own |
 | `--max-parallel` | Unset — only the global cap applies |
 
