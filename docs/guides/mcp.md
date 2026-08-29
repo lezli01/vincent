@@ -62,6 +62,11 @@ Each tool takes the route's path parameters by name, plus `body` (for `POST` and
   "arguments": { "id": 12, "run_id": "34", "query": { "format": "normalized", "limit": "200" } } }
 ```
 
+`task_create` also takes an optional `idempotency_key`, which becomes the
+`Idempotency-Key` header: re-sending the same arguments with the same key
+returns the original task instead of creating a second one. A tool call has no
+header surface, so it is an argument.
+
 Errors come back as the API's own envelope, so a `409` still carries
 `details.state` and you can branch on it rather than reading prose. One result is
 capped at 256 KiB, with a note saying so — page with the route's own

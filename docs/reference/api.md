@@ -1281,6 +1281,10 @@ Every route on this page is a tool, with these exceptions:
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 
+`task_create` additionally takes an optional `idempotency_key` string, which
+becomes the `Idempotency-Key` header — a tool call has no header surface, and
+replay protection exists for exactly the client an agent is.
+
 A tool call is dispatched by replaying its arguments against the very handler
 this page documents, so the request bounds, the validation and the error
 envelopes above are the same ones a tool sees — a `409` reaches an MCP client

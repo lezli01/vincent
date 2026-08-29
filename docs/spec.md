@@ -4395,7 +4395,10 @@ therefore mechanical rather than maintained: the §13.1 body bounds, the field
 bounds, the validation, the `409` + `details.state` envelopes and
 `Idempotency-Key` all apply by construction. One tool result is capped at 256 KiB
 with an explicit truncation note; a route's own `offset`/`limit` parameters are
-how a client asks for less.
+how a client asks for less. `POST /v1/tasks` gains one argument its route does
+not have as a body field: `idempotency_key`, which becomes the header. A tool
+call has no header surface at all, and §13.1's replay protection exists for a
+client whose response got lost — which is exactly what an agent is.
 
 Five routes are **deliberately not tools**, and this is a design line rather than
 an oversight:

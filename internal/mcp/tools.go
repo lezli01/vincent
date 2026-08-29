@@ -156,6 +156,14 @@ func inputSchema(r Route) json.RawMessage {
 			"type":        "object",
 			"description": "the JSON request body for " + r.Method + " " + r.Path,
 		}
+		if takesIdempotencyKey(r) {
+			props["idempotency_key"] = map[string]any{
+				"type": "string",
+				"description": "optional replay-protection key: re-sending the same " +
+					"arguments with the same key returns the original result instead of " +
+					"creating a second task",
+			}
+		}
 	} else {
 		props["query"] = map[string]any{
 			"type":                 "object",
@@ -170,6 +178,14 @@ func inputSchema(r Route) json.RawMessage {
 	// Marshaling a map[string]any of plain values cannot fail.
 	b, _ := json.Marshal(schema) //nolint:errchkjson // see above
 	return b
+}
+
+// takesIdempotencyKey reports whether a route honours §13.1's
+// `Idempotency-Key`. Only `POST /v1/tasks` does, and the schema says so on
+// that tool alone rather than everywhere — an argument a route ignores is a
+// worse lie than a missing one.
+func takesIdempotencyKey(r Route) bool {
+	return r.Method == http.MethodPost && r.Path == "/v1/tasks"
 }
 
 // hasBody reports whether a method carries a request body on this API.

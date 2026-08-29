@@ -18,6 +18,12 @@ import (
 type call struct {
 	Body  json.RawMessage   `json:"body,omitempty"`
 	Query map[string]string `json:"query,omitempty"`
+	// IdempotencyKey rides §13.1's replay-protection header. It is an
+	// *argument* rather than a header because a tool call has no header
+	// surface at all: without it the one §13.1 guarantee an MCP client could
+	// not reach would be the one that exists for a client whose response got
+	// lost — which is exactly the client an agent is.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 	// params carries the path parameters by name; the SDK hands us raw JSON,
 	// so they are decoded from the same object.
 	params map[string]string
@@ -91,6 +97,9 @@ func requestFor(ctx context.Context, r Route, c call) (*http.Request, error) {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 		req.ContentLength = int64(len(body))
+	}
+	if c.IdempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", c.IdempotencyKey)
 	}
 	// A loopback host is required: the handler chain reads r.Host for nothing
 	// today, but net/http requires a non-empty one on a server-side request.

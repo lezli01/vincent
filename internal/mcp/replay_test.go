@@ -248,3 +248,40 @@ func text(t *testing.T, res *sdk.CallToolResult) string {
 	}
 	return tc.Text
 }
+
+// TestDispatchForwardsIdempotencyKey: §13.1's replay protection exists for a
+// client whose response got lost, which is exactly what an agent is. A tool
+// call has no header surface, so the key is an argument — and this proves it
+// reaches the route as the header the route reads.
+func TestDispatchForwardsIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	h := &stubHandler{status: http.StatusOK, body: `{"id":1}`}
+	s := New(Deps{Handler: h})
+	if _, err := s.dispatch(t.Context(), routeFor(t, "task_create"),
+		json.RawMessage(`{"idempotency_key":"abc-123","body":{"project_id":1}}`)); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if got := h.got.Header.Get("Idempotency-Key"); got != "abc-123" {
+		t.Errorf("Idempotency-Key = %q, want abc-123", got)
+	}
+}
+
+// TestIdempotencyKeyIsOnlyOnTaskCreate: the argument is advertised on the one
+// route that honours it. An argument a route ignores is a worse lie than a
+// missing one.
+func TestIdempotencyKeyIsOnlyOnTaskCreate(t *testing.T) {
+	t.Parallel()
+	for _, r := range Routes() {
+		var schema struct {
+			Properties map[string]any `json:"properties"`
+		}
+		if err := json.Unmarshal(inputSchema(r), &schema); err != nil {
+			t.Fatalf("%s: %v", r.Tool, err)
+		}
+		_, has := schema.Properties["idempotency_key"]
+		want := r.Tool == "task_create"
+		if has != want {
+			t.Errorf("%s advertises idempotency_key = %v, want %v", r.Tool, has, want)
+		}
+	}
+}
