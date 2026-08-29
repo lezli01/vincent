@@ -175,3 +175,35 @@ func (c *Client) GetWorkflowDefinition(ctx context.Context, projectID int64, nam
 	}
 	return out, nil
 }
+
+// TaskWorkflow is GET /v1/tasks/{id}/workflow (§13.2, task 050): one task's
+// own §5.3 snapshot as the structure a graph is drawn from — includes already
+// spliced (§7.9), any `edit + retry` rewrite reflected (§6).
+//
+// It carries no `scope`, `file` or `platforms`: those are registry facts a
+// snapshot has none of, and a task's provenance is its `workflow_origin`
+// instead (task 050 decision 6). Definition is nil when the snapshot did not
+// parse, which is a 200 with findings, not an error.
+type TaskWorkflow struct {
+	TaskID     int64             `json:"task_id"`
+	Name       string            `json:"name"`
+	Errors     []WorkflowFinding `json:"errors,omitempty"`
+	Warnings   []WorkflowFinding `json:"warnings,omitempty"`
+	Error      *string           `json:"error"`
+	Definition *WorkflowBody     `json:"definition"`
+}
+
+// Valid reports whether the snapshot parsed.
+func (t TaskWorkflow) Valid() bool { return len(t.Errors) == 0 && t.Definition != nil }
+
+// GetTaskWorkflow fetches one task's own workflow snapshot. It is never the
+// registry entry of the same name: the registry's copy is whatever the file
+// says now, and the task ran the snapshot.
+func (c *Client) GetTaskWorkflow(ctx context.Context, taskID int64) (TaskWorkflow, error) {
+	var out TaskWorkflow
+	path := "/v1/tasks/" + strconv.FormatInt(taskID, 10) + "/workflow"
+	if err := c.get(ctx, path, &out); err != nil {
+		return TaskWorkflow{}, err
+	}
+	return out, nil
+}
