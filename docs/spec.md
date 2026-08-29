@@ -2747,6 +2747,7 @@ One Go binary, `vincent`:
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code |
+| `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
 | `vincent version` | Build info |
 
 *Added 2026-08-26 (task 035).* `vincent task add --github-issue <n>` creates a
@@ -2855,6 +2856,25 @@ good copy, not a fresh copy of the damage — and the documentation keeps "stop
 the daemon, then copy `vincent.db`, `vincent.db-wal` and `vincent.db-shm`
 together" as the no-binary fallback, which is also the honest answer for a
 daemon that will not start.
+
+*Added 2026-08-29 (task 055).* `vincent update` is the **second stated
+exception** to "the daemon owns everything" (§4), beside `daemon restore`'s
+above, and for the same kind of reason twice over. The operation must work with
+**no daemon** — the user this feature exists for is on a direct-download binary
+and may never have started one — and a daemon cannot cleanly rewrite its own
+running image on Windows, where the running executable can be renamed aside but
+not overwritten. So the CLI downloads, verifies and swaps; what the daemon keeps
+is the background check and the cached answer (§12.3, §13.2).
+
+The swap changes the binary and nothing else. It drains nothing, pauses nothing
+and kills nothing: the running daemon keeps its old code until it is restarted,
+which is a state `vincent daemon status` and `vincent doctor` both report and
+neither treats as a fault. Applying an update is never automatic — agents run
+full-auto (§16), and swapping the orchestrator underneath running tasks with no
+human in the loop is not something vincent does quietly. There is also no
+prompt: the command is already the explicit human act, and this tree does not
+prompt because its purpose is scripting (task 048). `--dry-run` prints what
+would happen.
 
 *Added 2026-08-15 (task 006).* `vincent doctor` is the one data subcommand that
 still produces a **full report when no daemon answers**, the way
@@ -3102,6 +3122,9 @@ agents:
 github:
   enabled: true                # read GitHub issues and pull requests (§13.2)
   poll_interval: 5m            # reconcile task↔pull-request links this often; 0 = off (task 052)
+update:                        # check for a newer vincent release (task 055)
+  check: true                  # opt-out; false = the daemon makes no such request at all
+  poll_interval: 24h           # 0 = off, same as check: false; negative is refused
 notify:                        # run a command when a task enters one of these states (task 046)
   on: []                       # §6 state names; [] (the default) fires nothing
   command: []                  # argv, never a shell string; the envelope arrives on stdin
@@ -3132,8 +3155,47 @@ degrades to "no new links this tick" and logs at debug — never a per-tick erro
 storm, and never a task state change.
 
 `poll_interval: 0` switches the reconciler off while leaving the rest of the
-integration on. This is the daemon's first standing outbound network traffic,
-and it must be refusable without refusing `github.enabled` entirely.
+integration on. It must be refusable without refusing `github.enabled` entirely.
+
+*Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
+outbound network traffic when it landed, and that sentence read as though it
+were the only one. It is now the first that fires for a *subset* of installs:
+the gate above stops at the first "no", so a daemon with no GitHub-origin
+project makes no call under this key. The release check below is the first that
+fires for **every** install, which is why it carries its own switch rather than
+riding this one.
+
+**`update` and the release check (task 055, added 2026-08-29).** Every
+`update.poll_interval` the daemon asks GitHub for vincent's latest **stable**
+release and caches the answer in memory, which `GET /v1/update` (§13.2),
+`vincent doctor` and `vincent daemon status` render. It is another daemon
+subsystem wired in `internal/daemon.Run` beside the scheduler, the notifier and
+the pull-request reconciler, with the same posture: one goroutine, config read
+per tick so a reload governs the next one, and a **quiet** failure policy —
+offline, rate-limited and malformed all degrade to "no new answer this tick" at
+debug level, and the previously cached answer survives.
+
+The call is one unauthenticated GET with no identifying header (§16). Stable-only
+is enforced twice: `releases/latest` excludes drafts and prereleases server-side,
+which already honours `.goreleaser.yaml`'s `prerelease: auto`, and a tag carrying
+a semver prerelease suffix is rejected client-side so the guarantee does not rest
+on one API's documented behaviour. Comparison normalizes the `v` prefix —
+goreleaser injects `{{.Version}}` without one while tags carry one — and a `dev`
+build is never reported as behind.
+
+Either `check: false` or `poll_interval: 0` stops the poller; a negative interval
+refuses the file, because rounding a typo to "do not poll" would look like it
+worked. The cache is in memory and not in SQLite: a restart re-polls, no
+migration is needed, and §12.4's "persist before acting" governs task transitions,
+which this is not.
+
+**`vincent update --check` does not go through the daemon**, and neither does
+`vincent update` (§12.1). That is what makes `check: false` a literal promise —
+with the poller off the daemon makes no request, and only an explicit command
+does — and it is what makes the check answer before the first poll and with no
+daemon running. The endpoint therefore serves the cache and never refreshes: a
+`?refresh` parameter would hand any client the ability to make the request the
+user disabled.
 
 **`usage_limit_recheck_interval` (task 003, added 2026-08-14).** How long a task
 waits before being re-admitted after its agent reported a spent usage quota
@@ -3589,6 +3651,25 @@ POST   /v1/doctor/fix                   { force? } or ?force — runs gc's recla
                                         A separate method from the GET on purpose: a call that
                                         deletes directories is a different promise from a
                                         report (task 005)
+GET    /v1/update                       *Added 2026-08-29 (task 055).* the daemon's cached release
+                                        check (§12.3) →
+                                        { enabled, current_version, latest_version,
+                                          update_available, published_at, release_url,
+                                          checked_at, error }.
+                                        It serves the **cache and never polls**: `update.check:
+                                        false` promises the daemon makes no outbound request, and
+                                        a `?refresh` parameter would hand any client the ability
+                                        to break that. `vincent update --check` queries the feed
+                                        itself instead (§12.1), which is also why it answers
+                                        before the first poll and with no daemon running.
+                                        `checked_at: null` with an empty `latest_version` is the
+                                        **never-polled** state, and is a different answer from
+                                        "no update available". `update_available` is computed
+                                        server-side so every client agrees, and a `dev` build is
+                                        never reported as behind. `current_version` is the
+                                        **daemon's** build, which may be older than the binary
+                                        that asked — that is what `vincent daemon status` reports
+                                        after a swap. A prerelease never appears here
 POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
                                         `vincent daemon stop` calls this and waits for exit
 POST   /v1/daemon/backup                { path } → { path, bytes, database_bytes,
@@ -5125,6 +5206,25 @@ currently true to show (§15 view 6).
   it is shown — a quit two seconds in must not bury it. Every failure reading or
   writing that file shows the notice again: a security warning that suppresses
   itself because a parse failed has failed in the wrong direction.
+- **The release check and `vincent update` (task 055, added 2026-08-29).** The
+  check sends **one unauthenticated GET** of the project's public
+  latest-release feed and nothing else: no `Authorization` header, no
+  telemetry, no machine, install or user identifier, and no header saying
+  anything about this host. It downloads nothing and executes nothing.
+  `update.check: false` (§12.3) stops it entirely, and `vincent update`
+  queries the feed itself rather than through the daemon so that switch means
+  what it says. `vincent update` **verifies before it executes anything it
+  downloaded**, in the order the release notes tell a human to: the cosign
+  signature over `checksums.txt` against the project's pinned certificate
+  identity and OIDC issuer, then the downloaded archive's SHA-256 against that
+  now-trusted file, then extraction and the swap. On any mismatch nothing is
+  replaced and the previous binary is left byte-identical. The identity and
+  issuer are constants, not flags — a verification whose identity the caller
+  chooses verifies nothing. `cosign` is preferred from the user's `PATH` and
+  never bundled (the posture `internal/github` takes toward `gh`); without it
+  the checksum check runs alone and the command says plainly that the signature
+  was not verified, and `--require-signature` makes its absence fatal.
+  A binary a package manager owns is never modified.
 - Worktrees provide *collision* isolation, not *security* isolation.
 - The daemon stores no secrets; agent CLIs use their own auth (keychain/config). The
   token file gates only the vincent API itself.
