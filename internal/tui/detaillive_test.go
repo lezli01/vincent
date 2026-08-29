@@ -29,7 +29,7 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	ctx := context.Background()
 
 	path := filepath.Join(t.TempDir(), "0-1.jsonl")
-	covered := writeTranscript(t, path, "line-one", "line-two")
+	covered := appendTranscript(t, path, "line-one", "line-two")
 
 	// The task must actually be running: T3.10's subscription rule only
 	// opens the live tail for a running task, which is the only state that
@@ -66,7 +66,7 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 
 	// The daemon writes a third line and publishes it, exactly as the runner
 	// does: transcript first, then the chunk carrying the position past it.
-	next := writeTranscript(t, path, "line-one", "line-two", "line-three")
+	next := appendTranscript(t, path, "line-three")
 
 	// A chunk the fetch already covered — same line, offset at the boundary
 	// the fetch reported. It must be recognized as already seen.
@@ -97,18 +97,33 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	}
 }
 
-// writeTranscript writes a transcript holding exactly these records and
-// returns the file size — the offset the daemon stamps on the chunk it
+// appendTranscript appends these records to the transcript and returns the
+// file size afterwards — the offset the daemon stamps on the chunk it
 // publishes right after the last write.
-func writeTranscript(t *testing.T, path string, texts ...string) int64 {
+//
+// It appends because the daemon does: a transcript is opened once and written
+// to, never rebuilt (§12.2). Rewriting the file with os.WriteFile truncates it
+// to zero first, and the per-task subscription's ConnectedNote re-reads the
+// transcript (§13.3) at a moment this test does not synchronize with. A read
+// landing inside that window returns an empty window, applyTranscript replaces
+// the records already on screen with it, and the first line goes missing for a
+// reason that has nothing to do with the seam under test.
+func appendTranscript(t *testing.T, path string, texts ...string) int64 {
 	t.Helper()
-	var sb strings.Builder
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatalf("open transcript: %v", err)
+	}
+	defer func() { _ = f.Close() }()
 	for _, text := range texts {
-		fmt.Fprintf(&sb,
-			`{"type":"vincent.output","phase":"run","stream":"stdout","text":%q}`+"\n", text)
+		if _, err := fmt.Fprintf(f,
+			`{"type":"vincent.output","phase":"run","stream":"stdout","text":%q}`+"\n", text); err != nil {
+			t.Fatalf("write transcript: %v", err)
+		}
 	}
-	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
-		t.Fatalf("write transcript: %v", err)
+	fi, err := f.Stat()
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
 	}
-	return int64(len(sb.String()))
+	return fi.Size()
 }
