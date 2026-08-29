@@ -4330,10 +4330,14 @@ stream for the live tail.
 
    **Row height (task 050, added 2026-08-29).** A cell too long for its column
    wraps onto further lines of the same row rather than being truncated away.
-   Every row on a board is the same height — the tallest wrapped row currently
-   on screen, clamped to three lines — so a board where nothing overflows is one
-   line per row and renders exactly as it always did. Anything still overflowing
-   at the third line is cut there with an ellipsis. Four cells wrap: `TITLE`,
+   Every row on a board is the same height — the tallest row in the list the
+   board is currently showing, clamped to three lines — so a board where nothing
+   overflows is one line per row and renders exactly as it always did. The list,
+   not the visible window: the table's scroll offset is private, and a height
+   that changed as the board scrolled would move rows under the cursor. One long
+   title far down therefore raises the rows above it, and a filter that excludes
+   it lowers them again. Anything still overflowing at the third line is cut
+   there with an ellipsis. Four cells wrap: `TITLE`,
    `STATE`, `STEP` and `STATUS`. `ID`, `ELAPSED`, `COST` and the marker column
    cannot meaningfully overflow, and `PROJECT` / `WORKFLOW` are identifiers used
    for scanning, which a fourteen-cell wrap makes unreadable — under width

@@ -22,9 +22,11 @@ list with the user-facing context a commit subject cannot carry.
   with only what neither can use coming back to it. Separately, `TITLE`,
   `STATE`, `STEP` and `STATUS` wrap across up to three lines of the same row,
   so `awaiting_children (2 blocked)` and a step's own status message are
-  readable without opening the task. Every row on a board is the same height,
-  so a board where nothing overflows renders exactly as it did before. Narrow
-  boards are unchanged in both respects. See [Using the TUI](docs/guides/tui.md#the-board).
+  readable without opening the task. Every row on a board is the same height —
+  as tall as the tallest row in the list — so a board where nothing overflows
+  renders exactly as it did before. Column widths are unchanged on a narrow
+  board; wrapping applies at every width, because 80–120 columns is where cells
+  were being cut worst. See [Using the TUI](docs/guides/tui.md#the-board).
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 

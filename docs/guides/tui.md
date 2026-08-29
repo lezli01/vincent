@@ -87,9 +87,11 @@ clears it, and `enter` opens the selected task.
 the state, the step and the status carry across up to three lines of the same
 row, so `awaiting_children (2 blocked)` and a step's own message are readable
 without opening the task. Every row on a board is the same height — as tall as
-the tallest one on screen, and never more than three lines — so a board where
-nothing overflows is one line per task, exactly as before. What still does not
-fit at three lines ends in `…`. Clicking any line of a row selects that row,
+the tallest row in the list, and never more than three lines — so a board where
+nothing overflows is one line per task, exactly as before. The list, not the
+part of it you can see: one long title far down the board makes the rows above
+it tall too, and a filter that hides it makes them short again. What still does
+not fit at three lines ends in `…`. Clicking any line of a row selects that row,
 and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost
 and the marker column do not wrap, and neither do project and workflow: those
 two are names you scan down, which a fourteen-cell wrap makes unreadable, so
