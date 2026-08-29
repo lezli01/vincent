@@ -40,6 +40,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyDown}
 	case "right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight}
+	case "left":
+		msg = tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "space":
 		msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "ctrl+s":
@@ -100,6 +102,22 @@ func tabbedTaskFixture(t *testing.T, tab taskViewTab) *taskView {
 // repairFormFixture is a repair popup as `R` on a blocked task opens it.
 func repairFormFixture() *repairForm {
 	return newRepairForm(7, "check_failed", "build")
+}
+
+// foldingShell is a shell whose board is grouped and focused on the task
+// table — the only state the four fold keys exist in. newShellFixture's board
+// is flat, where they are deliberately inert (task 054 decision 5).
+func foldingShell(t *testing.T) *shell {
+	t.Helper()
+	s, _ := newShellFixture(t,
+		task(1, stateQueued, inProject("api"), inWorkflow("build")),
+		task(2, stateQueued, inProject("web"), inWorkflow("build")),
+	)
+	s.focus = panelTasks
+	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.dataDir, s.board.foldsLoaded = "", true
+	s.render(120, 37)
+	return s
 }
 
 func followUpFormFixture() *followUpForm {
@@ -192,6 +210,50 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s2.update(registryKey(t, "L"))
 			if s2.board.laneParent != 0 {
 				t.Fatalf("L drilled into a task with no lanes (laneParent %d)", s2.board.laneParent)
+			}
+		},
+		"left": func(t *testing.T) {
+			s := foldingShell(t)
+			s.update(registryKey(t, "left"))
+			s.render(120, 37)
+			if !s.board.folds.has(foldPath{"api", "build"}) {
+				t.Fatalf("left did not collapse the cursor's group (folds %v)", s.board.folds)
+			}
+			// Again, on the header it just closed: ← walks outwards.
+			s.update(registryKey(t, "left"))
+			s.render(120, 37)
+			if !s.board.folds.has(foldPath{"api"}) {
+				t.Fatalf("a second left did not collapse the parent (folds %v)", s.board.folds)
+			}
+		},
+		"right": func(t *testing.T) {
+			s := foldingShell(t)
+			s.update(registryKey(t, "left"))
+			s.render(120, 37)
+			s.update(registryKey(t, "right"))
+			s.render(120, 37)
+			if s.board.folds.has(foldPath{"api", "build"}) {
+				t.Fatalf("right did not expand the group under the cursor (folds %v)", s.board.folds)
+			}
+		},
+		"C": func(t *testing.T) {
+			s := foldingShell(t)
+			s.update(registryKey(t, "C"))
+			s.render(120, 37)
+			for _, want := range []foldPath{{"api"}, {"api", "build"}} {
+				if !s.board.folds.has(want) {
+					t.Fatalf("C did not collapse %v (folds %v)", want, s.board.folds)
+				}
+			}
+		},
+		"O": func(t *testing.T) {
+			s := foldingShell(t)
+			s.update(registryKey(t, "C"))
+			s.render(120, 37)
+			s.update(registryKey(t, "O"))
+			s.render(120, 37)
+			if len(s.board.folds) != 0 {
+				t.Fatalf("O left folds behind: %v", s.board.folds)
 			}
 		},
 	},

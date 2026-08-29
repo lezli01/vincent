@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,11 @@ type board struct {
 
 	tbl        table.Model
 	selectedID int64
+	// selectedPath is the collapsed header the cursor is resting on, empty
+	// when it is on a task. A collapsed header stands in for its tasks, so it
+	// is a row (task 054 decision 2) — and the render has to be able to put
+	// the cursor back on it, which selectedID cannot say.
+	selectedPath foldPath
 	// laneParent drills the board into one fan-out parent's lanes (§7.6,
 	// task 014). Zero is the ordinary board, which hides lanes entirely
 	// (decision 13); non-zero shows exactly that parent's lanes, in merge
@@ -95,6 +101,14 @@ type board struct {
 	// marks is the bulk selection (boardmark.go, task 011): the tasks the §6
 	// action keys act on instead of the row under the cursor.
 	marks markSet
+
+	// folds is the collapsed groups (boardfold.go, task 054), persisted in
+	// {data_dir}/tui.json — dataDir is where, and foldsLoaded stops a
+	// reconnect's second setDataDir from re-reading the file over folds made
+	// since. Empty is the board every version before this one rendered.
+	folds       foldSet
+	dataDir     string
+	foldsLoaded bool
 
 	filter    textinput.Model
 	filtering bool
@@ -178,6 +192,18 @@ func ringBell() {
 }
 
 func (b *board) title() string { return "Board" }
+
+// setDataDir hands the board the resolved data dir and reads the fold set out
+// of it (task 054 decision 1). It is called again on every reconnect, which
+// must not re-read the file: the folds on screen are newer than the ones on
+// disk whenever a key was pressed since.
+func (b *board) setDataDir(dir string) {
+	if b.foldsLoaded && b.dataDir == dir {
+		return
+	}
+	b.dataDir, b.foldsLoaded = dir, true
+	b.folds = loadFolds(dir)
+}
 
 // setClient wires the board to a connected daemon and kicks off its initial
 // load. Called again on reconnect, which is why the tick is guarded.
@@ -346,6 +372,14 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// to a 404. Only a *successful* load prunes: a failed refresh is not news
 	// about which tasks exist.
 	b.marks = b.marks.keep(msg.tasks)
+	// The same argument for the fold set: a group whose project was removed
+	// would otherwise re-collapse it months later when it comes back
+	// (task 054 decision 4). Pruning is against the task values rather than
+	// the rendered grouping, so `g` and the filter leave it alone.
+	if pruned := b.folds.prune(msg.tasks); len(pruned) != len(b.folds) {
+		b.folds = pruned
+		b.persistFolds()
+	}
 }
 
 // updateNote reacts to the event stream. Every task event schedules a
@@ -362,6 +396,14 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 			bell()
 			return nil
 		})
+	}
+	// A collapsed group opens by itself the moment a task inside it enters
+	// awaiting_input (task 054 decision 3). This is the safeguard that makes
+	// 009 decision 4's named failure — a fold hiding a task waiting on a
+	// human — unreachable rather than merely visible, and it hangs off the
+	// same event the bell reads.
+	if id, ok := enteredAwaitingInput(ev.Event); ok && b.expandFor(id) {
+		cmds = append(cmds, b.saveFolds())
 	}
 	if isTaskEvent(ev.Event.Type) {
 		cmds = append(cmds, b.scheduleRefresh())
@@ -412,6 +454,29 @@ func (b *board) ringsFor(ev apiclient.Event) bool {
 	}
 	b.lastBellAt = now
 	return true
+}
+
+// enteredAwaitingInput reads a state-change event for a transition *into*
+// awaiting_input and names the task it happened to.
+//
+// It is a second read of the event ringsFor already looks at, because the two
+// answers differ: the bell rings once per event id and is rate-limited into
+// one interruption, while a fold hiding a task that just started waiting has
+// to open every time.
+func enteredAwaitingInput(ev apiclient.Event) (int64, bool) {
+	if ev.Type != "task.state_changed" || ev.TaskID == nil {
+		return 0, false
+	}
+	var payload struct {
+		To string `json:"to"`
+	}
+	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+		return 0, false
+	}
+	if payload.To != stateAwaitingInput {
+		return 0, false
+	}
+	return *ev.TaskID, true
 }
 
 func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
@@ -490,6 +555,24 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		b.group = b.group.next()
 		b.groupPinned = true
 		return b, nil
+	case "left", "right", "C", "O":
+		// Folding (boardfold.go, task 054). With `group_by: []` there are no
+		// groups, so the four keys are inert rather than doing something
+		// arbitrary — and the fold set is *not* cleared, so cycling back to a
+		// grouped view restores what was folded (decision 5).
+		if len(b.group) == 0 {
+			return b, nil
+		}
+		switch msg.String() {
+		case "left":
+			return b, b.collapseAtCursor()
+		case "right":
+			return b, b.expandAtCursor()
+		case "C":
+			return b, b.collapseAll()
+		default:
+			return b, b.expandAll()
+		}
 	}
 
 	// §15's action keys act on the row under the cursor. A key the daemon
@@ -518,12 +601,16 @@ func travelDir(before, after int) int {
 	return 1
 }
 
-// skipHeaders steps the cursor off any row it may not rest on — a group
-// header, or the continuation of a wrapped row above it — carrying on in the
-// direction of travel and turning around at either end. Headers are labels:
-// resting on one would empty the detail panels and offer no actions. A
-// continuation is the same task as the line above it, so resting there would
-// make j and k take two or three presses to move one task.
+// skipHeaders steps the cursor off any row it may not rest on — an *expanded*
+// group header, or the continuation of a wrapped row above it — carrying on in
+// the direction of travel and turning around at either end. An expanded header
+// names rows that are present, so it is a label: resting on one would empty
+// the detail panels and offer no actions. A continuation is the same task as
+// the line above it, so resting there would make j and k take two or three
+// presses to move one task. A *collapsed* header stands in for tasks that are
+// not on screen, so it is a row and the cursor stops there (task 054
+// decision 2) — which is what lets ←/→ address every nesting level without a
+// heuristic.
 //
 // It moves with MoveUp/MoveDown rather than SetCursor for the reason
 // clickRow does: the table's scroll offset is private and only those two keep
@@ -581,12 +668,13 @@ func (b *board) clickRow(line int) {
 		return
 	}
 	delta := line - cursorLine
-	// A group header is a label, not a row: clicking one leaves the selection
-	// alone rather than jumping to a task the click did not name. The clicked
-	// row is the cursor's plus the delta — a body line cannot be indexed into
-	// the row slice directly, because the table may be scrolled.
+	// An expanded group header is a label, not a row: clicking one leaves the
+	// selection alone rather than jumping to a task the click did not name. A
+	// collapsed one is a row and selects like any other. The clicked row is
+	// the cursor's plus the delta — a body line cannot be indexed into the row
+	// slice directly, because the table may be scrolled.
 	target := b.rowAt(b.tbl.Cursor() + delta)
-	if target.header {
+	if target.header && !target.collapsed {
 		return
 	}
 	// A click on the second or third line of a wrapped row names the row it
@@ -626,16 +714,37 @@ func (b *board) wheelMove(delta int) {
 }
 
 // rows is the table as it is rendered: filtered, sorted, — under a grouping —
-// interleaved with group headers (boardgroup.go), and expanded so a task that
-// wraps occupies one row per line. Every index into the table means an index
-// into this slice, which is the property the whole wrapping design is built
-// to keep: the cursor, the click math and bubbles' own paging all count rows.
+// interleaved with group headers (boardgroup.go), with the subtree of every
+// collapsed one removed (boardfold.go), and expanded so a task that wraps
+// occupies one row per line. Every index into the table means an index into
+// this slice, which is the property the whole wrapping design is built to
+// keep: the cursor, the click math and bubbles' own paging all count rows.
+//
+// Folding runs before wrapping, not after: applyFolds counts the marked tasks
+// a collapsed header swallowed, and a wrapped task is several rows carrying
+// the same task, so folding a wrapped board would count each of them. Wrapping
+// last also measures the row height against the rows actually on screen, so a
+// long title inside a collapsed group no longer makes every row taller.
 func (b *board) rows() []boardRow {
+	return b.wrapRows(applyFolds(b.allRows(), b.folds, b.marks))
+}
+
+// allRows is the same table before folds and wrapping are applied — filtered,
+// sorted and grouped, one row per task. It is what folding is a view over,
+// which is how group order and within-group order stay the band sort's (009
+// decision 2), and it is what anything that means "the tasks on this board"
+// reads.
+func (b *board) allRows() []boardRow {
 	tasks := filterTasks(b.tasks, b.filter.Value())
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
 	sortTasks(sorted)
-	rows := groupRows(sorted, b.group)
+	return groupRows(sorted, b.group)
+}
+
+// wrapRows expands each task row into one row per rendered line, so an index
+// into the table is an index into the slice.
+func (b *board) wrapRows(rows []boardRow) []boardRow {
 	// Before the first render there is no width to wrap against, and a board
 	// laid out at a guessed one would place the cursor by rows that are not
 	// the rows about to be drawn.
@@ -674,11 +783,17 @@ func (b *board) rowAt(i int) boardRow {
 	return rows[i]
 }
 
-// visible is the tasks on screen in render order, headers dropped: the list
-// for anything that walks tasks rather than lines — the attention jump, the
-// action bar's target.
+// visible is the tasks the *filter* is showing, in render order, headers
+// dropped: the list for anything that walks tasks rather than lines — the
+// attention jump, the action bar's target, `V`.
+//
+// It is deliberately filter-scoped and not fold-scoped. A fold is a way of
+// looking at the board, exactly as a `g` press is; the selection and the
+// attention jump are statements about tasks. So `V` marks inside a collapsed
+// group (task 011's rule, unchanged) and `!` can reach a task a fold is
+// hiding — which is what lets it open the group it lands in.
 func (b *board) visible() []apiclient.Task {
-	rows := b.rows()
+	rows := b.allRows()
 	out := make([]apiclient.Task, 0, len(rows))
 	for _, r := range rows {
 		if r.selectable() {
@@ -700,6 +815,14 @@ func (b *board) selected() (int64, bool) {
 	rows := b.rows()
 	i := b.tbl.Cursor()
 	if i < 0 {
+		return 0, false
+	}
+	// A collapsed header is a row, but it is not a task: it has no state, no
+	// available_actions and nothing for the detail panels to show, so the §6
+	// action keys, space, enter and L all do nothing on one and the panels
+	// hold their last task (task 054 decision 2). Resolving forward here
+	// would make every one of those keys act on a task the cursor is not on.
+	if i < len(rows) && rows[i].header && rows[i].collapsed {
 		return 0, false
 	}
 	for ; i < len(rows); i++ {
@@ -730,6 +853,14 @@ func (b *board) hintedProject() int64 {
 // its cursor index but never remaps it, so tracking the index alone would
 // silently select a different task whenever the sort shifted.
 func (b *board) rememberSelection() {
+	if r := b.rowAt(b.tbl.Cursor()); r.header && r.collapsed {
+		// The cursor is parked on a fold. selectedID cannot say that — it
+		// names a task — so the path is remembered alongside it, and the last
+		// task stays remembered for when the group opens again.
+		b.selectedPath = slices.Clone(r.path)
+		return
+	}
+	b.selectedPath = nil
 	if id, ok := b.selected(); ok {
 		b.selectedID = id
 	}
@@ -738,12 +869,24 @@ func (b *board) rememberSelection() {
 // restoreSelection moves the cursor back onto the remembered task — after a
 // refresh that reordered the rows, and after `g` regrouped them.
 func (b *board) restoreSelection(rows []boardRow) {
+	if len(b.selectedPath) > 0 {
+		if i := headerIndex(rows, b.selectedPath); i >= 0 && rows[i].collapsed {
+			b.tbl.SetCursor(i)
+			return
+		}
+	}
 	if b.selectedID != 0 {
 		for i := range rows {
 			if rows[i].selectable() && rows[i].task.ID == b.selectedID {
 				b.tbl.SetCursor(i)
 				return
 			}
+		}
+		// The row is gone because a fold swallowed it: the header standing in
+		// for the task is where the cursor belongs, not the top of the board.
+		if i := b.foldedHome(rows); i >= 0 {
+			b.tbl.SetCursor(i)
+			return
 		}
 	}
 	// The task is gone (archived, or filtered out), or nothing has been

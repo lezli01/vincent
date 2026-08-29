@@ -311,10 +311,59 @@ func TestBoardHonoursAConfiguredFlatTable(t *testing.T) {
 		return len(b.group) == 0
 	})
 	got := content(h.m)
-	if strings.Contains(got, groupGlyph) {
+	// The open glyph only: ▸ is the diff pane's and the pickers' marker too,
+	// so scanning a whole frame for it proves nothing. A flat board renders no
+	// headers at all, folded or otherwise.
+	if strings.Contains(got, groupGlyphOpen) {
 		t.Errorf("a flat board rendered a group header:\n%s", got)
 	}
 	if !strings.Contains(got, "WORKFLOW") {
 		t.Errorf("a flat board dropped the WORKFLOW column:\n%s", got)
 	}
+}
+
+// TestCollapsedGroupOpensForAwaitingInput drives task 054 decision 3's third
+// safeguard through the real event path: the daemon commits a transition into
+// awaiting_input, the shell's live SSE stream carries it, and the fold hiding
+// that task opens by itself. The unit test pokes the model; this proves the
+// event the daemon actually publishes is the one the board reads.
+func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	quiet := h.createTask(t, "quiet task")
+	noisy := h.createTask(t, "noisy task")
+	ctx := context.Background()
+
+	h.p.until(20*time.Second, "both tasks to appear", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, "quiet task") && strings.Contains(got, "noisy task")
+	})
+
+	b := h.m.views[viewHome].(*shell).board
+	b.updateKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if got := content(h.m); strings.Contains(got, "noisy task") {
+		t.Fatalf("← did not fold the group away:\n%s", got)
+	}
+	if len(b.folds) == 0 {
+		t.Fatal("← folded nothing")
+	}
+
+	if _, _, err := h.st.TransitionTask(
+		ctx, quiet.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{},
+	); err != nil {
+		t.Fatalf("TransitionTask(quiet): %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(
+		ctx, noisy.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{},
+	); err != nil {
+		t.Fatalf("TransitionTask(noisy): %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(
+		ctx, noisy.ID, store.TaskRunning, store.TaskAwaitingInput, store.TaskChange{},
+	); err != nil {
+		t.Fatalf("TransitionTask(awaiting): %v", err)
+	}
+
+	h.p.until(20*time.Second, "the fold to open over the waiting task", func() bool {
+		return len(b.folds) == 0 && strings.Contains(content(h.m), "noisy task")
+	})
 }

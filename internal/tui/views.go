@@ -69,9 +69,12 @@ type projectHinting interface {
 	hintedProject() int64
 }
 
-// dataDirAware is implemented by views that read files the daemon writes.
-// The daemon view's log tail is the only one, and §15 records why: an
-// endpoint cannot serve the log when the daemon is what died.
+// dataDirAware is implemented by views that read files under the data dir:
+// the daemon view's log tail, for the reason §15 records — an endpoint cannot
+// serve the log when the daemon is what died — and the board, whose collapsed
+// groups live in {data_dir}/tui.json (task 054). That file is view state the
+// TUI owns, not configuration it reads: `tui.board.group_by` still arrives
+// over GET /v1/config (009 decision 1).
 type dataDirAware interface {
 	setDataDir(string)
 }

@@ -11,39 +11,43 @@ import (
 // tuiState is {data_dir}/tui.json (§12.2): state the TUI owns and the daemon
 // has no opinion about. It is a JSON object rather than a marker file so a
 // later preference joins it without a format change — and so a hand-edited
-// file is readable.
+// file is readable. Task 050's collapsed board groups are the first field to
+// take that offer up.
+//
+// This is view state, not configuration: task 009 decision 1's rule that the
+// TUI reads no *configuration* from disk is untouched — `tui.board.group_by`
+// still arrives over `GET /v1/config`, as it always did.
 type tuiState struct {
-	FullAutoNoticeAck bool `json:"full_auto_notice_ack"`
+	FullAutoNoticeAck bool       `json:"full_auto_notice_ack"`
+	BoardFolds        []foldPath `json:"board_folds,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "tui.json") }
 
-// noticeAcknowledged reports whether the §16 full-auto notice has already
-// been dismissed.
-//
-// Every failure answers false: no file, an unreadable one, a half-written
-// one, an object that no longer parses. A security warning that suppresses
-// itself because a parse failed has failed in the wrong direction, and
-// showing it a second time costs one keystroke.
-func noticeAcknowledged(dataDir string) bool {
+// readTUIState reads the file. Every failure answers the zero value: no file,
+// an unreadable one, a half-written one, an object that no longer parses.
+// Both readers want that direction — a security warning that suppresses
+// itself because a parse failed has failed the wrong way, and a fold set that
+// cannot be read means the board everybody had yesterday.
+func readTUIState(dataDir string) tuiState {
+	var st tuiState
 	if dataDir == "" {
-		return false
+		return st
 	}
 	b, err := os.ReadFile(statePath(dataDir))
 	if err != nil {
-		return false
+		return st
 	}
-	var st tuiState
 	if err := json.Unmarshal(b, &st); err != nil {
-		return false
+		return tuiState{}
 	}
-	return st.FullAutoNoticeAck
+	return st
 }
 
-// acknowledgeNotice records the dismissal. It merges into whatever the file
-// already holds rather than rewriting it, so a field this build does not
-// know about survives being read by it.
-func acknowledgeNotice(dataDir string) error {
+// mergeTUIState writes one field into whatever the file already holds rather
+// than rewriting it, so a field this build does not know about — and the
+// other field it does — survives being written by it.
+func mergeTUIState(dataDir, key string, value any) error {
 	if dataDir == "" {
 		return errors.New("no data directory resolved")
 	}
@@ -53,7 +57,7 @@ func acknowledgeNotice(dataDir string) error {
 			raw = map[string]any{}
 		}
 	}
-	raw["full_auto_notice_ack"] = true
+	raw[key] = value
 	b, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return err
@@ -62,6 +66,18 @@ func acknowledgeNotice(dataDir string) error {
 		return err
 	}
 	return os.WriteFile(statePath(dataDir), append(b, '\n'), 0o600)
+}
+
+// noticeAcknowledged reports whether the §16 full-auto notice has already
+// been dismissed. Every read failure answers false, and showing the warning a
+// second time costs one keystroke.
+func noticeAcknowledged(dataDir string) bool {
+	return readTUIState(dataDir).FullAutoNoticeAck
+}
+
+// acknowledgeNotice records the dismissal.
+func acknowledgeNotice(dataDir string) error {
+	return mergeTUIState(dataDir, "full_auto_notice_ack", true)
 }
 
 // noticeBody is §16's full-auto risk, compressed. It is a constant and not a

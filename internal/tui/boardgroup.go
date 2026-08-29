@@ -133,18 +133,28 @@ type boardRow struct {
 	// for every task row.
 	depth int
 	// label, count and attention describe the group a header opens. The
-	// attention count is on the header so a collapsed-looking board can never
-	// hide that something is waiting on a human (§15).
+	// attention count is on the header so a collapsed group can never hide
+	// that something is waiting on a human (§15, task 054 decision 3).
 	label     string
 	count     int
 	attention int
+	// path names the group for the fold set (boardfold.go): this header's
+	// label and every label above it, outermost first. Empty on a task row.
+	path foldPath
+	// collapsed and marked are filled in by applyFolds, never by groupRows:
+	// a folded header stands in for rows that are not on screen, so it says
+	// how many of them the bulk selection holds.
+	collapsed bool
+	marked    int
 }
 
-// selectable reports whether the cursor may rest on this row. A header is a
-// label and a continuation is the tail of the row above it: neither is a
-// thing a key acts on, so both are stepped over (board.skipHeaders) and
-// skipped by everything that walks tasks rather than lines.
-func (r boardRow) selectable() bool { return !r.header && r.line == 0 }
+// selectable reports whether the cursor may rest on this row. An expanded
+// header is a label and a continuation is the tail of the row above it:
+// neither is a thing a key acts on, so both are stepped over
+// (board.skipHeaders) and skipped by everything that walks tasks rather than
+// lines. A *collapsed* header stands in for tasks that are not on screen, so
+// it is a row the cursor stops on (task 054 decision 2).
+func (r boardRow) selectable() bool { return (!r.header || r.collapsed) && r.line == 0 }
 
 // groupRows interleaves group headers into an already-sorted task list.
 // Groups appear in the order their first task does, so the band sort decides
@@ -158,8 +168,8 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 		return out
 	}
 	out := make([]boardRow, 0, len(tasks)+len(g))
-	var walk func(tasks []apiclient.Task, depth int)
-	walk = func(tasks []apiclient.Task, depth int) {
+	var walk func(tasks []apiclient.Task, depth int, path foldPath)
+	walk = func(tasks []apiclient.Task, depth int, path foldPath) {
 		if depth == len(g) {
 			for _, t := range tasks {
 				out = append(out, boardRow{task: t, depth: depth})
@@ -167,17 +177,23 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 			return
 		}
 		for _, grp := range partitionTasks(tasks, g[depth]) {
+			// A fresh slice per group: append onto a shared backing array
+			// would leave two sibling headers naming the same path.
+			sub := make(foldPath, len(path), len(path)+1)
+			copy(sub, path)
+			sub = append(sub, grp.key)
 			out = append(out, boardRow{
 				header:    true,
 				depth:     depth,
 				label:     grp.key,
 				count:     len(grp.tasks),
 				attention: countAttention(grp.tasks),
+				path:      sub,
 			})
-			walk(grp.tasks, depth+1)
+			walk(grp.tasks, depth+1, sub)
 		}
 	}
-	walk(tasks, 0)
+	walk(tasks, 0, nil)
 	return out
 }
 
@@ -224,11 +240,19 @@ func groupValue(t apiclient.Task, k groupKey) string {
 	return v
 }
 
-// groupGlyph opens a header line. A glyph rather than colour alone, so the
-// nesting survives NO_COLOR and a 16-colour terminal (§15 Colour). It marks a
-// group, not a collapse control: nothing here folds away, because a board
-// whose whole job is showing you every task has no business hiding rows.
-const groupGlyph = "▾"
+// groupGlyphOpen and groupGlyphFolded open a header line. A glyph rather than
+// colour alone, so the state survives NO_COLOR and a 16-colour terminal
+// (§15 Colour).
+//
+// It is a disclosure control since task 054, which superseded 009 decision
+// 4's "nothing folds away": on a six-project installation the board's job is
+// showing you every task you can act on rather than every task there is. What
+// a fold is not allowed to hide is that something needs a human, and the
+// count and the attention badge below survive the fold for that reason.
+const (
+	groupGlyphOpen   = "▾"
+	groupGlyphFolded = "▸"
+)
 
 // styleGroup is the header label. Bold rather than coloured: the state
 // colours are the board's colour vocabulary and a header holds no state.
@@ -237,10 +261,20 @@ var styleGroup = lipgloss.NewStyle().Bold(true)
 // headerCell renders a group header into the title column — the widest column
 // and the only one guaranteed to be there at any width (boardcols.go).
 func (r boardRow) headerCell() string {
-	label := strings.Repeat(groupIndent, r.depth) + groupGlyph + " " + r.label
+	glyph := groupGlyphOpen
+	if r.collapsed {
+		glyph = groupGlyphFolded
+	}
+	label := strings.Repeat(groupIndent, r.depth) + glyph + " " + r.label
 	out := styleGroup.Render(label) + styleDim.Render("  "+strconv.Itoa(r.count))
 	if r.attention > 0 {
 		out += "  " + styleWarn.Render(attentionBadge+" "+strconv.Itoa(r.attention))
+	}
+	if r.marked > 0 {
+		// What a bulk action would touch inside a group whose rows are not on
+		// screen. The selection is a set of tasks and not a view (task 011),
+		// so folding one away must not make it invisible.
+		out += "  " + styleKey.Render(markGlyph+" "+strconv.Itoa(r.marked))
 	}
 	return out
 }
@@ -250,13 +284,12 @@ func (r boardRow) headerCell() string {
 const groupIndent = "  "
 
 // firstTaskRow is the row a cursor with nothing to restore belongs on: the
-// first actual task. Zero when there is nothing at all, which is the same
-// answer the ungrouped board gave.
+// first row it may rest on — a task, or a collapsed header standing in for
+// tasks (task 054 decision 2). Zero when there is nothing at all, which is
+// the same answer the ungrouped board gave.
 func firstTaskRow(rows []boardRow) int {
-	for i := range rows {
-		if rows[i].selectable() {
-			return i
-		}
+	if i := landingRow(rows, 0); i >= 0 {
+		return i
 	}
 	return 0
 }

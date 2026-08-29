@@ -622,7 +622,31 @@ func (s *shell) jumpAttention() tea.Cmd {
 			break
 		}
 	}
+	// A fold is never what keeps you from work that needs a human: the key
+	// that exists for finding it opens whatever group it lands in, and the
+	// expansion is a real fold change, persisted like any other (task 054
+	// decision 3).
+	if s.board.expandFor(next) {
+		return tea.Batch(s.board.saveFolds(), s.openNow(next))
+	}
 	return s.openNow(next)
+}
+
+// liveBindings drops the registry rows whose keys are inert in the shell's
+// current state, so the footer never offers a press that does nothing. The
+// board's fold keys are the only ones: with `group_by: []` the table has no
+// groups at all (task 054 decision 5).
+func (s *shell) liveBindings(rows []binding) []binding {
+	if len(s.board.group) > 0 {
+		return rows
+	}
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if !b.fold {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // focusedContext names the focused panel for the binding registry. The output
