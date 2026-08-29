@@ -3013,7 +3013,7 @@ platform the standing answer to an agent that will not resolve is the §12.3
   token                      # API bearer token, created 0600 at first start
   daemon.json                # { "port": N, "pid": N, "started_at": … } for client discovery
   daemon.lock
-  tui.json                   # TUI-local state (the §16 first-run acknowledgment)
+  tui.json                   # TUI-local view state: the §16 first-run acknowledgment, the board's collapsed groups (§15)
   worktrees/{task_id}/
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
   transcripts/{task_id}/{step_index}-{step_id}-{attempt}.jsonl  # sub-step of a parallel group (§7.5)
@@ -4358,8 +4358,13 @@ its task insert back, and replays the winner's.
 
 ## 15. TUI
 
-Built with Bubble Tea. The TUI is a pure API client — it holds no state the daemon
-doesn't have, and killing it never affects work. It subscribes to `/v1/events` and
+Built with Bubble Tea. The TUI is a pure API client — it holds no *task* state
+the daemon doesn't have, and killing it never affects work. What it does own is
+view state: where the cursor is, which tabs are open, and (amended 2026-08-29,
+task 054) which board groups are folded, which persists in `{data_dir}/tui.json`
+beside the §16 acknowledgment. That is not configuration — the TUI still reads
+none from disk, and `tui.board.group_by` arrives over `GET /v1/config` as it
+always did. It subscribes to `/v1/events` and
 re-renders on change; the task-detail view additionally subscribes to that task's
 stream for the live tail.
 
@@ -4733,10 +4738,26 @@ get to bend:
   amended to that; the reasoning that a **new column** must not silently
   re-spend the freed width is untouched, and is still what the `STATUS` gate
   enforces.*
-- **A header is a label, not a row.** The cursor steps over headers in the
-  direction it was travelling, clicking one selects nothing, and nothing folds
-  away: a board whose whole job is showing you every task has no business
-  hiding rows behind a collapse.
+- **An open header is a label, not a row.** The cursor steps over it in the
+  direction it was travelling, and clicking it selects nothing.
+- **Groups fold** (amended 2026-08-29, task 054; this replaces the original
+  "nothing folds away" rule, which is superseded together with task 009's
+  decision 4). `←` collapses the group the cursor is in and `←` again the group
+  around that, `→` opens one level, `C` and `O` do the whole table. A *collapsed*
+  header stands in for tasks that are not on screen, so it **is** a row: the
+  cursor rests on it, and it shows `▸` rather than `▾`, its task count, its
+  attention badge and how many of its tasks the bulk selection holds. It is a
+  row and not a task: it has no state and no `available_actions`, so the §6
+  action keys, `space`, `enter` and `L` do nothing while the cursor is on one
+  and the detail panels hold the last task rather than blanking. Folding is
+  a view over the same band sort — the rows that remain are in the order they
+  were. It is never refused: what protects the failure the original rule named is
+  that the header keeps its badge, that `!` opens whatever group it lands in, and
+  that a collapsed group opens by itself the moment a task inside it enters
+  `awaiting_input`. The set is keyed by label path, persists in
+  `{data_dir}/tui.json`, survives `g` and a filter, and drops a path whose
+  project or workflow has left the board. `group_by: []` has no groups, so the
+  four keys are inert; a fresh install has nothing folded.
 - **The panel title names the grouping only when it is not the configured one**,
   the same rule the output pane's `v` follows.
 

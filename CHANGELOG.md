@@ -72,6 +72,19 @@ list with the user-facing context a commit subject cannot carry.
   The graph itself is unchanged: node boxes and the inspector strip render
   exactly as they did. See [Using the TUI](docs/guides/tui.md).
 
+- **Board groups fold.** `←` collapses the group the cursor is in and `←` again
+  the group around that; `→` opens one level; `C` and `O` do the whole table.
+  A collapsed header shows `▸`, keeps its task count, its `!` needs-attention
+  badge and its selected count, and the cursor rests on it. Folds are remembered
+  across restarts in `{data_dir}/tui.json`, survive `g`, a filter and a
+  reconnect, and are forgotten when the project or workflow leaves the board.
+  A fold can never hide work waiting on you: `!` opens whatever group it lands
+  in, and a collapsed group opens by itself the moment a task inside it enters
+  `awaiting_input`. `V` still selects tasks inside a fold. With
+  `tui.board.group_by: []` there are no groups and the four keys do nothing;
+  a fresh install has nothing folded. See
+  [Using the TUI](docs/guides/tui.md#folding-groups).
+
 ### Changed
 
 - **The board stops spending a wide terminal on the title column, and a cell

@@ -67,6 +67,7 @@ the living engineering specification records implementation contracts.
 | [051](051-live-workflow-graph-tab.md) | Live workflow graph tab on the task workspace | ✅ done (5/5) |
 | [052](052-github-pull-requests.md) | List a GitHub project's open pull requests and link them to board tasks | 🚧 in progress (5/7) |
 | [053](053-workflow-step-detail.md) | A full step-detail modal in the workflow graph | ✅ done (5/5) |
+| [054](054-collapsible-board-groups.md) | Collapsible groups on the task board | ✅ done (1/1) |
 
 ## How to add and update a task document
 

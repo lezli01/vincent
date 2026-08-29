@@ -738,8 +738,12 @@ func (m *root) footerLine() string {
 			target = t.target()
 		}
 	}
+	rows := bindingsFor(ctx)
+	if s, ok := m.views[m.active].(*shell); ok {
+		rows = s.liveBindings(rows)
+	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-	line, hits := buildFooter(m.width, bindingsFor(ctx), bar, target, attention, retry)
+	line, hits := buildFooter(m.width, rows, bar, target, attention, retry)
 	m.footerHits = hits
 	return line
 }

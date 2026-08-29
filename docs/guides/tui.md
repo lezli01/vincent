@@ -136,10 +136,44 @@ task count and its needs-attention badge](../assets/tui-grouping.png)
 - A grouped level loses its column — the header already names it — and the
   width it frees is spent on the row: on the title first, and once the title
   has reached its ceiling, on `STEP` and `STATUS`.
-- Headers are labels: the cursor steps over them, and nothing collapses.
+- An open header is a label: the cursor steps over it, and clicking it selects
+  nothing.
 
 `g` cycles project›workflow → project → workflow → flat for the session. The
 panel title names the grouping whenever it is not the configured one.
+
+### Folding groups
+
+On an installation with six projects on it, most of the board is not what you
+are working on. Fold the rest away:
+
+| Key | Does |
+|---|---|
+| `←` | Collapse the group you are in. Press it again on the header it closed to fold the group around that |
+| `→` | Expand the collapsed group under the cursor, one level |
+| `C` | Collapse every group |
+| `O` | Expand every group |
+
+A collapsed header shows `▸` instead of `▾`, and it keeps everything that made
+the group worth reading at a glance: the task count, the `!` needs-attention
+badge, and how many of its tasks are selected. **The cursor rests on a collapsed
+header** — that is what makes it a row rather than a label, and it is how `←`
+and `→` reach every nesting level. It is not a task, so the action keys, `space`
+and `enter` do nothing there.
+
+Three things mean a fold can never hide work waiting on you:
+
+- the header's badge and count survive the fold;
+- `!` (jump to the next task needing a human) opens whatever group it lands in;
+- a collapsed group **opens by itself** the moment a task inside it starts
+  waiting for input.
+
+Folds are remembered across restarts, in `{data_dir}/tui.json`
+([files](../reference/files.md)). They survive `g`, a filter and a reconnect,
+and a group is forgotten when its project or workflow leaves the board. `V`
+still selects tasks inside a collapsed group — the selection is a set of tasks,
+not of rows. With `group_by: []` there are no groups, so the four keys do
+nothing. A fresh install has nothing folded.
 
 Set the grouping you start with in `config.yaml`
 ([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)); `[]`

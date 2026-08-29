@@ -78,6 +78,11 @@ type binding struct {
 	priority int
 	// action is the §6 action a scopeTaskAction row is gated on.
 	action string
+	// fold marks a row whose key only means something while the board has
+	// groups. With `group_by: []` there are none, so shell.liveBindings drops
+	// these and the footer never names a press that does nothing (task 054
+	// decision 5).
+	fold bool
 	// nav marks a navigation entry; navTarget is where it goes.
 	nav       bool
 	navTarget viewID
@@ -137,6 +142,13 @@ var bindings = []binding{
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
 	{key: "L", label: "drill into the selected fan-out's lanes, or back out (lanes are hidden from the board otherwise)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
+	// Folding (task 054). ← and → walk the group tree a level at a time; the
+	// cursor rests on a collapsed header, which is how every level stays
+	// addressable. C/O are the diff pane's two letters in the same meaning.
+	{key: "left", label: "collapse the group you are in (← again folds the group around it; the header keeps the count and the ! badge)", scope: scopePanel, context: ctxTasks, hint: "←/→ fold", priority: 8, fold: true},
+	{key: "right", label: "expand the collapsed group under the cursor, one level", scope: scopePanel, context: ctxTasks, priority: 9, fold: true},
+	{key: "C", label: "collapse every group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10, fold: true},
+	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true},
 
 	// Timeline.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},

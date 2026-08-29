@@ -32,13 +32,17 @@ func inWorkflow(name string) func(*apiclient.Task) {
 	return func(t *apiclient.Task) { t.Workflow = name }
 }
 
-// rowLabels renders the row structure compactly: "▾ label" for a header at
-// its depth, "#id" for a task.
+// rowLabels renders the row structure compactly: "▾ label" for an expanded
+// header at its depth, "▸ label" for a collapsed one, "#id" for a task.
 func rowLabels(rows []boardRow) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		if r.header {
-			out = append(out, strings.Repeat(" ", r.depth)+"▾ "+r.label)
+			glyph := groupGlyphOpen
+			if r.collapsed {
+				glyph = groupGlyphFolded
+			}
+			out = append(out, strings.Repeat(" ", r.depth)+glyph+" "+r.label)
 			continue
 		}
 		out = append(out, "#"+strconv.FormatInt(r.task.ID, 10))

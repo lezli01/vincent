@@ -72,6 +72,33 @@ business hiding rows, and a collapsed group holding an `awaiting_input` task is 
 the failure the pinning rule and the bell exist to prevent. The `▾` glyph is a nesting
 marker, not a disclosure control.
 
+> **Superseded in part, 2026-08-29 — [task 054](054-collapsible-board-groups.md).**
+> Groups fold. The half of this decision that stands is the cursor rule for an
+> *open* header: it is still a label, it is still stepped over, and clicking it
+> still selects nothing, for the reason given above — it has no task, so it has
+> no state, no `available_actions` and nothing for the detail panels to show. A
+> **collapsed** header stands in for tasks that are not on screen, so it is a
+> row the cursor rests on; the same reasoning then says what it is *not*, and
+> the §6 action keys, `space`, `enter` and `L` all do nothing on one.
+>
+> The half that is reversed is "nothing collapses". The argument that beat it:
+> on a six-project installation the board's job is showing you every task you
+> can *act on* rather than every task there is, and the two ways out today both
+> cost something — `/` hides the work waiting on a human, `g` keeps every row.
+> The concrete failure this decision named is answered three times over, and the
+> third answer is what makes it unreachable rather than merely visible:
+>
+> - the header keeps its task count and its `! n` attention badge through a fold
+>   — the machinery decision 2 built for exactly this;
+> - `!` opens whatever group it lands in, so the key that exists for finding
+>   waiting work always reaches it;
+> - a collapsed group opens **by itself** the moment a task inside it enters
+>   `awaiting_input`.
+>
+> Nothing is ever *refused* a collapse, which is what would have made the
+> feature unpredictable on the busy board that wants it. See 050 for the fold
+> rules, where the set lives and why that is not a reversal of decision 1.
+
 ### 5. `g` cycles for the session and never writes the config
 
 *2026-08-16.* project›workflow → project → workflow → flat. The config is where the
@@ -113,7 +140,10 @@ board with one level of a two-level grouping is still a board.
 
 ## Out of scope
 
-- **Collapsing groups** — decision 4.
+- ~~**Collapsing groups** — decision 4.~~ *(2026-08-29: no longer out of scope —
+  delivered by [task 054](054-collapsible-board-groups.md), which supersedes the
+  "nothing collapses" half of decision 4. The reasoning is in the note on that
+  decision above.)*
 - **Grouping by state, agent, model or priority** — decision 6.
 - **Configurable columns or sort order.** This task makes the table's *shape*
   configurable; which columns show is still derived from the terminal width (§15), and
