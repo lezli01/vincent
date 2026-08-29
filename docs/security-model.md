@@ -192,7 +192,7 @@ to pass.
 
 ## What vincent writes outside its own directories
 
-Exactly one thing, and it is recorded here rather than discovered:
+Two things, and they are recorded here rather than discovered:
 
 **A cursor step passes `--model`, and cursor persists that selection to
 `~/.cursor/cli-config.json`.** Vincent always passes one (defaulting to `auto`)
@@ -202,6 +202,23 @@ orchestrator than preserving an interactive preference.
 
 It is not a secret and not an escalation, but it does mean a cursor step
 overwrites the model you last picked in an interactive `cursor-agent` session.
+
+**[`vincent update`](reference/cli.md#vincent-update) replaces the vincent
+binary**, which is by definition outside vincent's own directories. It happens
+only when you run that command, only when vincent — not a package manager —
+owns the binary, and only after the download is verified: the cosign signature
+over `checksums.txt` against the project's pinned identity and issuer, then the
+archive's SHA-256 against that verified file. On any mismatch nothing is
+replaced and the old binary is left byte-identical. Without `cosign` on your
+`PATH` the checksum check runs alone and the command says so; pass
+`--require-signature` to refuse in that case. On Windows a running executable
+cannot be overwritten, so the old one is renamed to `<name>.vincent-old` beside
+it and deleted on the daemon's next start.
+
+The **check** for a newer release is separate and writes nothing: it is one
+unauthenticated GET sending no token, no telemetry and no machine or install
+identifier, and [`update.check: false`](reference/configuration.md#update)
+switches it off entirely. The daemon never downloads or applies anything.
 
 Everything else vincent writes lives in its
 [config and data directories](reference/files.md), plus the git branches and

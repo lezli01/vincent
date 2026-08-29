@@ -34,7 +34,9 @@ workflow-snapshot bytes and how far back its event history reaches; every agent
 CLI with its path, version and
 [`logged_in`](agents.md#found-is-not-usable); whether the
 [GitHub integration](../reference/configuration.md#github) can read issues, and
-if not which piece is missing; free disk, worktree count and bytes, and any
+if not which piece is missing; whether a newer vincent has been
+[released](../reference/cli.md#vincent-update) and whether the running daemon is
+older than the binary you just ran; free disk, worktree count and bytes, and any
 orphaned worktrees; and task counts by state — so "12 blocked" is visible
 without opening the board.
 

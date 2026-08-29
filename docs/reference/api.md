@@ -270,8 +270,7 @@ endpoints can never disagree. Changes are announced by the
   "update_available": true,
   "published_at": "2026-08-21T09:31:07Z",
   "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0",
-  "checked_at": "2026-08-29T10:00:00Z",
-  "error": ""
+  "checked_at": "2026-08-29T10:00:00Z"
 }
 ```
 
@@ -290,9 +289,9 @@ daemon running.
 - `current_version` is the **daemon's** build. The binary that made the request
   may be a newer one, which is exactly what `vincent daemon status` reports
   after an update.
-- `error` carries why the last poll failed and is empty when it worked. A
-  quietly failing check would otherwise look identical to one with nothing to
-  report.
+- `error` carries why the last poll failed and is **absent** when it worked, as
+  above. A quietly failing check would otherwise look identical to one with
+  nothing to report.
 - A prerelease never appears here.
 
 ## Doctor

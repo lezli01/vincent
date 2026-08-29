@@ -54,7 +54,10 @@ vincent version
 ```
 
 `brew install` needs none of this — the cask strips the attribute itself as part
-of the install.
+of the install. Neither does
+[`vincent update`](../reference/cli.md#vincent-update): it downloads the archive
+itself rather than through a browser, and clears the attribute from the binary
+it swaps in.
 
 For the `.pkg`, the equivalent is opening it from the Finder's context menu
 (**right-click → *Open*** → *Open* in the dialog), or installing it from the

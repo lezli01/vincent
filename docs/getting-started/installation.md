@@ -391,7 +391,7 @@ Per channel:
 | [The macOS installer package](#installer-package-macos) | download and run the new `.pkg` |
 | [WinGet](#winget-windows) | `winget upgrade --id lezli01.Vincent --exact` |
 | [Scoop](#scoop-windows) | `scoop update vincent` |
-| [mise](#mise-all-platforms) | `mise upgrade vincent` |
+| [mise](#mise-all-platforms) | `mise upgrade github:lezli01/vincent` |
 | [deb / rpm](#deb-and-rpm-linux) | install the new package |
 | [A release archive](#download-a-release) | `vincent update` |
 | [`go install`](#build-from-source) | `go install github.com/lezli01/vincent/cmd/vincent@latest` |

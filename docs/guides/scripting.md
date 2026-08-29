@@ -95,6 +95,13 @@ case $? in
 esac
 ```
 
+[`vincent update`](../reference/cli.md#vincent-update) overloads them too, and
+differently: with `--check`, `2` means an update **is available** and `1` that
+the check itself failed; without it, `2` means an update exists but a package
+manager owns this install, and `1` that verification or the swap failed and the
+binary was left untouched. Neither `2` means "no daemon" — the command never
+contacts one.
+
 What sets exit `1` is a **closed set**: `config.yaml` exists and does not parse,
 the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
 database is at a schema version this binary does not understand, orphaned

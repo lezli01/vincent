@@ -74,7 +74,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Eight groups:
+One report answering "why is nothing running?". Nine groups:
 
 | Group | Rows |
 |---|---|
@@ -84,6 +84,7 @@ One report answering "why is nothing running?". Eight groups:
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
+| Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
 
@@ -97,6 +98,9 @@ are present, or a task is **unreconciled** — `queued` (or finished) while one 
 its step runs is still marked `running`, which means crash recovery could not
 close the previous attempt and admission will not run that task until it does
 ([Troubleshooting](../guides/troubleshooting.md#start-here-vincent-doctor)).
+The **Update** rows never set it either: a newer release and a daemon still
+running the previous build both leave everything working, so both are stated as
+facts with the command that acts on them — never as problems.
 The **GitHub** rows never set the exit code either, and they say why: every "no"
 they can report — the toggle off, `gh` missing, `gh` logged out, no token —
 leaves task creation without an issue working exactly as before, so the row ends
@@ -218,8 +222,8 @@ resolved. Exit `0` healthy, `1` not running, `2` unresponsive.
 
 If the binary you just ran is newer than the daemon that answered — which is
 what you have right after [`vincent update`](#vincent-update) — it says so and
-names the restart. That is a line, not a failure: the running daemon keeps its
-old code until it is restarted, and everything keeps working meanwhile.
+tells you to restart it. That is a line, not a failure: the running daemon keeps
+its old code until it is restarted, and everything keeps working meanwhile.
 
 ### `vincent daemon logs`
 
