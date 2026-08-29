@@ -36,7 +36,7 @@ const (
 	// is its own context because its keys are entirely different from the
 	// list's, and the footer and the ? overlay must say which set is live.
 	ctxWorkflowGraph bindingContext = "workflow graph"
-	// ctxTaskWorkflow is the task workspace's workflow-graph tab (task 050).
+	// ctxTaskWorkflow is the task workspace's workflow-graph tab (task 051).
 	// It is its own context rather than a second registration of
 	// ctxWorkflowGraph because that layer's `e` (open the file in $EDITOR)
 	// and `R` (re-fetch the registry entry) are meaningless against a task's
@@ -193,7 +193,7 @@ var bindings = []binding{
 	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4},
 	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5},
 
-	// The task workspace's workflow tab (task 050). The graph is this task's
+	// The task workspace's workflow tab (task 051). The graph is this task's
 	// own snapshot with its run state on it; `tab` cycles the workspace's
 	// tabs here, so the source-order node walk is deliberately absent.
 	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxTaskWorkflow, hint: "↑↓←→ select", priority: 1},

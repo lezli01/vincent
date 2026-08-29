@@ -13,7 +13,7 @@ import (
 // decision 21: a golden alone can be refreshed into blessing a wrong picture,
 // so what must stay true is asserted separately from what it looks like.
 
-// fixtureLaneShadow is the shape task 050 decision 2 exists for: a top-level
+// fixtureLaneShadow is the shape task 051 decision 2 exists for: a top-level
 // `build` and a fan_out lane's own `build`. Step ids are unique per *body*
 // (§7.6, task 014 decision 4), so this workflow is valid — and before the
 // namespacing it drew two nodes answering to one id.

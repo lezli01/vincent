@@ -58,7 +58,7 @@ const (
 	// GroupOffGraph frames the attempts a task ran that its snapshot does not
 	// declare — a follow-up round's step, which `internal/api/actions.go`
 	// calls one that "is not part of the snapshot", and a repair's rewrite
-	// (task 050 decision 3). It hangs below the single END node, which task
+	// (task 051 decision 3). It hangs below the single END node, which task
 	// 017 decision 16 reserved as the runtime overlay's anchor for *reached*:
 	// these attempts are neither dropped nor smuggled into the topology as if
 	// the workflow had declared them.
@@ -103,12 +103,12 @@ func offNodeID(stepID string) string { return syntheticPrefix + "off:" + stepID 
 // LaneKey names one fan_out lane across the whole diagram: a lane id alone is
 // unique only within its own step, the same way a lane's step ids are
 // (task 014 decision 4). It is the key a runtime overlay hangs a lane's child
-// task off (task 050 decision 1).
+// task off (task 051 decision 1).
 func LaneKey(fanOutNodeID, laneID string) string { return fanOutNodeID + "." + laneID }
 
 // lanePrefix namespaces a lane's inline step ids. Step-id uniqueness is *per
 // body*, so a top-level `build` and a lane's `build` are two different steps
-// — and were, until task 050, two nodes answering to one id, which made the
+// — and were, until task 051, two nodes answering to one id, which made the
 // selection ambiguous and would have made a parent `step_run` paint both
 // (decision 2). Node.StepID keeps the raw id, which is what a join against
 // `step_run.step_id` still compares.
@@ -214,7 +214,7 @@ func Build(wf *apiclient.WorkflowBody) Diagram {
 }
 
 // OffGraphRun is one attempt the task ran that the snapshot does not declare
-// (task 050 decision 3): a follow-up round's step, or a repair's rewrite.
+// (task 051 decision 3): a follow-up round's step, or a repair's rewrite.
 type OffGraphRun struct {
 	// StepID is the run's `step_id`, which is what names the node.
 	StepID string

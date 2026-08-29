@@ -96,7 +96,7 @@ type Theme struct {
 
 // ViewState is what the viewer knows that the diagram does not: which node is
 // selected, and — for a task's graph rather than a registry entry's — what
-// each node's step actually did (task 050). A zero Run is the definition
+// each node's step actually did (task 051). A zero Run is the definition
 // viewer the workflows screen still opens.
 type ViewState struct {
 	Selected string
@@ -258,7 +258,7 @@ func (c *canvas) captions(g Group, s Scene, run Overlay) {
 		}
 		// A lane's run state lands here rather than on its inline steps: they
 		// run in a child task, so the parent holds no step_run for them
-		// (task 050 decision 1).
+		// (task 051 decision 1).
 		if rs, ok := run.Lanes[col.Key]; ok {
 			text = laneCaption(text, rs)
 		}

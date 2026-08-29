@@ -2,7 +2,7 @@ package workflowgraph
 
 import "strconv"
 
-// The runtime overlay (task 050) is what turns a definition viewer into a
+// The runtime overlay (task 051) is what turns a definition viewer into a
 // picture of one task. It is deliberately a *second* input to Render rather
 // than a rewrite of the Diagram: the diagram is what the workflow says, the
 // overlay is what happened, and keeping them apart is what lets an overlay
@@ -48,7 +48,7 @@ type RunState struct {
 	// ChildTaskID is a fan_out lane's child task (§7.6), 0 elsewhere. It
 	// rides on the lane caption, never on the lane's inline step nodes: those
 	// run in the child, so the parent holds no step_run for them and cannot
-	// honestly paint them (task 050 decision 1).
+	// honestly paint them (task 051 decision 1).
 	ChildTaskID int64
 }
 

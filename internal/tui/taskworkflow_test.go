@@ -31,7 +31,7 @@ func workflowTabFixture(t *testing.T) *taskView {
 }
 
 // `tab` on the Workflow tab is the workspace's tab cycle, not the graph's
-// source-order node walk (task 050 decision 5). The two collide, and the tab
+// source-order node walk (task 051 decision 5). The two collide, and the tab
 // cycle is the one 049 built the muscle memory on.
 func TestTabOnTheWorkflowTabMovesToTheNextTab(t *testing.T) {
 	v := workflowTabFixture(t)

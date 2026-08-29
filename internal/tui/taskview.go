@@ -17,7 +17,7 @@ import (
 
 // taskViewTab names the five full-screen task surfaces. Steps is deliberately
 // first: entering a task lands on the execution history people most often came
-// to inspect. Workflow is deliberately last (task 050): appending it leaves
+// to inspect. Workflow is deliberately last (task 051): appending it leaves
 // 1-4 bound to the tabs task 049 built the muscle memory on.
 type taskViewTab int
 
@@ -42,7 +42,7 @@ type taskView struct {
 	detail *detail
 	tab    taskViewTab
 	popup  bool
-	// workflow is the §15 workflow-graph tab (task 050). It is a sub-model
+	// workflow is the §15 workflow-graph tab (task 051). It is a sub-model
 	// rather than more fields here because it owns a viewport and a
 	// selection, and because the graph component is shared with the
 	// workflows screen.

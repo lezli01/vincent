@@ -13,7 +13,7 @@ import (
 // splicedSnapshot is what an `include` leaves behind (§7.9): the flat body,
 // with every spliced step carrying the chain it came through. A registry
 // entry would show one collapsed `include` node here; a task's graph shows
-// the steps that actually ran (task 050 decision 4).
+// the steps that actually ran (task 051 decision 4).
 const splicedSnapshot = `name: shipit
 steps:
   - {id: plan, type: agent, prompt: plan it}

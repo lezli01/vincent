@@ -176,13 +176,13 @@ func (c *Client) GetWorkflowDefinition(ctx context.Context, projectID int64, nam
 	return out, nil
 }
 
-// TaskWorkflow is GET /v1/tasks/{id}/workflow (§13.2, task 050): one task's
+// TaskWorkflow is GET /v1/tasks/{id}/workflow (§13.2, task 051): one task's
 // own §5.3 snapshot as the structure a graph is drawn from — includes already
 // spliced (§7.9), any `edit + retry` rewrite reflected (§6).
 //
 // It carries no `scope`, `file` or `platforms`: those are registry facts a
 // snapshot has none of, and a task's provenance is its `workflow_origin`
-// instead (task 050 decision 6). Definition is nil when the snapshot did not
+// instead (task 051 decision 6). Definition is nil when the snapshot did not
 // parse, which is a 200 with findings, not an error.
 type TaskWorkflow struct {
 	TaskID     int64             `json:"task_id"`

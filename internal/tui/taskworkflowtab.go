@@ -14,7 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
-// The Workflow tab (task 050) is the task workspace's fifth surface: the
+// The Workflow tab (task 051) is the task workspace's fifth surface: the
 // task's own §5.3 snapshot drawn as a control-flow graph, with a run-state
 // overlay that advances as the task does.
 //
@@ -213,7 +213,7 @@ func (t *taskView) applyRunOverlay() {
 // buildOverlay joins a task's step rows onto the graph's nodes.
 //
 // The join is `step_run.step_id` to `Node.StepID`, not to `Node.ID`: since
-// task 050 a lane's inline steps carry a namespaced node id, so the raw id is
+// task 051 a lane's inline steps carry a namespaced node id, so the raw id is
 // what a row compares against. A lane's own steps run in a *child* task, so
 // the parent holds no row for them and they are left unpainted — their lane's
 // caption carries the child's state instead (decision 1).

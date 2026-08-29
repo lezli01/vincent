@@ -166,7 +166,7 @@ func TestBuildFanOutLanesAndMerge(t *testing.T) {
 	d := Build(fixtureFanOut())
 	merge := mergeNodeID("spread")
 	ref := refNodeID("spread", "web")
-	// A lane's inline steps are namespaced by the lane they run in (task 050
+	// A lane's inline steps are namespaced by the lane they run in (task 051
 	// decision 2): the parent's `build` and a lane's `build` are two steps,
 	// and were two nodes answering to one id until they were.
 	impl := lanePrefix("spread", "api") + "api_impl"

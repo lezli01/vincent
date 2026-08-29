@@ -8,7 +8,7 @@ import (
 )
 
 // GET /v1/tasks/{id}/workflow serves one task's own workflow — its §5.3
-// snapshot — as the structure a graph is drawn from (task 050).
+// snapshot — as the structure a graph is drawn from (task 051).
 //
 // It is a different endpoint from GET /v1/workflows/definition, and
 // deliberately so. That one is defined by Registry.Lookup and §5.2 shadowing
@@ -29,7 +29,7 @@ import (
 //   - The registry envelope's `scope`, `file`, `platforms` and
 //     `platform_supported` are *not* here. They are registry facts a snapshot
 //     has none of, and sending them empty would be four fields inviting a
-//     wrong reading (task 050 decision 6). A task's provenance already has
+//     wrong reading (task 051 decision 6). A task's provenance already has
 //     its own field, `workflow_origin` on GET /v1/tasks/{id}.
 type taskWorkflowResponse struct {
 	TaskID   int64            `json:"task_id"`

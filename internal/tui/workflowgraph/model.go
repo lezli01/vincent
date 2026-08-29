@@ -42,7 +42,7 @@ type Model struct {
 
 	// body is the definition the diagram was built from, kept so an overlay
 	// that discovers an off-snapshot attempt can rebuild without the host
-	// having to refetch (task 050 decision 3).
+	// having to refetch (task 051 decision 3).
 	body *apiclient.WorkflowBody
 	// run is the runtime overlay, empty for the definition viewer.
 	run Overlay
@@ -52,7 +52,7 @@ type Model struct {
 	// sourceWalk is whether tab/shift+tab walk the nodes in source order.
 	// Inside the task workspace they do not: `tab` is the workspace's tab
 	// cycle there, and shadowing it would break the muscle memory task 049
-	// built (task 050 decision 5).
+	// built (task 051 decision 5).
 	sourceWalk bool
 }
 
@@ -74,7 +74,7 @@ func New() Model {
 
 // SetSourceWalk decides whether tab/shift+tab walk the nodes in source order.
 // A host that owns `tab` for something else turns it off rather than having
-// the component shadow a key the surrounding screen already binds (task 050
+// the component shadow a key the surrounding screen already binds (task 051
 // decision 5).
 func (m *Model) SetSourceWalk(on bool) { m.sourceWalk = on }
 
