@@ -644,6 +644,54 @@ and reports the same `{value, source}`.
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
+| `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
+
+### The task's workflow
+
+`GET /v1/tasks/{id}/workflow` serves the task's own workflow snapshot with the
+same structure `GET /v1/workflows/definition` serves for a registry entry — one
+DTO describes both. It is what the TUI's **Workflow** tab draws.
+
+It is deliberately not the registry entry of the same name. The snapshot is what
+the task actually ran: [`include`](workflow-schema.md#type-include) steps are
+already spliced flat, and an `edit + retry` rewrite is reflected. The registry's
+copy is whatever the file says right now, which for a running task may be a
+different workflow entirely.
+
+```sh
+curl -sS "http://127.0.0.1:$PORT/v1/tasks/12/workflow" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "task_id": 12,
+  "name": "ship-it",
+  "error": null,
+  "definition": {
+    "name": "ship-it",
+    "fields": [],
+    "defaults": { "agent": "claude" },
+    "steps": [
+      { "id": "plan", "type": "agent", "prompt": "plan it" },
+      { "id": "lint", "type": "command", "run": "go vet ./...",
+        "resolved_from": ["go-checks"] }
+    ]
+  }
+}
+```
+
+`resolved_from` names the chain of workflows a step was spliced through,
+outermost first — after a splice there is no `include` step left to attribute
+it to, so the step carries it.
+
+The envelope carries no `scope`, `file`, `platforms` or `platform_supported`:
+those are registry facts a snapshot has none of. Where the task's definition
+came from is `workflow_origin` on `GET /v1/tasks/{id}`.
+
+A snapshot that does not parse is a **200** with `errors[]` and
+`"definition": null`, never a `4xx` — the same rule
+[`/v1/workflows/definition`](#workflows) follows.
 
 ### Replaying a create
 

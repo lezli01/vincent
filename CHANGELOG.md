@@ -11,6 +11,23 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Added
+
+- **A live workflow graph on the task workspace.** A fifth tab, **Workflow**
+  (`5`, or `tab` round to it), draws the workflow a task is running as a
+  control-flow graph with its run state on it: which node is running, what
+  succeeded or failed, what a false `if:` guard skipped as against what you
+  skipped by hand, which loop pass it is on, and — for a parked task — where it
+  is stuck and why. A fan-out lane's caption carries its child task and that
+  child's state. Attempts that ran outside the workflow, such as a follow-up
+  round, appear in a frame below `END` rather than being hidden. The graph is
+  the task's own snapshot, so it keeps showing what actually ran even if the
+  workflow file is edited underneath it. It reads with colour turned off.
+- **`GET /v1/tasks/{id}/workflow`** serves a task's own workflow snapshot as a
+  full definition — includes already spliced, `edit + retry` rewrites
+  reflected. A snapshot that does not parse is a `200` with findings and a null
+  `definition`, matching `GET /v1/workflows/definition`.
+
 ### Changed
 
 - **The board stops spending a wide terminal on the title column, and a cell
@@ -27,6 +44,14 @@ list with the user-facing context a commit subject cannot carry.
   renders exactly as it did before. Column widths are unchanged on a narrow
   board; wrapping applies at every width, because 80–120 columns is where cells
   were being cut worst. See [Using the TUI](docs/guides/tui.md#the-board).
+
+### Fixed
+
+- **Two nodes in a workflow graph could answer to one id.** A `fan_out` lane's
+  inline steps have their own step-id namespace, so a lane's `build` and a
+  top-level `build` are different steps — but the graph gave both boxes the same
+  node id, which made selecting one ambiguous. Lane-inner nodes are now
+  namespaced by their lane.
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 
