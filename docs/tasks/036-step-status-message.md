@@ -164,6 +164,21 @@ width a *grouped* board frees by dropping PROJECT and WORKFLOW, which
 `columnsFor` records as going to the title; at every width a grouped board's
 title stays strictly wider than a flat board's, and a test asserts it.
 
+*Amended 2026-08-29 (task 050 decision 1).* The last sentence no longer holds
+and is replaced. Task 050 gives `TITLE` a ceiling — without one it takes 100
+cells of a 200-column board while `STEP` and `STATUS` are still cutting their
+content — and above that ceiling a grouped board and a flat one render **equal**
+titles, so "strictly wider at every width" is an invariant no cap can keep. The
+rest of this decision stands unchanged, and it is the part that mattered: the
+freed width is still spent on the row rather than lost, it just lands wherever
+the allocation order puts it (title to the cap, then `STEP`, then `STATUS`,
+then back to the title), so a grouped board is never *worse off* than a flat
+one at the same width. The reasoning that a **new column** must not silently
+re-spend that width is untouched — `minTitleWithStatus` is now spelled
+`maxTitle`, at the same value 64, and still gates `STATUS` exactly as it did.
+`TestStatusColumnDoesNotEatTheWidthGroupingFrees` and
+`TestGroupedColumnsAreDropped` carry the amended form.
+
 **10. The list row denormalizes the *newest* row's status.** *2026-08-26.* The
 board reads `GET /v1/tasks` and never fetches step rows, so `status_message`
 rides the list DTO the way `step_name` and `cost_usd` do — one extra query for

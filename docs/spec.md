@@ -4302,12 +4302,52 @@ stream for the live tail.
    admitted only when the title still clears a comfortable width, so a board
    narrow enough to lose it renders exactly as it did before the column existed,
    and the width a grouped board frees by dropping PROJECT and WORKFLOW still
-   goes to the title. The status of the *newest* row, not the newest message: a
+   goes to the title. *Amended 2026-08-29 (task 050): the status is no longer
+   truncated with an ellipsis — it wraps, along with TITLE, STATE and STEP, per
+   the row-height rule below; and "the width goes to the title" is now "the
+   width is spent on the row", per the title cap below.* The status of the *newest* row, not the newest message: a
    step that spoke and finished must not have its line linger beside the next
    step, which is doing something else. The state cell is untouched — the
    recorded reasoning that keeps a hold's reason out of it (it does not fit, and
    widening a column for a rare state costs every board the columns that shed
    first) stands unchanged, and this column is why the status did not go there.
+
+   **Column widths (task 050, added 2026-08-29).** `TITLE` is the only flexible
+   column, and it takes the width the fixed set leaves — but only up to a
+   ceiling. Past that ceiling the surplus is spent in a fixed order: `STEP`
+   first, up to a maximum wide enough for a step name with a loop rollup beside
+   it (`3/7 green · loop 4/10`); then `STATUS`, up to a maximum of a couple of
+   the board's lines of prose; and only then does the remainder go back to the
+   title. The give-back is not a softening of the ceiling — it is what stops a
+   board that has shed `STATUS` leaving dead cells on the right, and the title
+   passes the ceiling only once neither other column has any appetite left. The
+   ceiling and the `STATUS` column's admission gate are one value, because they
+   are one fact: the title has cleared a comfortable width, so there is room to
+   spend elsewhere. Below that width nothing changes — the shedding ladder, the
+   minimum title and every narrow board render exactly as they did. `STATE` is
+   deliberately not among the columns a surplus reaches: the recorded reasoning
+   above holds, and the wrap is what makes its overflow readable.
+
+   **Row height (task 050, added 2026-08-29).** A cell too long for its column
+   wraps onto further lines of the same row rather than being truncated away.
+   Every row on a board is the same height — the tallest row in the list the
+   board is currently showing, clamped to three lines — so a board where nothing
+   overflows is one line per row and renders exactly as it always did. The list,
+   not the visible window: the table's scroll offset is private, and a height
+   that changed as the board scrolled would move rows under the cursor. One long
+   title far down therefore raises the rows above it, and a filter that excludes
+   it lowers them again. Anything still overflowing at the third line is cut
+   there with an ellipsis. Four cells wrap: `TITLE`,
+   `STATE`, `STEP` and `STATUS`. `ID`, `ELAPSED`, `COST` and the marker column
+   cannot meaningfully overflow, and `PROJECT` / `WORKFLOW` are identifiers used
+   for scanning, which a fourteen-cell wrap makes unreadable — under width
+   pressure those two are shed, which is the answer the ladder already gives.
+   A group header stays exactly one line at every row height, and the marker
+   glyph sits on a row's first line only. The cursor highlight is honest about
+   what it can do: it shades the selected row's first line, because the shading
+   is applied per row and faking it per cell would come out with unshaded
+   gutters between the columns.
+
 2. **Task detail.** *Amended 2026-08-28 (task 049): task detail is a separate
    full-screen workspace with four full-view tabs. **Steps & Attempts** is the
 	   default and renders the existing step/attempt timeline. **Task Details** is
@@ -4582,6 +4622,15 @@ get to bend:
   `WORKFLOW` drop out of the column set (the §15 shedding order is otherwise
   unchanged) and the width goes to the title, which is where a grouped board
   needs it — the titles are indented under their headers.
+  *Amended 2026-08-29 (task 050): the freed width is spent on the row in the
+  allocation order above — the title first, then `STEP`, then `STATUS`, then
+  back to the title. A grouped board is therefore never worse off than a flat
+  one at the same width, but above the title's ceiling the two render equal
+  titles and the gain shows up in the other two columns instead. The earlier
+  wording, and task 036 decision 9's "strictly wider at every width", are
+  amended to that; the reasoning that a **new column** must not silently
+  re-spend the freed width is untouched, and is still what the `STATUS` gate
+  enforces.*
 - **A header is a label, not a row.** The cursor steps over headers in the
   direction it was travelling, clicking one selects nothing, and nothing folds
   away: a board whose whole job is showing you every task has no business

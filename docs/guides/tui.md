@@ -83,6 +83,27 @@ Three behaviors matter:
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it, and `enter` opens the selected task.
 
+**A cell too long for its column wraps rather than disappearing.** The title,
+the state, the step and the status carry across up to three lines of the same
+row, so `awaiting_children (2 blocked)` and a step's own message are readable
+without opening the task. Every row on a board is the same height — as tall as
+the tallest row in the list, and never more than three lines — so a board where
+nothing overflows is one line per task, exactly as before. The list, not the
+part of it you can see: one long title far down the board makes the rows above
+it tall too, and a filter that hides it makes them short again. What still does
+not fit at three lines ends in `…`. Clicking any line of a row selects that row,
+and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost
+and the marker column do not wrap, and neither do project and workflow: those
+two are names you scan down, which a fourteen-cell wrap makes unreadable, so
+under width pressure they are dropped instead.
+
+**The title has a ceiling.** It takes whatever the fixed columns leave, up to a
+comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
+the two columns whose content actually outgrows them — and only what neither
+can use comes back to the title. So a 200-column board shows
+`3/7 green · loop 4/10` whole instead of spending the room on a title's
+trailing blanks.
+
 A wide terminal also gets a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
 `compiling internal/store`, `3 tests red`. It is set by the step, not by
@@ -113,7 +134,8 @@ task count and its needs-attention badge](../assets/tui-grouping.png)
   group sits where its first task does, so the group holding the oldest thing
   waiting on a human is the top group.
 - A grouped level loses its column — the header already names it — and the
-  width goes to the title.
+  width it frees is spent on the row: on the title first, and once the title
+  has reached its ceiling, on `STEP` and `STATUS`.
 - Headers are labels: the cursor steps over them, and nothing collapses.
 
 `g` cycles project›workflow → project → workflow → flat for the session. The
