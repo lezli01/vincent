@@ -109,12 +109,13 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m7-gate.sh                            # conditions between steps (§7.7)
 ./scripts/m8-gate.sh                            # loops (§7.8)
 ./scripts/m9-gate.sh                            # workflow includes (§7.9)
+./scripts/m10-gate.sh                           # the daemon's MCP server (§13.4)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All seven run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
+All eight run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
 `m8` spent a while unwired because a cloud session's token has no `workflow`
 scope and so cannot write `.github/workflows/` by any route — push or API
 (#120, #122, #125). A gate that has never run on a platform is not known to

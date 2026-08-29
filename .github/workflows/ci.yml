@@ -139,3 +139,13 @@ jobs:
       - name: M9 gate (includes)
         shell: bash
         run: ./scripts/m9-gate.sh
+
+      # M10: the daemon's MCP server (task 055, §13.4). The client is curl
+      # speaking streamable HTTP, so the three-OS matrix proves the SSE frame
+      # parsing as much as the feature — the `data:` lines are CRLF-delimited
+      # by the spec, which is exactly the class of thing that passes on Linux
+      # and fails on Windows. Command steps and one manual gate, so no agent
+      # CLI is involved.
+      - name: M10 gate (MCP)
+        shell: bash
+        run: ./scripts/m10-gate.sh

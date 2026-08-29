@@ -1,6 +1,6 @@
 # 057 — Serve MCP from the daemon so agents can drive vincent directly
 
-**Status:** 🔄 in progress (7/9)
+**Status:** 🔄 in progress (8/9)
 **Issue:** [#243](https://github.com/lezli01/vincent/issues/243)
 **Spec:** adds §13.4; amends §3 (decision row 28), §9.1, §9.2, §9.3, §9.4,
 §9.7, §11, §12.3, §12.4, §14, §16, §20
@@ -256,11 +256,17 @@ their own steps.
 - [x] **057.7** — Documentation: §13.4 and the eleven amendments, decision row
   28, the config reference, the API page, `docs/guides/mcp.md`, the feature tour,
   and this record.
-- [ ] **057.8** — `scripts/m10-gate.sh`: an end-to-end walk over a real daemon —
-  list the tools, create a project and a task, wait on it through one blocking
-  call, read its transcript and diff, answer an `awaiting_input` question, and
-  assert the five exclusions absent. Wired into `ci.yml`'s `gates` job on all
-  three platforms, committed executable via `git update-index --chmod=+x`.
+- [x] **057.8** — `scripts/m10-gate.sh`: an end-to-end walk over a real daemon,
+  with curl as the MCP client — list the tools and assert the five exclusions
+  absent, create a project and a task, wait on it through one blocking call to
+  `awaiting_gate`, prove a `409` still carries `details.state` through the tool
+  path, approve and wait for `done`, read the transcript and the diff, and check
+  the daemon is still up. Wired into `ci.yml`'s `gates` job on all three
+  platforms, committed executable via `git update-index --chmod=+x`.
+
+  *It uses a manual gate rather than `awaiting_input`, so no agent CLI is
+  involved and the `run:` bodies stay in the sh∩pwsh intersection — the
+  `awaiting_input` leg belongs with 057.9, which needs the fake agent anyway.*
 - [ ] **057.9** — `cmd/fakeagent` scenario that calls back into the daemon over
   its per-step endpoint, so auto-wiring is proven end to end from a step rather
   than from the adapter's argv alone.
