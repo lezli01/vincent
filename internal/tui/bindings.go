@@ -36,8 +36,15 @@ const (
 	// is its own context because its keys are entirely different from the
 	// list's, and the footer and the ? overlay must say which set is live.
 	ctxWorkflowGraph bindingContext = "workflow graph"
-	ctxDaemon        bindingContext = "daemon"
-	ctxForm          bindingContext = "answer form"
+	// ctxTaskWorkflow is the task workspace's workflow-graph tab (task 050).
+	// It is its own context rather than a second registration of
+	// ctxWorkflowGraph because that layer's `e` (open the file in $EDITOR)
+	// and `R` (re-fetch the registry entry) are meaningless against a task's
+	// snapshot, and because `tab` belongs to the workspace's tab cycle here
+	// rather than to the graph's source-order walk (decision 5).
+	ctxTaskWorkflow bindingContext = "task workflow"
+	ctxDaemon       bindingContext = "daemon"
+	ctxForm         bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -186,6 +193,13 @@ var bindings = []binding{
 	{key: "e", label: "open the workflow file in $EDITOR (the graph redraws when you save)", scope: scopePanel, context: ctxWorkflowGraph, hint: "e edit", priority: 4},
 	{key: "R", label: "re-fetch this workflow's definition", scope: scopePanel, context: ctxWorkflowGraph, hint: "R reload", priority: 5},
 
+	// The task workspace's workflow tab (task 050). The graph is this task's
+	// own snapshot with its run state on it; `tab` cycles the workspace's
+	// tabs here, so the source-order node walk is deliberately absent.
+	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxTaskWorkflow, hint: "↑↓←→ select", priority: 1},
+	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxTaskWorkflow, hint: "⇧ pan", priority: 2},
+	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, hint: "5 workflow", priority: 3},
+
 	// Daemon.
 	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
@@ -218,7 +232,7 @@ var bindings = []binding{
 // management takeover.
 func isHomeContext(ctx bindingContext) bool {
 	switch ctx {
-	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff:
+	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow:
 		return true
 	default:
 		return false

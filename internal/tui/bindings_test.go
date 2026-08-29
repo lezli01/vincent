@@ -344,8 +344,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabSteps {
-				t.Fatalf("tab moved to %v, want Steps & Attempts", v.tab)
+			if v.tab != taskTabWorkflow {
+				t.Fatalf("tab moved to %v, want Workflow", v.tab)
 			}
 		},
 		// The way back off the tab has to stay on screen, so `]` is a row here
@@ -567,6 +567,32 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if w.graph.err != "" {
 				t.Errorf("R left the previous error on screen: %q", w.graph.err)
+			}
+		},
+	},
+
+	ctxTaskWorkflow: {
+		"down": func(t *testing.T) {
+			v := workflowTabFixture(t)
+			before := v.workflow.graph.Selected()
+			v.updateKey(registryKey(t, "down"))
+			if v.workflow.graph.Selected() == before {
+				t.Fatalf("down did not move the graph selection (still %q)", before)
+			}
+		},
+		"shift+down": func(t *testing.T) {
+			v := workflowTabFixture(t)
+			before := v.workflow.graph.Selected()
+			v.updateKey(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModShift})
+			if got := v.workflow.graph.Selected(); got != before {
+				t.Fatalf("shift+down moved the selection to %q; panning must not", got)
+			}
+		},
+		"5": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabSteps)
+			v.updateKey(registryKey(t, "5"))
+			if v.tab != taskTabWorkflow {
+				t.Fatalf("5 moved to %v, want Workflow", v.tab)
 			}
 		},
 	},
