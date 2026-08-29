@@ -8,12 +8,17 @@
 //	gh auth status
 //	gh issue list --repo owner/name --state S --limit N --json FIELDS
 //	gh issue view N --repo owner/name --json FIELDS
+//	gh pr list --repo owner/name --state S --limit N --json FIELDS
+//	gh pr view N --repo owner/name --json FIELDS
 //
 // Scenario selection is environment-driven:
 //
 //	FAKEGH_SCENARIO  success (default) | logged-out | empty | not-found |
 //	                 unauthorized | rate-limited | forbidden | bad-json |
 //	                 hang
+//	FAKEGH_PR_BRANCH when set, the head branch of the first pull request in
+//	                 the corpus, so a gate or a test can point one at the
+//	                 branch a real task was given.
 //	FAKEGH_ARGV_FILE when set, each invocation appends its argv (one
 //	                 space-joined line) to this file, so a test can assert
 //	                 the flags the adapter passed — and, for a disabled
@@ -45,6 +50,10 @@ func main() {
 		issueList(scenario)
 	case len(args) >= 3 && args[0] == "issue" && args[1] == "view":
 		issueView(scenario, args[2])
+	case len(args) >= 2 && args[0] == "pr" && args[1] == "list":
+		pullList(scenario)
+	case len(args) >= 3 && args[0] == "pr" && args[1] == "view":
+		pullView(scenario, args[2])
 	default:
 		fmt.Fprintf(os.Stderr, "fakegh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(2)
@@ -129,6 +138,109 @@ func issueView(scenario, number string) {
 	}
 	fmt.Fprintf(os.Stderr, "gh: Could not resolve to an Issue with the number of %d. (HTTP 404)\n", n)
 	os.Exit(1)
+}
+
+func pullList(scenario string) {
+	if fail(scenario) {
+		return
+	}
+	if scenario == "bad-json" {
+		fmt.Println("not json at all")
+		return
+	}
+	pulls := pullCorpus()
+	if scenario == "empty" {
+		pulls = nil
+	}
+	// The listing is open-only, the way `gh pr list` defaults: the merged row
+	// exists in the corpus so `pr view` can answer for it, and it must not
+	// appear here or the two would disagree about what "open" means.
+	open := make([]map[string]any, 0, len(pulls))
+	for _, pull := range pulls {
+		if pull["state"] == "OPEN" {
+			open = append(open, pull)
+		}
+	}
+	if pulls == nil {
+		open = nil
+	}
+	emit(open)
+}
+
+func pullView(scenario, number string) {
+	if fail(scenario) {
+		return
+	}
+	if scenario == "bad-json" {
+		fmt.Println("{")
+		return
+	}
+	n, err := strconv.Atoi(number)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gh: invalid pull request number %q\n", number)
+		os.Exit(1)
+	}
+	for _, pull := range pullCorpus() {
+		if pull["number"] == n {
+			emit(pull)
+			return
+		}
+	}
+	fmt.Fprintf(os.Stderr, "gh: Could not resolve to a PullRequest with the number of %d. (HTTP 404)\n", n)
+	os.Exit(1)
+}
+
+// pullCorpus is the fixed pull-request set, shaped exactly like
+// `gh pr list --json`. Three rows on purpose: an open one whose head branch a
+// test or gate can point at a real task, an open draft, and a **merged** one,
+// which is the case the durable link exists to serve and the one an open-only
+// listing can never answer.
+func pullCorpus() []map[string]any {
+	branch := os.Getenv("FAKEGH_PR_BRANCH")
+	if branch == "" {
+		branch = "vincent/1-add-a-thing"
+	}
+	return []map[string]any{
+		{
+			"number":      412,
+			"title":       "Add a thing",
+			"url":         "https://github.com/octo/repo/pull/412",
+			"state":       "OPEN",
+			"isDraft":     false,
+			"headRefName": branch,
+			"baseRefName": "main",
+			"author":      map[string]any{"login": "octocat"},
+			"createdAt":   "2026-08-26T19:21:29Z",
+			"updatedAt":   "2026-08-26T19:30:00Z",
+			"mergedAt":    nil,
+		},
+		{
+			"number":      401,
+			"title":       "Draft: rework the board header",
+			"url":         "https://github.com/octo/repo/pull/401",
+			"state":       "OPEN",
+			"isDraft":     true,
+			"headRefName": "vincent/9-rework-the-board-header",
+			"baseRefName": "main",
+			"author":      map[string]any{"login": "hubot"},
+			"createdAt":   "2026-07-01T08:00:00Z",
+			"updatedAt":   "2026-07-02T08:00:00Z",
+			"mergedAt":    nil,
+		},
+		{
+			"number":      377,
+			"title":       "Ship the thing that already merged",
+			"url":         "https://github.com/octo/repo/pull/377",
+			"state":       "MERGED",
+			"isDraft":     false,
+			"headRefName": "vincent/3-ship-the-thing",
+			"baseRefName": "main",
+			"author":      map[string]any{"login": "octocat"},
+			"createdAt":   "2026-06-01T08:00:00Z",
+			"updatedAt":   "2026-06-02T08:00:00Z",
+			"mergedAt":    "2026-06-02T08:00:00Z",
+		},
+	}
 }
 
 func emit(v any) {

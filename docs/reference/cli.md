@@ -977,9 +977,9 @@ honest answer offline, and the one place a preview and a real run can differ.
 
 ## `vincent github`
 
-Read-only views of a project's GitHub issues. Nothing under this command writes
-to GitHub, and the daemon makes every call — a client never talks to GitHub.
-Both subcommands need a daemon.
+Read-only views of a project's GitHub issues and pull requests. Nothing under
+this command writes to GitHub, and the daemon makes every call — a client never
+talks to GitHub. All three subcommands need a daemon.
 
 ### `vincent github issues`
 
@@ -998,6 +998,29 @@ ISSUE  STATE  TITLE                                                     LABELS  
 `--state` defaults to `open`, `--limit` to the daemon's own bound. Filter the
 output yourself — there is no `--query`.
 
+### `vincent github prs`
+
+```sh
+vincent github prs --project ID [--limit N] [--json]
+```
+
+Lists the project's **open** pull requests, newest first, and names the task
+each one is linked to.
+
+```
+PR     STATE  TITLE                                        BRANCH                            TASK
+#412   open   List a GitHub project's open pull requests   vincent/231-list-open-pull-reque…  #61
+#401   draft  Rework the board header                      vincent/9-rework-the-board-header  -
+```
+
+`STATE` is `open`, `draft`, `closed` or `merged`; the listing itself is
+open-only, so `closed` and `merged` appear only through a task's own link.
+`TASK` is the board task this pull request is linked to. The daemon makes that
+link in the background every
+[`github.poll_interval`](configuration.md#github), matching a pull request's
+head branch against a task's own branch; a link made or removed by hand over
+[the API](api.md#github-pull-requests) wins over it.
+
 ### `vincent github status`
 
 ```sh
@@ -1012,6 +1035,9 @@ enabled  yes
 repo     lezli01/vincent
 issues   readable via gh
 ```
+
+The `issues` row covers pull requests too: they are read through the same
+credential and the same gate.
 
 It is the per-project half of [`vincent doctor`](#vincent-doctor)'s GitHub rows:
 doctor answers "can this machine read GitHub at all", this answers "and is this

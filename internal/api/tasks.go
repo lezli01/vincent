@@ -111,6 +111,13 @@ type taskResponse struct {
 	// captured and never refreshed — clients render it as history, not as the
 	// issue's current state.
 	GitHubIssue *github.Issue `json:"github_issue"`
+	// GitHubPull is this task's pull-request link (§5.3, task 052); null for
+	// a task no pull request has ever matched. It is a **pointer** — repo,
+	// number, who linked it, and whether a human unlinked it — never a
+	// snapshot: everything renderable about the pull request is served live
+	// by GET /v1/tasks/{id}/github/pull, which is what lets a task still name
+	// a pull request that has since merged.
+	GitHubPull *github.PullLink `json:"github_pull"`
 	// WorkflowOrigin is where the task's workflow definition came from (§5.3,
 	// task 043): scope, scope-relative file and source digest, or `derived`
 	// naming the parent of a fan-out lane. Null for a task created before the
@@ -202,6 +209,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		QueuedReason:     nilIfEmpty(t.QueuedReason),
 		PendingInput:     rawIfNotEmpty(t.PendingInputJSON),
 		GitHubIssue:      t.GitHubIssue,
+		GitHubPull:       t.GitHubPull,
 		WorkflowOrigin:   t.WorkflowOrigin,
 		PauseRequested:   t.PauseRequested,
 		AvailableActions: availableActions(t.State),

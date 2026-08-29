@@ -153,6 +153,17 @@ type Task struct {
 	// which is why a step render still cannot fail for an external reason
 	// (§8.4). A fan-out lane inherits its parent's copy verbatim.
 	GitHubIssue *github.Issue
+	// GitHubPull is the pull request this task is linked to (§5.3, task 052),
+	// nil for a task no pull request has ever matched.
+	//
+	// It is a **pointer**, not a snapshot: repo, number, who linked it, and
+	// whether a human unlinked it. Everything renderable about the pull
+	// request — title, state, draft, merged — is re-fetched on every render,
+	// which is the deliberate opposite of GitHubIssue above. A non-nil value
+	// with Suppressed set is the record of a human's refusal, not a link; the
+	// reconciler reads it so the next tick does not re-apply what a person
+	// just removed.
+	GitHubPull *github.PullLink
 	// WorkflowOrigin is where this task's workflow definition came from
 	// (§5.3, task 043), captured once at creation beside WorkflowSnapshot.
 	// nil means the origin was not recorded — a task created before migration

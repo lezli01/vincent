@@ -1,0 +1,18 @@
+{
+  "author": {
+    "id": "MDQ6VXNlcjE=",
+    "is_bot": false,
+    "login": "octocat",
+    "name": "The Octocat"
+  },
+  "baseRefName": "master",
+  "createdAt": "2026-06-01T08:00:00Z",
+  "headRefName": "vincent/3-ship-the-thing",
+  "isDraft": false,
+  "mergedAt": "2026-06-02T08:00:00Z",
+  "number": 377,
+  "state": "MERGED",
+  "title": "Ship the thing that already merged",
+  "updatedAt": "2026-06-02T08:00:00Z",
+  "url": "https://github.com/octo/repo/pull/377"
+}

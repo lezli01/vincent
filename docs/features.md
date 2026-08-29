@@ -15,7 +15,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue, prefilled and editable; issue details in templates; read-only, no stored credential |
+| GitHub | Create a task from an issue, prefilled and editable; issue details in templates; a project's open pull requests, each linked to the task whose branch it came from; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -245,6 +245,31 @@ appear, `vincent doctor` reports why, and everything else is unaffected. Set
 See the [new-task form](guides/tui.md), the
 [configuration reference](reference/configuration.md), and the
 [workflow schema](reference/workflow-schema.md) for `.Issue`.
+
+## Link a task to its pull request
+
+Once a workflow has pushed a task's branch and a pull request has been opened
+from it, vincent finds it. Every
+[`github.poll_interval`](reference/configuration.md#github) — 5 minutes by
+default — the daemon lists each GitHub-based project's **open** pull requests
+and links the ones whose head branch is a task's own branch. It never overwrites
+a link you made by hand, and a link you removed is never re-applied.
+
+`vincent github prs --project ID` prints a project's open pull requests with the
+task each one belongs to. Only the *link* is stored: a pull request's title,
+state, draft and merged status are re-read every time it is shown, which is what
+lets a task still name a pull request that has since merged and dropped off the
+open listing. A task with no pull request is offered a prefilled compare URL
+instead — GitHub's own "open a pull request" page, carrying the task's title and
+description, and `Closes #N` when the task came from an issue.
+
+This is the one thing vincent does on the network without being asked, so it has
+its own switch: `github.poll_interval: 0` stops the background listing and
+leaves everything else working on demand. It writes nothing to GitHub either —
+the compare URL is built, never fetched, and a human presses GitHub's button.
+
+See the [CLI reference](reference/cli.md#vincent-github-prs) and the
+[API reference](reference/api.md#github-pull-requests).
 
 ## Diagnose and maintain it
 

@@ -105,8 +105,9 @@ agents:
 		Loop:     Loop{MaxIterations: 10},
 		Include:  Include{MaxDepth: 5},
 		// And once more for `github:` — the file names no key, so the task
-		// 035 opt-out default survives: enabled.
-		GitHub: GitHub{Enabled: true},
+		// 035 opt-out default survives: enabled, with task 052's reconciler
+		// interval.
+		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
 		TUI:    TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {

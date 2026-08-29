@@ -335,7 +335,11 @@ type TaskDetail struct {
 	// refreshed — a client renders it as the task's history, not as the
 	// issue's current state.
 	GitHubIssue *GitHubIssue `json:"github_issue,omitempty"`
-	Steps       []StepRun    `json:"steps"`
+	// GitHubPull is this task's pull-request link (task 052); nil for a task
+	// no pull request has ever matched. It is a pointer, not a snapshot —
+	// TaskGitHubPull fetches what the pull request currently says.
+	GitHubPull *GitHubPullLink `json:"github_pull,omitempty"`
+	Steps      []StepRun       `json:"steps"`
 	// Warnings is set on the POST /v1/tasks 201 only: advisory findings that
 	// did not block creation, such as a model the catalog does not know.
 	// POST /v1/tasks/{id}/repair reports the same findings about its own

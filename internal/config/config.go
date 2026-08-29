@@ -279,7 +279,24 @@ type GitHub struct {
 	// parse error the strict decoder already refuses — which is why
 	// validate() has no clause for this block.
 	Enabled bool `yaml:"enabled"`
+	// PollInterval is how often the daemon reconciles task↔pull-request links
+	// (task 052, §12.3): it lists each GitHub-based project's open pull
+	// requests and links the ones whose head branch is a task's branch.
+	//
+	// This is the daemon's **first standing outbound network traffic**, which
+	// is why it is a key rather than a constant, and why `0` disables the
+	// reconciler while leaving the rest of the integration on. A user who
+	// wants the picker but no background calls must be able to say so without
+	// turning `enabled` off.
+	//
+	// The default is conservative — a pull request appearing a few minutes
+	// late costs nothing, and the reconciler is a convenience over a fact the
+	// branch already carries.
+	PollInterval Duration `yaml:"poll_interval"`
 }
+
+// Polls reports whether the reconciler should run at all.
+func (g GitHub) Polls() bool { return g.Enabled && g.PollInterval > 0 }
 
 // Notify configures the daemon's outward signal (spec §12.3 — task 046): a
 // command spawned when a task enters one of the listed states, with a JSON
@@ -530,7 +547,7 @@ func Default() Config {
 		// legible rather than about what the machine can afford.
 		Include: Include{MaxDepth: 5},
 		// On by default: an opt-out, per task 035 decision 6.
-		GitHub: GitHub{Enabled: true},
+		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},

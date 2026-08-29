@@ -118,7 +118,8 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
 | 25 | Conditions between steps | `if:` guards any step (skip and carry on) and any fan-out lane or group sub-step (subset the set); `type: condition` ends the sequence with the task `done`; `allow_failure:` turns the failures a step itself produced into an advance, so a guard has a run's own findings to read. Guards are §8.4 templates that must render exactly `true` or `false`, re-evaluated every time and never cached (§7.7, task 015) |
-| 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26) |
+| 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here |
+| 27 | GitHub pull requests | **Read-only, daemon-side**, like row 26 and through the same gate and credential. A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29) |
 
 ## 4. Architecture
 
@@ -289,6 +290,7 @@ A unit of work delivered by running a workflow against a project.
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
+| `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue |
 
 
 *Amended 2026-08-17 (task 014).* A snapshot may carry a whole fan-out tree: a
@@ -3098,7 +3100,8 @@ agents:
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
 github:
-  enabled: true                # read GitHub issues, so a task can be created from one (§13.2)
+  enabled: true                # read GitHub issues and pull requests (§13.2)
+  poll_interval: 5m            # reconcile task↔pull-request links this often; 0 = off (task 052)
 notify:                        # run a command when a task enters one of these states (task 046)
   on: []                       # §6 state names; [] (the default) fires nothing
   command: []                  # argv, never a shell string; the envelope arrives on stdin
@@ -3106,6 +3109,31 @@ tui:                           # view preference; the daemon validates and relay
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
+
+**`github.poll_interval` and the pull-request reconciler (task 052, added
+2026-08-29).** Every `poll_interval` the daemon lists each GitHub-based
+project's **open** pull requests and links the ones whose `head` branch equals a
+task's `branch_name` within that project, marking the link `source: auto`. The
+branch is the ground truth — vincent named it (§10) — and the stored link is a
+durable cache of it, which is what lets a task still name a pull request after
+that pull request merged and dropped off an open-only listing.
+
+It is a daemon subsystem wired in `internal/daemon.Run` beside the scheduler and
+the notifier, not a side effect of the listing endpoint (§13.2): a link written
+only when a human opens a screen exists only for the projects somebody happened
+to open, and a GET that mutates rows is a shape no other write in this API
+takes. It reads the config per tick, so a reload governs the next one.
+
+The §13.2 gate runs **first and stops at the first "no"**, so a disabled
+integration or a non-GitHub project makes no call on this path either. It never
+overwrites a `human` link, never clears one and never un-suppresses one. Its
+failure policy is deliberately **quiet**: a rate-limited or unreachable GitHub
+degrades to "no new links this tick" and logs at debug — never a per-tick error
+storm, and never a task state change.
+
+`poll_interval: 0` switches the reconciler off while leaving the rest of the
+integration on. This is the daemon's first standing outbound network traffic,
+and it must be refusable without refusing `github.enabled` entirely.
 
 **`usage_limit_recheck_interval` (task 003, added 2026-08-14).** How long a task
 waits before being re-admitted after its agent reported a spent usage quota
@@ -3636,6 +3664,36 @@ GET    /v1/projects/{id}/github/issues  *Added 2026-08-26 (task 035).* The proje
                                         An unusable integration is a **409** carrying
                                         `details.reason` from the vocabulary above, not a 200
                                         with an empty list
+GET    /v1/projects/{id}/github/pulls   *Added 2026-08-29 (task 052).* The project's **open**
+                                        pull requests, newest first; `?limit=`. Same gate, same
+                                        409-with-`details.reason` on an unusable integration.
+                                        A **pure read**: it fetches, normalizes, sorts and
+                                        returns, and persists nothing — linking is the
+                                        reconciler's job (§12.3), because a link that appears
+                                        only when someone looks is not a durable link, and no
+                                        other write in this API is a GET. Rows a task claims
+                                        carry `task_id` and `link_source` (auto | human)
+GET    /v1/tasks/{id}/github/pull       *Added 2026-08-29 (task 052).* This task's pull request:
+                                        the stored link plus the **live** pull request, fetched
+                                        by number. Always **200**, whatever GitHub says — a
+                                        workspace asks it on every open and the stored link is a
+                                        fact vincent owns, so an unusable integration rides
+                                        along as `reason` rather than refusing the row. Fetching
+                                        by number rather than searching the listing is what lets
+                                        a task still name a pull request that has **merged** and
+                                        dropped off an open-only listing. A task with no link
+                                        gets `compare_url` instead: GitHub's own “open a pull
+                                        request” page, prefilled from the task and **built, not
+                                        fetched** — no request is made to GitHub to produce it
+POST   /v1/tasks/{id}/github/pull       *Added 2026-08-29 (task 052).* `{ number }` — the human
+                                        link, for a pull request the head-branch rule misses or
+                                        gets wrong. Writes vincent's own column only; **no**
+                                        GitHub call is made, not even to check the number
+                                        exists. Clears any earlier suppression
+DELETE /v1/tasks/{id}/github/pull       *Added 2026-08-29 (task 052).* The human unlink. It does
+                                        **not** clear the column: it marks the link
+                                        `suppressed`, keeping repo and number, which is what
+                                        makes the refusal survive the next reconciler tick
 
 GET    /v1/workflows?project_id=        merged registry view: built-in + global + that project's
                                         (shadowing applied); each entry:
@@ -3966,7 +4024,16 @@ Two kinds of streams:
    nothing. Types:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.status_changed`, `task.children_changed`, `project.*`,
-   `workflow.registry_changed`, `agent.quota_changed`, `daemon.shutting_down`.
+   `workflow.registry_changed`, `agent.quota_changed`,
+   `task.github_pull_changed`, `daemon.shutting_down`.
+   *Amended 2026-08-29 (task 052, issue #231): `task.github_pull_changed` —
+   payload `{repo, number, source, suppressed}`, empty when the link was
+   cleared — announces that a task's pull-request link changed, because the
+   reconciler (§12.3) writes it in the background and a running TUI must
+   re-render without polling. It carries a `task_id` and is **not** a
+   transition: the task's state is unchanged, `updated_at` is untouched, and
+   `scheduler.WakeOn` is false for it, since nothing about admission depends on
+   a pull request.*
    *Amended 2026-08-28 (task 046, issue #90): the `notify:` hook (§12.3)
    introduces **no new event type**. Its selector reads the `to` field of
    `task.state_changed`, the way the TUI bell does; `task.blocked` and
@@ -4108,6 +4175,22 @@ CREATE TABLE tasks (
                                               -- index, no generated column — so a linked task costs the same
                                               -- as any other on every board query. A fan_out lane inherits
                                               -- its parent's copy verbatim (§7.6)
+  github_pull_json    TEXT,                   -- the pull request this task is linked to (§5.3, task 052,
+                                              -- migration 0018); NULL = never matched. A **pointer**, not a
+                                              -- snapshot: { repo, number, source, suppressed, linked_at } and
+                                              -- nothing renderable, because draft/state/merged are live by
+                                              -- nature and a stored copy of them would read exactly like a
+                                              -- current one while being wrong. `repo` rides beside `number`
+                                              -- because a number alone is meaningless — this is where task
+                                              -- 035 decision 5's "repo identity is not stored" was revisited,
+                                              -- landing on the task rather than as a projects column.
+                                              -- `suppressed` records a *human unlink*: the reconciler needs
+                                              -- three states, not two — never matched, linked, and
+                                              -- matched-but-refused — and an absent column carries only the
+                                              -- first. Not folded into github_issue_json: that column is
+                                              -- defined as "NULL = no linked issue" holding a bare Issue, so
+                                              -- widening it would leave every existing row in the old shape
+                                              -- and force a shape-sniffing read path forever
   workflow_origin_json TEXT,                  -- where workflow_name's definition came from (§5.2/§5.3, task 043,
                                               -- migration 0017); NULL = origin not recorded, reported as `unknown`.
                                               -- {scope, file, digest} for a registry-backed task and
@@ -4313,7 +4396,7 @@ stream for the live tail.
    admitted only when the title still clears a comfortable width, so a board
    narrow enough to lose it renders exactly as it did before the column existed,
    and the width a grouped board frees by dropping PROJECT and WORKFLOW still
-   goes to the title. *Amended 2026-08-29 (task 050): the status is no longer
+   goes to the title. *Amended 2026-08-29 (task 052): the status is no longer
    truncated with an ellipsis — it wraps, along with TITLE, STATE and STEP, per
    the row-height rule below; and "the width goes to the title" is now "the
    width is spent on the row", per the title cap below.* The status of the *newest* row, not the newest message: a
@@ -4323,7 +4406,7 @@ stream for the live tail.
    widening a column for a rare state costs every board the columns that shed
    first) stands unchanged, and this column is why the status did not go there.
 
-   **Column widths (task 050, added 2026-08-29).** `TITLE` is the only flexible
+   **Column widths (task 052, added 2026-08-29).** `TITLE` is the only flexible
    column, and it takes the width the fixed set leaves — but only up to a
    ceiling. Past that ceiling the surplus is spent in a fixed order: `STEP`
    first, up to a maximum wide enough for a step name with a loop rollup beside
@@ -4339,7 +4422,7 @@ stream for the live tail.
    deliberately not among the columns a surplus reaches: the recorded reasoning
    above holds, and the wrap is what makes its overflow readable.
 
-   **Row height (task 050, added 2026-08-29).** A cell too long for its column
+   **Row height (task 052, added 2026-08-29).** A cell too long for its column
    wraps onto further lines of the same row rather than being truncated away.
    Every row on a board is the same height — the tallest row in the list the
    board is currently showing, clamped to three lines — so a board where nothing
@@ -4641,7 +4724,7 @@ get to bend:
   `WORKFLOW` drop out of the column set (the §15 shedding order is otherwise
   unchanged) and the width goes to the title, which is where a grouped board
   needs it — the titles are indented under their headers.
-  *Amended 2026-08-29 (task 050): the freed width is spent on the row in the
+  *Amended 2026-08-29 (task 052): the freed width is spent on the row in the
   allocation order above — the title first, then `STEP`, then `STATUS`, then
   back to the title. A grouped board is therefore never worse off than a flat
   one at the same width, but above the title's ceiling the two render equal
@@ -5441,9 +5524,15 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   record row 11 is untouched — and the issue is snapshotted at creation rather
   than re-fetched, so the step path is unchanged. Jira and task templates stay
   deferred; nothing here was a decision *against* them, only a v1 scope line,
-  and v1 shipped. **Pull requests** — checking, listing or reporting on them —
-  are the intended next piece and are deliberately not built: the normalized
-  types live in their own package, the capability probe already answers "is
-  this project GitHub-based and reachable", and the task column can carry a PR
-  shape without a second migration.
+  and v1 shipped. ~~**Pull requests** — checking, listing or reporting on them
+  — are the intended next piece and are deliberately not built~~ — **promoted
+  out of future work, 2026-08-29** (§5.3, §12.3, §13.2, §13.3, §14; decision
+  record row 27, task 052): a project's open pull requests are listed, and a
+  task is linked to the one opened from its branch by a daemon-side reconciler.
+  It is **reading only** — decision record row 11 stands unamended, and the
+  "create a PR" affordance is a constructed compare URL a human clicks, not a
+  write. The one thing this paragraph predicted wrongly is the migration: the
+  task column could *not* carry a PR shape, because `github_issue_json` is
+  defined as "NULL = no linked issue" holding a bare `Issue`, so `github_pull_json`
+  is a sibling column (migration 0018) rather than a widening.
 - Container/VM-sandboxed step execution.

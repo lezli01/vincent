@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -126,4 +127,131 @@ func (c *Client) ListGitHubIssues(
 		return nil, err
 	}
 	return out, nil
+}
+
+// GitHubPullRequest is one row of GET /v1/projects/{id}/github/pulls, in the
+// daemon's normalized shape.
+//
+// Nothing here is stored on the task. What a task keeps is a
+// GitHubPullLink — repo and number — and everything below is re-read every
+// time, because draft, state and merged status are live by nature (task 052).
+type GitHubPullRequest struct {
+	Repo   string `json:"repo"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url"`
+	// State is open or closed. A merged pull request is closed and carries
+	// Merged: `gh` spells that third state MERGED and the REST API does not
+	// spell it at all, so the daemon folds it onto a bool.
+	State      string    `json:"state"`
+	Draft      bool      `json:"draft"`
+	Merged     bool      `json:"merged"`
+	HeadBranch string    `json:"head_branch,omitempty"`
+	BaseBranch string    `json:"base_branch,omitempty"`
+	Author     string    `json:"author,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitzero"`
+	UpdatedAt  time.Time `json:"updated_at,omitzero"`
+	FetchedAt  time.Time `json:"fetched_at,omitzero"`
+	// TaskID is the task this pull request is linked to, nil when none is;
+	// LinkSource is `auto` or `human`, so a client can say which kind of
+	// claim it is showing.
+	TaskID     *int64 `json:"task_id,omitempty"`
+	LinkSource string `json:"link_source,omitempty"`
+}
+
+// Status is the one word a row renders: merged beats closed, draft beats
+// open, which is the order a human reads them in.
+func (p GitHubPullRequest) Status() string {
+	switch {
+	case p.Merged:
+		return "merged"
+	case p.State == "closed":
+		return "closed"
+	case p.Draft:
+		return "draft"
+	default:
+		return "open"
+	}
+}
+
+// GitHubPullLink is a task's stored pull-request link — a **pointer**, never
+// a snapshot. Suppressed is a human's sticky unlink, which the daemon's
+// reconciler reads so the next tick does not re-apply what a person removed.
+type GitHubPullLink struct {
+	Repo       string    `json:"repo"`
+	Number     int       `json:"number"`
+	Source     string    `json:"source"`
+	Suppressed bool      `json:"suppressed,omitempty"`
+	LinkedAt   time.Time `json:"linked_at,omitzero"`
+}
+
+// GitHubTaskPull is GET /v1/tasks/{id}/github/pull: what this task knows
+// about its pull request right now.
+//
+// Pull is fetched live on every call, which is what lets a task still name a
+// pull request that has since merged and dropped off the open listing. Reason
+// carries the daemon's named vocabulary when the fetch could not be made, so
+// a workspace still renders when GitHub is unreachable.
+type GitHubTaskPull struct {
+	Linked     bool               `json:"linked"`
+	Repo       string             `json:"repo,omitempty"`
+	Number     int                `json:"number,omitempty"`
+	Source     string             `json:"source,omitempty"`
+	Suppressed bool               `json:"suppressed,omitempty"`
+	Pull       *GitHubPullRequest `json:"pull,omitempty"`
+	Reason     string             `json:"reason,omitempty"`
+	// CompareURL is GitHub's own "open a pull request" page for this task's
+	// branch, prefilled from the task. The daemon *builds* it — no request is
+	// made to GitHub to produce it, and vincent still writes nothing there.
+	// Present only when nothing is linked.
+	CompareURL string `json:"compare_url,omitempty"`
+}
+
+// ListGitHubPulls lists a project's **open** pull requests, newest first.
+func (c *Client) ListGitHubPulls(
+	ctx context.Context, projectID int64, limit int,
+) ([]GitHubPullRequest, error) {
+	path := "/v1/projects/" + strconv.FormatInt(projectID, 10) + "/github/pulls"
+	if limit > 0 {
+		path += "?limit=" + strconv.Itoa(limit)
+	}
+	var out []GitHubPullRequest
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// TaskGitHubPull fetches a task's linked pull request, live.
+func (c *Client) TaskGitHubPull(ctx context.Context, taskID int64) (GitHubTaskPull, error) {
+	var out GitHubTaskPull
+	if err := c.get(ctx, taskPullPath(taskID), &out); err != nil {
+		return GitHubTaskPull{}, err
+	}
+	return out, nil
+}
+
+// LinkGitHubPull names a task's pull request by hand, for the cases the
+// head-branch rule misses or gets wrong. It clears any earlier unlink.
+func (c *Client) LinkGitHubPull(ctx context.Context, taskID int64, number int) (Task, error) {
+	var out Task
+	body := map[string]int{"number": number}
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID), body, &out); err != nil {
+		return Task{}, err
+	}
+	return out, nil
+}
+
+// UnlinkGitHubPull removes a task's link and records the refusal, so the
+// daemon's reconciler does not re-apply it on the next tick.
+func (c *Client) UnlinkGitHubPull(ctx context.Context, taskID int64) (Task, error) {
+	var out Task
+	if err := c.send(ctx, http.MethodDelete, taskPullPath(taskID), nil, &out); err != nil {
+		return Task{}, err
+	}
+	return out, nil
+}
+
+func taskPullPath(taskID int64) string {
+	return "/v1/tasks/" + strconv.FormatInt(taskID, 10) + "/github/pull"
 }

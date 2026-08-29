@@ -201,6 +201,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodDelete, "/v1/projects/{id}", s.handleProjectDelete)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/github/pulls", s.handleProjectGitHubPulls)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
 	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
 	rt.handle(http.MethodGet, "/v1/workflows/definition", s.handleWorkflowDefinition)
@@ -225,6 +226,9 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", s.handleStepStatus)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPull)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullLink)
+	rt.handle(http.MethodDelete, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullUnlink)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {

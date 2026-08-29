@@ -137,8 +137,15 @@ agents:
 # and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
 # environment the daemon inherited. Set enabled to false to stop the daemon
 # reading GitHub at all.
+#
+# poll_interval is how often the daemon reconciles the link between a task and
+# its pull request, by matching an open pull request's head branch against the
+# task's branch (task 052). It is the only background network traffic vincent
+# makes: set it to 0 to switch the reconciler off and keep the rest of the
+# integration, which then calls GitHub only when you ask it to.
 github:
   enabled: true
+  poll_interval: 5m
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
@@ -669,25 +676,39 @@ editor launcher and would open a GUI.
 ```yaml
 github:
   enabled: true
+  poll_interval: 5m
 ```
 
-Whether the daemon may read GitHub issues, so a task can be created from one.
-It is an **opt-out**: on by default, and it costs nothing until you use it.
+Whether the daemon may read GitHub issues and pull requests, so a task can be
+created from an issue and linked to the pull request opened from its branch. It
+is an **opt-out**: on by default, and it costs nothing until you use it.
 
 It governs **reading only**. Nothing under this key writes to GitHub, and no
 GitHub call happens while a step runs — the daemon calls when you open the issue
-picker and when it creates a task from an issue, and nowhere else. The issue is
-stored on the task at that moment and never re-read, which is why a step's
-`.Issue` renders offline and cannot fail because GitHub is down.
+picker, when it creates a task from an issue, when a client asks for a pull
+request, and on the reconciler's tick. The issue is stored on the task at that
+moment and never re-read, which is why a step's `.Issue` renders offline and
+cannot fail because GitHub is down. A pull request is the opposite: only the
+*link* is stored, and its title, state, draft and merged status are re-read
+every time, because a snapshot of them would go stale and lie.
+
+`poll_interval` is how often the daemon reconciles those links: it lists each
+GitHub-based project's open pull requests and links the ones whose head branch
+equals a task's branch. It is vincent's **only** standing outbound network
+traffic, which is why it has its own key — set it to `0` and the reconciler
+stops while the rest of the integration keeps working on demand. A link a human
+made by hand is never overwritten by it, and a link a human removed is never
+re-applied.
 
 It applies only to a project whose `origin` remote parses as a github.com
 repository. On every other project it does nothing at all — the issue row is not
 offered, and no `gh` process is started.
 
 Setting it to `false` stops the daemon reading GitHub entirely: the TUI's issue
-row disappears, `GET /v1/projects/{id}/github` reports `disabled`, and creating
-a task with `--github-issue` is refused. Read per use, so a
-[reload](#reload-semantics) governs the next call.
+row disappears, `GET /v1/projects/{id}/github` reports `disabled`, the pull
+request listing answers `409`, the reconciler stops, and creating a task with
+`--github-issue` is refused. Read per use, so a
+[reload](#reload-semantics) governs the next call and the next tick.
 
 **There is deliberately no token key here.** Vincent stores no credential of its
 own. It uses the `gh` CLI when that is installed and logged in — which carries
