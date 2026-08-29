@@ -13,21 +13,32 @@ every client is a thin consumer of its localhost API.
 ### Does it need an API key or an account?
 
 No. Vincent stores **no credentials**. It runs the agent CLI you already
-installed and authenticated. There is no vincent account and no telemetry, and
-vincent reaches the network almost only on your behalf: whatever your agent CLI
-and your workflow's own git commands do, plus reading GitHub — an issue when you
+installed and authenticated. There is no vincent account and no telemetry.
+
+Almost every call vincent makes is on your behalf: whatever your agent CLI and
+your workflow's own git commands do, plus reading GitHub — an issue when you
 create a task from one, a project's open pull requests when you ask for them.
 That reading uses your existing `gh` login, or a `GITHUB_TOKEN`/`GH_TOKEN`
 already in the daemon's environment; vincent stores neither, and never writes
 anything to GitHub.
 
-The one call it makes **without** being asked is the pull-request reconciler:
-every [`github.poll_interval`](reference/configuration.md#github) (5 minutes by
-default) the daemon lists each GitHub-based project's open pull requests, so a
-task can name the pull request opened from its branch. Set `poll_interval: 0` to
-stop it and keep the rest, or
-[`github.enabled: false`](reference/configuration.md#github) to switch off every
-GitHub call vincent makes.
+Two calls the daemon makes **without** being asked, both switchable:
+
+- **The release check.** Once a day the daemon asks GitHub for vincent's latest
+  stable release, so `vincent doctor` can tell you a newer one exists. It is one
+  unauthenticated GET and it sends nothing identifying — no token, no telemetry,
+  no machine or install identifier. It downloads and installs nothing; that is
+  [`vincent update`](reference/cli.md#vincent-update), which you run. Set
+  [`update.check: false`](reference/configuration.md#update) and the daemon
+  makes no such request at all.
+- **The pull-request reconciler.** Every
+  [`github.poll_interval`](reference/configuration.md#github) (5 minutes by
+  default) the daemon lists each GitHub-based project's open pull requests, so a
+  task can name the pull request opened from its branch. It fires only for
+  projects whose `origin` is a github.com repository, so a daemon with no such
+  project never makes it. Set `poll_interval: 0` to stop it and keep the rest,
+  or [`github.enabled: false`](reference/configuration.md#github) to switch off
+  every GitHub call vincent makes.
 
 ### Which agent CLIs work?
 

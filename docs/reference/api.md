@@ -127,6 +127,7 @@ are long-lived by contract and no write deadline is set.
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
 | `GET` | `/v1/doctor` | The whole diagnostic report. Read-only. `?probe=false` skips the forced adapter re-probe — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
+| `GET` | `/v1/update` | The daemon's **cached** release check — see [Update check](#update-check). Never polls |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
 | `POST` | `/v1/daemon/backup` | `{ path }` — writes a `.tar.gz` of daemon state to `path`. See [Backup](#backup) |
 | `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
@@ -255,6 +256,44 @@ The same block rides `GET /v1/info` per adapter, so a client rendering a badge
 from `/v1/info` needs no second fetch. Both are served from one read, so the two
 endpoints can never disagree. Changes are announced by the
 [`agent.quota_changed`](#events-sse) event.
+
+## Update check
+
+`GET /v1/update` serves the release check
+[`update`](configuration.md#update) governs:
+
+```json
+{
+  "enabled": true,
+  "current_version": "v0.4.1",
+  "latest_version": "v0.5.0",
+  "update_available": true,
+  "published_at": "2026-08-21T09:31:07Z",
+  "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0",
+  "checked_at": "2026-08-29T10:00:00Z",
+  "error": ""
+}
+```
+
+It serves **the cache and nothing else**. There is deliberately no `?refresh`:
+`update.check: false` promises the daemon makes no outbound request, and a
+parameter that made one on demand would hand any client the ability to break
+that. [`vincent update --check`](cli.md#vincent-update) queries the release feed
+itself instead, which is also why it works before the first poll and with no
+daemon running.
+
+- `checked_at` is `null` and `latest_version` empty until a poll succeeds. That
+  is the **never-polled** state and it is not the same answer as "no update
+  available" — a daemon that started ten seconds ago does not know yet.
+- `update_available` is the daemon's verdict, computed server-side, so every
+  client agrees. A `dev` build is never reported as behind.
+- `current_version` is the **daemon's** build. The binary that made the request
+  may be a newer one, which is exactly what `vincent daemon status` reports
+  after an update.
+- `error` carries why the last poll failed and is empty when it worked. A
+  quietly failing check would otherwise look identical to one with nothing to
+  report.
+- A prerelease never appears here.
 
 ## Doctor
 

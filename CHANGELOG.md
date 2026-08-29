@@ -13,6 +13,35 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Vincent tells you when a newer release exists, and can install it.** The
+  daemon asks GitHub once a day for the latest **stable** release, caches the
+  answer and serves it on `GET /v1/update`; `vincent doctor` grows an `UPDATE`
+  group and `vincent daemon status` says when the running daemon is older than
+  the binary on disk. A prerelease is never offered, and a failed check
+  (offline, rate-limited) degrades quietly and blocks nothing.
+
+  `vincent update --check` asks on demand — it queries the feed itself, so it
+  works before the first poll and with no daemon running. `vincent update`
+  applies one, and does only what is honest for the way you installed:
+  a binary a package manager owns is never modified and that channel's upgrade
+  command is printed instead; a binary vincent owns — the direct-download
+  archive, or one you placed by hand — is downloaded, **verified, then**
+  swapped. On any verification failure nothing is replaced and the old binary
+  is left byte-identical. Exit codes are documented and distinct, and `--json`
+  carries `swapped`.
+
+  Verification is the chain the release notes already tell you to run by hand:
+  the cosign signature over `checksums.txt`, then the archive's SHA-256 against
+  that verified file. `cosign` is used when it is on your `PATH` and is never
+  bundled; without it the checksum check runs alone and the command says so,
+  and `--require-signature` makes its absence fatal.
+
+  The check is an opt-out: a new `update:` block in `config.yaml` with
+  `check: true` and `poll_interval: 24h`. With `update.check: false` the daemon
+  makes **no** outbound request for it, and only running `vincent update` does.
+  It sends nothing identifying — no token, no telemetry, no machine or install
+  identifier. Applying an update is never automatic.
+
 - **A live workflow graph on the task workspace.** A fifth tab, **Workflow**
   (`5`, or `tab` round to it), draws the workflow a task is running as a
   control-flow graph with its run state on it: which node is running, what

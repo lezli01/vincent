@@ -367,17 +367,43 @@ See the [Contributing guide](https://lezli01.is-a.dev/vincent/contributing.html)
 
 ## Upgrading
 
-Use the channel's upgrade command, or replace the archive binary and restart
-the daemon:
+The daemon checks once a day whether a newer stable release exists, and
+`vincent doctor` shows the answer. Ask directly at any time:
 
 ```sh
-vincent daemon stop
-# brew upgrade vincent
-# winget upgrade --id lezli01.Vincent --exact
-# scoop update vincent
-# mise upgrade github:lezli01/vincent
-# or unpack/install the new archive, deb, or rpm
-vincent daemon start
+vincent update --check
+```
+
+`vincent update` then does whatever is honest for the way you installed it. If
+a package manager owns the binary it changes nothing and prints that channel's
+command; if vincent owns the binary — the direct-download archive, or one you
+placed by hand — it downloads the release for your platform, verifies it, and
+swaps it in place. See [`vincent update`](../reference/cli.md#vincent-update)
+for the flags, the verification chain and the exit codes, and
+[`update`](../reference/configuration.md#update) for the switch that turns the
+background check off.
+
+Per channel:
+
+| Installed with | Upgrade with |
+|---|---|
+| [Homebrew](#homebrew-macos) | `brew upgrade vincent` |
+| [The macOS installer package](#installer-package-macos) | download and run the new `.pkg` |
+| [WinGet](#winget-windows) | `winget upgrade --id lezli01.Vincent --exact` |
+| [Scoop](#scoop-windows) | `scoop update vincent` |
+| [mise](#mise-all-platforms) | `mise upgrade vincent` |
+| [deb / rpm](#deb-and-rpm-linux) | install the new package |
+| [A release archive](#download-a-release) | `vincent update` |
+| [`go install`](#build-from-source) | `go install github.com/lezli01/vincent/cmd/vincent@latest` |
+
+Whichever route you take, the running daemon keeps its **old** code until it is
+restarted — `vincent update` swaps the binary and nothing else. `vincent daemon
+status` says so when the two disagree:
+
+```sh
+vincent service restart      # if you registered vincent as a service
+# otherwise
+vincent daemon stop && vincent daemon start
 vincent version
 ```
 
