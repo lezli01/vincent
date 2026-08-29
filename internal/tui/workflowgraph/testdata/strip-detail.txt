@@ -6,8 +6,8 @@ deploy: id=deploy type=command
 == fanout
 plan: id=plan type=agent
 spread: id=spread type=fan_out
-api_impl: id=api_impl type=agent
-api_test: id=api_test type=command
+spread.api/api_impl: id=api_impl type=agent
+spread.api/api_test: id=api_test type=command
 #ref:spread:web: lane=web workflow=web-feature if={{ .Fields.web }}
 #merge:spread: on_conflict=agent join=spread resolver=fixup
 ship: id=ship type=command
@@ -15,6 +15,14 @@ ship: id=ship type=command
 == guarded
 plan: id=plan type=agent check=go build ./...
 maybe: id=maybe type=command if={{ eq .Fields.mode "full" }}
+ship: id=ship type=command
+#end:
+== laneshadow
+build: id=build type=command
+spread: id=spread type=fan_out
+spread.api/build: id=build type=command
+spread.web/build: id=build type=command
+#merge:spread: on_conflict=block join=spread
 ship: id=ship type=command
 #end:
 == loop
@@ -37,8 +45,8 @@ work: id=work type=agent
 skip: id=skip type=condition if={{ .Steps.work.Success }}
 record: id=record type=command
 spread: id=spread type=fan_out
-first: id=first type=command
-second: id=second type=command
+spread.one/first: id=first type=command
+spread.two/second: id=second type=command
 #merge:spread: on_conflict=block join=spread
 #end:
 == parallel
