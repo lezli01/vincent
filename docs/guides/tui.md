@@ -593,7 +593,8 @@ A `fan_out` has a **merge** node below its frame, because the join is a git
 merge that runs and can block. A `parallel` group has none: its join is only its
 members finishing. A guard on an ordinary step draws **no** second branch — false
 there means skip and carry on, so the flow is unchanged. A lane naming another
-workflow is one collapsed box; opening it is not in this version.
+workflow is one collapsed box; drawing that workflow's own graph in its place is
+not in this version.
 
 | Key | Does |
 |---|---|
