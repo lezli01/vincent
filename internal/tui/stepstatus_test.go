@@ -136,7 +136,8 @@ func TestTimelineWrapsStatusAndMapsContinuationRowsToAttempt(t *testing.T) {
 
 // The board cell: present when there is something to say, empty when there is
 // not — a column of dashes would read as something missing rather than as the
-// ordinary case — and truncated with an ellipsis to the column's width.
+// ordinary case — and uncut, because the row wraps it now (task 050) instead
+// of the cell truncating itself to a width it can no longer know.
 func TestFormatStatus(t *testing.T) {
 	if got := formatStatus(nil); got != "" {
 		t.Errorf("formatStatus(nil) = %q, want empty", got)
@@ -148,12 +149,8 @@ func TestFormatStatus(t *testing.T) {
 		t.Errorf("formatStatus = %q", got)
 	}
 	long := strings.Repeat("x", widthStatus+20)
-	got := formatStatus(&long)
-	if len([]rune(got)) > widthStatus {
-		t.Errorf("formatStatus width = %d, want at most %d", len([]rune(got)), widthStatus)
-	}
-	if !strings.HasSuffix(got, "…") {
-		t.Errorf("a truncated status = %q, want an ellipsis", got)
+	if got := formatStatus(&long); got != long {
+		t.Errorf("formatStatus cut a long message to %q; wrapping owns that now", got)
 	}
 }
 
@@ -191,9 +188,15 @@ func TestStatusColumnIsTheLastAdmitted(t *testing.T) {
 
 // The one recorded decision this column could have overturned: a grouped
 // board drops PROJECT and WORKFLOW because the headers name them, and the
-// width that frees goes to the title (see columnsFor). Admitting the status
-// on exactly that freed width would reverse it — which is what
-// minTitleWithStatus is set high enough to prevent.
+// width that frees is spent on the row (see columnsFor). Admitting the status
+// on exactly that freed width would reverse it — which is what maxTitle, as
+// this column's gate, is set high enough to prevent.
+//
+// Since task 050 the assertion is on the *remainder* the set leaves rather
+// than on the rendered title: the title has a ceiling now, so above it a
+// grouped board and a flat one render equal titles and the freed width turns
+// up in STEP and STATUS instead (decision 1, amending task 036 decision 9).
+// TestGroupedColumnsAreDropped holds the rendered side.
 //
 // Checked at the widths a grouped board actually carries the status at.
 // Below them the ladder has always spent freed width on buying back the step
@@ -203,7 +206,7 @@ func TestStatusColumnDoesNotEatTheWidthGroupingFrees(t *testing.T) {
 		flat := columnsFor(width, nil, false)
 		grouped := columnsFor(width, grouping{groupProject, groupWorkflow}, false)
 		if grouped.titleWidth(width) <= flat.titleWidth(width) {
-			t.Errorf("width %d: grouped title %d, flat %d — grouping must gain title space",
+			t.Errorf("width %d: grouped remainder %d, flat %d — grouping must gain row space",
 				width, grouped.titleWidth(width), flat.titleWidth(width))
 		}
 	}

@@ -9,6 +9,23 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Changed
+
+- **The board stops spending a wide terminal on the title column, and a cell
+  too long for its column now wraps instead of vanishing.** `TITLE` used to
+  take every cell the fixed columns left — 100 of them on a 200-column
+  terminal, mostly trailing blanks — while `STEP` was still cutting
+  `3/7 green · loop 4/10` and `STATUS` was still cutting a clause. The title
+  now stops at a comfortable width and the surplus goes to those two columns,
+  with only what neither can use coming back to it. Separately, `TITLE`,
+  `STATE`, `STEP` and `STATUS` wrap across up to three lines of the same row,
+  so `awaiting_children (2 blocked)` and a step's own status message are
+  readable without opening the task. Every row on a board is the same height,
+  so a board where nothing overflows renders exactly as it did before. Narrow
+  boards are unchanged in both respects. See [Using the TUI](docs/guides/tui.md#the-board).
+
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 
 ### Added

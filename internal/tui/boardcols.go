@@ -21,25 +21,51 @@ const (
 	widthElapsed   = 9
 	widthCost      = 8
 	// widthStatus holds a step's own status message (task 036) — enough for a
-	// clause, with the rest truncated. It is not wider because this column is
+	// clause. It is the *base* width: a board with a surplus to spend takes
+	// this column up to widthStatusMax (boardColumns), and whatever still
+	// does not fit wraps onto the row's further lines rather than being cut
+	// (task 050). It is not wider by default because this column is
 	// affordable only on a board with room to spare, which is the deal it is
 	// admitted on.
 	widthStatus = 28
 	minTitle    = 16
-	// minTitleWithStatus is the title width below which the status column is
-	// not worth its cells. minTitle alone is the wrong gate for it: a
-	// 120-column board is the common case, and admitting the status there
-	// would take a 50-cell title down to 20 — still "legal", and still a
-	// board whose titles no longer identify anything.
+	// maxTitle is two facts at one value, because they are the same fact: the
+	// ceiling on the title column, and the title width below which the status
+	// column is not worth its cells.
 	//
-	// Set high enough that the column is genuinely a wide-terminal luxury,
-	// and — deliberately — high enough that it cannot eat the width a grouped
-	// board frees by dropping PROJECT and WORKFLOW. That width was recorded
-	// as going to the title (see columnsFor), and a new column quietly
-	// spending it would overturn that decision rather than add to it. At
-	// every width, a grouped board's title stays strictly wider than a flat
-	// board's.
-	minTitleWithStatus = 64
+	// As a ceiling (task 050 decision 1): the title is the only flexible
+	// column, so without one it takes every cell a wide terminal offers —
+	// 100 of them at 200 columns — while STEP is still cutting `3/7 green ·
+	// loop 4/10` at widthStepLong and STATUS is still cutting a clause at
+	// widthStatus. Past this width a title is mostly trailing blanks, so
+	// boardColumns spends the surplus on those two first and gives back only
+	// what neither has an appetite for.
+	//
+	// As the status column's gate it is the old minTitleWithStatus at the
+	// same value, which leaves columnsFor byte-identical at every width.
+	// minTitle alone is the wrong gate: a 120-column board is the common
+	// case, and admitting the status there would take a 50-cell title down to
+	// 20 — still "legal", and still a board whose titles no longer identify
+	// anything. Set high enough, too, that the column cannot eat the width a
+	// grouped board frees by dropping PROJECT and WORKFLOW.
+	//
+	// Amended 2026-08-29 (task 050 decision 1): task 036 decision 9 recorded
+	// that a grouped board's title stays *strictly* wider than a flat board's
+	// at every width. A ceiling cannot keep that — above it both boards'
+	// titles are equal — so the invariant is now that a grouped board is
+	// never worse off: the width it frees is still spent on the row, it just
+	// lands wherever the allocation order below puts it. The reasoning that a
+	// *new column* must not silently re-spend that width is untouched, which
+	// is what this gate still enforces.
+	maxTitle = 64
+	// widthStepMax and widthStatusMax are how far a surplus may take those
+	// two columns before the rest goes back to the title (task 050 decision
+	// 3). The step's ceiling fits `3/7 green · loop 4/10` — 21 cells — with
+	// room for a step name longer than the sample's; the status' is a couple
+	// of the board's lines of prose, past which wrapping is the better answer
+	// than a column nothing else can see around.
+	widthStepMax   = 32
+	widthStatusMax = 96
 )
 
 // maxBoardColumns is every column the widest board can carry — the size a row
@@ -125,9 +151,11 @@ func (s columnSet) titleWidth(width int) int { return width - s.fixedWidth() }
 // what a task is doing.
 // A grouped level costs no column: the header above the rows already names
 // it, and repeating it down every row of the group is fourteen characters
-// spent saying what the reader just read. The width that frees goes to the
-// title, which is where a grouped board needs it — the titles are indented
-// under their headers.
+// spent saying what the reader just read. The width that frees is spent on
+// the row — first on the title, which is where a grouped board needs it
+// because the titles are indented under their headers, and then, once the
+// title has reached maxTitle, on STEP and STATUS in that order (boardColumns,
+// task 050 decision 3).
 // The marker column is outside the shedding order entirely: it is three cells
 // wide with its padding, it exists only while a selection does, and it is the
 // one column whose absence would make the keys lie about what they act on.
@@ -145,7 +173,7 @@ func columnsFor(width int, g grouping, marking bool) columnSet {
 	// something every board pays for. Anything that clears this gate has room
 	// to spare; anything that does not renders exactly as it did before the
 	// column existed.
-	if set.titleWidth(width) < minTitleWithStatus {
+	if set.titleWidth(width) < maxTitle {
 		set.status = false
 	}
 	for set.titleWidth(width) < minTitle {
@@ -169,14 +197,43 @@ func columnsFor(width int, g grouping, marking bool) columnSet {
 	return set
 }
 
-// boardColumns builds the table columns for a terminal width, giving the
-// title whatever space the fixed columns leave.
+// boardColumns builds the table columns for a terminal width.
+//
+// The title takes whatever space the fixed columns leave, but only up to
+// maxTitle. Past that the surplus is spent in a fixed order — STEP to
+// widthStepMax, then STATUS to widthStatusMax, then the remainder back to the
+// title (task 050 decision 3). Those two are the columns whose content
+// demonstrably outgrows them; STATE is deliberately not among them, because
+// the recorded reason for keeping a hold's reason out of that cell is that
+// widening a column for a rare state costs every board the columns that shed
+// first (§15, task 036) — the wrap is what makes its overflow readable now.
+//
+// The give-back is not a softening of the ceiling, it is what stops the board
+// leaving dead cells: with STATUS gated off — the default grouping at 160
+// columns — STEP fills at +14 and nothing else has any appetite, so without
+// it twelve cells on the right would render blank. It only lets the title
+// exceed maxTitle once both other columns are full.
 func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSet) {
 	set := columnsFor(width, g, marking)
 	title := max(set.titleWidth(width), minTitle)
 	stepWidth := widthStepShort
 	if set.stepName {
 		stepWidth = widthStepLong
+	}
+	statusWidth := widthStatus
+	if surplus := title - maxTitle; surplus > 0 {
+		title = maxTitle
+		if set.stepName {
+			take := min(surplus, widthStepMax-stepWidth)
+			stepWidth += take
+			surplus -= take
+		}
+		if set.status {
+			take := min(surplus, widthStatusMax-statusWidth)
+			statusWidth += take
+			surplus -= take
+		}
+		title += surplus
 	}
 
 	cols := make([]table.Column, 0, maxBoardColumns)
@@ -202,7 +259,7 @@ func boardColumns(width int, g grouping, marking bool) ([]table.Column, columnSe
 		cols = append(cols, table.Column{Title: "COST", Width: widthCost})
 	}
 	if set.status {
-		cols = append(cols, table.Column{Title: "STATUS", Width: widthStatus})
+		cols = append(cols, table.Column{Title: "STATUS", Width: statusWidth})
 	}
 	return cols, set
 }

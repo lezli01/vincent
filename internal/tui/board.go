@@ -518,10 +518,12 @@ func travelDir(before, after int) int {
 	return 1
 }
 
-// skipHeaders steps the cursor off a group header, carrying on in the
+// skipHeaders steps the cursor off any row it may not rest on — a group
+// header, or the continuation of a wrapped row above it — carrying on in the
 // direction of travel and turning around at either end. Headers are labels:
-// resting on one would empty the detail panels and offer no actions, so j/k
-// pass over them as if they were not rows at all.
+// resting on one would empty the detail panels and offer no actions. A
+// continuation is the same task as the line above it, so resting there would
+// make j and k take two or three presses to move one task.
 //
 // It moves with MoveUp/MoveDown rather than SetCursor for the reason
 // clickRow does: the table's scroll offset is private and only those two keep
@@ -532,7 +534,7 @@ func (b *board) skipHeaders(dir int) {
 	// loop between two headers.
 	for range rows {
 		i := b.tbl.Cursor()
-		if i < 0 || i >= len(rows) || !rows[i].header {
+		if i < 0 || i >= len(rows) || rows[i].selectable() {
 			return
 		}
 		if dir > 0 {
@@ -583,9 +585,14 @@ func (b *board) clickRow(line int) {
 	// alone rather than jumping to a task the click did not name. The clicked
 	// row is the cursor's plus the delta — a body line cannot be indexed into
 	// the row slice directly, because the table may be scrolled.
-	if b.rowAt(b.tbl.Cursor() + delta).header {
+	target := b.rowAt(b.tbl.Cursor() + delta)
+	if target.header {
 		return
 	}
+	// A click on the second or third line of a wrapped row names the row it
+	// continues (task 050): the cursor only ever rests on a row's first line,
+	// so the move is shortened to land there.
+	delta -= target.line
 	switch {
 	case delta > 0:
 		b.tbl.MoveDown(delta)
@@ -618,15 +625,44 @@ func (b *board) wheelMove(delta int) {
 	b.rememberSelection()
 }
 
-// rows is the table as it is rendered: filtered, sorted, and — under a
-// grouping — interleaved with group headers (boardgroup.go). Every index into
-// the table means an index into this slice.
+// rows is the table as it is rendered: filtered, sorted, — under a grouping —
+// interleaved with group headers (boardgroup.go), and expanded so a task that
+// wraps occupies one row per line. Every index into the table means an index
+// into this slice, which is the property the whole wrapping design is built
+// to keep: the cursor, the click math and bubbles' own paging all count rows.
 func (b *board) rows() []boardRow {
 	tasks := filterTasks(b.tasks, b.filter.Value())
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
 	sortTasks(sorted)
-	return groupRows(sorted, b.group)
+	rows := groupRows(sorted, b.group)
+	// Before the first render there is no width to wrap against, and a board
+	// laid out at a guessed one would place the cursor by rows that are not
+	// the rows about to be drawn.
+	if b.width <= 0 {
+		return rows
+	}
+	cols, set := boardColumns(b.width, b.group, b.hasMarks())
+	h := b.rowHeight(rows, cols, set)
+	if h <= 1 {
+		return rows
+	}
+	out := make([]boardRow, 0, len(rows)*h)
+	for _, r := range rows {
+		out = append(out, r)
+		if r.header {
+			// A group header is a label on one line at every height: it has
+			// nothing to wrap, and a header padded to three lines would put
+			// more air between the groups than the groups have rows.
+			continue
+		}
+		for line := 1; line < h; line++ {
+			cont := r
+			cont.line = line
+			out = append(out, cont)
+		}
+	}
+	return out
 }
 
 // rowAt is the row at a table index, or a zero row off either end.
@@ -645,7 +681,7 @@ func (b *board) visible() []apiclient.Task {
 	rows := b.rows()
 	out := make([]apiclient.Task, 0, len(rows))
 	for _, r := range rows {
-		if !r.header {
+		if r.selectable() {
 			out = append(out, r.task)
 		}
 	}
@@ -704,7 +740,7 @@ func (b *board) rememberSelection() {
 func (b *board) restoreSelection(rows []boardRow) {
 	if b.selectedID != 0 {
 		for i := range rows {
-			if !rows[i].header && rows[i].task.ID == b.selectedID {
+			if rows[i].selectable() && rows[i].task.ID == b.selectedID {
 				b.tbl.SetCursor(i)
 				return
 			}
@@ -747,7 +783,7 @@ func (b *board) render(width, height int) string {
 		b.tbl.SetRows(nil)
 	}
 	b.tbl.SetColumns(cols)
-	b.tbl.SetRows(b.rowsFor(rows, set))
+	b.tbl.SetRows(b.rowsFor(rows, cols, set))
 	b.tbl.SetWidth(b.width)
 	// Two lines of chrome above, plus the filter line when it is showing.
 	b.tbl.SetHeight(max(3, b.height-b.chromeLines()))
@@ -798,41 +834,147 @@ func (b *board) firstRowLine() int {
 	return n
 }
 
-// rowsFor renders the table's cells. It and boardColumns share one shape —
-// the same optional columns in the same order — and move together; a row that
-// disagrees with the column set indexes the table out of range.
-func (b *board) rowsFor(rows []boardRow, set columnSet) []table.Row {
+// boardCell is one cell of a task row before it is laid out: the plain text,
+// the style each of its lines takes once it has been wrapped, and whether it
+// wraps at all (task 050 decisions 6 and 8).
+type boardCell struct {
+	text  string
+	style lipgloss.Style
+	// wrap is false for the columns that keep truncating. ID, ELAPSED and
+	// COST cannot meaningfully overflow; PROJECT and WORKFLOW are identifiers
+	// used for scanning, which a 14-cell wrap makes unreadable — under width
+	// pressure they are shed instead, which is the answer the ladder already
+	// gives for them.
+	wrap bool
+	// indent prefixes every line of the cell, continuations included: a
+	// grouped board's titles are indented under their headers, and a
+	// continuation that lost the indent would hang out to the left of the
+	// title it belongs to.
+	indent string
+}
+
+// cellsFor is one task's cells in column order. It and boardColumns share one
+// shape — the same optional columns in the same order — and move together; a
+// row that disagrees with the column set indexes the table out of range.
+func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set columnSet) []boardCell {
+	cells := make([]boardCell, 0, maxBoardColumns)
+	plain := func(text string) boardCell { return boardCell{text: text} }
+	if set.mark {
+		// The glyph is a single cell that never wraps, so it lands on the
+		// row's first line and the continuations below it stay blank — which
+		// is the whole of "the marker belongs to the row, not to every line
+		// of it".
+		cells = append(cells, plain(b.markCell(t.ID)))
+	}
+	cells = append(cells, plain(strconv.FormatInt(t.ID, 10)))
+	if set.project {
+		cells = append(cells, plain(t.ProjectName))
+	}
+	if set.workflow {
+		cells = append(cells, plain(t.Workflow))
+	}
+	elapsed := "—"
+	if d, ok := t.Elapsed(now); ok {
+		elapsed = formatElapsed(d)
+	}
+	cells = append(cells,
+		boardCell{text: t.Title, wrap: true, indent: indent},
+		boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true},
+		boardCell{text: formatStep(t, set.stepName), wrap: true},
+		plain(elapsed),
+	)
+	if set.cost {
+		cells = append(cells, plain(formatCost(t.CostUSD)))
+	}
+	if set.status {
+		cells = append(cells, boardCell{text: formatStatus(t.StatusMessage), wrap: true})
+	}
+	return cells
+}
+
+// layoutCells wraps a task's cells to the column widths, returning each
+// cell's rendered lines in column order. A cell shorter than the row simply
+// has fewer lines; rowsFor blanks the rest.
+func layoutCells(cells []boardCell, cols []table.Column) [][]string {
+	out := make([][]string, len(cells))
+	for i, c := range cells {
+		var lines []string
+		if !c.wrap {
+			lines = []string{c.text}
+		} else {
+			width := 0
+			if i < len(cols) {
+				width = cols[i].Width
+			}
+			lines = wrapCellLines(c.text, width-ansi.StringWidth(c.indent), boardRowLines)
+		}
+		styled := make([]string, 0, len(lines))
+		for _, l := range lines {
+			if l == "" {
+				styled = append(styled, "")
+				continue
+			}
+			styled = append(styled, c.indent+c.style.Render(l))
+		}
+		out[i] = styled
+	}
+	return out
+}
+
+// rowHeight is how many lines every task row on the board takes: the tallest
+// wrapped row currently on screen, clamped to [1, boardRowLines] (task 050
+// decision 4).
+//
+// Uniform rather than per-row, because a fixed multiplier is what keeps the
+// row arithmetic — the cursor's, the click's, the viewport's — arithmetic
+// rather than a per-row lookup. A board where nothing overflows is 1 and
+// renders exactly as it did before rows could wrap.
+func (b *board) rowHeight(rows []boardRow, cols []table.Column, set columnSet) int {
+	now := b.now()
+	indent := strings.Repeat(groupIndent, len(b.group))
+	h := 1
+	for _, r := range rows {
+		if r.header {
+			continue
+		}
+		for _, lines := range layoutCells(b.cellsFor(r.task, now, indent, set), cols) {
+			h = max(h, len(lines))
+		}
+		if h >= boardRowLines {
+			return boardRowLines
+		}
+	}
+	return h
+}
+
+// rowsFor renders the table's cells, one table.Row per display line. A
+// continuation row carries the next line of each wrapping cell and a blank
+// for the rest, so it has the same cell count as the row it continues — a row
+// that disagrees with the column set indexes the table out of range.
+func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []table.Row {
 	now := b.now()
 	// Task titles sit under their headers, one indent per grouping level.
 	indent := strings.Repeat(groupIndent, len(b.group))
 	out := make([]table.Row, 0, len(rows))
+	var lines [][]string
 	for _, r := range rows {
 		if r.header {
 			out = append(out, groupHeaderRow(r, set))
+			lines = nil
 			continue
 		}
-		t := r.task
+		// Continuations follow their first line, so the layout is computed
+		// once per task and read down.
+		if r.line == 0 || lines == nil {
+			lines = layoutCells(b.cellsFor(r.task, now, indent, set), cols)
+		}
 		row := make(table.Row, 0, maxBoardColumns)
-		if set.mark {
-			row = append(row, b.markCell(t.ID))
-		}
-		row = append(row, strconv.FormatInt(t.ID, 10))
-		if set.project {
-			row = append(row, t.ProjectName)
-		}
-		if set.workflow {
-			row = append(row, t.Workflow)
-		}
-		elapsed := "—"
-		if d, ok := t.Elapsed(now); ok {
-			elapsed = formatElapsed(d)
-		}
-		row = append(row, indent+t.Title, renderBoardState(t), formatStep(t, set.stepName), elapsed)
-		if set.cost {
-			row = append(row, formatCost(t.CostUSD))
-		}
-		if set.status {
-			row = append(row, formatStatus(t.StatusMessage))
+		for _, cell := range lines {
+			if r.line < len(cell) {
+				row = append(row, cell[r.line])
+			} else {
+				row = append(row, "")
+			}
 		}
 		out = append(out, row)
 	}

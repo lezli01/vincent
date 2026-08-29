@@ -183,40 +183,54 @@ var stateStyles = map[string]lipgloss.Style{
 // colour alone so the distinction survives a monochrome terminal.
 const attentionBadge = "!"
 
-func renderState(state string) string {
-	label := state
+// stateLabel is a state as it reads before any style is applied.
+func stateLabel(state string) string {
 	if needsAttention(state) {
-		label = attentionBadge + " " + state
+		return attentionBadge + " " + state
 	}
-	if st, ok := stateStyles[state]; ok {
-		return st.Render(label)
-	}
-	return label
+	return state
 }
 
-// renderBoardState is the board's state cell. A queued task held by the
-// scheduler (§11) shows when it resumes — `queued → 14:20` — so it reads as
-// waiting on a clock rather than on a slot, which a bare `queued` cannot say.
+func renderState(state string) string { return applyStateStyle(state, stateLabel(state)) }
+
+// boardStateLabel is the board's state cell as plain text. A queued task held
+// by the scheduler (§11) shows when it resumes — `queued → 14:20` — so it
+// reads as waiting on a clock rather than on a slot, which a bare `queued`
+// cannot say.
 //
 // The reason itself is deliberately not in this cell: it does not fit
 // widthState, and widening the column for a rare state would cost every board
 // the columns that get shed first. The detail header, which has the width,
 // names it (renderDetailState).
-func renderBoardState(t apiclient.Task) string {
+//
+// Plain rather than styled because the board wraps this cell (task 050): the
+// text is wrapped first and each produced line styled after, so no wrapping
+// is ever ANSI-aware — the same order the output pane uses (v0 T4.16).
+// What no longer fits after wrapping is cut on the row's last line, so
+// `awaiting_children (2 blocked)` is readable on the board rather than only
+// in the detail view.
+func boardStateLabel(t apiclient.Task) string {
 	// A fan-out parent says what its subtree is doing, because its own state
 	// says nothing a reader can act on (task 014). A blocked lane is
 	// invisible in the task list by design (decision 13), and this is what
 	// pays for that.
 	if t.State == stateAwaitingChildren && t.Children != nil {
 		if label := t.Children.Summary(); label != "" {
-			return applyStateStyle(t.State, t.State+" ("+label+")")
+			return t.State + " (" + label + ")"
 		}
 	}
 	_, until, ok := t.Hold()
 	if !ok || until == nil {
-		return renderState(t.State)
+		return stateLabel(t.State)
 	}
-	return applyStateStyle(t.State, t.State+" → "+until.Local().Format("15:04"))
+	return t.State + " → " + until.Local().Format("15:04")
+}
+
+// renderBoardState is boardStateLabel with the state's colour applied — the
+// whole cell in one piece, for anything that wants the rendered form without
+// the board's line layout.
+func renderBoardState(t apiclient.Task) string {
+	return applyStateStyle(t.State, boardStateLabel(t))
 }
 
 // renderDetailState is the header form: the full `queued · usage limit →
@@ -270,15 +284,53 @@ func formatCost(c *float64) string {
 // the ordinary case for most step types and every workflow that has not
 // adopted the protocol, and a column of dashes reads as something missing.
 //
-// Truncated with an ellipsis rather than wrapped, because the table gives
-// every row one line. The whole message is on the attempt line in the detail
-// view, which has the width — the same division of labour renderBoardState
-// makes for a hold's reason.
+// The whole message, uncut: a board row is up to three lines tall now and the
+// cell wraps across them (task 050 decision 6), so the message is readable
+// here rather than only on the attempt line in the detail view. What still
+// does not fit at three lines is cut there, by wrapCellLines — the width this
+// used to truncate at is a column *base* now, not the width the cell renders
+// at, so this function has no width to cut against.
 func formatStatus(message *string) string {
 	if message == nil || *message == "" {
 		return ""
 	}
-	return ansi.Truncate(*message, widthStatus, "…")
+	return *message
+}
+
+// boardRowLines is the ceiling on a board row's height (task 050 decision 4).
+// Three: two lines is not enough for a status message at a narrow width, and
+// past three a board is a list of paragraphs rather than a table you scan.
+const boardRowLines = 3
+
+// wrapCellLines lays a cell's text out across a column, at most height lines,
+// with whatever is left over cut with an ellipsis on the last one — which is
+// what the table did to the whole cell before it wrapped.
+//
+// The text is plain, never styled: the style goes on each produced line
+// afterwards (task 050 decision 8), following the output pane's recorded
+// precedent (v0 T4.16). That keeps escape sequences out of the width
+// arithmetic entirely, so no wrapping here has to be ANSI-aware.
+func wrapCellLines(text string, width, height int) []string {
+	if text == "" || width <= 0 || height <= 0 {
+		return nil
+	}
+	// A cell is one run of text however the daemon spelled it: a newline
+	// inside a status message would otherwise become a line the row never
+	// budgeted for, and the table would render it into the row below.
+	if strings.ContainsAny(text, "\n\r\t") {
+		text = strings.Join(strings.Fields(text), " ")
+	}
+	if ansi.StringWidth(text) <= width {
+		return []string{text}
+	}
+	lines := strings.Split(ansi.Wrap(text, width, "-"), "\n")
+	if len(lines) <= height {
+		return lines
+	}
+	// Everything past the last line is rejoined and cut there, so the
+	// ellipsis says "there is more" rather than the row simply stopping.
+	rest := strings.Join(lines[height-1:], " ")
+	return append(lines[:height-1:height-1], ansi.Truncate(rest, width, "…"))
 }
 
 // formatStep renders k/n plus the step name when there is room. A snapshot

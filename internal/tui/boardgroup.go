@@ -117,6 +117,18 @@ type boardRow struct {
 	// header marks a group header; task is the zero value on one.
 	header bool
 	task   apiclient.Task
+	// line is which line of a wrapped task this row renders (task 050
+	// decision 5): 0 for the row itself, 1 and up for its continuations. A
+	// task occupies exactly one boardRow per line and a group header stays
+	// exactly one, which is what keeps line == row true — bubbles' table
+	// counts rows throughout its scroll model, so a multi-line row that was
+	// one table.Row would break paging, the height budget and the click math
+	// all at once.
+	//
+	// The continuation carries a copy of its task, so anything asking a row
+	// what it is on gets the same answer wherever in the block the cursor
+	// happens to be.
+	line int
 	// depth is the nesting level: 0 for an outermost header, len(grouping)
 	// for every task row.
 	depth int
@@ -127,6 +139,12 @@ type boardRow struct {
 	count     int
 	attention int
 }
+
+// selectable reports whether the cursor may rest on this row. A header is a
+// label and a continuation is the tail of the row above it: neither is a
+// thing a key acts on, so both are stepped over (board.skipHeaders) and
+// skipped by everything that walks tasks rather than lines.
+func (r boardRow) selectable() bool { return !r.header && r.line == 0 }
 
 // groupRows interleaves group headers into an already-sorted task list.
 // Groups appear in the order their first task does, so the band sort decides
@@ -236,7 +254,7 @@ const groupIndent = "  "
 // answer the ungrouped board gave.
 func firstTaskRow(rows []boardRow) int {
 	for i := range rows {
-		if !rows[i].header {
+		if rows[i].selectable() {
 			return i
 		}
 	}

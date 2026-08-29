@@ -153,6 +153,11 @@ const markGlyph = "✓"
 // markCell is the row's cell in the marker column. styleKey is reused rather
 // than duplicated: the glyph means the same thing a key hint does — this is the
 // thing the next press acts on.
+//
+// One cell, and one line: the marker column does not wrap (task 050 decision
+// 6), so on a row that does the glyph stays on its first line and the
+// continuations below are blank. A column of ticks running down a wrapped row
+// would read as three marked tasks rather than one.
 func (b *board) markCell(id int64) string {
 	if b.marks.has(id) {
 		return styleKey.Render(markGlyph)

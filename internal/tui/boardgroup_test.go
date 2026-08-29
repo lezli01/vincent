@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -224,19 +225,67 @@ func TestGroupedColumnsAreDropped(t *testing.T) {
 	if !one.workflow {
 		t.Error("grouping by project dropped the WORKFLOW column, which nothing names")
 	}
-	// The width a dropped column frees goes to the title, which is where a
-	// grouped board needs it: the titles are indented under their headers.
+	// The width a dropped column frees is spent on the row rather than lost:
+	// on the title first, which is where a grouped board needs it because the
+	// titles are indented under their headers, and then — once the title has
+	// reached maxTitle — on STEP and STATUS (task 050 decision 1, amending
+	// task 036 decision 9, which said "strictly wider" and could not survive
+	// a ceiling).
 	if both.titleWidth(160) <= full.titleWidth(160) {
-		t.Errorf("grouped title width %d, flat %d — grouping must not cost title space",
+		t.Errorf("grouped remainder %d, flat %d — grouping must not cost row space",
 			both.titleWidth(160), full.titleWidth(160))
 	}
+	for _, width := range []int{120, 160, 200, 240, 400} {
+		flatCols, _ := boardColumns(width, nil, false)
+		groupedCols, _ := boardColumns(width, grouping{groupProject, groupWorkflow}, false)
+		flatSpend, groupedSpend := flexibleWidth(flatCols), flexibleWidth(groupedCols)
+		if groupedSpend < flatSpend {
+			t.Errorf("width %d: grouped spends %d on TITLE/STEP/STATUS, flat %d — grouping must never be worse off",
+				width, groupedSpend, flatSpend)
+		}
+		if groupedTitle, flatTitle := colWidth(groupedCols, "TITLE"), colWidth(flatCols, "TITLE"); groupedTitle < flatTitle {
+			t.Errorf("width %d: grouped title %d, flat %d", width, groupedTitle, flatTitle)
+		}
+	}
+}
+
+// flexibleWidth is what a column set spends on the three columns a surplus
+// can reach: whatever grouping frees has to turn up in one of them.
+func flexibleWidth(cols []table.Column) int {
+	total := 0
+	for _, c := range cols {
+		switch c.Title {
+		case "TITLE", "STEP", "STATUS":
+			total += c.Width
+		}
+	}
+	return total
+}
+
+// colWidth is a named column's width, or zero when the width shed it.
+func colWidth(cols []table.Column, title string) int {
+	for _, c := range cols {
+		if c.Title == title {
+			return c.Width
+		}
+	}
+	return 0
 }
 
 // TestGroupedRowsMatchTheColumnCount: a row that disagrees with the column
 // set indexes the table out of range, which is a panic, not a rendering
 // glitch.
+// A continuation row is held to the same bar (task 050): it is the next line
+// of a wrapped row, and one that forgot a cell is the same panic — so the
+// fixture carries a task long enough to wrap at every width above the narrow
+// end.
 func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
-	b := groupedBoard(task(1, stateRunning, inProject("api"), inWorkflow("build")))
+	b := groupedBoard(
+		task(1, stateRunning, inProject("api"), inWorkflow("build")),
+		task(2, stateRunning, inProject("api"), inWorkflow("build"),
+			withTitle(strings.Repeat("word ", 30)),
+			withStatus(strings.Repeat("clause ", 30))),
+	)
 	// 240 is wide enough for the status column (task 036), which is the
 	// widest set a row is ever built at.
 	for _, width := range []int{40, 70, 90, 120, 200, 240} {
@@ -247,11 +296,20 @@ func TestGroupedRowsMatchTheColumnCount(t *testing.T) {
 			// cell, and a header that forgot it is the same panic.
 			for _, marks := range []markSet{nil, {1}} {
 				b.marks = marks
+				b.render(width, 30)
 				cols, set := boardColumns(width, g, b.hasMarks())
-				for _, row := range b.rowsFor(b.rows(), set) {
+				rows := b.rows()
+				for i, row := range b.rowsFor(rows, cols, set) {
 					if len(row) != len(cols) {
-						t.Fatalf("width %d, %s, marks=%v: row has %d cells, %d columns",
-							width, g.label(), marks, len(row), len(cols))
+						t.Fatalf("width %d, %s, marks=%v: row %d has %d cells, %d columns",
+							width, g.label(), marks, i, len(row), len(cols))
+					}
+				}
+				// A header is one line at every row height: a group broken
+				// across three would be more air than the group has rows.
+				for i, r := range rows {
+					if r.header && i+1 < len(rows) && rows[i+1].line != 0 {
+						t.Fatalf("width %d, %s: header at row %d grew a continuation", width, g.label(), i)
 					}
 				}
 			}

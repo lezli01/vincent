@@ -293,3 +293,77 @@ func TestRootMouseToggle(t *testing.T) {
 		t.Error("the mouse toggle is not in the help overlay")
 	}
 }
+
+// TestShellClickOnAWrappedRowSelectsIt re-derives the click math for a board
+// whose rows are more than one line tall (task 050 decision 5). A row is
+// still a line — a task simply owns three of them — so the click lands on the
+// row it points at, and pointing at the second or third line of a block
+// selects the task that block belongs to rather than the one below it.
+func TestShellClickOnAWrappedRowSelectsIt(t *testing.T) {
+	tasks := make([]apiclient.Task, 0, 4)
+	for id := int64(1); id <= 4; id++ {
+		tasks = append(tasks, task(id, stateRunning, withTitle(strings.Repeat("word ", 20))))
+	}
+	s, _ := newShellFixture(t, tasks...)
+	s.settle()
+	height := rowHeightOf(s.board.rows())
+	if height < 2 {
+		t.Fatalf("row height = %d at 120 columns; nothing wrapped, so this proves nothing", height)
+	}
+
+	lines := strings.Split(s.render(120, 37), "\n")
+	for _, want := range s.board.visible() {
+		first := lineOfTaskRow(t, lines, want.ID)
+		for offset := range height {
+			s.update(tea.MouseClickMsg{X: 10, Y: first + offset, Button: tea.MouseLeft})
+			s.render(120, 37)
+			if got, ok := s.board.selected(); !ok || got != want.ID {
+				t.Fatalf("clicking line %d of #%d's block (offset %d) selected #%d",
+					first+offset, want.ID, offset, got)
+			}
+			// The cursor rests on the row's first line however far down the
+			// block the click landed, which is what keeps the next j or k
+			// moving one task.
+			if rows := s.board.rows(); !rows[s.board.tbl.Cursor()].selectable() {
+				t.Fatalf("a click at offset %d parked the cursor on a continuation", offset)
+			}
+		}
+	}
+}
+
+// TestShellClickBelowWrappedRowsIsIgnored is the T3.8 finding held for tall
+// rows: the blank lines under a short table are still not rows, however many
+// lines each row above them takes.
+func TestShellClickBelowWrappedRowsIsIgnored(t *testing.T) {
+	s, _ := newShellFixture(t,
+		task(1, stateRunning, withTitle(strings.Repeat("word ", 20))),
+		task(2, stateRunning, withTitle(strings.Repeat("word ", 20))),
+	)
+	s.settle()
+	height := rowHeightOf(s.board.rows())
+	if height < 2 {
+		t.Fatalf("row height = %d; nothing wrapped, so this proves nothing", height)
+	}
+	before, ok := s.board.selected()
+	if !ok {
+		t.Fatal("fixture selected nothing")
+	}
+	box := s.lastBoxes[0]
+	firstRow := box.y + 1 + s.board.firstRowLine()
+
+	// Past both blocks, still inside the panel.
+	for _, offset := range []int{2*height + 1, 2*height + 3} {
+		s.update(tea.MouseClickMsg{X: 10, Y: firstRow + offset, Button: tea.MouseLeft})
+		s.render(120, 37)
+		if got, _ := s.board.selected(); got != before {
+			t.Fatalf("a click %d lines below the first row moved the selection to #%d", offset, got)
+		}
+	}
+	// The second task's block still selects, so the bound is not simply
+	// "ignore everything below the first row".
+	s.update(tea.MouseClickMsg{X: 10, Y: firstRow + height, Button: tea.MouseLeft})
+	s.render(120, 37)
+	if got, _ := s.board.selected(); got == before {
+		t.Fatal("clicking the second task's block selected nothing")
+	}
+}

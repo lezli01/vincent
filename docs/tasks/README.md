@@ -63,6 +63,7 @@ the living engineering specification records implementation contracts.
 | [047](047-cli-logs-and-transcripts.md) | `vincent daemon logs` and `vincent task transcript` | ✅ done (5/5) |
 | [048](048-cli-human-actions.md) | A command line for every §6 human action | ✅ done (6/6) |
 | [049](049-full-screen-task-workspace.md) | Board-only home and full-screen task workspace | ✅ done (5/5) |
+| [050](050-board-column-widths-and-wrapping.md) | Cap the board TITLE column and wrap overflowing cells | ✅ done (2/2) |
 
 ## How to add and update a task document
 
