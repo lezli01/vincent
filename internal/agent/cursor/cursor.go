@@ -215,6 +215,12 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 	// hand — the record would become a guess. A truthful record outranks an
 	// annoyance in another tool; the side effect is documented in the README.
 	args = append(args, "--model", model)
+	if spec.MCP != nil {
+		// --approve-mcps rides with the workspace file: without it a headless
+		// run stops on a trust prompt for the server vincent just configured,
+		// which is a hang rather than a question (§9.7).
+		args = append(args, "--approve-mcps")
+	}
 	// spec.Effort is deliberately dropped: cursor has no effort flag, and
 	// reasoning depth is selected through the model id (spec §9.7).
 	return args, nil
@@ -231,6 +237,14 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	args, err := buildArgs(spec)
 	if err != nil {
 		return nil, err
+	}
+	if spec.MCP != nil {
+		// Written before the process starts, because cursor reads it at
+		// startup, and removed in Wait. A crash between the two leaves it
+		// behind; §12.4 recovery is what sweeps that up.
+		if err := agent.WriteCursorMCPConfig(spec.WorkDir, spec.MCP); err != nil {
+			return nil, err
+		}
 	}
 	//nolint:gosec // path comes from config or PATH resolution by design.
 	cmd := exec.Command(path, args...)
@@ -256,6 +270,9 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		events:     make(chan agent.Event, 64),
 		readerDone: make(chan struct{}),
 		procDone:   make(chan struct{}),
+	}
+	if spec.MCP != nil {
+		r.mcpWorkDir = spec.WorkDir
 	}
 	go r.readLoop(stdout)
 	go func() {
@@ -289,6 +306,10 @@ type run struct {
 	waitOnce sync.Once
 	waitRes  agent.RunResult
 	waitErr  error
+
+	// mcpWorkDir is the worktree whose `.cursor/mcp.json` this run wrote, and
+	// which Wait removes. Empty when the run carried no MCP server.
+	mcpWorkDir string
 }
 
 // maxLineBytes bounds one stream line; tool_call payloads embed file contents
@@ -370,6 +391,12 @@ func (r *run) Wait() (agent.RunResult, error) {
 		err := r.cmd.Wait()
 		close(r.procDone)
 		r.proc.Release()
+		if r.mcpWorkDir != "" {
+			// Removal failure is not a run failure: the file is inert once
+			// its token is retired, and reporting it would fail a step that
+			// did its work. §12.4 recovery sweeps a leftover anyway.
+			_ = agent.RemoveCursorMCPConfig(r.mcpWorkDir)
+		}
 
 		var exitErr *exec.ExitError
 		if err != nil && !errors.As(err, &exitErr) {

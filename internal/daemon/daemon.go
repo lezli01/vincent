@@ -26,6 +26,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/notify"
 	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/scheduler"
@@ -281,6 +282,12 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 
 	worktrees := worktree.NewManager(git, dirs.Data)
+	// The §13.4 MCP server lives on the API server, which is built below,
+	// after the runner it has to serve. The holder is the join: an atomic
+	// pointer rather than a plain variable because the runner's goroutines
+	// read it and this one writes it, and -race is a CI gate on all three
+	// platforms.
+	var apiHolder atomic.Pointer[api.Server]
 	runnerDeps := taskrun.Deps{
 		Store:     st,
 		Config:    currentConfig,
@@ -291,6 +298,34 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		DataDir:   dirs.Data,
 		Logger:    logger,
 		Events:    broker,
+		// Wiring vincent's own agent steps to §13.4 (task 057 decision 10).
+		// `mcp.wire_steps` is read per step rather than captured, so a hot
+		// reload governs the next step the way the rest of §12.3 does.
+		MCPForStep: func(runID, taskID int64, stepID string) (*agent.MCPServer, func()) {
+			if !currentConfig().MCP.WireSteps {
+				return nil, nil
+			}
+			srv := apiHolder.Load()
+			if srv == nil || srv.MCP() == nil {
+				return nil, nil
+			}
+			sess, err := srv.MCP().OpenStep(runID, taskID, stepID)
+			if err != nil {
+				// A step that could not be given the tools still runs: the
+				// failure here is vincent's own bookkeeping, not the
+				// adapter refusing a capability, so it is not what
+				// `mcp_unsupported` means (§13.4).
+				logger.Warn("mcp step session not opened",
+					"task", taskID, "run", runID, "error", err)
+				return nil, nil
+			}
+			server := &agent.MCPServer{
+				Name:  mcp.ServerName,
+				URL:   "http://" + ln.Addr().String() + sess.URLPath(),
+				Token: sess.Secret,
+			}
+			return server, func() { srv.MCP().CloseStep(runID) }
+		},
 	}
 	runner := taskrun.New(runnerDeps)
 	// Transcript retention (§17): once at startup and every 24 h after. The
@@ -412,6 +447,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 			sched.Wake()
 		},
 	})
+	apiHolder.Store(srv)
 
 	if err := config.Watch(ctx, logger, dirs.Config, func(next config.Config) {
 		prev := current.Load()

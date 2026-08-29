@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -136,6 +137,22 @@ type Server struct {
 	// snaps memoizes parsed workflow snapshots for the task list's step
 	// columns; entries are immutable, so it needs no invalidation (§18).
 	snaps *snapshotCache
+	// mcp serves §13.4's Model Context Protocol endpoints from this same
+	// listener (task 057 decision 1). It is built here rather than by the
+	// daemon so it can be handed the pre-auth mux directly: a tool call is
+	// replayed in process against the very handler this method assembles,
+	// and re-presenting a token to it would be ceremony, not a check.
+	mcp *mcp.Server
+	// routes is the registered route table, in registration order. It exists
+	// so the MCP tool surface can be asserted against it (task 057) rather
+	// than maintained beside it.
+	routes []Route
+}
+
+// Route is one registered API route.
+type Route struct {
+	Method string
+	Path   string
 }
 
 // New assembles the server: routes wrapped in recover → log → auth
@@ -176,6 +193,18 @@ func New(deps Deps) *Server {
 // Handler exposes the fully-wrapped handler for tests.
 func (s *Server) Handler() http.Handler { return s.handler }
 
+// Routes returns the registered route table in registration order. It is the
+// source the §13.4 tool surface is asserted against (task 057).
+func (s *Server) Routes() []Route {
+	out := make([]Route, len(s.routes))
+	copy(out, s.routes)
+	return out
+}
+
+// MCP returns the §13.4 server, so the daemon can open and close a step's
+// per-step session around an agent run (task 057 decision 6).
+func (s *Server) MCP() *mcp.Server { return s.mcp }
+
 // Serve serves on ln until Shutdown; it returns http.ErrServerClosed then.
 func (s *Server) Serve(ln net.Listener) error {
 	if err := s.httpSrv.Serve(ln); err != nil {
@@ -195,6 +224,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) buildHandler() http.Handler {
 	mux := http.NewServeMux()
 	rt := &router{mux: mux, allowed: map[string][]string{}}
+	defer func() { s.routes = rt.routes }()
 	rt.handle(http.MethodGet, "/v1/health", s.handleHealth)
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
@@ -246,6 +276,28 @@ func (s *Server) buildHandler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
+	// §13.4's MCP endpoints ride the same mux, and so the same recover → log
+	// → auth chain (task 057 decision 1): loopback only, no TLS, the same
+	// bearer token, discovery through the same daemon.json. `/mcp` is the
+	// shared endpoint every client reaches; `/mcp/step/{run_id}` is the
+	// per-step one the daemon wires an agent step to, which authenticates its
+	// own run secret instead and is exempted in authMiddleware.
+	//
+	// The MCP server is handed `mux`, not the wrapped handler: a tool call
+	// replayed in process has already been authenticated at the endpoint it
+	// arrived on. Passing the wrapped handler would make every tool call
+	// re-present a token this process just checked.
+	s.mcp = mcp.New(mcp.Deps{
+		Handler: mux,
+		Logger:  s.deps.Logger,
+		Broker:  s.deps.Broker,
+		Store:   s.deps.Store,
+		Config:  s.deps.Config,
+		Version: version.Version(),
+	})
+	mux.Handle("/mcp", s.mcp.Handler())
+	mux.Handle("/mcp/", s.mcp.Handler())
+	mux.Handle(mcp.StepPathPrefix+"{run_id}", s.mcp.StepHandler())
 	var h http.Handler = mux
 	h = s.authMiddleware(h)
 	h = s.logMiddleware(h)
@@ -259,9 +311,11 @@ func (s *Server) buildHandler() http.Handler {
 type router struct {
 	mux     *http.ServeMux
 	allowed map[string][]string
+	routes  []Route
 }
 
 func (rt *router) handle(method, path string, h http.HandlerFunc) {
+	rt.routes = append(rt.routes, Route{Method: method, Path: path})
 	if len(rt.allowed[path]) == 0 {
 		rt.mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 			allow := strings.Join(rt.allowed[path], ", ")

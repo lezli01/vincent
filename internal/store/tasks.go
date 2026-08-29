@@ -18,7 +18,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, github_pull_json,
-	workflow_origin_json,
+	workflow_origin_json, created_by_task_id,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -186,7 +186,7 @@ func insertTaskTx(
 			base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
 			state, current_step, block_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
-			github_pull_json, workflow_origin_json,
+			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
@@ -194,7 +194,7 @@ func insertTaskTx(
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
-		pullJSON, originJSON,
+		pullJSON, originJSON, t.CreatedByTaskID,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -889,6 +889,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		laneOrder                      sql.NullInt64
 		githubIssue, githubPull        sql.NullString
 		workflowOrigin                 sql.NullString
+		createdBy                      sql.NullInt64
 		created, updated               string
 		started, finished, archived    sql.NullString
 	)
@@ -899,6 +900,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue, &githubPull, &workflowOrigin,
+		&createdBy,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -909,6 +911,10 @@ func scanTask(r rowScanner) (*Task, error) {
 	if parentStep.Valid {
 		idx := int(parentStep.Int64)
 		t.ParentStepIndex = &idx
+	}
+	if createdBy.Valid {
+		id := createdBy.Int64
+		t.CreatedByTaskID = &id
 	}
 	t.LaneID = laneID.String
 	t.LaneOrder = int(laneOrder.Int64)

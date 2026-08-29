@@ -114,6 +114,7 @@ agents:
 		// and stays on through a config that overrides everything else, which
 		// is what "opt-out" has to mean for it to be true.
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
+		MCP:    MCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
 		TUI:    TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +61,17 @@ func (r *Runner) runAgentStep(
 	runCtx, cancelCause := context.WithCancelCause(ctx)
 	defer cancelCause(nil)
 
+	// §13.4's per-step endpoint (task 057): minted here so its secret lives
+	// exactly as long as the attempt, and released on every exit path.
+	var mcpSrv *agent.MCPServer
+	if r.deps.MCPForStep != nil {
+		srv, release := r.deps.MCPForStep(run.ID, env.task.ID, env.step.ID)
+		if release != nil {
+			defer release()
+		}
+		mcpSrv = srv
+	}
+
 	handle, err := adapter.Start(runCtx, agent.RunSpec{
 		Prompt:         prompt,
 		WorkDir:        env.task.WorktreePath,
@@ -83,6 +95,7 @@ func (r *Runner) runAgentStep(
 		// reach them. There is no step-level `env:` here: `env:` is a
 		// command-step field (§8.1).
 		Env: commandEnv(r.childEnv(), rc, nil),
+		MCP: mcpSrv,
 	})
 	if err != nil {
 		tr.Note("error", map[string]any{"error": err.Error()})
@@ -91,8 +104,14 @@ func (r *Runner) runAgentStep(
 		// adapter (§9.4); saying so keeps the user from reinstalling a CLI
 		// that is present and working.
 		reason := ReasonAgentUnavailable
-		if errors.Is(err, agent.ErrRestrictedUnsupported) {
+		switch {
+		case errors.Is(err, agent.ErrRestrictedUnsupported):
 			reason = ReasonRestrictedUnsupported
+		case errors.Is(err, agent.ErrMCPUnsupported):
+			// Loud rather than silent (§13.4, decision 8): a step wired to
+			// the vincent tools that cannot have them has not run correctly,
+			// even if the CLI would happily start without them.
+			reason = ReasonMCPUnsupported
 		}
 		return stepOutcome{state: store.StepFailed, reason: reason}
 	}
@@ -110,7 +129,7 @@ func (r *Runner) runAgentStep(
 			"permission_mode": string(resolvePermission(env.wf, env.step)),
 			"on_input":        string(onInput),
 			"workdir":         env.task.WorktreePath,
-			"argv":            handle.Argv(),
+			"argv":            redactMCPToken(handle.Argv(), mcpSrv),
 			"timeout":         timeout.String(),
 			"attempt":         run.Attempt,
 		})
@@ -751,6 +770,23 @@ func commandEnv(base []string, rc workflow.RenderContext, stepEnvVars map[string
 	out = append(out, workflow.Env(rc)...)
 	for k, v := range stepEnvVars {
 		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+// redactMCPToken removes the §13.4 per-step bearer token from the argv the
+// §12.3 debug record writes. claude carries its MCP configuration inline on
+// the command line (§9.2), and a debug transcript is something people paste
+// into issues — so the one place vincent copies that argv is the one place it
+// has to be scrubbed. The token is short-lived and loopback-only, which bounds
+// the cost; it does not make publishing it fine.
+func redactMCPToken(argv []string, srv *agent.MCPServer) []string {
+	if srv == nil || srv.Token == "" {
+		return argv
+	}
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		out[i] = strings.ReplaceAll(a, srv.Token, "[redacted]")
 	}
 	return out
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -90,7 +91,10 @@ func TestBuildArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildArgs(tt.spec, tt.inputMode)
+			got, err := buildArgs(tt.spec, tt.inputMode)
+			if err != nil {
+				t.Fatalf("buildArgs: %v", err)
+			}
 			if strings.Join(got, " ") != strings.Join(tt.want, " ") {
 				t.Errorf("buildArgs = %q, want %q", got, tt.want)
 			}
@@ -294,5 +298,66 @@ func TestRespondNoPending(t *testing.T) {
 func TestCuratedInputSupportIsDetected(t *testing.T) {
 	if got := New(nil).Curated().InputSupport; got != agent.InputDetected {
 		t.Errorf("InputSupport = %q, want %q", got, agent.InputDetected)
+	}
+}
+
+// TestBuildArgsMCP covers task 057 decision 8's claude half: the server rides
+// inline on --mcp-config, and --strict-mcp-config rides with it so the user's
+// own servers never leak into a vincent step.
+func TestBuildArgsMCP(t *testing.T) {
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:7777/mcp/step/9", Token: "s3cret"}
+	got, err := buildArgs(agent.RunSpec{PermissionMode: agent.FullAuto, MCP: srv}, false)
+	if err != nil {
+		t.Fatalf("buildArgs: %v", err)
+	}
+	i := slices.Index(got, "--mcp-config")
+	if i < 0 || i+1 >= len(got) {
+		t.Fatalf("argv = %q, want a --mcp-config with a value", got)
+	}
+	if !slices.Contains(got, "--strict-mcp-config") {
+		t.Errorf("argv = %q, want --strict-mcp-config beside --mcp-config", got)
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(got[i+1]), &cfg); err != nil {
+		t.Fatalf("--mcp-config value is not JSON: %v (%s)", err, got[i+1])
+	}
+	entry, ok := cfg.Servers["vincent"]
+	if !ok {
+		t.Fatalf("--mcp-config = %s, want a `vincent` server", got[i+1])
+	}
+	if entry.Type != "http" || entry.URL != srv.URL {
+		t.Errorf("server = %+v, want type http at %s", entry, srv.URL)
+	}
+	if entry.Headers["Authorization"] != "Bearer s3cret" {
+		t.Errorf("Authorization header = %q, want the run secret", entry.Headers["Authorization"])
+	}
+}
+
+// TestBuildArgsNoMCP is the `mcp.wire_steps: false` half: a spec with no
+// server produces no MCP flag at all.
+func TestBuildArgsNoMCP(t *testing.T) {
+	got, err := buildArgs(agent.RunSpec{PermissionMode: agent.FullAuto}, false)
+	if err != nil {
+		t.Fatalf("buildArgs: %v", err)
+	}
+	for _, a := range got {
+		if strings.Contains(a, "mcp") {
+			t.Fatalf("argv = %q, want nothing about MCP", got)
+		}
+	}
+}
+
+// TestRestrictedToolsCarryVincent covers decision 9: a restricted step sees
+// the vincent tools, because a tool list every call is denied against is worse
+// than no tool list.
+func TestRestrictedToolsCarryVincent(t *testing.T) {
+	if !strings.Contains(restrictedTools, "mcp__vincent__*") {
+		t.Errorf("restrictedTools = %q, want mcp__vincent__* in it", restrictedTools)
 	}
 }

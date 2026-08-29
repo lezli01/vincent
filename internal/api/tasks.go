@@ -14,6 +14,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -581,6 +582,16 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		AgentOverride:    agentOverride,
 		State:            store.TaskQueued,
 		GitHubIssue:      issue,
+	}
+	// §13.4 provenance and its bounds (task 057 decision 7). Both only apply
+	// to a task an agent step created over MCP; every other caller leaves
+	// created_by_task_id NULL and is bounded by nothing new.
+	if creator, viaMCP := mcp.CreatorTaskID(ctx); viaMCP {
+		if msg := s.checkMCPBounds(ctx, creator); msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		t.CreatedByTaskID = &creator
 	}
 	if req.Description != nil {
 		t.Description = *req.Description
@@ -1259,4 +1270,45 @@ func timePtr(t *time.Time) *string {
 	}
 	v := t.UTC().Format(time.RFC3339)
 	return &v
+}
+
+// checkMCPBounds enforces `mcp.max_depth` and `mcp.max_tasks` on the chain the
+// creating task belongs to (§12.3, §13.4 — task 057 decision 7). It returns
+// the refusal message, or "" to proceed.
+//
+// Enforced at creation, like §7.6's fan-out bounds and §7.9's include bound,
+// and for the same reason: the cheapest moment to refuse a runaway is before
+// the worktree exists. What is different is that the chain it walks is not in
+// any snapshot — it is discovered one insert at a time, which is exactly why
+// neither existing bound covers it.
+func (s *Server) checkMCPBounds(ctx context.Context, creator int64) string {
+	cfg := s.deps.Config()
+	// +1 for the task about to be inserted: the ancestry is the chain behind
+	// the creator, and the creator itself is a level.
+	ancestors, err := s.deps.Store.MCPAncestry(ctx, creator, cfg.MCP.MaxDepth+2)
+	if err != nil {
+		s.deps.Logger.Warn("walk mcp ancestry", "task", creator, "error", err)
+		return ""
+	}
+	depth := len(ancestors) + 1
+	if depth >= cfg.MCP.MaxDepth {
+		return fmt.Sprintf(
+			"mcp.max_depth is %d and task %d is already %d levels deep in MCP-created tasks",
+			cfg.MCP.MaxDepth, creator, depth)
+	}
+	root := creator
+	if len(ancestors) > 0 {
+		root = ancestors[len(ancestors)-1]
+	}
+	n, err := s.deps.Store.MCPChainSize(ctx, root)
+	if err != nil {
+		s.deps.Logger.Warn("count mcp chain", "task", root, "error", err)
+		return ""
+	}
+	if n >= cfg.MCP.MaxTasks {
+		return fmt.Sprintf(
+			"mcp.max_tasks is %d and the MCP creation chain rooted at task %d already holds %d",
+			cfg.MCP.MaxTasks, root, n)
+	}
+	return ""
 }

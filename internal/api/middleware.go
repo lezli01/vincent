@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/lezli01/vincent/internal/mcp"
 )
 
 // healthPath is exempt from auth (spec §13.1) and logged at debug so status
@@ -17,6 +19,16 @@ const healthPath = "/v1/health"
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == healthPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// §13.4's per-step endpoint carries a secret minted for one step run,
+		// not the daemon token (task 057 decision 6), so it authenticates
+		// itself. It is exempted here rather than accepting both tokens: a
+		// step endpoint that also took the daemon token would let any client
+		// impersonate a running step, and the wait tool's deadlock refusal
+		// reads that identity.
+		if strings.HasPrefix(r.URL.Path, mcp.StepPathPrefix) {
 			next.ServeHTTP(w, r)
 			return
 		}

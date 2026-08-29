@@ -48,6 +48,18 @@ const (
 	// the backstop for exactly that — running a step full-auto because
 	// restricting was unavailable would invert the choice the step made.
 	ReasonRestrictedUnsupported = "restricted_unsupported"
+	// ReasonMCPUnsupported is an agent step whose adapter — or whose
+	// installed CLI version — cannot carry the §13.4 MCP server the daemon
+	// wired for it (task 057 decision 8).
+	//
+	// It fails the step rather than running without the tools, which is a
+	// deliberate departure from the standing rule that a capability an
+	// adapter lacks is stated in §9.x and ignored at run time: a workflow
+	// whose prompt depends on the vincent tools would otherwise burn an agent
+	// run producing work premised on a channel that was never there. A user
+	// who wants the old behaviour has `mcp.wire_steps: false`, which is one
+	// line and turns the wiring off everywhere.
+	ReasonMCPUnsupported = "mcp_unsupported"
 	// ReasonTranscriptLimit is an attempt whose transcript passed
 	// `transcript_max_bytes` (§12.3, §18). The run is killed rather than
 	// allowed to fill the disk; the partial transcript is kept, because the

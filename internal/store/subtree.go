@@ -204,3 +204,58 @@ func (s *Store) EmitChildrenChanged(ctx context.Context, childID int64, toState 
 	}
 	return nil
 }
+
+// EventTaskCreatedByChanged does not exist, deliberately: MCP provenance is
+// written once at insert and never changes, so there is nothing to emit.
+
+// MCPAncestry returns the chain of tasks that created taskID over MCP, nearest
+// creator first (§13.4, task 057 decision 7). The task itself is not in it.
+//
+// It walks `created_by_task_id` rather than `parent_task_id`, in the ancestor
+// direction, which is the one idx_tasks_created_by exists for. The recursion
+// is bounded by `mcp.max_depth` at creation, so a chain this walks is a chain
+// something already refused to make longer; the LIMIT is the backstop for a
+// database that arrived from somewhere else.
+func (s *Store) MCPAncestry(ctx context.Context, taskID int64, limit int) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		WITH RECURSIVE chain(id, creator) AS (
+			SELECT id, created_by_task_id FROM tasks WHERE id = ?
+			UNION ALL
+			SELECT t.id, t.created_by_task_id FROM tasks t JOIN chain ON t.id = chain.creator
+		)
+		SELECT id FROM chain WHERE id != ? LIMIT ?`, taskID, taskID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("mcp ancestry of task %d: %w", taskID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan mcp ancestor: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mcp ancestry of task %d: %w", taskID, err)
+	}
+	return out, nil
+}
+
+// MCPChainSize counts every task in the MCP creation chain rooted at the
+// ultimate creator of taskID — ancestors, the task itself, and everything they
+// or their descendants created. It is what `mcp.max_tasks` bounds.
+func (s *Store) MCPChainSize(ctx context.Context, rootID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		WITH RECURSIVE tree(id) AS (
+			SELECT id FROM tasks WHERE id = ?
+			UNION
+			SELECT t.id FROM tasks t JOIN tree ON t.created_by_task_id = tree.id
+		)
+		SELECT COUNT(*) FROM tree`, rootID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("mcp chain size of task %d: %w", rootID, err)
+	}
+	return n, nil
+}

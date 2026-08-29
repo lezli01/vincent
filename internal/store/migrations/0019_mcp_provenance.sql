@@ -1,0 +1,29 @@
+-- 0019_mcp_provenance: which task's agent created this one through MCP
+-- (task 057 decision 7, spec §13.4/§14).
+--
+-- A step's agent can create a task whose step runs an agent that creates a
+-- task, and the depth of that is discovered at run time. Neither §7.6's
+-- `fan_out.max_depth`/`max_tasks` nor §7.9's `include.max_depth` covers it:
+-- both are creation-time checks over a static snapshot, and this chain has no
+-- snapshot to check. `mcp.max_depth` and `mcp.max_tasks` bound it instead, by
+-- walking this column with a recursive CTE the way subtree.go already walks
+-- `parent_task_id`.
+--
+-- It is deliberately **not** `parent_task_id`, and reusing that column was
+-- rejected rather than overlooked. `store/subtree.go` counts children by
+-- `parent_task_id` for the `awaiting_children` join, and `store.ListTasks`'s
+-- ChildrenExclude filters roots by it. A task an agent created out of band and
+-- placed there would make its creator's `fan_out` step wait on a lane it never
+-- spawned — a live step joining on work it does not know about, which is worse
+-- than the duplicated column.
+--
+-- NULL is every task created by a human, by the CLI, by the TUI, or as a
+-- `fan_out` lane: provenance is a fact about the MCP path only, so a daemon
+-- with no MCP traffic has this NULL on every row it writes.
+--
+-- The index exists because the CTE walks *ancestors* — child → creator — and
+-- that direction is the primary key's, not this column's. It is the reverse
+-- direction, creator → created, that needs one: `mcp.max_tasks` counts a whole
+-- chain, and idx_tasks_parent's precedent is exactly this.
+ALTER TABLE tasks ADD COLUMN created_by_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL; -- NULL = not created through MCP
+CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by_task_id);

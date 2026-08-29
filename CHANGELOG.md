@@ -61,6 +61,42 @@ list with the user-facing context a commit subject cannot carry.
   It sends nothing identifying — no token, no telemetry, no machine or install
   identifier. Applying an update is never automatic.
 
+- **The daemon speaks MCP, so an AI agent can drive vincent directly.** `POST
+  /mcp` serves the Model Context Protocol on the same loopback listener as the
+  REST API and behind the same bearer token — no second listener, no second auth
+  story. Point any MCP client at `http://127.0.0.1:{port}/mcp` and it gets the
+  whole API as tools, with discovery, argument schemas and typed errors instead
+  of hand-rolled curl. The tool surface *is* the route table, because a call is
+  dispatched by replaying it against the same handler `/v1` uses: a `409` still
+  carries `details.state`, field bounds still name the field and the limit, and
+  `Idempotency-Key` still works. **Five routes are deliberately not tools** —
+  `daemon/stop`, `daemon/backup`, `DELETE /v1/projects/{id}`, `maintenance/gc`
+  and `doctor/fix` — because an agent has no business stopping or reconfiguring
+  the daemon supervising it.
+- **`task_wait`, so following a run does not mean polling.** One blocking call
+  returns when a task reaches `done`, `aborted`, `archived`, `awaiting_input`,
+  `blocked` or `awaiting_gate`, or when its timeout elapses (5 minutes by
+  default, hard ceiling 30). Step transitions stream as MCP progress
+  notifications, and the result is complete for a client that drops every one of
+  them. A step that waits on a task which cannot start while that step holds its
+  concurrency slot gets an immediate `would_deadlock` error rather than hanging.
+- **Vincent's own agent steps get the vincent tools, with nothing to
+  configure.** The daemon registers a per-step MCP endpoint with the agent CLI
+  it spawns, so a step can file follow-up work, read a sibling lane's
+  transcript, or answer a gate. On by default; `mcp.wire_steps: false` turns it
+  off. Each adapter carries it its own way — claude on `--mcp-config` with
+  `--strict-mcp-config`, codex on `-c mcp_servers.…` overrides with the token in
+  its environment, cursor via a `.cursor/mcp.json` written into the task
+  worktree for the duration of the run and removed after (your global
+  `~/.cursor/mcp.json` is never touched). An adapter that cannot carry one fails
+  the step with `mcp_unsupported` rather than running an agent that silently has
+  no tools.
+- **`mcp:` in `config.yaml`** — `wire_steps` (default `true`), and `max_depth`
+  (3) / `max_tasks` (32), which bound a chain of tasks created over MCP. A
+  step's agent can create a task whose step runs an agent that creates a task,
+  and that shape is discovered as it happens rather than declared, so neither
+  `fan_out`'s bounds nor `include`'s covered it.
+
 - **A live workflow graph on the task workspace.** A fifth tab, **Workflow**
   (`5`, or `tab` round to it), draws the workflow a task is running as a
   control-flow graph with its run state on it: which node is running, what
@@ -162,6 +198,13 @@ list with the user-facing context a commit subject cannot carry.
   renders exactly as it did before. Column widths are unchanged on a narrow
   board; wrapping applies at every width, because 80–120 columns is where cells
   were being cut worst. See [Using the TUI](docs/guides/tui.md#the-board).
+
+- **`permission_mode: restricted` does not restrict what a step does to
+  vincent.** Claude's restricted allow-list now carries `mcp__vincent__*` in
+  full, so a restricted step wired to the MCP server can create and cancel
+  tasks. Without it the step would have seen the whole tool list and been denied
+  every call, which is worse than not offering it. `restricted` bounds the
+  filesystem and the shell, and that is all it claims to bound.
 
 ### Fixed
 

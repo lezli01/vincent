@@ -29,7 +29,14 @@ const binaryName = "claude"
 // project code anyway (T1.7 decision). With input mode live, tools outside
 // this list surface as §7.4 permission requests (subject to on_input);
 // without it they degrade per §9.4 as before.
-const restrictedTools = "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(git:*)"
+//
+// `mcp__vincent__*` is in the list in full (task 057 decision 9). Without it a
+// restricted step wired to §13.4's server would see every vincent tool and be
+// denied every call — the worst of both, a tool list that is a lie. So
+// `restricted` bounds what a step does to the filesystem and the shell, not
+// what it does to vincent: a restricted step can create and cancel tasks. That
+// is stated in §9.4 and §16 because it is only defensible written down.
+const restrictedTools = "Read,Glob,Grep,Edit,Write,MultiEdit,Bash(git:*),mcp__vincent__*"
 
 // Probe timeouts bound the --version and --help subprocesses. Raised from
 // 10 s/15 s after a cold logon timed out three probes that all answered in
@@ -125,7 +132,7 @@ func probeVersion(ctx context.Context, path string) (string, error) {
 // never an argv element. inputMode adds the §7.4 control-protocol flags
 // (input.go) — enabled whenever the binary supports it, regardless of the
 // on_input policy, since deny-mode auto-answers still need the stream.
-func buildArgs(spec agent.RunSpec, inputMode bool) []string {
+func buildArgs(spec agent.RunSpec, inputMode bool) ([]string, error) {
 	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
 	if spec.PermissionMode == agent.Restricted {
 		args = append(args, "--allowedTools", restrictedTools)
@@ -141,7 +148,44 @@ func buildArgs(spec agent.RunSpec, inputMode bool) []string {
 	if spec.Effort != "" {
 		args = append(args, "--effort", spec.Effort)
 	}
-	return args
+	if spec.MCP != nil {
+		cfg, err := mcpConfig(spec.MCP)
+		if err != nil {
+			return nil, err
+		}
+		// --strict-mcp-config rides with it, always: without it the user's own
+		// `.mcp.json` and their global servers are loaded into a vincent step
+		// too, which is a step running with tools nobody in this repository
+		// chose and a config file vincent does not control (§9.2).
+		args = append(args, "--mcp-config", cfg, "--strict-mcp-config")
+	}
+	return args, nil
+}
+
+// mcpConfig renders §13.4's endpoint as claude's inline `--mcp-config` value.
+//
+// The token is on the command line, and that is a real cost rather than an
+// oversight: it is visible to `ps` for the life of the step, and it reaches the
+// §12.3 debug record, which is why that record redacts it. What bounds the cost
+// is what the token is — a secret minted for one step run, dead when the step
+// ends, and useful only against a loopback listener on this machine (§16).
+// claude offers no env-var indirection for an inline config, and the
+// alternative — writing a config file into the worktree — is the thing cursor
+// has to do and that §9.7 documents as a cost, not a preference.
+func mcpConfig(srv *agent.MCPServer) (string, error) {
+	b, err := json.Marshal(map[string]any{
+		"mcpServers": map[string]any{
+			srv.Name: map[string]any{
+				"type":    "http",
+				"url":     srv.URL,
+				"headers": map[string]string{"Authorization": "Bearer " + srv.Token},
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("render mcp config: %w", err)
+	}
+	return string(b), nil
 }
 
 // Start implements agent.Adapter. The prompt is written via stdin (Windows
@@ -161,8 +205,12 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	if version, verr := probeVersion(ctx, path); verr == nil {
 		inputMode = supportsInput(version)
 	}
+	args, err := buildArgs(spec, inputMode)
+	if err != nil {
+		return nil, err
+	}
 	//nolint:gosec // path comes from config or PATH resolution by design.
-	cmd := exec.Command(path, buildArgs(spec, inputMode)...)
+	cmd := exec.Command(path, args...)
 	cmd.Dir = spec.WorkDir
 	if spec.Env != nil {
 		cmd.Env = spec.Env
