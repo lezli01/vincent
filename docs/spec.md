@@ -4560,18 +4560,18 @@ filter, open picker or form, expansion, or graph. The split introduces no new
 daemon state and no capability that exists only at one size.
 
 ```
-┌─ Tasks ──────────────────────────────────────────────┐
-│  #12  api    add rate limiting   running   3/5  …    │
-│  #13  web    fix flaky test      ● gate    2/4  …    │
-│                                                       │
-└───────────────────────────────────────────────────────┘
+┌─ Tasks ────────────────────────────────────────────────────┐
+│  #12  api    add rate limiting   running   3/5  …          │
+│  #13  web    fix flaky test      ● gate    2/4  …          │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
  enter open · / filter                    : commands  ? help  q quit
 
-┌─ Task #12 ───────────────────────────────────────────┐
+┌─ Task #12 ─────────────────────────────────────────────────┐
 │ Steps & Attempts │ Task Details │ Output │ Diff │ Workflow │
-│  1 ✓ plan                                      1m2s   │
-│  2 ▸ implement                                 4m9s   │
-└───────────────────────────────────────────────────────┘
+│  1 ✓ plan                                      1m2s        │
+│  2 ▸ implement                                 4m9s        │
+└────────────────────────────────────────────────────────────┘
  tab views · ↑/↓ attempts · esc board      : commands  ? help  q quit
 ```
 

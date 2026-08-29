@@ -206,7 +206,10 @@ the inspector never edits anything.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-**Diff** gives the task's file-grouped git diff the entire view.
+**Diff** gives the task's file-grouped git diff the entire view. **Workflow**
+draws the workflow this task ran as a control-flow graph with its run state on
+it; it is documented beside the workflows screen's graph, under *Workflows*
+below.
 
 The header names the task's workflow and, in brackets, where that definition
 came from: `adhoc (built-in)`, `adhoc (project .vincent/workflows/adhoc.yaml)`,
@@ -299,7 +302,7 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
-| `[` | Back to the Output tab (`]` advances to Steps & Attempts) |
+| `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
 leaves it open. The mouse wheel scrolls whichever tab is on screen.
