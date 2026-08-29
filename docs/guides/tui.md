@@ -43,7 +43,8 @@ workspace has five full-view tabs — **Steps & Attempts**, **Task Details**,
 whole terminal. `tab` advances through them, `shift+tab` goes back, and `1`–`5`
 jump directly. `esc` returns to the board.
 
-New task, projects, workflows, and daemon are full-screen takeovers too. `esc`
+New task, projects, workflows, daemon, and — for GitHub projects — pull
+requests are full-screen takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
 **never quits**.
 
@@ -236,6 +237,24 @@ and the task's workflow-step snapshot. Its left sidebar selects one section at
 a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
 the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
 the inspector never edits anything.
+
+Its **GitHub pull request** section follows the captured issue and shows one of
+three things: the pull request linked to this task with its live state, the
+reason the integration is unusable, or — when nothing is linked — the offer to
+open one. Two keys work there, and both only reach a browser:
+
+| Key | Does |
+|---|---|
+| `o` | Open this task's pull request in a browser |
+| `P` | Open a pull request for this task's branch — the prefilled title and body are editable first, and nothing is sent to GitHub from here |
+
+`P` opens a small popup with the title and body vincent guessed from the task,
+both editable. `ctrl+s` opens GitHub's own new-pull-request page with whatever
+you left there; `esc` closes the popup and discards the draft. vincent builds
+that URL and never fetches it — nothing is created on GitHub until you press
+the button on GitHub's own page. Both keys are absent unless the project's
+GitHub integration is usable. Linking and unlinking live on the pull-requests
+screen below.
 
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
@@ -576,6 +595,34 @@ defaults and current workload on the right](../assets/tui-projects.png)
 | `d` | Remove it (asks first; its task rows go with it) |
 | `/` | Filter by name or path |
 | `ctrl+s` | Save, in the form |
+
+### Pull requests
+
+Every open pull request across every registered project whose `origin` is a
+github.com repository vincent can authenticate to, grouped by project. Each row
+carries the number, its state (`open`, `draft`, `closed` or `merged`), the
+title, the head branch, and the task that claims it — with `auto` when the
+daemon's reconciler matched it by head branch and `human` when somebody linked
+it by hand.
+
+The entry appears in the palette only when at least one project qualifies; with
+none, the screen is unreachable rather than empty. A project whose listing fails
+shows its reason on that group and does not hide the others. A reconciler tick
+that links or unlinks a pull request re-renders the screen with no keypress.
+
+| Key | Does |
+|---|---|
+| `enter` | Open the workspace of the task that claims this pull request |
+| `o` | Open the selected pull request in a browser |
+| `l` | Link it to a task in the same project |
+| `u` | Unlink it (asks first) |
+| `R` | Re-list every project |
+| `↑`/`↓` | Move the selection |
+| `/` | Filter by number, title, branch or project |
+
+`u` is a **sticky** refusal, not a reset: the daemon records that a human
+removed this link, and the reconciler will not re-apply it on its next tick.
+The confirmation says so.
 
 ### Workflows
 

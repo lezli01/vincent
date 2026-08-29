@@ -13,6 +13,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A pull-requests screen in the TUI, and a browser to open them in.** A new
+  takeover lists every open pull request across every registered project whose
+  `origin` is a github.com repository vincent can authenticate to, grouped by
+  project, with the task that claims each row and whether the daemon matched it
+  by head branch or a human linked it. `o` opens the selected one in a browser,
+  `enter` jumps to the claiming task's workspace, and `l`/`u` link and unlink —
+  `u` being the sticky refusal the reconciler will not undo, which the
+  confirmation says out loud. A project whose listing fails shows its reason
+  without hiding the others, and a reconciler tick re-renders the screen with no
+  keypress. The entry appears in the command palette only when at least one
+  project qualifies. The task workspace's **Task Details** tab gains a matching
+  **GitHub pull request** section: the linked pull request with its live state,
+  the reason the integration is unusable, or — with nothing linked — `P` to open
+  GitHub's own new-pull-request page with an editable prefill. vincent builds
+  that URL and never fetches it; nothing is created on GitHub from here.
+  Opening a URL uses `open`, `xdg-open` or the Windows shell handler, and says
+  so on screen when there is no browser to open — unlike the clipboard
+  fallback, which is silent by design.
+
 - **Vincent tells you when a newer release exists, and can install it.** The
   daemon asks GitHub once a day for the latest **stable** release, caches the
   answer and serves it on `GET /v1/update`; `vincent doctor` grows an `UPDATE`
