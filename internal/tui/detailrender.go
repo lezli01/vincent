@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -338,14 +339,18 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, styleDim.Render(indent+stepLabel(r)))
 			ids = append(ids, 0)
 		}
-		line := d.attemptLine(r, grouped || looped || repair)
+		attemptLines := d.attemptLines(r, grouped || looped || repair)
 		if r.ID == d.selectedRun {
 			cursorLine = len(lines)
-			line = styleSelected.Render(line)
+			for i := range attemptLines {
+				attemptLines[i] = styleSelected.Render(attemptLines[i])
+			}
 		}
-		lines = append(lines, line)
-		ids = append(ids, r.ID)
-		if summary := summaryLine(r, grouped || looped || repair); summary != "" {
+		for _, line := range attemptLines {
+			lines = append(lines, line)
+			ids = append(ids, r.ID)
+		}
+		for _, summary := range summaryLines(r, grouped || looped || repair, d.width) {
 			// The same run id, so clicking the continuation selects the
 			// attempt it belongs to rather than falling through to a focus
 			// click on nothing.
@@ -537,6 +542,34 @@ func stepLabel(r apiclient.StepRun) string {
 // tier deeper because its sub-step header is already at the attempt's usual
 // indent.
 func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
+	fields := d.attemptFields(r, indented)
+	if r.StatusMessage != nil && *r.StatusMessage != "" {
+		fields = append(fields, styleStatus.Render(statusGlyph+" "+*r.StatusMessage))
+	}
+	return strings.Join(fields, " ")
+}
+
+// attemptLines keeps compact metrics together where they fit, then gives the
+// step-authored status its own continuation. Besides being easier to scan,
+// that prevents an unbounded status from being the last field on an already
+// full row and relying on the frame to discard it.
+func (d *detail) attemptLines(r apiclient.StepRun, indented bool) []string {
+	fields := d.attemptFields(r, indented)
+	if d.width <= 0 {
+		return []string{d.attemptLine(r, indented)}
+	}
+
+	indent := timelineContinuationIndent(indented)
+	lines := wrapTimelineFields(fields, d.width, indent)
+	if r.StatusMessage != nil && strings.TrimSpace(*r.StatusMessage) != "" {
+		lines = append(lines, timelineContinuationLines(
+			*r.StatusMessage, statusGlyph, indent, d.width, 0, styleStatus,
+		)...)
+	}
+	return lines
+}
+
+func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 	mark := ""
 	if r.PromptOverride || r.RunOverride {
 		mark = " " + editedBadge
@@ -579,18 +612,29 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	if r.Agent != nil && *r.Agent != "" {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
 	}
-	// What the step said about itself (§5.4, task 036) goes last, and in its
-	// own style. It is deliberately *not* rendered beside failure_reason:
-	// the reason is the daemon's verdict, while this is free text the step
-	// chose — a step killed on `timeout` may be carrying a line it wrote
-	// thirty-five minutes earlier, and styling the two alike would present a
-	// stale self-report as a cause. Last, because it is the one field with no
-	// bound a reader can predict: when the pane is too narrow it is what the
-	// frame truncates, rather than the metrics beside it.
-	if r.StatusMessage != nil && *r.StatusMessage != "" {
-		fields = append(fields, styleStatus.Render(statusGlyph+" "+*r.StatusMessage))
+	return fields
+}
+
+func wrapTimelineFields(fields []string, width int, continuationIndent string) []string {
+	if len(fields) == 0 {
+		return nil
 	}
-	return strings.Join(fields, " ")
+	if width <= 0 {
+		return []string{strings.Join(fields, " ")}
+	}
+
+	lines := make([]string, 0, 2)
+	line := fields[0]
+	for _, field := range fields[1:] {
+		candidate := line + " " + field
+		if ansi.StringWidth(candidate) <= width {
+			line = candidate
+			continue
+		}
+		lines = append(lines, line)
+		line = continuationIndent + field
+	}
+	return append(lines, line)
 }
 
 func attemptStateGlyph(state string) string {
@@ -646,17 +690,68 @@ const statusGlyph = "»"
 // roughly double the height of a healthy timeline to restate what the output
 // pane is already showing for the one attempt the reader selected.
 //
-// One line, flattened. The full text is in the output pane and the
-// transcript; this is the sentence that decides whether to go there.
-func summaryLine(r apiclient.StepRun, indented bool) string {
+// The full text is in the output pane and transcript, so the timeline keeps a
+// short wrapped preview. Three physical rows are enough to make a failure
+// legible without letting a multi-thousand-character result consume the whole
+// task view (Task 78 is a real example of both extremes).
+const timelineSummaryMaxLines = 3
+
+func summaryLines(r apiclient.StepRun, indented bool, width int) []string {
 	if r.State == "succeeded" || strings.TrimSpace(r.ResultSummary) == "" {
-		return ""
+		return nil
 	}
-	indent := "       "
+	return timelineContinuationLines(
+		r.ResultSummary, "↳", timelineContinuationIndent(indented), width,
+		timelineSummaryMaxLines, styleDim,
+	)
+}
+
+func timelineContinuationIndent(indented bool) string {
 	if indented {
-		indent = "         "
+		return "         "
 	}
-	return styleDim.Render(indent + "↳ " + strings.Join(strings.Fields(r.ResultSummary), " "))
+	return "       "
+}
+
+// timelineContinuationLines flattens embedded whitespace, wraps words to the
+// available display width, and hard-wraps unbroken paths or hashes. limit == 0
+// means the full value is shown (used for the short live status message).
+func timelineContinuationLines(
+	text, glyph, indent string,
+	width, limit int,
+	style lipgloss.Style,
+) []string {
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		return nil
+	}
+	if width <= 0 {
+		return []string{style.Render(indent + glyph + " " + text)}
+	}
+
+	prefix := glyph + " "
+	prefixWidth := ansi.StringWidth(prefix)
+	bodyWidth := max(width-ansi.StringWidth(indent)-prefixWidth, 1)
+	wrapped := wrapTaskDetailText(text, bodyWidth)
+	truncated := limit > 0 && len(wrapped) > limit
+	if truncated {
+		wrapped = wrapped[:limit]
+		if bodyWidth == 1 {
+			wrapped[len(wrapped)-1] = "…"
+		} else {
+			wrapped[len(wrapped)-1] = ansi.Truncate(wrapped[len(wrapped)-1], bodyWidth-1, "") + "…"
+		}
+	}
+
+	lines := make([]string, len(wrapped))
+	for i, line := range wrapped {
+		linePrefix := prefix
+		if i > 0 {
+			linePrefix = strings.Repeat(" ", prefixWidth)
+		}
+		lines[i] = indent + style.Render(linePrefix+line)
+	}
+	return lines
 }
 
 func formatTokens(r apiclient.StepRun) string {

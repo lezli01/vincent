@@ -444,6 +444,7 @@ func (t *taskView) renderTabBody(width, height int) string {
 		return t.detail.diff.render(width, height)
 	default:
 		t.detail.focus = focusTimeline
+		t.detail.width = width
 		return t.detail.timelinePanel(height)
 	}
 }
