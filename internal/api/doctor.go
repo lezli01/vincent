@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/doctor"
+	"github.com/lezli01/vincent/internal/release"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/version"
@@ -59,6 +60,14 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	if s.deps.Reclaimer != nil {
 		scan = s.doctorScanOrphans
 	}
+	// The cache, never a fresh poll: GET /v1/doctor is a request and
+	// `update.check: false` promises the daemon makes no outbound call for
+	// this feature (task 055 decision 3). A daemon that has not polled yet
+	// reports the never-polled state, which is a true answer.
+	var updateStatus release.Status
+	if s.deps.UpdateStatus != nil {
+		updateStatus = s.deps.UpdateStatus()
+	}
 	rep := doctor.Compose(ctx, doctor.Options{
 		Dirs:        s.deps.Dirs,
 		LogPath:     s.deps.LogPath,
@@ -66,6 +75,7 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 		Daemon:      s.doctorDaemon(),
 		Agents:      s.doctorAgents(ctx, probe),
 		ScanOrphans: scan,
+		Update:      updateStatus,
 	})
 	s.fillDatabase(ctx, rep)
 	s.fillTasks(ctx, rep)

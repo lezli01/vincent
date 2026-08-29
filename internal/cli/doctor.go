@@ -222,6 +222,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{"DATABASE", doctorDatabaseRows(rep.Database)},
 		{"AGENTS", doctorAgentRows(rep.Agents)},
 		{"GITHUB", doctorGitHubRows(rep.GitHub)},
+		{"UPDATE", doctorUpdateRows(rep.Update)},
 		{"STORAGE", doctorStorageRows(rep.Storage)},
 		{"TASKS", doctorTaskRows(rep.Tasks)},
 	}
@@ -413,6 +414,53 @@ func doctorAgentVerdicts(a apiclient.DoctorAgent) []string {
 		parts = append(parts, "no restricted mode on "+runtime.GOOS)
 	}
 	return parts
+}
+
+// doctorUpdateRows renders the release check (task 055).
+//
+// Like the GitHub row above it never accuses: a newer release, a check that
+// is switched off and a daemon still running the previous build all leave
+// everything working, so none of them is a Problem and none of them changes
+// the exit code. The row states the fact and the command that acts on it.
+func doctorUpdateRows(u apiclient.DoctorUpdate) [][]string {
+	rows := [][]string{{"check", boolWord(u.Enabled)}}
+
+	switch {
+	case u.LatestVersion == "" && u.Error != "":
+		// The failure reason, not a shrug: "403 API rate limit exceeded" is
+		// the difference between "wait" and "something is wrong".
+		rows = append(rows, []string{"latest release", "unknown: " + u.Error})
+	case u.LatestVersion == "" && !u.Enabled:
+		rows = append(rows, []string{"latest release", "not checked (update.check is false)"})
+	case u.LatestVersion == "":
+		rows = append(rows, []string{"latest release", "not checked yet"})
+	default:
+		latest := u.LatestVersion
+		if u.CheckedAt != nil {
+			latest += "  checked " + u.CheckedAt.Local().Format("2006-01-02 15:04")
+		}
+		rows = append(rows, []string{"latest release", latest})
+	}
+
+	switch {
+	case u.UpdateAvailable:
+		rows = append(rows, []string{
+			"this binary",
+			u.BinaryVersion + " — " + u.LatestVersion + " is available; run `vincent update`",
+		})
+	default:
+		rows = append(rows, []string{"this binary", u.BinaryVersion})
+	}
+
+	if u.DaemonOutdated {
+		rows = append(rows, []string{
+			"running daemon",
+			u.DaemonVersion + " — older than this binary; restart it to pick the new build up",
+		})
+	} else if u.DaemonVersion != "" {
+		rows = append(rows, []string{"running daemon", u.DaemonVersion})
+	}
+	return rows
 }
 
 // doctorGitHubRows renders the GitHub issue integration row (task 035).
