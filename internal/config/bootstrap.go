@@ -118,12 +118,35 @@ agents:
 #
 # poll_interval is how often the daemon reconciles the link between a task and
 # its pull request, by matching an open pull request's head branch against the
-# task's branch (task 052). It is the only background network traffic vincent
-# makes: set it to 0 to switch the reconciler off and keep the rest of the
-# integration, which then calls GitHub only when you ask it to.
+# task's branch (task 052). It is one of vincent's two standing background
+# calls — the other is the release check below — and it fires only for
+# projects hosted on github.com: set it to 0 to switch the reconciler off and
+# keep the rest of the integration, which then calls GitHub only when you ask
+# it to.
 github:
   enabled: true
   poll_interval: 5m
+
+# Check whether a newer vincent has been released (task 055). The daemon asks
+# GitHub for the project's latest stable release once a day, caches the answer
+# in memory and serves it on GET /v1/update; "vincent doctor" and "vincent
+# daemon status" show it. Prereleases are never reported.
+#
+# It is one unauthenticated GET. Nothing identifying is sent: no token, no
+# telemetry, no machine or install identifier — vincent asks GitHub a public
+# question and reads the answer.
+#
+# Unlike the GitHub reconciler above, this one fires for every install, which
+# is why it has its own switch. With check: false the daemon makes no request
+# for it at all; only running "vincent update" does, and that command makes
+# its own call rather than going through the daemon. poll_interval: 0 has the
+# same effect and keeps the key visible.
+#
+# Nothing is ever downloaded or installed by the check. "vincent update"
+# applies one, and only when you run it.
+update:
+  check: true
+  poll_interval: 24h
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",

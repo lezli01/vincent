@@ -1,0 +1,25 @@
+{
+  "url": "https://api.github.com/repos/lezli01/vincent/releases/193874112",
+  "html_url": "https://github.com/lezli01/vincent/releases/tag/v0.4.1",
+  "id": 193874112,
+  "tag_name": "v0.4.1",
+  "target_commitish": "master",
+  "name": "v0.4.1",
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-08-21T09:12:44Z",
+  "published_at": "2026-08-21T09:31:07Z",
+  "assets": [
+    {
+      "name": "checksums.txt",
+      "browser_download_url": "https://github.com/lezli01/vincent/releases/download/v0.4.1/checksums.txt",
+      "size": 1583
+    },
+    {
+      "name": "vincent_0.4.1_darwin_arm64.tar.gz",
+      "browser_download_url": "https://github.com/lezli01/vincent/releases/download/v0.4.1/vincent_0.4.1_darwin_arm64.tar.gz",
+      "size": 8412663
+    }
+  ],
+  "body": "## Features\n\n* collapsible groups on the task board\n"
+}

@@ -249,6 +249,13 @@ type Config struct {
 	// enters one of the listed states (§12.3, task 046). Its zero value is
 	// off, so a daemon nobody configured spawns nothing.
 	Notify Notify `yaml:"notify"`
+	// Update governs the release check (§12.3, task 055): whether the daemon
+	// asks GitHub for the latest stable release on a timer, and how often.
+	//
+	// It is read per tick, so a hot reload governs the next one — including
+	// a reload that switches the poller off, which takes effect without a
+	// restart.
+	Update Update `yaml:"update"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -297,6 +304,38 @@ type GitHub struct {
 
 // Polls reports whether the reconciler should run at all.
 func (g GitHub) Polls() bool { return g.Enabled && g.PollInterval > 0 }
+
+// Update configures the release check (spec §12.3 — task 055).
+//
+// There is no `auto_apply` here and there never will be: agents already run
+// full-auto (§16), and swapping the orchestrator's own binary underneath
+// running tasks with no human in the loop is not something vincent does
+// quietly. Checking is automatic; `vincent update` is the human act.
+type Update struct {
+	// Check turns the background poll on. It defaults to **true** and is an
+	// opt-*out*, like GitHub.Enabled — but it carries a stronger promise
+	// than that one does, because unlike the pull-request reconciler this
+	// check fires for **every** install rather than only for projects whose
+	// origin is a github.com repository. With `check: false` the daemon
+	// makes no outbound request for this feature at all; only an explicit
+	// `vincent update` does, and that one is the CLI's own call and never
+	// goes through the daemon (decision 3).
+	//
+	// A plain bool for the same reason GitHub.Enabled is one: Load
+	// unmarshals into Default(), so an absent key keeps true and an explicit
+	// `false` turns it off.
+	Check bool `yaml:"check"`
+	// PollInterval is how often the daemon re-asks. `0` stops the poller
+	// while leaving the key legible, mirroring `github.poll_interval`.
+	//
+	// The default is a day. A release is not news that goes stale in
+	// minutes, and the endpoint is unauthenticated — a tighter interval buys
+	// nothing and spends the shared rate limit.
+	PollInterval Duration `yaml:"poll_interval"`
+}
+
+// Polls reports whether the release check should run at all.
+func (u Update) Polls() bool { return u.Check && u.PollInterval > 0 }
 
 // Notify configures the daemon's outward signal (spec §12.3 — task 046): a
 // command spawned when a task enters one of the listed states, with a JSON
@@ -548,6 +587,8 @@ func Default() Config {
 		Include: Include{MaxDepth: 5},
 		// On by default: an opt-out, per task 035 decision 6.
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
+		// On by default with a day between calls (task 055 decision 3).
+		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},
@@ -641,6 +682,12 @@ func (c Config) validate() error {
 	}
 	if err := c.Notify.validate(); err != nil {
 		return err
+	}
+	// Non-negative, not positive: `0` is the documented "do not poll", and a
+	// negative interval is a typo that would otherwise round to it silently
+	// and look like it worked.
+	if c.Update.PollInterval < 0 {
+		return fmt.Errorf("update.poll_interval must not be negative, got %s", c.Update.PollInterval)
 	}
 	return c.Environment.validate()
 }
