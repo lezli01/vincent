@@ -1,52 +1,66 @@
-# prepare-release — get the Release Please pull request to the point where a
-# human can merge it, and stop there.
+# prepare-release — bring the repository to the point where the Release Please
+# pull request is one click from being the release, and stop there.
 #
-# `release` (the sibling workflow in this registry) cuts the release: it audits,
-# dry-runs, gates, *merges* the Release Please PR and then watches every
-# channel. This one owns the part before that one-way door — RELEASING.md steps
-# 1 to 4 — and deliberately never merges anything. When it finishes green, the
-# release PR is a merge away.
+# It owns RELEASING.md steps 1 to 4. It deliberately never merges the *release*
+# pull request: that merge tags, signs, attests and publishes to Homebrew, Scoop
+# and WinGet, and a published tag is never re-pointed (RELEASING.md § If a
+# release goes wrong). A sibling `release` workflow used to do the merge-and-
+# watch half; it was deleted in `db49ca0`, so nothing in this registry cuts a
+# release any more and this file no longer claims one does.
 #
 #   preflight → update-deps → audit (loop: sweep → break → repair) → vuln-clear
-#            → changes → deps-pr → deps-gate → refresh → stage → changelogs
-#            → push → dry-run → green → verify → report
+#            → site-pins → site-audit → site-fix → site-clear
+#            → changes → prep-pr → prep-green → prep-gate → prep-merge
+#            → refresh → stage → changelogs → push
+#            → dry-run → green → verify → report
 #
-# Two effects reach the outside world and both are reversible:
+# Three effects reach the outside world:
 #
-#   * `deps-pr` pushes this task's own branch and opens an ordinary pull
-#     request against the base branch, because a dependency or vulnerability
-#     fix is a product change: it needs its own Conventional Commit, its own
-#     CI, and its own changelog line (CLAUDE.md, "everything lands via PR to
-#     master"). It is *not* pushed onto the bot's branch.
-#   * `push` pushes two curated changelog files onto the Release Please
-#     branch, which is exactly what RELEASING.md step 3 asks a maintainer to
-#     do and the only moment either changelog can be written.
+#   * `prep-pr` rebases this task's own branch onto the tip of the base branch,
+#     pushes it, and opens an ordinary pull request. Dependency work and
+#     release-facing documentation fixes are product changes: each needs its own
+#     Conventional Commit, its own CI and its own changelog line (CLAUDE.md,
+#     "everything lands via PR to master"). They are committed separately on one
+#     branch — `fix(deps):`/`chore(deps):` and `docs:` — so Release Please
+#     records each under the heading it belongs to.
+#   * `prep-merge` merges that pull request into the base branch, after
+#     `prep-green` has it green and `prep-gate` has been approved. Reversible:
+#     a merge commit can be reverted, and nothing is tagged or published.
+#   * `push` pushes two curated changelog files onto the Release Please branch,
+#     which is RELEASING.md step 3 and the only moment either changelog can be
+#     written.
 #
-# Nothing here tags, publishes, or merges. The single manual gate is
-# `deps-gate`, and it is not ceremony: if a dependency PR was opened it has to
-# land on the base branch *before* the changelogs are written, because Release
-# Please force-pushes its branch whenever a new commit reaches the base — which
-# would take the changelog commit with it. The gate holds the task in
-# `awaiting_gate` (slot released) until that has happened, and `refresh`
-# re-reads the world afterwards. When no dependency PR was opened the gate is
-# skipped and the run is unattended end to end.
+# **Why the merge has to happen here, before the changelogs.** `master` is
+# protected with `strict: true` — a branch must be up to date with the base to
+# merge at all — and Release Please force-pushes its branch whenever a new
+# commit reaches the base. So a changelog commit written before the preparation
+# pull request lands would simply be discarded. That ordering is the spine of
+# this file: everything master-bound lands first, `refresh` re-reads the world,
+# and only then is anything written to the bot's branch.
+#
+# The single manual gate is `prep-gate`, immediately before `prep-merge` — the
+# one write to a protected branch. When nothing needed changing the gate is
+# skipped along with the whole pull-request leg and the run is unattended end to
+# end.
 #
 # Credentials: this workflow never reads or prints a secret. It needs `gh`
-# already authenticated with push access to this repository, a git identity,
-# and network access for `govulncheck`'s database.
+# already authenticated with push access to this repository, a git identity, and
+# network access for `govulncheck`'s database.
 #
 # Specific to **this** repository: it knows the Release Please label and title
 # shape, `.release-please-manifest.json`, the `ci` and `gates` check matrices,
-# the `Release` workflow file and its `dry_run` input, and both changelog files
-# with the four failure shapes RELEASING.md step 3 warns about.
+# the `Release` workflow file and its `dry_run` input, both changelog files with
+# the four failure shapes RELEASING.md step 3 warns about, and the GitHub Pages
+# layout — `_config.yml`'s `exclude:` list, `_data/seo_pages.json`,
+# `_data/why_articles.json` and the generated cards under `docs/assets/social/`.
 #
-# POSIX-only, and it says so: every command step pins `shell: sh`, and the
-# agent steps' `check` runs under the platform default and is written in `sh`
+# POSIX-only, and it says so: every command step pins `shell: sh`, and the agent
+# steps' `check` runs under the platform default and is written in `sh`
 # regardless (§8.2 rejects `shell` on an agent step).
 #
 # Saying what is happening: most of this workflow's wall clock is spent
-# waiting — a two-hour vulnerability loop, a 75-minute dry run, a 90-minute
-# wait for two green matrices — and a `running` row with no other output is
+# waiting — a two-hour vulnerability loop, a 75-minute dry run, three separate
+# waits on a three-OS check matrix — and a `running` row with no other output is
 # unreadable. Every step that runs a process reports through `vincent status`
 # (§5.4), shown live on the board's STATUS column and kept on the finished
 # attempt. Command steps call it through a `say` helper defined at the top of
@@ -59,24 +73,25 @@
 # write incapable of failing a step: a `vincent` that is not on the daemon's
 # PATH, or a step that has already finished (the daemon answers 409), would
 # otherwise abort a `set -e` script. The cost is that the messages are silently
-# dropped rather than explained when `vincent` cannot be found; check the
-# STATUS column is populated on a first run.
+# dropped rather than explained when `vincent` cannot be found; check the STATUS
+# column is populated on a first run.
 #
-# Two uses, and they are different. **Progress**, set before the thing it
-# names, which under `set -e` doubles as the error message: the step dies at
-# the failing command and the status still says what was being attempted.
-# And a **verdict**, set on a path that is about to exit non-zero — every
-# refusal in `preflight`, `vuln-clear` and `verify` says which refusal it was,
-# because they all exit 1 and all classify `nonzero_exit`. `changes` is the
-# one step whose red row is a *normal* outcome, and the status is the only
-# thing that can say so on the board.
+# Two uses, and they are different. **Progress**, set before the thing it names,
+# which under `set -e` doubles as the error message: the step dies at the
+# failing command and the status still says what was being attempted. And a
+# **verdict**, set on a path that is about to exit non-zero — every refusal in
+# `preflight`, `vuln-clear`, `site-clear`, `prep-merge` and `verify` says which
+# refusal it was, because they all exit 1 and all classify `nonzero_exit`.
+# `changes` and `site-audit` are the two steps whose red rows are *normal*
+# outcomes, and the status is the only thing that can say so on the board.
 #
-# Agent steps are *asked* for status in their prompts. Vincent never appends
-# an instruction of its own, so an agent reports only because this file said to.
+# Agent steps are *asked* for status in their prompts. Vincent never appends an
+# instruction of its own, so an agent reports only because this file said to.
 #
-# Requires: `gh` (authenticated), `git`, `go`, `jq`, `awk`.
+# Requires: `gh` (authenticated), `git`, `go`, `jq`, `awk`. `python3` with
+# Pillow only if a social card is actually missing.
 name: prepare-release
-description: Make the Release Please PR mergeable — dependencies, vulnerabilities, both changelogs, an optional dry run, and a green verdict. Never merges.
+description: Make the Release Please PR mergeable — dependencies, vulnerabilities, the published site metadata, both changelogs, an optional dry run, and a green verdict. Merges its own preparation PR; never merges the release PR.
 
 platforms: [posix]
 
@@ -84,14 +99,27 @@ fields:
   - name: dependencies
     label: Dependency work before the release
     description: >-
-      none = sweep for vulnerabilities and block on a finding, touching nothing.
-      security = fix only what govulncheck reports. all = also run
+      none = sweep for vulnerabilities and block on a finding, touching no Go
+      code. security = fix only what govulncheck reports. all = also run
       `go get -u ./...` and `go mod tidy` first, then repair whatever that
-      breaks. Anything but `none` may open a pull request you have to merge
-      before this workflow can continue.
+      breaks. Anything but `none` may open a pull request this workflow then
+      merges into the base branch.
     type: string
     required: true
     pattern: '^(none|security|all)$'
+
+  - name: docs
+    label: Release-facing documentation and site metadata
+    description: >-
+      The other half of "what has to be current before a tag", and independent
+      of the dependency setting. check = audit the published pages' SEO
+      metadata, the "Why vincent is awesome" social cards and the version pins
+      in the documentation, and block on a finding. fix = also repair what the
+      audit reports, in the same pull request as any dependency work. none =
+      skip the audit entirely.
+    type: string
+    required: true
+    pattern: '^(none|check|fix)$'
 
   - name: dry-run
     label: Dry-run the Release workflow
@@ -107,10 +135,10 @@ defaults:
   agent: claude
   max_retries: 1
   timeout: 30m
-  # The only human checkpoint is the `deps-gate` gate. An agent parking the
-  # task in `awaiting_input` would add a second one nobody is watching for —
-  # and this workflow is meant to run to completion unattended when there is
-  # no dependency PR to land.
+  # The only human checkpoint is the `prep-gate` gate. An agent parking the task
+  # in `awaiting_input` would add a second one nobody is watching for — and this
+  # workflow is meant to run to completion unattended when there is nothing to
+  # land on the base branch.
   on_input: deny
 
 steps:
@@ -126,7 +154,7 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      # Six ways this step refuses, all of them exit 1, all of them
+      # Seven ways this step refuses, all of them exit 1, all of them
       # `nonzero_exit`. The status is what says which — a missing tool, a
       # logged-out gh, an unset git identity and "there is nothing to prepare"
       # are four different things for a maintainer to go and do.
@@ -136,9 +164,9 @@ steps:
       done
       gh auth status >/dev/null 2>&1 || { say "gh is not authenticated"; echo "gh is not authenticated" >&2; exit 1; }
 
-      # Two commits get made here — one on this task's branch, one on the bot's
-      # — and git refuses both without an identity. Failing now beats failing
-      # after an agent has spent a session writing prose.
+      # Two commits get made here — on this task's branch — plus one on the
+      # bot's, and git refuses all of them without an identity. Failing now
+      # beats failing after an agent has spent a session writing prose.
       git config user.email >/dev/null 2>&1 || { say "git user.email is not set"; echo "git user.email is not set" >&2; exit 1; }
       git config user.name >/dev/null 2>&1 || { say "git user.name is not set"; echo "git user.name is not set" >&2; exit 1; }
 
@@ -147,6 +175,14 @@ steps:
         CHANGELOG.md site-changelog.md RELEASING.md; do
         [ -f "$file" ] || { say "missing $file"; echo "missing $file" >&2; exit 1; }
       done
+
+      # The site audit reads all three of these and can say nothing useful
+      # without them. Only demanded when it is going to run.
+      if [ "{{index .Task.Fields "docs"}}" != "none" ]; then
+        for file in _config.yml _data/seo_pages.json _data/why_articles.json; do
+          [ -f "$file" ] || { say "missing $file"; echo "missing $file — needed by the site audit" >&2; exit 1; }
+        done
+      fi
 
       old=$(jq -er '."."' .release-please-manifest.json)
       case "$old" in
@@ -183,8 +219,9 @@ steps:
 
       title=$(printf '%s' "$pr" | jq -r .title)
       # Release Please titles its PR "chore(master): release X.Y.Z". Both
-      # changelogs are written under that exact number, so a title this cannot
-      # be parsed out of is a stop, not a warning.
+      # changelogs, and every version pin the site audit checks, are written
+      # under that exact number, so a title this cannot be parsed out of is a
+      # stop, not a warning.
       version=$(printf '%s' "$title" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?' | head -n 1 || true)
       [ -n "$version" ] || {
         say "could not parse a version out of the release PR title"
@@ -336,11 +373,153 @@ steps:
       echo "both changelogs describe $version"
       AUDIT
 
+      # == What GitHub Pages actually publishes, derived from `_config.yml`'s
+      # own `exclude:` list rather than restated here. An entry added to that
+      # list later must stop this demanding SEO metadata for a page that is no
+      # longer on the site; a list copied into this file would not.
+      #
+      # Usage: sh site-pages.sh  (from the repository root). One definition,
+      # two consumers: the audit and the pin rewrite.
+      cat > .vincent-prepare/site-pages.sh <<'PAGES'
+      awk '
+        /^exclude:/ { inside = 1; next }
+        inside && /^[^ \t#-]/ { inside = 0 }
+        inside && /^[ \t]*-[ \t]*/ { sub(/^[ \t]*-[ \t]*/, ""); print }
+      ' _config.yml > .vincent-prepare/.exclude
+
+      # Jekyll never publishes a dotted directory, and none of these carry a
+      # page. Everything else that is tracked and not excluded is on the site.
+      git ls-files '*.md' | awk '
+        BEGIN { while ((getline line < ".vincent-prepare/.exclude") > 0) if (line != "") excl[++n] = line }
+        /^\./ || /^(internal|cmd|examples|bin|scripts)\// { next }
+        {
+          for (i = 1; i <= n; i++) {
+            e = excl[i]
+            if ($0 == e) next
+            if (substr(e, length(e)) == "/" && index($0, e) == 1) next
+          }
+          print
+        }
+      '
+      rm -f .vincent-prepare/.exclude
+      PAGES
+
+      # == The site audit, written once and called twice: as `site-fix`'s
+      # `check`, and by `site-clear` as the postcondition for the whole leg.
+      # Same one-script-several-callers discipline as the changelog audit, and
+      # for the same reason — a check and its verdict must not be able to
+      # disagree.
+      #
+      # Usage: sh audit-site.sh <dir> <version>. Not `set -e`: every check runs
+      # and the exit code is the summary.
+      cat > .vincent-prepare/audit-site.sh <<'SITE'
+      dir="$1"
+      version="$2"
+      [ -n "$dir" ] && [ -n "$version" ] || { echo "usage: audit-site.sh <dir> <version>" >&2; exit 2; }
+
+      fails=0
+      failed=""
+      fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); failed="$failed$*; "; }
+      warn() { printf 'WARN %s\n' "$*"; }
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      cd "$dir" || exit 2
+      mkdir -p .vincent-prepare
+      tmp=.vincent-prepare/.site
+
+      echo "auditing the published site metadata and version pins in $dir for $version"
+
+      sh .vincent-prepare/site-pages.sh | sort -u > "$tmp.pages"
+      jq -r '.[].path' _data/seo_pages.json 2>/dev/null | sort -u > "$tmp.seo"
+      jq -r '.[].path' _data/why_articles.json 2>/dev/null | sort -u > "$tmp.why"
+      [ -s "$tmp.seo" ] || fail "_data/seo_pages.json is missing, empty, or not a list of {path,...}"
+      [ -s "$tmp.why" ] || fail "_data/why_articles.json is missing, empty, or not a list of {path,...}"
+
+      # == Every published page carries SEO metadata, in one of the two data
+      # files CLAUDE.md names as the single place for it. 404.md is the one
+      # deliberate exception: it is an error document, not a destination.
+      missing=$(grep -vx '404.md' "$tmp.pages" | while read -r p; do
+        grep -qxF "$p" "$tmp.seo" || grep -qxF "$p" "$tmp.why" || printf '%s\n' "$p"
+      done)
+      if [ -n "$missing" ]; then
+        printf '      %s\n' $missing
+        fail "the above published page(s) have no entry in _data/seo_pages.json or _data/why_articles.json"
+      fi
+
+      # And the other direction: a renamed or deleted page leaves an entry
+      # behind that renders metadata, and a <link rel=canonical>, for nothing.
+      stale=$(cat "$tmp.seo" "$tmp.why" | while read -r p; do
+        [ -f "$p" ] || printf '%s\n' "$p"
+      done)
+      if [ -n "$stale" ]; then
+        printf '      %s\n' $stale
+        fail "the above _data entr(ies) name a file that does not exist"
+      fi
+
+      # == The "Why vincent is awesome" collection is one thing in three
+      # places: the article, its _data entry, and its generated social card.
+      # CLAUDE.md forbids hand-editing the cards, so a missing one is a
+      # scripts/social-cards.py run, never a drawing.
+      for f in docs/why/*.md; do
+        [ "$f" = 'docs/why/*.md' ] && break
+        case "$f" in docs/why/README.md) continue ;; esac
+        grep -qxF "$f" "$tmp.why" || fail "$f is not listed in _data/why_articles.json"
+      done
+      while read -r p; do
+        [ -n "$p" ] || continue
+        slug=$(basename "$p" .md)
+        [ -f "docs/assets/social/$slug.png" ] \
+          || fail "no social card for $slug — regenerate with scripts/social-cards.py"
+      done < "$tmp.why"
+      for f in docs/assets/social/*.png; do
+        [ "$f" = 'docs/assets/social/*.png' ] && break
+        slug=$(basename "$f" .png)
+        grep -qxF "docs/why/$slug.md" "$tmp.why" \
+          || fail "docs/assets/social/$slug.png has no article in _data/why_articles.json"
+      done
+
+      # == Version pins in the published documentation. These are examples, and
+      # an example naming a version three releases old is the fault actually
+      # observed: `github:lezli01/vincent@0.3.0` sat in README.md and
+      # docs/getting-started/installation.md through 0.4.0, 0.5.0 and 0.6.0
+      # while every other install route pointed at `releases/latest`.
+      pins=$(while read -r p; do
+        grep -HnoE 'lezli01/vincent@v?[0-9]+\.[0-9]+\.[0-9]+' "$p" 2>/dev/null || true
+      done < "$tmp.pages" | grep -v "@v\{0,1\}$version\$" || true)
+      if [ -n "$pins" ]; then
+        printf '      %s\n' $pins
+        fail "the above published version pin(s) do not name $version"
+      fi
+
+      # == Screenshots. A warning and never a failure: every docs/assets/tui-*.png
+      # is a capture of the running TUI made by scripts/screenshots.sh, which
+      # needs VHS, ttyd and ffmpeg, is macOS/Linux-only and is not run by CI —
+      # so this can report the drift, and nothing here can fix it. Whether a
+      # panel actually moved is a judgement, which is why it does not block.
+      shot=$(git log -1 --format=%ct -- docs/assets/tui-board.png 2>/dev/null || echo 0)
+      tui=$(git log -1 --format=%ct -- internal/tui 2>/dev/null || echo 0)
+      if [ "${shot:-0}" -gt 0 ] && [ "${tui:-0}" -gt "${shot:-0}" ]; then
+        warn "internal/tui last changed $(git log -1 --format=%cs -- internal/tui) and docs/assets/tui-*.png were last captured $(git log -1 --format=%cs -- docs/assets/tui-board.png) — if a panel moved, re-run ./scripts/screenshots.sh"
+      fi
+
+      rm -f "$tmp".*
+      echo
+      if [ "$fails" -gt 0 ]; then
+        # The findings, not the count — same reasoning as the changelog audit.
+        say "site: $failed"
+        echo "$fails blocking finding(s)"
+        exit 1
+      fi
+      say "site metadata, social cards and version pins are current for $version"
+      echo "site metadata, social cards and version pins are current for $version"
+      SITE
+
       # == The green check, written once and called by `green` for the base
-      # branch. Exit 0 iff every check run on the commit completed successfully
-      # and both required matrices are present. A commit with *no* checks yet
-      # passes the per-run rule trivially, which is why the count matters as
-      # much as the conclusions.
+      # branch and by `ready-pr.sh` for the preparation pull request. Exit 0 iff
+      # every check run on the commit completed successfully and both required
+      # matrices are present. A commit with *no* checks yet passes the per-run
+      # rule trivially, which is why the count matters as much as the
+      # conclusions.
       #
       # Pending is not failure: a run still in flight is waited on, up to the
       # caller's bound in minutes, and only a *completed* non-success is
@@ -349,9 +528,9 @@ steps:
       set -e
       # Reports its own progress. It inherits VINCENT_TASK_ID and
       # VINCENT_STEP_ID from the step that invoked it, so it speaks as that
-      # step — which is what is wanted: the 45-minute wait in `green` happens
-      # entirely inside here, and without this the board shows `running` and
-      # nothing else for the whole of it.
+      # step — which is what is wanted: the long waits happen entirely inside
+      # here, and without this the board shows `running` and nothing else for
+      # the whole of it.
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       sha="$1"
       wait_min=${2:-0}
@@ -440,6 +619,111 @@ steps:
       done
       GREEN
 
+      # == Bring a pull request to the state GitHub will actually merge from,
+      # written once and called twice: by `prep-green` before the gate, so a
+      # human is asked to approve something green, and by `prep-merge` after it,
+      # because the base branch may have moved while the gate was open.
+      #
+      # `master` is protected with `strict: true` — "require branches to be up
+      # to date before merging" — so a pull request that is merely green is not
+      # necessarily mergeable. Every round therefore re-reads mergeStateStatus,
+      # rebases the branch onto the tip when it has fallen BEHIND, and only then
+      # waits on the checks of whatever head that produced.
+      #
+      # Usage: sh ready-pr.sh <number> <wait_min>.
+      cat > .vincent-prepare/ready-pr.sh <<'READY'
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      number="$1"
+      wait_min=${2:-30}
+      deadline=$(( $(date +%s) + wait_min * 60 ))
+
+      round=0
+      while [ "$round" -lt 6 ]; do
+        round=$(( round + 1 ))
+
+        # A failed read is not a verdict about the pull request; retry it
+        # inside the same round rather than calling the PR unmergeable.
+        set +e
+        pr=$(gh pr view "$number" --json state,url,headRefOid,mergeStateStatus 2>/dev/null)
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ] || [ -z "$pr" ]; then
+          say "GitHub API failed reading PR #$number, retrying"
+          sleep 20
+          continue
+        fi
+
+        state=$(printf '%s' "$pr" | jq -r .state)
+        status=$(printf '%s' "$pr" | jq -r .mergeStateStatus)
+        oid=$(printf '%s' "$pr" | jq -r .headRefOid)
+        short=$(printf '%s' "$oid" | cut -c1-7)
+
+        if [ "$state" != OPEN ]; then
+          say "PR #$number is $state, not OPEN"
+          echo "PR #$number is $state, not OPEN" >&2
+          exit 1
+        fi
+
+        case "$status" in
+          UNKNOWN)
+            # GitHub computes mergeability lazily; the first read after a push
+            # is routinely UNKNOWN and means "ask again", not "no".
+            say "GitHub has not computed mergeability for #$number yet"
+            sleep 15
+            continue
+            ;;
+          DIRTY)
+            say "PR #$number conflicts with $VINCENT_BASE_BRANCH: resolve by hand"
+            echo "PR #$number conflicts with $VINCENT_BASE_BRANCH — resolve the conflict and re-run this step" >&2
+            exit 1
+            ;;
+          BEHIND)
+            # The whole reason this script exists. Rebase rather than merge:
+            # the branch carries one or two Conventional Commits that Release
+            # Please will read, and a merge commit from the base into them adds
+            # a commit nobody wants in that history.
+            say "#$number is behind $VINCENT_BASE_BRANCH: rebasing it onto the tip"
+            echo "PR #$number is BEHIND $VINCENT_BASE_BRANCH; rebasing onto the tip (round $round)"
+            gh pr update-branch "$number" --rebase || {
+              say "could not rebase #$number onto $VINCENT_BASE_BRANCH"
+              echo "gh pr update-branch failed for #$number — rebase it by hand and re-run" >&2
+              exit 1
+            }
+            sleep 15
+            continue
+            ;;
+        esac
+
+        now=$(date +%s)
+        left=$(( (deadline - now) / 60 ))
+        [ "$left" -lt 1 ] && left=1
+        say "waiting for #$number to go green at $short"
+        echo "== PR #$number checks at $oid"
+        sh .vincent-prepare/require-green.sh "$oid" "$left"
+
+        # It was green at $oid. If the base moved while we waited, the pull
+        # request is BEHIND again and the next round rebases it — which is the
+        # race `strict: true` makes real, not a theoretical one.
+        after=$(gh pr view "$number" --json headRefOid,mergeStateStatus 2>/dev/null || echo '{}')
+        astatus=$(printf '%s' "$after" | jq -r '.mergeStateStatus // "UNKNOWN"')
+        aoid=$(printf '%s' "$after" | jq -r '.headRefOid // ""')
+        if [ "$astatus" = BEHIND ] || [ "$aoid" != "$oid" ]; then
+          echo "PR #$number moved or fell behind while its checks ran; going round again"
+          continue
+        fi
+
+        printf '%s\n' "$oid" > .vincent-prepare/prep-head.txt
+        say "#$number is green and up to date at $short"
+        echo "PR #$number is green, up to date with $VINCENT_BASE_BRANCH, and mergeable at $oid"
+        exit 0
+      done
+
+      say "#$number never settled: it kept falling behind $VINCENT_BASE_BRANCH"
+      echo "PR #$number never reached a green, up-to-date head in 6 rounds — the base branch is moving faster than its CI" >&2
+      exit 1
+      READY
+
       git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
       say "preparing v$version from release PR $(printf '%s' "$pr" | jq -r .number)"
 
@@ -448,6 +732,7 @@ steps:
       echo "preparing:     v$version"
       echo "release PR:    $title — $(printf '%s' "$pr" | jq -r .url)"
       echo "dependencies:  {{index .Task.Fields "dependencies"}}"
+      echo "docs:          {{index .Task.Fields "docs"}}"
       echo "dry run:       {{index .Task.Fields "dry-run"}}"
 
   - id: update-deps
@@ -494,17 +779,22 @@ steps:
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
           rc=0
 
-          # Build and test only when the tree actually differs from the commit
-          # this task branched off. Untracked scratch under .vincent-prepare/
-          # is invisible to `git diff HEAD`, which is why it can live here.
-          if git diff --quiet HEAD; then
-            echo "== tree unchanged, skipping build and test"
+          # `go run mage.go test` is also what proves the derived documentation
+          # still matches the source — internal/config/docs_claims_test.go and
+          # internal/cli/docs_claims_test.go assert the configuration and CLI
+          # reference pages against the real config struct and cobra tree
+          # (CLAUDE.md, "a change to any of those is a change to its page").
+          # It runs on the first pass regardless of whether the tree differs,
+          # because on a `dependencies: none` run there is nothing to make it
+          # differ and those assertions would otherwise never fire before a tag.
+          if [ "{{.Loop.Index}}" != "1" ] && git diff --quiet HEAD; then
+            echo "== tree unchanged since the last pass, skipping build and test"
           else
-            say "building the updated tree"
+            say "building the tree"
             echo "== go build ./..."
             go build ./... || rc=1
             if [ "$rc" -eq 0 ]; then
-              say "running the test suite"
+              say "running the test suite and the docs-claims assertions"
               echo "== go run mage.go test"
               go run mage.go test || rc=1
             fi
@@ -539,7 +829,7 @@ steps:
       - id: repair
         name: Fix what the sweep reported
         type: agent
-        # `none` means "touch nothing": the sweep still reports, and
+        # `none` means "touch no Go code": the sweep still reports, and
         # `vuln-clear` still blocks on a finding, but nothing is edited.
         if: '{{ ne (index .Task.Fields "dependencies") "none" }}'
         timeout: 45m
@@ -555,7 +845,7 @@ steps:
 
           What the sweep ran, in order, stopping at the first failure:
 
-              go build ./...            (only when the tree already differs from HEAD)
+              go build ./...
               go run mage.go test
               go run mage.go vuln       (govulncheck for linux, darwin and windows)
 
@@ -577,6 +867,10 @@ steps:
             moved. Adapt this repository's code to the new API; do not roll the
             dependency back to hide the break unless the new version is
             genuinely broken, and say so in the summary if you do.
+          - A failing **`docs_claims_test.go`** is not a test to relax: those
+            assertions hold `docs/reference/configuration.md` and
+            `docs/reference/cli.md` against the real config struct and cobra
+            tree. Fix the page, not the assertion.
           - Read `CLAUDE.md` before editing Go code. Migrations are
             append-only, platform-specific code lives in `_unix.go` /
             `_windows.go` files, and `go run mage.go lint` is strict.
@@ -634,6 +928,180 @@ steps:
         say "clean: build, tests and govulncheck on all three platforms"
       fi
 
+  - id: site-pins
+    name: Bump the documented version pins and regenerate missing social cards
+    type: command
+    shell: sh
+    if: '{{ eq (index .Task.Fields "docs") "fix" }}'
+    timeout: 10m
+    max_retries: 0
+    # The cheap half of the site repair, done before the audit so the agent
+    # below is only ever asked for the residue a command cannot produce. Both
+    # of these are substitutions, not judgements: a pin is a version string, and
+    # a social card is the deterministic output of scripts/social-cards.py,
+    # which CLAUDE.md forbids hand-editing.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      version=$(cat .vincent-prepare/version.txt)
+
+      # `sed -i` is spelled differently on BSD and GNU; writing beside the file
+      # and moving it is the same on both.
+      say "pointing the documented version pins at $version"
+      changed=""
+      sh .vincent-prepare/site-pages.sh | while read -r p; do
+        grep -q 'lezli01/vincent@' "$p" 2>/dev/null || continue
+        sed -E "s|(lezli01/vincent@)v?[0-9]+\.[0-9]+\.[0-9]+|\1$version|g" "$p" > "$p.pin.tmp"
+        if cmp -s "$p" "$p.pin.tmp"; then
+          rm -f "$p.pin.tmp"
+        else
+          mv "$p.pin.tmp" "$p"
+          echo "  pinned $p to $version"
+        fi
+      done
+
+      # The pin now names a version that does not exist as a tag yet — it comes
+      # into existence minutes after this pull request lands, when the release
+      # PR is merged. That is the right way round: the alternative is the state
+      # actually observed, an example pinned three releases back.
+
+      # A card is missing only when a "Why vincent is awesome" article was added
+      # without one. Pillow is not a dependency of anything else here, so its
+      # absence is reported rather than installed around; the audit that follows
+      # turns the still-missing card into a blocking finding either way.
+      need=""
+      for p in $(jq -r '.[].path' _data/why_articles.json); do
+        slug=$(basename "$p" .md)
+        [ -f "docs/assets/social/$slug.png" ] || need="$need $slug"
+      done
+      if [ -n "$need" ]; then
+        echo
+        echo "missing social card(s):$need"
+        if command -v python3 >/dev/null 2>&1 && python3 -c 'import PIL' >/dev/null 2>&1; then
+          say "regenerating the missing social cards"
+          python3 scripts/social-cards.py
+        else
+          say "social cards missing and Pillow is not installed"
+          echo "python3 with Pillow is not available — run 'python -m pip install Pillow' then 'python3 scripts/social-cards.py'" >&2
+        fi
+      fi
+
+      echo
+      git --no-pager diff --stat -- '*.md' _data docs/assets/social
+      git status --porcelain -- docs/assets/social
+
+  - id: site-audit
+    name: Audit the published site metadata and version pins
+    type: command
+    shell: sh
+    if: '{{ ne (index .Task.Fields "docs") "none" }}'
+    timeout: 10m
+    # A probe, so its failure is the answer and the input to `site-fix`'s guard
+    # and prompt. Its red row is a normal outcome, which is what the status
+    # says — `nonzero_exit` reads as a fault and this is not one.
+    allow_failure: true
+    max_retries: 0
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      version=$(cat .vincent-prepare/version.txt)
+      say "auditing the published pages, cards and version pins"
+      sh .vincent-prepare/audit-site.sh . "$version"
+
+  - id: site-fix
+    name: Write what the site audit could not
+    type: agent
+    # Only when there is something left after `site-pins`, and only when this
+    # task was asked to repair rather than to report. The common case is that
+    # the audit passed and no session is spent at all.
+    if: '{{ and (eq (index .Task.Fields "docs") "fix") (ne (index .Steps "site-audit").ExitCode 0) }}'
+    timeout: 30m
+    # Worth the one retry: the check below is a precise, machine-readable list
+    # of what is still wrong, and vincent appends it to the second attempt's
+    # prompt automatically.
+    max_retries: 1
+    check: 'sh .vincent-prepare/audit-site.sh . "$(cat .vincent-prepare/version.txt)"'
+    prompt: |
+      The site audit for this release found something a command could not fix.
+      You are fixing it, in **this** worktree — the repository's own tree, not
+      the Release Please branch.
+
+      What it reported:
+
+      ```
+      {{(index .Steps "site-audit").Result}}
+      ```
+
+      The rules behind those findings, from `CLAUDE.md`:
+
+      - **GitHub Pages SEO metadata is centralized** in `_data/seo_pages.json`
+        and `_data/why_articles.json`. Every published page has an entry in one
+        of them. A page with no entry needs one added to `_data/seo_pages.json`
+        with its `path`, a `seo_title` and a one-sentence `description`; match
+        the voice and length of the entries already there. An entry naming a
+        file that no longer exists is deleted, or repointed if the page was
+        renamed.
+      - **The social cards are generated, never drawn.** They come from
+        `scripts/social-cards.py` reading `_data/why_articles.json`. If a card
+        is missing, add or correct the article's entry in that file and run
+        `python3 scripts/social-cards.py`. Do not hand-edit a PNG under
+        `docs/assets/social/`, and do not commit one you made another way. If
+        Pillow is not installed, install it with `python -m pip install Pillow`
+        first.
+      - **Product-name style:** `vincent` with a lowercase `v` in all prose,
+        headings, labels and metadata. An initial capital only as the first
+        word of a sentence.
+
+      A **version pin** finding means a published example still names an old
+      version. The number to use is in `.vincent-prepare/version.txt` — read it
+      and use exactly that.
+
+      A **screenshot** line is a `WARN`, not a finding: `docs/assets/tui-*.png`
+      can only be regenerated by `./scripts/screenshots.sh`, which needs VHS.
+      Do not attempt it and do not edit those files.
+
+      Do not touch `CHANGELOG.md` or `site-changelog.md` — a later step in this
+      same run writes both. Do not commit, push, or open a pull request: a later
+      step does that too. Leave your work as uncommitted changes in the
+      worktree.
+
+      Run `vincent status "<under ten words>"` before each significant phase,
+      and if you get stuck make the status name what is actually missing — "no
+      description written for docs/guides/tui.md", not "working on it".
+
+      Finish by running
+
+          sh .vincent-prepare/audit-site.sh . "$(cat .vincent-prepare/version.txt)"
+
+      yourself. That exact command is this step's check: if it prints any
+      `FAIL`, the step has not succeeded. Then summarize what you changed.
+
+  - id: site-clear
+    name: Confirm the published site is current
+    type: command
+    shell: sh
+    if: '{{ ne (index .Task.Fields "docs") "none" }}'
+    timeout: 10m
+    max_retries: 0
+    # The postcondition for the site leg, and the step that makes `docs: check`
+    # mean something: `site-audit` is `allow_failure`, so without this a finding
+    # on a check-only run would be printed and walked past.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      version=$(cat .vincent-prepare/version.txt)
+
+      if sh .vincent-prepare/audit-site.sh . "$version"; then
+        exit 0
+      fi
+
+      # The audit sets its own status from inside, naming the findings. Only
+      # the remedy differs by setting, and that is what is added here.
+      if [ "{{index .Task.Fields "docs"}}" = "check" ]; then
+        echo "this task ran with docs=check, so nothing was repaired — re-run with docs=fix, or fix it by hand" >&2
+      else
+        echo "the site audit still fails after site-pins and site-fix — read their output above" >&2
+      fi
+      exit 1
+
   - id: changes
     name: Did anything in the tree change?
     type: command
@@ -644,28 +1112,33 @@ steps:
     allow_failure: true
     max_retries: 0
     # The one step here whose red row is the *interesting* outcome — it is what
-    # opens the dependency PR and turns on the manual gate. The status says so,
-    # because `nonzero_exit` reads as a fault and this is not one.
+    # opens the preparation PR, turns on the manual gate and merges. The status
+    # says so, because `nonzero_exit` reads as a fault and this is not one.
     #
     # Set before the probe, never after: `git diff --quiet HEAD` has to be the
     # last command, since its exit code is what every guard downstream reads.
+    # Untracked scratch under .vincent-prepare/ is invisible to it, which is why
+    # it can live in the worktree; a newly generated social card is not, and is
+    # counted below on purpose.
     run: |
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
       git --no-pager diff --stat HEAD
-      if git diff --quiet HEAD; then
-        say "tree unchanged: no dependency PR, the gate is skipped"
-      else
-        say "tree changed: a dependency PR will be opened and gated"
-      fi
-      git diff --quiet HEAD
+      git status --porcelain -- docs/assets/social
 
-  - id: deps-pr
-    name: Open a pull request for the dependency work
+      if git diff --quiet HEAD && [ -z "$(git status --porcelain -- docs/assets/social)" ]; then
+        say "tree unchanged: no preparation PR, the gate is skipped"
+        exit 0
+      fi
+      say "tree changed: a preparation PR will be opened, gated and merged"
+      exit 1
+
+  - id: prep-pr
+    name: Rebase onto the base branch and open the preparation pull request
     type: command
     shell: sh
     if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
-    timeout: 15m
+    timeout: 20m
     # Pushing a branch and opening a PR is an outward effect; a retry after an
     # ambiguous failure would risk a second pull request. Look at the remote
     # first, then re-run by hand.
@@ -676,27 +1149,85 @@ steps:
       version=$(cat .vincent-prepare/version.txt)
       initial=$(cat .vincent-prepare/initial-verdict.txt)
 
+      # == Two commits, split by path, on one branch. Release Please derives
+      # the changelog from Conventional Commits, so folding a documentation fix
+      # into `fix(deps):` misfiles it and folding a vulnerability bump into
+      # `docs:` loses its changelog line entirely.
+      deps=no
+      docs=no
+
       # A vulnerability that was present when this task started is a `fix:` —
       # it earns its own changelog line and a patch bump. A routine `go get -u`
       # sweep is a `chore:`, matching what Dependabot writes for gomod.
       if [ "$initial" -ne 0 ]; then
-        type=fix
-        subject="fix(deps): update dependencies reported by govulncheck"
-        prtitle="Update the dependencies govulncheck flagged before v$version"
+        depsubject="fix(deps): update dependencies reported by govulncheck"
       else
-        type=chore
-        subject="chore(deps): update Go module dependencies"
-        prtitle="Update Go module dependencies before v$version"
+        depsubject="chore(deps): update Go module dependencies"
       fi
 
-      # Only tracked files. `git add -A` would sweep .vincent-prepare/ — this
-      # task's scratch — into the commit.
-      git add -u
-      git diff --cached --quiet && { say "nothing staged after all"; echo "nothing staged after all" >&2; exit 1; }
-      git commit -q -m "$subject"
+      git add -u -- go.mod go.sum '*.go'
+      if ! git diff --cached --quiet; then
+        git commit -q -m "$depsubject"
+        deps=yes
+      fi
 
+      # Whatever is left is the documentation half. Only tracked files plus the
+      # one directory that can legitimately gain an untracked file — `git add -A`
+      # would sweep .vincent-prepare/, this task's scratch, into the commit.
+      git add -u
+      git add -- docs/assets/social 2>/dev/null || true
+      if ! git diff --cached --quiet; then
+        git commit -q -m "docs: refresh the release-facing documentation for v$version"
+        docs=yes
+      fi
+
+      if [ "$deps" = no ] && [ "$docs" = no ]; then
+        say "nothing staged after all"
+        echo "nothing staged after all" >&2
+        exit 1
+      fi
+
+      # A plain-language title, never a conventional one: GitHub copies the PR
+      # title into the merge commit body, so a conventional title makes Release
+      # Please record both the merge and its inner commit. The `PR title`
+      # workflow enforces this (CLAUDE.md).
+      if [ "$deps" = yes ] && [ "$docs" = yes ]; then
+        prtitle="Prepare the repository for v$version"
+      elif [ "$deps" = yes ]; then
+        case "$depsubject" in
+          fix*) prtitle="Update the dependencies govulncheck flagged before v$version" ;;
+          *)    prtitle="Update Go module dependencies before v$version" ;;
+        esac
+      else
+        prtitle="Refresh the release-facing documentation before v$version"
+      fi
+
+      # == The rebase. `master` is protected with `strict: true`, so a pull
+      # request that is behind the base cannot be merged at all — and this
+      # branch was cut when the task was created, which may have been a while
+      # ago. Rebasing rather than merging keeps the two Conventional Commits
+      # above at the tip, where Release Please reads them.
+      say "rebasing $VINCENT_BRANCH onto the tip of $VINCENT_BASE_BRANCH"
+      git fetch --quiet origin "$VINCENT_BASE_BRANCH"
+      git rebase "origin/$VINCENT_BASE_BRANCH" || {
+        # Never leave the worktree mid-rebase: vincent's dirty detection owns
+        # this branch, and a conflicted index would follow the task around.
+        git rebase --abort || true
+        say "rebase onto $VINCENT_BASE_BRANCH conflicts: resolve it by hand"
+        echo "rebasing $VINCENT_BRANCH onto origin/$VINCENT_BASE_BRANCH conflicts — resolve it in the worktree and re-run this step" >&2
+        exit 1
+      }
+
+      # The rebase rewrites this branch, so a re-run after a partial failure
+      # needs a force push — bounded by the sha actually observed, so a push
+      # someone else made in between is refused rather than discarded.
       say "pushing $VINCENT_BRANCH"
-      git push -u origin "HEAD:refs/heads/$VINCENT_BRANCH"
+      git fetch --quiet origin "+refs/heads/$VINCENT_BRANCH:refs/remotes/origin/$VINCENT_BRANCH" 2>/dev/null || true
+      if seen=$(git rev-parse -q --verify "refs/remotes/origin/$VINCENT_BRANCH"); then
+        git push --force-with-lease="refs/heads/$VINCENT_BRANCH:$seen" origin "HEAD:refs/heads/$VINCENT_BRANCH"
+      else
+        git push origin "HEAD:refs/heads/$VINCENT_BRANCH"
+      fi
 
       # Re-running this step after a partial failure must not open a second
       # pull request.
@@ -706,58 +1237,136 @@ steps:
         url=$(printf '%s' "$existing" | jq -r .url)
         echo "pull request #$number already open for $VINCENT_BRANCH"
       else
-        say "opening the dependency pull request"
-        # A plain-language title, never a conventional one: GitHub copies the
-        # PR title into the merge commit body, so a conventional title makes
-        # Release Please record both the merge and its inner commit. The
-        # `PR title` workflow enforces this (CLAUDE.md).
+        say "opening the preparation pull request"
         url=$(gh pr create \
           --base "$VINCENT_BASE_BRANCH" \
           --head "$VINCENT_BRANCH" \
           --title "$prtitle" \
           --body "Opened by the \`prepare-release\` workflow for vincent task #$VINCENT_TASK_ID, on the way to v$version.
 
-      The commit is \`$subject\`, so Release Please will record it under the next version once this lands.
+      Dependency work: $deps. Release-facing documentation: $docs. Each half is its own Conventional Commit, so Release Please records it under the heading it belongs to.
 
       \`\`\`
-      $(git --no-pager diff --stat HEAD~1 HEAD)
+      $(git --no-pager log --oneline "origin/$VINCENT_BASE_BRANCH..HEAD")
+
+      $(git --no-pager diff --stat "origin/$VINCENT_BASE_BRANCH...HEAD")
       \`\`\`
 
-      Merge this first: the release PR's changelogs are written only after it is on \`$VINCENT_BASE_BRANCH\`, because Release Please force-pushes its branch whenever a new commit reaches the base and would take a changelog commit with it.")
+      This lands **before** the release changelogs are written: Release Please force-pushes its branch whenever a new commit reaches \`$VINCENT_BASE_BRANCH\` and would take a changelog commit with it. The same workflow merges this pull request once its checks are green and its gate is approved.")
         number=$(printf '%s' "$url" | grep -oE '[0-9]+$')
       fi
 
-      printf '%s\n' "$number" > .vincent-prepare/deps-pr.txt
-      say "dependency PR #$number open: merge it, then approve the gate"
+      printf '%s\n' "$number" > .vincent-prepare/prep-pr.txt
+      printf '%s\n' "$deps" > .vincent-prepare/prep-deps.txt
+      printf '%s\n' "$docs" > .vincent-prepare/prep-docs.txt
+      say "preparation PR #$number open: waiting for its checks"
       echo
-      echo "dependency pull request: $url"
-      echo "commit:                  $subject"
+      echo "preparation pull request: $url"
+      echo "  dependency commit:      $deps"
+      echo "  documentation commit:   $docs"
       echo
-      echo "this must be merged into $VINCENT_BASE_BRANCH before the changelogs are written"
+      echo "this is merged into $VINCENT_BASE_BRANCH before the changelogs are written"
 
-  - id: deps-gate
-    name: Land the dependency pull request
+  - id: prep-green
+    name: Bring the preparation pull request up to date and green
+    type: command
+    shell: sh
+    if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
+    # Long enough for a three-OS matrix to land twice, because a rebase
+    # triggered by a moving base starts a fresh one. Windows CI alone has taken
+    # 11m54s here.
+    timeout: 90m
+    # A failure that survives the wait means the world is genuinely not ready —
+    # a red check, an unresolvable rebase, a base moving faster than its CI.
+    # There is no delay between attempts, so a retry fails a second time a
+    # second later.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      number=$(cat .vincent-prepare/prep-pr.txt)
+      sh .vincent-prepare/ready-pr.sh "$number" 75
+
+  - id: prep-gate
+    name: Approve merging the preparation pull request
     type: manual
     if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
     instructions: |
-      This run changed dependencies and opened a pull request for them:
+      This run changed the tree and opened a pull request, which is now green
+      and up to date with `{{.Task.BaseBranch}}`:
 
-      {{(index .Steps "deps-pr").Result}}
+      {{(index .Steps "prep-green").Result}}
 
-      Do this before approving:
+      Approving lets **this workflow merge it** into `{{.Task.BaseBranch}}`.
+      That is the only write to a protected branch in this run, and it is
+      reversible — a merge commit can be reverted, and nothing is tagged,
+      signed or published by it.
 
-      1. Review and merge that pull request into `{{.Task.BaseBranch}}`, once
-         its own CI is green.
-      2. Wait for the `Release Please` workflow to run afterwards. It will
-         rewrite its release pull request — possibly with a new version number
-         — and **force-push its branch**. That is exactly why this gate is
-         here: a changelog commit written before this point would be discarded.
-      3. Approve here. The next step re-reads the release pull request from
-         scratch and will refuse to continue if the dependency PR is not
-         actually merged.
+      Read before approving:
 
-      Reject if the dependency work is wrong or the release should wait. The
-      task blocks and nothing has been written to the release branch.
+      1. The diff. A dependency bump that changed this repository's own code,
+         or a documentation edit that says something the release does not do,
+         is what this gate is for.
+      2. That each commit's Conventional Commit type is right. Release Please
+         reads them, so a `fix(deps):` earns a changelog line and a patch bump
+         and a `chore(deps):` does not.
+
+      What happens next, and why the order matters: merging this makes Release
+      Please re-run and **force-push its own branch**, possibly with a new
+      version number. Only after that does this workflow write the two
+      changelogs onto that branch. A changelog written before this point would
+      be discarded, which is the whole reason this gate sits here rather than
+      later.
+
+      Reject if the work is wrong or the release should wait. The task blocks,
+      the pull request stays open, and nothing has been written to
+      `{{.Task.BaseBranch}}` or to the release branch.
+
+  - id: prep-merge
+    name: Merge the preparation pull request
+    type: command
+    shell: sh
+    if: '{{ ne (index .Steps "changes").ExitCode 0 }}'
+    timeout: 45m
+    # The write to a protected branch. `max_retries: 0` on purpose: after an
+    # ambiguous failure the remote is the only authority on whether the merge
+    # happened, so a person looks at it before anything tries again.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      number=$(cat .vincent-prepare/prep-pr.txt)
+
+      # The gate may have been open for hours, and `strict: true` means a pull
+      # request that fell behind in that time cannot merge. Same script as
+      # `prep-green`, run again against the world as it is now.
+      say "re-checking #$number is still green and up to date"
+      sh .vincent-prepare/ready-pr.sh "$number" 30
+
+      # No `--delete-branch`: it deletes the *local* branch too, and vincent
+      # owns `{{.Task.BranchName}}` — the worktree is still on it and archive
+      # cleanup still expects it. The repository has `deleteBranchOnMerge`, so
+      # the remote copy goes on its own.
+      #
+      # No `--body` either: GitHub's default merge commit message is what
+      # CLAUDE.md's plain-language PR title rule is written against.
+      say "merging #$number into $VINCENT_BASE_BRANCH"
+      gh pr merge "$number" --merge
+
+      # The postcondition, read back rather than assumed. A merge that the API
+      # accepted and a branch protection rule then refused would otherwise pass
+      # silently into a run that writes changelogs on the wrong base.
+      state=$(gh pr view "$number" --json state --jq .state)
+      [ "$state" = MERGED ] || {
+        say "#$number is $state, not MERGED, after the merge call"
+        echo "PR #$number reports state=$state after gh pr merge — look at the pull request before re-running" >&2
+        exit 1
+      }
+
+      sha=$(gh pr view "$number" --json mergeCommit --jq '.mergeCommit.oid // ""')
+      printf '%s\n' "$sha" > .vincent-prepare/prep-merge-sha.txt
+      say "#$number merged into $VINCENT_BASE_BRANCH"
+      echo "PR #$number merged into $VINCENT_BASE_BRANCH as ${sha:-?}"
 
   - id: refresh
     name: Re-read the release pull request
@@ -769,17 +1378,18 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      # If a dependency PR was opened, it has to be merged — not closed, not
-      # still open. Approving the gate is a claim; this is the check.
-      if [ -f .vincent-prepare/deps-pr.txt ]; then
-        number=$(cat .vincent-prepare/deps-pr.txt)
+      # `prep-merge` already asserted this, and asserting it again is not
+      # ceremony: a merge can be reverted, and everything below is written on
+      # the assumption that the base branch carries this work.
+      if [ -f .vincent-prepare/prep-pr.txt ]; then
+        number=$(cat .vincent-prepare/prep-pr.txt)
         state=$(gh pr view "$number" --json state --jq .state)
         [ "$state" = MERGED ] || {
-          say "dependency PR #$number is $state, not MERGED: cannot continue"
-          echo "dependency PR #$number is $state, not MERGED — the release cannot be prepared on top of it" >&2
+          say "preparation PR #$number is $state, not MERGED: cannot continue"
+          echo "preparation PR #$number is $state, not MERGED — the release cannot be prepared on top of it" >&2
           exit 1
         }
-        echo "dependency PR #$number is merged"
+        echo "preparation PR #$number is merged"
 
         # Release Please reruns on that merge and rewrites its branch. Give it
         # a bounded chance to finish before reading the PR, so the version and
@@ -819,10 +1429,13 @@ steps:
         say "release PR still proposes v$version"
       else
         # Worth a message of its own: everything downstream is written for
-        # this number, and a move here is the usual reason a later step
-        # refuses.
+        # this number, the version pins this run may have just bumped included,
+        # and a move here is the usual reason a later step refuses.
         say "the proposed version moved: v$was -> v$version"
         echo "the proposed version moved: v$was -> v$version"
+        if [ -f .vincent-prepare/prep-docs.txt ] && [ "$(cat .vincent-prepare/prep-docs.txt)" = yes ]; then
+          echo "note: the documentation pins merged by this run name v$was — re-run this task to correct them" >&2
+        fi
       fi
       printf '%s\n' "$version" > .vincent-prepare/version.txt
 
@@ -1020,6 +1633,8 @@ steps:
       - Do not renumber, reorder or edit any previously released section in
         either file.
       - Do not edit anything outside `.vincent-prepare/rp/`.
+      - Write `vincent` with a lowercase `v` except as the first word of a
+        sentence (CLAUDE.md, product-name style).
 
       Run `vincent status "<under ten words>"` before each significant phase —
       reading the material, writing the canonical entry, writing the site page
@@ -1252,6 +1867,16 @@ steps:
       mergeable=$(printf '%s' "$pr" | jq -r .mergeStateStatus)
       case "$mergeable" in
         CLEAN|HAS_HOOKS|UNSTABLE) ;;
+        BEHIND)
+          # `strict: true` on the base branch. Nothing here updates the release
+          # branch: an "Update branch" on it is a force-push by Release Please
+          # in all but name, and it is exactly what discards the changelogs
+          # this run just wrote. The remedy is a person's, and it is short.
+          say "release PR #$number is BEHIND $VINCENT_BASE_BRANCH"
+          echo "release PR #$number is BEHIND $VINCENT_BASE_BRANCH — something landed on the base after the changelogs were pushed" >&2
+          echo "$VINCENT_BASE_BRANCH requires a branch to be up to date to merge, and updating the release branch discards the changelogs; re-run this task instead" >&2
+          exit 1
+          ;;
         *)
           say "release PR #$number is not mergeable: $mergeable"
           echo "release PR #$number is not mergeable (mergeStateStatus=$mergeable)" >&2
@@ -1291,12 +1916,19 @@ steps:
       echo
       echo "done in this run:"
       echo "  dependencies      {{index .Task.Fields "dependencies"}}"
-      if [ -f .vincent-prepare/deps-pr.txt ]; then
-        echo "  dependency PR     #$(cat .vincent-prepare/deps-pr.txt) (merged)"
+      echo "  documentation     {{index .Task.Fields "docs"}}"
+      if [ -f .vincent-prepare/prep-pr.txt ]; then
+        echo "  preparation PR    #$(cat .vincent-prepare/prep-pr.txt) merged into $VINCENT_BASE_BRANCH as $(cat .vincent-prepare/prep-merge-sha.txt 2>/dev/null || echo '?')"
+        echo "                    dependency commit: $(cat .vincent-prepare/prep-deps.txt 2>/dev/null || echo '?'), documentation commit: $(cat .vincent-prepare/prep-docs.txt 2>/dev/null || echo '?')"
       else
-        echo "  dependency PR     none needed"
+        echo "  preparation PR    none needed — the tree was already correct"
       fi
       echo "  vulnerabilities   govulncheck clean for linux, darwin and windows"
+      if [ "{{index .Task.Fields "docs"}}" = "none" ]; then
+        echo "  site metadata     not audited (this task ran with docs=none)"
+      else
+        echo "  site metadata     SEO entries, social cards and version pins current for $version"
+      fi
       echo "  CHANGELOG.md      curated for $version and pushed to the release branch"
       echo "  site-changelog.md $version section written and pushed"
       if [ -f .vincent-prepare/dry-run-url.txt ]; then
@@ -1318,8 +1950,10 @@ steps:
       echo "  * a published tag is never re-pointed — RELEASING.md § If a"
       echo "    release goes wrong."
       echo
-      echo "the sibling 'release' workflow does the merge-and-watch half if you"
-      echo "would rather drive it from vincent than from the browser."
+      echo "then walk RELEASING.md steps 6 to 10: watch both workflows, verify"
+      echo "the artifacts as a user would, and check the Homebrew, Scoop and"
+      echo "WinGet channels. Nothing in this registry does that half — the"
+      echo "'release' workflow that used to was removed in db49ca0."
       echo
       echo "secrets the tag will need (names only, never values):"
       gh secret list 2>/dev/null | awk '{ print "  " $1 }' || echo "  could not list repository secrets"
