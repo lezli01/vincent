@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -33,6 +34,15 @@ type graphLayer struct {
 	scope string
 	file  string
 	graph workflowgraph.Model
+	// body is the definition as fetched, kept for the modal's workflow-level
+	// header — the description, the declared fields and the platforms, which
+	// are facts about the file the node sits in rather than about the node.
+	body *apiclient.WorkflowBody
+	// modal is the open step detail, nil while the graph has the keyboard.
+	// It is a popup over the picture rather than a third in-place layer, so
+	// "Escape closes one layer at a time" stays literally true: modal, then
+	// graph, then the takeover (task 053).
+	modal *stepModal
 	// loading is the first fetch and every refetch; the layer keeps showing
 	// the last good graph behind it rather than blanking.
 	loading bool
@@ -42,6 +52,16 @@ type graphLayer struct {
 	// the list load and this fetch, which is the race decision 11's envelope
 	// exists to describe.
 	findings []apiclient.WorkflowFinding
+}
+
+// stepModal is the open detail of one node. It keeps the node id rather than
+// a copy of its detail: a refetch rebuilds the diagram, and the modal has to
+// re-render from the new definition or close if the node went away — the same
+// rule the selection follows (decision 19).
+type stepModal struct {
+	node  string
+	title string
+	vp    viewport.Model
 }
 
 func newGraphLayer(key wfResolveKey, entry *apiclient.WorkflowEntry) *graphLayer {
@@ -128,9 +148,20 @@ func (w *workflowsView) applyDefinition(msg workflowDefinitionMsg) {
 	}
 	g.findings = nil
 	g.loaded = true
+	g.body = msg.def.Definition
 	// Selection is kept by node id across the reload, which is what node
 	// identity being semantic rather than positional buys (decision 19).
 	g.graph.SetDefinition(msg.def.Definition)
+	// An open modal is re-rendered from the definition that just landed, and
+	// closed back to the graph when the node it was reading no longer exists.
+	// Select ignores an id the new diagram does not have, which is what makes
+	// "did it survive?" one comparison.
+	if g.modal != nil {
+		g.graph.Select(g.modal.node)
+		if g.graph.Selected() != g.modal.node {
+			g.modal = nil
+		}
+	}
 	w.sizeGraph()
 }
 
@@ -146,6 +177,7 @@ func (w *workflowsView) sizeGraph() {
 		height -= 2 // focused pane border
 	}
 	w.graph.graph.SetSize(max(width, 1), max(height-graphChromeRows, 1))
+	w.syncModal()
 }
 
 // graphChromeRows is the header line plus the inspector strip and its rule.
@@ -161,11 +193,16 @@ func (w *workflowsView) updateGraphKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	g := w.graph
 	switch msg.String() {
 	case "esc":
-		if g.err != "" {
+		switch {
+		case g.modal != nil:
+			// The modal is the innermost layer: it closes first, and the node
+			// it was opened on stays selected.
+			g.modal = nil
+		case g.err != "":
 			g.err = ""
-			return w, nil
+		default:
+			w.graph = nil
 		}
-		w.graph = nil
 		return w, nil
 	case "e":
 		return w, w.editCmd()
@@ -173,19 +210,57 @@ func (w *workflowsView) updateGraphKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		g.err = ""
 		g.loading = true
 		return w, w.definitionCmd(g.key)
+	case "enter":
+		if g.modal == nil {
+			w.openStepModal()
+			return w, nil
+		}
+	}
+	// While the modal is open it owns the keyboard: scroll and pager keys move
+	// it, and nothing reaches the selection underneath — a graph that moved
+	// its cursor behind an open modal would close onto a different node.
+	if g.modal != nil {
+		var cmd tea.Cmd
+		g.modal.vp, cmd = g.modal.vp.Update(msg)
+		return w, cmd
 	}
 	updated, cmd := g.graph.Update(msg)
 	g.graph = updated
 	return w, cmd
 }
 
+// openStepModal opens the selected node in full. Every node opens something —
+// `enter` is never inert — but there is nothing to open before the definition
+// lands, and nothing selected in a terminal too narrow to draw a node, where
+// the layer shows its hint instead (decision 8).
+func (w *workflowsView) openStepModal() {
+	g := w.graph
+	if g == nil || !g.loaded || g.graph.TooNarrow() {
+		return
+	}
+	node, ok := g.graph.SelectedNode()
+	if !ok || len(node.Full) == 0 {
+		return
+	}
+	// A fresh modal each time, so reopening starts at the top: the offset a
+	// previous reading ended on is not where the next one begins (decision 19).
+	vp := viewport.New()
+	vp.SoftWrap = false
+	g.modal = &stepModal{node: node.ID, title: node.Label, vp: vp}
+	w.syncModal()
+}
+
 // bindingContext names the layer that has the keyboard, so the footer and the
 // ? overlay describe the keys that actually work.
 func (w *workflowsView) bindingContext() bindingContext {
-	if w.graph != nil {
+	switch {
+	case w.graph != nil && w.graph.modal != nil:
+		return ctxWorkflowStep
+	case w.graph != nil:
 		return ctxWorkflowGraph
+	default:
+		return ctxWorkflows
 	}
-	return ctxWorkflows
 }
 
 // The graph pane's origin inside a takeover. The root has already taken the

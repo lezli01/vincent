@@ -601,9 +601,35 @@ workflow is one collapsed box; opening it is not in this version.
 | `shift` + arrows | Pan the canvas |
 | `pgup` `pgdn` `u` `d` `f` `b` | Page it |
 | `tab` / `shift+tab` | Walk the nodes in source order |
+| `enter` | Open the selected node in full |
 | `e` | Open the file in `$EDITOR` — the graph redraws when you save |
 | `R` | Re-fetch this workflow's definition |
 | `esc` | Back to the registry |
+
+**`enter` opens the step in full.** The strip is a glance; the popup `enter`
+opens is the reading. It shows every field the node carries, wrapped and never
+truncated — the `prompt`, the `run:` body, `env`, `instructions`,
+`permission_mode`, the input and check timeouts, a group's `max_parallel`, a
+loop's `count`/`for_each` and `max_iterations` — above a header naming the
+workflow it sits in. A value the step leaves empty that the file's `defaults`
+block supplies is shown as the effective value and marked `(inherited from
+defaults)`, so the graph can answer "what will actually run here" without
+folding the two together. A field neither the step nor `defaults` sets is
+simply absent.
+
+Every node opens something. A merge shows its conflict policy and, when it has
+one, the resolver agent in full; a lane's collapsed workflow reference names
+the workflow and says it becomes a child task, while an `include` says its
+steps are spliced into this one; a `parallel`, `fan_out` or `loop` header shows
+its bounds; `END` says the workflow ends there.
+
+While it is open the popup has the keyboard: `↑`/`↓` and the pager keys scroll
+it, `e` and `R` still work, and `esc` closes it back to the graph with the same
+node selected. A second `esc` closes the graph, as it always did.
+
+![The step-detail popup over the graph: the selected command step in full — the
+workflow it belongs to, its id and type, its whole `run:` body, and a timeout
+marked as inherited from defaults](../assets/tui-workflow-step.png)
 
 Editing is the point of `e` here: save the file and the graph redraws in place,
 with your selected node still selected. A terminal too narrow to draw a node

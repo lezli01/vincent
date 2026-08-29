@@ -1,0 +1,60 @@
+== condition
+plan: id=plan type=agent
+gate: id=gate type=condition if={{ .Fields.deploy }}
+deploy: id=deploy type=command
+#end:
+== fanout
+plan: id=plan type=agent
+spread: id=spread type=fan_out
+api_impl: id=api_impl type=agent
+api_test: id=api_test type=command
+#ref:spread:web: lane=web workflow=web-feature if={{ .Fields.web }}
+#merge:spread: on_conflict=agent join=spread resolver=fixup
+ship: id=ship type=command
+#end:
+== guarded
+plan: id=plan type=agent check=go build ./...
+maybe: id=maybe type=command if={{ eq .Fields.mode "full" }}
+ship: id=ship type=command
+#end:
+== loop
+plan: id=plan type=agent
+repeat: id=repeat type=loop
+work: id=work type=agent
+verify: id=verify type=command
+ship: id=ship type=command
+#end:
+== loopbreak
+plan: id=plan type=agent
+repeat: id=repeat type=loop
+work: id=work type=agent
+enough: id=enough type=break if={{ .Steps.work.Success }}
+ship: id=ship type=command
+#end:
+== nested
+repeat: id=repeat type=loop
+work: id=work type=agent
+skip: id=skip type=condition if={{ .Steps.work.Success }}
+record: id=record type=command
+spread: id=spread type=fan_out
+first: id=first type=command
+second: id=second type=command
+#merge:spread: on_conflict=block join=spread
+#end:
+== parallel
+plan: id=plan type=agent
+checks: id=checks type=parallel
+lint: id=lint type=command
+unit: id=unit type=command
+e2e: id=e2e type=command if={{ .Fields.slow }}
+ship: id=ship type=command
+#end:
+== sequential
+plan: id=plan type=agent
+build: id=build type=command
+ship: id=ship type=manual
+#end:
+== wide
+wide: id=wide type=agent name=実装をレビューしてからマージする
+emoji: id=emoji type=command name=🚀🚀🚀 deploy 🚀🚀🚀 everything everywhere
+#end:

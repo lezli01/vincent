@@ -569,6 +569,45 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Errorf("R left the previous error on screen: %q", w.graph.err)
 			}
 		},
+		"enter": func(t *testing.T) {
+			w := graphFixture(t)
+			w.render(100, 40)
+			w.updateKey(registryKey(t, "enter"))
+			if w.graph.modal == nil {
+				t.Fatal("enter did not open the selected node's detail")
+			}
+		},
+	},
+
+	ctxWorkflowStep: {
+		"down": func(t *testing.T) {
+			w := modalFixture(t)
+			w.render(100, 16)
+			before := w.graph.modal.vp.View()
+			w.updateKey(registryKey(t, "down"))
+			if w.graph.modal.vp.View() == before {
+				t.Fatal("down did not scroll the open detail")
+			}
+		},
+		"e": func(t *testing.T) {
+			w := modalFixture(t)
+			if _, cmd := w.updateKey(registryKey(t, "e")); cmd == nil {
+				t.Fatal("e did not open the workflow file from inside the detail")
+			}
+		},
+		"R": func(t *testing.T) {
+			w := modalFixture(t)
+			if _, cmd := w.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not re-fetch the definition from inside the detail")
+			}
+		},
+		"esc": func(t *testing.T) {
+			w := modalFixture(t)
+			w.updateKey(registryKey(t, "esc"))
+			if w.graph == nil || w.graph.modal != nil {
+				t.Fatal("esc did not close the detail back to the graph")
+			}
+		},
 	},
 
 	ctxTaskWorkflow: {

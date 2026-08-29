@@ -51,6 +51,27 @@ list with the user-facing context a commit subject cannot carry.
   would go stale and lie. See
   [task 052](docs/tasks/052-github-pull-requests.md); the TUI pull-request
   screen and the browser opener are still to come.
+- **`enter` in the workflow graph opens the selected node in full.** The
+  inspector strip packs two lines and drops the rest; the popup `enter` opens
+  shows everything the definition says about that node, wrapped and never
+  truncated — the `prompt`, the `run:` body, `env`, `instructions`,
+  `permission_mode`, the input and check timeouts, a group's `max_parallel`, a
+  loop's `count`/`for_each` and `max_iterations` — above a header naming the
+  workflow it sits in, with its description, declared fields, platforms and
+  file. A value the step leaves empty that the workflow's `defaults` block
+  supplies is shown as the effective value and marked `(inherited from
+  defaults)`, so the graph can answer "what will actually run here" without
+  hiding which of the two said it. A field neither sets is simply absent — the
+  popup shows the file, never the daemon's own run-time fallback. Every node
+  opens something: a merge shows its conflict policy and its resolver agent, a
+  collapsed workflow reference says whether it becomes a child task or spliced
+  steps, a group header shows its bounds, and `END` says the workflow ends
+  there. `esc` closes it back to the graph with the same node still selected,
+  and `e` and `R` keep working from inside it. Reading a prompt no longer means
+  handing the whole file to `$EDITOR` and losing the picture you were reading.
+  The graph itself is unchanged: node boxes and the inspector strip render
+  exactly as they did. See [Using the TUI](docs/guides/tui.md).
+
 ### Changed
 
 - **The board stops spending a wide terminal on the title column, and a cell

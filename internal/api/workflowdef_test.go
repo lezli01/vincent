@@ -379,8 +379,8 @@ func TestGateCorpusIsServable(t *testing.T) {
 		writeWorkflowFile(t, h.globalDir, name, string(src))
 		names = append(names, name)
 	}
-	if len(names) < 10 {
-		t.Fatalf("the corpus has %d workflows; the gate documents ten", len(names))
+	if len(names) < 11 {
+		t.Fatalf("the corpus has %d workflows; the gate documents eleven", len(names))
 	}
 	h.reg.ReloadGlobal()
 
