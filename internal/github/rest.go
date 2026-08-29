@@ -204,3 +204,95 @@ func restError(resp *http.Response, body []byte) *Error {
 		return &Error{Reason: ReasonUnreachable, Detail: detail}
 	}
 }
+
+// restPull is the REST API's pull-request shape (see ghPull for why the two
+// legs do not share a struct).
+type restPull struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+	Draft   bool   `json:"draft"`
+	Head    struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// MergedAt is the only merged signal both the collection and the single
+	// resource carry; the single resource's `merged` bool is deliberately not
+	// read, so one field decides it on both routes.
+	MergedAt *time.Time `json:"merged_at"`
+}
+
+func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
+	pull := PullRequest{
+		Repo:       repo.String(),
+		Number:     r.Number,
+		Title:      r.Title,
+		URL:        r.HTMLURL,
+		State:      normalizeState(r.State),
+		Draft:      r.Draft,
+		HeadBranch: r.Head.Ref,
+		BaseBranch: r.Base.Ref,
+		Author:     r.User.Login,
+		CreatedAt:  r.CreatedAt,
+		UpdatedAt:  r.UpdatedAt,
+		FetchedAt:  now,
+	}
+	if r.MergedAt != nil && !r.MergedAt.IsZero() {
+		pull.Merged, pull.State = true, StateClosed
+	}
+	return pull
+}
+
+func (c *Client) restListPulls(ctx context.Context, cred credential, repo Repo, opts ListOptions) ([]PullRequest, error) {
+	q := url.Values{}
+	q.Set("state", opts.state())
+	q.Set("per_page", strconv.Itoa(opts.limit()))
+	q.Set("sort", "created")
+	q.Set("direction", "desc")
+	body, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/pulls?%s",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), q.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	return parseRESTPullList(body, repo, c.now())
+}
+
+func parseRESTPullList(body []byte, repo Repo, now time.Time) ([]PullRequest, error) {
+	var raw []restPull
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, newError(ReasonBadResponse, "decode pull request list: %v", err)
+	}
+	pulls := make([]PullRequest, 0, len(raw))
+	for _, r := range raw {
+		pulls = append(pulls, r.normalize(repo, now))
+	}
+	return pulls, nil
+}
+
+func (c *Client) restGetPull(ctx context.Context, cred credential, repo Repo, number int) (PullRequest, error) {
+	body, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/pulls/%d",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), number))
+	if err != nil {
+		return PullRequest{}, err
+	}
+	return parseRESTPull(body, repo, c.now())
+}
+
+func parseRESTPull(body []byte, repo Repo, now time.Time) (PullRequest, error) {
+	var raw restPull
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return PullRequest{}, newError(ReasonBadResponse, "decode pull request: %v", err)
+	}
+	if raw.Number == 0 {
+		return PullRequest{}, newError(ReasonBadResponse, "pull request response carried no number")
+	}
+	return raw.normalize(repo, now), nil
+}

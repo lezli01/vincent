@@ -30,6 +30,17 @@ const (
 	// nothing about admission changes when an agent is near-spent. The
 	// near-exhausted agent is displayed, never withheld.
 	EventAgentQuotaChanged = "agent.quota_changed"
+	// EventTaskGitHubPullChanged announces that a task's pull-request link
+	// changed (task 052): the reconciler matched one, or a human linked or
+	// unlinked one. Payload `{repo, number, source, suppressed}`, empty when
+	// the link was cleared.
+	//
+	// It carries a task_id and is not a transition: the task's state is
+	// unchanged, `updated_at` is untouched, and `scheduler.WakeOn` is false
+	// for it, because nothing about admission depends on a pull request. It
+	// exists so a running TUI re-renders a task whose pull request appeared
+	// without polling the endpoint.
+	EventTaskGitHubPullChanged = "task.github_pull_changed"
 )
 
 // SetEventHook registers fn to run after an event's transaction commits.

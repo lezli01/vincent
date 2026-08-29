@@ -19,9 +19,9 @@ import (
 func newGitHubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "github",
-		Short: "Read GitHub issues for a project",
+		Short: "Read GitHub issues and pull requests for a project",
 	}
-	cmd.AddCommand(newGitHubIssuesCmd(), newGitHubStatusCmd())
+	cmd.AddCommand(newGitHubIssuesCmd(), newGitHubPullsCmd(), newGitHubStatusCmd())
 	return cmd
 }
 
@@ -65,6 +65,55 @@ func newGitHubIssuesCmd() *cobra.Command {
 	cmd.Flags().Int64Var(&projectID, "project", 0, "Project id (required)")
 	cmd.Flags().StringVar(&state, "state", "open", "Issue state: open, closed or all")
 	cmd.Flags().IntVar(&limit, "limit", 0, "How many issues to list (default: the daemon's)")
+	_ = cmd.MarkFlagRequired("project")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// `vincent github prs` is the listing without the TUI (task 052), so it is
+// scriptable and a gate script can assert it over curl and jq without driving
+// a terminal. Open pull requests only: the daemon's listing is open-only, and
+// a merged one is answered from the task that links it.
+func newGitHubPullsCmd() *cobra.Command {
+	var (
+		projectID int64
+		limit     int
+	)
+	cmd := &cobra.Command{
+		Use:   "prs",
+		Short: "List a project's open GitHub pull requests, newest first",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				pulls, err := c.ListGitHubPulls(ctx, projectID, limit)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					if pulls == nil {
+						pulls = []apiclient.GitHubPullRequest{}
+					}
+					return emitJSON(cmd.OutOrStdout(), pulls)
+				}
+				rows := make([][]string, 0, len(pulls))
+				for _, p := range pulls {
+					task := "-"
+					if p.TaskID != nil {
+						task = "#" + strconv.FormatInt(*p.TaskID, 10)
+					}
+					rows = append(rows, []string{
+						"#" + strconv.Itoa(p.Number), p.Status(), p.Title,
+						dash(p.HeadBranch), task,
+					})
+				}
+				return table(cmd.OutOrStdout(),
+					[]string{"PR", "STATE", "TITLE", "BRANCH", "TASK"}, rows)
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&projectID, "project", 0, "Project id (required)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "How many pull requests to list (default: the daemon's)")
 	_ = cmd.MarkFlagRequired("project")
 	jsonFlag(cmd)
 	return cmd

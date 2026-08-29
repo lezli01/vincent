@@ -1,0 +1,38 @@
+[
+  {
+    "author": {
+      "id": "MDQ6VXNlcjE=",
+      "is_bot": false,
+      "login": "octocat",
+      "name": "The Octocat"
+    },
+    "baseRefName": "master",
+    "createdAt": "2026-08-26T19:21:29Z",
+    "headRefName": "vincent/231-list-open-pull-requests",
+    "isDraft": false,
+    "mergedAt": null,
+    "number": 412,
+    "state": "OPEN",
+    "title": "List a GitHub project's open pull requests",
+    "updatedAt": "2026-08-27T09:02:11Z",
+    "url": "https://github.com/octo/repo/pull/412"
+  },
+  {
+    "author": {
+      "id": "MDQ6VXNlcjI=",
+      "is_bot": false,
+      "login": "hubot",
+      "name": ""
+    },
+    "baseRefName": "master",
+    "createdAt": "2026-07-01T08:00:00Z",
+    "headRefName": "vincent/9-rework-the-board-header",
+    "isDraft": true,
+    "mergedAt": null,
+    "number": 401,
+    "state": "OPEN",
+    "title": "Rework the board header",
+    "updatedAt": "2026-07-02T08:00:00Z",
+    "url": "https://github.com/octo/repo/pull/401"
+  }
+]

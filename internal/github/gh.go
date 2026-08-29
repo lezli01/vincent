@@ -209,3 +209,100 @@ func (c *Client) ghVersion(ctx context.Context, path string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
 	return line
 }
+
+// ghPullFields is the `--json` field set both `gh pr list` and `gh pr view`
+// are asked for, for the reason ghFields is one list: the two calls cannot
+// drift into producing different PullRequests for the same pull request.
+const ghPullFields = "number,title,url,state,isDraft,headRefName,baseRefName,author,createdAt,updatedAt,mergedAt"
+
+// ghPull is `gh pr --json`'s shape. Its own type, for the reason ghIssue is:
+// `gh` and the REST API disagree about almost every name (`isDraft` vs
+// `draft`, `headRefName` vs `head.ref`, `mergedAt` vs `merged_at`).
+type ghPull struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	State   string `json:"state"`
+	IsDraft bool   `json:"isDraft"`
+	Head    string `json:"headRefName"`
+	Base    string `json:"baseRefName"`
+	Author  struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+	MergedAt  *time.Time `json:"mergedAt"`
+}
+
+func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
+	pull := PullRequest{
+		Repo:       repo.String(),
+		Number:     g.Number,
+		Title:      g.Title,
+		URL:        g.URL,
+		State:      normalizeState(g.State),
+		Draft:      g.IsDraft,
+		HeadBranch: g.Head,
+		BaseBranch: g.Base,
+		Author:     g.Author.Login,
+		CreatedAt:  g.CreatedAt,
+		UpdatedAt:  g.UpdatedAt,
+		FetchedAt:  now,
+	}
+	// `gh` reports a third state, MERGED, that the REST API does not have.
+	// Folding it onto State+Merged is what makes the two legs agree: a merged
+	// pull request is closed everywhere in vincent, and carries Merged.
+	if pull.State == "merged" || (g.MergedAt != nil && !g.MergedAt.IsZero()) {
+		pull.Merged, pull.State = true, StateClosed
+	}
+	return pull
+}
+
+func (c *Client) ghListPulls(ctx context.Context, cred credential, repo Repo, opts ListOptions) ([]PullRequest, error) {
+	out, err := c.runGH(ctx, cred.ghPath,
+		"pr", "list",
+		"--repo", repo.String(),
+		"--state", opts.state(),
+		"--limit", strconv.Itoa(opts.limit()),
+		"--json", ghPullFields)
+	if err != nil {
+		return nil, err
+	}
+	return parseGHPullList(out, repo, c.now())
+}
+
+// parseGHPullList is the decoding half of the leg, split from the exec so the
+// table tests can drive it straight from captured output.
+func parseGHPullList(out []byte, repo Repo, now time.Time) ([]PullRequest, error) {
+	var raw []ghPull
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, newError(ReasonBadResponse, "decode gh pr list: %v", err)
+	}
+	pulls := make([]PullRequest, 0, len(raw))
+	for _, g := range raw {
+		pulls = append(pulls, g.normalize(repo, now))
+	}
+	return pulls, nil
+}
+
+func (c *Client) ghGetPull(ctx context.Context, cred credential, repo Repo, number int) (PullRequest, error) {
+	out, err := c.runGH(ctx, cred.ghPath,
+		"pr", "view", strconv.Itoa(number),
+		"--repo", repo.String(),
+		"--json", ghPullFields)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	return parseGHPull(out, repo, c.now())
+}
+
+func parseGHPull(out []byte, repo Repo, now time.Time) (PullRequest, error) {
+	var raw ghPull
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return PullRequest{}, newError(ReasonBadResponse, "decode gh pr view: %v", err)
+	}
+	if raw.Number == 0 {
+		return PullRequest{}, newError(ReasonBadResponse, "gh pr view returned no pull request number")
+	}
+	return raw.normalize(repo, now), nil
+}

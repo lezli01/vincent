@@ -28,6 +28,29 @@ list with the user-facing context a commit subject cannot carry.
   reflected. A snapshot that does not parse is a `200` with findings and a null
   `definition`, matching `GET /v1/workflows/definition`.
 
+- **GitHub pull requests: list a project's open ones, and link them to board
+  tasks.** `GET /v1/projects/{id}/github/pulls` lists a project's open pull
+  requests, and `vincent github prs --project ID` prints the same listing. A
+  task is linked to the pull request opened from its branch automatically: the
+  daemon matches an open pull request's head branch against the task's own
+  branch every `github.poll_interval` (5m by default; `0` switches it off,
+  which is worth knowing because it is vincent's only background network
+  traffic). `GET /v1/tasks/{id}/github/pull` serves that task's pull request
+  **live**, which is what lets a task still name one that has since merged and
+  dropped off the open listing; `POST` and `DELETE` on the same path let you
+  link or unlink by hand, and an unlink is remembered so the daemon does not
+  re-apply it. A task with no pull request gets a prefilled `compare_url` —
+  GitHub's own "open a pull request" page, with the task's title and
+  description and `Closes #N` where it applies.
+
+  All of it is read-only: **vincent still writes nothing to GitHub**. The
+  compare URL is built, never fetched, and no `gh` invocation or network call
+  is made at all when the integration is off or a project's `origin` is not a
+  github.com remote. Only the *link* is stored — a pull request's title, state,
+  draft and merged status are re-read every time, because a snapshot of them
+  would go stale and lie. See
+  [task 052](docs/tasks/052-github-pull-requests.md); the TUI pull-request
+  screen and the browser opener are still to come.
 ### Changed
 
 - **The board stops spending a wide terminal on the title column, and a cell

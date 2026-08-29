@@ -68,7 +68,8 @@ type Options struct {
 	Logger *slog.Logger
 }
 
-// Client reads GitHub issues for the daemon. It is safe for concurrent use.
+// Client reads GitHub issues and pull requests for the daemon. It is safe
+// for concurrent use.
 type Client struct {
 	opts Options
 
@@ -198,6 +199,59 @@ func (c *Client) Get(ctx context.Context, repo Repo, number int) (Issue, error) 
 		return Issue{}, err
 	}
 	return issue, nil
+}
+
+// ListPulls returns repo's pull requests, newest first. The listing the API
+// serves is open-only: an open listing is what a "which of my branches has a
+// PR" screen is asking, and pulling a repository's whole pull-request history
+// to answer a question about one row is what GetPull exists to avoid.
+func (c *Client) ListPulls(ctx context.Context, repo Repo, opts ListOptions) ([]PullRequest, error) {
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	var pulls []PullRequest
+	if cred.via == ViaGH {
+		pulls, err = c.ghListPulls(ctx, cred, repo, opts)
+	} else {
+		pulls, err = c.restListPulls(ctx, cred, repo, opts)
+	}
+	if err != nil {
+		c.logf("github pull request list failed", "repo", repo.String(),
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return nil, err
+	}
+	sortPulls(pulls)
+	return pulls, nil
+}
+
+// GetPull returns one pull request, in any state.
+//
+// It is the merged case's only answer. A task's link outlives the pull
+// request's presence in an open listing — that is the whole point of storing
+// it — so the task workspace reads its PR here rather than looking for it in
+// a listing that by then no longer carries it.
+func (c *Client) GetPull(ctx context.Context, repo Repo, number int) (PullRequest, error) {
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	var pull PullRequest
+	if cred.via == ViaGH {
+		pull, err = c.ghGetPull(ctx, cred, repo, number)
+	} else {
+		pull, err = c.restGetPull(ctx, cred, repo, number)
+	}
+	if err != nil {
+		c.logf("github pull request fetch failed", "repo", repo.String(), "pull", number,
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return PullRequest{}, err
+	}
+	return pull, nil
 }
 
 // credential resolves how to talk to GitHub, memoized for probeTTL.

@@ -65,6 +65,7 @@ the living engineering specification records implementation contracts.
 | [049](049-full-screen-task-workspace.md) | Board-only home and full-screen task workspace | ✅ done (5/5) |
 | [050](050-board-column-widths-and-wrapping.md) | Cap the board TITLE column and wrap overflowing cells | ✅ done (2/2) |
 | [051](051-live-workflow-graph-tab.md) | Live workflow graph tab on the task workspace | ✅ done (5/5) |
+| [052](052-github-pull-requests.md) | List a GitHub project's open pull requests and link them to board tasks | 🚧 in progress (5/7) |
 
 ## How to add and update a task document
 

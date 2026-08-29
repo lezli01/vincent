@@ -115,8 +115,15 @@ agents:
 # and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
 # environment the daemon inherited. Set enabled to false to stop the daemon
 # reading GitHub at all.
+#
+# poll_interval is how often the daemon reconciles the link between a task and
+# its pull request, by matching an open pull request's head branch against the
+# task's branch (task 052). It is the only background network traffic vincent
+# makes: set it to 0 to switch the reconciler off and keep the rest of the
+# integration, which then calls GitHub only when you ask it to.
 github:
   enabled: true
+  poll_interval: 5m
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",

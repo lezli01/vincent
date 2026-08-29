@@ -353,6 +353,16 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// config toggle per call through the API's own gate, so a hot reload
 	// governs the next request rather than requiring a restart.
 	githubClient := github.New(github.Options{Logger: logger})
+	// The task↔pull-request reconciler (task 052, §12.3), wired here beside
+	// the scheduler and the notifier because it is a subsystem of the same
+	// kind: it owns its own goroutine, reads currentConfig() per tick so a
+	// hot reload reaches the next one, and writes only through the store.
+	//
+	// It is the daemon's first standing outbound network traffic, which is
+	// why `github.poll_interval: 0` switches it off on its own — the loop
+	// still runs and still does nothing, so switching it back on needs no
+	// restart.
+	go NewPullReconciler(st, currentConfig, git, githubClient, logger).Run(ctx)
 
 	srv := api.New(api.Deps{
 		Token:       token,

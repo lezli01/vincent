@@ -1,0 +1,35 @@
+-- 0018_github_pull: the pull request a task is linked to (task 052,
+-- spec §5.3/§14).
+--
+-- One nullable JSON column beside 0014's `github_issue_json`, not inside it.
+-- 0014's own comment hoped its shape could grow to carry this without a second
+-- migration; it cannot, honestly. That column is documented and implemented as
+-- "NULL = no linked issue" holding a bare normalized github.Issue, so a task
+-- with a pull request and no issue would have to make it non-NULL with
+-- something that is not an issue. Widening it into an envelope would leave
+-- every existing row in the old shape and force a shape-sniffing read path
+-- forever. One append-only migration is the cheaper honesty.
+--
+-- It is a **pointer**, not a snapshot — the opposite of `github_issue_json` on
+-- purpose. It holds `{repo, number, source, suppressed, linked_at}` and
+-- nothing else. Title, state, draft and merged status are always re-fetched,
+-- because they are live by nature and a snapshot of them would read exactly
+-- like a current one while being wrong within minutes. An issue is
+-- snapshotted so a *run* is reproducible and `.Issue` renders offline; a pull
+-- request has no such requirement, and nothing in the step path reads this.
+--
+-- `repo` rides beside `number` because a number alone is meaningless. This is
+-- where task 035 decision 5's "repo identity is not stored" was revisited, as
+-- that decision predicted it would be: the identity landed on the task, where
+-- the number already had to go, and **no** `github_repo` column was added to
+-- projects. "GitHub-based" stays a derived fact — the `origin` remote parsed
+-- at the point of use.
+--
+-- `source` is auto or human and `suppressed` records a human unlink, because
+-- the reconciler needs three states and not two: never matched, linked, and
+-- matched-but-refused. The absence of a link cannot carry the third, and
+-- without it every tick would re-apply a link a human just removed.
+--
+-- Nothing queries inside it — no index, no generated column — so a linked task
+-- costs the same as any other on every board query, the property 0014 set.
+ALTER TABLE tasks ADD COLUMN github_pull_json TEXT; -- NULL = no linked pull request

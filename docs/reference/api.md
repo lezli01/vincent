@@ -417,6 +417,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
+| `GET` | `/v1/projects/{id}/github/pulls` | Its **open** pull requests, newest first — `?limit=` |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
@@ -495,6 +496,90 @@ template context.
 `POST /v1/tasks` computes exactly the same prefill from the same code, so a
 preview a human accepted and a create call that names only the issue produce the
 same task. An unknown workflow name is `400 validation_failed`.
+
+### GitHub pull requests
+
+`GET /v1/projects/{id}/github/pulls` lists the repository's **open** pull
+requests, newest first; `?limit=` caps the rows. It goes through the same
+capability gate as the issue listing, so a disabled integration or a project
+whose `origin` is not a github.com repository makes no call at all.
+
+It is a pure read: it fetches, normalizes, sorts and returns, and **persists
+nothing**. Linking is the daemon's own job (below).
+
+```json
+[
+  {
+    "repo": "lezli01/vincent", "number": 412,
+    "title": "List a GitHub project's open pull requests",
+    "url": "https://github.com/lezli01/vincent/pull/412",
+    "state": "open", "draft": false, "merged": false,
+    "head_branch": "vincent/231-list-open-pull-requests", "base_branch": "master",
+    "author": "lezli01",
+    "created_at": "2026-08-26T19:21:29Z", "updated_at": "2026-08-27T09:02:11Z",
+    "fetched_at": "2026-08-29T12:00:00Z",
+    "task_id": 61, "link_source": "auto"
+  }
+]
+```
+
+`state` is `open` or `closed`; a merged pull request is closed and carries
+`merged: true`. `task_id` and `link_source` are present on the rows a task
+claims — `auto` when the daemon matched the head branch, `human` when a person
+said so.
+
+Nothing about a pull request is ever stored. What a task keeps is a *pointer* —
+`github_pull`, holding `{repo, number, source, suppressed, linked_at}` — and
+everything renderable is re-read on every request, because draft, state and
+merged status are live by nature and a snapshot of them would read exactly like
+a current one while being wrong.
+
+| Method | Path | Body / notes |
+|---|---|---|
+| `GET` | `/v1/tasks/{id}/github/pull` | This task's pull request, fetched live |
+| `POST` | `/v1/tasks/{id}/github/pull` | `{ number }` — link by hand |
+| `DELETE` | `/v1/tasks/{id}/github/pull` | Unlink, and remember the refusal |
+
+```json
+{
+  "linked": true, "repo": "lezli01/vincent", "number": 412, "source": "auto",
+  "pull": { "number": 412, "state": "closed", "merged": true, "…": "…" }
+}
+```
+
+`GET` answers **200 whatever GitHub says**. A task workspace asks it on every
+open, and refusing the whole row because the integration is off would take a
+fact vincent owns away from a client that can still render it — so the stored
+link is always served, and `reason` carries the named vocabulary above when the
+live fetch could not be made. It fetches by number rather than looking in the
+listing, which is what lets a task still name a pull request that has since
+**merged** and dropped off an open-only listing.
+
+For a task with no link, the response carries `compare_url` instead: GitHub's
+own "open a pull request" page for the task's branch, prefilled with the task's
+title and description plus `Closes #N` when the task carries an issue snapshot
+from the same repository. It is **built, never fetched** — producing it makes no
+request to GitHub. vincent pushes nothing, opens nothing and merges nothing; a
+human presses GitHub's button.
+
+`POST` is the human link, for a pull request the head-branch rule misses (one
+opened from a branch vincent did not create) or gets wrong. It writes vincent's
+own column and makes no GitHub call, not even to check the number exists —
+validating it would put a network failure in the way of a person correcting
+vincent, and a wrong number shows as `not_found` the moment it is displayed. A
+human link is never overwritten by the daemon.
+
+`DELETE` does not clear the column: it marks the link **suppressed**, keeping
+the repo and number. That is what makes a human unlink stick — the daemon has to
+be able to read the refusal, and an empty column would only say "never matched".
+
+Both write routes return the updated task.
+
+Linking otherwise happens in the background. Every
+[`github.poll_interval`](configuration.md#github) the daemon lists each
+GitHub-based project's open pull requests and links the ones whose head branch
+equals a task's branch, marking them `auto`. It never overwrites a `human` link
+and never un-suppresses one. Set the interval to `0` to switch it off.
 
 Either endpoint answers **409** when the integration is not usable, carrying the
 reason a client can branch on:

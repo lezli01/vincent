@@ -17,7 +17,8 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
-	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, workflow_origin_json,
+	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, github_pull_json,
+	workflow_origin_json,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
@@ -172,6 +173,10 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	pullJSON, err := marshalGitHubPull(t.GitHubPull)
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
 	originJSON, err := marshalWorkflowOrigin(t.WorkflowOrigin)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -181,15 +186,15 @@ func insertTaskTx(
 			base_branch, branch_name, worktree_path, priority, agent_override, model_override, effort_override,
 			state, current_step, block_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
-			workflow_origin_json,
+			github_pull_json, workflow_origin_json,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
-		originJSON,
+		pullJSON, originJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt))
 	if err != nil {
@@ -882,7 +887,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		parentID, parentStep           sql.NullInt64
 		laneID                         sql.NullString
 		laneOrder                      sql.NullInt64
-		githubIssue                    sql.NullString
+		githubIssue, githubPull        sql.NullString
 		workflowOrigin                 sql.NullString
 		created, updated               string
 		started, finished, archived    sql.NullString
@@ -893,7 +898,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
-		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue, &workflowOrigin,
+		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue, &githubPull, &workflowOrigin,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
 	}
@@ -941,6 +946,13 @@ func scanTask(r rowScanner) (*Task, error) {
 			return nil, fmt.Errorf("github_issue_json: %w", err)
 		}
 		t.GitHubIssue = &issue
+	}
+	if githubPull.Valid && githubPull.String != "" {
+		var link github.PullLink
+		if err := json.Unmarshal([]byte(githubPull.String), &link); err != nil {
+			return nil, fmt.Errorf("github_pull_json: %w", err)
+		}
+		t.GitHubPull = &link
 	}
 	// A NULL column stays nil rather than becoming a zero-valued origin: "not
 	// recorded" and "recorded as an empty scope" are different claims, and only
@@ -993,6 +1005,20 @@ func marshalGitHubIssue(issue *github.Issue) (any, error) {
 	b, err := json.Marshal(issue)
 	if err != nil {
 		return nil, fmt.Errorf("marshal github issue: %w", err)
+	}
+	return string(b), nil
+}
+
+// marshalGitHubPull renders a task's pull-request link for storage. A nil
+// link is SQL NULL; a suppressed one is **not**, because a human's refusal is
+// exactly what has to survive the next reconciler tick (task 052).
+func marshalGitHubPull(link *github.PullLink) (any, error) {
+	if link == nil || (link.Number == 0 && !link.Suppressed) {
+		return nil, nil
+	}
+	b, err := json.Marshal(link)
+	if err != nil {
+		return nil, fmt.Errorf("marshal github pull link: %w", err)
 	}
 	return string(b), nil
 }

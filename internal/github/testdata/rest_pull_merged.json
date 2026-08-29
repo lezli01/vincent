@@ -1,0 +1,19 @@
+{
+  "url": "https://api.github.com/repos/octo/repo/pulls/377",
+  "id": 2470100,
+  "html_url": "https://github.com/octo/repo/pull/377",
+  "number": 377,
+  "state": "closed",
+  "locked": false,
+  "title": "Ship the thing that already merged",
+  "user": { "login": "octocat", "id": 1, "type": "User" },
+  "body": "",
+  "created_at": "2026-06-01T08:00:00Z",
+  "updated_at": "2026-06-02T08:00:00Z",
+  "closed_at": "2026-06-02T08:00:00Z",
+  "merged_at": "2026-06-02T08:00:00Z",
+  "merged": true,
+  "draft": false,
+  "head": { "label": "octo:vincent/3-ship-the-thing", "ref": "vincent/3-ship-the-thing" },
+  "base": { "label": "octo:master", "ref": "master" }
+}
