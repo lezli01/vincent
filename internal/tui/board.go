@@ -59,10 +59,13 @@ type (
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg time.Time
-	// selectTaskMsg asks the home shell to select a task in the table and
-	// open it in the detail panels immediately — the explicit path, used by
-	// task creation. Cursor movement goes through the settle window instead.
-	selectTaskMsg struct{ id int64 }
+	// selectTaskMsg asks the root to select a task on the board and open its
+	// full-screen workspace. State is the board snapshot hint used to subscribe
+	// to a running task before the authoritative detail fetch lands.
+	selectTaskMsg struct {
+		id    int64
+		state string
+	}
 )
 
 // board is the §15 home view: every task, live.
@@ -769,11 +772,7 @@ func (b *board) actionLine() string {
 	if t.id == 0 {
 		return ""
 	}
-	var extra []string
-	if t.has(apiclient.ActionAnswer) {
-		extra = append(extra, styleAsk.Render("enter → answer"))
-	}
-	return b.actions.render(t, extra...)
+	return b.actions.render(t)
 }
 
 func (b *board) chromeLines() int {

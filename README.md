@@ -33,7 +33,7 @@
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/tui-board.png" alt="The vincent TUI: task board, step timeline, and live agent output" width="900">
+<img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/tui-board.png" alt="The vincent TUI task board" width="900">
 </p>
 
 <p align="center">
@@ -150,6 +150,14 @@ or per task (`agent: claude` / `codex` / `cursor`).
 | Claude Code | `claude` | Mid-run questions supported — a step can pause in `awaiting_input` and be answered from the TUI |
 | Codex | `codex` | Non-interactive once started; reports no cost |
 | Cursor | **`cursor-agent`** | Non-interactive; reports no cost |
+
+> [!WARNING]
+> **Known limitation in Claude restricted mode:** it does not currently provide
+> a complete boundary against arbitrary command execution. Do not use it for
+> untrusted tasks or repositories. Until this is resolved, run Claude jobs only
+> in environments you trust or inside an additional OS-level sandbox or VM. The
+> underlying details are being handled through the private security-advisory
+> process.
 
 Three things to know about the Cursor adapter specifically:
 

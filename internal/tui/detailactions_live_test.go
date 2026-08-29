@@ -220,7 +220,7 @@ func TestDetailAnswersLiveAgentQuestion(t *testing.T) {
 	// would: the form never opens itself (§15 — it announces itself and the
 	// human presses the key).
 	h.press(t, "enter")
-	if s := h.m.views[viewHome].(*shell); !s.popup {
+	if v := h.m.views[viewTask].(*taskView); !v.popup {
 		t.Fatal("enter did not open the answer popup")
 	}
 	h.press(t, " ")

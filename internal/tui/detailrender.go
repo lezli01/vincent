@@ -8,12 +8,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 var (
-	styleStepHeader = lipgloss.NewStyle().Bold(true)
+	styleStepHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	styleSelected   = lipgloss.NewStyle().Background(lipgloss.Color("237")).Bold(true)
 	styleTool       = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	styleStderr     = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Faint(true)
@@ -43,20 +44,27 @@ func (d *detail) timelinePanel(height int) string {
 			// The collapsed band has no header above it to indent under.
 			return d.attemptLine(run, false)
 		}
-		return d.headerLine()
+		return d.headerLines()[0]
 	}
-	var sb strings.Builder
-	sb.WriteString(d.headerLine())
-	used := 1
-	if line := d.errorLine(); line != "" && height > 2 {
-		sb.WriteString("\n")
-		sb.WriteString(line)
-		used++
+	header := d.headerLines()
+	// Even a very short task view keeps one physical row for the timeline.
+	// The richer header yields its least important lower rows first.
+	header = header[:min(len(header), max(height-1, 1))]
+	lines := append([]string(nil), header...)
+	for _, line := range d.errorLines() {
+		if len(lines) >= height-1 {
+			break
+		}
+		lines = append(lines, line)
 	}
-	sb.WriteString("\n")
-	sb.WriteString(d.renderTimeline(height - used))
-	d.timelineTop = used
-	return sb.String()
+	// A quiet row separates the task summary from the execution history when
+	// the viewport can afford it. Tiny panes still keep one line for a run.
+	if len(lines) < height-1 {
+		lines = append(lines, "")
+	}
+	d.timelineTop = len(lines)
+	lines = append(lines, d.renderTimeline(max(height-len(lines), 1)))
+	return strings.Join(lines, "\n")
 }
 
 // clickTimeline selects the attempt rendered at the given content line —
@@ -214,12 +222,54 @@ func (d *detail) headerLine() string {
 		return styleDim.Render(" loading task…")
 	}
 	t := d.task
-	parts := []string{
-		styleTitle.Render(fmt.Sprintf(" #%d %s", t.ID, t.Title)),
-		renderDetailState(t.Task),
+	parts := []string{styleTitle.Render(fmt.Sprintf(" #%d %s", t.ID, t.Title))}
+	parts = append(parts, d.headerOverviewParts()...)
+	if t.BranchName != "" {
+		parts = append(parts, styleDim.Render(t.BranchName))
 	}
+	if t.Workflow != "" {
+		parts = append(parts, styleDim.Render(t.Workflow+" ("+t.WorkflowOrigin.Source()+")"))
+	}
+	return strings.Join(parts, styleDim.Render(" · "))
+}
+
+// headerLines turns the task's one-line identity into a small readable block:
+// title first, scan-friendly state next, and the two potentially long
+// provenance values on labeled rows of their own. Task 78 has both a long
+// title and branch, and is the case that exposed the old overflow.
+func (d *detail) headerLines() []string {
+	if !d.loaded || d.width <= 0 {
+		return []string{d.headerLine()}
+	}
+	t := d.task
+	lines := wrappedHeaderValue(
+		fmt.Sprintf(" #%d ", t.ID),
+		valueOr(t.Title, "untitled task"), d.width, styleTitle,
+	)
+
+	overview := d.headerOverviewParts()
+	if len(overview) > 0 {
+		lines = append(lines, wrapHeaderOverview(overview, d.width)...)
+	}
+	if t.BranchName != "" {
+		lines = append(lines, wrappedHeaderValue(
+			"  branch  ", t.BranchName, d.width, styleDim,
+		)...)
+	}
+	if t.Workflow != "" {
+		workflow := t.Workflow + " (" + t.WorkflowOrigin.Source() + ")"
+		lines = append(lines, wrappedHeaderValue(
+			"  workflow  ", workflow, d.width, styleDim,
+		)...)
+	}
+	return lines
+}
+
+func (d *detail) headerOverviewParts() []string {
+	t := d.task
+	parts := []string{renderDetailState(t.Task)}
 	if k, n, ok := t.StepDisplay(); ok {
-		parts = append(parts, fmt.Sprintf("%d/%d", k, n))
+		parts = append(parts, styleDim.Render("step")+" "+fmt.Sprintf("%d/%d", k, n))
 	}
 	if loop := t.Loop.Display(); loop != "" {
 		parts = append(parts, loop)
@@ -227,19 +277,45 @@ func (d *detail) headerLine() string {
 	if t.ProjectName != "" {
 		parts = append(parts, styleDim.Render(t.ProjectName))
 	}
-	if t.BranchName != "" {
-		parts = append(parts, styleDim.Render(t.BranchName))
+	parts = append(parts, styleDim.Render("cost")+" "+formatCost(t.CostUSD))
+	return parts
+}
+
+func wrapHeaderOverview(fields []string, width int) []string {
+	if len(fields) == 0 {
+		return nil
 	}
-	// The workflow and where its definition came from (task 043). A name on
-	// its own cannot tell a project `adhoc.yaml` from the built-in it shadows,
-	// which is the whole point of recording an origin. The digest is left to
-	// `vincent task show` and the API: this line is a glance, and half a hash
-	// compares against nothing anyway.
-	if t.Workflow != "" {
-		parts = append(parts, styleDim.Render(t.Workflow+" ("+t.WorkflowOrigin.Source()+")"))
+	const indent = "  "
+	separator := styleDim.Render(" · ")
+	line := indent + fields[0]
+	lines := make([]string, 0, 2)
+	for _, field := range fields[1:] {
+		candidate := line + separator + field
+		if ansi.StringWidth(candidate) <= width {
+			line = candidate
+			continue
+		}
+		lines = append(lines, ansi.Truncate(line, width, "…"))
+		line = indent + field
 	}
-	parts = append(parts, formatCost(t.CostUSD))
-	return strings.Join(parts, styleDim.Render(" · "))
+	return append(lines, ansi.Truncate(line, width, "…"))
+}
+
+func wrappedHeaderValue(prefix, value string, width int, style lipgloss.Style) []string {
+	prefixWidth := ansi.StringWidth(prefix)
+	wrapped := wrapTaskDetailText(value, max(width-prefixWidth, 1))
+	if len(wrapped) == 0 {
+		wrapped = []string{""}
+	}
+	lines := make([]string, len(wrapped))
+	for i, line := range wrapped {
+		linePrefix := prefix
+		if i > 0 {
+			linePrefix = strings.Repeat(" ", prefixWidth)
+		}
+		lines[i] = ansi.Truncate(style.Render(linePrefix+line), width, "…")
+	}
+	return lines
 }
 
 // errorLine surfaces a stale view without tearing it down: a failed refresh
@@ -253,6 +329,23 @@ func (d *detail) errorLine() string {
 	default:
 		return ""
 	}
+}
+
+func (d *detail) errorLines() []string {
+	line := d.errorLine()
+	if line == "" {
+		return nil
+	}
+	if d.width <= 0 || ansi.StringWidth(line) <= d.width {
+		return []string{line}
+	}
+	plain := ansi.Strip(line)
+	wrapped := wrapTaskDetailText(plain, d.width)
+	lines := make([]string, len(wrapped))
+	for i, part := range wrapped {
+		lines[i] = styleBad.Render(part)
+	}
+	return lines
 }
 
 // renderTimeline draws every attempt grouped under its step, windowed around
@@ -295,9 +388,13 @@ func (d *detail) renderTimeline(height int) string {
 		round := d.followUpRound(r.StepIndex)
 		grouped := (groups[r.StepIndex] || round > 0) && !looped
 		if r.StepIndex != lastStep {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+				ids = append(ids, 0)
+			}
 			lastStep = r.StepIndex
 			lastSub, lastIteration = "", 0
-			lines = append(lines, styleStepHeader.Render(d.timelineHeader(r, round, looped, grouped)))
+			lines = append(lines, d.timelineHeader(r, round, looped, grouped))
 			ids = append(ids, 0)
 		}
 		if looped && r.Iteration != lastIteration {
@@ -334,14 +431,18 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, styleDim.Render(indent+stepLabel(r)))
 			ids = append(ids, 0)
 		}
-		line := d.attemptLine(r, grouped || looped || repair)
+		attemptLines := d.attemptLines(r, grouped || looped || repair)
 		if r.ID == d.selectedRun {
 			cursorLine = len(lines)
-			line = styleSelected.Render(line)
+			for i := range attemptLines {
+				attemptLines[i] = styleSelected.Render(attemptLines[i])
+			}
 		}
-		lines = append(lines, line)
-		ids = append(ids, r.ID)
-		if summary := summaryLine(r, grouped || looped || repair); summary != "" {
+		for _, line := range attemptLines {
+			lines = append(lines, line)
+			ids = append(ids, r.ID)
+		}
+		for _, summary := range summaryLines(r, grouped || looped || repair, d.width) {
 			// The same run id, so clicking the continuation selects the
 			// attempt it belongs to rather than falling through to a focus
 			// click on nothing.
@@ -367,7 +468,8 @@ func (d *detail) renderTimeline(height int) string {
 // thing task 027 decision 1 refused to do.
 func (d *detail) timelineHeader(r apiclient.StepRun, round int, looped, grouped bool) string {
 	if round > 0 {
-		return fmt.Sprintf("  ↳ follow-up %d", round)
+		return styleStepHeader.Render(fmt.Sprintf("  ↳ follow-up %d", round)) +
+			styleDim.Render("  ──────────")
 	}
 	label := stepLabel(r)
 	switch {
@@ -376,14 +478,14 @@ func (d *detail) timelineHeader(r apiclient.StepRun, round int, looped, grouped 
 	case grouped:
 		label = d.structureLabel(r.StepIndex, "parallel")
 	}
-	header := fmt.Sprintf("  %d %s", r.StepIndex+1, label)
+	header := styleStepHeader.Render(fmt.Sprintf("  Step %d  %s", r.StepIndex+1, label))
 	if from := d.includedFrom(r.StepIndex); from != "" {
 		// A spliced step is an ordinary step in every other respect, so the
 		// only thing worth saying is where it was written (§7.9). The full
 		// chain is in the workflow graph's inspector.
 		header += styleDim.Render("  from " + from)
 	}
-	return header
+	return header + styleDim.Render("  ──────────")
 }
 
 // isRepairRun reports whether a row is an ad-hoc repair rather than an
@@ -532,15 +634,46 @@ func stepLabel(r apiclient.StepRun) string {
 // tier deeper because its sub-step header is already at the attempt's usual
 // indent.
 func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
-	mark := " "
+	fields := d.attemptFields(r, indented)
+	if r.StatusMessage != nil && *r.StatusMessage != "" {
+		fields = append(fields, styleStatus.Render(statusGlyph+" "+*r.StatusMessage))
+	}
+	return strings.Join(fields, " ")
+}
+
+// attemptLines keeps compact metrics together where they fit, then gives the
+// step-authored status its own continuation. Besides being easier to scan,
+// that prevents an unbounded status from being the last field on an already
+// full row and relying on the frame to discard it.
+func (d *detail) attemptLines(r apiclient.StepRun, indented bool) []string {
+	fields := d.attemptFields(r, indented)
+	if d.width <= 0 {
+		return []string{d.attemptLine(r, indented)}
+	}
+
+	indent := timelineContinuationIndent(indented)
+	lines := wrapTimelineFields(fields, d.width, indent)
+	if r.StatusMessage != nil && strings.TrimSpace(*r.StatusMessage) != "" {
+		lines = append(lines, timelineContinuationLines(
+			*r.StatusMessage, statusGlyph, indent, d.width, 0, styleStatus,
+		)...)
+	}
+	return lines
+}
+
+func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
+	mark := ""
 	if r.PromptOverride || r.RunOverride {
-		mark = editedBadge
+		mark = " " + editedBadge
 	}
 	indent := "    "
 	if indented {
 		indent = "      "
 	}
-	fields := []string{fmt.Sprintf("%sa%d %s %-9s", indent, r.Attempt, mark, r.State)}
+	fields := []string{
+		fmt.Sprintf("%s%s  Attempt %-2d%s", indent, attemptStateGlyph(r.State), r.Attempt, mark),
+		renderAttemptState(r.State),
+	}
 	if dur, ok := r.Duration(d.now()); ok {
 		fields = append(fields, formatElapsed(dur))
 	}
@@ -571,18 +704,66 @@ func (d *detail) attemptLine(r apiclient.StepRun, indented bool) string {
 	if r.Agent != nil && *r.Agent != "" {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
 	}
-	// What the step said about itself (§5.4, task 036) goes last, and in its
-	// own style. It is deliberately *not* rendered beside failure_reason:
-	// the reason is the daemon's verdict, while this is free text the step
-	// chose — a step killed on `timeout` may be carrying a line it wrote
-	// thirty-five minutes earlier, and styling the two alike would present a
-	// stale self-report as a cause. Last, because it is the one field with no
-	// bound a reader can predict: when the pane is too narrow it is what the
-	// frame truncates, rather than the metrics beside it.
-	if r.StatusMessage != nil && *r.StatusMessage != "" {
-		fields = append(fields, styleStatus.Render(statusGlyph+" "+*r.StatusMessage))
+	return fields
+}
+
+func wrapTimelineFields(fields []string, width int, continuationIndent string) []string {
+	if len(fields) == 0 {
+		return nil
 	}
-	return strings.Join(fields, " ")
+	if width <= 0 {
+		return []string{strings.Join(fields, " ")}
+	}
+
+	lines := make([]string, 0, 2)
+	line := fields[0]
+	for _, field := range fields[1:] {
+		candidate := line + " " + field
+		if ansi.StringWidth(candidate) <= width {
+			line = candidate
+			continue
+		}
+		lines = append(lines, line)
+		line = continuationIndent + field
+	}
+	return append(lines, line)
+}
+
+func attemptStateGlyph(state string) string {
+	switch state {
+	case "succeeded":
+		return "✓"
+	case "running":
+		return "●"
+	case "failed":
+		return "×"
+	case "interrupted":
+		return "!"
+	case "skipped":
+		return "–"
+	case stepStateStopped:
+		return "■"
+	default:
+		return "○"
+	}
+}
+
+func renderAttemptState(state string) string {
+	label := fmt.Sprintf("%-11s", state)
+	switch state {
+	case "succeeded":
+		return styleOK.Render(label)
+	case "running":
+		return styleFocus.Render(label)
+	case "failed":
+		return styleBad.Render(label)
+	case "interrupted":
+		return styleWarn.Render(label)
+	case "skipped", stepStateStopped:
+		return styleDim.Render(label)
+	default:
+		return label
+	}
 }
 
 // statusGlyph marks a step-authored status message, so it reads as a quote
@@ -601,17 +782,68 @@ const statusGlyph = "»"
 // roughly double the height of a healthy timeline to restate what the output
 // pane is already showing for the one attempt the reader selected.
 //
-// One line, flattened. The full text is in the output pane and the
-// transcript; this is the sentence that decides whether to go there.
-func summaryLine(r apiclient.StepRun, indented bool) string {
+// The full text is in the output pane and transcript, so the timeline keeps a
+// short wrapped preview. Three physical rows are enough to make a failure
+// legible without letting a multi-thousand-character result consume the whole
+// task view (Task 78 is a real example of both extremes).
+const timelineSummaryMaxLines = 3
+
+func summaryLines(r apiclient.StepRun, indented bool, width int) []string {
 	if r.State == "succeeded" || strings.TrimSpace(r.ResultSummary) == "" {
-		return ""
+		return nil
 	}
-	indent := "       "
+	return timelineContinuationLines(
+		r.ResultSummary, "↳", timelineContinuationIndent(indented), width,
+		timelineSummaryMaxLines, styleDim,
+	)
+}
+
+func timelineContinuationIndent(indented bool) string {
 	if indented {
-		indent = "         "
+		return "         "
 	}
-	return styleDim.Render(indent + strings.Join(strings.Fields(r.ResultSummary), " "))
+	return "       "
+}
+
+// timelineContinuationLines flattens embedded whitespace, wraps words to the
+// available display width, and hard-wraps unbroken paths or hashes. limit == 0
+// means the full value is shown (used for the short live status message).
+func timelineContinuationLines(
+	text, glyph, indent string,
+	width, limit int,
+	style lipgloss.Style,
+) []string {
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		return nil
+	}
+	if width <= 0 {
+		return []string{style.Render(indent + glyph + " " + text)}
+	}
+
+	prefix := glyph + " "
+	prefixWidth := ansi.StringWidth(prefix)
+	bodyWidth := max(width-ansi.StringWidth(indent)-prefixWidth, 1)
+	wrapped := wrapTaskDetailText(text, bodyWidth)
+	truncated := limit > 0 && len(wrapped) > limit
+	if truncated {
+		wrapped = wrapped[:limit]
+		if bodyWidth == 1 {
+			wrapped[len(wrapped)-1] = "…"
+		} else {
+			wrapped[len(wrapped)-1] = ansi.Truncate(wrapped[len(wrapped)-1], bodyWidth-1, "") + "…"
+		}
+	}
+
+	lines := make([]string, len(wrapped))
+	for i, line := range wrapped {
+		linePrefix := prefix
+		if i > 0 {
+			linePrefix = strings.Repeat(" ", prefixWidth)
+		}
+		lines[i] = indent + style.Render(linePrefix+line)
+	}
+	return lines
 }
 
 func formatTokens(r apiclient.StepRun) string {

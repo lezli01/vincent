@@ -678,7 +678,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "R":
 		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
-		// `R` is free in the home shell, where the takeover screens that use
+		// `R` is free in the task workspace, where the takeover screens that use
 		// it for re-probing never are.
 		return d.openRepair()
 	case "F":

@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI now opens tasks in a dedicated full-screen workspace.** The home
+  view is the task board alone; pressing `enter` opens four full-view tabs for
+  Steps & Attempts, Task Details, Output, and Diff. Attempt selection follows
+  across tabs, Output can switch between attempts, and entering an attempt from
+  the timeline jumps directly to its output. Task Details exposes the complete
+  task record through a section sidebar, while long titles, branches, status
+  messages, and failed-attempt summaries wrap within the terminal instead of
+  overflowing. `esc` returns to the board. See [Using the TUI](docs/guides/tui.md).
+
 - **`vincent workflow render <file>` dry-runs a workflow's templates.**
   `workflow validate` only checks that a template *parses*, so
   `{{.Task.Titel}}`, `{{.Task.Fields.ticket}}` on a task that sets no `ticket`,

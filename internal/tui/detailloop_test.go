@@ -51,11 +51,11 @@ func TestDetailTimelineGroupsLoopIterations(t *testing.T) {
 
 	got := d.timelinePanel(30)
 	for _, want := range []string{
-		"1 build",        // the ordinary step is unchanged
-		"2 green (loop)", // the loop is named from the snapshot; it writes no row
-		"iteration 1",    // every iteration gets a header…
-		"iteration 2",    //
-		"alpha",          // …carrying the for_each item it ran on
+		"Step 1  build",        // the ordinary step is unchanged
+		"Step 2  green (loop)", // the loop is named from the snapshot; it writes no row
+		"iteration 1",          // every iteration gets a header…
+		"iteration 2",          //
+		"alpha",                // …carrying the for_each item it ran on
 		"beta",
 		diffFoldClosed, // iteration 1 is folded shut
 		diffFoldOpen,   // iteration 2, the latest, is open

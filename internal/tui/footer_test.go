@@ -115,10 +115,11 @@ func TestFooterFollowsPanelFocus(t *testing.T) {
 	if got := ansi.Strip(m.footerLine()); !strings.Contains(got, "enter open") {
 		t.Fatalf("tasks-panel footer = %q, want its keys", got)
 	}
+	m.Update(selectTaskMsg{id: 1})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if got := ansi.Strip(m.footerLine()); !strings.Contains(got, "[/] tabs") {
-		t.Fatalf("output-panel footer = %q, want its keys", got)
+	if got := ansi.Strip(m.footerLine()); !strings.Contains(got, "tab views") {
+		t.Fatalf("output-tab footer = %q, want its keys", got)
 	}
 	m.Update(selectViewMsg{id: viewProjects})
 	if got := ansi.Strip(m.footerLine()); !strings.Contains(got, "a add") {

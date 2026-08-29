@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -47,6 +48,47 @@ func loadDetail(d *detail, steps []apiclient.StepRun) {
 	})
 }
 
+func TestDetailHeaderWrapsLongIdentityFields(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 78
+	d.width = 48
+	d.applyLoaded(detailLoadedMsg{
+		id: d.taskID,
+		task: apiclient.TaskDetail{
+			Task: apiclient.Task{
+				ID: d.taskID, State: "done", ProjectName: "vincent",
+				Title:       "#90 Notify hook: the daemon has no way to signal a human outside the TUI",
+				CurrentStep: 24, StepTotal: 24,
+				BranchName: "vincent/78-90-notify-hook-the-daemon-has-no-way-to",
+				Workflow:   "github-resolver",
+				WorkflowOrigin: &apiclient.WorkflowOrigin{
+					Scope: "project", File: ".vincent/workflows/github-resolver.yaml",
+				},
+			},
+			Steps: []apiclient.StepRun{attempt(1006, 23, 1, "Confirm the merge", "succeeded", false)},
+		},
+	})
+
+	got := d.timelinePanel(24)
+	for i, line := range strings.Split(got, "\n") {
+		if width := ansi.StringWidth(line); width > d.width {
+			t.Errorf("timeline line %d is %d cells wide, want <= %d: %q", i, width, d.width, line)
+		}
+	}
+	plain := ansi.Strip(got)
+	for _, want := range []string{
+		"outside the TUI", "branch", "vincent/78-90", "as-no-way-to",
+		"workflow", ".vincent/workflows/github-resolver.y", "aml)", "Confirm the merge",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("wrapped task header is missing %q:\n%s", want, got)
+		}
+	}
+	if d.timelineTop < 6 {
+		t.Errorf("task header used only %d rows; want a wrapped identity block", d.timelineTop)
+	}
+}
+
 // TestDetailTimelineRendersAttempts covers what §15 asks a timeline to show,
 // including the two things this PR made visible: the §17 active duration with
 // its excluded wait beside it, and the edited-attempt flag.
@@ -66,9 +108,9 @@ func TestDetailTimelineRendersAttempts(t *testing.T) {
 
 	got := d.timelinePanel(30)
 	for _, want := range []string{
-		"#42 detail task", // header names the task
-		"1 implement",     // step group header, 1-based
-		"a1", "a2",        // both attempts
+		"#42 detail task",        // header names the task
+		"Step 1  implement",      // step group header, 1-based
+		"Attempt 1", "Attempt 2", // both attempts
 		"template_error", // why the first one died
 		editedBadge,      // the human edit PR C recorded and nothing read
 		"40s",            // 60s wall clock minus 20s waiting (§17)
@@ -113,14 +155,19 @@ func TestDetailTimelineRendersParallelGroup(t *testing.T) {
 
 	got := d.timelinePanel(30)
 	for _, want := range []string{
-		"1 build",             // the ordinary step is unchanged
-		"2 verify (parallel)", // the group is named from the snapshot, not from a row
-		"· test",              // each sub-step gets its own tier
+		"Step 1  build",             // the ordinary step is unchanged
+		"Step 2  verify (parallel)", // the group is named from the snapshot, not from a row
+		"· test",                    // each sub-step gets its own tier
 		"· lint",
 		"nonzero_exit", // and its own failure
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("timeline missing %q:\n%s", want, got)
+		}
+	}
+	for i, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "Step 2  verify") && (i == 0 || strings.TrimSpace(strings.Split(got, "\n")[i-1]) != "") {
+			t.Error("the second step is not separated from the first by a breathing row")
 		}
 	}
 
@@ -133,7 +180,7 @@ func TestDetailTimelineRendersParallelGroup(t *testing.T) {
 			order = append(order, "test")
 		case strings.Contains(line, "· lint"):
 			order = append(order, "lint")
-		case strings.Contains(line, "a1 "), strings.Contains(line, "a2 "):
+		case strings.Contains(line, "Attempt 1"), strings.Contains(line, "Attempt 2"):
 			order = append(order, "attempt")
 		}
 	}

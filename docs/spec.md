@@ -4308,7 +4308,23 @@ stream for the live tail.
    recorded reasoning that keeps a hold's reason out of it (it does not fit, and
    widening a column for a rare state costs every board the columns that shed
    first) stands unchanged, and this column is why the status did not go there.
-2. **Task detail.** *Amended 2026-08-26 (task 036): the attempt line gains two
+2. **Task detail.** *Amended 2026-08-28 (task 049): task detail is a separate
+   full-screen workspace with four full-view tabs. **Steps & Attempts** is the
+	   default and renders the existing step/attempt timeline. **Task Details** is
+	   a read-only inspector with a section sidebar: only the selected section is
+	   rendered, `↑`/`↓` or a mouse click selects another, and `pgup`/`pgdn`
+	   scrolls long section content. Its sections cover the title, description, declared
+	   fields, project, workflow and recorded origin, branch/worktree, state,
+   priority, usage/cost, lifecycle timestamps, holds/blocks, pending input,
+   fan-out/loop state, captured issue, available actions and workflow snapshot.
+	   **Output** renders the selected attempt's live or historical transcript and
+	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
+	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
+	   on that attempt.
+   **Diff** renders the task's grouped git diff. Each owns the whole task body;
+   `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
+   returns to the board. The attempt selection persists across tabs.*
+   *Amended 2026-08-26 (task 036): the attempt line gains two
    fields.* The step's own **status message** (§5.4) renders last on the line,
    in its own style and behind a glyph, so it reads as a quotation from the step
    rather than as another of the daemon's fields — and specifically **not** in
@@ -4320,12 +4336,9 @@ stream for the live tail.
    reader is asking "what went wrong" and the reason answers only which
    category. Under every attempt it would double a healthy timeline's height to
    restate what the output pane already shows for the selected one.
-   Step timeline (every attempt, with durations, tokens, cost);
-   live output tail of the running step (follow mode); scrollback into full
-   transcripts of past steps. Timeline and output are **side by side, both always
-   visible** — selecting an attempt *is* how scrollback is navigated, so neither
-   half can hide behind the other. The output side is a tabbed pane the diff
-   joins. Attempt duration here is
+   The step timeline carries every attempt, with durations, tokens and cost;
+   selecting one drives the full-view Output tab's live tail or scrollback into
+   past transcripts. Attempt duration here is
    §17's active time (`finished_at - started_at - input_wait_ms`) with the excluded
    wait shown beside it rather than silently subtracted; this is deliberately not
    the board's wall-clock `elapsed`, because the per-step figure is diagnostic while
@@ -4474,8 +4487,9 @@ stream for the live tail.
 
 ### Layout
 
-The list above is a contract about **capabilities**, not about screens. Views 1
-and 2 — the daily loop — are one persistent screen of three panels; views 3–6 are
+The list above is also the screen contract. View 1 is the board-only home
+screen. `enter` on its selected row opens view 2, the full-screen task workspace;
+`esc` returns. The workspace's four tabs each take its whole body. Views 3–6 are
 full-screen takeovers reached from the command palette.
 
 **Guided takeovers (task 020, added 2026-08-20).** At a terminal size of at
@@ -4488,19 +4502,24 @@ daemon state and no capability that exists only at one size.
 
 ```
 ┌─ Tasks ──────────────────────────────────────────────┐
-│  #12  api    add rate limiting   running   3/5  …    │   ← always full width
+│  #12  api    add rate limiting   running   3/5  …    │
 │  #13  web    fix flaky test      ● gate    2/4  …    │
-└──────────────────────────────────────────────────────┘
-┌─ Timeline ───────────┐┌─ Output │ Diff ──────────────┐
-│  1 ✓ plan      1m2s  ││  … live tail …               │
-│  2 ▸ implement 4m9s  ││                              │
-└──────────────────────┘└──────────────────────────────┘
- tab focus · enter open · / filter        : commands  ? help  q quit
+│                                                       │
+└───────────────────────────────────────────────────────┘
+ enter open · / filter                    : commands  ? help  q quit
+
+┌─ Task #12 ───────────────────────────────────────────┐
+│ Steps & Attempts │ Task Details │ Output │ Diff       │
+│  1 ✓ plan                                      1m2s   │
+│  2 ▸ implement                                 4m9s   │
+└───────────────────────────────────────────────────────┘
+ tab views · ↑/↓ attempts · esc board      : commands  ? help  q quit
 ```
 
-The task table keeps the full §15 column set at full width. A narrow left rail
-would have to drop most of it, and cost-so-far and step `k/n` are the two columns
-a human scans to decide where to intervene.
+The task table keeps the full §15 column set at full width. The task workspace
+does not reserve a rail or a second pane: metadata, transcripts and diffs are
+all width-sensitive, while the selected attempt is durable view state that can
+drive Output without staying visible beside it.
 
 **Two kinds of `queued` (task 003, added 2026-08-14).** A task waiting on an
 agent's usage window and a task waiting for a free slot are both `queued`, and

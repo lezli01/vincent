@@ -79,7 +79,7 @@ func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 	if form == nil {
 		t.Fatal("F did not open the follow-up form")
 	}
-	if !h.m.views[viewHome].(*shell).popup {
+	if !h.m.views[viewTask].(*taskView).popup {
 		t.Fatal("the follow-up form did not take the popup")
 	}
 	if !strings.Contains(content(h.m), "Follow-up") {
@@ -122,7 +122,7 @@ func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 
 	// The form closes on the reply, so the popup goes with it.
 	h.p.until(30*time.Second, "the submitted form to close", func() bool {
-		return detailOf(h.m).followUp == nil && !h.m.views[viewHome].(*shell).popup
+		return detailOf(h.m).followUp == nil && !h.m.views[viewTask].(*taskView).popup
 	})
 }
 

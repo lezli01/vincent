@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -75,21 +77,60 @@ func TestTimelineRendersResultSummaryOnFailure(t *testing.T) {
 	}
 }
 
-// A multi-line summary is flattened to one: the timeline gives every attempt
-// a fixed number of rows, and a stack trace pasted into it would push the
-// rest of the run off the pane.
-func TestSummaryLineIsOneLine(t *testing.T) {
+// Long summaries wrap inside the pane, but remain a preview: Task 78 contains
+// several multi-thousand-character command and agent results, and rendering
+// every byte would replace one overflow bug with a timeline-sized wall of text.
+func TestSummaryLinesWrapAndCapPreview(t *testing.T) {
 	r := attempt(1, 0, 1, "implement", "failed", false)
-	r.ResultSummary = "panic: boom\n\tgoroutine 1 [running]:\n\tmain.main()"
-	got := summaryLine(r, false)
-	if strings.Contains(got, "\n") {
-		t.Errorf("summaryLine returned %d lines: %q", strings.Count(got, "\n")+1, got)
+	r.ResultSummary = strings.Repeat("panic: boom goroutine 1 [running] main.main() ", 20) +
+		strings.Repeat("a", 80)
+	got := summaryLines(r, false, 42)
+	if len(got) != timelineSummaryMaxLines {
+		t.Fatalf("summaryLines returned %d lines, want %d: %q", len(got), timelineSummaryMaxLines, got)
 	}
-	if !strings.Contains(got, "panic: boom goroutine 1 [running]: main.main()") {
-		t.Errorf("summaryLine = %q, want the flattened summary", got)
+	for i, line := range got {
+		if width := ansi.StringWidth(line); width > 42 {
+			t.Errorf("summary line %d is %d cells wide, want <= 42: %q", i, width, line)
+		}
 	}
-	if summaryLine(attempt(1, 0, 1, "implement", "succeeded", false), false) != "" {
+	if !strings.HasSuffix(ansi.Strip(got[len(got)-1]), "…") {
+		t.Errorf("truncated summary has no ellipsis: %q", got[len(got)-1])
+	}
+	if got := summaryLines(attempt(1, 0, 1, "implement", "succeeded", false), false, 42); got != nil {
 		t.Error("a succeeded attempt with no summary rendered a line")
+	}
+}
+
+func TestTimelineWrapsStatusAndMapsContinuationRowsToAttempt(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 78
+	d.width = 48
+
+	failed := attempt(885, 0, 1, "classify", "failed", false)
+	failed.StatusMessage = ptr("enhancement path: judged by the new behaviour because this exit is normal")
+	failed.ResultSummary = strings.Repeat("a required check is still pending on the pull request ", 8)
+	loadDetail(d, []apiclient.StepRun{failed})
+
+	got := d.renderTimeline(30)
+	for i, line := range strings.Split(got, "\n") {
+		if width := ansi.StringWidth(line); width > d.width {
+			t.Errorf("timeline line %d is %d cells wide, want <= %d: %q", i, width, d.width, line)
+		}
+	}
+	if !strings.Contains(got, statusGlyph+" enhancement path") {
+		t.Errorf("wrapped status is missing:\n%s", got)
+	}
+	if !strings.Contains(got, "↳ a required check") {
+		t.Errorf("wrapped summary is missing:\n%s", got)
+	}
+	runRows := 0
+	for _, id := range d.visibleRuns {
+		if id == failed.ID {
+			runRows++
+		}
+	}
+	if runRows < 5 {
+		t.Errorf("only %d continuation rows map to run %d; visible ids = %v", runRows, failed.ID, d.visibleRuns)
 	}
 }
 

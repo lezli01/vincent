@@ -8,14 +8,13 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// viewID indexes the root's routed screens: the fused home screen (§15
-// views 1–2 as one persistent three-panel shell) and the four full-screen
-// takeovers (§15 views 3–6). The digits 1..6 keep their §15 meanings until
-// T3.11 retires them — 1 and 2 both land on the home screen.
+// viewID indexes the root's routed screens: the board-only home screen, the
+// full-screen task workspace, and the four management takeovers (§15).
 type viewID int
 
 const (
 	viewHome viewID = iota
+	viewTask
 	viewNewTask
 	viewProjects
 	viewWorkflows
@@ -25,8 +24,6 @@ const (
 
 // panel is one routed screen (T3.10: renamed from view). Screens are
 // sub-models: the root delegates non-global messages to the active one only.
-// The home shell implements it too, and composes the board and detail
-// sub-models into the three §15 panes behind it.
 type panel interface {
 	title() string
 	update(msg tea.Msg) (panel, tea.Cmd)
@@ -81,7 +78,7 @@ type dataDirAware interface {
 
 // connectionAware is implemented by views that render while the daemon is
 // unreachable and therefore have to say which of their contents are still
-// true: the daemon view, and the home shell whose panels stay on screen
+// true: the daemon view, the board, and an already-loaded task workspace
 // marked stale (§15 Disconnected).
 type connectionAware interface {
 	setConnected(bool)
@@ -98,8 +95,15 @@ type clientAware interface {
 // newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail sub-model's per-task subscription.
 func newViews(ctx context.Context) [viewCount]panel {
+	home := newShell(ctx)
+	// Keep the board and detail sub-models independently testable while routing
+	// them as separate screens. The task view owns detail updates; the home shell
+	// retains the pointer only so both screens share the established action state.
+	home.boardOnly = true
+	home.detail.active = false
 	return [viewCount]panel{
-		viewHome:      newShell(ctx),
+		viewHome:      home,
+		viewTask:      newTaskView(home.detail),
 		viewNewTask:   newNewTask(),
 		viewProjects:  newProjectsView(),
 		viewWorkflows: newWorkflowsView(),
