@@ -183,6 +183,22 @@ The step fails rather than running unrestricted, which is deliberate — a
 restricted mode that quietly isn't restricted is worse than none. Use claude or
 codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
 
+### `mcp_unsupported`
+
+The step was to be wired to vincent's own [MCP server](mcp.md) — the default —
+and the adapter, or the CLI build you have, cannot carry one for a single run.
+
+All three shipped adapters can, so you should not meet this: claude takes
+`--mcp-config`, codex takes `-c mcp_servers.…` overrides, and cursor gets a
+`.cursor/mcp.json` written into the task worktree. It is the reason reserved for
+a CLI that drops or renames that surface in a future release.
+
+The step **fails** rather than starting an agent that silently has no vincent
+tools, because a prompt written against those tools would otherwise burn a run
+producing work premised on a channel that was never there. If the step does not
+need them, set [`mcp.wire_steps: false`](../reference/configuration.md#mcp) —
+it is hot-reloaded — and retry.
+
 ### "untested version" beside an adapter
 
 Not a fault, and nothing to fix. Vincent pins the CLI builds its parsers were
@@ -498,6 +514,7 @@ The block reason names what happened:
 | `condition_error` | A step's `if:` guard rendered nothing usable (see below) |
 | `loop_limit` | A `loop` has more iterations to run than it is allowed (see below) |
 | `restricted_unsupported` | The adapter cannot restrict on this platform; refused at task creation, so this is a workflow or machine that changed afterwards |
+| `mcp_unsupported` | The adapter cannot be given vincent's own MCP server for this step (see below) |
 | `platform_unsupported` | The workflow's `platforms:` list does not admit this host |
 | `input_unsupported` | A step needs an agent that can answer questions mid-run, and this one cannot (see below) |
 | `transcript_limit` | The attempt's transcript hit `transcript_max_bytes` |

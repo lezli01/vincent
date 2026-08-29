@@ -439,5 +439,7 @@ the states are the same, the latency is not.
 
 - [CLI reference](../reference/cli.md) — every command and flag.
 - [HTTP API reference](../reference/api.md) — every endpoint and event type.
+- [Driving vincent from an agent](mcp.md) — the same API as MCP tools, for when
+  the script is an AI agent.
 - [Running at login](running-at-login.md) — so there is always a daemon to talk
   to.

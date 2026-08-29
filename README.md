@@ -81,6 +81,7 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 | **Human control where it matters** | Pause at approval gates, answer supported agents mid-run, inspect file-grouped diffs, edit and retry blocked steps, and decide when publishing happens. |
 | **A TUI built for active workloads** | Use a grouped task board, guided task creation, project and workflow workspaces, bulk actions, live output, cost and duration metrics, and a navigable workflow graph. |
 | **Automation-ready interfaces** | Every operation is available through CLI subcommands and a localhost REST + SSE API. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
+| **Drivable by an agent over MCP** | The daemon serves the Model Context Protocol on the same listener, so any MCP client gets the API as tools with discovery, schemas, typed errors, and one bounded call that waits for a task. Vincent's own agent steps are wired in by default. |
 | **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, WinGet, Scoop, mise, deb/rpm packages, or release archives. |
 
 Explore the [complete feature guide](docs/features.md), or jump directly to the
@@ -490,7 +491,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 
 - [Writing workflows](docs/guides/workflows.md) · [Agent CLIs](docs/guides/agents.md)
 - [Using the TUI](docs/guides/tui.md) · [Scripting vincent](docs/guides/scripting.md)
-- [Running at login](docs/guides/running-at-login.md) · [Troubleshooting](docs/guides/troubleshooting.md)
+- [Driving vincent from an agent](docs/guides/mcp.md) · [Running at login](docs/guides/running-at-login.md)
+- [Troubleshooting](docs/guides/troubleshooting.md)
 
 **Agent skill**
 
