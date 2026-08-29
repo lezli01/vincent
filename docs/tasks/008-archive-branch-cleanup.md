@@ -40,6 +40,16 @@ the branch's name, a deleted base with a surviving remote-tracking ref — must 
 That destroys real commit objects, for a case rarer than the one this is about. It was
 the issue's own rejected alternative and stays rejected.
 
+> **Superseded in part, 2026-08-29 — [task 056](056-fetch-base-branch.md).**
+> The comparison is against the base *branch by name* only when the task has no
+> recorded `base_sha`. Once a task branch is cut from a fetched upstream tip, the
+> name no longer resolves to where the task started: a task that wrote nothing is
+> still ahead of the local base, the answer flips to `has_commits`, and this
+> policy silently stops firing for every project whose local base is behind. The
+> rest of the decision stands unchanged — an ancestor test, one cheap git call,
+> and an unambiguous revision on both sides, which a 40-hex object name is by
+> construction.
+
 ### 2. Any git failure means *cannot judge*, and keeps the branch
 
 *2026-08-16.* Base branch renamed or deleted, repository gone, git unhappy for a reason
@@ -52,6 +62,17 @@ different facts, and only one of them is a judgement.
 belt behind the rev-list, and its refusal is what covers a branch checked out in
 another worktree — exactly the case where a force delete corrupts somebody's working
 tree.
+
+> **Superseded in part, 2026-08-29 — [task 056](056-fetch-base-branch.md).**
+> The delete is `-D` when the task recorded a `base_sha`, and `-d` exactly as
+> written above when it did not. `-d`'s own check is "merged into HEAD or its
+> upstream", and HEAD in the project repository *is* the human's local base
+> branch — stale in precisely the situation the base-branch fetch exists for — so
+> it refuses a branch the rev-list has already proved empty against the commit
+> the task was actually cut from. The half of this decision that matters is
+> untouched: git refuses to delete a branch checked out in any worktree under
+> either flag, so the working-tree case is still covered, by git rather than by
+> the flag.
 
 ### 3. The remote leg gets its own key, defaults to false, and runs only on an attended archive
 
