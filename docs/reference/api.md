@@ -13,6 +13,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - [Projects](#projects)
 - [Workflows](#workflows)
 - [Tasks](#tasks)
+- [Chats](#chats)
 - [Transcripts and diffs](#transcripts-and-diffs)
 - [Events (SSE)](#events-sse)
 - [MCP](#mcp)
@@ -1130,6 +1131,87 @@ resolved into the snapshot, so an include that cycles, names a workflow this
 project cannot see, nests past `include.max_depth`, brings a step id already in
 use, or is restricted to another platform is a `400` here.
 
+## Chats
+
+A **chat** is a titled conversation with an agent, scoped to a project, running
+in its own git worktree and `vincent/{id}-{slug}` branch. Each turn resumes the
+agent CLI's own session, so turn N has turns 1..N-1 in context. Chats are a
+separate family from tasks: they never appear in `GET /v1/tasks` or on the
+board, and tasks never appear here.
+
+```
+GET    /v1/chats?project_id=&state=   newest first; state may repeat
+POST   /v1/chats                      create, with a worktree and a branch
+GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
+POST   /v1/chats/{id}/send            start a turn
+POST   /v1/chats/{id}/answer          answer a mid-run request
+POST   /v1/chats/{id}/cancel          stop the live turn
+POST   /v1/chats/{id}/archive         remove the worktree; terminal
+```
+
+### Creating one
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/chats   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"project_id": 1, "title": "poke at the parser"}'
+```
+
+`agent` is optional and defaults to the first registered adapter that **can
+resume** — there is no `defaults.agent` key, and a chat's whole premise is
+continuity. An adapter that cannot resume is refused:
+
+```json
+{"error": {"code": "agent_cannot_resume",
+           "message": "agent \"codex\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
+```
+
+Today that is codex and cursor. Both CLIs have a resume of some shape; vincent
+does not read it yet, and faking continuity by replaying the log into the prompt
+is exactly what this refusal exists to prevent.
+
+### States
+
+`idle` → `running` → `idle`, with `awaiting_input` in the middle when the agent
+asks something, and `archived` as the only terminal state. Anything outside that
+table is a `409` — sending to an archived chat, answering one that asked
+nothing. There is no pause: a paused chat is an idle one nobody has sent to.
+
+### Sending a turn
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/chats/3/send   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"message": "what does buildArgs do with an empty model?"}'
+```
+
+`202` with the new turn. Poll `GET /v1/chats/3` or follow `GET /v1/events` for
+`chat.turn_changed`. A chat has no live-output stream over HTTP: the turn's
+normalized output goes to the turn's transcript file, and `result_text` on the
+finished turn is the answer.
+
+Over `max_parallel_chats` it is **`409 chat_cap_reached`, immediately** — never
+queued. A chat is a foreground reply, and waiting behind batch work is the thing
+chats exist to avoid, so you get an error you can act on instead of a spinner.
+The chat is left exactly as it was: still `idle`, with no turn row behind it.
+
+### Turns
+
+Each turn carries the accounting a step run does — `input_tokens`,
+`output_tokens`, `cost_usd`, `exit_code`, `duration_ms` — plus `session_id`, the
+session it actually ran in, and its own transcript at
+`{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. That file is not served by
+any route: [`/v1/tasks/{id}/transcript`](#transcripts-and-diffs) is task-only,
+and a chat's is read from disk. A turn is `running`, then `done`, `failed` or
+`interrupted`, forever.
+
+Two failure reasons are worth knowing:
+
+- **`session_lost`** — the CLI no longer knows the stored session. The turn
+  fails, the chat stays usable and keeps its id, and nothing starts a fresh
+  session behind your back: an agent answering with none of the conversation in
+  context reads exactly like one that has it, so starting over is a decision you
+  make explicitly.
+- **`interrupted`** — the daemon restarted under a live turn. It is **not**
+  re-run, unlike a task's step: re-running would re-send your message into a
+  session that died with the process. The chat returns to `idle`.
+
 ## Step status
 
 A running step can say what it is doing, in its own words:
@@ -1229,6 +1311,8 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
+chat.created            chat.state_changed      chat.turn_changed
+chat.archived
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1262,6 +1346,14 @@ they need.
   retires an observation — never on a re-observation identical to what is
   already stored, and never merely because a window lapsed. Re-fetch
   [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
+- The `chat.*` events belong to the [chat](#chats) family and carry the chat's
+  `project_id`, so `?project_id=` filters them the way it filters a task's.
+  Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
+  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`.
+  Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
+  stream and no live-output route**: a chat's normalized output is written to
+  the turn's transcript file, and over HTTP a finished turn's `result_text` is
+  what you read.
 - `task.github_pull_changed` carries `{ repo, number, source, suppressed }` —
   empty when the link was cleared — and says a task's pull-request link changed:
   the daemon's reconciler matched one, or a human linked or unlinked one. It is
@@ -1320,6 +1412,7 @@ Every route on this page is a tool, with these exceptions:
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
+| every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
 
 `task_create` additionally takes an optional `idempotency_key` string, which
 becomes the `Idempotency-Key` header — a tool call has no header surface, and

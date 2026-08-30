@@ -36,6 +36,10 @@ import (
 type configResponse struct {
 	Listen           string `json:"listen"`
 	MaxParallelTasks int    `json:"max_parallel_tasks"`
+	// MaxParallelChats is a separate dimension from MaxParallelTasks (§11,
+	// task 063 decision 1): a chat turn is refused over the cap rather than
+	// queued, and holds no task slot.
+	MaxParallelChats int `json:"max_parallel_chats"`
 	// BranchTemplate is empty when the file pins none, which is not the same
 	// as the built-in: a project may override it, and the fallback lives in
 	// internal/worktree rather than in a default here.
@@ -222,6 +226,7 @@ func configBody(cfg config.Config) configResponse {
 	return configResponse{
 		Listen:           cfg.Listen,
 		MaxParallelTasks: cfg.MaxParallelTasks,
+		MaxParallelChats: cfg.MaxParallelChats,
 		BranchTemplate:   cfg.BranchTemplate,
 		Defaults: configDefaults{
 			AgentTimeout:   cfg.Defaults.AgentTimeout.String(),
@@ -336,6 +341,7 @@ func inheritBody(i config.Inherit) configInherit {
 type configPatch struct {
 	Listen                      *string            `json:"listen"`
 	MaxParallelTasks            *int               `json:"max_parallel_tasks"`
+	MaxParallelChats            *int               `json:"max_parallel_chats"`
 	BranchTemplate              *string            `json:"branch_template"`
 	Defaults                    *defaultsPatch     `json:"defaults"`
 	DeleteEmptyBranchOnArchive  *bool              `json:"delete_empty_branch_on_archive"`
@@ -450,6 +456,9 @@ func (p configPatch) sets() []config.Set {
 	}
 	if p.MaxParallelTasks != nil {
 		add("max_parallel_tasks", strconv.Itoa(*p.MaxParallelTasks))
+	}
+	if p.MaxParallelChats != nil {
+		add("max_parallel_chats", strconv.Itoa(*p.MaxParallelChats))
 	}
 	if p.BranchTemplate != nil {
 		add("branch_template", config.RenderString(*p.BranchTemplate))

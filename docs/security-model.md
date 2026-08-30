@@ -361,7 +361,8 @@ In rough order of value:
 4. **Read the diff before approving.** The Diff tab exists for this; the gate
    exists so you have a moment to use it.
 5. **Cap concurrency.** `max_parallel_tasks` bounds how much can be happening
-   without you.
+   without you, and `max_parallel_chats` bounds the chats running beside it —
+   they are independent, so the ceiling on live agent processes is their sum.
 6. **Turn on `debug: true` when a run surprises you.** It records the resolved
    settings and full argv of every step in its transcript.
 7. **Prefer per-project scoped workflows** (`.vincent/workflows/`) so a

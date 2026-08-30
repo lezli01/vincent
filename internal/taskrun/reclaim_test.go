@@ -100,7 +100,7 @@ func (h *reclaimHarness) realWorktree(t *testing.T, title string) *store.Task {
 	t.Helper()
 	task := h.task(t, title)
 	branch := worktree.BranchName(task.ID, title)
-	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main", false,
+	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, worktree.TaskOwner(task.ID), branch, "main", false,
 		func(c worktree.Created) error {
 			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &c.Path, nil)
 		})
@@ -484,7 +484,7 @@ func TestScanCannotDeleteAWorktreeBeingCreated(t *testing.T) {
 	}()
 
 	branch := worktree.BranchName(task.ID, "racing")
-	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, task.ID, branch, "main", false,
+	created, err := h.worktrees.CreateAndClaim(t.Context(), h.repo, worktree.TaskOwner(task.ID), branch, "main", false,
 		func(c worktree.Created) error {
 			close(inClaim)
 			return h.store.SetTaskProgress(t.Context(), task.ID, nil, &c.Path, nil)

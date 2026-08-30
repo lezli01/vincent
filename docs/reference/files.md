@@ -72,7 +72,9 @@ Project-scoped workflows live in the repository instead, at
   tui.json                                          # TUI-local view state
   logs/daemon.log                                   # rotated, size-capped
   worktrees/{task_id}/                              # one git worktree per task
+  worktrees/chat-{chat_id}/                         # one git worktree per chat
   transcripts/{task_id}/{step_index}-{attempt}.jsonl
+  transcripts/chat-{chat_id}/{turn_seq}.jsonl
 ```
 
 | File | What it is |
@@ -99,6 +101,14 @@ where `slug` comes from the task title. A title that sanitizes to nothing gives
 That is the **default**. The name is configurable — a template per project or in
 `config.yaml`, or a literal for one task — see
 [Configuration](configuration.md#branch_template).
+
+A [chat](cli.md#vincent-chat) gets one on exactly the same terms, at
+`{data_dir}/worktrees/chat-{chat_id}/` on its own `vincent/{id}-{slug}` branch.
+The directory is prefixed because tasks and chats share one root and are
+numbered independently — without it, chat 7 and task 7 would claim one path.
+The name is informational: `vincent gc` decides what is a stray from the
+database claims, which cover both tables, so a chat's worktree is never
+mistaken for an orphan.
 
 Two rules worth internalizing:
 
@@ -131,10 +141,11 @@ counts them on the daemon view, but it never deletes one on its own.
 
 ```
 {data_dir}/transcripts/{task_id}/{step_index}-{attempt}.jsonl
+{data_dir}/transcripts/chat-{chat_id}/{turn_seq}.jsonl
 ```
 
-One file per **attempt**, JSONL. It contains the agent's own event stream
-verbatim — lossless and replayable — interleaved with vincent's namespaced
+One file per **attempt** — or, for a chat, per **turn** — JSONL. It contains
+the agent's own event stream verbatim — lossless and replayable — interleaved with vincent's namespaced
 `vincent.*` annotation lines.
 
 Two consequences of storing the raw stream rather than a parsed one:
@@ -147,6 +158,10 @@ Two consequences of storing the raw stream rather than a parsed one:
 Transcripts are bounded by `transcript_max_bytes` per attempt and pruned for
 **archived** tasks past `transcript_retention_days` — see
 [Configuration](configuration.md).
+
+Both of those are **task-scoped**. A chat's turn transcripts are written with no
+size cap and are not pruned when the chat is archived; they stay until you
+remove them.
 
 **What reclaims a transcript.** Retention, for as long as the task row exists.
 Deleting a project deletes its task rows, and retention walks rows — so those
@@ -183,7 +198,7 @@ vincent daemon --config-dir /srv/v-cfg --data-dir /srv/v-data
 | Path | Deleting it means |
 |---|---|
 | `logs/daemon.log` | Nothing; it is recreated |
-| `transcripts/{task_id}/` | That task's output history is gone; the task record and its metrics stay |
+| `transcripts/{task_id}/`, `transcripts/chat-{chat_id}/` | That task's or chat's output history is gone; the record and its metrics stay |
 | `worktrees/{task_id}/` | Effectively an unregistered archive — prefer archiving the task, which does it properly. For a directory whose task no longer exists, prefer `vincent gc`, which checks it is not somebody's live worktree first |
 | `daemon.json`, `daemon.lock` | Only safe while the daemon is stopped; both are recreated |
 | `token` | Recreated at next start, and every existing client must re-read it |

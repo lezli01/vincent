@@ -75,6 +75,7 @@ agents:
 	want := Config{
 		Listen:           "localhost:7777",
 		MaxParallelTasks: 9,
+		MaxParallelChats: 3,
 		Defaults: Defaults{
 			AgentTimeout:   Duration(90 * time.Minute),
 			CommandTimeout: Duration(90 * time.Second),

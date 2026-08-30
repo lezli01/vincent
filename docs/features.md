@@ -10,6 +10,7 @@ state stay on your machine; vincent provides the control plane around them.
 |---|---|
 | Orchestration | Durable daemon, priority queue, global and per-project concurrency, per-user service installation |
 | Git isolation | One worktree and branch per task, configurable branch names, safe archive cleanup |
+| Chats | Conversations with an agent in their own worktree and branch, continued through the agent CLI's own session, with transcripts and cost |
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
@@ -35,6 +36,34 @@ starving other work.
 Each task runs in a dedicated git worktree on its own branch. Parallel tasks do
 not collide with one another, and vincent never changes your active checkout.
 The branch convention is configurable globally, per project, or for one task.
+
+## Talk to an agent without a workflow
+
+Not every question is a task. A **chat** is a titled conversation with an agent,
+scoped to a project, that gets its own worktree and `vincent/{id}-{slug}` branch
+exactly as a task does — so you can ask about a repository, read the answer, and
+ask the next question with the first still in context.
+
+Continuity is the agent CLI resuming **its own** session, not vincent replaying
+the conversation into the next prompt. That means only an adapter that can
+resume may hold a chat: today that is `claude`, and `codex` and `cursor` are
+refused at creation rather than having continuity faked for them.
+
+A chat is real work, not a scratchpad. The agent may commit to the chat's
+branch, every turn records its tokens, cost and duration, and each turn keeps
+its own transcript — the accounting a conversation held in a terminal never
+leaves behind. Archiving a chat cleans up its worktree, and an empty branch
+with it, the way archiving a task does.
+
+Chats never appear on the task board and never enter the scheduler. A turn
+starts the moment you send it, bounded only by its own
+[`max_parallel_chats`](reference/configuration.md#max_parallel_chats) cap — over
+that it is refused immediately rather than queued behind batch work, which is
+the wait a chat exists to avoid.
+
+Drive one with [`vincent chat`](reference/cli.md#vincent-chat) or the
+[`/v1/chats` routes](reference/api.md#chats). There is no chats view in the TUI
+yet, and no chat route is exposed as an MCP tool.
 
 ## Express the workflow the work needs
 

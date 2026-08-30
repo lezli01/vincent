@@ -38,7 +38,7 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, and the read-only `health`, `info`, `config_get`,
 `agent_list`, `doctor`, `orphan_list`.
 
-Six things are deliberately **not** tools:
+Six admin routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/daemon/backup`
@@ -59,6 +59,14 @@ response serves `config.yaml` in full; the tool masks `environment.set`'s
 values and `notify.command`'s argv, keeping the names, because a tool result
 lands in the model's context and in the step's transcript. Nothing else is
 changed — see the [security model](../security-model.md).
+
+**Nor is any `/v1/chats` route** — the whole
+[chat](../reference/api.md#chats) family, reads included. A chat turn starts an
+agent CLI without going through admission, so a tool that could send one would
+let an agent start unqueued agent processes, which is the exact thing
+`max_tasks` below bounds. The recursion bounds cannot help either: they walk
+`created_by_task_id`, and a chat is not in that chain. Nothing is lost — an
+agent calling these tools already has a session of its own.
 
 Each tool takes the route's path parameters by name, plus `body` (for `POST` and
 `PATCH`) or `query` (for `GET`):

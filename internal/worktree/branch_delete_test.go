@@ -44,10 +44,10 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "no commits past base is deleted",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 1, "vincent/1-empty", "main", false); err != nil {
+				if _, err := m.Create(t.Context(), repo, TaskOwner(1), "vincent/1-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
-				if err := m.Remove(t.Context(), repo, m.Path(1), false); err != nil {
+				if err := m.Remove(t.Context(), repo, m.Path(TaskOwner(1)), false); err != nil {
 					t.Fatalf("remove: %v", err)
 				}
 				return "main", "vincent/1-empty"
@@ -58,7 +58,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "one commit past base survives",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				path, err := m.Create(t.Context(), repo, 2, "vincent/2-work", "main", false)
+				path, err := m.Create(t.Context(), repo, TaskOwner(2), "vincent/2-work", "main", false)
 				if err != nil {
 					t.Fatalf("create: %v", err)
 				}
@@ -75,10 +75,10 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "base moving forward afterwards still reads as empty",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 3, "vincent/3-empty", "main", false); err != nil {
+				if _, err := m.Create(t.Context(), repo, TaskOwner(3), "vincent/3-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
-				if err := m.Remove(t.Context(), repo, m.Path(3), false); err != nil {
+				if err := m.Remove(t.Context(), repo, m.Path(TaskOwner(3)), false); err != nil {
 					t.Fatalf("remove: %v", err)
 				}
 				// main gains work the task never saw. The tip is still an
@@ -93,10 +93,10 @@ func TestDeleteEmptyBranch(t *testing.T) {
 		{
 			name: "base branch that no longer resolves cannot be judged",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
-				if _, err := m.Create(t.Context(), repo, 4, "vincent/4-empty", "main", false); err != nil {
+				if _, err := m.Create(t.Context(), repo, TaskOwner(4), "vincent/4-empty", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
-				if err := m.Remove(t.Context(), repo, m.Path(4), false); err != nil {
+				if err := m.Remove(t.Context(), repo, m.Path(TaskOwner(4)), false); err != nil {
 					t.Fatalf("remove: %v", err)
 				}
 				return "gone-forever", "vincent/4-empty"
@@ -109,7 +109,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
 				// The worktree is deliberately *not* removed: `git branch -d`
 				// is the belt that covers this, and it must refuse.
-				if _, err := m.Create(t.Context(), repo, 5, "vincent/5-live", "main", false); err != nil {
+				if _, err := m.Create(t.Context(), repo, TaskOwner(5), "vincent/5-live", "main", false); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				return "main", "vincent/5-live"
@@ -126,10 +126,10 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			name: "a ref hierarchy neighbour is not collaterally removed",
 			setup: func(t *testing.T, m *Manager, repo string) (string, string) {
 				for id, name := range map[int64]string{6: "feat/foo/bar", 7: "feat/foo/baz"} {
-					if _, err := m.Create(t.Context(), repo, id, name, "main", false); err != nil {
+					if _, err := m.Create(t.Context(), repo, TaskOwner(id), name, "main", false); err != nil {
 						t.Fatalf("create %s: %v", name, err)
 					}
-					if err := m.Remove(t.Context(), repo, m.Path(id), false); err != nil {
+					if err := m.Remove(t.Context(), repo, m.Path(TaskOwner(id)), false); err != nil {
 						t.Fatalf("remove %s: %v", name, err)
 					}
 				}
@@ -183,7 +183,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 	repo := testrepo.Init(t, "main")
 	m := newManager(t)
-	path, err := m.Create(t.Context(), repo, 1, "vincent/1-work", "main", false)
+	path, err := m.Create(t.Context(), repo, TaskOwner(1), "vincent/1-work", "main", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -245,7 +245,7 @@ func pushedRepo(t *testing.T, m *Manager, branch string) (repo, remote string) {
 	remote = testrepo.InitBare(t)
 	testrepo.Run(t, repo, "remote", "add", "origin", remote)
 	testrepo.Run(t, repo, "push", "-q", "-u", "origin", "main")
-	path, err := m.Create(t.Context(), repo, 1, branch, "main", false)
+	path, err := m.Create(t.Context(), repo, TaskOwner(1), branch, "main", false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -291,10 +291,10 @@ func TestDeleteEmptyBranchRemoteNoUpstream(t *testing.T) {
 	testrepo.Run(t, repo, "remote", "add", "origin", remote)
 	testrepo.Run(t, repo, "push", "-q", "origin", "main")
 	m := newManager(t)
-	if _, err := m.Create(t.Context(), repo, 1, "vincent/1-local", "main", false); err != nil {
+	if _, err := m.Create(t.Context(), repo, TaskOwner(1), "vincent/1-local", "main", false); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := m.Remove(t.Context(), repo, m.Path(1), false); err != nil {
+	if err := m.Remove(t.Context(), repo, m.Path(TaskOwner(1)), false); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	// A branch with the same name on the remote, put there by something other

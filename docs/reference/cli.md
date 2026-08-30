@@ -16,6 +16,7 @@ localhost API.
 - [`vincent config`](#vincent-config)
 - [`vincent status`](#vincent-status)
 - [`vincent update`](#vincent-update)
+- [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
@@ -956,6 +957,82 @@ vincent update --check --json
   "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0"
 }
 ```
+
+## `vincent chat`
+
+Chats are conversations with an agent (spec §5.5). Each gets its own git
+worktree and `vincent/{id}-{slug}` branch, exactly as a task does, and every
+turn resumes the agent's own session — so turn N sees turns 1..N-1.
+
+Chats are not tasks. They never appear on the board, they run no workflow, and
+a chat turn never waits for a scheduler slot: it starts when you send it, or it
+is refused because `max_parallel_chats` chats are already running.
+
+Only an agent CLI that can resume its own session can hold a chat. Today that
+is `claude`; `codex` and `cursor` are refused at creation with
+`agent_cannot_resume` rather than having the conversation faked by replaying
+the log as prompt context.
+
+### `vincent chat start`
+
+```sh
+vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
+                         [--base BRANCH] [--message TEXT]
+```
+
+Starts a chat and prints its id, agent and branch. `--agent` defaults to the
+first installed adapter that can resume a session. `--message` sends a first
+turn straight away and waits for it, which is `start` plus `send` in one call.
+
+### `vincent chat send`
+
+```sh
+vincent chat send CHAT_ID MESSAGE
+```
+
+Sends a message and blocks until the turn ends, then prints the agent's answer
+on stdout. A failed turn prints its reason on stderr and exits 1 — including
+`session_lost`, which means the agent CLI no longer knows the session this chat
+was resuming. The chat stays usable; starting a fresh conversation is a
+decision you make, not one vincent makes silently.
+
+There is **no `vincent chat answer`**. If the agent asks a question mid-turn the
+chat enters `awaiting_input` and the send keeps waiting, because the turn has
+not ended; answering it means calling `POST /v1/chats/{id}/answer`
+[over the API](api.md#chats). Nothing bounds that wait today — a chat turn has
+no timeout of its own — so an unanswered question leaves the turn live in the
+daemon and the send waiting on it. Interrupting `vincent chat send` stops the
+polling, not the turn; `POST /v1/chats/{id}/cancel` is what ends it.
+
+Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
+live agent process. The send is refused, never queued.
+
+### `vincent chat list`
+
+```sh
+vincent chat list [--project ID]
+```
+
+One line per chat: id, state, agent, title.
+
+### `vincent chat show`
+
+```sh
+vincent chat show CHAT_ID
+```
+
+The chat's header and every turn in order, with each turn's prompt, answer and
+— where it failed — its reason.
+
+### `vincent chat archive`
+
+```sh
+vincent chat archive CHAT_ID [--force]
+```
+
+Removes the chat's worktree and, under `delete_empty_branch_on_archive`, an
+empty branch with it — the same archive a task gets. A worktree with local
+changes is refused; `--force` is the way past it.
 
 ## `vincent workflow`
 

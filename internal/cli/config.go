@@ -157,6 +157,9 @@ func configFields() map[string]configField {
 		"max_parallel_tasks": intField(
 			func(c apiclient.Config) int { return c.MaxParallelTasks },
 			func(n *int) apiclient.ConfigPatch { return apiclient.ConfigPatch{MaxParallelTasks: n} }),
+		"max_parallel_chats": intField(
+			func(c apiclient.Config) int { return c.MaxParallelChats },
+			func(n *int) apiclient.ConfigPatch { return apiclient.ConfigPatch{MaxParallelChats: n} }),
 		"branch_template": {
 			read: func(c apiclient.Config) string { return c.BranchTemplate },
 			// Not trimmed: a template is written verbatim into a branch name,

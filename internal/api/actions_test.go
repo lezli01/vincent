@@ -11,6 +11,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // actionHarness is the task harness with no runner: tasks stay queued, so a
@@ -251,7 +252,7 @@ func TestArchiveDirtyWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch, false)
+	path, err := h.wt.Create(t.Context(), h.repo, worktree.TaskOwner(task.ID), stored.BranchName, stored.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
@@ -307,7 +308,7 @@ func archivableTask(t *testing.T, h *taskHarness) *store.Task {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	path, err := h.wt.Create(t.Context(), h.repo, task.ID, stored.BranchName, stored.BaseBranch, false)
+	path, err := h.wt.Create(t.Context(), h.repo, worktree.TaskOwner(task.ID), stored.BranchName, stored.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}

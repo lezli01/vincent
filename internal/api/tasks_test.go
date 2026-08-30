@@ -539,7 +539,7 @@ func TestTaskDiffUsesTheRecordedBaseSHA(t *testing.T) {
 	}
 	advanceRemoteBase(t, h.repo, stored.BaseBranch)
 
-	created, err := h.wt.CreateAndClaim(t.Context(), h.repo, task.ID,
+	created, err := h.wt.CreateAndClaim(t.Context(), h.repo, worktree.TaskOwner(task.ID),
 		stored.BranchName, stored.BaseBranch, true, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)

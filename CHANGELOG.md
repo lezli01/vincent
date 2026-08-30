@@ -13,6 +13,44 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Free chat: conversational agent sessions beside tasks.** A `chat` is a
+  titled conversation with an agent, scoped to a project, running in its own git
+  worktree and `vincent/{id}-{slug}` branch. Each turn resumes the agent CLI's
+  *own* session, so turn N has turns 1..N-1 in context — nothing is replayed as
+  prompt context. Chats are a first-class entity beside tasks, not a task with a
+  flag: they have their own `chats`/`chat_turns` tables, their own four-state
+  lifecycle (`idle` / `running` / `awaiting_input` / `archived`), their own
+  route family under `/v1/chats`, and they never appear on the task board or in
+  `GET /v1/tasks`. Turns carry the same accounting a step run does — tokens,
+  cost, duration, exit code — and each gets its own transcript, which closes the
+  gap the feature was asked for: a conversation held outside vincent leaves no
+  record at all. Drive one with `vincent chat start|send|list|show|archive`, or
+  over the API. Mid-run questions use the existing §7.4 flow verbatim; answering
+  one is `POST /v1/chats/{id}/answer`, which has no `vincent chat` subcommand
+  yet.
+
+  Two limits worth knowing before you reach for it. **codex and cursor cannot
+  hold a chat**: creating one on either is refused with `400
+  agent_cannot_resume`. Both CLIs have a resume of some shape, but vincent does
+  not read it yet and no fixture captured against a named CLI version pins it,
+  and replaying the conversation into the prompt would be an emulation of a
+  capability the adapter does not have — so vincent refuses instead of faking
+  it. A stored session the CLI no longer knows fails that turn with
+  `session_lost` and leaves the chat usable, for the same reason: a silently
+  fresh session answers as if it had context it does not have, and you could
+  not tell that apart from a working conversation. And **there is no chats view
+  in the TUI yet** — chats are driven from `vincent chat` and the API in this
+  release.
+- **`max_parallel_chats` (default 3).** Chats are bounded by their own cap,
+  counted independently of `max_parallel_tasks`: a running chat consumes no task
+  slot and never delays an admissible task. A `send` over the cap is refused
+  with `409 chat_cap_reached` **immediately** rather than queued — a chat is a
+  foreground reply, and waiting behind batch work is the thing chats exist to
+  avoid.
+- **`--resume` for the claude adapter.** `RunSpec.ResumeSessionID` and
+  `RunResult.SessionID`, plus the `agent.Resumer` capability. Only chat turns
+  set it; every workflow step still gets a fresh session, unchanged.
+
 - **Run a task's steps inside a container.** A new `container:` block in
   `config.yaml` names an image, and a task's step processes run inside **one**
   container, created with the task's worktree and removed with it. That is every
@@ -42,7 +80,6 @@ list with the user-facing context a commit subject cannot carry.
   step installed, and crash recovery removes a container only after confirming
   it still carries the label naming that task. `vincent doctor` gained a
   container row, which probes the runtime even when the feature is off.
-
 - **Enum task fields, with a value picker in New task, and a `default:` for
   every field type.** A workflow's `fields:` gains `type: enum`, whose members
   are declared in `values:` and published through `GET /v1/workflows` — which a
@@ -265,6 +302,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Worktree directories are named by owner.** A task's is still
+  `{data_dir}/worktrees/{task_id}`, unchanged and unmoved; a chat's is
+  `{data_dir}/worktrees/chat-{chat_id}`. Both live under one root, so without
+  this, task 7 and chat 7 would claim the same directory. `vincent gc` builds
+  its claim sets from both tables, so a chat's worktree and transcripts are not
+  strays and do not inflate the orphan count on `GET /v1/info`.
 - **Tasks now start from the *current* base branch, not from whatever your last
   `git pull` left behind.** Before a task's worktree is created, vincent fetches
   its base branch from that branch's own remote and cuts the task branch from the
@@ -327,6 +370,20 @@ list with the user-facing context a commit subject cannot carry.
   top-level `build` are different steps — but the graph gave both boxes the same
   node id, which made selecting one ambiguous. Lane-inner nodes are now
   namespaced by their lane.
+
+### Not included
+
+- **codex and cursor cannot hold a chat yet, and say so.** Creating one on
+  either is refused with `400 agent_cannot_resume`. Both CLIs have a resume of
+  some shape, but vincent does not read it yet and no fixture captured against a
+  named CLI version pins it. Replaying the conversation into the prompt would be
+  an emulation of a capability the adapter does not have, so vincent refuses
+  instead of faking it. A stored session the CLI no longer knows fails that turn
+  with `session_lost` and leaves the chat usable, for the same reason: a silently
+  fresh session answers as if it had context it does not have, and you could not
+  tell that apart from a working conversation.
+- **No chats view in the TUI yet.** Chats are driven from `vincent chat` and the
+  API in this release.
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 

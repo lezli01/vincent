@@ -27,6 +27,7 @@ silently drops.
 | Binary | `claude` | `codex` | **`cursor-agent`** |
 | `agent:` value | `claude` | `codex` | `cursor` |
 | Mid-run questions (`awaiting_input`) | ✅ | — | — |
+| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | — | — |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
@@ -57,6 +58,13 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   `mcp__vincent__*` in full, so `restricted` bounds the filesystem and the
   shell, **not** what the step does to vincent. See
   [Driving vincent from an agent](mcp.md#what-this-is-not).
+- **Resumes its own session**, with `--resume <session_id>`. That is what makes
+  a [chat](../reference/cli.md#vincent-chat) work: vincent stores the
+  `session_id` claude stamps on its stream and hands it back on the next turn,
+  so turn N sees turns 1..N-1 without anything being replayed into the prompt.
+  Workflow steps never set it — every step still gets a fresh session. A session
+  the CLI no longer knows fails that turn with `session_lost` rather than
+  quietly starting a new one.
 - **Carries [vincent's own MCP server](mcp.md#your-own-steps-get-this-too)** on
   `--mcp-config` with an inline config, alongside `--strict-mcp-config` so your
   own MCP servers never leak into a step. Per run: nothing global is written.
@@ -124,6 +132,12 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   `awaiting_input`, and `on_input: wait|deny` has no effect on it. `on_input:
   require` is the one that does: a step declaring it cannot use codex at all,
   and a workflow pinning `agent: codex` on such a step fails validation.
+- **Cannot resume a session**, so codex cannot hold a chat: creating one on it
+  is refused with `agent_cannot_resume`. The CLI does have `exec resume`, and
+  its stream does carry a `thread_id`, but vincent reads neither yet and no
+  captured fixture pins the argv against a named build. Replaying the
+  conversation into the prompt would be an emulation of continuity, which is
+  what the refusal exists to prevent.
 - **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
   shows at the `normal` and `verbose` output levels (`v` cycles them) and the
   transcript records as `agent.thinking`. Whether any are emitted depends on
@@ -152,6 +166,9 @@ and would open a GUI. **Workflow value:** `agent: cursor`.
 - Reports token usage but **no cost**, and `supports_input: false` — so, like
   codex, cursor cannot back a step declaring `on_input: require`, and pinning it
   on one is a validation error.
+- **Cannot resume a session** either, and is refused for chats the same way.
+  `cursor-agent` has a `--resume` and emits a `session_id`; as with codex,
+  neither is wired here and no fixture pins the flag against a named build.
 - Errors do not arrive in the stream — an invalid model id exits 1 with a message
   on stderr and no result line — so the adapter reports "stream ended without a
   result event" plus the stderr tail, which is what makes an everyday typo

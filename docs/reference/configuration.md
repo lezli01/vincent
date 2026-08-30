@@ -319,6 +319,27 @@ belongs to.
 
 Real agents cost money; this is the knob that bounds it.
 
+### `max_parallel_chats`
+
+```yaml
+max_parallel_chats: 3
+```
+
+Cap on **chats** holding a live agent process — a separate dimension from
+`max_parallel_tasks`, which never sees a chat and is never delayed by one. Must
+be at least 1. It is **not** in the generated default file above; omitting it
+keeps the default, as omitting any key does.
+
+A chat counts while it is `running` or `awaiting_input`, for the same reason a
+task does: the process is alive. A `send` over the cap is refused immediately
+with `409 chat_cap_reached` and is **never queued**. That is the point — a chat
+is a foreground conversation, and parking your reply behind someone else's batch
+work is the wait chats exist to avoid. You get an error you can act on rather
+than a spinner.
+
+The honest ceiling on concurrent agent CLIs is therefore
+`max_parallel_tasks + max_parallel_chats`, which is 6 by default.
+
 ### `branch_template`
 
 ```yaml
@@ -516,6 +537,11 @@ reboots rather than only on the restarts it no longer has.
 
 Task and step rows are **never** deleted — only the transcript files.
 
+**Chats are outside this.** The pruner walks archived *tasks*, so an archived
+[chat](cli.md#vincent-chat)'s turn transcripts under
+`{data_dir}/transcripts/chat-{chat_id}/` are kept until you delete them
+yourself.
+
 That same pass also drops
 [idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This
 setting does not govern them: `0` keeps every transcript, and expired keys still
@@ -537,6 +563,9 @@ ends — a half-written line would turn a size failure into a parse failure for
 every later reader.
 
 `0` disables the cap.
+
+**Chats are outside this too**: a chat turn's transcript is written with no cap,
+so nothing latches it and no turn fails with `transcript_limit`.
 
 ### `max_task_cost_usd`
 

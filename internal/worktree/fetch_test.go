@@ -46,7 +46,7 @@ func TestCreateFetchesTheBaseBranch(t *testing.T) {
 		t.Fatal("fixture is wrong: the remote is not ahead")
 	}
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, "vincent/1-fresh", "main", true, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), "vincent/1-fresh", "main", true, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestCreateFetchLeavesTheLocalBaseAlone(t *testing.T) {
 		t.Fatal("fixture is wrong: the working tree should be dirty")
 	}
 	m := newManager(t)
-	if _, err := m.Create(t.Context(), repo, 1, "vincent/1-fresh", "main", true); err != nil {
+	if _, err := m.Create(t.Context(), repo, TaskOwner(1), "vincent/1-fresh", "main", true); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	wantTip(t, repo, "refs/heads/main", localTip, "local base after the fetch")
@@ -103,7 +103,7 @@ func TestCreateSetsNoUpstreamOnTheTaskBranch(t *testing.T) {
 			testrepo.Run(t, repo, "config", "branch.autoSetupMerge", "always")
 			m := newManager(t)
 			const branch = "vincent/1-fresh"
-			if _, err := m.Create(t.Context(), repo, 1, branch, "main", fetch); err != nil {
+			if _, err := m.Create(t.Context(), repo, TaskOwner(1), branch, "main", fetch); err != nil {
 				t.Fatalf("Create: %v", err)
 			}
 			for _, key := range []string{"branch." + branch + ".remote", "branch." + branch + ".merge"} {
@@ -126,7 +126,7 @@ func TestCreateFetchWithNoRemote(t *testing.T) {
 	repo := testrepo.Init(t, "main")
 	localTip := testrepo.Run(t, repo, "rev-parse", "main")
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, "vincent/1-local", "main", true, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), "vincent/1-local", "main", true, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestCreateFetchWithBaseThatHasNoUpstream(t *testing.T) {
 	repo, _, _ := remoteAhead(t)
 	m := newManager(t)
 	// The parent lane's branch, cut from a fetched main.
-	parent, err := m.CreateAndClaim(t.Context(), repo, 1, "vincent/1-parent", "main", true, nil)
+	parent, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), "vincent/1-parent", "main", true, nil)
 	if err != nil {
 		t.Fatalf("create parent: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestCreateFetchWithBaseThatHasNoUpstream(t *testing.T) {
 	testrepo.Run(t, parent.Path, "commit", "-q", "-m", "parent work")
 	parentTip := testrepo.Run(t, parent.Path, "rev-parse", "HEAD")
 
-	child, err := m.CreateAndClaim(t.Context(), repo, 2, "vincent/2-lane", "vincent/1-parent", true, nil)
+	child, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(2), "vincent/2-lane", "vincent/1-parent", true, nil)
 	if err != nil {
 		t.Fatalf("create lane: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestCreateFetchFailureFallsBack(t *testing.T) {
 		testrepo.Run(t, repo, "rev-parse", "--show-toplevel")+"-gone.git")
 	m := newManager(t)
 	start := time.Now()
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, "vincent/1-fresh", "main", true, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), "vincent/1-fresh", "main", true, nil)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("an unreachable remote must not fail the creation: %v", err)
@@ -201,7 +201,7 @@ func TestCreateFetchFailureFallsBack(t *testing.T) {
 func TestCreateFetchDisabled(t *testing.T) {
 	repo, localTip, remoteTip := remoteAhead(t)
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, "vincent/1-stale", "main", false, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), "vincent/1-stale", "main", false, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestDeleteEmptyBranchUsesTheRecordedBaseSHA(t *testing.T) {
 	const branch = "vincent/1-nothing"
 	repo, _, _ := remoteAhead(t)
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, branch, "main", true, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), branch, "main", true, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestDeleteEmptyBranchFallsBackToTheBranchName(t *testing.T) {
 	const branch = "vincent/1-nothing"
 	repo, _, _ := remoteAhead(t)
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, branch, "main", false, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), branch, "main", false, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestDeleteEmptyBranchRefusesACheckedOutBranch(t *testing.T) {
 	const branch = "vincent/1-live"
 	repo, _, _ := remoteAhead(t)
 	m := newManager(t)
-	c, err := m.CreateAndClaim(t.Context(), repo, 1, branch, "main", true, nil)
+	c, err := m.CreateAndClaim(t.Context(), repo, TaskOwner(1), branch, "main", true, nil)
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}

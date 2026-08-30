@@ -44,6 +44,18 @@ var unauthenticatedMarkers = []string{
 	"authentication_error",
 }
 
+// sessionLostMarkers are the phrasings that mean "the session id you asked me
+// to resume is not one I know". Same conservative rule as the markers above:
+// recognize documented shapes, fall through to the generic verdict otherwise.
+// They are only ever consulted for a run that actually passed --resume, so a
+// task step can never be misdiagnosed as a lost session.
+var sessionLostMarkers = []string{
+	"no conversation found with session id",
+	"no conversation found",
+	"session not found",
+	"could not resume",
+}
+
 // resetEpochRe matches the reset time claude appends to its usage-limit
 // message as unix seconds: `Claude AI usage limit reached|1755100000`.
 var resetEpochRe = regexp.MustCompile(`limit reached\|(\d{9,11})`)
@@ -69,6 +81,26 @@ func classify(res agent.RunResult, stderr string) *agent.Failure {
 	default:
 		return nil
 	}
+}
+
+// classifyResume names a resume the CLI refused (task 063 decision 4). It
+// returns nil for a run that did not resume at all, and for a resumed run that
+// succeeded — a chat turn's ordinary case.
+//
+// It is a second pass rather than a branch inside classify because it needs
+// something classify has no business knowing: whether this run was a resume.
+// A quota stop or a logged-out CLI still wins nothing here; the caller applies
+// this one last, since a lost session is the actionable verdict and the only
+// one that says "this conversation cannot continue".
+func classifyResume(res agent.RunResult, stderr string, resuming bool) *agent.Failure {
+	if !resuming || !res.IsError {
+		return nil
+	}
+	text := strings.ToLower(strings.Join([]string{res.ErrorMessage, res.ResultText, stderr}, "\n"))
+	if containsAny(text, sessionLostMarkers) {
+		return &agent.Failure{Kind: agent.FailureSessionLost}
+	}
+	return nil
 }
 
 func containsAny(text string, markers []string) bool {

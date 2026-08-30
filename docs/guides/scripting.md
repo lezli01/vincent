@@ -115,7 +115,8 @@ defect.
 
 ## JSON output
 
-`--json` works on every subcommand that prints anything:
+`--json` works on every subcommand that prints anything, with one exception
+noted below:
 
 ```sh
 vincent project ls --json
@@ -134,6 +135,10 @@ Two guarantees make it safe to pipe into `jq`:
 ```sh
 vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 ```
+
+The exception is [`vincent chat`](../reference/cli.md#vincent-chat), which has
+no `--json` on any of its subcommands — it prints for a person. Script chats
+against [`/v1/chats`](../reference/api.md#chats) directly.
 
 `vincent task show <id> --json` carries two fields worth knowing about:
 `available_actions`, which is what the daemon will accept right now — read it

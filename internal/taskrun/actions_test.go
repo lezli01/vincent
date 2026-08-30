@@ -722,7 +722,7 @@ func (h *actionHarness) runs(t *testing.T, taskID int64) []store.StepRun {
 func (h *actionHarness) worktree(t *testing.T, task *store.Task) string {
 	t.Helper()
 	path, err := h.runner.deps.Worktrees.Create(
-		t.Context(), h.repo, task.ID, task.BranchName, task.BaseBranch, false)
+		t.Context(), h.repo, worktree.TaskOwner(task.ID), task.BranchName, task.BaseBranch, false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
