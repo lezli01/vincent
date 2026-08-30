@@ -169,10 +169,17 @@ type newTask struct {
 
 	projectID int64
 	workflow  string
-	titleIn   textinput.Model
-	desc      textarea.Model
-	fields    []kv
-	branch    textinput.Model
+	// workflowPicked records that the Workflow row was chosen by hand, which
+	// is the only thing that distinguishes it from a name the form derived
+	// for itself. The registry is project-scoped (§5.2) and the first listing
+	// is fetched before a project is selected, so a derived name must be
+	// re-derived when the project-scoped catalog lands; a deliberate pick
+	// must survive it.
+	workflowPicked bool
+	titleIn        textinput.Model
+	desc           textarea.Model
+	fields         []kv
+	branch         textinput.Model
 	// branchName is the task's own branch, distinct from branch above, which is
 	// the *base* it forks from. Two adjacent rows about branches need labels that
 	// cannot be misread as one having been renamed (task 001).
@@ -533,7 +540,7 @@ func (n *newTask) reset() {
 	n.priority.SetValue("0")
 	n.fields = nil
 	n.agent, n.model, n.effort = "", "", ""
-	n.workflow = ""
+	n.workflow, n.workflowPicked = "", false
 	n.projectID = 0
 	n.cursor = ntProject
 	n.mode = ntNavigating
@@ -588,7 +595,7 @@ func (n *newTask) setProject(p apiclient.Project) {
 // selectDefaultWorkflow points at the project's default, else adhoc, else
 // the first valid entry — the same fallback handleTaskCreate applies.
 func (n *newTask) selectDefaultWorkflow() {
-	if n.workflow != "" && n.workflowEntry(n.workflow) != nil {
+	if n.workflowPicked && n.workflow != "" && n.workflowEntry(n.workflow) != nil {
 		n.syncWorkflowFields()
 		return
 	}

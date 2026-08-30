@@ -463,11 +463,13 @@ func (n *newTask) applyPick(row ntRow, value string) tea.Cmd {
 		// GitHub", and an issue from the old project has no meaning here.
 		n.workflows = nil
 		n.setWorkflow("")
+		n.workflowPicked = false
 		n.github, n.githubProject = apiclient.GitHubStatus{}, 0
 		n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
 		return tea.Batch(n.workflowsCmd(id), n.githubCmd(id))
 	case ntWorkflow:
 		n.setWorkflow(value)
+		n.workflowPicked = true
 		// Each listed issue carries the prefill computed for the workflow's
 		// declared fields, so a workflow change makes those prefills stale.
 		return tea.Batch(n.issuesCmd(), n.resolveCmd())
