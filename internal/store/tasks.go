@@ -188,7 +188,7 @@ func insertTaskTx(
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),

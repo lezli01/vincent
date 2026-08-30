@@ -171,7 +171,7 @@ and the depth is discovered at run time — so neither §7.6's
 `fan_out.max_depth`/`max_tasks` nor §7.9's `include.max_depth` covers it. Both
 are creation-time checks over a static snapshot.
 
-Migration `0019_mcp_provenance.sql` adds **`created_by_task_id`**, deliberately
+Migration `0020_mcp_provenance.sql` adds **`created_by_task_id`**, deliberately
 distinct from `parent_task_id`. Reusing `parent_task_id` was **rejected**:
 `store/subtree.go` counts children by that column for the `awaiting_children`
 join and `store.ListTasks`'s `ChildrenExclude` filters roots by it, so an
@@ -246,7 +246,7 @@ their own steps.
   parity test that fails in both directions.
 - [x] **057.3** — `task_wait`: broker subscription, the six wake states, the
   ceiling, progress notifications, and the `would_deadlock` refusal.
-- [x] **057.4** — Migration `0019_mcp_provenance.sql`, `created_by_task_id`
+- [x] **057.4** — Migration `0020_mcp_provenance.sql`, `created_by_task_id`
   through the store, `MCPAncestry`/`MCPChainSize`, and the `mcp.max_depth` /
   `mcp.max_tasks` refusal at task creation.
 - [x] **057.5** — `agent.RunSpec.MCP`, `agent.ErrMCPUnsupported`, and the three

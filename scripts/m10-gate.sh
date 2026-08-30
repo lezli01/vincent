@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M10 phase gate (task 055; spec §13.4): prove over the wire that the daemon
+# M10 phase gate (task 057; spec §13.4): prove over the wire that the daemon
 # serves MCP and that an MCP client can do the whole job through it.
 #
 #   1. the tool list is served, carries the route table's tools plus

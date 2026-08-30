@@ -1,4 +1,4 @@
--- 0019_mcp_provenance: which task's agent created this one through MCP
+-- 0020_mcp_provenance: which task's agent created this one through MCP
 -- (task 057 decision 7, spec §13.4/§14).
 --
 -- A step's agent can create a task whose step runs an agent that creates a

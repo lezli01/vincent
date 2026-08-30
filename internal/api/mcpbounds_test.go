@@ -55,7 +55,7 @@ func boundsTask(t *testing.T, st *store.Store, projectID int64, title string, cr
 
 // TestMCPMaxDepthRefusesAtCreation: the chain a step's agent builds is
 // discovered one insert at a time, so it is bounded where every other creation
-// bound is — at creation, with a message naming the key it hit (task 055
+// bound is — at creation, with a message naming the key it hit (task 057
 // decision 7).
 func TestMCPMaxDepthRefusesAtCreation(t *testing.T) {
 	t.Parallel()

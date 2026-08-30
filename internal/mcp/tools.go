@@ -62,6 +62,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/config", "config_get", "The daemon's effective configuration (§12.3), as the daemon currently reads it."},
 	{http.MethodGet, "/v1/agents", "agent_list", "The agent adapters and their selectable models and effort levels (§9.6)."},
 	{http.MethodGet, "/v1/doctor", "doctor", "The diagnostic report: directories, log, database figures and detected problems."},
+	{http.MethodGet, "/v1/update", "update_status", "The daemon's cached release check (§12.3): the latest stable release, when it was last seen, and whether this build is behind it. Read-only — it never downloads or installs anything."},
 	{http.MethodGet, "/v1/maintenance/orphans", "orphan_list", "Data-root directories no task row claims (§10)."},
 	{http.MethodGet, "/v1/projects", "project_list", "List registered projects."},
 	{http.MethodPost, "/v1/projects", "project_create", "Register a git repository as a project. Body: {path, name?, branch_template?}."},
