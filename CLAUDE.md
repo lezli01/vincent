@@ -111,12 +111,16 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m9-gate.sh                            # workflow includes (§7.9)
 ./scripts/m10-gate.sh                           # the daemon's MCP server (§13.4)
 ./scripts/m11-gate.sh                           # editing config.yaml over the API (§12.3)
+./scripts/m12-gate.sh                           # container step execution (§16); skips without docker
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All nine run in `ci.yml`'s `gates` job on all three platforms. `m6`, `m7` and
+All nine of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
+is the tenth and the exception: it needs a real container runtime, so it runs
+its assertions on the Linux leg only and skips itself (exit 0, one line saying
+why) on the macOS and Windows runners, which have no docker daemon. `m6`, `m7` and
 `m8` spent a while unwired because a cloud session's token has no `workflow`
 scope and so cannot write `.github/workflows/` by any route — push or API
 (#120, #122, #125). A gate that has never run on a platform is not known to

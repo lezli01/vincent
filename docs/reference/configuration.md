@@ -961,6 +961,13 @@ inside the container with no translation, and
 directory on both sides. It is also why **a Windows daemon refuses a
 containerized task**: `C:\...` cannot exist inside a Linux container.
 
+One consequence is worth knowing before you hit it: "the same absolute path"
+means the **physical** one. A project path that runs through a symlink — the
+common case being macOS's `/tmp` and `/var`, which are symlinks into
+`/private` — is mounted as written while git resolves the worktree's pointer to
+the physical path, and the step then reports `not a git repository`. Register
+such a project by its resolved path (`cd project && pwd -P`).
+
 **`runtime`** is a docker-CLI-compatible binary. Only **`docker`** is verified in
 CI; `podman` and `nerdctl` are accepted because they take the same argv, which
 is not the same claim as tested.

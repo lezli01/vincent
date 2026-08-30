@@ -43,5 +43,5 @@ runs *and* how every agent is launched is not independently reviewable.
 
 `internal/agent/agenttest` gains a cross-compile of `cmd/fakeagent` for
 `linux/amd64` so the fake agent can be bind-mounted into a small image carrying
-`git`, the way `scripts/m11-gate.sh` already does it. Everything else stays
+`git`, the way `scripts/m12-gate.sh` already does it. Everything else stays
 hermetic: `go test` never needs a container daemon.

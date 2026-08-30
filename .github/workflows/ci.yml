@@ -158,3 +158,15 @@ jobs:
       - name: M11 gate (configuration)
         shell: bash
         run: ./scripts/m11-gate.sh
+
+      # M12: container step execution (task 061, §16). The only gate that is
+      # not proven on all three platforms, and the reason is stated rather than
+      # implied: the macOS and Windows runners have no docker daemon, so the
+      # script skips itself there (exit 0, one line saying why) and the real
+      # assertions only ever run on this leg. A containerized task is refused
+      # outright on a Windows daemon anyway (decision 2), but macOS is a
+      # supported host that CI cannot exercise — a gate that has never run on a
+      # platform is not known to pass there.
+      - name: M12 gate (containers)
+        shell: bash
+        run: ./scripts/m12-gate.sh

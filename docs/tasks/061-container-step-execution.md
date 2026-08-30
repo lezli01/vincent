@@ -151,7 +151,14 @@ is table-driven the way adapter parsing is.
   the same workflow with no image loads.
 - The two mounts are the repository and the worktree, at their own paths.
 
-`scripts/m11-gate.sh` covers what unit tests cannot: a real runtime, exactly
+One thing the gate found that no unit test could: decision 2's "identical
+inside and out" is about the **physical** path. A project or data directory
+reached through a symlink — macOS's `/tmp` and `/var` both are — is mounted as
+written while git resolves the worktree's `gitdir:` pointer to the physical
+path, and the step reports `not a git repository`. The configuration reference
+says so and the gate resolves its own temporary directory with `pwd -P`.
+
+`scripts/m12-gate.sh` covers what unit tests cannot: a real runtime, exactly
 one container per containerized task, a step timeout that stops the process
 while the container survives, and a daemon killed mid-step leaving no container
 behind. It **skips cleanly** when `docker info` fails, which is what keeps the
