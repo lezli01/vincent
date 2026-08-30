@@ -52,6 +52,11 @@ func TestContainerValidate(t *testing.T) {
 		{"good mount", Container{ExtraMounts: []string{"/a:/b"}}, false},
 		{"good ro mount", Container{ExtraMounts: []string{"/a:/b:ro"}}, false},
 		{"relative host", Container{ExtraMounts: []string{"a:/b"}}, true},
+		// The verdict is the same on every platform, which is the point: the
+		// only daemon that acts on this key runs Linux containers, so a
+		// windows host path is wrong even on windows, and `/a` is right even
+		// there. Judged with filepath.IsAbs both of these flip on GOOS.
+		{"windows host", Container{ExtraMounts: []string{`C:\src:/src`}}, true},
 		{"relative target", Container{ExtraMounts: []string{"/a:b"}}, true},
 		{"bad mode", Container{ExtraMounts: []string{"/a:/b:rx"}}, true},
 		{"one part", Container{ExtraMounts: []string{"/a"}}, true},

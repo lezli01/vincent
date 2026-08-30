@@ -3383,8 +3383,12 @@ CI — podman and nerdctl are accepted because they take the same argv, which is
 a different claim from "tested". The repository and the worktree are mounted
 **at their own absolute host paths**, so §8.4's `.Worktree` and §8.5's
 `VINCENT_WORKTREE` are true on both sides and no path in a workflow means two
-things; `extra_mounts` is for anything else. Reads happen per admission, so a
-hot reload governs the next task admitted rather than one already running.
+things; `extra_mounts` is for anything else, and both sides of each entry are
+validated as `/`-rooted paths on every platform rather than by the host's own
+rule — the only daemon that acts on the key runs Linux containers, so a shared
+`config.yaml` must not fail to *load* on a Windows machine over a mount that
+machine will never make. Reads happen per admission, so a hot reload governs
+the next task admitted rather than one already running.
 
 What is refused, and where (task 061 decision 3):
 

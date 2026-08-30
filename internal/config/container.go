@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -116,6 +115,16 @@ func (c Container) Validate() error {
 // validateMount checks one `host:container[:ro]` entry. Both paths must be
 // absolute: a relative source resolves against the daemon's working directory,
 // which is not a thing a workflow author can reason about.
+//
+// "Absolute" is judged POSIX-style on both sides, deliberately, and not with
+// filepath.IsAbs. filepath.IsAbs answers "absolute on the platform this binary
+// was built for", and a Windows daemon answers `/srv/cache` with no. But a
+// Windows daemon refuses containerized tasks outright (decision 2 — paths are
+// identical inside and out, and `C:\...` cannot exist in a Linux container),
+// so the only host that ever acts on this key is a POSIX one. Judging it by
+// the host's own rules would make a config.yaml that is correct for the Linux
+// daemon it was written for fail to *load* on a Windows machine sharing it,
+// over a key that machine will never reach.
 func validateMount(spec string) error {
 	parts := strings.Split(spec, ":")
 	if len(parts) < 2 || len(parts) > 3 {
@@ -124,7 +133,7 @@ func validateMount(spec string) error {
 	if len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw" {
 		return fmt.Errorf("container.extra_mounts %q: mode must be ro or rw, got %q", spec, parts[2])
 	}
-	if !filepath.IsAbs(parts[0]) {
+	if !strings.HasPrefix(parts[0], "/") {
 		return fmt.Errorf("container.extra_mounts %q: host path must be absolute", spec)
 	}
 	if !strings.HasPrefix(parts[1], "/") {

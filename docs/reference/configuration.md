@@ -992,7 +992,12 @@ MCP endpoint — and the task is refused at creation. Turn `mcp.wire_steps` off,
 or leave the network on.
 
 **`extra_mounts`** are additional bind mounts, each `host:container` or
-`host:container:ro`.
+`host:container:ro`. Both paths must start with `/`, on every platform — a
+relative source would resolve against the daemon's working directory, and a
+`C:\...` source is refused even on Windows, where the containerized task that
+would have used it is itself refused at creation. That keeps one `config.yaml`
+loadable everywhere: a Windows machine reads a Linux daemon's mounts without
+complaining about a key it will never act on.
 
 A workflow may override any of these in its `defaults.container:` block, which
 beats this one per field. There is no per-task override.
