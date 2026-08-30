@@ -70,6 +70,13 @@ list with the user-facing context a commit subject cannot carry.
   and `listen` ask for an explicit confirmation before they apply, because they
   decide what the daemon executes or exposes.
 
+- **The agent-facing surface is narrower than the human one.** `PATCH
+  /v1/config` is not an MCP tool — an agent must not reconfigure the daemon
+  supervising it — and the MCP `config_get` masks `environment.set`'s values and
+  `notify.command`'s argv, keeping the names, because a tool result lands in the
+  model's context and in the step's transcript. `GET /v1/config` over HTTP
+  serves them, behind the loopback listener and the owner-only token.
+
 - **A pull-requests screen in the TUI, and a browser to open them in.** A new
   takeover lists every open pull request across every registered project whose
   `origin` is a github.com repository vincent can authenticate to, grouped by

@@ -2924,6 +2924,7 @@ One Go binary, `vincent`:
 | `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
+| `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
@@ -4532,7 +4533,9 @@ bearer token. An MCP tool result is not that boundary: it is replayed on behalf
 of an agent step and lands in the model's context and in the step's transcript.
 So the MCP rendering masks those two fields — values only; the variable names
 survive, which is the same line §12.3 draws for the log — and nothing else. A
-test asserts the two bodies differ in exactly those fields and nowhere else. Everything else in §13.2 is a tool, including the three the
+test asserts the two bodies differ in exactly those fields and nowhere else.
+
+Everything else in §13.2 is a tool, including the three the
 proposal left unclassified: `POST`/`DELETE /v1/tasks/{id}/github/pull`,
 `POST /v1/tasks/{id}/steps/{step_id}/status`, and `POST /v1/tasks/{id}/archive`
 despite its worktree removal and its possible empty-branch delete. The unlink
@@ -5144,6 +5147,7 @@ stream for the live tail.
    The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
    at launch has no business killing it.
+
    *Amended 2026-08-30 (task 060, issue #244).* **The configuration block is the
    one exception, and only it.** "It reports, it does not act" still holds for
    stopping the daemon and for `vincent gc`: both act on the **process
@@ -5163,11 +5167,12 @@ stream for the live tail.
    rather than showing a pending value as though it were in force. While the
    editor is open the view **captures input**, which it never did before: every
    single-key global would otherwise land in the text field. There is still no
-   seventh view — the daemon view already owned this block. The log tail is read straight from
-   `{data_dir}/logs/daemon.log`, the one place the TUI is not a pure API client:
-   an endpoint cannot serve the log when the daemon is the thing that died, which
-   is when the log is worth reading — so it is the one view with something true to
-   show while disconnected. See *Disconnected* below for what the rest of the UI
+   seventh view — the daemon view already owned this block.
+
+   The log tail is read straight from `{data_dir}/logs/daemon.log`, the one
+   place the TUI is not a pure API client: an endpoint cannot serve the log when
+   the daemon is the thing that died, which is when the log is worth reading —
+   so it is the one view with something true to show while disconnected. See *Disconnected* below for what the rest of the UI
    does in that state.
 
 7. **Pull requests.** *Added 2026-08-29 (task 052.6).* Every available project's

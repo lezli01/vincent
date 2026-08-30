@@ -17,7 +17,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue, prefilled and editable; issue details in templates; a project's open pull requests, each linked to the task whose branch it came from; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
-| Operations | Automatic usage-limit waits, one-command diagnostics, orphan cleanup, database integrity checks, backup and restore |
+| Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
 
 ## Orchestrate work instead of terminals
@@ -226,9 +226,12 @@ The daemon serves the Model Context Protocol on the same loopback listener,
 behind the same bearer token, so any MCP client gets the whole API as tools —
 with discovery, argument schemas and typed errors rather than hand-rolled curl.
 
-- The tool surface is the route table, minus five destructive-admin routes an
-  agent has no business calling: stopping, backing up, garbage-collecting or
-  reconfiguring the daemon, and force-deleting a project.
+- The tool surface is the route table, minus six destructive-admin routes an
+  agent has no business calling: stopping, backing up, garbage-collecting,
+  repairing or reconfiguring the daemon, and force-deleting a project. The
+  configuration one is also the only tool whose body differs from its route's:
+  `config_get` masks `environment.set`'s values and `notify.command`'s argv,
+  because a tool result lands in the model's context and in the transcript.
 - One bounded `task_wait` call blocks until a task is done, aborted, archived,
   or waiting on a human — with a hard ceiling, so a call cannot hang. Step
   transitions stream as progress notifications, and the result is complete
@@ -328,6 +331,14 @@ follows it. The transcript command prints one attempt's complete record — the
 file `vincent task show` only names — rendered as text for a person, as NDJSON
 for `jq`, or as the agent's own dialect byte for byte, with `-f` following an
 attempt while it is still running.
+
+`config.yaml` is editable without leaving vincent. `vincent config get` prints
+every key in effect and `vincent config set` changes one; the TUI's daemon view
+edits the same keys in a typed form. Both go through the daemon, which owns the
+file: it validates the whole candidate before writing anything, edits your key
+in place so comments and key order survive, and applies the result before it
+answers — so a change is in force with nothing to restart, `listen` excepted.
+An invalid value leaves the file untouched.
 
 `vincent gc` focuses on orphaned worktrees and transcripts. It supports a dry
 run, refuses to remove dirty or unknown work without an explicit force, and
