@@ -23,7 +23,7 @@ practice people decide without looking. A step can sit in `awaiting_input` for
 `input_timeout` (24 h by default) while someone works this out.
 
 Two premises from the issue did not survive reading the code, and are corrected
-in decision 1 and decision 2 below.
+in decision 1 and decision 7 below.
 
 ## Decisions
 
@@ -48,19 +48,7 @@ follow-up if it is ever wanted.
 **Beat:** deleting the shell's dead popup path in the same change. It is a
 second reviewable thing with its own risk of taking a live test with it.
 
-**2. `overlayPopup` becomes a free function, because it is already shared.**
-*(2026-08-30)*
-
-`shell.overlayPopup` *is* live, despite decision 1: `taskView.render` builds a
-throwaway `shell{detail: t.detail, bodyW: t.width, bodyH: t.height}` and calls
-it, borrowing the renderer rather than duplicating it. That throwaway is
-constructed fresh every frame and can carry no tab state, so `overlayPopup` now
-takes the popup state it draws — `overlayPopup(bg, bodyW, bodyH, popupOverlay)`
-— and the tab and its pane live on the view that owns the popup. The three
-forms reach it through a small `popupForm` interface (`height`, `render`),
-which is all three already had in common.
-
-**3. The Details tab is the sidebar renderer, from an extracted sub-model.**
+**2. The Details tab is the sidebar renderer, from an extracted sub-model.**
 *(2026-08-30)*
 
 `renderDetails` is a two-pane layout — a 16–24 column section sidebar against an
@@ -77,7 +65,7 @@ reads `t.pull`, which the pane has no business fetching.
 is a second thing to keep in sync and reintroduces "leave to see the rest",
 which is the whole complaint.
 
-**4. A popup with tabs takes the full height budget.** *(2026-08-30)*
+**3. A popup with tabs takes the full height budget.** *(2026-08-30)*
 
 `ph = max(bodyH-4, 6)`, replacing `min(height(inner)+2, max(bodyH-4, 6))` for
 these three. No frame jitter across a `ctrl+t`, and the Details tab gets every
@@ -86,7 +74,7 @@ now floats in a full-height box. Accepted as the cost of a frame that does not
 resize under the reader. The compare-URL editor, outside this change, keeps
 sizing to its content.
 
-**5. `ctrl+t` switches the tabs, intercepted before the form.** *(2026-08-30)*
+**4. `ctrl+t` switches the tabs, intercepted before the form.** *(2026-08-30)*
 
 It is unbound anywhere in `bindings.go`, non-printable, and passes through
 every sub-mode these popups have: the answer form's free-text `textarea`, the
@@ -96,13 +84,13 @@ these popups already use. `taskView.updatePopupKey` takes it **before** the form
 sees it — that seam is the one thing that makes it survive a focused editor —
 and the forms themselves stay unaware that they have tabs.
 
-**6. `esc` on the Task details tab returns to the form tab.** *(2026-08-30)*
+**5. `esc` on the Task details tab returns to the form tab.** *(2026-08-30)*
 
 One layer per press, which is 017 decision 13's rule as task 053 restated it. It
 does not close the popup and it does not touch the draft. `esc` on the form tab
 keeps its existing per-popup meaning. §15's `esc` stack gains this inner layer.
 
-**7. The Task details tab is read-only, and more strictly than the workspace
+**6. The Task details tab is read-only, and more strictly than the workspace
 tab is.** *(2026-08-30)*
 
 `updateDetailsKey`'s `default` arm forwards unhandled keys to
@@ -110,6 +98,18 @@ tab is.** *(2026-08-30)*
 the popup that arm is not taken, and `o` (open the pull request) and `P` (open
 the create-PR form) are not offered: a popup that can raise a second popup is
 not a reference surface.
+
+**7. `overlayPopup` becomes a free function, because it is already shared.**
+*(2026-08-30)*
+
+`shell.overlayPopup` *is* live, despite decision 1: `taskView.render` builds a
+throwaway `shell{detail: t.detail, bodyW: t.width, bodyH: t.height}` and calls
+it, borrowing the renderer rather than duplicating it. That throwaway is
+constructed fresh every frame and can carry no tab state, so `overlayPopup` now
+takes the popup state it draws — `overlayPopup(bg, bodyW, bodyH, popupOverlay)`
+— and the tab and its pane live on the view that owns the popup. The three
+forms reach it through a small `popupForm` interface (`height`, `render`),
+which is all three already had in common.
 
 ## A gap this closed on the way
 
@@ -137,10 +137,10 @@ answer form's multi-select. A shot of the new tab would need a new tape in
   against it. ✓ 2026-08-30
 - [x] **059.2** Turn `shell.overlayPopup` into a free function over a
   `popupOverlay`, drawing the two-tab strip as the popup's first body line and
-  sizing per decision 4. ✓ 2026-08-30
+  sizing per decision 3. ✓ 2026-08-30
 - [x] **059.3** Give `taskView` a per-popup tab index and details pane, with
   `ctrl+t` and the details-tab `esc` intercepted in `updatePopupKey` ahead of
-  the form, and the tab read-only per decision 7. ✓ 2026-08-30
+  the form, and the tab read-only per decision 6. ✓ 2026-08-30
 - [x] **059.4** Register `ctrl+t` in `ctxForm`, `ctxRepairForm` and
   `ctxFollowUpForm` with probes; add the three `bindingContext` arms and the
   follow-up section to the `?` sheet; add each form's hint. ✓ 2026-08-30

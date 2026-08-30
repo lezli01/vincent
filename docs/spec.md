@@ -4932,9 +4932,9 @@ stream for the live tail.
    `GET /v1/agents` pickers the new-task flow uses (§8.6, with the request
    standing in for the step level). `ctrl+s` starts the repair, `esc` closes it
    and discards the draft — which is why `ctrl+t` (above, task 059) rather than
-   `esc` is the way out to the task's details. It is a popup and not an action key because a repair
-   needs prose written for this one task — which is also why it is excluded from
-   bulk actions.
+   `esc` is the way out to the task's details. It is a popup and not an action
+   key because a repair needs prose written for this one task — which is also
+   why it is excluded from bulk actions.
 
    The detail timeline must render a repair's StepRun as **its own labeled
    entry** under the blocked step, never as another attempt of that step (§5.4):
@@ -4952,9 +4952,9 @@ stream for the live tail.
    picked from `GET /v1/workflows` — and the same agent/model/effort pickers
    follow. `ctrl+s` starts the run, `esc` closes and discards the draft; as with
    repair, `ctrl+t` (above, task 059) is the way to read the task's details
-   without paying that. Like
-   repair it is excluded from bulk actions (task 011): the input is written for
-   one task, and the batch case is `vincent task follow-up` (§12.1).
+   without paying that. Like repair it is excluded from bulk actions (task 011):
+   the input is written for one task, and the batch case is
+   `vincent task follow-up` (§12.1).
 
    The detail timeline must render a follow-up round as **its own tier**, headed
    as a round rather than numbered as a step: its rows sit at
@@ -5362,8 +5362,11 @@ on an error, where it is the error and may be the only content there is.
 
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
-serves neither. Takeovers are for surfaces you visit deliberately; popups are for
-small things — the palette, confirmations, and the answer form.
+serves neither. Takeovers are for surfaces you visit deliberately; popups are
+for what interrupts you — the palette, confirmations, and the three form popups.
+*(Amended 2026-08-30, task 059: the dividing line is the interruption, not the
+size. A form popup with a tab strip takes the whole height budget and carries
+the task inspector inside it, and is no longer a small thing.)*
 
 ### Workflow graph
 

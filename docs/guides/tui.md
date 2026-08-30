@@ -519,11 +519,8 @@ keystroke is how an answer gets lost. It announces itself and waits for you.
 ### Reading the task without leaving the popup
 
 All three popups — the answer form, the repair form and the follow-up form —
-have a two-tab strip of their own along the top:
-
-```
- Question │ Task details   ctrl+t
-```
+have a two-tab strip of their own along the top: the form itself, named
+**Question**, **Repair** or **Follow-up**, and **Task details**.
 
 `ctrl+t` switches between them and the popup stays open. **Task details** is
 the same inspector the workspace's Task Details tab shows, with the same
