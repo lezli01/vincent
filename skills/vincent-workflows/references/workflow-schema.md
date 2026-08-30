@@ -90,8 +90,8 @@ validation. Read an optional value defensively:
 ## Defaults and common fields
 
 Workflow `defaults` may set `agent`, `model`, `effort`, `permission_mode`,
-`on_input`, `input_timeout`, `max_retries`, `retry_backoff`, and `timeout`.
-Step values win. `max_retries` counts attempts after the first: `0` means one
+`on_input`, `input_timeout`, `max_retries`, `retry_backoff`, `timeout`, and
+`container`. Step values win. `max_retries` counts attempts after the first: `0` means one
 attempt and `1` means at most two. `retry_backoff` is how long to wait before
 each retry, default `0s` — an immediate retry. Use it for steps that fail on
 something transient (a network call, a lock held elsewhere); leave it at zero
@@ -99,6 +99,18 @@ where a second attempt would fail the same way immediately. It never grants an
 extra attempt, only delays one `max_retries` already allows, and the waiting
 task holds no concurrency slot. Durations use Go syntax such as `90s`, `45m`,
 or `1h30m`.
+
+`container` is a mapping, not a scalar, and it merges per field over the
+daemon's `container:` block: `image`, `runtime`, `mount_agent_config`,
+`network`, `extra_mounts`. `image` is the switch — the daemon's default is `""`,
+meaning steps run on the daemon's host; `image: ""` written here is a real value
+meaning "run this workflow on the host" and is distinct from omitting the key.
+There is no per-step and no per-task override. A workflow that pins an image
+must keep its `run:` bodies to the image's `/bin/sh`: a step pinning
+`shell: pwsh` or `shell: cmd` fails validation at load, and `platforms:` still
+gates on the daemon's host, not on the image. Do not add a `container:` block to
+a workflow that does not already ask for one — which image a project runs in is
+a deployment decision, not a workflow-authoring one.
 
 Every runtime step has a unique `id` and a `type`; `name`, `max_retries`,
 `retry_backoff`, `timeout`, and `if` are common optional fields where the step
