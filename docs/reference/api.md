@@ -644,9 +644,17 @@ Registry entries carry
 
 `fields[]` is the selected workflow's ordered
 [`fields:` declaration](workflow-schema.md#fields). Each entry is
-`{ name, label?, description?, type, required, pattern? }`; `type` is always
-explicit (`string` when the YAML omitted it). An empty list means the workflow
-publishes no task-input contract, not that task fields are forbidden.
+`{ name, label?, description?, type, required, pattern?, values[]?, multiple?, default? }`;
+`type` is always explicit (`string` when the YAML omitted it). An empty list
+means the workflow publishes no task-input contract, not that task fields are
+forbidden.
+
+`values[]` is an `enum` field's members in declared order, `multiple` says it
+accepts more than one of them (joined with `,` in that order), and `default` is
+the value that applies when the caller omits the key. All three are absent when
+the declaration does not carry them. A client older than `enum` sees an unknown
+`type`, falls back to a free-text row, and relies on `POST /v1/tasks` to reject
+a non-member.
 
 `platforms[]` is the entry's [platform restriction](workflow-schema.md#platforms)
 as the file declares it, and `platform_supported` is **the daemon's own verdict**
@@ -694,7 +702,9 @@ GET /v1/workflows/definition?name=feature-pr&project_id=3
     "name": "feature-pr",
     "fields": [
       { "name": "ticket", "label": "Ticket", "type": "string",
-        "required": true, "pattern": "^OPS-[0-9]+$" }
+        "required": true, "pattern": "^OPS-[0-9]+$" },
+      { "name": "environment", "type": "enum", "required": true,
+        "values": ["dev", "staging", "prod"], "default": "staging" }
     ],
     "defaults": { "agent": "claude", "model": "sonnet" },
     "steps": [
@@ -857,10 +867,22 @@ The CLI and the TUI do not send the header: neither retries a create, so a
 failed create is reported to you and what to do next is your call.
 
 On `POST /v1/tasks`, the daemon validates the selected root workflow's
-declared fields before inserting the task. Missing required values and invalid
-types or patterns return `400 validation_failed`. The `fields` object remains
-open: additional names that the workflow did not declare are accepted, stored,
-and returned with the task.
+declared fields before inserting the task. Missing required values, invalid
+types or patterns, and values outside an `enum`'s `values[]` return
+`400 validation_failed`. The `fields` object remains open: additional names that
+the workflow did not declare are accepted, stored, and returned with the task.
+
+Two things happen before that validation. A `multiple: true` enum value is
+normalized — split on `,`, trimmed, emptied entries dropped, deduplicated,
+reordered to the declared order and rejoined — so `"reviewers": "cy, ana"` is
+stored as `"ana,cy"` and every client produces the same task row for the same
+selection; a rejection names the element that failed. And a **required** field's
+`default:` is substituted for an omitted key, so a caller that omits it gets a
+task rather than a 400, with the applied value recorded on the row. An
+**optional** field's default is never substituted: it is published in
+`GET /v1/workflows` for clients to seed, and an optional key you omit stays
+absent from the task's `fields`. A key sent with an empty value is never
+defaulted.
 
 `github_issue` is an issue **number**. The daemon fetches that issue, computes
 the [prefill](#github-issues), and fills in whatever this request left unset —

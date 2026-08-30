@@ -528,7 +528,12 @@ optional agent/model/effort override.
 When the selected workflow declares [`fields:`](../reference/workflow-schema.md#fields),
 the Fields row is pre-rendered in declaration order. It shows labels,
 descriptions, type/required badges, and regex help; boolean values toggle between
-`true` and `false`. Workflow-owned names are locked, but their values remain
+`true` and `false`. An [`enum`](../reference/workflow-schema.md#enum-fields) row
+opens a scrollable, filterable list of its declared values on `enter` — `esc`
+cancels, `enter` commits, and a `multiple` field toggles membership with the
+list open — while `←`/`→` step through the values in place without opening it,
+the way a boolean cycles. A declared `default:` seeds the row when the workflow
+is selected. Workflow-owned names are locked, but their values remain
 editable. You can still add and delete custom key/value rows — additional,
 undeclared fields remain valid and are recorded on the task. Values are kept
 when you switch workflows, including fields that the new workflow does not

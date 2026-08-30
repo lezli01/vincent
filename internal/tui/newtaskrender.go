@@ -509,7 +509,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 	switch {
 	case n.mode == ntPicking && n.pick != nil && ntRow(n.pick.row) == row:
 		return n.renderPicker()
-	case n.mode == ntFieldsOpen && row == ntFields:
+	case (n.mode == ntFieldsOpen || n.mode == ntFieldPicking) && row == ntFields:
 		return n.renderFields()
 	case n.mode == ntEditing && row == ntDescription:
 		return append(strings.Split(n.desc.View(), "\n"),
@@ -609,14 +609,25 @@ func (n *newTask) renderFields() []string {
 				name += " (" + r.key + ")"
 			}
 			tags := []string{r.definition.Type}
+			if r.definition.Multiple {
+				tags = append(tags, "multiple")
+			}
 			if r.definition.Required {
 				tags = append(tags, "required")
 			}
 			meta = " " + styleDim.Render("["+strings.Join(tags, " · ")+"]")
 		}
 		placeholder := styleDim.Render("(empty)")
-		if r.declared && r.definition.Type == apiclient.WorkflowFieldBoolean {
-			placeholder = styleDim.Render("(choose true/false)")
+		if r.declared {
+			switch r.definition.Type {
+			case apiclient.WorkflowFieldBoolean:
+				placeholder = styleDim.Render("(choose true/false)")
+			case apiclient.WorkflowFieldEnum:
+				placeholder = styleDim.Render("(choose a value)")
+				if r.definition.Multiple {
+					placeholder = styleDim.Render("(choose one or more)")
+				}
+			}
 		}
 		out = append(out, "    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder))
 		if i == f.cursor && r.declared {
@@ -626,6 +637,21 @@ func (n *newTask) renderFields() []string {
 			if r.definition.Pattern != "" {
 				out = append(out, styleDim.Render("        pattern: "+r.definition.Pattern))
 			}
+			// The members sit beside the pattern line, because they are the
+			// same thing said in the one form a client can build a control
+			// from: a list. A long list is truncated — the picker is where
+			// the whole of it is browsable.
+			if len(r.definition.Values) > 0 {
+				out = append(out, styleDim.Render("        values: "+summarizeValues(r.definition.Values)))
+			}
+		}
+		if i == f.cursor && n.mode == ntFieldPicking && n.pick != nil {
+			out = append(out, n.pick.renderBody()...)
+			hint := "    enter select · esc cancel"
+			if r.definition.Multiple {
+				hint = "    enter toggles · esc closes the list"
+			}
+			out = append(out, styleDim.Render(hint))
 		}
 	}
 	if len(f.rows) == 0 {
@@ -634,9 +660,22 @@ func (n *newTask) renderFields() []string {
 	if f.err != "" {
 		out = append(out, styleWarn.Render("    ⚠ "+f.err))
 	}
-	out = append(out, styleDim.Render(
-		"    a add custom · enter edit/toggle · d delete custom · esc done"))
+	if n.mode != ntFieldPicking {
+		out = append(out, styleDim.Render(
+			"    a add custom · enter edit/toggle/pick · ←/→ steps a choice · d delete custom · esc done"))
+	}
 	return out
+}
+
+// summarizeValues renders a declared value set on one line, cut off before it
+// wraps: an enum with 40 members is browsed in the picker, not read here.
+func summarizeValues(values []string) string {
+	const most = 6
+	if len(values) <= most {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:most], ", ") +
+		fmt.Sprintf(", … (%d more)", len(values)-most)
 }
 
 func (n *newTask) statusLines() []string {

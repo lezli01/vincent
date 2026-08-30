@@ -370,26 +370,33 @@ steps:
          description becomes a declared field, with a type, and a pattern where
          one exists. A workflow that digs an issue number out of the task title
          reads .Issue instead.
-      5. Failure policy, per step. max_retries: 0 on a probe and on anything
+      5. Closed sets and defaults. A field whose legal values are a fixed list
+         is type: enum with values:, not a string with a pattern spelling the
+         same alternation and not a set restated in prose — only a list can be
+         published, and only a published list becomes a picker. multiple: true
+         where more than one may be chosen. A field with an obvious value
+         carries default:, which is what stops a scripted caller from having to
+         restate it.
+      6. Failure policy, per step. max_retries: 0 on a probe and on anything
          whose replay is not provably safe; allow_failure: true where a red
          result is data a later guard reads; retry_backoff where retrying
          immediately cannot help.
-      6. Human mechanism, deliberately chosen. A manual gate sits immediately
+      7. Human mechanism, deliberately chosen. A manual gate sits immediately
          before the effect it authorizes and names what to inspect.
          on_input: require only where the conversation genuinely is part of the
          run, and never on a step that resolves to an adapter with no control
          channel. on_input: deny on a step meant to run untended.
-      7. Visibility. A step that runs for minutes, or that someone waits on,
+      8. Visibility. A step that runs for minutes, or that someone waits on,
          reports through vincent status — in the script for a command step, in
          the prompt for an agent step, in the wording used above.
-      8. Portability. A run: body is handed to /bin/sh on POSIX and to pwsh on
+      9. Portability. A run: body is handed to /bin/sh on POSIX and to pwsh on
          Windows, and vincent translates nothing. A body outside the
          intersection of the two is either rewritten into it, or the workflow
          declares platforms:, or the step carries a .Host.OS guard.
-      9. Defensive templates. Rendering uses missingkey=error, so an optional
-         field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
-         and never bare. A required field may be read directly.
-      10. Secrets. Nothing in a prompt, a field, an instruction or a run: body
+      10. Defensive templates. Rendering uses missingkey=error, so an optional
+          field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
+          and never bare. A required field may be read directly.
+      11. Secrets. Nothing in a prompt, a field, an instruction or a run: body
           that you would not want sitting in a transcript.
 
       ## What you may not change

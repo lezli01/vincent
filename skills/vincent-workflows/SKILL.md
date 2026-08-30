@@ -105,7 +105,13 @@ than guessing. See the cost reference for the full rules.
   returns no arbitrary value or credential, puts the task in `awaiting_gate`,
   and releases its concurrency slot.
 - Use declared task `fields` for typed choices known when the task is created.
-  Vincent has no generic between-step form that returns a new value.
+  Vincent has no generic between-step form that returns a new value. A field
+  whose legal values are a fixed set is `type: enum` with `values:`, not a
+  `string` with a pattern spelling the same alternation and not a set restated
+  in the description — only a published list becomes a picker in New task. Add
+  `multiple: true` when more than one may be chosen, and `default:` (valid on
+  any type) when there is an obvious value, so a scripted caller need not
+  restate it.
 - Use `on_input: require` only when an agent must ask a question and continue
   the same reasoning session. It requires an adapter that supports mid-run
   input and cannot be nested in `parallel` or `loop` or used by a merge

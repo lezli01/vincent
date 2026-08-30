@@ -1529,9 +1529,15 @@ fields:
   - name: ticket                 # required lowercase slug; .Task.Fields key
     label: Ticket                # optional presentation label
     description: Issue tracker key.
-    type: string                 # string (default) | integer | number | boolean
+    type: string                 # string (default) | integer | number | boolean | enum
     required: true               # default false
     pattern: '^OPS-[0-9]+$'      # optional Go RE2 expression; string only
+    default: OPS-1               # optional; any type
+  - name: environment
+    type: enum
+    values: [dev, staging, prod] # required for enum, rejected on every other type
+    multiple: false              # enum only; default false
+    default: staging
 ```
 
 - `integer` is a base-10 whole number, `number` is a finite decimal, and
@@ -1549,7 +1555,43 @@ fields:
 - Only the selected root workflow owns this contract. Declarations on included
   workflows or named fan-out lane workflows are not recursively merged. A
   composing workflow re-declares any input it wants to expose; a lane's own
-  `fields:` map continues to bind internal values.
+  `fields:` map continues to bind internal values. A lane's `fields:` overrides
+  are **not** validated against the root's declarations: a lane may bind a value
+  the root declares as an enum member to something that is not one. That is the
+  original behaviour of lane overrides, not a hole this section introduces.
+
+*Amended 2026-08-30 (task 058).* The vocabulary gains a fifth type, `enum`, and
+every type gains a `default:`.
+
+- `values:` carries an `enum`'s members in declared order. It is required for
+  `enum` and an error on every other type; it must be non-empty, its members
+  unique, non-empty, and free of `,`. `pattern:` stays string-only and is an
+  error alongside `enum` — the members *are* the constraint, and only a list can
+  be published to a client that wants to build a control from it.
+- `multiple:` (default false) says an `enum` accepts more than one member. It is
+  per field and `enum`-only. The picked members are joined with `,` in
+  **declared** order, deduplicated, with no spaces (`dev,prod`): declared order
+  rather than click order is what makes the same selection the same string, so
+  template output and branch names are stable. `POST /v1/tasks` normalizes a
+  supplied value that way — split, trim, drop empties, deduplicate, reorder,
+  rejoin — *before* checking membership, so every client produces the same task
+  row and a rejection names the offending element.
+- `default:` may be declared on any field and is validated against its own
+  declaration when the workflow loads. `default:` and `values:` take native YAML
+  scalars — `default: true`, `default: 3`, `default: 1.5`, `values: [1, 2]` —
+  canonicalized to the string the field carries, using the scalar's literal
+  source text. A mapping, or a sequence anywhere but a `multiple` enum's
+  `default:`, is a load error at `fields[i].default`.
+- `POST /v1/tasks` substitutes a **required** field's `default:` for an omitted
+  key before validating and inserting, so the task row records the value that
+  actually applied and a scripted caller that omits it no longer gets a 400. An
+  **optional** field's default is published through `GET /v1/workflows` and
+  seeded by clients only; the daemon never invents it, so an optional field the
+  caller omitted stays genuinely absent from `.Task.Fields` and adding a
+  `default:` to one is not a silent change for a workflow that guards on
+  presence. A key present but empty is never defaulted.
+- A client that predates `enum` sees an unknown type, falls through to a
+  free-text row and runs no local check. The daemon still gates the value.
 
 ### 8.2 Step types and fields
 
@@ -1717,7 +1759,7 @@ agent will receive. The vocabulary is:
 |---|---|
 | `.Task.ID` | `0`, following `.Loop.Index`'s precedent |
 | `.Task.Title` / `.Description` / `.BranchName` / `.BaseBranch` | `<task.title>`, `<task.description>`, `<branch>`, `<base_branch>` |
-| `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to `<field.NAME>`. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
+| `.Task.Fields` | one entry per **required** declared field (§8.1.2), bound to its `default:`, else an `enum`'s first declared value, else `<field.NAME>` — a sentinel is never a member of its own enum, so a preview binds a value the workflow could actually receive where one exists *(amended 2026-08-30, task 058)*. Optional declared and undeclared names stay absent, so reading one without `{{ with index … }}` is the error the defensive-read rule above says it is |
 | `.Project.*` | `<project.name>`, `<project.path>`, `<project.default_branch>` |
 | `.Steps` | one entry per step id the **file** declares, nested bodies and inline fan-out lanes included — an `include` step and a lane naming a registry workflow contribute none, since neither survives as a step of this task (§7.9, §7.6) — each `{Status: <steps.ID.status>, Result: <steps.ID.result>, ExitCode: 0}`. A forward reference renders clean: restricting the map to steps that would have completed interacts with `parallel` blindness, loop iterations and `allow_failure` in ways that produce false positives, and a false positive exits 1 inside a pre-commit hook |
 | `.Step.Attempt` | `1`, and the `<previous-attempt-failure>` block above is not appended |
