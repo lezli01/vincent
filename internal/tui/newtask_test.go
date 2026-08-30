@@ -228,6 +228,52 @@ func TestNewTaskFallsBackToAdhocWithoutAProjectDefault(t *testing.T) {
 	}
 }
 
+// TestNewTaskPrefillsAProjectScopedDefaultWorkflow covers the default that
+// only the project-scoped listing carries. The first, unscoped ListWorkflows
+// cannot contain it (loadCmd runs before a project is picked, so it passes
+// project 0), so the preselection §5.1 promises can only be made once the
+// follow-up ntWorkflowsMsg lands.
+func TestNewTaskPrefillsAProjectScopedDefaultWorkflow(t *testing.T) {
+	// unscoped is what GET /v1/workflows answers without a project_id:
+	// builtin and global entries, never a repo's own .vincent/workflows.
+	unscoped := []apiclient.WorkflowEntry{{
+		Name: "adhoc", Scope: "builtin", Description: "One agent step.",
+		Steps: []apiclient.WorkflowEntryStep{{ID: "run", Name: "Run", Type: "agent", Agent: "claude"}},
+	}}
+	scoped := append(append([]apiclient.WorkflowEntry{}, unscoped...), apiclient.WorkflowEntry{
+		Name: "repo-flow", Scope: "project", Description: "Defined in the repo.",
+		Steps: []apiclient.WorkflowEntryStep{{ID: "run", Name: "Run", Type: "agent", Agent: "claude"}},
+	})
+	projects := []apiclient.Project{
+		{ID: 1, Name: "vincent", DefaultBranch: "main"},
+		{ID: 2, Name: "other", DefaultBranch: "trunk", DefaultWorkflow: ptr("repo-flow")},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		hint     int64
+		projects []apiclient.Project
+	}{
+		// The two paths that select a project without the picker: the board's
+		// hint, and the sole registered project.
+		{name: "hinted project", hint: 2, projects: projects},
+		{name: "only project", projects: projects[1:]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n := newNewTask()
+			n.hintProject = tc.hint
+			n.update(ntLoadedMsg{projects: tc.projects, workflows: unscoped})
+			if n.projectID != 2 {
+				t.Fatalf("projectID = %d, want the project carrying the default", n.projectID)
+			}
+			n.update(ntWorkflowsMsg{projectID: 2, entries: scoped})
+			if n.workflow != "repo-flow" {
+				t.Errorf("workflow = %q, want the project's project-scoped default", n.workflow)
+			}
+		})
+	}
+}
+
 // resolveField is a resolved §8.6 value with its source, spelled short.
 func resolveField(value, source string) *apiclient.ResolvedField {
 	return &apiclient.ResolvedField{Value: value, Source: source}
