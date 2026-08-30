@@ -142,6 +142,13 @@ func buildArgs(spec agent.RunSpec, inputMode bool) ([]string, error) {
 	if inputMode {
 		args = append(args, "--input-format", "stream-json", "--permission-prompt-tool", "stdio")
 	}
+	// --resume takes the session id claude itself reported on a previous run
+	// (§9.2, task 063). It is the whole of chat continuity: the CLI reloads
+	// its own conversation, so turn N sees turns 1..N-1 without vincent
+	// replaying anything as prompt context.
+	if spec.ResumeSessionID != "" {
+		args = append(args, "--resume", spec.ResumeSessionID)
+	}
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
@@ -241,6 +248,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	}
 	r := &run{
 		cmd:        cmd,
+		resuming:   spec.ResumeSessionID != "",
 		proc:       proc,
 		stderr:     stderr,
 		stdin:      stdin,
@@ -293,8 +301,18 @@ type run struct {
 	raw     chan agent.Event
 	promote chan agent.Event
 
+	// resuming records that this run was started with a session id, so Wait
+	// can tell a session claude refused to load from any other failure
+	// (task 063 decision 4).
+	resuming bool
+
 	mu       sync.Mutex
 	terminal *agent.RunResult // parsed result event, if any
+	// sessionID is the last `session_id` claude stamped on a stream line.
+	// Every line carries it, so the last one seen is the session the run
+	// actually ran in — which is what a resumed run must store, since
+	// claude may hand a resumed conversation a new id.
+	sessionID string
 	// streamErr is readLoop's own reader failing, latched for Wait. It is
 	// vincent losing the stream, not the CLI failing, and Wait says so with
 	// agent.FailureStreamError rather than letting the exit code speak for a
@@ -358,6 +376,11 @@ func (r *run) readLoop(rd io.Reader) {
 		copy(line, sc.Bytes())
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
+		}
+		if sid := sessionIDOf(line); sid != "" {
+			r.mu.Lock()
+			r.sessionID = sid
+			r.mu.Unlock()
 		}
 		ev := r.parseStreamLine(line)
 		if ev.Type == agent.EventResult && ev.Result != nil {
@@ -507,8 +530,9 @@ func (r *run) Wait() (agent.RunResult, error) {
 		}
 		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
 		r.mu.Lock()
-		terminal, streamErr := r.terminal, r.streamErr
+		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		r.mu.Unlock()
+		res.SessionID = sessionID
 		if terminal != nil {
 			res.IsError = terminal.IsError
 			res.ErrorMessage = terminal.ErrorMessage
@@ -527,6 +551,12 @@ func (r *run) Wait() (agent.RunResult, error) {
 		// It happens here because this is the one place that holds both the
 		// terminal result and the stderr tail; the engine sees neither.
 		res.Failure = classify(res, r.stderr.String())
+		// A resume claude refused outranks the generic verdict: the id is
+		// gone, and no amount of retrying this run will bring it back
+		// (task 063 decision 4).
+		if f := classifyResume(res, r.stderr.String(), r.resuming); f != nil {
+			res.Failure = f
+		}
 		// A stream vincent could not read to the end outranks whatever the
 		// exit code says: the run may well have finished cleanly, but the
 		// record of it is missing lines, and §7.1 success is a claim about
@@ -569,3 +599,8 @@ func (w *tailWriter) String() string {
 
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.cmd.Args }
+
+// SupportsResume implements agent.Resumer: claude can reload one of its own
+// conversations with `--resume <session_id>` (§9.2), which is what makes a
+// chat's second turn see the first (task 063 decision 3).
+func (a *Adapter) SupportsResume() bool { return true }

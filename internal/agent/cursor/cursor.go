@@ -460,3 +460,10 @@ func (w *tailWriter) String() string {
 
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.cmd.Args }
+
+// SupportsResume implements agent.Resumer, in the negative (§9.7, task 063
+// decision 3). cursor-agent has a `--resume` of its own and emits a
+// `session_id`, but as with codex neither is wired here and no captured
+// fixture pins the flag against a named cursor-agent build. Chat creation
+// refuses cursor rather than replaying the log as prompt context.
+func (a *Adapter) SupportsResume() bool { return false }

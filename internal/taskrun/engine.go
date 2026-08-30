@@ -682,7 +682,7 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// Read per admission, not cached: a hot reload then reaches the next task
 	// admitted, the way usage_limit_recheck_interval reaches the next hold.
 	fetch := r.deps.Config().FetchBaseBranch
-	created, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, task.ID,
+	created, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
 		task.BranchName, task.BaseBranch, fetch, func(c worktree.Created) error {
 			// A failed persist is logged and the run continues, as it always
 			// has: the worktree is real and the step can use it. What it

@@ -46,6 +46,25 @@ var Excluded = []Route{
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},
 	{Method: http.MethodPost, Path: "/v1/doctor/fix"},
+	// The chat family (task 063 decision 2). An agent must not be able to
+	// start agent processes that no §11 cap admitted and no scheduler
+	// ordered — a chat turn is deliberately unqueued, and that property is
+	// safe only while a *human* is the one starting it.
+	//
+	// The depth bound cannot help here either: mcp.max_depth and
+	// mcp.max_tasks bound a tree by walking `created_by_task_id`, and a chat
+	// is not in that chain. Giving chats a depth would mean inventing depth
+	// semantics for a non-task, and getting it wrong means an agent that can
+	// fork conversations without limit.
+	//
+	// Nothing is lost: an agent calling these tools already *has* a session.
+	{Method: http.MethodGet, Path: "/v1/chats"},
+	{Method: http.MethodPost, Path: "/v1/chats"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/send"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/answer"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
 }
 
 // Streaming lists the §13.3 SSE routes. They are not tools because a tool call

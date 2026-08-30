@@ -11,7 +11,12 @@ import (
 // against claude 2.1.x). Parsing is tolerant: unknown event types become
 // EventUnknown, transcripted verbatim but not normalized (phase 1 decision).
 type streamLine struct {
-	Type         string         `json:"type"`
+	Type string `json:"type"`
+	// SessionID is claude's own identifier for the conversation. Every line
+	// carries it, including the `system`/`init` line that precedes any
+	// assistant output, which is why sessionIDOf reads it off the raw line
+	// rather than off a normalized event (task 063).
+	SessionID    string         `json:"session_id"`
 	Subtype      string         `json:"subtype"`
 	Message      *streamMessage `json:"message"`
 	IsError      bool           `json:"is_error"`
@@ -49,6 +54,20 @@ type streamBlock struct {
 type streamUsage struct {
 	InputTokens  int64 `json:"input_tokens"`
 	OutputTokens int64 `json:"output_tokens"`
+}
+
+// sessionIDOf reads claude's `session_id` off one verbatim stream line, or ""
+// when the line has none or does not parse. It is deliberately separate from
+// parseLine: a session id is not an event — it is a property of the run, and
+// the run records it (§9.1, §9.2).
+func sessionIDOf(raw []byte) string {
+	var line struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return ""
+	}
+	return line.SessionID
 }
 
 // NewLineParser returns a parser for claude transcript lines (§13.2

@@ -46,6 +46,10 @@ listen: 127.0.0.1:0
 # on each project.
 max_parallel_tasks: 3
 
+# Cap on chats holding a live agent process. Independent of the task caps: a
+# send over it is refused 409, never queued.
+max_parallel_chats: 3
+
 # Naming convention for the branch each task's worktree is cut on. It is a
 # Go text/template rendered with .ID, .Slug, .Project, .Workflow and .Date;
 # the result is sanitised into a legal ref. A project may override it, and
@@ -318,6 +322,26 @@ agent process is alive mid-step and killing it would lose the session the answer
 belongs to.
 
 Real agents cost money; this is the knob that bounds it.
+
+### `max_parallel_chats`
+
+```yaml
+max_parallel_chats: 3
+```
+
+Cap on **chats** holding a live agent process — a separate dimension from
+`max_parallel_tasks`, which never sees a chat and is never delayed by one. Must
+be at least 1.
+
+A chat counts while it is `running` or `awaiting_input`, for the same reason a
+task does: the process is alive. A `send` over the cap is refused immediately
+with `409 chat_cap_reached` and is **never queued**. That is the point — a chat
+is a foreground conversation, and parking your reply behind someone else's batch
+work is the wait chats exist to avoid. You get an error you can act on rather
+than a spinner.
+
+The honest ceiling on concurrent agent CLIs is therefore
+`max_parallel_tasks + max_parallel_chats`, which is 6 by default.
 
 ### `branch_template`
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
@@ -74,6 +75,12 @@ type Deps struct {
 	// owns the live runs they reach and the step_run rows they close; this
 	// package only maps them onto HTTP.
 	Runner *taskrun.Runner
+	// Chats runs chat turns (§5.5, task 063). It is a second runner rather
+	// than a mode of the first because a chat turn is never queued and never
+	// goes through internal/scheduler (decision 1). Nil is tolerated (tests
+	// without one) — the chat action routes then answer 500, the way the
+	// task actions do without a Runner.
+	Chats *chatrun.Runner
 	// Catalog serves /v1/agents and /v1/info agent availability from the
 	// §9.6 binary-identity cache: fresh by construction, stat-cheap per
 	// request. Nil is tolerated (tests without adapters) — /v1/info then
@@ -289,6 +296,15 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPull)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullLink)
 	rt.handle(http.MethodDelete, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullUnlink)
+	// Chats (§5.5, §13.2). They are their own family: nothing here touches
+	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
+	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)
+	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
+	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/send", s.handleChatSend)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/answer", s.handleChatAnswer)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/cancel", s.handleChatCancel)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/archive", s.handleChatArchive)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -471,4 +472,77 @@ type Event struct {
 	TaskID    *int64
 	ProjectID *int64
 	Payload   json.RawMessage
+}
+
+// Chat is a titled conversation with an agent, scoped to a project and
+// running in its own git worktree and `vincent/{id}-{slug}` branch (spec
+// §5.5, task 063). It is a first-class entity beside Task, not a task with a
+// different shape: it has no workflow snapshot, no step ledger and no §6
+// lifecycle, and it never appears on the task board.
+type Chat struct {
+	ID        int64
+	ProjectID int64
+	Title     string
+	State     chatstate.State
+	// Agent is the adapter this chat talks to. It is fixed at creation and
+	// must be one that can resume its own session (§9.1): a chat whose
+	// adapter changed mid-conversation would resume an id another CLI never
+	// issued.
+	Agent          string
+	Model          string
+	Effort         string
+	PermissionMode string
+	Branch         string
+	BaseBranch     string
+	BaseSHA        string
+	// WorktreePath is the §10 claim. Empty once archived, which is what
+	// takes the directory out of gc's claim set.
+	WorktreePath string
+	// SessionID is the agent CLI's own conversation id, resumed on the next
+	// turn (§7.3, amended for chats). Empty before the first turn finishes.
+	SessionID string
+	// PendingInput is the §7.4 request this chat is waiting on, verbatim as
+	// the API renders it. Non-nil exactly in `awaiting_input`.
+	PendingInput json.RawMessage
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ChatTurn is one exchange: a human message and the agent run it produced
+// (spec §5.5, §14). Its accounting columns are step_runs' — tokens, cost,
+// duration, pid, exit code, proc identity — because closing the accounting
+// gap is half of what chats are for; `step_runs` itself is untouched, and
+// `step_runs.task_id` stays NOT NULL.
+type ChatTurn struct {
+	ID     int64
+	ChatID int64
+	// Seq is 1-based position in the conversation, unique per chat.
+	Seq    int
+	Prompt string
+	State  chatstate.TurnState
+	// FailReason is the shared snake_case vocabulary internal/taskrun and
+	// internal/worktree own — `session_lost`, `timeout`, `agent_error`. A
+	// reason means the same thing wherever it originated.
+	FailReason   string
+	ErrorMessage string
+	ResultText   string
+	SessionID    string
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      *float64
+	ExitCode     *int
+	PID          *int
+	ProcIdentity *string
+	StartedAt    time.Time
+	EndedAt      *time.Time
+	DurationMS   *int64
+}
+
+// ChatWorktreeClaim is one chat's claim on a data-root directory (§10). It
+// mirrors WorktreeClaim, and gc unions the two sets: the roots are shared, so
+// a chat's worktree that no set named would be deleted as a stray.
+type ChatWorktreeClaim struct {
+	ChatID int64
+	Path   string
+	State  chatstate.State
 }

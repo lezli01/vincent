@@ -76,6 +76,7 @@ the living engineering specification records implementation contracts.
 | [060](060-daemon-configuration-editing.md) | Edit the daemon configuration from the TUI | ✅ done (8/8) |
 | [061](061-container-step-execution.md) | Run a task's steps inside a container: the exec seam | ✅ done (1/1) |
 | [062](062-agent-steps-in-containers.md) | Agent steps inside the task's container | 📋 planned (0/1) |
+| [063](063-free-chat.md) | Free chat: conversational agent sessions beside tasks | 🔄 in progress (1/2) |
 
 ## How to add and update a task document
 

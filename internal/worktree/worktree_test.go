@@ -60,12 +60,12 @@ func TestCreateRemoveLifecycle(t *testing.T) {
 	m := newManager(t)
 	ctx := context.Background()
 
-	path, err := m.Create(ctx, repo, 7, "vincent/7-test", "main", false)
+	path, err := m.Create(ctx, repo, TaskOwner(7), "vincent/7-test", "main", false)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if path != m.Path(7) {
-		t.Errorf("path = %q, want %q", path, m.Path(7))
+	if path != m.Path(TaskOwner(7)) {
+		t.Errorf("path = %q, want %q", path, m.Path(TaskOwner(7)))
 	}
 	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
 		t.Errorf("worktree not checked out: %v", err)
@@ -91,25 +91,25 @@ func TestCreateErrors(t *testing.T) {
 	m := newManager(t)
 	ctx := context.Background()
 
-	_, err := m.Create(ctx, filepath.Join(t.TempDir(), "gone"), 1, "vincent/1", "main", false)
+	_, err := m.Create(ctx, filepath.Join(t.TempDir(), "gone"), TaskOwner(1), "vincent/1", "main", false)
 	wantReason(t, err, ReasonProjectPathMissing)
 
-	_, err = m.Create(ctx, repo, 2, "vincent/2", "nope", false)
+	_, err = m.Create(ctx, repo, TaskOwner(2), "vincent/2", "nope", false)
 	wantReason(t, err, ReasonBaseBranchMissing)
 
 	testrepo.Run(t, repo, "branch", "vincent/3-taken")
-	_, err = m.Create(ctx, repo, 3, "vincent/3-taken", "main", false)
+	_, err = m.Create(ctx, repo, TaskOwner(3), "vincent/3-taken", "main", false)
 	wantReason(t, err, ReasonBranchExists)
 
 	// Pre-existing non-empty target dir: prune-then-fail decision.
-	target := m.Path(4)
+	target := m.Path(TaskOwner(4))
 	if err := os.MkdirAll(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(target, "leftover"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = m.Create(ctx, repo, 4, "vincent/4", "main", false)
+	_, err = m.Create(ctx, repo, TaskOwner(4), "vincent/4", "main", false)
 	wantReason(t, err, ReasonWorktreePathOccupied)
 }
 
@@ -118,7 +118,7 @@ func TestRemoveDirty(t *testing.T) {
 	m := newManager(t)
 	ctx := context.Background()
 
-	path, err := m.Create(ctx, repo, 5, "vincent/5-dirty", "main", false)
+	path, err := m.Create(ctx, repo, TaskOwner(5), "vincent/5-dirty", "main", false)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRemoveDirtyTracked(t *testing.T) {
 	m := newManager(t)
 	ctx := context.Background()
 
-	path, err := m.Create(ctx, repo, 6, "vincent/6", "main", false)
+	path, err := m.Create(ctx, repo, TaskOwner(6), "vincent/6", "main", false)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestRemoveProjectGone(t *testing.T) {
 	m := newManager(t)
 	ctx := context.Background()
 
-	path, err := m.Create(ctx, repo, 8, "vincent/8", "main", false)
+	path, err := m.Create(ctx, repo, TaskOwner(8), "vincent/8", "main", false)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

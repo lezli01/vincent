@@ -78,6 +78,14 @@
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
+//	FAKEAGENT_SESSION_DIR gives the claude dialect a memory (task 063): a
+//	                      directory of conversations keyed by the session id
+//	                      it mints and stamps on every line. `--resume <id>`
+//	                      reloads one and the run says what it recalls; an id
+//	                      the directory does not hold is refused on stderr
+//	                      with a nonzero exit and no stream, which is the
+//	                      `session_lost` leg. Unset, the run mints an id,
+//	                      remembers nothing, and behaves exactly as before
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
 //	FAKEAGENT_ASK_MULTI   ask-question: add a second, multi-select question
@@ -228,7 +236,19 @@ func main() {
 
 	prompt, stdin := readPrompt(hasFlag("--input-format"))
 
+	// The conversation is resolved before a single stream line is emitted
+	// (task 063): a `--resume` of an id the store does not hold ends here,
+	// with the refusal on stderr and no stream at all, which is the shape
+	// internal/agent/claude classifies as `session_lost`.
+	prior := openSession()
+	rememberPrompt(prompt)
+
 	emit(map[string]any{"type": "system", "subtype": "init", "model": "fake-1"})
+	if line := recallLine(prior); line != "" {
+		// What a resumed session remembers. A fresh one says nothing here,
+		// so a vincent that dropped --resume fails by omission.
+		emitText(line)
+	}
 	switch scenario {
 	case "ask-question":
 		askQuestion(prompt, stdin)
@@ -576,6 +596,15 @@ func askPermission(prompt []byte, rd *bufio.Reader) {
 }
 
 func emit(v map[string]any) {
+	// Every claude stream line carries the session id (task 063), which is
+	// how internal/agent/claude learns the id to resume next turn. The
+	// global is only ever set by the claude dialect, so the codex and cursor
+	// emissions below are untouched.
+	if sessionID != "" {
+		if _, ok := v["session_id"]; !ok {
+			v["session_id"] = sessionID
+		}
+	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)

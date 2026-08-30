@@ -31,13 +31,13 @@ func TestTranscriptCapLatches(t *testing.T) {
 	if !tr.Exceeded() {
 		t.Fatal("Exceeded is false after passing the cap")
 	}
-	before := tr.size
+	before := tr.Size()
 	tr.Raw([]byte("y"))
 	if !tr.Exceeded() {
 		t.Error("Exceeded un-latched on a later write")
 	}
-	if tr.size != before {
-		t.Errorf("size advanced from %d to %d after the cap; writes must be dropped", before, tr.size)
+	if tr.Size() != before {
+		t.Errorf("size advanced from %d to %d after the cap; writes must be dropped", before, tr.Size())
 	}
 }
 
@@ -78,8 +78,8 @@ func TestTranscriptCapDisabledByZero(t *testing.T) {
 	if tr.Exceeded() {
 		t.Error("Exceeded with the cap disabled")
 	}
-	if tr.size < 100_000 {
-		t.Errorf("size = %d; writes were dropped with the cap disabled", tr.size)
+	if tr.Size() < 100_000 {
+		t.Errorf("size = %d; writes were dropped with the cap disabled", tr.Size())
 	}
 }
 
@@ -94,12 +94,12 @@ func TestNoteOverLimitSurvivesTheCap(t *testing.T) {
 	}
 
 	tr.Note("ignored", map[string]any{"k": "v"})
-	sizeAfterNormalNote := tr.size
+	sizeAfterNormalNote := tr.Size()
 
 	tr.NoteOverLimit("transcript_limit", map[string]any{"max_bytes": 16})
 	tr.Close()
 
-	if tr.size <= sizeAfterNormalNote {
+	if tr.Size() <= sizeAfterNormalNote {
 		t.Error("NoteOverLimit was dropped by the cap")
 	}
 	body, err := os.ReadFile(tr.Path())

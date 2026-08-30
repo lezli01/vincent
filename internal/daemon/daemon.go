@@ -22,6 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
@@ -334,6 +335,18 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		},
 	}
 	runner := taskrun.New(runnerDeps)
+	// The chat runner (§5.5, task 063). It is wired beside the task runner
+	// and shares nothing with the scheduler: a chat turn is never queued, so
+	// there is no admission loop to join.
+	chats := chatrun.New(chatrun.Deps{
+		Store:     st,
+		Config:    currentConfig,
+		Worktrees: worktrees,
+		Agents:    agents,
+		DataDir:   dirs.Data,
+		Logger:    logger,
+		Events:    broker,
+	})
 	// Transcript retention (§17): once at startup and every 24 h after. The
 	// ticker is what makes retention work on a daemon that survives reboots
 	// (T4.1) rather than only on the restarts it no longer has.
@@ -500,6 +513,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		Catalog:      catalog,
 		Workflows:    workflows,
 		Runner:       runner,
+		Chats:        chats,
 		WakeRunner:   sched.Wake,
 		Broker:       broker,
 		Reclaimer:    reclaimer,
@@ -530,6 +544,14 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	defer func() { _ = RemoveRuntimeInfo(dirs.Data) }()
 
 	runner.Start(ctx)
+	chats.Start(ctx)
+	// A turn the previous daemon died under is finalized `interrupted` and
+	// never re-run (§12.4, task 063 decision 5): re-running would re-send the
+	// human's message, and the session it was resuming died with the process.
+	if err := chats.Recover(ctx); err != nil {
+		logger.Error("startup failed: chat recovery", "error", err)
+		return err
+	}
 	sched.Start(ctx)
 
 	serveErr := make(chan error, 1)
@@ -545,6 +567,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Error("http server failed", "error", err)
 		sched.Stop()
 		runner.Stop()
+		chats.Stop()
 		notifier.Stop()
 		broker.Close()
 		return fmt.Errorf("http server: %w", err)
@@ -560,6 +583,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 	sched.Stop()
 	runner.StopGraceful(processGrace)
+	chats.Stop()
 	// Before broker.Close(): the broker is what feeds the notifier's hook, and
 	// a notification for a shutdown-time transition is one a person wants.
 	notifier.Stop()

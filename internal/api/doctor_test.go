@@ -304,7 +304,7 @@ func TestDoctorRequiresAuthAndTheRightMethod(t *testing.T) {
 func (h *doctorHarness) makeOrphan(t *testing.T, projectID int64, repo string, id int64) string {
 	t.Helper()
 	branch := "vincent/orphan-" + strconv.FormatInt(id, 10)
-	path, err := h.wt.Create(t.Context(), repo, id, branch, "main", false)
+	path, err := h.wt.Create(t.Context(), repo, worktree.TaskOwner(id), branch, "main", false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestDoctorLiveWorktreeIsNotAnOrphan(t *testing.T) {
 	h := newDoctorHarness(t)
 	projectID, repo := h.seedProject(t)
 	task := h.seedTask(t, projectID, store.TaskQueued, "live")
-	path, err := h.wt.Create(t.Context(), repo, task.ID, "vincent/live-one", "main", false)
+	path, err := h.wt.Create(t.Context(), repo, worktree.TaskOwner(task.ID), "vincent/live-one", "main", false)
 	if err != nil {
 		t.Fatalf("create worktree: %v", err)
 	}

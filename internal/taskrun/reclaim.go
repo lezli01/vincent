@@ -180,18 +180,14 @@ func (rc *Reclaimer) remove(o Orphan) error {
 // classify diffs both roots against the claim set and decides what each
 // entry is. It is the whole definition of an orphan in one place.
 func (rc *Reclaimer) classify(ctx context.Context, force, dryRun bool) (Report, error) {
-	claims, err := rc.deps.Store.ListWorktreeClaims(ctx)
-	if err != nil {
-		return Report{}, err
-	}
-	ids, err := rc.deps.Store.ListTaskIDs(ctx)
+	claimed, transcripts, err := rc.claimSets(ctx)
 	if err != nil {
 		return Report{}, err
 	}
 	rep := Report{DryRun: dryRun, Force: force}
 
 	wtRoot := rc.worktreeRoot()
-	for _, e := range rc.strays(wtRoot, claimedPaths(claims)) {
+	for _, e := range rc.strays(wtRoot, claimed) {
 		o := rc.measure(e, wtRoot, KindWorktree)
 		if o.Skip == "" && !force {
 			o.Skip = rc.dirtiness(ctx, o.Path)
@@ -199,7 +195,7 @@ func (rc *Reclaimer) classify(ctx context.Context, force, dryRun bool) (Report, 
 		rep.Orphans = append(rep.Orphans, o)
 	}
 	tsRoot := rc.transcriptRoot()
-	for _, e := range rc.strays(tsRoot, claimedTranscripts(tsRoot, ids)) {
+	for _, e := range rc.strays(tsRoot, transcripts) {
 		// No dirty check: a transcript directory is vincent's own output,
 		// not a working tree, so there is nothing for git to have an opinion
 		// about.
@@ -207,6 +203,16 @@ func (rc *Reclaimer) classify(ctx context.Context, force, dryRun bool) (Report, 
 	}
 	sortOrphans(rep.Orphans)
 
+	// The mismatch pass is tasks-only, deliberately. A Mismatch is §18's
+	// `worktree_missing` shape — a task row pointing at a directory that is
+	// gone — and it is keyed by TaskID. A chat with the same problem is
+	// reported the same way once it has a shape to be reported in; adding a
+	// chat id to a task-shaped record would make every consumer sniff which
+	// it got.
+	claims, err := rc.deps.Store.ListWorktreeClaims(ctx)
+	if err != nil {
+		return Report{}, err
+	}
 	for _, c := range claims {
 		if c.Path == "" {
 			continue
@@ -265,7 +271,15 @@ func (rc *Reclaimer) dirtiness(ctx context.Context, path string) string {
 	}
 }
 
-// claimSets builds both roots' claim sets in one pair of queries.
+// claimSets builds both roots' claim sets in one pass over the tables that
+// own directories under them.
+//
+// Chats are in both sets (task 063 decision 9). They live under the same two
+// roots, and `strays` treats anything no set names as an orphan — so a chat
+// whose worktree was not claimed here would be deleted by `vincent gc` and
+// would inflate `GET /v1/info`'s orphan count in the meantime. Keeping chat
+// directories in a root the reclaimer does not scan was rejected: it trades a
+// false positive for no gc coverage at all.
 func (rc *Reclaimer) claimSets(ctx context.Context) (worktrees, transcripts map[string]bool, err error) {
 	claims, err := rc.deps.Store.ListWorktreeClaims(ctx)
 	if err != nil {
@@ -275,7 +289,27 @@ func (rc *Reclaimer) claimSets(ctx context.Context) (worktrees, transcripts map[
 	if err != nil {
 		return nil, nil, err
 	}
-	return claimedPaths(claims), claimedTranscripts(rc.transcriptRoot(), ids), nil
+	chatClaims, err := rc.deps.Store.ListChatWorktreeClaims(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	chatIDs, err := rc.deps.Store.ListChatIDs(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	wt := claimedPaths(claims)
+	for _, c := range chatClaims {
+		if c.Path == "" {
+			continue
+		}
+		wt[filepath.Clean(c.Path)] = true
+	}
+	tsRoot := rc.transcriptRoot()
+	ts := claimedTranscripts(tsRoot, ids)
+	for _, id := range chatIDs {
+		ts[filepath.Clean(filepath.Join(tsRoot, worktree.ChatOwner(id).Dir()))] = true
+	}
+	return wt, ts, nil
 }
 
 // strays lists the entries directly under root that claimed does not name. A

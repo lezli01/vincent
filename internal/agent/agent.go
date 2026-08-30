@@ -78,6 +78,39 @@ var ErrRestrictedUnsupported = errors.New("restricted permission mode is unsuppo
 // run.
 var ErrMCPUnsupported = errors.New("this agent CLI cannot be given an MCP server for a single run")
 
+// ErrResumeUnsupported is returned by Start when the adapter cannot resume a
+// prior session of its CLI (spec §9.1, §9.3, §9.7, task 063). It is the third
+// sentinel of the ErrRestrictedUnsupported shape, and it exists for the same
+// reason: a chat that silently started a *fresh* session would answer as if it
+// had context it does not have, and no reader could tell that apart from a
+// working conversation.
+//
+// The refusal is normally made long before Start — chat creation consults
+// CanResume and refuses the adapter outright (§5.5) — so this is the
+// belt-and-braces half, for a caller that built a RunSpec by hand.
+var ErrResumeUnsupported = errors.New("this agent CLI cannot resume a previous session")
+
+// Resumer is the optional capability an adapter implements when its CLI can
+// resume its own prior session (spec §9.1, task 063 / §7.3 amended).
+//
+// It is an optional interface rather than an Adapter method so that "adding an
+// agent CLI is one new implementation with zero core changes" stays true: an
+// adapter that says nothing cannot resume. All three shipped adapters
+// implement it anyway, because §9.x states a missing capability positively —
+// codex and cursor return false with the reason in their doc comment rather
+// than leaving a reader to infer it from an absence.
+type Resumer interface {
+	// SupportsResume reports whether Start honors RunSpec.ResumeSessionID.
+	SupportsResume() bool
+}
+
+// CanResume reports whether a can resume a prior session. It is what the API
+// consults before creating a chat on an adapter (§5.5).
+func CanResume(a Adapter) bool {
+	r, ok := a.(Resumer)
+	return ok && r.SupportsResume()
+}
+
 // MCPServer is the vincent MCP endpoint a step's agent is wired to (spec
 // §9.1, §13.4). Nil — the zero value of RunSpec.MCP — is a run with no
 // vincent tools, which is every run before task 057 and every run under
@@ -163,6 +196,14 @@ type RunSpec struct {
 	// nil is a run with no vincent tools. An adapter that cannot carry one
 	// returns ErrMCPUnsupported from Start rather than starting without it.
 	MCP *MCPServer
+	// ResumeSessionID resumes the agent CLI's own prior session instead of
+	// starting a fresh one (§7.3, amended for chats only — task 063). Empty
+	// is the fresh session every workflow step gets and always got.
+	//
+	// Only a chat turn ever sets it. An adapter that cannot resume returns
+	// ErrResumeUnsupported from Start rather than starting a fresh session
+	// under a spec that promised continuity.
+	ResumeSessionID string
 	// Env is the child's environment, resolved from §12.3 `environment:`
 	// (T4.23). nil still means "inherit the daemon's", which is what tests
 	// and any other caller get; the engine always populates it, so a running
@@ -329,7 +370,15 @@ type RunResult struct {
 	IsError      bool   // the stream's terminal result was an error, or none arrived
 	ErrorMessage string // set when IsError
 	ResultText   string // agent's final answer/summary
-	InputTokens  int64  // 0 if unreported
+	// SessionID is the CLI's own identifier for the conversation this run
+	// belongs to (§9.1, task 063): claude's `session_id`, codex's
+	// `thread_id`, cursor's `session_id`. Empty when the dialect reported
+	// none, which is every adapter that has not been taught to read it.
+	//
+	// A chat stores it and hands it back as RunSpec.ResumeSessionID on the
+	// next turn. Nothing in the task path reads it.
+	SessionID    string
+	InputTokens  int64 // 0 if unreported
 	OutputTokens int64
 	CostUSD      *float64 // nil if unreported (e.g. codex)
 	// Failure is the adapter's verdict about *why* the run stopped, when it
@@ -373,6 +422,16 @@ const (
 	// perfectly, and sending a user to look at it wastes their time. The
 	// engine maps it to `agent_protocol_error` (§18).
 	FailureStreamError FailureKind = "stream_error"
+	// FailureSessionLost is a resume the CLI refused because the session id
+	// it was given is gone or expired (task 063 decision 4). Only a chat
+	// turn can produce it — nothing else sets RunSpec.ResumeSessionID.
+	//
+	// The engine fails the turn with `session_lost` rather than falling back
+	// to a fresh session: the human asked to continue a conversation, and an
+	// agent answering with none of it in context reads exactly like one that
+	// has it. The chat stays usable; starting over is a decision a person
+	// makes explicitly.
+	FailureSessionLost FailureKind = "session_lost"
 )
 
 // Failure is an adapter's verdict about a stopped run (task 003, §9.1).

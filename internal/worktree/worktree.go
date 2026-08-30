@@ -102,8 +102,45 @@ func BranchName(taskID int64, title string) string {
 	return fmt.Sprintf("vincent/%d-%s", taskID, s)
 }
 
-// Manager creates and removes per-task worktrees under
-// {data_dir}/worktrees/{task_id} (spec §10).
+// OwnerKind says which entity a worktree belongs to (spec §10, task 063).
+type OwnerKind string
+
+// Worktree owner kinds.
+const (
+	OwnerTask OwnerKind = "task"
+	OwnerChat OwnerKind = "chat"
+)
+
+// Owner identifies the entity a worktree and its directory belong to. It
+// replaced a bare `taskID int64` when chats arrived (task 063 decision 9):
+// chats live under the same root, so `{root}/{id}` would have put chat 7 and
+// task 7 in one directory.
+//
+// The directory name stays informational — gc's rule is that the claim
+// decides, not the name — but two owners resolving to one path is not a
+// naming preference, it is a collision.
+type Owner struct {
+	Kind OwnerKind
+	ID   int64
+}
+
+// TaskOwner is the worktree owner for a task. Its directory name is the bare
+// id, unchanged from before Owner existed, so no installed worktree moves.
+func TaskOwner(id int64) Owner { return Owner{Kind: OwnerTask, ID: id} }
+
+// ChatOwner is the worktree owner for a chat (§5.5).
+func ChatOwner(id int64) Owner { return Owner{Kind: OwnerChat, ID: id} }
+
+// Dir is the owner's directory name directly under the worktree root.
+func (o Owner) Dir() string {
+	if o.Kind == OwnerChat {
+		return "chat-" + strconv.FormatInt(o.ID, 10)
+	}
+	return strconv.FormatInt(o.ID, 10)
+}
+
+// Manager creates and removes per-owner worktrees under
+// {data_dir}/worktrees/{owner} (spec §10).
 type Manager struct {
 	git  *gitx.Git
 	root string
@@ -170,9 +207,9 @@ func (m *Manager) lockRepo(projectPath string) func() {
 // Reclaim will delete inside (spec §10).
 func (m *Manager) Root() string { return m.root }
 
-// Path returns the worktree location for a task.
-func (m *Manager) Path(taskID int64) string {
-	return filepath.Join(m.root, strconv.FormatInt(taskID, 10))
+// Path returns the worktree location for an owner.
+func (m *Manager) Path(o Owner) string {
+	return filepath.Join(m.root, o.Dir())
 }
 
 // Created is what one worktree creation produced.
@@ -202,11 +239,11 @@ type Created struct {
 // are things only a caller that records the creation has any use for. This
 // one deliberately drops both.
 func (m *Manager) Create(
-	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch bool,
 ) (string, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	c, err := m.create(ctx, projectPath, taskID, branch, base, fetch)
+	c, err := m.create(ctx, projectPath, owner, branch, base, fetch)
 	return c.Path, err
 }
 
@@ -219,12 +256,12 @@ func (m *Manager) Create(
 // engine's own error path decides what happens to the task. The next scan
 // will see it as an orphan, which is precisely the crash case gc exists for.
 func (m *Manager) CreateAndClaim(
-	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch bool,
 	claim func(c Created) error,
 ) (Created, error) {
 	m.claims.RLock()
 	defer m.claims.RUnlock()
-	c, err := m.create(ctx, projectPath, taskID, branch, base, fetch)
+	c, err := m.create(ctx, projectPath, owner, branch, base, fetch)
 	if err != nil {
 		return c, err
 	}
@@ -261,7 +298,7 @@ func (m *Manager) WithReclaimLock(fn func() error) error {
 }
 
 func (m *Manager) create(
-	ctx context.Context, projectPath string, taskID int64, branch, base string, fetch bool,
+	ctx context.Context, projectPath string, owner Owner, branch, base string, fetch bool,
 ) (Created, error) {
 	// Whole of create, not just the prune: the add is as unsafe against a
 	// peer add as it is against a peer prune (#126, see Manager.repos). The
@@ -294,7 +331,7 @@ func (m *Manager) create(
 	if err := m.prune(ctx, projectPath); err != nil {
 		return Created{}, err
 	}
-	target := m.Path(taskID)
+	target := m.Path(owner)
 	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
 		return Created{}, &Error{
 			Reason:  ReasonWorktreePathOccupied,

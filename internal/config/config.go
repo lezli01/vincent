@@ -141,6 +141,18 @@ func ParseByteSize(s string) (ByteSize, error) {
 type Config struct {
 	Listen           string `yaml:"listen"`
 	MaxParallelTasks int    `yaml:"max_parallel_tasks"`
+	// MaxParallelChats bounds how many chats may hold a live agent process
+	// at once (§11, task 063 decision 1). It is a *separate* cap, not a
+	// share of MaxParallelTasks: a chat turn is a foreground reply to a
+	// person and must never wait behind batch work.
+	//
+	// It exists because the §11 amendment of 2026-08-29 (task 057) named the
+	// cost of an uncapped agent process verbatim — live-but-uncounted agent
+	// CLIs accumulating — and that reasoning does not stop applying because
+	// the noun changed. A turn over the cap is refused with 409 immediately;
+	// it is never queued, so internal/scheduler's "the only place
+	// queued → running happens" invariant is untouched.
+	MaxParallelChats int `yaml:"max_parallel_chats"`
 	// BranchTemplate is the global branch-naming convention, the level between
 	// the built-in `vincent/{id}-{slug}` and a project's own template (task 001,
 	// §5.3). Empty means the built-in name.
@@ -613,6 +625,7 @@ func Default() Config {
 	return Config{
 		Listen:           "127.0.0.1:0",
 		MaxParallelTasks: 3,
+		MaxParallelChats: 3,
 		Defaults: Defaults{
 			AgentTimeout:   Duration(60 * time.Minute),
 			CommandTimeout: Duration(15 * time.Minute),
@@ -718,6 +731,9 @@ func (c Config) validate() error {
 	}
 	if c.MaxParallelTasks < 1 {
 		return fmt.Errorf("max_parallel_tasks must be at least 1, got %d", c.MaxParallelTasks)
+	}
+	if c.MaxParallelChats < 1 {
+		return fmt.Errorf("max_parallel_chats must be at least 1, got %d", c.MaxParallelChats)
 	}
 	if c.Defaults.AgentTimeout <= 0 {
 		return fmt.Errorf("defaults.agent_timeout must be positive, got %s", c.Defaults.AgentTimeout)

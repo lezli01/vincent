@@ -51,7 +51,7 @@ func TestConcurrentCreateInOneProject(t *testing.T) {
 				defer wg.Done()
 				<-gate
 				id := int64(round*100 + i + 1)
-				_, errs[i] = m.CreateAndClaim(t.Context(), repo, id,
+				_, errs[i] = m.CreateAndClaim(t.Context(), repo, TaskOwner(id),
 					fmt.Sprintf("vincent/%d-lane", id), "main", false, nil)
 			}()
 		}

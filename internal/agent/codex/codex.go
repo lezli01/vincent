@@ -400,3 +400,12 @@ func (w *tailWriter) String() string {
 
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.cmd.Args }
+
+// SupportsResume implements agent.Resumer, in the negative (§9.3, task 063
+// decision 3). codex does have `exec resume <thread_id>`, and its stream does
+// carry a `thread_id` — but neither is read here yet, and no fixture captured
+// against a named codex build proves the argv. Saying false is the positive
+// statement the project's rule asks for: a capability an adapter lacks is
+// stated, never emulated. Replaying the conversation as prompt context would
+// be exactly that emulation, so chat creation refuses codex instead.
+func (a *Adapter) SupportsResume() bool { return false }
