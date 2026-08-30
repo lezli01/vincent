@@ -60,8 +60,10 @@ Six structural types compose those steps:
 Prompts, commands, checks, and instructions use Go templates. A step can read
 task and project data, declared task fields, loop context, and earlier step
 results. Workflows can declare ordered inputs with labels, descriptions,
-required flags, types, and validation patterns; the TUI renders them before the
-task is submitted, while additional ad hoc fields remain available.
+required flags, types, defaults, and validation patterns — including `enum`
+fields whose values are published as a list, so the TUI offers a picker rather
+than a text box. The TUI renders them before the task is submitted, while
+additional ad hoc fields remain available.
 
 The [workflow guide](guides/workflows.md) explains the patterns, and the
 [workflow schema](reference/workflow-schema.md) lists every field.

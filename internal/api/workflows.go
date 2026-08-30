@@ -50,6 +50,14 @@ type workflowFieldResponse struct {
 	Type        string `json:"type"`
 	Required    bool   `json:"required"`
 	Pattern     string `json:"pattern,omitempty"`
+	// Values, Multiple and Default publish an `enum` field's members, its
+	// cardinality and the value that applies when the key is omitted
+	// (§8.1.2, task 058). Publishing the members is the whole point of the
+	// type: a client can build a control from a list, and cannot from a
+	// pattern.
+	Values   []string `json:"values,omitempty"`
+	Multiple bool     `json:"multiple,omitempty"`
+	Default  string   `json:"default,omitempty"`
 }
 
 type workflowStepResponse struct {
@@ -108,6 +116,9 @@ func toWorkflowFieldResponses(fields []workflow.FieldDefinition) []workflowField
 			Type:        field.Type,
 			Required:    field.Required,
 			Pattern:     field.Pattern,
+			Values:      field.Values,
+			Multiple:    field.Multiple,
+			Default:     field.Default,
 		})
 	}
 	return out

@@ -13,6 +13,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Enum task fields, with a value picker in New task, and a `default:` for
+  every field type.** A workflow's `fields:` gains `type: enum`, whose members
+  are declared in `values:` and published through `GET /v1/workflows` — which a
+  `pattern: '^(dev|staging|prod)$'` never could, so no client could build a
+  control from one. New task opens a scrollable, filterable list on `enter` and
+  steps through the members in place with `←`/`→`, the way a boolean cycles.
+  `multiple: true` accepts more than one member; the value is stored as the
+  members joined with `,` in **declared** order, which the daemon normalizes to
+  before it checks membership, so `--field reviewers="cy, ana"` and a TUI
+  selection produce the same task row and the same branch name. Any field may
+  now carry a `default:`, written as its own YAML scalar (`default: true`,
+  `default: 3`, `default: staging`): the daemon substitutes a **required**
+  field's default when a caller omits the key, so a scripted `vincent task add`
+  no longer 400s for a value the workflow already knows, while an **optional**
+  field's default is seeded by the TUI and never invented server-side — an
+  optional key you omit is still absent from `.Task.Fields`. A bad declaration
+  is a visibly invalid workflow with a source path, not a surprise at task
+  creation.
+
 - **A pull-requests screen in the TUI, and a browser to open them in.** A new
   takeover lists every open pull request across every registered project whose
   `origin` is a github.com repository vincent can authenticate to, grouped by

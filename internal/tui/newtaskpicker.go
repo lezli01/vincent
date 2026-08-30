@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,10 @@ type pickerOption struct {
 	label    string
 	note     string
 	disabled bool
+	// selected marks a member of a multi-select list. Only a multi picker
+	// draws it, because in a single-select list the cursor already says which
+	// value would be chosen.
+	selected bool
 }
 
 // picker is the list a focused row expands into. allowFree adds a free-text
@@ -59,6 +64,11 @@ type picker struct {
 	filtering bool
 	matches   []int
 	err       string
+	// multi turns enter into a toggle instead of a commit: a `multiple: true`
+	// enum field is chosen a member at a time and the list stays open, so
+	// picking three reviewers is one visit rather than three (§8.1.2, task
+	// 058).
+	multi bool
 }
 
 func newPicker(row int, heading string, options []pickerOption, allowFree bool, current string) *picker {
@@ -213,7 +223,7 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 			p.err = firstNonEmpty(opt.note, "this option cannot be selected")
 			return pickerResult{}
 		}
-		return pickerResult{value: opt.value, chosen: true, closed: true}
+		return pickerResult{value: opt.value, chosen: true, closed: !p.multi}
 	case "esc":
 		// A narrowed list clears back to the whole catalog first; only an
 		// already-whole list closes. Otherwise escaping a typo'd filter costs
@@ -253,6 +263,13 @@ func (p *picker) renderBody() []string {
 		label := opt.label
 		if label == "" {
 			label = "(none)"
+		}
+		if p.multi {
+			box := "[ ] "
+			if opt.selected {
+				box = "[x] "
+			}
+			label = box + label
 		}
 		if opt.disabled {
 			label = styleBad.Render(label)
@@ -315,6 +332,96 @@ func (n *newTask) openPicker(row ntRow) {
 		return
 	}
 	n.mode = ntPicking
+}
+
+// openFieldPicker opens the value list for the focused declared enum row. It
+// is a second entry point into the same picker the §8.6 override rows use —
+// the list, the window, the filter and the scrolling are one implementation,
+// so a 40-member enum scrolls exactly like cursor's model catalog does.
+func (n *newTask) openFieldPicker() {
+	f := n.fieldsEd
+	if f == nil || f.cursor < 0 || f.cursor >= len(f.rows) {
+		return
+	}
+	row := f.rows[f.cursor]
+	if !row.declared || row.definition.Type != apiclient.WorkflowFieldEnum {
+		return
+	}
+	current := row.value
+	if row.definition.Multiple {
+		current = ""
+	}
+	n.pick = newPicker(f.cursor, row.definition.DisplayLabel(),
+		n.enumOptions(row), false, current)
+	n.pick.multi = row.definition.Multiple
+	n.mode = ntFieldPicking
+}
+
+// enumOptions is one row per declared member, in declared order. An optional
+// single-choice field gets a leading "(unset)" row, because clearing a
+// workflow-owned row is otherwise impossible: the row cannot be deleted.
+func (n *newTask) enumOptions(row kv) []pickerOption {
+	out := make([]pickerOption, 0, len(row.definition.Values)+1)
+	if !row.definition.Required && !row.definition.Multiple {
+		out = append(out, pickerOption{value: "", label: "(unset)"})
+	}
+	picked := enumSelection(row.value)
+	for _, member := range row.definition.Values {
+		opt := pickerOption{value: member, label: member, selected: slices.Contains(picked, member)}
+		if member == row.definition.Default {
+			opt.note = "default"
+		}
+		out = append(out, opt)
+	}
+	return out
+}
+
+// updateFieldPicking runs the enum list and hands the form back to the fields
+// editor when it closes — the editor stays open underneath the whole time, so
+// esc from the list returns to the row rather than to the form.
+func (n *newTask) updateFieldPicking(msg tea.KeyPressMsg) tea.Cmd {
+	if n.pick == nil || n.fieldsEd == nil {
+		n.mode = ntFieldsOpen
+		return nil
+	}
+	res := n.pick.update(msg)
+	if res.chosen {
+		n.applyFieldPick(res.value)
+	}
+	if res.closed {
+		n.pick = nil
+		n.mode = ntFieldsOpen
+	}
+	return res.cmd
+}
+
+// applyFieldPick writes the chosen member back onto the editor row. A
+// `multiple` field toggles membership and is rewritten in **declared** order
+// every time, so the row always shows the canonical string the daemon would
+// store rather than click order (§8.1.2, task 058).
+func (n *newTask) applyFieldPick(value string) {
+	f := n.fieldsEd
+	at := n.pick.row
+	if at < 0 || at >= len(f.rows) {
+		return
+	}
+	row := &f.rows[at]
+	if !row.definition.Multiple {
+		row.value = value
+	} else {
+		picked := enumSelection(row.value)
+		if i := slices.Index(picked, value); i >= 0 {
+			picked = append(picked[:i], picked[i+1:]...)
+		} else {
+			picked = append(picked, value)
+		}
+		row.value = enumValue(row.definition, picked)
+		for i := range n.pick.options {
+			n.pick.options[i].selected = slices.Contains(picked, n.pick.options[i].value)
+		}
+	}
+	f.err = fieldValidationMessage(*row)
+	n.touched = true
 }
 
 func (n *newTask) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
@@ -548,13 +655,28 @@ func (n *newTask) updateFields(msg tea.KeyPressMsg) tea.Cmd {
 		f.cursor = len(f.rows) - 1
 		f.startEdit(1)
 	case "enter", " ", "left", "right":
-		if len(f.rows) > 0 {
-			if f.rows[f.cursor].declared &&
-				f.rows[f.cursor].definition.Type == apiclient.WorkflowFieldBoolean {
-				f.toggleBoolean()
-			} else if msg.String() == "enter" {
-				f.startEdit(1)
+		if len(f.rows) == 0 {
+			return nil
+		}
+		row := f.rows[f.cursor]
+		switch {
+		case row.declared && row.definition.Type == apiclient.WorkflowFieldBoolean:
+			f.toggleBoolean()
+		case row.declared && row.definition.Type == apiclient.WorkflowFieldEnum:
+			// left/right step through the members in place the way a boolean
+			// cycles, so a two- or three-value field stays a single keypress;
+			// enter opens the list, which is the only workable control for a
+			// long one and the only one that can toggle a `multiple` set.
+			switch msg.String() {
+			case "left":
+				f.stepEnum(-1)
+			case "right":
+				f.stepEnum(1)
+			default:
+				n.openFieldPicker()
 			}
+		case msg.String() == "enter":
+			f.startEdit(1)
 		}
 	case "d":
 		if len(f.rows) > 0 {
@@ -634,6 +756,66 @@ func (f *fieldsEditor) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
+// stepEnum moves a single-choice enum one member along, wrapping. An optional
+// field gets an extra stop at the empty value, which is the only way back to
+// "unset" without deleting a row the workflow owns; a required one has no such
+// stop, because it has no legal empty value.
+//
+// A `multiple` field is not stepped: "the next set" has no meaning, so
+// left/right open nothing and the picker is the way to change it.
+func (f *fieldsEditor) stepEnum(delta int) {
+	if f.cursor < 0 || f.cursor >= len(f.rows) {
+		return
+	}
+	row := &f.rows[f.cursor]
+	if row.definition.Multiple {
+		return
+	}
+	stops := append([]string(nil), row.definition.Values...)
+	if !row.definition.Required {
+		stops = append(stops, "")
+	}
+	if len(stops) == 0 {
+		return
+	}
+	at := slices.Index(stops, row.value)
+	if at < 0 {
+		// An unknown value — seeded from an issue prefill, or left behind by
+		// a workflow edit — steps to the first member rather than nowhere.
+		at = -1
+		if delta < 0 {
+			at = 1
+		}
+	}
+	row.value = stops[((at+delta)%len(stops)+len(stops))%len(stops)]
+	f.err = fieldValidationMessage(*row)
+}
+
+// enumSelection splits a stored enum value into the members it names.
+func enumSelection(value string) []string {
+	out := []string{}
+	for _, part := range strings.Split(value, apiclient.WorkflowFieldSeparator) {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// enumValue joins a selection in the workflow's **declared** order, which is
+// the canonical string the daemon stores (§8.1.2, task 058). The TUI writes
+// the canonical form itself rather than leaning on the daemon to rewrite it,
+// so what the row shows is what the task will carry.
+func enumValue(def apiclient.WorkflowField, picked []string) string {
+	out := make([]string, 0, len(picked))
+	for _, member := range def.Values {
+		if slices.Contains(picked, member) {
+			out = append(out, member)
+		}
+	}
+	return strings.Join(out, apiclient.WorkflowFieldSeparator)
+}
+
 func (f *fieldsEditor) toggleBoolean() {
 	if f.cursor < 0 || f.cursor >= len(f.rows) {
 		return
@@ -680,6 +862,14 @@ func fieldValidationMessage(field kv) string {
 	case apiclient.WorkflowFieldBoolean:
 		if field.value != "true" && field.value != "false" {
 			return fmt.Sprintf("%s must be true or false", field.definition.DisplayLabel())
+		}
+	case apiclient.WorkflowFieldEnum:
+		for _, member := range enumSelection(field.value) {
+			if !slices.Contains(field.definition.Values, member) {
+				return fmt.Sprintf("%s must be one of %s; got %q",
+					field.definition.DisplayLabel(),
+					strings.Join(field.definition.Values, ", "), member)
+			}
 		}
 	case apiclient.WorkflowFieldString:
 		if field.definition.Pattern != "" {

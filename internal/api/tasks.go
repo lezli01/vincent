@@ -472,6 +472,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// selected root workflow. The map remains open: ValidateTaskFields checks
 	// only names the workflow declared, so existing custom metadata continues
 	// to pass through and be snapshotted on the task unchanged.
+	//
+	// PrepareTaskFields runs first (task 058): it substitutes a *required*
+	// field's declared default for an omitted key and canonicalizes a
+	// multi-valued enum to declared order, so the task row records the value
+	// that actually applied and every client produces the same string for the
+	// same selection. It never invents an optional field's default — an
+	// optional key the caller omitted stays absent from .Task.Fields.
+	req.Fields = entry.Workflow.PrepareTaskFields(req.Fields)
 	if fieldErrs := entry.Workflow.ValidateTaskFields(req.Fields); len(fieldErrs) > 0 {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, fieldErrs.Error())
 		return

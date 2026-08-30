@@ -13,7 +13,15 @@ const (
 	WorkflowFieldInteger = "integer"
 	WorkflowFieldNumber  = "number"
 	WorkflowFieldBoolean = "boolean"
+	// WorkflowFieldEnum carries its members in Values (task 058). A client
+	// that predates it sees an unknown type, falls through to a free-text
+	// row and runs no local check; the daemon still gates the value.
+	WorkflowFieldEnum = "enum"
 )
+
+// WorkflowFieldSeparator joins the members of a `multiple: true` enum, in the
+// workflow's declared order (§8.1.2, task 058).
+const WorkflowFieldSeparator = ","
 
 // WorkflowEntry is one row of GET /v1/workflows (§13.2): the merged registry
 // with §5.2 shadowing already applied. A file that failed to parse is listed
@@ -62,6 +70,14 @@ type WorkflowField struct {
 	Type        string `json:"type"`
 	Required    bool   `json:"required"`
 	Pattern     string `json:"pattern,omitempty"`
+
+	// Values are an `enum` field's members in declared order, Multiple says
+	// it accepts more than one of them, and Default is the value that applies
+	// when the key is omitted. Absent means the daemon predates the field,
+	// which is indistinguishable from "declares none" and treated as such.
+	Values   []string `json:"values,omitempty"`
+	Multiple bool     `json:"multiple,omitempty"`
+	Default  string   `json:"default,omitempty"`
 }
 
 // DisplayLabel is the presentation label, falling back to the field name.

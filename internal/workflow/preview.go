@@ -102,11 +102,27 @@ func PreviewLoop() LoopContext {
 
 // previewFields binds the task fields a preview can honestly claim: every
 // declared **required** field, overridden by anything the caller supplied.
+//
+// A required field binds, in order: its `default:` when it has one; else, for
+// an enum, its first declared value; else the sentinel. The two real values
+// come first because SentinelField("environment") is `<field.environment>`,
+// which is by construction not a member of its own enum — a preview that
+// bound it would render something the workflow could never receive (task
+// 058). Optional fields stay absent, which is exactly what POST /v1/tasks
+// guarantees: the preview binds only what it can honestly claim.
 func previewFields(wf *Workflow, supplied map[string]string) map[string]string {
 	out := make(map[string]string, len(supplied))
 	if wf != nil {
 		for _, f := range wf.Fields {
-			if f.Required && f.Name != "" {
+			if !f.Required || f.Name == "" {
+				continue
+			}
+			switch {
+			case f.Default != "":
+				out[f.Name] = f.Default
+			case f.Type == FieldEnum && len(f.Values) > 0:
+				out[f.Name] = f.Values[0]
+			default:
 				out[f.Name] = SentinelField(f.Name)
 			}
 		}

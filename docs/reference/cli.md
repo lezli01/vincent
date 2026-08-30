@@ -411,9 +411,10 @@ task 62 created: Release 2.0 (release, branch vincent/62-release-2-0)
 
 The confirmation line lists **names and a count, never values** — a field can
 carry a ticket key or a customer name, and this line ends up in scrollback and
-CI logs. It is read off the created task, so a field the daemon filled in from
-`--github-issue` is listed too. `--json` prints the task instead, values and
-all.
+CI logs. It is read off the created task, so a field the daemon filled in — from
+`--github-issue`, or from a **required** field's declared
+[`default:`](workflow-schema.md#default), which the daemon substitutes for an
+omitted key — is listed too. `--json` prints the task instead, values and all.
 
 #### Fields from a file or stdin
 
@@ -451,8 +452,8 @@ Rejected locally with exit 1, before the daemon is called:
 A name repeated *inside* the JSON object takes its last value, which is what a
 JSON decoder does. Names the workflow never declared stay valid either way —
 declaring `fields:` does not close the map — and everything the daemon
-validates (required, `type`, `pattern`, per-field size) is still checked by the
-daemon.
+validates (required, `type`, `pattern`, [`enum`](workflow-schema.md#enum-fields)
+membership, per-field size) is still checked by the daemon.
 
 Model and effort **only inherit from a level whose agent matches**, so switching
 agent without setting them resets them to the new adapter's default rather than
@@ -1031,9 +1032,11 @@ previous attempt's failure — bind to visible placeholders such as `<worktree>`
 and `<steps.plan.result>`, so the output reads as a preview and never as the
 literal prompt an agent will receive. A field a workflow declares
 [`required`](workflow-schema.md) binds too, because a real task is guaranteed
-to carry it; an optional or undeclared field stays absent, so reading one
-without `{{ with index .Task.Fields "x" }}` is reported — which is exactly the
-bug a real run would hit.
+to carry it: to its [`default:`](workflow-schema.md#default) where it has one,
+else an [`enum`](workflow-schema.md#enum-fields)'s first declared value, else
+the `<field.NAME>` placeholder. An optional or undeclared field stays absent, so
+reading one without `{{ with index .Task.Fields "x" }}` is reported — which is
+exactly the bug a real run would hit.
 
 Supply the rest yourself: `--title`, `--description`, repeated `--field k=v`,
 and `--agent`/`--model`/`--effort` for a task-level override. `--task ID` binds

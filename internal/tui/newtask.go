@@ -52,11 +52,12 @@ const (
 type ntMode int
 
 const (
-	ntNavigating ntMode = iota // moving between rows
-	ntEditing                  // a text row owns the keys
-	ntPicking                  // a picker is open
-	ntFieldsOpen               // the key/value editor is open
-	ntConfirming               // "discard this draft?"
+	ntNavigating   ntMode = iota // moving between rows
+	ntEditing                    // a text row owns the keys
+	ntPicking                    // a picker is open
+	ntFieldsOpen                 // the key/value editor is open
+	ntFieldPicking               // an enum field's value list is open over it
+	ntConfirming                 // "discard this draft?"
 )
 
 // New-task messages.
@@ -253,6 +254,8 @@ func (n *newTask) capturesInput() bool {
 		// The key/value editor types too, and was missing here: a "q" typed
 		// into a field name quit the TUI (M3 gate finding).
 		return n.fieldsEd != nil && n.fieldsEd.editing != 0
+	case ntFieldPicking:
+		return n.pick != nil && (n.pick.editing || n.pick.filtering)
 	case ntNavigating, ntConfirming:
 	}
 	return false
@@ -289,6 +292,11 @@ func (n *newTask) paste(text string) tea.Cmd {
 			return nil
 		}
 		return n.fieldsEd.paste(text)
+	case ntFieldPicking:
+		if n.pick == nil {
+			return nil
+		}
+		return n.pick.paste(text)
 	case ntNavigating, ntConfirming:
 	}
 	return cmd
@@ -590,8 +598,17 @@ func (n *newTask) syncWorkflowFields() {
 		out = make([]kv, 0, len(entry.Fields)+len(n.fields))
 		for _, definition := range entry.Fields {
 			declared[definition.Name] = true
+			// A declared `default:` seeds the row, but only where the human
+			// has not already put something there: switching workflow to
+			// compare two must not silently overwrite a value that was
+			// typed. Optional defaults are seeded here and nowhere else —
+			// the daemon never invents one (§8.1.2, task 058 decision 3).
+			value, typed := values[definition.Name]
+			if !typed || value == "" {
+				value = definition.Default
+			}
 			out = append(out, kv{
-				key: definition.Name, value: values[definition.Name],
+				key: definition.Name, value: value,
 				declared: true, definition: definition,
 			})
 		}
@@ -639,6 +656,8 @@ func (n *newTask) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return n, n.updatePicking(msg)
 	case ntFieldsOpen:
 		return n, n.updateFields(msg)
+	case ntFieldPicking:
+		return n, n.updateFieldPicking(msg)
 	case ntConfirming:
 		return n.updateConfirm(msg)
 	case ntNavigating:

@@ -315,10 +315,20 @@ func TestWorkflowDefinitionIsAsAuthored(t *testing.T) {
 // wire until someone maps it. This fails when that happens, naming the field.
 //
 // A field deliberately left off the wire belongs in the omit set below, with
-// the reason. It is empty today: every field of the workflow model is
-// something a graph or a future builder reads.
+// the reason.
 func TestWorkflowDefinitionCoversEveryField(t *testing.T) {
-	omit := map[string]map[string]string{}
+	// FieldDefinition's three unexported members are decode bookkeeping: they
+	// remember the *shape* a `default:` or `values:` node had so validation
+	// can report it at its own source path (task 058). A workflow that
+	// reaches the wire has already passed validation, so they are always
+	// zero by then and carry nothing a client could use.
+	omit := map[string]map[string]string{
+		"FieldDefinition": {
+			"defaultShape": "decode bookkeeping, consumed by validation before the wire",
+			"valuesShape":  "decode bookkeeping, consumed by validation before the wire",
+			"defaultSeq":   "decode bookkeeping, consumed by validation before the wire",
+		},
+	}
 	pairs := []struct {
 		name  string
 		model any

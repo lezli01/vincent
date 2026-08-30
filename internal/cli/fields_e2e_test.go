@@ -21,6 +21,12 @@ import (
 // on POSIX, pwsh on Windows (§8.3) — so it has to be spelled in the
 // intersection of the two (CLAUDE.md), and git is in it.
 const fieldConsumerWorkflow = `name: field-consumer
+fields:
+  # Optional, so the create below is unaffected by it: what it is here for is
+  # the membership rejection asserted at the end (§8.1.2, task 058).
+  - name: environment
+    type: enum
+    values: [dev, staging, prod]
 steps:
   - id: record
     type: command
@@ -118,6 +124,33 @@ func TestTaskFieldsReachATemplate(t *testing.T) {
 	}
 	if !strings.Contains(string(written), "OPS-42") {
 		t.Errorf("the step wrote %q, want the rendered field value OPS-42", written)
+	}
+
+	// The daemon is the authoritative boundary for a declared enum too (task
+	// 022 decision 5): `task add` needs no transport change and reports the
+	// membership error it is handed, by either route in.
+	for _, tc := range []struct {
+		name  string
+		stdin string
+		args  []string
+	}{
+		{"--field", "", []string{"--field", "environment=nope"}},
+		{"--fields-file", `{"environment":"nope"}`, []string{"--fields-file", "-"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append([]string{
+				"task", "add", "--project", strconv.FormatInt(project.ID, 10),
+				"--workflow", "field-consumer", "--title", "bad " + tc.name,
+			}, tc.args...)
+			out, code := runVincentStdin(t, dataDir, cfgDir, tc.stdin, args...)
+			if code == 0 {
+				t.Fatalf("a non-member was accepted: %q", out)
+			}
+			if !strings.Contains(out, "must be one of dev, staging, prod") ||
+				!strings.Contains(out, `"nope"`) {
+				t.Errorf("error %q, want the daemon's membership message unchanged", out)
+			}
+		})
 	}
 }
 

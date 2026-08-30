@@ -298,6 +298,7 @@ func workflowFromDefinition(body *apiclient.WorkflowBody) *workflow.Workflow {
 		wf.Fields = append(wf.Fields, workflow.FieldDefinition{
 			Name: f.Name, Label: f.Label, Description: f.Description,
 			Type: f.Type, Required: f.Required, Pattern: f.Pattern,
+			Values: f.Values, Multiple: f.Multiple, Default: f.Default,
 		})
 	}
 	return wf

@@ -148,6 +148,15 @@ fields:
   - name: dry-run
     label: Dry run
     type: boolean
+  - name: environment
+    type: enum
+    required: true
+    values: [dev, staging, prod]
+    default: staging
+  - name: reviewers
+    type: enum
+    multiple: true
+    values: [ana, bo, cy]
 ```
 
 Definitions stay in source order. Each definition has:
@@ -157,22 +166,61 @@ Definitions stay in source order. Each definition has:
 | `name` | slug | ✅ | | Key in `.Task.Fields`; unique in this list |
 | `label` | string | | `name` | Presentation text only |
 | `description` | string | | | Help text shown by clients |
-| `type` | `string` \| `integer` \| `number` \| `boolean` | | `string` | Editing and validation contract; stored value is still a string |
+| `type` | `string` \| `integer` \| `number` \| `boolean` \| `enum` | | `string` | Editing and validation contract; stored value is still a string |
 | `required` | bool | | `false` | Missing or whitespace-only values are rejected when true |
 | `pattern` | string | | | Go RE2 expression, valid only for `string`; use `^` and `$` for a whole-value match |
+| `values` | list of scalars | for `enum` | | The members, in declared order. Required for `enum`, rejected on every other type; non-empty, unique, no member may be empty or contain `,` |
+| `multiple` | bool | | `false` | `enum` only: the field accepts more than one member |
+| `default` | scalar | | | Any type. Applied when the caller omits the key; validated against this declaration when the workflow loads |
 
 Integers are base-10 whole numbers, numbers must be finite decimals, and
 booleans are exactly `true` or `false`. Optional absent or empty values skip
 type and pattern validation.
 
+### `enum` fields
+
+An `enum` publishes its members, which is what a regex cannot do: a client can
+build a picker from a list and not from `'^(dev|staging|prod)$'`. New task opens
+a scrollable value list on `enter`, and for a single-choice field steps through
+the members in place with `←`/`→`, the way a boolean cycles. A `multiple` field
+is changed only through the list.
+
+A `multiple: true` field stores the picked members joined with `,` in **declared
+order**, deduplicated, with no spaces — `dev,prod`. `POST /v1/tasks` normalizes
+what it is given that way before checking membership, so `--field
+reviewers="cy, ana"` is stored as `ana,cy` and the same selection always
+produces the same string. That is what keeps template output and branch names
+stable. A member may therefore not contain `,`.
+
+`pattern` and `enum` are mutually exclusive: the members are the constraint.
+
+### `default`
+
+`default:` is not `enum`-specific — any declared field may carry one — and it is
+written as the value's own YAML scalar: `default: true` on a boolean, `default:
+3` on an integer, `default: staging` on a string or an enum. A `multiple` enum
+may also take a list (`default: [dev, prod]`), normalized like any other value.
+
+The daemon substitutes a **required** field's default when the caller omits the
+key, so a scripted `vincent task add` that omits it succeeds and the task row
+records what applied. It never substitutes an **optional** field's default: that
+one is published to clients, and New task seeds the row with it, but an optional
+key the caller omitted stays absent from `.Task.Fields`. Adding a `default:` to
+an existing optional field therefore does not change what
+`{{ with index .Task.Fields "x" }}` sees.
+
 The task map remains **open**. A caller may send additional names; vincent
 records them and exposes them to templates just like declared fields. Only the
-declared names receive required, type, and pattern checks.
+declared names receive required, type, pattern and membership checks. A client
+older than `enum` sees an unknown type, falls back to a free-text row and runs
+no local check; the daemon still rejects a non-member.
 
 The selected workflow is the public boundary. Fields declared by an included
 workflow or a named `fan_out` lane are not merged into the caller's form. A
 composing workflow re-declares the inputs it exposes; lane `fields:` remains a
-separate map of values bound for that lane.
+separate map of values bound for that lane — and those overrides are not checked
+against the root's declarations, so a lane may bind a name the root declares as
+an `enum` to something that is not a member.
 
 ## `defaults`
 

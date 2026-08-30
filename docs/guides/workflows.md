@@ -333,6 +333,10 @@ fields:                          # optional — ordered task inputs (§5.4)
     label: Ticket
     required: true
     pattern: '^OPS-[0-9]+$'
+  - name: environment
+    type: enum
+    values: [dev, staging, prod]
+    default: staging
 
 defaults:                        # optional — inherited by every step
   agent: claude
@@ -978,6 +982,15 @@ fields:
   - name: dry-run
     label: Dry run
     type: boolean
+  - name: environment
+    type: enum
+    required: true
+    values: [dev, staging, prod]
+    default: staging
+  - name: reviewers
+    type: enum
+    multiple: true
+    values: [ana, bo, cy]
 ```
 
 The definition order is the form order. `string` is the default type;
@@ -986,8 +999,25 @@ and `boolean` accepts exactly `true` or `false`. `pattern` is a Go RE2 expressio
 for strings only — anchor it with `^` and `$` when the whole value must match.
 `label` and `description` only improve presentation.
 
-The daemon checks required/type/pattern rules at task creation, including for
-CLI and API callers. The selected root workflow owns the contract: fields from
+`enum` is the type for a closed set. Reach for it instead of
+`pattern: '^(dev|staging|prod)$'`: the members are *published*, so New task can
+draw a picker and `GET /v1/workflows` can hand the list to any other client,
+which a regex can never do. `multiple: true` lets more than one be picked; the
+value is then the members joined with `,` in declared order (`dev,prod`), which
+the daemon normalizes to, so the same selection is always the same string in a
+template and a branch name. A member may not contain `,`, and `pattern` and
+`enum` cannot be combined.
+
+Any field may carry a `default:`, written as its own YAML scalar — `default: 3`
+on an integer, `default: true` on a boolean. The daemon fills in a **required**
+field's default when a caller omits the key, so a scripted `vincent task add`
+does not have to restate it; an **optional** field's default is seeded by the
+TUI but never invented server-side, so an optional key you omit is still absent
+from `.Task.Fields` and `{{ with index .Task.Fields "x" }}` keeps working the
+way it always did.
+
+The daemon checks required/type/pattern/membership rules at task creation,
+including for CLI and API callers. The selected root workflow owns the contract: fields from
 included workflows and named fan-out lane workflows are not automatically
 merged, so a composing workflow re-declares any input it exposes.
 

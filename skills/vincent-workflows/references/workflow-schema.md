@@ -62,9 +62,23 @@ Each field declaration supports:
 | `name` | slug | Required and unique; key in `.Task.Fields` |
 | `label` | string | Presentation only; defaults to `name` |
 | `description` | string | Help shown by clients |
-| `type` | `string`, `integer`, `number`, `boolean` | Defaults to `string`; stored value remains a string |
+| `type` | `string`, `integer`, `number`, `boolean`, `enum` | Defaults to `string`; stored value remains a string |
 | `required` | boolean | Whitespace-only counts as absent |
 | `pattern` | Go RE2 string | Only for strings; use `^...$` for whole values |
+| `values` | list of scalars | Required for `enum`, rejected on every other type. Unique, non-empty, no `,` in a member |
+| `multiple` | boolean | `enum` only: more than one member may be picked |
+| `default` | scalar | Any type. Written as its own YAML scalar (`default: true`, `default: 3`) |
+
+A closed set of values is `type: enum` with `values:`, never a `string` with a
+pattern spelling the same alternation: only a list can be published, and only a
+published list becomes a picker in New task. A `multiple: true` field stores its
+members joined with `,` in declared order (`dev,prod`), which the daemon
+normalizes to on create.
+
+`default:` applies when the caller omits the key. The daemon substitutes a
+**required** field's default and records it on the task; an **optional** field's
+default is seeded by clients only, so an optional key the caller omitted is
+still absent from `.Task.Fields`.
 
 Undeclared fields remain allowed. Optional absent values skip type and pattern
 validation. Read an optional value defensively:
