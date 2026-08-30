@@ -174,3 +174,12 @@ jobs:
       - name: M12 gate (containers)
         shell: bash
         run: ./scripts/m12-gate.sh
+
+      # M13: authoring a workflow through the API (task 065, §8.2, §13.2).
+      # The three-OS matrix is the point of this one: the line-oriented
+      # writer has to hold its byte-identity guarantee against CRLF files and
+      # backslash paths, and the project scope is a repo path the gate builds
+      # on the host it runs on.
+      - name: M13 gate (workflow editor)
+        shell: bash
+        run: ./scripts/m13-gate.sh

@@ -80,7 +80,7 @@ echoed back.
 | Limit | Bytes | Applies to |
 |---|---|---|
 | Ordinary request body | 64 KiB | every route not listed below |
-| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate` — the bodies that carry a prompt or a workflow source |
+| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate`, `PATCH /v1/workflows` — the bodies that carry a prompt or a workflow source |
 | `yaml` in `POST /v1/workflows/validate` | 1 MiB | the same bound a workflow file gets when the registry loads it |
 
 Individual fields are bounded too — over one is `400 validation_failed` naming
@@ -97,6 +97,7 @@ the field and the limit:
 | one `answers` key | 64 KiB |
 | one `fields` / `answers` value | 64 KiB |
 | `fields` / `answers` entries, values per answer | 100 |
+| `ops` entries in one `PATCH /v1/workflows` | 512 |
 
 The two keys differ because they are different kinds of thing. A `fields` key is
 a short identifier you choose. An `answers` key is not yours to choose at all: it
@@ -666,11 +667,14 @@ carrying the reason a client can branch on:
 |---|---|---|
 | `GET` | `/v1/workflows?project_id=` | The merged registry: built-in + global + that project's, with shadowing applied |
 | `GET` | `/v1/workflows/definition?name=&project_id=` | One workflow's whole recursive structure, with the same shadowing applied |
+| `GET` | `/v1/workflows/schema` | The workflow schema as data: which fields are legal on which step type, and where each type may be nested |
+| `POST` | `/v1/workflows` | `{ scope, project_id?, name, from?, from_project_id? }` → the written file and its version. Creates a workflow; `from` forks an existing entry, keeping its `name:` so the copy shadows it |
+| `PATCH` | `/v1/workflows?name=&project_id=` | `{ version, ops[] }` → the same shape. Applies edit operations to a workflow file, preserving every byte outside the region they touch |
 | `POST` | `/v1/workflows/validate` | `{ yaml }` → `{ valid, errors[], warnings[] }` |
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, includes[]?, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, includes[]?, version?, errors[]?, warnings[]?, error? }`.
 
 `fields[]` is the selected workflow's ordered
 [`fields:` declaration](workflow-schema.md#fields). Each entry is
@@ -706,6 +710,10 @@ so an agent that is not installed never blocks a task.
 is **not** answered here: which file a name reaches depends on the project's
 registry, so an unresolvable or cyclic include is a `400` from `POST /v1/tasks`
 rather than an error on the entry.
+
+`version` is the token a write of this entry must carry, described under
+[Writing a workflow](#writing-a-workflow). It is absent for a built-in, which
+has no file to be stale against.
 
 ### One workflow's full definition
 
@@ -798,6 +806,92 @@ re-implement the precedence. `vincent workflow render` resolves a **file** —
 one this endpoint cannot serve, since it takes a workflow *name* the registry
 has frequently not picked up yet — by calling that one implementation directly,
 and reports the same `{value, source}`.
+
+### Writing a workflow
+
+`POST /v1/workflows` creates a file, `PATCH /v1/workflows` edits one, and
+neither carries YAML in either direction.
+
+A create names a scope and a `name` — lowercase letters, digits, `-`, `_` or
+`.`, starting with a letter or digit — and the daemon resolves the path itself:
+`{config_dir}/workflows/` for `global`, the project's `.vincent/workflows/` for
+`project`, created when it does not exist yet, with `{name}.yaml` inside it. The
+client never sends a path. Without `from`, the file is the starter template with
+its `name:` set to `name`. With `from`, it is a copy of an existing entry's
+bytes and `name` decides only the file name: **the copy keeps the source's own
+`name:`**, because keeping it is what makes it shadow the original.
+`from_project_id` says whose registry `from` is resolved against, when that is
+not the project being written to. Built-ins have no file of their own, so
+`scope: builtin` is a `400` — forking one into a scope that does have files is
+the only way to change a built-in. New files are written `0644` — a project
+workflow is meant to be committed and shared — and an existing file keeps the
+mode it has.
+
+A `PATCH` carries edit operations, which the daemon applies to the file's own
+bytes line by line. Comments, key order, blank lines, block scalars and CRLF
+endings outside the region an operation touches come back byte-identical. That
+is why the wire carries operations rather than a document: a client that had to
+send the whole file would have had to discard its comments to build it, and the
+daemon would then have nothing left to preserve.
+
+```json
+{ "version": "…",
+  "ops": [
+    { "op": "set", "path": "steps[2].prompt", "value": "…", "block": true },
+    { "op": "insert", "path": "steps[1]",
+      "item": [ { "key": "id", "value": "review" },
+                { "key": "type", "value": "agent" } ] },
+    { "op": "remove", "path": "steps[0].model" },
+    { "op": "move", "path": "steps[0]", "to": 2 } ] }
+```
+
+`path` is dotted with list indices — `steps[2].prompt`,
+`steps[3].lanes[0].merge.on_conflict`, `fields[1].values`. `block` writes the
+value as a `|` block scalar, which is what a prompt, a multi-line `run:` or an
+`instructions` body needs. `insert`'s path carries the index the entry lands at,
+and `item` is its keys in the order they should be written; the daemon renders
+the YAML. `remove` takes either a key path or an indexed one — `steps[0].model`
+drops the key, `steps[3].lanes[0]` drops the lane — and dropping a key is not
+the same as writing an empty one, since an absent `model:` inherits the
+workflow's `defaults` and `model: ""` does not. `move` reorders within one
+sequence.
+
+A create answers `201` and a patch `200`, both with
+`{ name, scope, file, version, errors[], warnings[] }` — the parse verdict on
+the bytes now on disk. The two differ in what they will let you produce. A
+`PATCH` the daemon cannot apply, or whose result does not parse, is a `400`
+naming the findings and **nothing is written**: the file is byte-identical to
+what it was before the request, the same rule
+[`PATCH /v1/config`](#daemon) follows. A result over the 1 MiB a workflow source
+is bounded to is a `413`, and equally writes nothing. A create can still answer
+with a populated `errors[]`, because a fork copies bytes verbatim and the entry
+you forked may already be broken — which is the same reason the registry lists a
+broken file instead of hiding it.
+
+**`version` is a precondition.** It is an opaque token for a file's current
+contents, served on `GET /v1/workflows` and `GET /v1/workflows/definition` and
+returned by every write. A `PATCH` carrying a stale one is a `409` with the
+current token in `details.version`, and nothing is written. This is scoped to
+workflows deliberately: [`PATCH /v1/config`](#daemon) carries no precondition
+because there the race is a human against themselves, while a workflow file has
+writers who are not the person at the keyboard — the `create-workflow` built-in
+writes the live registry directory from an agent run, and `$EDITOR` is one key
+away in the same view. A create is refused the same way when the destination
+file already exists, or when another file in the target scope already declares
+that `name:` — the duplicate the registry would otherwise have to pick between.
+
+`GET /v1/workflows/schema` is the [workflow schema](workflow-schema.md) served
+as data: the top-level, `defaults`, `fields[]`, lane and merge rows, and per
+step type the fields it accepts, which of the common fields it accepts, and
+which contexts (`body`, `parallel`, `loop`, `merge`) it may appear in. It is
+generated from the same table the parser validates against, so a client renders
+forms from it instead of carrying a second copy of the rules — which is how the
+two used to drift. Each row names a `control` telling a client what to draw
+(`string`, `text`, `enum`, `bool`, `int`, `duration`, `list`, `map`, `agent`,
+`model`, `effort`, `steps`, `lanes`, `merge`, `workflow`, `fields`,
+`template`); an unrecognized one is drawn as a text row, which is what keeps an
+older client usable against a newer daemon. Agent, model and effort value sets
+are **not** here — those come from [`GET /v1/agents`](#daemon).
 
 ## Tasks
 
@@ -1455,6 +1549,8 @@ Every route on this page is a tool, with these exceptions:
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
+| `POST /v1/workflows` | Same line: a workflow file is what that daemon runs. `GET /v1/workflows/schema` is an ordinary tool |
+| `PATCH /v1/workflows` | Same |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |

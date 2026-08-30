@@ -575,6 +575,18 @@ var builtinSources = map[string]string{
 	UpdateWorkflowsName: UpdateWorkflowsSource,
 }
 
+// BuiltinSource returns the compiled-in source of a built-in workflow. It is
+// how a fork of one reaches the disk (task 065): a built-in has no file, so
+// copying its bytes into a writable scope is the only way to change one, and
+// §5.2's shadowing then puts the copy in front of the original.
+func BuiltinSource(name string) ([]byte, bool) {
+	src, ok := builtinSources[name]
+	if !ok {
+		return nil, false
+	}
+	return []byte(src), true
+}
+
 // IsBuiltin reports whether name belongs to the built-in scope. It is
 // derived from builtinSources rather than compared against the two name
 // constants, so a third built-in is covered the day it is added — which

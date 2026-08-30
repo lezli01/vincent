@@ -36,8 +36,12 @@ type workflowResponse struct {
 	// client shows as "depends on"; whether those names resolve is not
 	// answered here, because it is a property of the project's resolved view
 	// and becomes a 400 at task creation (task 019 decision 8).
-	Includes []string         `json:"includes,omitempty"`
-	Errors   []workflow.Error `json:"errors,omitempty"`
+	Includes []string `json:"includes,omitempty"`
+	// Version is the token a PATCH of this entry must carry (task 065
+	// decision 4): the file's modification time and the hash of its bytes.
+	// Empty for a built-in, which has no file to be stale against.
+	Version string           `json:"version,omitempty"`
+	Errors  []workflow.Error `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []workflow.Error `json:"warnings,omitempty"`
 	Error    *string          `json:"error"`
@@ -93,6 +97,14 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 				Type:  st.Type,
 				Agent: agentOf(e.Workflow, st),
 			})
+		}
+	}
+	if e.File != "" {
+		// A file that vanished between the load and this call has no version
+		// rather than failing the request: the entry is still worth listing,
+		// and the next PATCH will 404 on the lookup anyway.
+		if v, err := workflow.Version(e.File); err == nil {
+			out.Version = v
 		}
 	}
 	if len(e.Errors) > 0 {

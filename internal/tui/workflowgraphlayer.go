@@ -254,6 +254,10 @@ func (w *workflowsView) openStepModal() {
 // ? overlay describe the keys that actually work.
 func (w *workflowsView) bindingContext() bindingContext {
 	switch {
+	case w.create != nil:
+		return ctxWorkflowCreate
+	case w.editor != nil:
+		return ctxWorkflowEditor
 	case w.graph != nil && w.graph.modal != nil:
 		return ctxWorkflowStep
 	case w.graph != nil:

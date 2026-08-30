@@ -112,13 +112,14 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/m10-gate.sh                           # the daemon's MCP server (§13.4)
 ./scripts/m11-gate.sh                           # editing config.yaml over the API (§12.3)
 ./scripts/m12-gate.sh                           # container step execution (§16); skips without docker
+./scripts/m13-gate.sh                           # authoring a workflow over the API (§8.2, §13.2)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 ```
 
-All nine of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
-is the tenth and the exception: it needs a real container runtime, so it runs
+All ten of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
+is the eleventh and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in

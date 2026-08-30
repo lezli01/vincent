@@ -101,6 +101,34 @@ list with the user-facing context a commit subject cannot carry.
   commits intact, and one checked out in another worktree blocks rather than
   letting git's own message surface.
 
+- **A workflow editor in the TUI: create, edit and fork through structured
+  forms.** The workflows screen authored nothing — `e` handed the terminal to
+  `$EDITOR` on raw YAML, and that was the whole story, which left the workflow
+  as the one first-class thing you could not author from the product. It now
+  takes three more keys: `i` opens a structured form on the entry under the
+  cursor, `a` creates a workflow in a scope you pick, and `f` forks a built-in
+  or global entry into a project, where it shadows the original. `e` is
+  unchanged and still means `$EDITOR` — it is the escape hatch for a file too
+  broken for the forms to load.
+
+  The forms are rendered from a schema the daemon serves
+  (`GET /v1/workflows/schema`), so a field that is not legal on the step you
+  are editing is one you are never offered: no `run:` row on an `agent` step,
+  no `manual` in the `type` row inside a `parallel` group, no `break` outside a
+  loop. **A save preserves everything you did not edit** — comments, key order,
+  blank lines, block scalars and CRLF endings all survive, because the client
+  sends edit operations and the daemon applies them to the file's own bytes
+  rather than re-emitting the document from a struct.
+
+  New routes: `POST /v1/workflows` (create or fork), `PATCH /v1/workflows`
+  (apply edit operations) and `GET /v1/workflows/schema`. A workflow file has
+  writers other than you — the `create-workflow` built-in, your own `$EDITOR`
+  — so a read hands back a version token and a write that carries a stale one
+  is refused with 409 instead of silently overwriting; the form offers to
+  re-read. Both write routes are excluded from MCP: an agent must not edit the
+  workflows the daemon supervising it runs. No delete, and no CLI counterpart —
+  `vincent workflow init|validate|render` already cover that surface.
+
 - **Enum task fields, with a value picker in New task, and a `default:` for
   every field type.** A workflow's `fields:` gains `type: enum`, whose members
   are declared in `values:` and published through `GET /v1/workflows` — which a

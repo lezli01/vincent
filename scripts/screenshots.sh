@@ -708,6 +708,27 @@ Screenshot "'"$OUT"'/tui-workflow-graph.png"
   # Screenshot: keys inside Hide never reach a screenshot, and a Screenshot is
   # written on the next captured frame, so a tape ending on one records
   # nothing.
+  # The structured editor (task 065), open on the same fan-out workflow: rows
+  # rendered from the served §8.2 schema, with the row under the cursor
+  # explaining itself. `i` is pressed outside a Hide block and the tape does
+  # not end on the Screenshot, for the two VHS traps documented above.
+  tape tui-workflow-editor 1400 '
+Type ":"
+Sleep 1s
+Type "workflows"
+Sleep 1s
+Enter
+Sleep 3s
+Down 3
+Sleep 1s
+Type "i"
+Sleep 4s
+Down 4
+Sleep 2s
+Screenshot "'"$OUT"'/tui-workflow-editor.png"
+Sleep 2s
+'
+
   tape tui-workflow-step 1400 '
 Type ":"
 Sleep 1s

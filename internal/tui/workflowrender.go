@@ -17,6 +17,12 @@ func (w *workflowsView) render(width, height int) string {
 	if height > 0 {
 		w.height = height
 	}
+	if w.create != nil {
+		return w.renderCreate(width, height)
+	}
+	if w.editor != nil {
+		return w.renderEditor(width, height)
+	}
 	if w.graph != nil {
 		w.sizeGraph()
 		var out string

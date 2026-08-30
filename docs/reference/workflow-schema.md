@@ -2,6 +2,11 @@
 
 # Workflow schema
 
+The daemon serves this table as data at `GET /v1/workflows/schema` — which
+fields are legal on which step type, and where each type may be nested. The
+TUI's structured editor renders its forms from it rather than carrying a second
+copy, which is why a form cannot offer you a field this page says is illegal.
+
 The complete YAML field reference. For a practical, pattern-oriented tour, see
 [Writing workflows](../guides/workflows.md).
 

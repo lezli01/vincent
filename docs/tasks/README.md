@@ -78,6 +78,7 @@ the living engineering specification records implementation contracts.
 | [062](062-agent-steps-in-containers.md) | Agent steps inside the task's container | 📋 planned (0/1) |
 | [063](063-free-chat.md) | Free chat: conversational agent sessions beside tasks | 🔄 in progress (1/3) |
 | [064](064-task-from-pull-request.md) | Create a task from a pull request, on the PR's head branch | 🔄 in progress (8/9) |
+| [065](065-workflow-editor-in-the-tui.md) | A workflow editor in the TUI: create, edit and fork through structured forms | ✅ done (13/13) |
 
 ## How to add and update a task document
 

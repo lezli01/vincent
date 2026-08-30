@@ -22,6 +22,13 @@ If you would rather read one working workflow than a guide, start with
 [`feature-pr.yaml`](../../examples/feature-pr.yaml) and come back here for the
 parts you want to change.
 
+There is a third way in, if you would rather not read YAML at all: the
+[workflows screen](tui.md#authoring--i-a-f) creates, edits and forks these
+files through structured forms. It knows the schema below, so it will not offer
+you a field the step you are editing cannot carry. Everything on this page is
+still what the file says — the forms write the same YAML, and keep the comments
+you put in it.
+
 ## Agent-assisted authoring
 
 The portable [vincent Workflows skill](../../skills/vincent-workflows/SKILL.md)
