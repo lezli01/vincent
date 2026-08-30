@@ -13,11 +13,20 @@
 #   5. `container.network: false` with `mcp.wire_steps: true` is refused at task
 #      creation with a 400 naming both keys
 #
-# It **skips cleanly** (exit 0, one line saying why) when `docker info` fails.
-# CI runs it on the Linux leg only — the macOS and Windows GitHub runners have
-# no docker daemon — and that skip is what keeps the other two legs green. This
-# is a real coverage gap and it is stated rather than implied: a gate that has
-# never run on a platform is not known to pass there.
+# It **skips cleanly** (exit 0, one line saying why) on a host that cannot run
+# the feature. CI runs its assertions on the Linux leg only, and the two skips
+# are not the same skip:
+#
+#   - macOS: the GitHub runner has no docker daemon, so `docker info` fails.
+#   - Windows: the runner *does* ship docker, and its daemon answers — but in
+#     Windows-container mode, where `FROM alpine:3` fails with "no matching
+#     manifest for windows/amd64". A daemon probe alone therefore does not skip
+#     there, and the gate has to say so itself. It would be a pointless run in
+#     any case: a Windows daemon refuses containerized tasks at creation
+#     (decision 2), so there is nothing on that platform for this to assert.
+#
+# That is a real coverage gap and it is stated rather than implied: a gate that
+# has never run on a platform is not known to pass there.
 #
 # No agent CLI is involved: the steps are `command` steps, so the gate is as
 # fast on CI as it is locally. Their `run:` bodies are the one place in this
@@ -31,6 +40,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Before the runtime probes, because it is a statement about the daemon under
+# test and not about docker: a Windows daemon refuses a containerized task at
+# creation (decision 2), so every assertion below is unreachable there.
+if [[ "${OS:-}" == "Windows_NT" ]]; then
+  echo "SKIP: a windows daemon refuses containerized tasks (decision 2); the container gate needs a posix host"
+  exit 0
+fi
+
 DOCKER="${VINCENT_GATE_RUNTIME:-docker}"
 if ! command -v "$DOCKER" >/dev/null 2>&1; then
   echo "SKIP: $DOCKER is not installed; the container gate needs a real runtime"
@@ -38,6 +55,14 @@ if ! command -v "$DOCKER" >/dev/null 2>&1; then
 fi
 if ! "$DOCKER" info >/dev/null 2>&1; then
   echo "SKIP: $DOCKER is installed but no daemon answered; the container gate needs a real runtime"
+  exit 0
+fi
+# A daemon that answered still may not run the gate's image. Docker in
+# Windows-container mode is the case that turned up in CI: it answers `info`
+# and then fails `FROM alpine:3` with "no matching manifest for windows/amd64".
+OSTYPE_OF_RUNTIME="$("$DOCKER" info --format '{{.OSType}}' 2>/dev/null || true)"
+if [[ "$OSTYPE_OF_RUNTIME" != "linux" ]]; then
+  echo "SKIP: $DOCKER runs ${OSTYPE_OF_RUNTIME:-unknown} containers; the container gate needs linux images"
   exit 0
 fi
 
@@ -278,16 +303,25 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [[ "$(count_containers_for "$KILL_TASK")" == 1 ]] || fail "task $KILL_TASK never got a container"
+# The orphan is identified *before* the kill, and the assertion below is about
+# this id and not about a count. Recovery re-runs the interrupted step as an
+# attempt that does not consume a retry, and that admission creates the task a
+# fresh container under the same name — so "no container for this task" is true
+# only in the window between the removal and the re-creation, and polling for
+# it is a race that lost about one run in three. A container id is never
+# reused, so "this one is gone" is a settled fact instead of a moment.
+ORPHAN="$(containers_for "$KILL_TASK")"
 DAEMON_PID="$(jq -r .pid "$DATA_DIR/daemon.json")"
 kill -9 "$DAEMON_PID" 2>/dev/null || fail "could not kill the daemon"
 sleep 2
 daemon_up
 for _ in $(seq 1 30); do
-  [[ "$(count_containers_for "$KILL_TASK")" == 0 ]] && break
+  "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1 || break
   sleep 1
 done
-[[ "$(count_containers_for "$KILL_TASK")" == 0 ]] \
-  || fail "recovery left task $KILL_TASK's container running"
+if "$DOCKER" inspect "$ORPHAN" >/dev/null 2>&1; then
+  fail "recovery left task $KILL_TASK's container $ORPHAN behind"
+fi
 echo "   ok: recovery removed the orphaned container"
 
 echo "== scenario 5: no network with wired MCP is refused at creation"

@@ -161,10 +161,16 @@ says so and the gate resolves its own temporary directory with `pwd -P`.
 `scripts/m12-gate.sh` covers what unit tests cannot: a real runtime, exactly
 one container per containerized task, a step timeout that stops the process
 while the container survives, and a daemon killed mid-step leaving no container
-behind. It **skips cleanly** when `docker info` fails, which is what keeps the
-macOS and Windows CI legs green — those runners have no docker daemon. That is
-a real coverage gap and it is stated rather than implied: a gate that has never
-run on a platform is not known to pass there.
+behind. It **skips cleanly** on a host that cannot run the feature, which is
+what keeps the macOS and Windows CI legs green — but the two skips are not the
+same skip. The macOS runner has no docker daemon, so `docker info` fails. The
+Windows runner ships docker and its daemon answers, in Windows-container mode,
+where the gate's `FROM alpine:3` fails with "no matching manifest for
+windows/amd64" — so the gate refuses on the host platform before it probes
+anything, which is the honest reason anyway: a Windows daemon refuses a
+containerized task at creation (decision 2), leaving nothing there to assert.
+That is a real coverage gap and it is stated rather than implied: a gate that
+has never run on a platform is not known to pass there.
 
 ## Out of scope
 

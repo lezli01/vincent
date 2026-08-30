@@ -120,7 +120,11 @@ VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 All nine of those run in `ci.yml`'s `gates` job on all three platforms. `m12`
 is the tenth and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
-why) on the macOS and Windows runners, which have no docker daemon. `m6`, `m7` and
+why) on the other two — but for two different reasons, and only one of them is
+"no docker". The macOS runner has no daemon. The **Windows runner does**, in
+Windows-container mode, where `FROM alpine:3` fails with "no matching manifest
+for windows/amd64"; probing for a daemon is therefore not enough to skip there,
+and the gate refuses on the host platform first. `m6`, `m7` and
 `m8` spent a while unwired because a cloud session's token has no `workflow`
 scope and so cannot write `.github/workflows/` by any route — push or API
 (#120, #122, #125). A gate that has never run on a platform is not known to
