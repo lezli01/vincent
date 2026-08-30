@@ -68,8 +68,10 @@ func TestGitHubPullsListing(t *testing.T) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("pulls body: %v (%s)", err, body)
 	}
-	if len(out) != 2 {
-		t.Fatalf("listing has %d rows, want the 2 open ones", len(out))
+	// Three open rows in the corpus now: two same-repository ones and the
+	// fork task 064 added.
+	if len(out) != 3 {
+		t.Fatalf("listing has %d rows, want the 3 open ones", len(out))
 	}
 	// The merged pull request in the corpus is not in the listing: an
 	// open-only listing that carried it would disagree with `gh pr list`.

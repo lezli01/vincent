@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue, prefilled and editable; issue details in templates; a project's open pull requests, each linked to the task whose branch it came from; read-only, no stored credential |
+| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -355,6 +355,29 @@ every time it is shown, which is what lets a task still name a pull request that
 has since merged and dropped off the open listing. A task with no pull request is offered a prefilled compare URL
 instead — GitHub's own "open a pull request" page, carrying the task's title and
 description, and `Closes #N` when the task came from an issue.
+
+## Run a pull request
+
+The other direction: turn a pull request into a task. Press `c` on the
+pull-requests screen, or run
+`vincent task add --project ID --github-pull N`. The new-task form opens
+prefilled with the pull request's title and body, editable like any other draft,
+and the task that comes out runs **on that pull request's head branch** — its
+worktree is that branch checked out with an upstream, so when a workflow pushes,
+the work lands on the pull request. Addressing review, fixing CI and extending
+somebody's branch stop being out-of-band git.
+
+`s` cycles the listing between open, closed and all, so a merged pull request you
+want to redo is reachable. A workflow field declared `pull` receives the number,
+which is how a `run:` step acts on the pull request. A fork works too: its head
+is fetched and checked out, and vincent says up front that nothing can be pushed
+back to it.
+
+Two branch rules follow from the task not owning its branch. If you already have
+that branch locally, vincent fast-forwards it, and refuses rather than discarding
+anything when it has diverged or is checked out somewhere else. And archiving
+such a task never deletes the branch — local or remote — because vincent did not
+cut it.
 
 This is one of two things vincent does on the network without being asked — the
 other is the release check under [Run it on your platform](#run-it-on-your-platform)

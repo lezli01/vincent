@@ -172,10 +172,14 @@ type pullRequestsView struct {
 	// a bare number and the daemon resolves the repo from the task's project,
 	// so offering a task from another project would link that project's repo
 	// to a number that means something else there.
-	picker      *picker
-	pickerPull  int
-	pickerRepo  string
-	confirm     *unlinkPrompt
+	picker     *picker
+	pickerPull int
+	pickerRepo string
+	confirm    *unlinkPrompt
+	// state is the listing's `state=` parameter, cycled by `s` (task 064
+	// decision 9). It starts at `open` — 052's default and still the answer
+	// to the question this screen usually asks.
+	state       string
 	note        string
 	noteBad     bool
 	refreshWait bool
@@ -187,7 +191,7 @@ func newPullRequestsView() *pullRequestsView {
 	fi := textinput.New()
 	fi.Placeholder = "filter by number, title, branch or project"
 	fi.Prompt = "/"
-	return &pullRequestsView{now: time.Now, filter: fi}
+	return &pullRequestsView{now: time.Now, filter: fi, state: pullStates[0]}
 }
 
 func (v *pullRequestsView) title() string { return "Pull requests" }
@@ -299,6 +303,7 @@ func (v *pullRequestsView) loadCmd() tea.Cmd {
 	}
 	v.loading = true
 	projects := append([]githubProject(nil), v.available...)
+	state := v.state
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -309,7 +314,8 @@ func (v *pullRequestsView) loadCmd() tea.Cmd {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				pulls, err := client.ListGitHubPulls(ctx, gp.project.ID, 0)
+				pulls, err := client.ListGitHubPulls(ctx, gp.project.ID,
+					apiclient.GitHubPullsOptions{State: state})
 				if err != nil {
 					groups[i].err = githubReasonMessage(err)
 					return
@@ -430,6 +436,11 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.openSelected()
 	case "enter":
 		return v, v.openTask()
+	case "s":
+		v.cycleState()
+		return v, v.loadCmd()
+	case "c":
+		return v, v.createTask()
 	case "l":
 		v.openLinkPicker()
 		return v, nil
@@ -438,6 +449,54 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	}
 	return v, nil
+}
+
+// pullStates is the cycle `s` walks (task 064 decision 9). `open` stays the
+// default, so 052's objection — do not pull a repository's whole pull-request
+// history to answer one question — is not reopened, only made a choice: acting
+// on a merged pull request and redoing a reverted one are real cases, and this
+// screen is now where a task is created from.
+var pullStates = []string{"open", "closed", "all"}
+
+func (v *pullRequestsView) cycleState() {
+	for i, s := range pullStates {
+		if s == v.state {
+			v.state = pullStates[(i+1)%len(pullStates)]
+			v.setNote("listing "+v.state+" pull requests…", false)
+			return
+		}
+	}
+	v.state = pullStates[0]
+}
+
+// createTask opens the new-task form seeded with the selected pull request
+// (task 064). The TUI computes no prefill and makes no GitHub call: it hands
+// the form a project and a number, and the form asks the daemon for the
+// prefill against the workflow it ends up on — 035 decision 2, unchanged.
+//
+// A row another task already claims is refused here rather than at the create
+// call. Two live tasks cannot hold one branch (decision 4), and saying so on
+// the row that shows the claim is more use than a 400 three screens later.
+func (v *pullRequestsView) createTask() tea.Cmd {
+	row, ok := v.current()
+	if !ok {
+		return nil
+	}
+	if row.pull.TaskID != nil {
+		v.setNote("pull request #"+strconv.Itoa(row.pull.Number)+
+			" is already claimed by task "+strconv.FormatInt(*row.pull.TaskID, 10)+
+			" — press enter to open it", true)
+		return nil
+	}
+	if strings.TrimSpace(row.pull.HeadBranch) == "" {
+		v.setNote("pull request #"+strconv.Itoa(row.pull.Number)+
+			" names no head branch, so there is no branch to run a task on", true)
+		return nil
+	}
+	pull := row.pull
+	return func() tea.Msg {
+		return newTaskFromPullMsg{projectID: row.project.ID, pull: &pull}
+	}
 }
 
 // openSelected hands the row's URL to a browser. The URL is GitHub's own,

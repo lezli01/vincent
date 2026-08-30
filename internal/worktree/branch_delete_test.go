@@ -146,7 +146,7 @@ func TestDeleteEmptyBranch(t *testing.T) {
 			m := newManager(t)
 			base, branch := tt.setup(t, m, repo)
 
-			out, err := m.DeleteEmptyBranch(t.Context(), repo, base, "", branch, false)
+			out, err := m.DeleteEmptyBranch(t.Context(), repo, base, "", branch, false, nil)
 			if tt.wantErr && err == nil {
 				t.Fatalf("DeleteEmptyBranch(%s..%s) returned no error", base, branch)
 			}
@@ -195,7 +195,7 @@ func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 		t.Fatalf("remove: %v", err)
 	}
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-work", false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-work", false, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestDeleteEmptyBranchKeepsTheCommitObject(t *testing.T) {
 func TestDeleteEmptyBranchMissingProjectPath(t *testing.T) {
 	m := newManager(t)
 	out, err := m.DeleteEmptyBranch(
-		t.Context(), filepath.Join(t.TempDir(), "not-here"), "main", "", "vincent/1-x", false)
+		t.Context(), filepath.Join(t.TempDir(), "not-here"), "main", "", "vincent/1-x", false, nil)
 	wantReason(t, err, ReasonProjectPathMissing)
 	if out.Result != BranchUnknown {
 		t.Errorf("result = %q, want %q", out.Result, BranchUnknown)
@@ -227,7 +227,7 @@ func TestDeleteEmptyBranchMissingProjectPath(t *testing.T) {
 func TestDeleteEmptyBranchNoBranch(t *testing.T) {
 	repo := testrepo.Init(t, "main")
 	m := newManager(t)
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "", false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "", false, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDeleteEmptyBranchRemote(t *testing.T) {
 		t.Fatalf("fixture is wrong: %s never reached the remote", branch)
 	}
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestDeleteEmptyBranchRemoteNoUpstream(t *testing.T) {
 	// this branch's upstream.
 	testrepo.Run(t, remote, "branch", "vincent/1-local", "main")
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-local", true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", "vincent/1-local", true, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestDeleteEmptyBranchRemoteRejected(t *testing.T) {
 	// unreachable remote there is, and needs no network.
 	testrepo.Run(t, repo, "remote", "set-url", "origin", filepath.Join(remote, "..", "vanished.git"))
 
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, true, nil)
 	if err == nil {
 		t.Fatal("a failed push reported no error")
 	}

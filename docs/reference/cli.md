@@ -382,7 +382,7 @@ whatever wraps this.
 ### `vincent task add`
 
 ```sh
-vincent task add --project ID (--title TITLE | --github-issue N)
+vincent task add --project ID (--title TITLE | --github-issue N | --github-pull N)
                  [--workflow NAME] [--description TEXT] [--base-branch BRANCH]
                  [--branch NAME] [--priority N] [--agent NAME] [--model M]
                  [--effort E] [--field NAME=VALUE]... [--fields-file PATH]
@@ -394,7 +394,7 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | Flag | Notes |
 |---|---|
 | `--project` | **Required** |
-| `--title` | Required unless `--github-issue` supplies one; also the source of the branch slug |
+| `--title` | Required unless `--github-issue` or `--github-pull` supplies one; also the source of the branch slug |
 | `--workflow` | Defaults to the project's default workflow |
 | `--base-branch` | What the task branches **from**. Defaults to the project's default branch |
 | `--branch` | What the task's branch is **called**. Used verbatim and wins over any template; defaults to the project's or the global [`branch_template`](configuration.md#branch_template) |
@@ -403,6 +403,7 @@ Creates a task. It is `queued` immediately — there is no draft state.
 | `--fields-file PATH` | Read fields from a JSON object of string values; `-` reads it from stdin. Combines with `--field`, which wins for a name both supply |
 | `--agent` / `--model` / `--effort` | The task-level override. It replaces workflow `defaults`, never an explicit step field |
 | `--github-issue N` | Create the task from GitHub issue `N`. See below |
+| `--github-pull N` | Create the task from GitHub pull request `N`, **running it on that pull request's head branch**. See below |
 
 Declared workflow fields are validated by the daemon, while additional names
 remain valid and are recorded on the same open field map:
@@ -500,6 +501,53 @@ does not change what a later step renders. It needs the
 [`github` integration](configuration.md#github) on, a github.com `origin`, and a
 credential — run [`vincent github status`](#vincent-github-status) or
 [`vincent doctor`](#vincent-doctor) if the daemon refuses.
+
+#### Creating a task from a pull request
+
+```sh
+vincent task add --project 1 --github-pull 412
+```
+
+```
+task 62 created: #412 Add a thing (adhoc, branch feature/add-a-thing)
+  from lezli01/vincent#412, running on its head branch feature/add-a-thing
+```
+
+Same shape as `--github-issue` — the number and nothing else, resolved by the
+daemon, explicit flags winning over what it would fill in — with one difference
+that is the whole point: **the task's branch is the pull request's head branch**,
+not `vincent/{id}-{slug}`. Its worktree is that branch checked out with an
+upstream, so when a workflow pushes, the commits land on the pull request.
+
+That branch is the one thing you cannot override. `--branch-name` is ignored for
+such a task, and `vincent task retry --branch` on it is refused: renaming it
+would detach the task from the pull request it was created for.
+
+What it fills in: the title (`#N ` and the pull request title), the description
+(the pull request body plus a trailing `GitHub pull request #N: <url>` line), and
+a workflow field declared as `pull`, which receives the **number** — that is how
+a `run:` step acts on the pull request, since a command step reads the
+environment and not the template context.
+
+Things worth knowing before you use it:
+
+- **Closed and merged pull requests work.** Redoing a reverted one and acting on
+  a merged one are why `--state` exists on
+  [`vincent github prs`](#vincent-github-prs).
+- **A fork runs, and cannot push back.** Its head is fetched from
+  `refs/pull/N/head` into a branch with no upstream. The command says so on the
+  line above; a delivery step will fail rather than push somewhere nobody
+  watches.
+- **A local branch of that name is fast-forwarded**, or, if it has diverged, the
+  task blocks with `pull_branch_diverged` and your unpushed commits are left
+  alone. A branch already checked out somewhere — including your own main
+  checkout — blocks with `pull_branch_checked_out`, because git cannot put one
+  branch in two worktrees.
+- **Archiving never deletes that branch.** It is not a branch vincent cut, and
+  `delete_empty_branch_on_archive` does not apply to it — which matters most for
+  a merged pull request, whose branch has no commits past its base.
+- `--github-issue` and `--github-pull` are mutually exclusive: they would prefill
+  the same title and description from different sources.
 
 ### `vincent task ls`
 
@@ -1212,11 +1260,11 @@ output yourself — there is no `--query`.
 ### `vincent github prs`
 
 ```sh
-vincent github prs --project ID [--limit N] [--json]
+vincent github prs --project ID [--state open|closed|all] [--limit N] [--json]
 ```
 
-Lists the project's **open** pull requests, newest first, and names the task
-each one is linked to.
+Lists the project's pull requests, newest first, and names the task each one is
+linked to. `--state` defaults to `open`.
 
 ```
 PR     STATE  TITLE                                        BRANCH                            TASK
@@ -1224,8 +1272,9 @@ PR     STATE  TITLE                                        BRANCH               
 #401   draft  Rework the board header                      vincent/9-rework-the-board-header  -
 ```
 
-`STATE` is `open`, `draft`, `closed` or `merged`; the listing itself is
-open-only, so `closed` and `merged` appear only through a task's own link.
+`STATE` is `open`, `draft`, `closed` or `merged`; the listing defaults to open,
+so `closed` and `merged` need `--state closed` or `--state all` — or a task's
+own link, which reads live whatever the listing was asked for.
 `TASK` is the board task this pull request is linked to. The daemon makes that
 link in the background every
 [`github.poll_interval`](configuration.md#github), matching a pull request's

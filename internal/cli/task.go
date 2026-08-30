@@ -45,6 +45,7 @@ func newTaskAddCmd() *cobra.Command {
 		fields      []string
 		fieldsFile  string
 		githubIssue int
+		githubPull  int
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -96,6 +97,14 @@ func newTaskAddCmd() *cobra.Command {
 					n := githubIssue
 					req.GitHubIssue = &n
 				}
+				// The same shape for a pull request (task 064): the flag
+				// carries the number and nothing else, and the daemon
+				// resolves it — same prefill implementation, and the head
+				// branch it names becomes the task's branch server-side.
+				if cmd.Flags().Changed("github-pull") {
+					n := githubPull
+					req.GitHubPull = &n
+				}
 				t, err := c.CreateTask(ctx, req)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -113,6 +122,14 @@ func newTaskAddCmd() *cobra.Command {
 				// flag carried a number, and the title it produced came from
 				// somewhere the user cannot see from here.
 				if summary := githubIssueSummary(t.GitHubIssue); summary != "" {
+					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
+						return err
+					}
+				}
+				// And which pull request, with the branch consequence stated:
+				// the task's branch is the pull request's head, which is the
+				// one thing --branch-name cannot change (task 064).
+				if summary := githubPullSummary(t); summary != "" {
 					if _, err := fmt.Fprintln(out, "  "+summary); err != nil {
 						return err
 					}
@@ -155,11 +172,17 @@ func newTaskAddCmd() *cobra.Command {
 			"a --field of the same name wins")
 	cmd.Flags().IntVar(&githubIssue, "github-issue", 0,
 		"Create the task from this GitHub issue; explicit flags win over what it would fill in")
+	cmd.Flags().IntVar(&githubPull, "github-pull", 0,
+		"Create the task from this GitHub pull request and run it on that pull request's head branch; "+
+			"explicit flags win over what it would fill in, except --branch-name, which the pull request decides")
 	_ = cmd.MarkFlagRequired("project")
+	// Both would prefill the same title and description from different
+	// sources, and there is no defensible order; the daemon refuses it too.
+	cmd.MarkFlagsMutuallyExclusive("github-issue", "github-pull")
 	// One of the two, not --title alone: an issue supplies the title, which is
 	// the whole point of naming one (task 035). Requiring both would make
 	// `--github-issue` a decoration on a title the user had to retype.
-	cmd.MarkFlagsOneRequired("title", "github-issue")
+	cmd.MarkFlagsOneRequired("title", "github-issue", "github-pull")
 	jsonFlag(cmd)
 	return cmd
 }

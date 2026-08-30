@@ -474,7 +474,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
-| `GET` | `/v1/projects/{id}/github/pulls` | Its **open** pull requests, newest first — `?limit=` |
+| `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
@@ -556,10 +556,17 @@ same task. An unknown workflow name is `400 validation_failed`.
 
 ### GitHub pull requests
 
-`GET /v1/projects/{id}/github/pulls` lists the repository's **open** pull
-requests, newest first; `?limit=` caps the rows. It goes through the same
-capability gate as the issue listing, so a disabled integration or a project
-whose `origin` is not a github.com repository makes no call at all.
+`GET /v1/projects/{id}/github/pulls` lists the repository's pull requests,
+newest first. `?state=` is `open` (the default), `closed` or `all`; `?limit=`
+caps the rows; `?workflow=` adds a computed `prefill` per row — the same shape
+the issue listing carries, and the same one `POST /v1/tasks` applies when you
+name a pull request. It goes through the same capability gate as the issue
+listing, so a disabled integration or a project whose `origin` is not a
+github.com repository makes no call at all.
+
+The default stays open-only on purpose: it is the question the screen usually
+asks, and pulling a repository's whole pull-request history to answer it would
+be paid for by everyone. Reaching a closed or merged one is a choice you make.
 
 It is a pure read: it fetches, normalizes, sorts and returns, and **persists
 nothing**. Linking is the daemon's own job (below).

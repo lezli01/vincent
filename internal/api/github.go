@@ -317,3 +317,102 @@ func (s *Server) applyIssuePrefill(
 	}
 	return &issue, true
 }
+
+// pullPrefill computes what creating a task from this pull request would fill
+// in (task 064 decision 9). It is issuePrefill's counterpart and the **one**
+// implementation of the pull-request half: the listing previews it, POST
+// /v1/tasks applies it, and the TUI renders what the daemon computed — which
+// is what makes "the CLI flag, the API and the TUI produce the same stored
+// task" a testable claim rather than a coincidence (035 decision 2).
+//
+// The only declared field a pull request fills is `pull`, matched by exact
+// name and offered only when the declaration would accept it. There is no
+// `.Pull` template variable for anything else to reach (064 decision 11), so
+// this is the whole of what a workflow learns about the pull request.
+func pullPrefill(pull github.PullRequest, wf *workflow.Workflow) githubPrefill {
+	out := githubPrefill{Title: github.PullTitle(pull), Description: github.PullDescription(pull)}
+	if wf == nil {
+		return out
+	}
+	for _, definition := range wf.Fields {
+		value, ok := github.PullCandidate(pull, github.FieldDecl{Name: definition.Name, Type: definition.Type})
+		if !ok || definition.Validate(value) != "" {
+			continue
+		}
+		if out.Fields == nil {
+			out.Fields = map[string]string{}
+		}
+		out.Fields[definition.Name] = value
+	}
+	return out
+}
+
+// applyPullPrefill resolves a create request's `github_pull` (task 064). It
+// mirrors applyIssuePrefill exactly — same fetch-then-fold shape, same
+// explicit-wins precedence keyed on presence for fields and on blankness for
+// title and description, same re-bounding afterwards — and differs in what it
+// returns: not a snapshot to persist, but the live pull request, which the
+// caller turns into a branch name, a `human` link and nothing else.
+//
+// A request without `github_pull` is left untouched and no GitHub call is
+// made, which is what keeps "a task created without a pull request makes no
+// GitHub call at all" true in the create path.
+//
+// It writes its own error response and reports false when it did.
+func (s *Server) applyPullPrefill(
+	ctx context.Context, w http.ResponseWriter,
+	project *store.Project, wf *workflow.Workflow, req *taskCreateRequest,
+) (*github.PullRequest, github.Repo, bool) {
+	if req.GitHubPull == nil {
+		return nil, github.Repo{}, true
+	}
+	number := *req.GitHubPull
+	if number < 1 {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("github_pull must be a positive pull request number, got %d", number))
+		return nil, github.Repo{}, false
+	}
+	gate := s.githubGateFor(ctx, project)
+	if !gate.avail.Available {
+		writeGitHubUnavailable(w, gate)
+		return nil, github.Repo{}, false
+	}
+	pull, err := s.deps.GitHub.GetPull(ctx, gate.repo, number)
+	if err != nil {
+		writeGitHubError(w, gate, err)
+		return nil, github.Repo{}, false
+	}
+	// The head branch *is* the task's branch (decision 1), so a pull request
+	// that does not name one cannot become a task at all. Refused here rather
+	// than at admission: the human asking is right here to be told why, and a
+	// task that can never run should not reach the board.
+	if strings.TrimSpace(pull.HeadBranch) == "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("pull request #%d names no head branch, so there is no branch to run the task on", number))
+		return nil, github.Repo{}, false
+	}
+	prefill := pullPrefill(pull, wf)
+	if strings.TrimSpace(req.Title) == "" {
+		req.Title = prefill.Title
+	}
+	if req.Description == nil {
+		description := prefill.Description
+		req.Description = &description
+	}
+	for name, value := range prefill.Fields {
+		if _, present := req.Fields[name]; present {
+			continue
+		}
+		if req.Fields == nil {
+			req.Fields = map[string]string{}
+		}
+		req.Fields[name] = value
+	}
+	// Re-bound now that the request carries text vincent fetched rather than
+	// text the caller typed, for the reason applyIssuePrefill does.
+	if msg := boundTaskFields(req.Title, ptrValue(req.Description), req.Fields); msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return nil, github.Repo{}, false
+	}
+	return &pull, gate.repo, true
+}

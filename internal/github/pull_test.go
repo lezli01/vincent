@@ -59,9 +59,11 @@ func TestPullLegsAgreeOnListing(t *testing.T) {
 	want := PullRequest{
 		Repo: "octo/repo", Number: 412,
 		Title:      "List a GitHub project's open pull requests",
+		Body:       "The delivery half of the loop is invisible today.",
 		URL:        "https://github.com/octo/repo/pull/412",
 		State:      StateOpen,
 		HeadBranch: "vincent/231-list-open-pull-requests",
+		HeadRepo:   "octo/repo",
 		BaseBranch: "master",
 		Author:     "octocat",
 		CreatedAt:  time.Date(2026, 8, 26, 19, 21, 29, 0, time.UTC),

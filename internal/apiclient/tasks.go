@@ -487,6 +487,12 @@ type CreateTaskRequest struct {
 	// fetches it, prefills whatever this request left unset, and persists the
 	// snapshot; anything set here wins over the issue-derived value.
 	GitHubIssue *int `json:"github_issue,omitempty"`
+	// GitHubPull creates the task **from** a GitHub pull request and runs it
+	// on that pull request's head branch (task 064). The daemon resolves it,
+	// prefills title, description and a declared `pull` field, writes the
+	// link, and names the branch; everything the caller supplies explicitly
+	// still wins, except the branch, which the pull request decides.
+	GitHubPull *int `json:"github_pull,omitempty"`
 }
 
 // CreateTask creates a task and returns it as the daemon recorded it. The

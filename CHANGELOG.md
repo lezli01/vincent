@@ -80,6 +80,27 @@ list with the user-facing context a commit subject cannot carry.
   step installed, and crash recovery removes a container only after confirming
   it still carries the label naming that task. `vincent doctor` gained a
   container row, which probes the runtime even when the feature is off.
+- **Create a task from a GitHub pull request, checked out on the pull request's
+  head branch.** `POST /v1/tasks` grows `github_pull`, `vincent task add` grows
+  `--github-pull N`, and the pull-requests screen grows `c` — all three resolve
+  the same daemon-side prefill, the way `github_issue` already does, and the
+  title, description and declared fields stay editable before you confirm. The
+  task's branch **is** the pull request's head branch: its worktree is that
+  branch checked out with an upstream, so when a workflow pushes, the commits
+  land on the pull request. A workflow field declared `pull` receives the
+  number, which is how a `run:` step acts on it. Fork pull requests run — their
+  head is fetched from `refs/pull/N/head` into a branch with no upstream, and
+  vincent says up front that nothing can be pushed back. `s` on the same screen
+  cycles the listing between open, closed and all (`?state=` on the API,
+  `--state` on `vincent github prs`), so a merged pull request is reachable; the
+  default stays open-only. Reading only, as before: no write method, no `POST`,
+  no mutating `gh` subcommand.
+- Three new block reasons for that path — `pull_fetch_failed`,
+  `pull_branch_diverged` and `pull_branch_checked_out`. A local branch of the
+  head's name is fast-forwarded; one that has diverged blocks with your unpushed
+  commits intact, and one checked out in another worktree blocks rather than
+  letting git's own message surface.
+
 - **Enum task fields, with a value picker in New task, and a `default:` for
   every field type.** A workflow's `fields:` gains `type: enum`, whose members
   are declared in `values:` and published through `GET /v1/workflows` — which a
@@ -301,6 +322,16 @@ list with the user-facing context a commit subject cannot carry.
   [Using the TUI](docs/guides/tui.md#folding-groups).
 
 ### Changed
+
+- **Archiving never deletes a branch vincent did not cut.**
+  `delete_empty_branch_on_archive` and `delete_remote_branch_on_archive` both
+  skip a task whose branch came from a pull request, and the archive reports
+  `not_ours`. Without this, archiving a task made from a *merged* pull request —
+  which by definition has no commits past its base — would have deleted a
+  contributor's head branch, on the forge with the remote key opted in.
+- `POST /v1/tasks/{id}/retry` refuses `branch_override` with a `409` on a task
+  created from a pull request: renaming its branch would detach it from the pull
+  request it was created for.
 
 - **Worktree directories are named by owner.** A task's is still
   `{data_dir}/worktrees/{task_id}`, unchanged and unmoved; a chat's is

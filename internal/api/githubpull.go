@@ -9,6 +9,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // The GitHub pull-request endpoints (spec §13.2, task 052). Read-only against
@@ -32,6 +33,10 @@ type githubPullResponse struct {
 	// LinkSource is `auto` or `human` when TaskID is set, so a client can say
 	// which kind of claim it is showing.
 	LinkSource string `json:"link_source,omitempty"`
+	// Prefill is what creating a task from this pull request would fill in,
+	// computed server-side (035 decision 2, task 064). Present only when the
+	// request named a workflow.
+	Prefill *githubPrefill `json:"prefill,omitempty"`
 }
 
 // githubTaskPullResponse is GET /v1/tasks/{id}/github/pull: what this task
@@ -77,10 +82,17 @@ type githubPullLinkRequest struct {
 
 // handleProjectGitHubPulls implements GET /v1/projects/{id}/github/pulls.
 //
-// Open only. An open listing is the question the screen is asking — "which of
-// my branches has a pull request" — and a merged one is answered from the
-// task's stored link through handleTaskGitHubPull, not by pulling a
-// repository's whole pull-request history onto one screen.
+// Open by default. An open listing is the question the screen is usually
+// asking — "which of my branches has a pull request" — and 052's objection to
+// listing everything stands: a repository's whole pull-request history is not
+// something to pull onto one screen to answer one question. `state` makes
+// that a choice the human makes rather than a rule (task 064 decision 9),
+// because redoing a reverted pull request and acting on a merged one are real
+// cases and the takeover is now where a task is created from.
+//
+// `workflow` opts into the computed prefill per row, exactly as it does on
+// the issue listing: the declared-field half of a prefill is a fact about a
+// workflow rather than about a pull request.
 //
 // It is **pure**: it fetches, normalizes, sorts and returns, and persists
 // nothing. Writing the link here would make it exist only for projects a
@@ -97,7 +109,7 @@ func (s *Server) handleProjectGitHubPulls(w http.ResponseWriter, r *http.Request
 		writeGitHubUnavailable(w, gate)
 		return
 	}
-	opts := github.ListOptions{}
+	opts := github.ListOptions{State: r.URL.Query().Get("state")}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
@@ -127,12 +139,30 @@ func (s *Server) handleProjectGitHubPulls(w http.ResponseWriter, r *http.Request
 			linked[c.Pull.Number] = c
 		}
 	}
+	// An unknown workflow name is a 400 rather than a silent "no prefill",
+	// for the reason the issue listing gives: the caller asked for a preview
+	// of something, and a preview of nothing would look like the pull request
+	// simply had no metadata.
+	var wf *workflow.Workflow
+	if name := strings.TrimSpace(r.URL.Query().Get("workflow")); name != "" {
+		entry, found := s.deps.Workflows.Lookup(project.ID, name)
+		if !found || !entry.Valid() {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("workflow %q not found for project %d", name, project.ID))
+			return
+		}
+		wf = entry.Workflow
+	}
 	out := make([]githubPullResponse, 0, len(pulls))
 	for _, pull := range pulls {
 		row := githubPullResponse{PullRequest: pull}
 		if c, ok := linked[pull.Number]; ok && c.Pull.Repo == pull.Repo {
 			id := c.TaskID
 			row.TaskID, row.LinkSource = &id, c.Pull.Source
+		}
+		if wf != nil {
+			prefill := pullPrefill(pull, wf)
+			row.Prefill = &prefill
 		}
 		out = append(out, row)
 	}

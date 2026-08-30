@@ -65,6 +65,15 @@ type (
 	// newTaskMsg opens the form, seeded with the project the caller was
 	// looking at.
 	newTaskMsg struct{ projectID int64 }
+
+	// newTaskFromPullMsg opens the form seeded with a pull request (task
+	// 064). It carries the row the takeover was looking at, not a prefill:
+	// the daemon computes prefills, and the form asks for one against the
+	// workflow it settles on (035 decision 2).
+	newTaskFromPullMsg struct {
+		projectID int64
+		pull      *apiclient.GitHubPullRequest
+	}
 	// ntLoadedMsg carries the three catalogs the form needs. They are
 	// fetched together because a form missing any of them cannot render a
 	// single picker honestly.
@@ -106,6 +115,16 @@ type (
 		key    issuesKey
 		issues []apiclient.GitHubIssue
 		err    error
+	}
+	// ntPullPrefillMsg carries the listing a seeded draft's prefill is read
+	// out of (task 064). The project, workflow and number travel with it so a
+	// reply that no longer describes the draft is dropped rather than applied.
+	ntPullPrefillMsg struct {
+		projectID int64
+		workflow  string
+		number    int
+		pulls     []apiclient.GitHubPullRequest
+		err       error
 	}
 	// ntDescriptionMsg carries the result of editing the description in
 	// $EDITOR.
@@ -178,6 +197,15 @@ type newTask struct {
 	// issue is the issue this draft is linked to, nil when none. It is what
 	// `github_issue` on the create request carries.
 	issue *apiclient.GitHubIssue
+	// pull is the pull request this draft was seeded from (task 064), nil for
+	// every other draft. It is what `github_pull` carries, and unlike issue
+	// it is never picked from inside the form: a task runs on a pull
+	// request's head branch, which is a decision made where the pull request
+	// is on screen.
+	pull *apiclient.GitHubPullRequest
+	// pullPrefilled records that the daemon's prefill for pull has landed, so
+	// a second listing reply cannot overwrite rows the human has since edited.
+	pullPrefilled bool
 
 	cursor   ntRow
 	mode     ntMode
@@ -452,13 +480,17 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		return n, nil
 	case newTaskMsg:
 		return n, n.open(msg.projectID)
+	case newTaskFromPullMsg:
+		cmd := n.open(msg.projectID)
+		n.pull = msg.pull
+		return n, cmd
 	case ntLoadedMsg:
 		return n, n.applyLoaded(msg)
 	case ntWorkflowsMsg:
 		if msg.projectID == n.projectID && msg.err == nil {
 			n.workflows = msg.entries
 			n.selectDefaultWorkflow()
-			return n, tea.Batch(n.resolveCmd(), n.issuesCmd())
+			return n, tea.Batch(n.resolveCmd(), n.issuesCmd(), n.pullPrefillCmd())
 		}
 		return n, nil
 	case ntResolvedMsg:
@@ -466,6 +498,9 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		return n, nil
 	case ntGitHubMsg:
 		return n, n.applyGitHub(msg)
+	case ntPullPrefillMsg:
+		n.applyPullPrefill(msg)
+		return n, nil
 	case ntIssuesMsg:
 		n.applyIssues(msg)
 		return n, nil
@@ -966,6 +1001,15 @@ func (n *newTask) request() apiclient.CreateTaskRequest {
 	}
 	if f := n.fieldMap(); len(f) > 0 {
 		req.Fields = f
+	}
+	if n.pull != nil {
+		number := n.pull.Number
+		req.GitHubPull = &number
+		// Same explicit-wins reasoning as a linked issue below: what is on
+		// screen is sent, empties included, or the daemon would put its own
+		// prefill back into a row the human deliberately cleared.
+		req.Description = ptr(n.desc.Value())
+		req.Fields = n.issueFieldMap()
 	}
 	if n.issue != nil {
 		number := n.issue.Number

@@ -51,13 +51,24 @@ func main() {
 	case len(args) >= 3 && args[0] == "issue" && args[1] == "view":
 		issueView(scenario, args[2])
 	case len(args) >= 2 && args[0] == "pr" && args[1] == "list":
-		pullList(scenario)
+		pullList(scenario, flagValue(args, "--state"))
 	case len(args) >= 3 && args[0] == "pr" && args[1] == "view":
 		pullView(scenario, args[2])
 	default:
 		fmt.Fprintf(os.Stderr, "fakegh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(2)
 	}
+}
+
+// flagValue reads `--name value` out of argv, which is how the real CLI takes
+// every one of the flags this fake honours.
+func flagValue(args []string, name string) string {
+	for i, a := range args {
+		if a == name && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func recordArgv(args []string) {
@@ -140,7 +151,7 @@ func issueView(scenario, number string) {
 	os.Exit(1)
 }
 
-func pullList(scenario string) {
+func pullList(scenario, state string) {
 	if fail(scenario) {
 		return
 	}
@@ -152,19 +163,35 @@ func pullList(scenario string) {
 	if scenario == "empty" {
 		pulls = nil
 	}
-	// The listing is open-only, the way `gh pr list` defaults: the merged row
-	// exists in the corpus so `pr view` can answer for it, and it must not
-	// appear here or the two would disagree about what "open" means.
-	open := make([]map[string]any, 0, len(pulls))
+	// `--state` is honoured rather than ignored, the way the real CLI does
+	// it (task 064 decision 9): the daemon now passes closed and all, and a
+	// fake that answered "open" to every one of them would make a test that
+	// asserts a merged pull request is listable pass for the wrong reason.
+	if state == "" {
+		state = "open"
+	}
+	rows := make([]map[string]any, 0, len(pulls))
 	for _, pull := range pulls {
-		if pull["state"] == "OPEN" {
-			open = append(open, pull)
+		st, _ := pull["state"].(string)
+		switch state {
+		case "all":
+			rows = append(rows, pull)
+		case "closed":
+			// MERGED is a closed pull request everywhere in vincent, and `gh`
+			// lists it under --state closed too.
+			if st != "OPEN" {
+				rows = append(rows, pull)
+			}
+		default:
+			if st == "OPEN" {
+				rows = append(rows, pull)
+			}
 		}
 	}
 	if pulls == nil {
-		open = nil
+		rows = nil
 	}
-	emit(open)
+	emit(rows)
 }
 
 func pullView(scenario, number string) {
@@ -194,7 +221,8 @@ func pullView(scenario, number string) {
 // `gh pr list --json`. Three rows on purpose: an open one whose head branch a
 // test or gate can point at a real task, an open draft, and a **merged** one,
 // which is the case the durable link exists to serve and the one an open-only
-// listing can never answer.
+// listing can never answer, and a **fork**, whose head lives in another
+// repository entirely.
 func pullCorpus() []map[string]any {
 	branch := os.Getenv("FAKEGH_PR_BRANCH")
 	if branch == "" {
@@ -202,43 +230,72 @@ func pullCorpus() []map[string]any {
 	}
 	return []map[string]any{
 		{
-			"number":      412,
-			"title":       "Add a thing",
-			"url":         "https://github.com/octo/repo/pull/412",
-			"state":       "OPEN",
-			"isDraft":     false,
-			"headRefName": branch,
-			"baseRefName": "main",
-			"author":      map[string]any{"login": "octocat"},
-			"createdAt":   "2026-08-26T19:21:29Z",
-			"updatedAt":   "2026-08-26T19:30:00Z",
-			"mergedAt":    nil,
+			"number":              412,
+			"title":               "Add a thing",
+			"body":                "Adds the thing, and a test for the thing.",
+			"url":                 "https://github.com/octo/repo/pull/412",
+			"state":               "OPEN",
+			"isDraft":             false,
+			"headRefName":         branch,
+			"headRepository":      map[string]any{"name": "repo"},
+			"headRepositoryOwner": map[string]any{"login": "octo"},
+			"baseRefName":         "main",
+			"author":              map[string]any{"login": "octocat"},
+			"createdAt":           "2026-08-26T19:21:29Z",
+			"updatedAt":           "2026-08-26T19:30:00Z",
+			"mergedAt":            nil,
 		},
 		{
-			"number":      401,
-			"title":       "Draft: rework the board header",
-			"url":         "https://github.com/octo/repo/pull/401",
-			"state":       "OPEN",
-			"isDraft":     true,
-			"headRefName": "vincent/9-rework-the-board-header",
-			"baseRefName": "main",
-			"author":      map[string]any{"login": "hubot"},
-			"createdAt":   "2026-07-01T08:00:00Z",
-			"updatedAt":   "2026-07-02T08:00:00Z",
-			"mergedAt":    nil,
+			"number":              401,
+			"title":               "Draft: rework the board header",
+			"body":                "",
+			"url":                 "https://github.com/octo/repo/pull/401",
+			"state":               "OPEN",
+			"isDraft":             true,
+			"headRefName":         "vincent/9-rework-the-board-header",
+			"headRepository":      map[string]any{"name": "repo"},
+			"headRepositoryOwner": map[string]any{"login": "octo"},
+			"baseRefName":         "main",
+			"author":              map[string]any{"login": "hubot"},
+			"createdAt":           "2026-07-01T08:00:00Z",
+			"updatedAt":           "2026-07-02T08:00:00Z",
+			"mergedAt":            nil,
 		},
 		{
-			"number":      377,
-			"title":       "Ship the thing that already merged",
-			"url":         "https://github.com/octo/repo/pull/377",
-			"state":       "MERGED",
-			"isDraft":     false,
-			"headRefName": "vincent/3-ship-the-thing",
-			"baseRefName": "main",
-			"author":      map[string]any{"login": "octocat"},
-			"createdAt":   "2026-06-01T08:00:00Z",
-			"updatedAt":   "2026-06-02T08:00:00Z",
-			"mergedAt":    "2026-06-02T08:00:00Z",
+			"number":              377,
+			"title":               "Ship the thing that already merged",
+			"body":                "The merged one.",
+			"url":                 "https://github.com/octo/repo/pull/377",
+			"state":               "MERGED",
+			"isDraft":             false,
+			"headRefName":         "vincent/3-ship-the-thing",
+			"headRepository":      map[string]any{"name": "repo"},
+			"headRepositoryOwner": map[string]any{"login": "octo"},
+			"baseRefName":         "main",
+			"author":              map[string]any{"login": "octocat"},
+			"createdAt":           "2026-06-01T08:00:00Z",
+			"updatedAt":           "2026-06-02T08:00:00Z",
+			"mergedAt":            "2026-06-02T08:00:00Z",
+		},
+		{
+			// The fork row (task 064 decision 5). Its head repository is a
+			// different `owner/name`, which is the only thing that makes a
+			// fork detectable at all — and the only reason a task created
+			// from it fetches `refs/pull/{n}/head` and gets no upstream.
+			"number":              355,
+			"title":               "Fix a typo from a fork",
+			"body":                "One character.",
+			"url":                 "https://github.com/octo/repo/pull/355",
+			"state":               "OPEN",
+			"isDraft":             false,
+			"headRefName":         "typo-fix",
+			"headRepository":      map[string]any{"name": "repo"},
+			"headRepositoryOwner": map[string]any{"login": "contributor"},
+			"baseRefName":         "main",
+			"author":              map[string]any{"login": "contributor"},
+			"createdAt":           "2026-05-01T08:00:00Z",
+			"updatedAt":           "2026-05-02T08:00:00Z",
+			"mergedAt":            nil,
 		},
 	}
 }

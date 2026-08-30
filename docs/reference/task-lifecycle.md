@@ -295,6 +295,19 @@ without losing the task: `POST /v1/tasks/{id}/retry` accepts a `branch_override`
 that renames the branch and re-admits it. See
 [Troubleshooting](../guides/troubleshooting.md#projects-and-worktrees).
 
+Three more belong to a task created from a pull request
+([`--github-pull`](cli.md#creating-a-task-from-a-pull-request)), whose branch is
+the pull request's head rather than one vincent cut:
+
+| Reason | What happened |
+|---|---|
+| `pull_fetch_failed` | The pull request's head could not be fetched. There is nothing to fall back to — the fetched commit is where the branch has to be — so unlike the base-branch fetch this blocks rather than degrading quietly |
+| `pull_branch_diverged` | You have a local branch of that name carrying commits the pull request's head does not. Vincent will not discard them; merge or rebase yours, or delete it if it is stale, then retry |
+| `pull_branch_checked_out` | That branch is already checked out in another worktree — vincent's or your own main checkout. Git cannot put one branch in two worktrees. Switch that checkout to another branch, then retry |
+
+`branch_override` is **refused** on such a task: renaming its branch would
+detach it from the pull request it was created for.
+
 ## Interruption is not failure
 
 Vincent is **crash-first**: every transition is persisted before it is acted on.

@@ -238,7 +238,7 @@ func TestDeleteEmptyBranchUsesTheRecordedBaseSHA(t *testing.T) {
 		t.Fatalf("remove: %v", err)
 	}
 	// The branch name alone, which is what a pre-056 row carries.
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, false, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestDeleteEmptyBranchUsesTheRecordedBaseSHA(t *testing.T) {
 		t.Fatalf("without the SHA result = %q, want %q — the premise of the column",
 			out.Result, BranchHasCommits)
 	}
-	out, err = m.DeleteEmptyBranch(t.Context(), repo, "main", c.BaseSHA, branch, false)
+	out, err = m.DeleteEmptyBranch(t.Context(), repo, "main", c.BaseSHA, branch, false, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch with the recorded base: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestDeleteEmptyBranchFallsBackToTheBranchName(t *testing.T) {
 	if err := m.Remove(t.Context(), repo, c.Path, false); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", "", branch, false, nil)
 	if err != nil {
 		t.Fatalf("DeleteEmptyBranch: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestDeleteEmptyBranchRefusesACheckedOutBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAndClaim: %v", err)
 	}
-	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", c.BaseSHA, branch, false)
+	out, err := m.DeleteEmptyBranch(t.Context(), repo, "main", c.BaseSHA, branch, false, nil)
 	if err == nil {
 		t.Fatal("deleted a branch that is checked out in a live worktree")
 	}

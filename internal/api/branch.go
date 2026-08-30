@@ -141,6 +141,19 @@ func (s *Server) renameBranchForRetry(w http.ResponseWriter, r *http.Request, br
 		s.internalError(w, "get task", err)
 		return false
 	}
+	// A pull-request task's branch is not negotiable (task 064 decision 10):
+	// renaming it would detach the task from the pull request it was created
+	// for, so every later commit would go somewhere that pull request never
+	// sees. §10 offers branch_override as the escape hatch from a
+	// `branch_exists` block, and a pull-request task cannot have one — its
+	// mode never refuses a pre-existing branch.
+	if task.GitHubPull.FromPull() {
+		writeConflict(w,
+			fmt.Sprintf("task %d runs on pull request #%d's head branch %q; branch_override would detach it from the pull request",
+				id, task.GitHubPull.Number, task.BranchName),
+			map[string]string{"branch": task.BranchName})
+		return false
+	}
 	if task.State != store.TaskBlocked {
 		writeConflict(w,
 			fmt.Sprintf("branch_override needs a blocked task; task %d is %s", id, task.State),

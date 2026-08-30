@@ -378,6 +378,18 @@ type taskCreateRequest struct {
 	// over the issue-derived one, which is what makes `--github-issue N` and
 	// the TUI's previewed prefill produce the same stored task (decision 2).
 	GitHubIssue *int `json:"github_issue"`
+	// GitHubPull creates this task **from** a GitHub pull request, and runs
+	// it on that pull request's head branch (§13.2, task 064). The daemon
+	// resolves it, prefills title, description and a declared `pull` field
+	// from it, writes the `human` link, and makes the head branch the task's
+	// branch — the top of §5.3's naming chain, above even a typed literal
+	// (decision 1). Explicit values win over prefilled ones exactly as they
+	// do for `github_issue`.
+	//
+	// Naming both `github_issue` and `github_pull` is refused: two prefills
+	// would fight over the same title and description, and there is no
+	// defensible order.
+	GitHubPull *int `json:"github_pull"`
 }
 
 // handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
@@ -459,7 +471,20 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// The GitHub issue prefill (task 035), before field validation because it
 	// is one of the things being validated, and before the title check
 	// because filling the title in is half of what it is for.
+	if req.GitHubIssue != nil && req.GitHubPull != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"github_issue and github_pull cannot both be given: they would prefill the same fields from different sources")
+		return
+	}
 	issue, ok := s.applyIssuePrefill(r.Context(), w, project, entry.Workflow, &req)
+	if !ok {
+		return
+	}
+	// The pull-request prefill (task 064), in the same place and for the same
+	// reasons: before field validation because it is one of the things being
+	// validated, and before the title check because filling the title in is
+	// half of what it is for.
+	pull, pullRepo, ok := s.applyPullPrefill(r.Context(), w, project, entry.Workflow, &req)
 	if !ok {
 		return
 	}
@@ -591,6 +616,22 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		State:            store.TaskQueued,
 		GitHubIssue:      issue,
 	}
+	if pull != nil {
+		// The link is written **at creation**, as `human` (decision 7): the
+		// pull-requests takeover then reads "claimed" immediately rather than
+		// up to `github.poll_interval` later, and 052 decision 2's reconciler
+		// will not overwrite a human link. `Branch` is what records that this
+		// task's branch came from the pull request — admission, archive and
+		// the retry guard all read it (decision 8).
+		t.GitHubPull = &github.PullLink{
+			Repo:     pullRepo.String(),
+			Number:   pull.Number,
+			Source:   github.SourceHuman,
+			Branch:   true,
+			Fork:     pull.Fork(),
+			LinkedAt: time.Now().UTC(),
+		}
+	}
 	// §13.4 provenance and its bounds (task 057 decision 7). Both only apply
 	// to a task an agent step created over MCP; every other caller leaves
 	// created_by_task_id NULL and is bounded by nothing new.
@@ -645,6 +686,9 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// Resolve before the insert so a bad name is a 400 rather than a task that
 	// blocks later, and so the git-side checks run with no transaction open.
 	spec := s.branchSpec(branchName, project)
+	if pull != nil {
+		spec.Pull = pull.HeadBranch
+	}
 	bctx := branchContext(t.Title, t.BaseBranch, t.Fields, project)
 	preview, err := resolveBranchPreview(spec, bctx)
 	if err != nil {
@@ -666,9 +710,16 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			return name, err
 		}
 	} else {
-		if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-			return
+		// A pull-request task is exempt from the collision check: its branch
+		// is *expected* to exist, and refusing it would make the feature
+		// unusable for anyone who has already looked at the pull request
+		// (decision 2). The in-transaction claim check below still runs, so
+		// two live vincent tasks on one head branch remain a 400.
+		if pull == nil {
+			if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+				return
+			}
 		}
 		t.BranchName = preview.Name
 	}
