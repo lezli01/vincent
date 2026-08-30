@@ -125,6 +125,15 @@ func configKeys() []configKey {
 			},
 		},
 		{
+			path: "max_parallel_chats", label: "max parallel chats", kind: kindInt,
+			help: "cap on chats holding a live agent process; separate from the task cap",
+			read: func(c apiclient.Config) string { return strconv.Itoa(c.MaxParallelChats) },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				n, err := parseInt(s)
+				return apiclient.ConfigPatch{MaxParallelChats: &n}, err
+			},
+		},
+		{
 			path: "branch_template", label: "branch template", kind: kindText,
 			help: "Go template for a task's branch name; empty uses the built-in",
 			read: func(c apiclient.Config) string { return c.BranchTemplate },

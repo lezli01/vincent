@@ -111,6 +111,9 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 type Config struct {
 	Listen           string `json:"listen"`
 	MaxParallelTasks int    `json:"max_parallel_tasks"`
+	// MaxParallelChats bounds chats holding a live agent process, counted
+	// separately from MaxParallelTasks (§11, task 063 decision 1).
+	MaxParallelChats int `json:"max_parallel_chats"`
 	// BranchTemplate is empty when the file pins none; the built-in fallback
 	// lives in the daemon, and a project may override it either way.
 	BranchTemplate string         `json:"branch_template"`
@@ -336,6 +339,7 @@ func (c *Client) PatchConfig(ctx context.Context, req ConfigPatch) (Config, erro
 type ConfigPatch struct {
 	Listen                      *string                 `json:"listen,omitempty"`
 	MaxParallelTasks            *int                    `json:"max_parallel_tasks,omitempty"`
+	MaxParallelChats            *int                    `json:"max_parallel_chats,omitempty"`
 	BranchTemplate              *string                 `json:"branch_template,omitempty"`
 	Defaults                    *ConfigDefaultsPatch    `json:"defaults,omitempty"`
 	DeleteEmptyBranchOnArchive  *bool                   `json:"delete_empty_branch_on_archive,omitempty"`
