@@ -424,8 +424,12 @@ func (r *Runner) deleteArchivedBranch(
 	log := r.deps.Logger.With("task", task.ID, "branch", task.BranchName)
 	// The remote leg is attended-only by §10, and this is the attended path:
 	// every caller of Archive is a human asking for this one task.
+	// Whether the branch is ours to delete at all (task 064 decision 3): a
+	// task created from a pull request runs on the contributor's head branch,
+	// and neither leg may touch it.
+	ours := !task.GitHubPull.FromPull()
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive)
+		task.BaseBranch, task.BaseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
 	if err != nil {
 		log.Warn("archive: branch kept", "result", out.Result, "error", err)
 		return out
@@ -437,6 +441,8 @@ func (r *Runner) deleteArchivedBranch(
 	case worktree.BranchHasCommits:
 		log.Info("archive: kept the branch, which has commits past its base",
 			"base", task.BaseBranch)
+	case worktree.BranchNotOurs:
+		log.Info("archive: kept the branch, which came from a pull request and was not cut by vincent")
 	}
 	return out
 }

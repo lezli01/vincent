@@ -213,7 +213,7 @@ func (c *Client) ghVersion(ctx context.Context, path string) string {
 // ghPullFields is the `--json` field set both `gh pr list` and `gh pr view`
 // are asked for, for the reason ghFields is one list: the two calls cannot
 // drift into producing different PullRequests for the same pull request.
-const ghPullFields = "number,title,url,state,isDraft,headRefName,baseRefName,author,createdAt,updatedAt,mergedAt"
+const ghPullFields = "number,title,body,url,state,isDraft,headRefName,headRepositoryOwner,headRepository,baseRefName,author,createdAt,updatedAt,mergedAt"
 
 // ghPull is `gh pr --json`'s shape. Its own type, for the reason ghIssue is:
 // `gh` and the REST API disagree about almost every name (`isDraft` vs
@@ -221,12 +221,24 @@ const ghPullFields = "number,title,url,state,isDraft,headRefName,baseRefName,aut
 type ghPull struct {
 	Number  int    `json:"number"`
 	Title   string `json:"title"`
+	Body    string `json:"body"`
 	URL     string `json:"url"`
 	State   string `json:"state"`
 	IsDraft bool   `json:"isDraft"`
 	Head    string `json:"headRefName"`
-	Base    string `json:"baseRefName"`
-	Author  struct {
+	// `gh` splits the head repository across two fields and neither is
+	// `owner/name`: `headRepository` is the bare name and
+	// `headRepositoryOwner` is the login. Both are null for a pull request
+	// whose fork has been deleted, which normalizes to an empty HeadRepo —
+	// read as "same repository", per PullRequest.Fork.
+	HeadRepo struct {
+		Name string `json:"name"`
+	} `json:"headRepository"`
+	HeadRepoOwner struct {
+		Login string `json:"login"`
+	} `json:"headRepositoryOwner"`
+	Base   string `json:"baseRefName"`
+	Author struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	CreatedAt time.Time  `json:"createdAt"`
@@ -239,10 +251,12 @@ func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
 		Repo:       repo.String(),
 		Number:     g.Number,
 		Title:      g.Title,
+		Body:       g.Body,
 		URL:        g.URL,
 		State:      normalizeState(g.State),
 		Draft:      g.IsDraft,
 		HeadBranch: g.Head,
+		HeadRepo:   joinRepo(g.HeadRepoOwner.Login, g.HeadRepo.Name),
 		BaseBranch: g.Base,
 		Author:     g.Author.Login,
 		CreatedAt:  g.CreatedAt,

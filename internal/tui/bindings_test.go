@@ -400,6 +400,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("u did not ask before unlinking")
 			}
 		},
+		"c": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "unclaimed"))
+			_, cmd := v.updateKey(registryKey(t, "c"))
+			if cmd == nil {
+				t.Fatal("c did not seed the new-task form")
+			}
+			if _, ok := cmd().(newTaskFromPullMsg); !ok {
+				t.Fatalf("c produced %T, want newTaskFromPullMsg", cmd())
+			}
+		},
+		"s": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "ship it"))
+			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
+				t.Fatal("s did not re-list with the new state")
+			}
+			if v.state != "closed" {
+				t.Fatalf("state = %q, want the cycle to have advanced to closed", v.state)
+			}
+		},
 		"R": func(t *testing.T) {
 			v := pullRequestsFixture(testPull(11, "ship it"))
 			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {

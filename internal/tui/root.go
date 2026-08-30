@@ -167,6 +167,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.github = msg.available()
 		}
 		return m, m.broadcast(msg)
+	case newTaskFromPullMsg:
+		return m.updateNewTaskFromPull(msg)
 	case taskCreatedMsg:
 		return m.updateTaskCreated(msg)
 	case connectedMsg:
@@ -427,6 +429,15 @@ func (m *root) openNewTask() tea.Cmd {
 	}
 	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: hint})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// updateNewTaskFromPull opens the new-task form seeded with a pull request
+// (task 064). It goes through the root for the reason openNewTask does: the
+// form has to be told to open before it is shown, because opening is what
+// resets the draft and fetches the catalogs.
+func (m *root) updateNewTaskFromPull(msg newTaskFromPullMsg) (tea.Model, tea.Cmd) {
+	cmd := m.deliver(viewNewTask, msg)
+	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
 }
 
 // updateTaskCreated lands on the task that was just created. Creating a task

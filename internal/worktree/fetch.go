@@ -127,3 +127,35 @@ func baseRev(base, baseSHA string) string {
 	}
 	return "refs/heads/" + base
 }
+
+// fetchPullHead fetches a pull request's head ref and resolves it to a commit
+// (task 064 decision 2).
+//
+// It is fetchBase's shape and deliberately not its policy. A base fetch that
+// fails is silent, because the task can still branch from the local base; a
+// head fetch that fails has nothing to fall back to, because the fetched
+// commit *is* where the task's branch has to be. The caller turns an empty
+// SHA into a block with ReasonPullFetchFailed.
+//
+// The ref is passed in whole rather than derived here: a same-repository pull
+// request is `refs/heads/{head}` and a fork's is `refs/pull/{n}/head`, and
+// which one applies is a GitHub fact this package does not hold.
+func (m *Manager) fetchPullHead(ctx context.Context, repo, remote, ref string) (string, FetchOutcome) {
+	out := FetchOutcome{Remote: remote, Ref: ref, Result: FetchDone}
+	fetchCtx, cancel := context.WithTimeout(ctx, gitx.RemoteTimeout)
+	defer cancel()
+	if _, err := m.git.Run(fetchCtx, repo, "fetch", remote, ref); err != nil {
+		out.Result, out.Error = FetchFailed, err.Error()
+		return "", out
+	}
+	sha, err := m.git.Run(fetchCtx, repo, "rev-parse", "FETCH_HEAD")
+	if err != nil {
+		out.Result, out.Error = FetchFailed, err.Error()
+		return "", out
+	}
+	if !fullHex.MatchString(sha) {
+		out.Result, out.Error = FetchFailed, "FETCH_HEAD did not resolve to a commit"
+		return "", out
+	}
+	return sha, out
+}

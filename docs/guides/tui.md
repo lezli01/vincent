@@ -590,6 +590,16 @@ the issue on GitHub afterwards does not change what a later step sees; the
 snapshot is what [`.Issue`](../reference/workflow-schema.md#template-context)
 renders from.
 
+**The same row shows a pull request** when you arrived here with `c` from the
+[pull-requests screen](#pull-requests) — the number, the title, the head branch,
+and, for a fork, that nothing can be pushed back to it. A pull request is never
+*picked* from inside the form: a task runs on the pull request's head branch, so
+that is a decision made where the pull request is on screen. The prefill lands in
+the same editable rows — the title, the description, and a declared `pull` field
+carrying the number. An issue and a pull request are mutually exclusive on the
+create call: they would prefill the same title and description from two sources,
+and the daemon refuses a request naming both.
+
 On a wide terminal those fields are grouped into six stages in the left rail:
 **Project**, **Workflow**, **Task details**, **Git & priority**, **Execution**,
 and **Review**. The main pane shows only the fields in the current stage, while
@@ -644,8 +654,9 @@ defaults and current workload on the right](../assets/tui-projects.png)
 
 ### Pull requests
 
-Every open pull request across every registered project whose `origin` is a
-github.com repository vincent can authenticate to, grouped by project. Each row
+Every pull request across every registered project whose `origin` is a
+github.com repository vincent can authenticate to, grouped by project. The
+listing starts open-only and `s` cycles it through closed and all. Each row
 carries the number, its state (`open`, `draft`, `closed` or `merged`), the
 title, the head branch, and the task that claims it — with `auto` when the
 daemon's reconciler matched it by head branch and `human` when somebody linked
@@ -660,8 +671,10 @@ that links or unlinks a pull request re-renders the screen with no keypress.
 |---|---|
 | `enter` | Open the workspace of the task that claims this pull request |
 | `o` | Open the selected pull request in a browser |
+| `c` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
 | `l` | Link it to a task in the same project |
 | `u` | Unlink it (asks first) |
+| `s` | Cycle the listing between open, closed and all |
 | `R` | Re-list every project |
 | `↑`/`↓` | Move the selection |
 | `/` | Filter by number, title, branch or project |
@@ -669,6 +682,18 @@ that links or unlinks a pull request re-renders the screen with no keypress.
 `u` is a **sticky** refusal, not a reset: the daemon records that a human
 removed this link, and the reconciler will not re-apply it on its next tick.
 The confirmation says so.
+
+`c` opens the New task form seeded with the row — the screen makes
+no GitHub call of its own and computes no prefill; it hands the form a project
+and a number, and the daemon fills in the rest. It is refused on a row a task
+already claims, saying which task, because two tasks cannot hold one branch, and
+on a row that names no head branch, because then there is nothing to run on.
+
+`s` is why closed and merged rows are reachable at all: the listing defaults to
+open, which is the question this screen usually asks, and pulling a repository's
+whole pull-request history to answer it would be paid for by everyone. Acting on
+a merged pull request and redoing a reverted one are the cases the other two
+states exist for.
 
 ### Workflows
 

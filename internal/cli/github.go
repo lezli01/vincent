@@ -72,20 +72,22 @@ func newGitHubIssuesCmd() *cobra.Command {
 
 // `vincent github prs` is the listing without the TUI (task 052), so it is
 // scriptable and a gate script can assert it over curl and jq without driving
-// a terminal. Open pull requests only: the daemon's listing is open-only, and
-// a merged one is answered from the task that links it.
+// a terminal. Open by default; `--state` reaches the closed and merged ones a
+// task can now be created from (task 064 decision 9).
 func newGitHubPullsCmd() *cobra.Command {
 	var (
 		projectID int64
+		state     string
 		limit     int
 	)
 	cmd := &cobra.Command{
 		Use:   "prs",
-		Short: "List a project's open GitHub pull requests, newest first",
+		Short: "List a project's GitHub pull requests, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				pulls, err := c.ListGitHubPulls(ctx, projectID, limit)
+				pulls, err := c.ListGitHubPulls(ctx, projectID,
+					apiclient.GitHubPullsOptions{State: state, Limit: limit})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
@@ -113,6 +115,7 @@ func newGitHubPullsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int64Var(&projectID, "project", 0, "Project id (required)")
+	cmd.Flags().StringVar(&state, "state", "open", "Pull request state: open, closed or all")
 	cmd.Flags().IntVar(&limit, "limit", 0, "How many pull requests to list (default: the daemon's)")
 	_ = cmd.MarkFlagRequired("project")
 	jsonFlag(cmd)
@@ -164,4 +167,20 @@ func githubIssueSummary(issue *apiclient.GitHubIssue) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprintf("from %s#%d: %s", issue.Repo, issue.Number, issue.Title))
+}
+
+// githubPullSummary is `vincent task add --github-pull`'s confirmation line
+// (task 064). It names the pull request the daemon resolved and the branch
+// consequence, because a task whose branch is somebody else's head branch is
+// not something to discover from `git status` later.
+func githubPullSummary(t apiclient.TaskDetail) string {
+	if t.GitHubPull == nil || !t.GitHubPull.Branch {
+		return ""
+	}
+	out := fmt.Sprintf("from %s#%d, running on its head branch %s",
+		t.GitHubPull.Repo, t.GitHubPull.Number, t.BranchName)
+	if t.GitHubPull.Fork {
+		out += " (a fork: the branch has no upstream, so nothing can be pushed back)"
+	}
+	return out
 }

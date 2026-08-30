@@ -210,11 +210,18 @@ func restError(resp *http.Response, body []byte) *Error {
 type restPull struct {
 	Number  int    `json:"number"`
 	Title   string `json:"title"`
+	Body    string `json:"body"`
 	HTMLURL string `json:"html_url"`
 	State   string `json:"state"`
 	Draft   bool   `json:"draft"`
 	Head    struct {
 		Ref string `json:"ref"`
+		// Repo is null when the head's fork has been deleted, which is why
+		// this is a pointer: an absent repository must normalize to an empty
+		// HeadRepo rather than to `"/"`.
+		Repo *struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
 	} `json:"head"`
 	Base struct {
 		Ref string `json:"ref"`
@@ -235,6 +242,7 @@ func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
 		Repo:       repo.String(),
 		Number:     r.Number,
 		Title:      r.Title,
+		Body:       r.Body,
 		URL:        r.HTMLURL,
 		State:      normalizeState(r.State),
 		Draft:      r.Draft,
@@ -244,6 +252,9 @@ func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  r.UpdatedAt,
 		FetchedAt:  now,
+	}
+	if r.Head.Repo != nil {
+		pull.HeadRepo = r.Head.Repo.FullName
 	}
 	if r.MergedAt != nil && !r.MergedAt.IsZero() {
 		pull.Merged, pull.State = true, StateClosed

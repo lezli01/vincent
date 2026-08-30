@@ -351,6 +351,36 @@ The base branch was deleted, or the repository moved. Re-point the project
 (`PATCH /v1/projects/{id}`, or edit it in the projects view) or set the task's
 base branch to one that exists.
 
+### `pull_fetch_failed` / `pull_branch_diverged` / `pull_branch_checked_out`
+
+These three belong to a task created from a pull request
+([`--github-pull`](../reference/cli.md#creating-a-task-from-a-pull-request)),
+whose branch is the pull request's head rather than one vincent cut. All three
+happen at admission, before any step runs.
+
+`pull_fetch_failed` means the head could not be fetched. Unlike the base-branch
+fetch — which degrades quietly, because the local base is always a valid answer
+— there is nothing to fall back to here: the fetched commit is where the branch
+has to be. Check the network and your GitHub credential (`vincent doctor`), then
+retry.
+
+`pull_branch_diverged` means you already have a local branch of that name and it
+carries commits the pull request's head does not. Vincent never `reset --hard`s
+it — your unpushed commits are still there. Merge or rebase yours onto the head,
+or delete the branch if it is stale, then retry. A branch merely *behind* the
+head is fast-forwarded and never blocks.
+
+`pull_branch_checked_out` means that branch is already checked out in another
+worktree — another vincent task's, or your own main checkout. Git cannot put one
+branch in two worktrees. Switch that checkout to another branch, then retry.
+Within vincent a second task for the same head branch is refused earlier, with a
+`400` at creation.
+
+`branch_override` is **refused** on such a task, so the `branch_exists` escape
+hatch above does not apply: renaming its branch would detach it from the pull
+request it was created for, and every later commit would go somewhere that pull
+request never sees.
+
 ## Workflows
 
 ### A workflow file does not show up

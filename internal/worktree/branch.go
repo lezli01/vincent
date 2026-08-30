@@ -79,6 +79,18 @@ func (c BranchContext) ID() (int64, error) {
 // Levels of the branch-naming chain, reported alongside a resolved name so a
 // client can say *why* a task is getting the name it is getting (task 001).
 const (
+	// BranchSourcePull is the new top of the chain (task 064 decision 1): a
+	// task created from a pull request runs on the pull request's head
+	// branch, and that is not negotiable. A project template or a typed
+	// literal would put the commits somewhere the pull request never sees,
+	// which defeats the feature.
+	//
+	// It sits *above* the literal rather than bypassing the resolver, so
+	// task 001's rule that the chain is resolved server-side and reported
+	// with the level that won still holds — and so `/v1/resolve` can say
+	// `pull` rather than leaving a client to guess why the name it previewed
+	// is not the name it got.
+	BranchSourcePull    = "pull"
 	BranchSourceTask    = "task"
 	BranchSourceProject = "project"
 	BranchSourceConfig  = "config"
@@ -90,6 +102,10 @@ const (
 // from config.yaml. An empty field means "nothing set at this level"; with all
 // three empty the built-in name applies.
 type BranchSpec struct {
+	// Pull is a pull request's head branch, and outranks everything below it
+	// (task 064 decision 1). Like Literal it is used verbatim, never
+	// rendered: it is a name GitHub reports, not a template.
+	Pull            string
 	Literal         string
 	ProjectTemplate string
 	ConfigTemplate  string
@@ -98,15 +114,20 @@ type BranchSpec struct {
 // ResolveBranchName applies the chain and reports both the name and the level
 // that produced it.
 //
-// A Literal is used verbatim, never rendered: it is a name the user typed for one
-// task, and treating it as a template would make a stray brace a syntax error
-// instead of part of a branch name.
+// A Pull or a Literal is used verbatim, never rendered: one is a branch name
+// GitHub reports and the other is a name the user typed for one task, and
+// treating either as a template would make a stray brace a syntax error
+// instead of part of a branch name. A Pull outranks a Literal — the new level
+// does not change what a literal *means*, it just never gets to apply on a
+// task whose branch the pull request already decides (task 064 decision 1).
 //
 // The error is ErrBranchNeedsID, unwrapped, when the winning level needs the task
 // id and c has none — including the built-in default, which always needs it. That
 // is the caller's signal to resolve again after the insert rather than a failure.
 func ResolveBranchName(spec BranchSpec, c BranchContext) (name, source string, err error) {
 	switch {
+	case strings.TrimSpace(spec.Pull) != "":
+		return strings.TrimSpace(spec.Pull), BranchSourcePull, nil
 	case strings.TrimSpace(spec.Literal) != "":
 		return strings.TrimSpace(spec.Literal), BranchSourceTask, nil
 	case spec.ProjectTemplate != "":

@@ -682,22 +682,37 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	// Read per admission, not cached: a hot reload then reaches the next task
 	// admitted, the way usage_limit_recheck_interval reaches the next hold.
 	fetch := r.deps.Config().FetchBaseBranch
-	created, err := r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
-		task.BranchName, task.BaseBranch, fetch, func(c worktree.Created) error {
-			// A failed persist is logged and the run continues, as it always
-			// has: the worktree is real and the step can use it. What it
-			// leaves behind is an unclaimed directory, which is precisely the
-			// crash case `vincent gc` reclaims.
-			var sha *string
-			if c.BaseSHA != "" {
-				sha = &c.BaseSHA
-			}
-			if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &c.Path, sha); err != nil {
-				log.Error("persist worktree path", "error", err)
-			}
-			return nil
-		})
-	logBaseFetch(log, task.BaseBranch, created.Fetch)
+	claim := func(c worktree.Created) error {
+		// A failed persist is logged and the run continues, as it always
+		// has: the worktree is real and the step can use it. What it leaves
+		// behind is an unclaimed directory, which is precisely the crash case
+		// `vincent gc` reclaims.
+		var sha *string
+		if c.BaseSHA != "" {
+			sha = &c.BaseSHA
+		}
+		if err := r.deps.Store.SetTaskProgress(ctx, task.ID, nil, &c.Path, sha); err != nil {
+			log.Error("persist worktree path", "error", err)
+		}
+		return nil
+	}
+	// The second creation mode (§10, task 064): a task created from a pull
+	// request runs *on* that pull request's head branch, so admission fetches
+	// the head and checks it out rather than cutting a new branch. It is
+	// selected by the flag the create call wrote on the link, not by the link
+	// existing — a human may link any task to any pull request, and that must
+	// not change how the task's branch was made (decision 8).
+	var created worktree.Created
+	var err error
+	if task.GitHubPull.FromPull() {
+		created, err = r.deps.Worktrees.CreatePullAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
+			task.BaseBranch, pullSpecFor(task), claim)
+		logPullFetch(log, task, created.Fetch)
+	} else {
+		created, err = r.deps.Worktrees.CreateAndClaim(ctx, project.Path, worktree.TaskOwner(task.ID),
+			task.BranchName, task.BaseBranch, fetch, claim)
+		logBaseFetch(log, task.BaseBranch, created.Fetch)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			// A shutdown mid-create is an interruption, not a git failure.
@@ -714,6 +729,41 @@ func (r *Runner) ensureWorktree(ctx context.Context, task *store.Task, project *
 	task.WorktreePath = created.Path
 	task.BaseSHA = created.BaseSHA
 	return nil
+}
+
+// pullSpecFor assembles the worktree layer's pull-request spec from what the
+// task already carries (task 064). Nothing here is fetched: the head branch
+// *is* `tasks.branch_name` (decision 1) and the fork flag was recorded on the
+// link at creation (decision 8), so admission needs no GitHub call — which is
+// what keeps §10's "creation is offline, admission runs git" shape intact.
+func pullSpecFor(task *store.Task) worktree.PullSpec {
+	spec := worktree.PullSpec{
+		Number: task.GitHubPull.Number,
+		Branch: task.BranchName,
+		Fork:   task.GitHubPull.Fork,
+		Ref:    "refs/heads/" + task.BranchName,
+	}
+	if spec.Fork {
+		// A fork's head branch does not exist in `origin` at all, so it is
+		// read through GitHub's own `refs/pull/{n}/head`. The daemon does not
+		// `git remote add` the fork: a remote left behind after archive is
+		// exactly the residue §10 refuses (decision 5).
+		spec.Ref = fmt.Sprintf("refs/pull/%d/head", spec.Number)
+	}
+	return spec
+}
+
+// logPullFetch reports what the pull-request head fetch did. Unlike the base
+// fetch there is no degraded-but-fine outcome: the task either got the head
+// or blocked, so this is a plain record of which ref was read and from where.
+func logPullFetch(log *slog.Logger, task *store.Task, out worktree.FetchOutcome) {
+	if out.Result == "" {
+		return
+	}
+	log.Info("pull request head fetch",
+		"pull", task.GitHubPull.Number, "branch", task.BranchName,
+		"remote", out.Remote, "ref", out.Ref, "result", out.Result,
+		"fork", task.GitHubPull.Fork)
 }
 
 // logBaseFetch reports what the base-branch fetch did (§10, task 056). Only a

@@ -291,6 +291,13 @@ func (n *newTask) rowValue(row ntRow) string {
 	case ntWorkflow:
 		return n.workflowSummary()
 	case ntIssue:
+		// A draft seeded from a pull request shows the pull request on the
+		// same row: the two are mutually exclusive on the create call, and a
+		// row that said "(none)" while the task was about to run on somebody
+		// else's head branch would be the worst thing this form could say.
+		if summary := n.pullSummary(); summary != "" {
+			return summary
+		}
 		return n.issueSummary()
 	case ntTitle:
 		if n.mode == ntEditing && n.cursor == ntTitle {

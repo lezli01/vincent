@@ -130,7 +130,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
 | 25 | Conditions between steps | `if:` guards any step (skip and carry on) and any fan-out lane or group sub-step (subset the set); `type: condition` ends the sequence with the task `done`; `allow_failure:` turns the failures a step itself produced into an advance, so a guard has a run's own findings to read. Guards are §8.4 templates that must render exactly `true` or `false`, re-evaluated every time and never cached (§7.7, task 015) |
 | 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here |
-| 27 | GitHub pull requests | **Read-only, daemon-side**, like row 26 and through the same gate and credential. A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29) |
+| 27 | GitHub pull requests | **Read-only, daemon-side**, like row 26 and through the same gate and credential. A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29). *Narrowed 2026-08-30 (task 064):* the read-only posture holds in full — no write method, no `POST`, no mutating `gh` subcommand — and a task may now be created **from** a pull request and run on its head branch. That adds a flag to the same envelope (`branch`, `fork`) rather than a snapshot: nothing renderable is stored, so "a pointer, never a snapshot" is unchanged, and there is still no `.Pull` template variable. The consequences live in §10 (a second worktree creation mode, and archive never touching a branch vincent did not cut) and in §5.3's branch-name chain, which gains `pull` above the per-task literal. The listing above is narrowed the same way: it still **defaults** to open, but `?state=` (§13.2) makes a closed or merged pull request reachable, because acting on a merged one and redoing a reverted one are exactly what creating a task from one is for |
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
 | 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30) |
 
@@ -293,9 +293,9 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch` |
-| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one |
+| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override |
 | `worktree_path` | assigned when the worktree is created |
-| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit |
+| `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff |
 | `priority` | integer, default 0; higher runs first |
 | `agent_override` / `model_override` / `effort_override` | optional, chosen at creation (§13.2); replace the workflow's `defaults` but never an explicit step field (§8.6) |
 | `state` | §6 |
@@ -304,7 +304,7 @@ A unit of work delivered by running a workflow against a project.
 | `pending_follow_up` | *Added 2026-08-25 (task 027).* The follow-up run a human asked for from `done` or `aborted` (§6): its compiled workflow, the run form and text it came from, the optional agent/model/effort, the **origin state** the task is returned to, the 1-based **round**, and the run's own **step cursor**. NULL when no follow-up is in flight |
 | `workflow_origin` | *Added 2026-08-28 (task 043).* Where the definition behind `workflow_name` came from, captured **once at creation** beside `workflow_snapshot`. It holds the **scope** that won §5.2's shadowing walk (`builtin`, `global`, `project`, or `derived`), the source **file relative to that scope's root** (`.vincent/workflows/adhoc.yaml`, `workflows/release.yaml`; absent for a built-in, which has none), and a **digest** — `sha256:<hex>` over the registry entry's source bytes exactly as loaded, with no normalization. It is **never recomputed**, so it identifies the *file version the task was created from* rather than the bytes the engine runs: include expansion (§7.9), fan-out resolution (§7.6) and `edit + retry` all rewrite `workflow_snapshot` afterwards, and `edit + retry` is separately audited through `step_runs.prompt_override` / `run_override`. A `fan_out` lane records `derived` naming its parent task (§7.6): its steps come from the parent's snapshot, resolved at the *parent's* creation, so it never read a registry at all. NULL for a task created before this was recorded, which is reported as `unknown` — never re-derived from today's registry, which would report a substitution as though it had always been there |
 | `github_issue` | *Added 2026-08-26 (task 035).* The GitHub issue this task was created from, captured **once at creation** and NULL for every task created without one. It holds the normalized issue — repo, number, title, body, url, state, labels, author, assignee, milestone (title and number), the issue's own timestamps and the instant it was fetched — and it is **never re-fetched**: every step renders `.Issue` (§8.4) from this snapshot, so an issue edited on GitHub afterwards is deliberately not reflected. That is the reasoning `workflow_snapshot` already rests on: a run is reproducible, no network call enters the step path, and a step render still cannot fail for an external reason. A `fan_out` lane inherits its parent's copy verbatim (§7.6) |
-| `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue |
+| `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
 *Amended 2026-08-17 (task 014).* A snapshot may carry a whole fan-out tree: a
@@ -1909,6 +1909,13 @@ VINCENT_WORKTREE, VINCENT_BRANCH, VINCENT_BASE_BRANCH, VINCENT_STEP_ID,
 VINCENT_STEP_ATTEMPT, VINCENT_WORKFLOW
 ```
 
+*Amended 2026-08-30 (task 064).* A workflow that declares a field named `pull`
+(§8.1.2) receives the pull request's **number** in it when the task was created
+from one, and reads it here as any declared field is read — a `run:` body sees
+this environment and not §8.4's template context, which is why the number has to
+be a field at all. There is no `.Pull` template variable and never was; `pull` is
+the only way a workflow learns the number, exactly as `issue` is for an issue.
+
 The precedence is one rule for all three step types: the §12.3 resolved base
 environment, then this block, then a `command` step's own `env:` (which is a
 command-step field, so an agent step has none). Because the block is layered
@@ -2822,6 +2829,42 @@ Two consequences are handled rather than assumed away:
   - **`POST /v1/tasks` is unchanged.** Task creation stays entirely offline and still
     400s on a `base_branch` with no local branch; a base that exists only on the
     remote is not a case this serves.
+
+  *Amended 2026-08-30 (task 064).* There is now a **second creation mode**, for a
+  task created from a pull request (`github_pull`, §13.2). Everything above
+  describes the first mode and is unchanged for it; a pull-request task inverts
+  both halves of "cut a new branch, refuse a pre-existing one", because its branch
+  **is** the pull request's head branch and its commits have to reach the pull
+  request.
+
+  - **No `-b`, and no `branch_exists` refusal.** The head is fetched, the local
+    branch is created at it or fast-forwarded to it, and the worktree is added with
+    `git worktree add {worktree_path} {branch_name}`. A pre-existing local branch of
+    that name is the *normal* case for anyone who has already looked at the pull
+    request.
+  - **The fetch is fatal.** `git fetch {remote} refs/heads/{head}` — or
+    `refs/pull/{n}/head` for a fork — and there is nothing to fall back to, because
+    the fetched commit is where the branch has to be. A failure blocks the task with
+    `pull_fetch_failed` (§18). This is the one place §10 fetches and can block; the
+    base fetch above still never does.
+  - **Fast-forward or block.** A local branch behind the head is fast-forwarded; one
+    that already contains it is left alone; a **diverged** one blocks with
+    `pull_branch_diverged`. It is never `reset --hard`: the local copy may hold
+    unpushed commits. A branch already checked out in another worktree — vincent's
+    or the human's own — blocks with `pull_branch_checked_out`, because git cannot
+    put one branch in two worktrees.
+  - **`--no-track` is narrowed, not reversed.** On a pull-request task the upstream
+    is the deliverable: `branch.{head}.remote` and `branch.{head}.merge` are set
+    deliberately, so a workflow's push reaches the pull request. The hazard the flag
+    exists for is closed from the other end instead — see the archive exception
+    below. A **fork** gets no upstream at all: nothing can push back, and that is
+    said on the task at creation rather than discovered when a delivery step fails.
+    The daemon never runs `git remote add` for a fork.
+  - **`base_sha` is the head commit at admission** (§5.3), so
+    `GET /v1/tasks/{id}/diff` answers "what did this task change" rather than
+    re-rendering the pull request's own diff.
+  - **`POST /v1/tasks` is still entirely offline.** It resolves the pull request over
+    GitHub for the prefill, exactly as `github_issue` does, and runs no git.
 - **Branch naming:** `vincent/{task_id}-{slug}` by default. A pre-existing branch of
   the same name fails the task with a clear error rather than reusing it.
 
@@ -2850,6 +2893,17 @@ Two consequences are handled rather than assumed away:
     every write in the daemon.
   - `branch_exists` is recoverable through `POST /v1/tasks/{id}/retry`'s
     `branch_override` (§12.2). Without it a blocked task would be permanently dead.
+
+  *Amended 2026-08-30 (task 064).* The chain grows a level above the literal:
+  `built-in < config.yaml < project < per-task literal < pull request`, reported by
+  `/v1/resolve` as source `pull`. A task created from a pull request runs on that
+  pull request's head branch and nothing else may name it — a project template or a
+  typed literal would put the commits somewhere the pull request never sees. Two
+  consequences, both refusals: the creation-time collision check does not apply to a
+  pull-request task (its branch is expected to exist; the in-transaction claim check
+  against other unarchived tasks still does, and still 400s), and
+  `retry { branch_override }` is **refused with a 409** on such a task, since
+  renaming its branch would detach it from the pull request it was created for.
 - **Chat worktrees (added 2026-08-30, task 063).** A chat (§5.5) gets a worktree
   and a `vincent/{id}-{slug}` branch on exactly the terms above: same root, same
   branch template, same dirty detection, same archive semantics (§13.2's
@@ -2931,6 +2985,16 @@ Two consequences are handled rather than assumed away:
     exist. Local leg only, best-effort, exactly like the worktree removal beside it.
   - **`vincent gc` and `vincent doctor --fix` gain nothing** — see the task 005
     amendment below.
+  - *Amended 2026-08-30 (task 064).* **Neither leg runs on a branch vincent did not
+    cut.** Task 008 was designed on the premise that vincent only ever deletes
+    branches it created; that premise was implicit until a task could be created from
+    a pull request (§13.2). A task made from a **merged** pull request is exactly "no
+    commits past its base" — the case this policy fires on — and with
+    `delete_remote_branch_on_archive` opted in it would delete a contributor's head
+    branch on the forge. Such a task's archive reports `not_ours` and skips both legs;
+    the worktree is still removed and pruned. This is also what lets a pull-request
+    task carry a real upstream (§10's `--no-track` narrowing) without reopening the
+    hazard that flag exists for.
   - **The outcome is reported on the archive response (§13.2), not as an event.**
     `archived` is terminal and a `block_reason` would be a lie on it; every other path
     logs to `daemon.log`. No new event type and no migration.
@@ -4329,6 +4393,14 @@ GET    /v1/projects/{id}/github/pulls   *Added 2026-08-29 (task 052).* The proje
                                         only when someone looks is not a durable link, and no
                                         other write in this API is a GET. Rows a task claims
                                         carry `task_id` and `link_source` (auto | human)
+                                        *Amended 2026-08-30 (task 064):* `?state=` (open |
+                                        closed | all, default **open**) and `?workflow=`, which
+                                        adds a computed `prefill` per row — the same shape the
+                                        issues listing carries, and the same one POST /v1/tasks
+                                        applies, so a preview a human accepted and a create
+                                        call naming only the number produce the same task. The
+                                        default stays open-only: closed and merged are now a
+                                        choice a human makes, not a listing everyone pays for
 GET    /v1/tasks/{id}/github/pull       *Added 2026-08-29 (task 052).* This task's pull request:
                                         the stored link plus the **live** pull request, fetched
                                         by number. Always **200**, whatever GitHub says — a
@@ -4486,7 +4558,7 @@ GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_
                                         drifts from the rows it counts.
 POST   /v1/tasks                        { project_id, workflow, title, description?, fields?,
                                           base_branch?, branch_name?, priority?, agent?,
-                                          model?, effort?, github_issue? }
+                                          model?, effort?, github_issue?, github_pull? }
                                         branch_name is used verbatim and wins over every
                                         template (§10, task 001)
                                         → task (state=queued); agent/model/effort form the
@@ -4514,6 +4586,21 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         An unusable integration is the same **409** with
                                         `details.reason` the issues endpoint returns; a request
                                         without github_issue makes no GitHub call at all
+                                        *Added 2026-08-30 (task 064):* github_pull is a pull
+                                        request **number**, and behaves exactly as github_issue
+                                        does — one prefill implementation, explicit values win,
+                                        `title` becomes optional, the same 409, and no GitHub
+                                        call without it — with three additions. The task's
+                                        `branch_name` **is** the pull request's head branch and
+                                        outranks `branch_name` in the request (§5.3, §10). The
+                                        `github_pull` link is written at creation as `human`, so
+                                        the takeover reads "claimed" immediately rather than a
+                                        poll interval later, carrying `branch` and (for a fork)
+                                        `fork`. No snapshot is persisted: the prefilled title and
+                                        description become ordinary task text, and nothing
+                                        re-renders draft/state/merged later. Naming both
+                                        github_issue and github_pull is a **400** — two prefills
+                                        over one title and description, with no defensible order
                                         *Added 2026-08-28 (task 040):* accepts an optional
                                         `Idempotency-Key` header. Same key + same request →
                                         `201` with the task the first send created; same key +
@@ -5645,6 +5732,19 @@ task 051, 2026-08-29, added the Workflow tab). Views 3–7 are
 full-screen takeovers reached from the command palette (view 7 added
 2026-08-29 by task 052.6).
 
+*Amended 2026-08-30 (task 064).* View 7 gains two keys. **`c`** opens the
+new-task form seeded with the selected pull request: the daemon computes the
+prefill and the form previews it in editable rows, so the TUI still makes no
+GitHub call of its own (task 035 decision 2). The created task runs on the pull
+request's head branch, which is the one row of that form the human cannot
+change. A row another task already claims is refused on the row rather than at
+the create call — two live tasks cannot hold one branch. **`s`** cycles the
+listing between `open`, `closed` and `all`; the default stays `open`, so the
+screen still answers "which of my branches has a pull request" without pulling a
+repository's whole history to do it. **`P` on a task workspace is unchanged** and
+already withholds itself on a task that has a live link: the pull request such a
+task was created from already exists.
+
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
 unixes, the shell's protocol handler on Windows — and to nothing else. Only
@@ -6408,6 +6508,10 @@ else.
 | Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
+| A pull request's head cannot be fetched | *Added 2026-08-30 (task 064).* A task created from a pull request runs on that pull request's head branch, so the fetch has nothing to fall back to. The task blocks with `pull_fetch_failed` at admission — deliberately unlike §10's base fetch, which is silent because a local base is always a valid answer |
+| A local branch of a pull request's head has diverged | *Added 2026-08-30 (task 064).* Blocked with `pull_branch_diverged`. Never `reset --hard`: the local copy may hold commits nobody has pushed, and discarding them silently is the same dishonesty §10 refuses for branch names. A branch merely *behind* the head is fast-forwarded and the task proceeds; one already *containing* it is left alone |
+| A pull request's head branch is checked out elsewhere | *Added 2026-08-30 (task 064).* Blocked with `pull_branch_checked_out`, naming the worktree that holds it — vincent's or the human's own main checkout. git cannot put one branch in two worktrees, and this is the honest way to say so rather than letting git's own message surface. Within vincent a second task for the same branch is already a `400` from task 001's in-transaction claim check |
+| `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |
 | Configured branch name is not a legal git ref | `400` with `branch_name_invalid`, quoting git's own rules. Never sanitized into something legal — a branch the user did not ask for is worse than a rejection (task 001) |
 | Branch template references a field the task does not set | `400` at creation. Note that `{{.Fields.x}}` errors while `{{ index .Fields "x" }}` renders empty by design (§8.4's `missingkey=error` covers map *field* access only), and `feat/-slug` is a legal ref — so the loud form is the documented default for branch templates |
 | Archive-time branch delete fails | *Added 2026-08-16 (task 008).* Checked out in another worktree (git refuses, and refuses the same under `-d` and `-D`), the base branch renamed away so the emptiness test cannot run, a remote that rejects the push or never answers inside `RemoteTimeout` — none of it fails the archive. The worktree is already gone and the task must still reach `archived`. It is logged, reported on the response as `error`/`unknown`, and the branch survives, which is the pre-008 behaviour. The remote leg cannot even be reached without a local delete that succeeded first. *Amended 2026-08-29 (task 056):* the local delete is `git branch -D` when the task recorded a `base_sha` (§10), which is why the refusal above is stated of git rather than of the lower-case flag |
@@ -6718,6 +6822,16 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   task column could *not* carry a PR shape, because `github_issue_json` is
   defined as "NULL = no linked issue" holding a bare `Issue`, so `github_pull_json`
   is a sibling column (migration 0018) rather than a widening.
+  **Promoted further, 2026-08-30** (§5.3, §8.5, §10, §13.2, §15, §18; decision
+  record row 27, task 064): a pull request is not only visible but **runnable** —
+  a task can be created from one and its worktree is that pull request's head
+  branch, checked out with an upstream, so the agent's commits reach the pull
+  request when a workflow pushes. Still reading only: no write method, no `POST`,
+  no mutating `gh` subcommand, and row 11 stands. The costs are recorded where
+  they land rather than here — §10 gained a second worktree creation mode and an
+  archive exception (vincent never deletes a branch it did not cut), §18 gained
+  three block reasons, and the branch-name chain gained a level above the
+  per-task literal.
 - ~~Container/VM-sandboxed step execution~~ — **the container half is
   promoted out of future work, 2026-08-30** (§16, task 061, issue #256): a
   `container:` block names an image, and a task's step processes run inside one

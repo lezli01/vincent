@@ -474,7 +474,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=`, `?workflow=` |
-| `GET` | `/v1/projects/{id}/github/pulls` | Its **open** pull requests, newest first — `?limit=` |
+| `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
 first (force-removing worktrees), and is refused while any task is running.
@@ -556,10 +556,17 @@ same task. An unknown workflow name is `400 validation_failed`.
 
 ### GitHub pull requests
 
-`GET /v1/projects/{id}/github/pulls` lists the repository's **open** pull
-requests, newest first; `?limit=` caps the rows. It goes through the same
-capability gate as the issue listing, so a disabled integration or a project
-whose `origin` is not a github.com repository makes no call at all.
+`GET /v1/projects/{id}/github/pulls` lists the repository's pull requests,
+newest first. `?state=` is `open` (the default), `closed` or `all`; `?limit=`
+caps the rows; `?workflow=` adds a computed `prefill` per row — the same shape
+the issue listing carries, and the same one `POST /v1/tasks` applies when you
+name a pull request. It goes through the same capability gate as the issue
+listing, so a disabled integration or a project whose `origin` is not a
+github.com repository makes no call at all.
+
+The default stays open-only on purpose: it is the question the screen usually
+asks, and pulling a repository's whole pull-request history to answer it would
+be paid for by everyone. Reaching a closed or merged one is a choice you make.
 
 It is a pure read: it fetches, normalizes, sorts and returns, and **persists
 nothing**. Linking is the daemon's own job (below).
@@ -586,10 +593,15 @@ claims — `auto` when the daemon matched the head branch, `human` when a person
 said so.
 
 Nothing about a pull request is ever stored. What a task keeps is a *pointer* —
-`github_pull`, holding `{repo, number, source, suppressed, linked_at}` — and
-everything renderable is re-read on every request, because draft, state and
-merged status are live by nature and a snapshot of them would read exactly like
-a current one while being wrong.
+`github_pull`, holding `{repo, number, source, suppressed, linked_at, branch,
+fork}` — and everything renderable is re-read on every request, because draft,
+state and merged status are live by nature and a snapshot of them would read
+exactly like a current one while being wrong. `branch` and `fork` are not
+renderable either: `branch: true` says this task's `branch_name` **is** this pull
+request's head branch, because the task was created from it
+([`github_pull` on `POST /v1/tasks`](#tasks)), and `fork: true` that the head
+lives in another repository, so the branch carries no upstream and nothing can be
+pushed back. Both are absent on a link a reconciler or a human made.
 
 | Method | Path | Body / notes |
 |---|---|---|
@@ -792,7 +804,7 @@ and reports the same `{value, source}`.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue? }` — `branch_name` is used verbatim and wins over any template. Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based; `0` outside one) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart |
@@ -919,6 +931,37 @@ a later step renders through
 `github_issue` makes no GitHub call at all. An unusable integration is the same
 409 with `details.reason` the GitHub endpoints return.
 
+`github_pull` is a pull-request **number**, and it resolves through the same one
+implementation on the same presence/blank rules — the daemon fetches the pull
+request, prefills `title` (`#N ` and the pull request title), `description` (its
+body plus a trailing `GitHub pull request #N: <url>` line) and a declared field
+named exactly `pull` carrying the bare number, and anything sent explicitly wins.
+Naming both `github_issue` and `github_pull` is `400 validation_failed`: they
+would prefill the same title and description from two sources.
+
+What is different is the branch. **The task's `branch_name` is the pull request's
+head branch** — the top of the [branch chain](configuration.md#branch_template),
+above even a literal `branch_name`, which is ignored — and its worktree is that
+branch checked out with an upstream, so a workflow that pushes lands its commits
+on the pull request. Four consequences follow:
+
+- The creation-time branch-collision check is **skipped**: the branch is expected
+  to exist. The in-transaction claim check still runs, so two live tasks on one
+  head branch remain a `400`.
+- The `github_pull` link is written **at creation** with `source: "human"`, so the
+  pull request reads as claimed immediately rather than on the next reconciler
+  tick, and the reconciler will not overwrite it. The link carries `branch: true`
+  — this task's branch came from this pull request — and `fork: true` when the head
+  lives in another repository, in which case the branch has no upstream and nothing
+  can be pushed back.
+- Archiving deletes **neither** branch leg; the outcome is `not_ours` (below).
+- `POST /v1/tasks/{id}/retry` refuses `branch_override` with a `409`.
+
+Fetching the head is admission's job, not creation's: `POST /v1/tasks` runs no
+git at all. A fetch that fails, a diverged local branch of that name, or one
+already checked out elsewhere block the task with
+[`pull_fetch_failed`, `pull_branch_diverged` or `pull_branch_checked_out`](task-lifecycle.md#failure-reasons).
+
 Every task representation also carries `workflow_origin`: which definition the
 `workflow` name resolved to at creation.
 
@@ -957,7 +1000,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered |
+| `/retry` | blocked | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request |
 | `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
@@ -1051,9 +1094,11 @@ at the branch, it adds a `branch` object beside the task fields:
 }
 ```
 
-`result` is `deleted` (no commits past its base), `has_commits` (kept), `unknown`
-(git could not judge it — base branch renamed away, repository gone) or `error`
-(the delete itself failed), with git's message in `error` for the last two. The
+`result` is `deleted` (no commits past its base), `has_commits` (kept),
+`not_ours` (kept — the branch came from a pull request, so vincent did not cut it
+and never deletes it, and the remote leg does not run either), `unknown` (git
+could not judge it — base branch renamed away, repository gone) or `error` (the
+delete itself failed), with git's message in `error` for the last two. The
 `remote` object appears only when
 [`delete_remote_branch_on_archive`](configuration.md#delete_remote_branch_on_archive)
 is on and the local delete succeeded; its `result` is `deleted`, `no_upstream` or

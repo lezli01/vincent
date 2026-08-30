@@ -143,10 +143,14 @@ type GitHubPullRequest struct {
 	// State is open or closed. A merged pull request is closed and carries
 	// Merged: `gh` spells that third state MERGED and the REST API does not
 	// spell it at all, so the daemon folds it onto a bool.
-	State      string    `json:"state"`
-	Draft      bool      `json:"draft"`
-	Merged     bool      `json:"merged"`
-	HeadBranch string    `json:"head_branch,omitempty"`
+	State      string `json:"state"`
+	Draft      bool   `json:"draft"`
+	Merged     bool   `json:"merged"`
+	HeadBranch string `json:"head_branch,omitempty"`
+	// HeadRepo is `owner/name` of the repository the head lives in. A value
+	// different from Repo is a fork: its branch can be fetched and run, and
+	// nothing can push back to it (task 064 decision 5).
+	HeadRepo   string    `json:"head_repo,omitempty"`
 	BaseBranch string    `json:"base_branch,omitempty"`
 	Author     string    `json:"author,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitzero"`
@@ -157,6 +161,18 @@ type GitHubPullRequest struct {
 	// claim it is showing.
 	TaskID     *int64 `json:"task_id,omitempty"`
 	LinkSource string `json:"link_source,omitempty"`
+	// Prefill is what creating a task from this pull request would fill in,
+	// computed by the daemon (task 064). Present only when the listing named
+	// a workflow; the form previews it in editable rows and makes no GitHub
+	// call of its own.
+	Prefill *GitHubPrefill `json:"prefill,omitempty"`
+}
+
+// Fork reports that the head branch lives in another repository. An empty
+// HeadRepo reads as the same repository, which is what every leg reported
+// before the field existed.
+func (p GitHubPullRequest) Fork() bool {
+	return p.HeadRepo != "" && p.Repo != "" && !strings.EqualFold(p.HeadRepo, p.Repo)
 }
 
 // Status is the one word a row renders: merged beats closed, draft beats
@@ -183,6 +199,13 @@ type GitHubPullLink struct {
 	Source     string    `json:"source"`
 	Suppressed bool      `json:"suppressed,omitempty"`
 	LinkedAt   time.Time `json:"linked_at,omitzero"`
+	// Branch records that the task's branch **is** this pull request's head
+	// branch, because the task was created from it (task 064). It is why
+	// archive leaves that branch alone and why a retry refuses
+	// `branch_override`. Fork additionally says the head lives in another
+	// repository, so nothing can be pushed back.
+	Branch bool `json:"branch,omitempty"`
+	Fork   bool `json:"fork,omitempty"`
 }
 
 // GitHubTaskPull is GET /v1/tasks/{id}/github/pull: what this task knows
@@ -207,13 +230,36 @@ type GitHubTaskPull struct {
 	CompareURL string `json:"compare_url,omitempty"`
 }
 
-// ListGitHubPulls lists a project's **open** pull requests, newest first.
+// GitHubPullsOptions narrow a pull-request listing. The zero value asks for
+// the most recent **open** pull requests with no prefill — 052's default,
+// unchanged: closed and merged are now selectable, not listed by default
+// (task 064 decision 9).
+type GitHubPullsOptions struct {
+	// State is open (default), closed or all.
+	State string
+	// Limit caps the rows; <= 0 lets the daemon choose.
+	Limit int
+	// Workflow opts into the per-row prefill.
+	Workflow string
+}
+
+// ListGitHubPulls lists a project's pull requests, newest first.
 func (c *Client) ListGitHubPulls(
-	ctx context.Context, projectID int64, limit int,
+	ctx context.Context, projectID int64, opts GitHubPullsOptions,
 ) ([]GitHubPullRequest, error) {
+	q := url.Values{}
+	if opts.State != "" {
+		q.Set("state", opts.State)
+	}
+	if opts.Limit > 0 {
+		q.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	if opts.Workflow != "" {
+		q.Set("workflow", opts.Workflow)
+	}
 	path := "/v1/projects/" + strconv.FormatInt(projectID, 10) + "/github/pulls"
-	if limit > 0 {
-		path += "?limit=" + strconv.Itoa(limit)
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	var out []GitHubPullRequest
 	if err := c.get(ctx, path, &out); err != nil {

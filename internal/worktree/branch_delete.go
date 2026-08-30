@@ -27,6 +27,15 @@ const (
 	// BranchDeleteFailed: the branch qualified but `git branch -d` refused or
 	// failed. It survives.
 	BranchDeleteFailed = "error"
+	// BranchNotOurs: the branch came from a pull request, so vincent did not
+	// cut it and never deletes it — neither leg runs (§10, task 064
+	// decision 3). Task 008 was designed on the premise that vincent only
+	// ever deletes branches it created; that premise was implicit until a
+	// task could be created from a **merged** pull request, which is exactly
+	// "no commits past its base" — the case delete_empty_branch_on_archive
+	// fires on — and with delete_remote_branch_on_archive opted in would
+	// delete a contributor's head branch on the forge.
+	BranchNotOurs = "not_ours"
 )
 
 // Outcomes of the remote leg, which only runs on an attended archive with
@@ -109,12 +118,24 @@ type upstream struct {
 // honoured only on an attended archive (§10): deleting a branch on a forge
 // other people share is unrecoverable and outward-facing, so the unattended
 // paths never pass true.
+// ours is false for a branch vincent did not cut — today, a pull request's
+// head branch (task 064 decision 3) — and both legs are skipped. It is a
+// pointer so that a caller with nothing to say passes nil and gets task 008's
+// behaviour unchanged; every caller that has a task row in hand should answer
+// it.
 func (m *Manager) DeleteEmptyBranch(
-	ctx context.Context, projectPath, base, baseSHA, branch string, deleteRemote bool,
+	ctx context.Context, projectPath, base, baseSHA, branch string, deleteRemote bool, ours *bool,
 ) (BranchOutcome, error) {
 	out := BranchOutcome{Branch: branch}
 	if branch == "" {
 		return BranchOutcome{}, nil
+	}
+	if ours != nil && !*ours {
+		// Reported rather than silent: "the branch is still there" and "the
+		// branch is still there *because it is not ours*" are different facts
+		// on an archive log line, and only the second one is a policy.
+		out.Result = BranchNotOurs
+		return out, nil
 	}
 	if _, err := os.Stat(projectPath); err != nil {
 		e := &Error{

@@ -15,7 +15,14 @@
     "state": "OPEN",
     "title": "List a GitHub project's open pull requests",
     "updatedAt": "2026-08-27T09:02:11Z",
-    "url": "https://github.com/octo/repo/pull/412"
+    "url": "https://github.com/octo/repo/pull/412",
+    "body": "The delivery half of the loop is invisible today.",
+    "headRepository": {
+      "name": "repo"
+    },
+    "headRepositoryOwner": {
+      "login": "octo"
+    }
   },
   {
     "author": {
@@ -33,6 +40,13 @@
     "state": "OPEN",
     "title": "Rework the board header",
     "updatedAt": "2026-07-02T08:00:00Z",
-    "url": "https://github.com/octo/repo/pull/401"
+    "url": "https://github.com/octo/repo/pull/401",
+    "body": "",
+    "headRepository": {
+      "name": "repo"
+    },
+    "headRepositoryOwner": {
+      "login": "octo"
+    }
   }
 ]

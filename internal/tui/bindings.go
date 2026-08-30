@@ -257,11 +257,13 @@ var bindings = []binding{
 	// for.
 	{key: "enter", label: "open the workspace of the task that claims this pull request", scope: scopePanel, context: ctxPullRequests, hint: "enter task", priority: 1},
 	{key: "o", label: "open the selected pull request in a browser", scope: scopePanel, context: ctxPullRequests, hint: "o browser", priority: 2},
-	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 3},
-	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 4},
-	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 5},
-	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 6},
-	{key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 7},
+	{key: "c", label: "create a task from this pull request — it runs on the pull request's head branch, and the form is editable first", scope: scopePanel, context: ctxPullRequests, hint: "c new task", priority: 3},
+	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 4},
+	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
+	{key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6},
+	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7},
+	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 8},
+	{key: "/", label: "filter by number, title, branch or project", scope: scopePanel, context: ctxPullRequests, priority: 9},
 
 	// Daemon.
 	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},

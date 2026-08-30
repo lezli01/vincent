@@ -14,5 +14,12 @@
   "state": "MERGED",
   "title": "Ship the thing that already merged",
   "updatedAt": "2026-06-02T08:00:00Z",
-  "url": "https://github.com/octo/repo/pull/377"
+  "url": "https://github.com/octo/repo/pull/377",
+  "body": "",
+  "headRepository": {
+    "name": "repo"
+  },
+  "headRepositoryOwner": {
+    "login": "octo"
+  }
 }

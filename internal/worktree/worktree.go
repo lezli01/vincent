@@ -307,11 +307,8 @@ func (m *Manager) create(
 	unlock := m.lockRepo(projectPath)
 	defer unlock()
 
-	if _, err := os.Stat(projectPath); err != nil {
-		return Created{}, &Error{
-			Reason:  ReasonProjectPathMissing,
-			Message: fmt.Sprintf("project path %s does not exist", projectPath), Err: err,
-		}
+	if err := m.requireProjectPath(projectPath); err != nil {
+		return Created{}, err
 	}
 	// The local base is still required, and task creation is still offline
 	// (§10 fail-fast): a base that exists only on the remote is not a case
@@ -332,14 +329,11 @@ func (m *Manager) create(
 		return Created{}, err
 	}
 	target := m.Path(owner)
-	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
-		return Created{}, &Error{
-			Reason:  ReasonWorktreePathOccupied,
-			Message: fmt.Sprintf("worktree path %s already exists and is not empty; remove it manually", target),
-		}
+	if err := m.requireEmptyTarget(target); err != nil {
+		return Created{}, err
 	}
-	if err := os.MkdirAll(m.root, 0o700); err != nil {
-		return Created{}, &Error{Reason: ReasonGitError, Message: "create worktrees dir", Err: err}
+	if err := m.mkdirRoot(); err != nil {
+		return Created{}, err
 	}
 	out := Created{Path: target, Fetch: FetchOutcome{Result: FetchDisabled}}
 	start := base
@@ -367,6 +361,37 @@ func (m *Manager) create(
 		return Created{}, &Error{Reason: ReasonGitError, Message: "git worktree add failed", Err: err}
 	}
 	return out, nil
+}
+
+// requireProjectPath, requireEmptyTarget and mkdirRoot are the three
+// pre-flight checks both creation modes share (task 064). They are factored
+// out rather than duplicated so the pull-request mode cannot drift into
+// refusing a different set of things than the ordinary one.
+func (m *Manager) requireProjectPath(projectPath string) error {
+	if _, err := os.Stat(projectPath); err != nil {
+		return &Error{
+			Reason:  ReasonProjectPathMissing,
+			Message: fmt.Sprintf("project path %s does not exist", projectPath), Err: err,
+		}
+	}
+	return nil
+}
+
+func (m *Manager) requireEmptyTarget(target string) error {
+	if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
+		return &Error{
+			Reason:  ReasonWorktreePathOccupied,
+			Message: fmt.Sprintf("worktree path %s already exists and is not empty; remove it manually", target),
+		}
+	}
+	return nil
+}
+
+func (m *Manager) mkdirRoot() error {
+	if err := os.MkdirAll(m.root, 0o700); err != nil {
+		return &Error{Reason: ReasonGitError, Message: "create worktrees dir", Err: err}
+	}
+	return nil
 }
 
 // ValidateBranchName reports whether branch is a legal branch name, returning a
