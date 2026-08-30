@@ -353,10 +353,16 @@ Names resolve through a chain, most specific first:
 
 | Level | Set where |
 |---|---|
+| a pull request's head branch | the task was created from a pull request (`--github-pull` / `github_pull`). Nothing below overrides it |
 | the task's own name | `--branch` / `branch_name`, used **verbatim**, never rendered |
 | project template | `PATCH /v1/projects/{id}` → `branch_template` |
 | global template | this key |
 | built-in | nothing configured |
+
+The top level is not configurable and not negotiable: a task created from a pull
+request runs **on** that pull request's head branch, so a template or a typed
+literal would put its commits somewhere the pull request never sees. See
+[creating a task from a pull request](cli.md#creating-a-task-from-a-pull-request).
 
 Available in a template:
 
@@ -431,13 +437,20 @@ The test is `git rev-list -n 1 {base}..{branch}` producing nothing: the branch t
 is an ancestor of the base. It stays correct when the base moves on after the task
 started, and it is exact — **a branch carrying any commit is never deleted**.
 
-Three refusals are deliberate, and all of them keep the branch:
+Four refusals are deliberate, and all of them keep the branch:
 
 | Situation | What happens |
 |---|---|
 | The branch has commits | Kept, reported `has_commits` |
+| Vincent did not cut the branch — the task was created from a pull request | Kept, reported `not_ours` |
 | git cannot judge it — base branch renamed or deleted, repository gone | Kept, reported `unknown`, logged |
 | The delete itself fails — the branch is checked out in another worktree | Kept, reported `error`, logged |
+
+`not_ours` is the one that is a *policy* rather than an accident. A task created
+from a pull request runs on that pull request's head branch, and a task made from
+a **merged** pull request is by definition "no commits past its base" — precisely
+the case this key fires on. Deleting there would delete a contributor's branch, so
+neither leg runs on such a task.
 
 A branch problem never fails an archive: the task reaches `archived` either way,
 and the branch simply survives, which is what always used to happen.
@@ -512,8 +525,10 @@ task (`POST /v1/tasks/{id}/archive`) — deleting a branch on a forge you share 
 other people cannot be undone, so no unattended path does it. `DELETE
 /v1/projects/{id}?force` never touches a remote.
 
-It runs only after the local delete succeeded, and only when the branch has a
-configured upstream (`branch.{name}.remote` and `branch.{name}.merge`). No
+It runs only after the local delete succeeded — so a branch kept as `not_ours`
+stops both legs, which is exactly the branch this key would otherwise delete on
+the forge — and only when the branch has a configured upstream
+(`branch.{name}.remote` and `branch.{name}.merge`). No
 upstream means nothing was pushed as far as vincent knows, so nothing is
 attempted — and the remote name is never guessed from the local one. The push is
 `git push --delete {remote} {ref}` under a 60-second timeout; a rejection, an

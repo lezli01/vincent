@@ -966,6 +966,15 @@ the title carries — and it is how a `command` step gets at it: step bodies see
 the way into a `run:`. Declare it `integer` (or `number`, or `string`); a
 `boolean` `issue` is left empty like any other type mismatch.
 
+A task created from a **pull request**
+([`--github-pull`](cli.md#creating-a-task-from-a-pull-request)) fills a declared
+field named exactly `pull` the same way, with the pull request's number. There is
+no `.Pull` to go with it, on purpose: a pull request is a pointer, never a
+snapshot, so nothing about it is stored to re-render — which makes the `pull`
+field the only way a workflow finds the number. `labels`, `assignee` and
+`milestone` are deliberately absent from this leg: offering a name it cannot fill
+would make the prefill's shape depend on which leg answered.
+
 Visibility follows one rule — a step appears once the engine has advanced past
 it — and three consequences follow from it:
 

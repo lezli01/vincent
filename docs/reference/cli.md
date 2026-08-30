@@ -519,9 +519,9 @@ that is the whole point: **the task's branch is the pull request's head branch**
 not `vincent/{id}-{slug}`. Its worktree is that branch checked out with an
 upstream, so when a workflow pushes, the commits land on the pull request.
 
-That branch is the one thing you cannot override. `--branch-name` is ignored for
-such a task, and `vincent task retry --branch` on it is refused: renaming it
-would detach the task from the pull request it was created for.
+That branch is the one thing you cannot override. `--branch` is ignored for such
+a task, and `vincent task retry --branch` on it is refused: renaming it would
+detach the task from the pull request it was created for.
 
 What it fills in: the title (`#N ` and the pull request title), the description
 (the pull request body plus a trailing `GitHub pull request #N: <url>` line), and
@@ -754,7 +754,7 @@ kind of recovery:
 
 | Flag | What it does |
 |---|---|
-| `--branch NAME` | Renames the task's branch **before** the retry re-admits it. This is the [`branch_exists`](task-lifecycle.md) recovery: the task, its id and its transcripts all survive, which deleting and re-creating it would not |
+| `--branch NAME` | Renames the task's branch **before** the retry re-admits it. This is the [`branch_exists`](task-lifecycle.md) recovery: the task, its id and its transcripts all survive, which deleting and re-creating it would not. Refused on a task created from a pull request |
 | `--prompt` / `--run` | Edit+retry. The text replaces that step's prompt or command in **this task's** workflow snapshot, and in no other task's — the registry file is untouched |
 | `--prompt-file` / `--run-file` | The same, read from a file, or from stdin with `-`. A replacement prompt is usually several lines, which argv is a poor place for |
 
