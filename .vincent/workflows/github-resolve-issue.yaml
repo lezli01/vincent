@@ -32,7 +32,9 @@
 #   gate      (a human reads the diff)
 #   publish → report
 #   gate-merge (a human reads the pull request)
-#   rebase → resolve? → repush → wait-checks → merge → merged
+#   merge-attempt (a loop, at most three passes)
+#     rebase → resolve? → repush → wait-checks → merge → probe → repair?
+#   merged
 #
 # ## How the branch is expressed
 #
@@ -147,22 +149,57 @@
 # Opening the pull request is not the end of the run. `gate-merge` is a second
 # manual gate, and it authorizes a different thing than the first: `gate` says
 # "make this branch public", `gate-merge` says "put it in the base branch".
-# Everything after it is deterministic except a conflict resolver:
+# Everything after it is deterministic except two agents — a conflict resolver
+# and a check repairer — and neither runs anywhere a deterministic step has not
+# already said what is wrong:
 #
-#   checks-required read the base branch's required contexts by name, before
-#                   anything is pushed
-#   rebase          fetch the base and rebase onto it, under `allow_failure` so
-#                   a conflict is data rather than a blocked task
-#   resolve         an agent, and only if the rebase stopped on a conflict
-#   repush          assert the branch sits on top of the base, record the two
-#                   shas the rest of the tail pins to, force-push
-#   await-head      wait until the PR points at the commit that was pushed
-#   wait-checks     wait until every required context has reported success *at
-#                   that commit*
-#   merge-ready     wait until GitHub itself calls the PR mergeable
-#   merge           `gh pr merge --merge --match-head-commit`
-#   merged          read the PR back, confirm MERGED at that same commit, clear
-#                   the scratch directory
+#   checks-required  read the base branch's required contexts by name, before
+#                    anything is pushed
+#   merge-attempt    a bounded loop: one clean attempt and up to two repairs
+#     rebase           fetch the base and rebase onto it, under `allow_failure`
+#                      so a conflict is data rather than a blocked task
+#     resolve          an agent, and only if the rebase stopped on a conflict
+#     repush           assert the branch sits on top of the base, record the two
+#                      shas the rest of the pass pins to, force-push
+#     await-head       wait until the PR points at the commit that was pushed
+#     wait-checks      wait until every required context has reported success
+#                      *at that commit*, under `allow_failure` so a red one is
+#                      the repairer's input rather than the end of the run
+#     merge-ready      wait until GitHub itself calls the PR mergeable
+#     merge            `gh pr merge --merge --match-head-commit`
+#     merge-probe      read the PR back and ask whether it is MERGED at that
+#                      same commit — the only step entitled to say it landed
+#     merge-elsewhere  stop the run outright if the PR was merged at some other
+#                      commit or closed under it: neither is a thing to retry
+#     merge-ok         break out of the loop once the probe says it landed
+#     repair-checks    an agent, and only if a required check went red and there
+#                      is another pass left to re-run CI against the repair
+#   merged           the postcondition: MERGED at the commit this task pushed,
+#                    or the run blocks; clears the scratch directory
+#
+# ## Why the tail loops
+#
+# A required check that goes red on the pushed commit is the one failure here
+# that a person would answer the same way every time: read the failing job, fix
+# the cause on the branch, push, wait for CI again. That is what the loop does,
+# and `repair-checks` is the only agent it adds. Three passes — one attempt and
+# at most two repairs — and `repair-checks` carries `if: not .Loop.IsLast` for
+# the same reason `verify`'s repair does: a repair nothing re-probes would cost
+# a session and reach `merged` unverified.
+#
+# The loop pays for a second thing that used to cost a person a re-run. Branch
+# protection here is `strict: true`, so a base branch that moves while CI runs
+# makes the rebase stale and GitHub answers `BEHIND`. There is nothing for an
+# agent to repair in that case — the next pass's rebase *is* the repair — so it
+# ends the pass without one and the loop starts from the top.
+#
+# Nothing *inside* a pass retries. A `gh pr merge` whose response was lost is
+# not a call to repeat and neither is a force-push; what repeats is a whole
+# attempt, which begins by asking git and GitHub what is true. That is also why
+# `merge-probe` runs on every pass, including one where `merge` was skipped or
+# failed: a lost response leaves a pull request that *is* merged and a step that
+# exited non-zero, and force-pushing over that is the one thing a retrying tail
+# must never do.
 #
 # `--merge` is not a preference: this repository has squash and rebase merges
 # disabled and merges everything with a merge commit, because a branch's
@@ -206,13 +243,13 @@
 #
 # The other side of `strict: true` branch protection is that the base moving
 # during the wait makes this branch stale: `merge-ready` reports `BEHIND` and
-# fails there, with a message, instead of the merge call failing opaquely.
-# Re-run the task from `gate-merge` and the rebase happens again.
+# ends the pass there, with a message, instead of the merge call failing
+# opaquely. The next pass rebases onto the base that moved.
 #
-# Nothing in the tail retries. A `gh pr merge` whose response was lost is not a
-# call to repeat, and neither is a force-push. `merged` is what says whether it
-# landed, and it asks GitHub — for the state *and* the head commit — rather
-# than trusting an exit code.
+# `merged` is what says whether the run landed anything, and it asks GitHub —
+# for the state *and* the head commit — rather than trusting an exit code. It
+# sits outside the loop because a loop that runs out of passes succeeds (§7.8),
+# exactly as `verify-final` sits outside `verify`.
 #
 # A transient API error during an hour-long poll is not a verdict, though: the
 # wait tolerates five in a row before giving up, so one 502 does not discard
@@ -1404,9 +1441,12 @@ steps:
     name: Approve the merge
     type: manual
     # The second authority boundary. `gate` said "make this branch public";
-    # this one says "put it in the base branch". Everything after it is
-    # deterministic — a rebase, a force-push, a wait, one merge call — so this
-    # is the last point at which a person decides anything.
+    # this one says "put it in the base branch". It is the last point at which
+    # a person decides anything, and since the tail became a loop it authorizes
+    # more than it used to: up to three rebase-push-wait-merge passes, and up
+    # to two agent sessions committing repairs to a branch this person has
+    # already read. The instructions say so — an approval whose scope the
+    # workflow quietly widened is not an approval.
     instructions: |
       The pull request for task #{{.Task.ID}} is open:
 
@@ -1419,14 +1459,29 @@ steps:
       Merging closes the issue, because the body says `Closes #…`, and GitHub
       deletes the remote branch.
 
+      It will do that up to **three times**. If a required check goes red on
+      the commit it pushed, an agent reads the failing job, commits a fix on
+      this branch, and the whole attempt runs again — a new rebase, a new
+      force-push, another hour of CI. So approving here also authorizes up to
+      two unattended agent sessions writing code on a branch you have already
+      read, which means the diff that merges may not be the diff you approved
+      at `gate`. Every commit they make is in the branch history and on the
+      pull request.
+
       Read the PR itself, not just the diff you already approved: the review
       thread, and whether the base branch has moved under it in a way that
       makes this change wrong rather than merely conflicted.
 
-      Two things stop the tail rather than merging, and both leave the PR open:
-      someone else pushing to the branch, and {{.Task.BaseBranch}} moving while
-      the checks run — this repository requires a branch to be up to date, so
-      that makes the rebase stale. Re-running this task from here redoes it.
+      What stops the tail rather than merging: someone else pushing to the
+      branch, a rebase whose conflicts the resolver cannot finish, a required
+      check still red after two repair passes, and a pull request merged or
+      closed outside this task. All of them leave the branch pushed and the PR
+      as they found it, and re-running this task from here starts the passes
+      over.
+
+      {{.Task.BaseBranch}} moving while the checks run no longer stops it: this
+      repository requires a branch to be up to date, so that makes the rebase
+      stale, and the next pass rebases onto the base that moved.
 
       Reject to leave the pull request open and unmerged. Nothing is undone by
       rejecting — the branch stays pushed and the PR stays up.
@@ -1488,597 +1543,854 @@ steps:
       cat .vincent-issue/required.txt
       say "$(wc -l < .vincent-issue/required.txt | tr -d ' ') required check(s) to wait for"
 
-  - id: rebase
-    name: Rebase onto the base branch
-    type: command
-    shell: sh
-    timeout: 10m
-    max_retries: 0
-    # `allow_failure` because a conflict is the expected other outcome, not an
-    # error: `resolve` reads this exit code. A failed row here is normal.
-    #
-    # A failure leaves the worktree mid-rebase, which is exactly the state
-    # `resolve` needs to finish the job — so nothing aborts it here.
-    allow_failure: true
-    # The conflict path is handled explicitly rather than left to `set -e`
-    # because this is the third step whose red row is a normal outcome, and the
-    # status is the only thing that can distinguish the two ways it goes red: a
-    # conflict, which `resolve` is about to pick up, and a failed `git fetch`,
-    # which it cannot do anything about. `resolve`'s prompt already tells the
-    # agent to check for that second case — this puts the same distinction on
-    # the board.
-    #
-    # `exit 1` after the guard rather than the rebase's own code: the `if:`
-    # below reads `ne … 0`, so any non-zero is equivalent, and the fetch path
-    # keeps `set -e`'s code by construction.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+  - id: merge-attempt
+    name: Rebase, verify and merge the pull request
+    type: loop
+    # One clean attempt and at most two repairs. A pass is a whole merge
+    # attempt — rebase, force-push, wait for the required checks *on the commit
+    # it pushed*, merge — and it is worth repeating because the two ways it
+    # goes red are both answered by another pass rather than by a person: a
+    # required check that failed on this branch, which `repair-checks` commits
+    # a fix for, and a `BEHIND` verdict, which the next rebase resolves.
+    count: 3
+    # `defaults.timeout` (30m) bounds the *whole* loop (§7.8), not a pass, and
+    # one pass can legitimately spend an hour in `wait-checks` alone. Three of
+    # rebase + resolve + push + an hour of CI + a repair is where this comes
+    # from. It is a ceiling, not an expectation: the ordinary run breaks out on
+    # the first pass in the time the checks take.
+    timeout: 13h
+    steps:
+      - id: rebase
+        name: Rebase onto the base branch
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # `allow_failure` because a conflict is the expected other outcome, not
+        # an error: `resolve` reads this exit code. A failed row here is normal.
+        #
+        # A failure leaves the worktree mid-rebase, which is exactly the state
+        # `resolve` needs to finish the job — so nothing aborts it here.
+        allow_failure: true
+        # The conflict path is handled explicitly rather than left to `set -e`
+        # because this is the third step whose red row is a normal outcome, and
+        # the status is the only thing that can distinguish the two ways it goes
+        # red: a conflict, which `resolve` is about to pick up, and a failed
+        # `git fetch`, which it cannot do anything about. `resolve`'s prompt
+        # already tells the agent to check for that second case — this puts the
+        # same distinction on the board.
+        #
+        # `exit 1` after the guard rather than the rebase's own code: the `if:`
+        # below reads `ne … 0`, so any non-zero is equivalent, and the fetch
+        # path keeps `set -e`'s code by construction.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      say "fetching origin/{{.Task.BaseBranch}}"
-      git fetch origin {{.Task.BaseBranch}}
+          say "fetching origin/{{.Task.BaseBranch}}"
+          git fetch origin {{.Task.BaseBranch}}
 
-      say "rebasing onto origin/{{.Task.BaseBranch}}"
-      if ! git rebase origin/{{.Task.BaseBranch}}; then
-        say "rebase stopped on conflicts: the resolver runs next"
-        exit 1
-      fi
-      say "rebased cleanly onto origin/{{.Task.BaseBranch}}"
-
-  - id: resolve
-    name: Resolve the rebase conflicts
-    type: agent
-    if: '{{ ne (index .Steps "rebase").ExitCode 0 }}'
-    timeout: 45m
-    # One session, no retry: a second attempt inherits whatever state the first
-    # left behind, which is not the state this prompt describes. If it cannot
-    # finish, the task blocks and you finish the rebase by hand.
-    max_retries: 0
-    prompt: |
-      The rebase of {{.Task.BranchName}} onto `origin/{{.Task.BaseBranch}}`
-      stopped. It said:
-
-      {{ (index .Steps "rebase").Result }}
-
-      You are in the worktree at {{.Worktree.Path}}, most likely mid-rebase.
-      Run `git status` first and find out what is actually true before you
-      change anything — it may be a conflict, or it may be that the fetch
-      itself failed, in which case there is nothing here to resolve and you
-      should say so rather than inventing a fix.
-
-      Say what you find and what you are doing about it:
-
-          vincent status "<one short line about what you are doing now>"
-
-      Start with what `git status` actually showed — "mid-rebase, 2 conflicted
-      files" or "the fetch failed, nothing to resolve" — because those two lead
-      to opposite outcomes and the board cannot tell them apart otherwise. Then
-      one per conflicted commit you continue past, and one at the end. Under ten
-      words. If the two sides are genuinely incompatible and you are stopping,
-      make the status say so: "internal/store conflict needs a human decision".
-
-      If it is a conflict, resolve it:
-
-      - The change being rebased is described in `.vincent-issue/brief.md`, and
-        the pull request body is in `.vincent-issue/pr.md`. Both say what this
-        branch is *for*; that is what decides how a conflict resolves.
-      - Keep both sides' intent. Do not resolve a conflict by discarding the
-        base branch's side because it is in the way — someone else's change
-        landed there on purpose. If the two are genuinely incompatible, stop
-        and leave the rebase in place rather than picking a winner.
-      - `git add` the resolved files and `git rebase --continue` for each
-        conflicted commit until the rebase is finished. Do not `git rebase
-        --skip` a commit of this branch.
-      - Never `git rebase --abort` and never `git merge` the base branch
-        instead: the next step asserts that the base is an ancestor of HEAD.
-      - Do not push. A later step does that.
-
-      When the rebase is finished, run `go run mage.go test` and
-      `go run mage.go lint` and fix what the rebase broke — a conflict resolved
-      so that it compiles is not the same thing as one resolved correctly.
-
-      Never stage or commit `.vincent-issue/`.
-    # Asserts the rebase is actually finished (no rebase state directory in
-    # this worktree — `--git-path` resolves the linked worktree's own, not the
-    # main repo's), that nothing was left half-resolved, that the branch really
-    # does sit on top of the base rather than having been merged or aborted,
-    # and that the tree still passes the bar.
-    check: >
-      test ! -d "$(git rev-parse --git-path rebase-merge)" &&
-      test ! -d "$(git rev-parse --git-path rebase-apply)" &&
-      git diff --quiet &&
-      git diff --cached --quiet &&
-      ! git ls-files .vincent-issue | grep -q . &&
-      git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
-      go run mage.go test &&
-      go run mage.go lint
-    check_timeout: 20m
-
-  - id: repush
-    name: Force-push the rebased branch
-    type: command
-    shell: sh
-    timeout: 5m
-    # Load-bearing and not repeatable in any meaningful sense: if the push
-    # succeeded and the response was lost, a second one is either a no-op or a
-    # lease failure, and neither is worth automating.
-    max_retries: 0
-    # The ancestor test is the postcondition of the whole rebase leg, checked
-    # once here whether `resolve` ran or not: if the base is not an ancestor of
-    # HEAD, the branch was not rebased and there is nothing to force-push.
-    #
-    # `--force-with-lease` rather than `--force`: it refuses if `origin`'s copy
-    # of this branch is not the commit `publish` left there — which is the case
-    # exactly when someone else pushed to it while the gate was open.
-    #
-    # A rebase that changed nothing makes this a no-op push, which is fine —
-    # and `head.sha` then names the commit `publish` already pushed, whose
-    # checks have long since run. Nothing downstream needs to know which of the
-    # two happened.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
-        say "branch is not on top of the base: nothing was pushed"
-        echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
-        echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
-        git status --short --branch >&2
-        exit 1
-      fi
-
-      # The two shas the rest of the tail pins to, both recorded *before* the
-      # push. `head` is what this push makes the branch, and every question
-      # asked of GitHub after this names it instead of naming the pull request
-      # — which is what makes the wait immune to the propagation window.
-      # `prev` is the value `--force-with-lease` is about to assert about
-      # origin, which is what lets `await-head` tell "GitHub has not caught up
-      # yet" apart from "someone else pushed".
-      if ! prev=$(git rev-parse --verify --quiet "origin/{{.Task.BranchName}}"); then
-        say "no origin/{{.Task.BranchName}} to replace: nothing was pushed"
-        echo "this worktree has no origin/{{.Task.BranchName}}, so there is no published commit" >&2
-        echo "for the force-push to replace and no lease for it to hold. nothing was pushed." >&2
-        exit 1
-      fi
-      printf '%s\n' "$prev" > .vincent-issue/prev-head.sha
-      git rev-parse HEAD > .vincent-issue/head.sha
-
-      # A lease failure is the one interesting way this dies, and the status
-      # set here is what survives to say so: someone pushed to the branch while
-      # the merge gate was open.
-      say "force-pushing $(cut -c1-7 .vincent-issue/head.sha) over $(printf '%s' "$prev" | cut -c1-7)"
-      git push --force-with-lease origin {{.Task.BranchName}}
-      echo "pushed $(cat .vincent-issue/head.sha) over $(cat .vincent-issue/prev-head.sha)"
-      say "pushed $(cut -c1-7 .vincent-issue/head.sha)"
-
-  - id: await-head
-    name: Wait for the PR to point at the pushed commit
-    type: command
-    shell: sh
-    timeout: 10m
-    max_retries: 0
-    # The first of the two windows a force-push opens. Until GitHub moves the
-    # pull request's head, every question about "this PR's checks" is answered
-    # about the pre-rebase commit — which is green, because it passed before
-    # the gate. Waiting here is what stops that answer from being mistaken for
-    # this commit's.
-    #
-    # A head that is neither sha is not a race to wait out: `--force-with-lease`
-    # already proved origin was at `prev` when this task pushed, so a third
-    # value means someone pushed afterwards. That branch is not the one anyone
-    # approved, so nothing merges it.
-    #
-    # The wait is paced rather than fixed. GitHub usually moves the head within
-    # a second or two of the push, so the first polls are close together and
-    # the interval then doubles to a 15s ceiling: the common case is detected
-    # in ~2s instead of 5, and an unusually slow one costs ~25 calls over five
-    # minutes rather than 60. The budget is counted in *seconds waited*, not in
-    # polls, so it stays the five minutes the failure message claims even
-    # though the polls are no longer evenly spaced.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      url=$(cat .vincent-issue/url.txt)
-      head=$(cat .vincent-issue/head.sha)
-      prev=$(cat .vincent-issue/prev-head.sha)
-      short=$(printf '%s' "$head" | cut -c1-7)
-
-      # Set once, outside the loop: this usually finishes in about two seconds
-      # and re-stating the same sentence per poll would be noise the coalescing
-      # floor cannot even see. The polls that say something new — a third sha,
-      # the timeout — say it where they exit.
-      say "waiting for the PR head to become $short"
-
-      nap=2
-      waited=0
-      while :; do
-        # The exit status, not the captured text: a failed `gh` must read as
-        # "no answer yet" and be waited out, never as a third sha.
-        set +e
-        oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>/dev/null)
-        rc=$?
-        set -e
-        if [ "$rc" -ne 0 ]; then
-          oid=''
-        fi
-
-        if [ "$oid" = "$head" ]; then
-          echo "the pull request head is $head"
-          say "the PR points at $short"
-          break
-        fi
-
-        if [ -n "$oid" ] && [ "$oid" != "$prev" ]; then
-          say "someone else pushed to {{.Task.BranchName}}: refusing to wait"
-          echo "the pull request head is $oid, which is neither the commit this task pushed" >&2
-          echo "($head) nor the one it replaced ($prev): someone else pushed to" >&2
-          echo "{{.Task.BranchName}}. refusing to wait on checks for a branch this task no longer owns." >&2
-          exit 1
-        fi
-
-        if [ "$waited" -ge 300 ]; then
-          say "PR head still not $short five minutes after the push"
-          echo "five minutes after the force-push the pull request still reports $oid," >&2
-          echo "not the pushed commit $head. nothing was merged." >&2
-          exit 1
-        fi
-
-        sleep "$nap"
-        waited=$((waited + nap))
-        if [ "$nap" -lt 15 ]; then
-          nap=$((nap * 2))
-          if [ "$nap" -gt 15 ]; then nap=15; fi
-        fi
-      done
-
-  - id: wait-checks
-    name: Wait for the required checks
-    type: command
-    shell: sh
-    # The step's own timeout is the outer bound; the loop's poll budget is what
-    # produces a legible message instead of a `timeout` block reason.
-    timeout: 90m
-    max_retries: 0
-    # Not `gh pr checks --required`. That command resolves the pull request's
-    # head at query time and reports the rollup it finds there, which makes it
-    # wrong in both of the windows a force-push opens: it answers about the old
-    # commit until the head moves, and it answers about a half-created set of
-    # runs afterwards. In both, "every required check is green" is a true
-    # sentence about the wrong thing, and exit code 0 does not distinguish it
-    # from the real one.
-    #
-    # So this asks the **commit** — by sha, from `head.sha` — for its check
-    # runs and its commit statuses, and grades what comes back against the
-    # expected set `checks-required` read from branch protection. A required
-    # context that has no row yet is *pending*, which is the entire fix: an
-    # absence can no longer be read as a pass.
-    #
-    # Both kinds are collected because either can satisfy a required context:
-    # Actions jobs arrive as check runs, third-party integrations as commit
-    # statuses. A check run that has not finished has no conclusion, and that
-    # is the pending this loop sleeps on.
-    #
-    # The head is re-asserted every poll: a push that lands during the hour
-    # ends the wait rather than being merged by it.
-    #
-    # An hour of CI, budgeted in *seconds waited* rather than in polls, because
-    # the polls are no longer evenly spaced. The pending interval starts at 15s
-    # and doubles to a 60s ceiling: a three-platform matrix takes minutes, so a
-    # fixed 30s spent most of the hour asking a question whose answer had not
-    # changed. The ramp reaches the same hour in roughly 60 calls instead of
-    # 120, while answering a fast run sooner than the old first poll did.
-    #
-    # A transient API failure is not a verdict — five in a row are tolerated so
-    # one 502 does not throw away forty minutes of waiting. Those retries get
-    # their *own*, longer ramp (30s doubling to 120s): an outage that has
-    # already produced three failures is not one more 30s pause away from
-    # being over, and six failures crammed into two and a half minutes spends
-    # the whole tolerance on a single bad moment. The error interval resets the
-    # moment a poll answers, so a blip does not slow the rest of the wait.
-    #
-    # Both sleeps draw on the one budget, so an alternating error/pending
-    # pattern — which never reaches six errors in a row — is still bounded by
-    # the hour.
-    # This is the step the status message exists for. It can hold a task for an
-    # hour with a `running` row and no other output — the polling is silent by
-    # design — so it reports the live tally instead: how many of the expected
-    # contexts have reported success, and how long it has been waiting. The
-    # tally comes out of the same `checks.txt` the verdict is graded from, so
-    # the board and the exit code can never disagree.
-    #
-    # Once per *pending* poll, which is at worst every 15 seconds — well clear
-    # of the one-second coalescing floor (§5.4) and around 60 messages across a
-    # full hour. The error path deliberately says nothing per attempt: five
-    # tolerated blips are not news, and overwriting the tally with "the API
-    # blipped" would lose the one number a person is watching. Only the sixth,
-    # which ends the wait, speaks.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      url=$(cat .vincent-issue/url.txt)
-      slug=$(cat .vincent-issue/slug.txt)
-      head=$(cat .vincent-issue/head.sha)
-      short=$(printf '%s' "$head" | cut -c1-7)
-      nreq=$(wc -l < .vincent-issue/required.txt | tr -d ' ')
-      echo "waiting for the required checks on $head"
-      echo "($url)"
-      say "waiting for $nreq required check(s) on $short"
-
-      budget=3600
-      waited=0
-      nap=15
-      enap=30
-      errors=0
-      while :; do
-        set +e
-        oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>.vincent-issue/api-err.txt)
-        rc_head=$?
-        gh api --paginate "repos/$slug/commits/$head/check-runs" \
-          --jq '.check_runs[] | [.name, (if .status != "completed" then "PENDING" else (.conclusion // "PENDING" | ascii_upcase) end)] | @tsv' \
-          > .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
-        rc_runs=$?
-        gh api "repos/$slug/commits/$head/status" \
-          --jq '.statuses[] | [.context, (.state | ascii_upcase)] | @tsv' \
-          >> .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
-        rc_status=$?
-        set -e
-
-        # Before the transient-error gate, not after it: a head that answered
-        # and disagrees is a definite answer, and the calls that fail *because*
-        # the branch moved under this task would otherwise be retried five
-        # times as if they were blips.
-        if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
-          say "someone pushed to {{.Task.BranchName}} during the wait: not merging"
-          echo "the pull request head moved to $oid while waiting for checks on $head:" >&2
-          echo "someone pushed to {{.Task.BranchName}}. nothing was merged." >&2
-          exit 1
-        fi
-
-        if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
-          errors=$((errors + 1))
-          if [ "$errors" -gt 5 ]; then
-            say "the GitHub API failed six times in a row: not merging"
-            echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
-            cat .vincent-issue/api-err.txt >&2
+          say "rebasing onto origin/{{.Task.BaseBranch}}"
+          if ! git rebase origin/{{.Task.BaseBranch}}; then
+            say "rebase stopped on conflicts: the resolver runs next"
             exit 1
           fi
-          if [ "$waited" -ge "$budget" ]; then
-            say "an hour up with the GitHub API failing: not merging"
-            echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
-            cat .vincent-issue/api-err.txt >&2
+          say "rebased cleanly onto origin/{{.Task.BaseBranch}}"
+
+      - id: resolve
+        name: Resolve the rebase conflicts
+        type: agent
+        if: '{{ ne (index .Steps "rebase").ExitCode 0 }}'
+        timeout: 45m
+        # One session, no retry: a second attempt inherits whatever state the
+        # first left behind, which is not the state this prompt describes. If it
+        # cannot finish, the task blocks and you finish the rebase by hand.
+        max_retries: 0
+        prompt: |
+          The rebase of {{.Task.BranchName}} onto `origin/{{.Task.BaseBranch}}`
+          stopped. It said:
+
+          {{ (index .Steps "rebase").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}, most likely mid-rebase.
+          Run `git status` first and find out what is actually true before you
+          change anything — it may be a conflict, or it may be that the fetch
+          itself failed, in which case there is nothing here to resolve and you
+          should say so rather than inventing a fix.
+
+          Say what you find and what you are doing about it:
+
+              vincent status "<one short line about what you are doing now>"
+
+          Start with what `git status` actually showed — "mid-rebase, 2 conflicted
+          files" or "the fetch failed, nothing to resolve" — because those two lead
+          to opposite outcomes and the board cannot tell them apart otherwise. Then
+          one per conflicted commit you continue past, and one at the end. Under ten
+          words. If the two sides are genuinely incompatible and you are stopping,
+          make the status say so: "internal/store conflict needs a human decision".
+
+          If it is a conflict, resolve it:
+
+          - The change being rebased is described in `.vincent-issue/brief.md`, and
+            the pull request body is in `.vincent-issue/pr.md`. Both say what this
+            branch is *for*; that is what decides how a conflict resolves.
+          - Keep both sides' intent. Do not resolve a conflict by discarding the
+            base branch's side because it is in the way — someone else's change
+            landed there on purpose. If the two are genuinely incompatible, stop
+            and leave the rebase in place rather than picking a winner.
+          - `git add` the resolved files and `git rebase --continue` for each
+            conflicted commit until the rebase is finished. Do not `git rebase
+            --skip` a commit of this branch.
+          - Never `git rebase --abort` and never `git merge` the base branch
+            instead: the next step asserts that the base is an ancestor of HEAD.
+          - Do not push. A later step does that.
+
+          When the rebase is finished, run `go run mage.go test` and
+          `go run mage.go lint` and fix what the rebase broke — a conflict resolved
+          so that it compiles is not the same thing as one resolved correctly.
+
+          Never stage or commit `.vincent-issue/`.
+        # Asserts the rebase is actually finished (no rebase state directory in
+        # this worktree — `--git-path` resolves the linked worktree's own, not
+        # the main repo's), that nothing was left half-resolved, that the branch
+        # really does sit on top of the base rather than having been merged or
+        # aborted, and that the tree still passes the bar.
+        check: >
+          test ! -d "$(git rev-parse --git-path rebase-merge)" &&
+          test ! -d "$(git rev-parse --git-path rebase-apply)" &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          ! git ls-files .vincent-issue | grep -q . &&
+          git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 20m
+
+      - id: repush
+        name: Force-push the rebased branch
+        type: command
+        shell: sh
+        timeout: 5m
+        # Load-bearing and not repeatable in any meaningful sense: if the push
+        # succeeded and the response was lost, a second one is either a no-op or
+        # a lease failure, and neither is worth automating.
+        max_retries: 0
+        # The ancestor test is the postcondition of the whole rebase leg,
+        # checked once here whether `resolve` ran or not: if the base is not an
+        # ancestor of HEAD, the branch was not rebased and there is nothing to
+        # force-push.
+        #
+        # `--force-with-lease` rather than `--force`: it refuses if `origin`'s
+        # copy of this branch is not the commit `publish` left there — which is
+        # the case exactly when someone else pushed to it while the gate was
+        # open.
+        #
+        # A rebase that changed nothing makes this a no-op push, which is fine —
+        # and `head.sha` then names the commit `publish` already pushed, whose
+        # checks have long since run. Nothing downstream needs to know which of
+        # the two happened.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
+            say "branch is not on top of the base: nothing was pushed"
+            echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
+            echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
+            git status --short --branch >&2
             exit 1
           fi
-          sleep "$enap"
-          waited=$((waited + enap))
-          if [ "$enap" -lt 120 ]; then
-            enap=$((enap * 2))
-            if [ "$enap" -gt 120 ]; then enap=120; fi
-          fi
-          continue
-        fi
-        errors=0
-        enap=30
 
-        # Grades every expected context and prints the verdict on line 1.
-        # SKIPPED and NEUTRAL count as passes because branch protection counts
-        # them as passes; anything that is neither a pass nor a recognised
-        # in-flight state is a failure, so a state this does not know about
-        # stops the tail instead of being waited out.
-        awk -F '\t' '
-          NR == FNR { req[++n] = $1; next }
-          { seen[$1] = seen[$1] " " $2 }
-          END {
-            verdict = "pass"
-            for (i = 1; i <= n; i++) {
-              c = req[i]
-              if (!(c in seen)) {
-                rows = rows "  pending  " c "  (not reported yet)\n"
-                if (verdict != "fail") verdict = "pending"
-                continue
-              }
-              m = split(seen[c], st, " ")
-              worst = "pass"
-              for (j = 1; j <= m; j++) {
-                s = st[j]
-                if (s == "SUCCESS" || s == "SKIPPED" || s == "NEUTRAL") continue
-                if (s == "PENDING" || s == "EXPECTED" || s == "QUEUED" || s == "IN_PROGRESS" || s == "WAITING" || s == "REQUESTED") {
-                  if (worst != "fail") worst = "pending"
-                  continue
+          # The two shas the rest of the tail pins to, both recorded *before*
+          # the push. `head` is what this push makes the branch, and every
+          # question asked of GitHub after this names it instead of naming the
+          # pull request — which is what makes the wait immune to the
+          # propagation window. `prev` is the value `--force-with-lease` is
+          # about to assert about origin, which is what lets `await-head` tell
+          # "GitHub has not caught up yet" apart from "someone else pushed".
+          if ! prev=$(git rev-parse --verify --quiet "origin/{{.Task.BranchName}}"); then
+            say "no origin/{{.Task.BranchName}} to replace: nothing was pushed"
+            echo "this worktree has no origin/{{.Task.BranchName}}, so there is no published commit" >&2
+            echo "for the force-push to replace and no lease for it to hold. nothing was pushed." >&2
+            exit 1
+          fi
+          printf '%s\n' "$prev" > .vincent-issue/prev-head.sha
+          git rev-parse HEAD > .vincent-issue/head.sha
+
+          # A lease failure is the one interesting way this dies, and the status
+          # set here is what survives to say so: someone pushed to the branch
+          # while the merge gate was open.
+          say "force-pushing $(cut -c1-7 .vincent-issue/head.sha) over $(printf '%s' "$prev" | cut -c1-7)"
+          git push --force-with-lease origin {{.Task.BranchName}}
+          echo "pushed $(cat .vincent-issue/head.sha) over $(cat .vincent-issue/prev-head.sha)"
+          say "pushed $(cut -c1-7 .vincent-issue/head.sha)"
+
+      - id: await-head
+        name: Wait for the PR to point at the pushed commit
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # The first of the two windows a force-push opens. Until GitHub moves
+        # the pull request's head, every question about "this PR's checks" is
+        # answered about the pre-rebase commit — which is green, because it
+        # passed before the gate. Waiting here is what stops that answer from
+        # being mistaken for this commit's.
+        #
+        # A head that is neither sha is not a race to wait out:
+        # `--force-with-lease` already proved origin was at `prev` when this
+        # task pushed, so a third value means someone pushed afterwards. That
+        # branch is not the one anyone approved, so nothing merges it.
+        #
+        # The wait is paced rather than fixed. GitHub usually moves the head
+        # within a second or two of the push, so the first polls are close
+        # together and the interval then doubles to a 15s ceiling: the common
+        # case is detected in ~2s instead of 5, and an unusually slow one costs
+        # ~25 calls over five minutes rather than 60. The budget is counted in
+        # *seconds waited*, not in polls, so it stays the five minutes the
+        # failure message claims even though the polls are no longer evenly
+        # spaced.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+          prev=$(cat .vincent-issue/prev-head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          # Set once, outside the loop: this usually finishes in about two
+          # seconds and re-stating the same sentence per poll would be noise the
+          # coalescing floor cannot even see. The polls that say something new —
+          # a third sha, the timeout — say it where they exit.
+          say "waiting for the PR head to become $short"
+
+          nap=2
+          waited=0
+          while :; do
+            # The exit status, not the captured text: a failed `gh` must read as
+            # "no answer yet" and be waited out, never as a third sha.
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>/dev/null)
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              oid=''
+            fi
+
+            if [ "$oid" = "$head" ]; then
+              echo "the pull request head is $head"
+              say "the PR points at $short"
+              break
+            fi
+
+            if [ -n "$oid" ] && [ "$oid" != "$prev" ]; then
+              say "someone else pushed to {{.Task.BranchName}}: refusing to wait"
+              echo "the pull request head is $oid, which is neither the commit this task pushed" >&2
+              echo "($head) nor the one it replaced ($prev): someone else pushed to" >&2
+              echo "{{.Task.BranchName}}. refusing to wait on checks for a branch this task no longer owns." >&2
+              exit 1
+            fi
+
+            if [ "$waited" -ge 300 ]; then
+              say "PR head still not $short five minutes after the push"
+              echo "five minutes after the force-push the pull request still reports $oid," >&2
+              echo "not the pushed commit $head. nothing was merged." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: wait-checks
+        name: Wait for the required checks
+        type: command
+        shell: sh
+        # The step's own timeout is the outer bound; the loop's poll budget is
+        # what produces a legible message instead of a `timeout` block reason.
+        timeout: 90m
+        max_retries: 0
+        # A red required check is the repairer's input, not the end of the run,
+        # so this row has to survive as data (§7.2). Everything downstream reads
+        # it as `Status "succeeded"` rather than as an exit code: a step skipped
+        # by its own guard has exit code 0, which would make "the checks are
+        # green" and "nobody asked" the same sentence — the bug this whole tail
+        # is built to avoid, one level up.
+        allow_failure: true
+        # Not `gh pr checks --required`. That command resolves the pull
+        # request's head at query time and reports the rollup it finds there,
+        # which makes it wrong in both of the windows a force-push opens: it
+        # answers about the old commit until the head moves, and it answers
+        # about a half-created set of runs afterwards. In both, "every required
+        # check is green" is a true sentence about the wrong thing, and exit
+        # code 0 does not distinguish it from the real one.
+        #
+        # So this asks the **commit** — by sha, from `head.sha` — for its check
+        # runs and its commit statuses, and grades what comes back against the
+        # expected set `checks-required` read from branch protection. A required
+        # context that has no row yet is *pending*, which is the entire fix: an
+        # absence can no longer be read as a pass.
+        #
+        # Both kinds are collected because either can satisfy a required
+        # context: Actions jobs arrive as check runs, third-party integrations
+        # as commit statuses. A check run that has not finished has no
+        # conclusion, and that is the pending this loop sleeps on.
+        #
+        # The head is re-asserted every poll: a push that lands during the hour
+        # ends the wait rather than being merged by it.
+        #
+        # An hour of CI, budgeted in *seconds waited* rather than in polls,
+        # because the polls are no longer evenly spaced. The pending interval
+        # starts at 15s and doubles to a 60s ceiling: a three-platform matrix
+        # takes minutes, so a fixed 30s spent most of the hour asking a question
+        # whose answer had not changed. The ramp reaches the same hour in
+        # roughly 60 calls instead of 120, while answering a fast run sooner
+        # than the old first poll did.
+        #
+        # A transient API failure is not a verdict — five in a row are tolerated
+        # so one 502 does not throw away forty minutes of waiting. Those retries
+        # get their *own*, longer ramp (30s doubling to 120s): an outage that
+        # has already produced three failures is not one more 30s pause away
+        # from being over, and six failures crammed into two and a half minutes
+        # spends the whole tolerance on a single bad moment. The error interval
+        # resets the moment a poll answers, so a blip does not slow the rest of
+        # the wait.
+        #
+        # Both sleeps draw on the one budget, so an alternating error/pending
+        # pattern — which never reaches six errors in a row — is still bounded
+        # by the hour. This is the step the status message exists for. It can
+        # hold a task for an hour with a `running` row and no other output — the
+        # polling is silent by design — so it reports the live tally instead:
+        # how many of the expected contexts have reported success, and how long
+        # it has been waiting. The tally comes out of the same `checks.txt` the
+        # verdict is graded from, so the board and the exit code can never
+        # disagree.
+        #
+        # Once per *pending* poll, which is at worst every 15 seconds — well
+        # clear of the one-second coalescing floor (§5.4) and around 60 messages
+        # across a full hour. The error path deliberately says nothing per
+        # attempt: five tolerated blips are not news, and overwriting the tally
+        # with "the API blipped" would lose the one number a person is watching.
+        # Only the sixth, which ends the wait, speaks.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          slug=$(cat .vincent-issue/slug.txt)
+          head=$(cat .vincent-issue/head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+          nreq=$(wc -l < .vincent-issue/required.txt | tr -d ' ')
+          echo "waiting for the required checks on $head"
+          echo "($url)"
+          say "waiting for $nreq required check(s) on $short"
+
+          budget=3600
+          waited=0
+          nap=15
+          enap=30
+          errors=0
+          while :; do
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>.vincent-issue/api-err.txt)
+            rc_head=$?
+            gh api --paginate "repos/$slug/commits/$head/check-runs" \
+              --jq '.check_runs[] | [.name, (if .status != "completed" then "PENDING" else (.conclusion // "PENDING" | ascii_upcase) end)] | @tsv' \
+              > .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
+            rc_runs=$?
+            gh api "repos/$slug/commits/$head/status" \
+              --jq '.statuses[] | [.context, (.state | ascii_upcase)] | @tsv' \
+              >> .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
+            rc_status=$?
+            set -e
+
+            # Before the transient-error gate, not after it: a head that
+            # answered and disagrees is a definite answer, and the calls that
+            # fail *because* the branch moved under this task would otherwise be
+            # retried five times as if they were blips.
+            if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
+              say "someone pushed to {{.Task.BranchName}} during the wait: not merging"
+              echo "the pull request head moved to $oid while waiting for checks on $head:" >&2
+              echo "someone pushed to {{.Task.BranchName}}. nothing was merged." >&2
+              exit 1
+            fi
+
+            if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
+              errors=$((errors + 1))
+              if [ "$errors" -gt 5 ]; then
+                say "the GitHub API failed six times in a row: not merging"
+                echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
+                cat .vincent-issue/api-err.txt >&2
+                exit 1
+              fi
+              if [ "$waited" -ge "$budget" ]; then
+                say "an hour up with the GitHub API failing: not merging"
+                echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
+                cat .vincent-issue/api-err.txt >&2
+                exit 1
+              fi
+              sleep "$enap"
+              waited=$((waited + enap))
+              if [ "$enap" -lt 120 ]; then
+                enap=$((enap * 2))
+                if [ "$enap" -gt 120 ]; then enap=120; fi
+              fi
+              continue
+            fi
+            errors=0
+            enap=30
+
+            # Grades every expected context and prints the verdict on line 1.
+            # SKIPPED and NEUTRAL count as passes because branch protection
+            # counts them as passes; anything that is neither a pass nor a
+            # recognised in-flight state is a failure, so a state this does not
+            # know about stops the tail instead of being waited out.
+            awk -F '\t' '
+              NR == FNR { req[++n] = $1; next }
+              { seen[$1] = seen[$1] " " $2 }
+              END {
+                verdict = "pass"
+                for (i = 1; i <= n; i++) {
+                  c = req[i]
+                  if (!(c in seen)) {
+                    rows = rows "  pending  " c "  (not reported yet)\n"
+                    if (verdict != "fail") verdict = "pending"
+                    continue
+                  }
+                  m = split(seen[c], st, " ")
+                  worst = "pass"
+                  for (j = 1; j <= m; j++) {
+                    s = st[j]
+                    if (s == "SUCCESS" || s == "SKIPPED" || s == "NEUTRAL") continue
+                    if (s == "PENDING" || s == "EXPECTED" || s == "QUEUED" || s == "IN_PROGRESS" || s == "WAITING" || s == "REQUESTED") {
+                      if (worst != "fail") worst = "pending"
+                      continue
+                    }
+                    worst = "fail"
+                  }
+                  rows = rows "  " worst "  " c " " seen[c] "\n"
+                  if (worst == "fail") verdict = "fail"
+                  else if (worst == "pending" && verdict != "fail") verdict = "pending"
                 }
-                worst = "fail"
+                printf "%s\n%s", verdict, rows
               }
-              rows = rows "  " worst "  " c " " seen[c] "\n"
-              if (worst == "fail") verdict = "fail"
-              else if (worst == "pending" && verdict != "fail") verdict = "pending"
-            }
-            printf "%s\n%s", verdict, rows
-          }
-        ' .vincent-issue/required.txt .vincent-issue/seen.tsv > .vincent-issue/checks.txt
+            ' .vincent-issue/required.txt .vincent-issue/seen.tsv > .vincent-issue/checks.txt
 
-        verdict=$(head -n 1 .vincent-issue/checks.txt)
-        case "$verdict" in
-          pass)
-            sed -n '2,$p' .vincent-issue/checks.txt
-            echo "--- every required check passed on $head ---"
-            say "all $nreq required check(s) green on $short"
-            break
-            ;;
-          fail)
-            # Name the contexts, not the count: "ci (windows-latest) FAILURE"
-            # is actionable from the board, "a required check failed" sends
-            # someone to the transcript to find out which. `NR > 1` skips the
-            # verdict word on line 1, which is itself `fail` here; dropping the
-            # marker field and keeping the rest is what survives a context name
-            # containing spaces, which every matrix job's does. Over-long lists
-            # are truncated at 256 bytes rather than refused (§5.4).
-            say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' .vincent-issue/checks.txt)"
-            echo "a required check did not pass on $head; not merging:" >&2
-            sed -n '2,$p' .vincent-issue/checks.txt >&2
-            exit 1
-            ;;
-        esac
+            verdict=$(head -n 1 .vincent-issue/checks.txt)
+            case "$verdict" in
+              pass)
+                sed -n '2,$p' .vincent-issue/checks.txt
+                echo "--- every required check passed on $head ---"
+                say "all $nreq required check(s) green on $short"
+                break
+                ;;
+              fail)
+                # Name the contexts, not the count: "ci (windows-latest)
+                # FAILURE" is actionable from the board, "a required check
+                # failed" sends someone to the transcript to find out which. `NR
+                # > 1` skips the verdict word on line 1, which is itself `fail`
+                # here; dropping the marker field and keeping the rest is what
+                # survives a context name containing spaces, which every matrix
+                # job's does. Over-long lists are truncated at 256 bytes rather
+                # than refused (§5.4).
+                say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' .vincent-issue/checks.txt)"
+                echo "a required check did not pass on $head; not merging:" >&2
+                sed -n '2,$p' .vincent-issue/checks.txt >&2
+                exit 1
+                ;;
+            esac
 
-        if [ "$waited" -ge "$budget" ]; then
-          say "still pending after an hour on $short: not merging"
-          echo "required checks on $head still pending after an hour; not merging:" >&2
-          sed -n '2,$p' .vincent-issue/checks.txt >&2
+            if [ "$waited" -ge "$budget" ]; then
+              say "still pending after an hour on $short: not merging"
+              echo "required checks on $head still pending after an hour; not merging:" >&2
+              sed -n '2,$p' .vincent-issue/checks.txt >&2
+              exit 1
+            fi
+
+            # The live tally, refreshed on every pending poll: the one number a
+            # person watching an hour-long wait actually wants. `NR > 1` again —
+            # line 1 of checks.txt is the verdict, which is `pending` every time
+            # execution reaches here, and counting it would report one context
+            # fewer as green than is true.
+            pend=$(awk 'NR > 1 && $1 == "pending"' .vincent-issue/checks.txt | wc -l | tr -d ' ')
+            say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 60 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 60 ]; then nap=60; fi
+            fi
+          done
+
+      - id: merge-ready
+        name: Wait for GitHub to call it mergeable
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # Nothing to wait for if the checks never went green: `wait-checks` has
+        # already named the red context, which is more than `BLOCKED` will ever
+        # say.
+        if: '{{ eq (index .Steps "wait-checks").Status "succeeded" }}'
+        # `BEHIND` and `DIRTY` are answers the next pass acts on rather than
+        # errors to block on — both are fixed by rebasing again, which is where
+        # a pass starts. Under `allow_failure` they end this pass; `merge` is
+        # guarded on this step having succeeded, so nothing merges on the way
+        # out.
+        allow_failure: true
+        # GitHub's own verdict lags the checks: for a few seconds after the last
+        # required context turns green the pull request is still `BLOCKED`, and
+        # a merge attempted in that window is refused. Waiting for the verdict
+        # here keeps `merge` a single call that either works or means something.
+        #
+        # This is not a substitute for `wait-checks` and could not be: `BLOCKED`
+        # is opaque — a red required check, a missing one and an unmet review
+        # requirement are the same word — so a loop that only watched this would
+        # wait the full hour on a failure `wait-checks` names in two minutes.
+        #
+        # `BEHIND` is the other side of `strict: true` branch protection: the
+        # base moved while CI ran, so the rebase is stale. That is a real
+        # answer, not something to poll through — and the fix is another rebase,
+        # which is what the next pass of this loop begins with. Before the loop
+        # it cost a person a re-run from `gate-merge`.
+        #
+        # The wait is paced to what is being waited on: the verdict usually
+        # settles in a few seconds, so the first polls are 2s apart and the
+        # interval then doubles to a 15s ceiling. A fixed 15s spent a quarter of
+        # a minute on the overwhelmingly common case of "already clean by the
+        # time we asked". The five-minute budget is unchanged and now counted in
+        # seconds waited, so the failure message stays true.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+
+          # Set once: the common case settles in seconds. Each of the four
+          # states this refuses gets its own message where it exits, because
+          # `BEHIND`, `DIRTY` and `DRAFT` need three different responses from a
+          # person and `nonzero_exit` is the same word for all of them.
+          say "waiting for GitHub to call the PR mergeable"
+
+          nap=2
+          waited=0
+          while :; do
+            # Same rule as `await-head`: a failed call leaves an empty answer to
+            # be waited out rather than a value to act on.
+            if ! gh pr view "$url" --json headRefOid,mergeable,mergeStateStatus \
+              --jq '[.headRefOid, .mergeable, .mergeStateStatus] | @tsv' \
+              > .vincent-issue/mergeable.tsv 2>/dev/null; then
+              : > .vincent-issue/mergeable.tsv
+            fi
+            oid=$(cut -f1 .vincent-issue/mergeable.tsv)
+            mergeable=$(cut -f2 .vincent-issue/mergeable.tsv)
+            state=$(cut -f3 .vincent-issue/mergeable.tsv)
+
+            if [ -n "$oid" ] && [ "$oid" != "$head" ]; then
+              say "the PR head moved off the verified commit: not merging"
+              echo "the pull request head moved to $oid, not the verified commit $head." >&2
+              echo "nothing was merged." >&2
+              exit 1
+            fi
+
+            case "$state" in
+              CLEAN|UNSTABLE|HAS_HOOKS)
+                echo "mergeable: $mergeable, state: $state"
+                say "GitHub calls it mergeable: $state"
+                break
+                ;;
+              BEHIND)
+                say "BEHIND: {{.Task.BaseBranch}} moved — the next pass rebases again"
+                echo "{{.Task.BaseBranch}} moved while the checks ran, and this repository requires a branch" >&2
+                echo "to be up to date before merging: this rebase is stale. nothing was merged on this" >&2
+                echo "pass; the next one rebases onto the base that moved." >&2
+                exit 1
+                ;;
+              DIRTY)
+                say "DIRTY: the PR conflicts with {{.Task.BaseBranch}} — the next pass rebases"
+                echo "the pull request conflicts with {{.Task.BaseBranch}}; nothing was merged on this pass." >&2
+                echo "the next pass rebases, and the resolver picks up the conflicts it stops on." >&2
+                exit 1
+                ;;
+              DRAFT)
+                say "DRAFT: the PR is not ready to merge"
+                echo "the pull request is a draft; nothing was merged." >&2
+                exit 1
+                ;;
+            esac
+
+            if [ "$waited" -ge 300 ]; then
+              say "GitHub still says ${state:-unknown} five minutes after the checks went green"
+              echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
+              echo "five minutes after every required check went green; not merging. read the PR." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: merge
+        name: Merge the pull request
+        type: command
+        shell: sh
+        timeout: 10m
+        # Only where GitHub said it would take it. `merge-ready` is itself
+        # guarded on the checks, so this one guard carries both — and it reads
+        # `Status` rather than an exit code because a skipped step's exit code
+        # is 0.
+        if: '{{ eq (index .Steps "merge-ready").Status "succeeded" }}'
+        # A refused or lost merge call ends the pass rather than the run: the
+        # loop's answer to it is to ask GitHub what actually happened
+        # (`merge-probe`) and, only if nothing did, to attempt the whole thing
+        # again from the rebase.
+        allow_failure: true
+        # The one irreversible step in the tail, and the reason nothing above it
+        # retries either. A retried merge is a merge attempted against a state
+        # this workflow no longer knows; `merged` reads the real answer back
+        # instead.
+        max_retries: 0
+        # `--merge` is the repository's rule, not a preference: squash and
+        # rebase merges are disabled on this repo because a branch's history
+        # becomes master's history (CLAUDE.md). No `--delete-branch`: the
+        # repository deletes the remote branch itself, and gh's flag would also
+        # delete the local branch this worktree is sitting on.
+        #
+        # `--match-head-commit` closes the last gap in the tail: between the
+        # final poll and this call, a push could still land. GitHub refuses the
+        # merge if the head is not the commit whose checks were verified, which
+        # is a server -side guarantee rather than one this workflow has to win a
+        # race for.
+        #
+        # The status is set before the call and never after it: this is the
+        # irreversible step, and a message claiming success would be a claim
+        # this step is not entitled to make — `gh pr merge` exiting 0 is the API
+        # accepting the merge, not GitHub having recorded it. `merged` reads the
+        # real answer back and says so. What survives here on a failure —
+        # "merging <sha>" — is exactly the sentence a person needs before
+        # deciding whether to look at the PR.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "merging $(cut -c1-7 .vincent-issue/head.sha) with a merge commit"
+          gh pr merge "$(cat .vincent-issue/url.txt)" \
+            --merge \
+            --match-head-commit "$(cat .vincent-issue/head.sha)"
+
+      - id: merge-probe
+        name: Ask GitHub whether the merge landed
+        type: command
+        shell: sh
+        timeout: 3m
+        max_retries: 0
+        # The break condition, and the only step in this loop entitled to say
+        # the merge happened: `gh pr merge` exiting 0 is the API accepting the
+        # call, not GitHub having recorded it.
+        #
+        # It runs on every pass, including one where `merge` was skipped or
+        # failed, because that is the case a retrying tail makes newly
+        # dangerous. A merge call whose response was lost leaves a pull request
+        # that *is* merged and a step that exited non-zero; the next pass would
+        # then force-push over a branch GitHub has already merged and deleted.
+        # Asking the server before repeating anything is what closes that.
+        #
+        # Three answers, three exit codes, because the loop has to tell them
+        # apart: 0 landed at the commit this task verified, 2 the pull request
+        # is merged at some *other* commit or closed under this task — neither
+        # is a thing to retry — and 1 it is still open, which is the pass that
+        # repairs and goes round again.
+        allow_failure: true
+        # It waits wherever the merge call **ran**, and that includes the pass
+        # where it exited non-zero. `gh pr merge` returning is the API accepting
+        # the merge, not GitHub having finished recording it: for a second or
+        # two afterwards the pull request can still read OPEN. A merge whose
+        # response was lost looks exactly like a failed one, so reading once and
+        # calling it "not merged" is how the next pass would come to force-push
+        # over a merged branch. Only a *skipped* merge — the checks were red, or
+        # GitHub never called it mergeable — has no window to wait out, and
+        # there a minute per pass would buy nothing.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          budget=60
+          if [ '{{ (index .Steps "merge").Status }}' = skipped ]; then
+            budget=0
+          fi
+
+          nap=2
+          waited=0
+          while :; do
+            # A failed read is "no answer yet", the same rule every wait in this
+            # tail uses: it must never be mistaken for a state.
+            if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+              > .vincent-issue/merged.json 2>/dev/null; then
+              printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+                > .vincent-issue/merged.json
+            fi
+            state=$(jq -r .state .vincent-issue/merged.json)
+            if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then break; fi
+            if [ "$waited" -ge "$budget" ]; then break; fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 10 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 10 ]; then nap=10; fi
+            fi
+          done
+
+          jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+            .vincent-issue/merged.json
+
+          oid=$(jq -r .headRefOid .vincent-issue/merged.json)
+
+          if [ "$state" = MERGED ] && [ "$oid" = "$head" ]; then
+            say "merged $short"
+            exit 0
+          fi
+
+          if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then
+            echo "the pull request is $state at $oid, not open at the commit this task pushed ($head):" >&2
+            echo "somebody merged or closed it outside this task. nothing here will push over that." >&2
+            exit 2
+          fi
+
+          say "pass {{.Loop.Index}}: the PR is ${state:-unreadable}, not merged"
+          echo "the pull request is ${state:-unreadable} at $oid; it did not merge on this pass." >&2
           exit 1
-        fi
 
-        # The live tally, refreshed on every pending poll: the one number a
-        # person watching an hour-long wait actually wants. `NR > 1` again —
-        # line 1 of checks.txt is the verdict, which is `pending` every time
-        # execution reaches here, and counting it would report one context
-        # fewer as green than is true.
-        pend=$(awk 'NR > 1 && $1 == "pending"' .vincent-issue/checks.txt | wc -l | tr -d ' ')
-        say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
+      - id: merge-elsewhere
+        name: Refuse a pull request this task no longer owns
+        type: command
+        shell: sh
+        timeout: 1m
+        max_retries: 0
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 2 }}'
+        # No `allow_failure`: this is the one outcome inside the loop that has
+        # to stop the run rather than start another pass. Everything a pass does
+        # next — rebase, force-push — would be done to a pull request somebody
+        # else has already finished with.
+        run: |
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-        sleep "$nap"
-        waited=$((waited + nap))
-        if [ "$nap" -lt 60 ]; then
-          nap=$((nap * 2))
-          if [ "$nap" -gt 60 ]; then nap=60; fi
-        fi
-      done
-
-  - id: merge-ready
-    name: Wait for GitHub to call it mergeable
-    type: command
-    shell: sh
-    timeout: 10m
-    max_retries: 0
-    # GitHub's own verdict lags the checks: for a few seconds after the last
-    # required context turns green the pull request is still `BLOCKED`, and a
-    # merge attempted in that window is refused. Waiting for the verdict here
-    # keeps `merge` a single call that either works or means something.
-    #
-    # This is not a substitute for `wait-checks` and could not be: `BLOCKED` is
-    # opaque — a red required check, a missing one and an unmet review
-    # requirement are the same word — so a loop that only watched this would
-    # wait the full hour on a failure `wait-checks` names in two minutes.
-    #
-    # `BEHIND` is the other side of `strict: true` branch protection: the base
-    # moved while CI ran, so the rebase is stale. That is a real answer, not
-    # something to poll through — the fix is another rebase, which means
-    # re-running this task from `gate-merge`.
-    #
-    # The wait is paced to what is being waited on: the verdict usually settles
-    # in a few seconds, so the first polls are 2s apart and the interval then
-    # doubles to a 15s ceiling. A fixed 15s spent a quarter of a minute on the
-    # overwhelmingly common case of "already clean by the time we asked". The
-    # five-minute budget is unchanged and now counted in seconds waited, so the
-    # failure message stays true.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      url=$(cat .vincent-issue/url.txt)
-      head=$(cat .vincent-issue/head.sha)
-
-      # Set once: the common case settles in seconds. Each of the four states
-      # this refuses gets its own message where it exits, because `BEHIND`,
-      # `DIRTY` and `DRAFT` need three different responses from a person and
-      # `nonzero_exit` is the same word for all of them.
-      say "waiting for GitHub to call the PR mergeable"
-
-      nap=2
-      waited=0
-      while :; do
-        # Same rule as `await-head`: a failed call leaves an empty answer to be
-        # waited out rather than a value to act on.
-        if ! gh pr view "$url" --json headRefOid,mergeable,mergeStateStatus \
-          --jq '[.headRefOid, .mergeable, .mergeStateStatus] | @tsv' \
-          > .vincent-issue/mergeable.tsv 2>/dev/null; then
-          : > .vincent-issue/mergeable.tsv
-        fi
-        oid=$(cut -f1 .vincent-issue/mergeable.tsv)
-        mergeable=$(cut -f2 .vincent-issue/mergeable.tsv)
-        state=$(cut -f3 .vincent-issue/mergeable.tsv)
-
-        if [ -n "$oid" ] && [ "$oid" != "$head" ]; then
-          say "the PR head moved off the verified commit: not merging"
-          echo "the pull request head moved to $oid, not the verified commit $head." >&2
-          echo "nothing was merged." >&2
+          say "the PR was merged or closed outside this task: stopping"
+          echo "the pull request is no longer an open one this task owns; see the 'merge-probe'" >&2
+          echo "run above for its state and head. nothing further was pushed or merged." >&2
           exit 1
-        fi
 
-        case "$state" in
-          CLEAN|UNSTABLE|HAS_HOOKS)
-            echo "mergeable: $mergeable, state: $state"
-            say "GitHub calls it mergeable: $state"
-            break
-            ;;
-          BEHIND)
-            say "BEHIND: {{.Task.BaseBranch}} moved, the rebase is stale — re-run from the merge gate"
-            echo "{{.Task.BaseBranch}} moved while the checks ran, and this repository requires a branch" >&2
-            echo "to be up to date before merging: this rebase is stale. re-run this task from the" >&2
-            echo "merge gate to rebase again. nothing was merged." >&2
-            exit 1
-            ;;
-          DIRTY)
-            say "DIRTY: the PR conflicts with {{.Task.BaseBranch}}"
-            echo "the pull request conflicts with {{.Task.BaseBranch}}; nothing was merged." >&2
-            exit 1
-            ;;
-          DRAFT)
-            say "DRAFT: the PR is not ready to merge"
-            echo "the pull request is a draft; nothing was merged." >&2
-            exit 1
-            ;;
-        esac
+      - id: merge-ok
+        name: Stop once the merge has landed
+        type: break
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 0 }}'
 
-        if [ "$waited" -ge 300 ]; then
-          say "GitHub still says ${state:-unknown} five minutes after the checks went green"
-          echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
-          echo "five minutes after every required check went green; not merging. read the PR." >&2
-          exit 1
-        fi
+      - id: repair-checks
+        name: Repair the failing required checks
+        type: agent
+        # The only failure in this loop an agent can do anything about, and only
+        # while a pass remains to prove the repair — a repair nothing re-runs CI
+        # against would reach `merged` unverified while costing a whole session,
+        # which is `verify`'s rule applied here.
+        #
+        # A `BEHIND` verdict, a refused merge and a lease failure are not
+        # repairs: the next pass's rebase and force-push are what answer those,
+        # and an agent asked to "fix" one would invent work.
+        if: '{{ and (ne (index .Steps "wait-checks").Status "succeeded") (not .Loop.IsLast) }}'
+        timeout: 60m
+        # A pass *is* the retry here, and the next one re-runs the real checks —
+        # a better judge than a second session against this step's own budget.
+        max_retries: 0
+        prompt: |
+          A required check failed on the pull request for {{.Task.BranchName}},
+          on the commit this task pushed. This is how the required contexts
+          graded at that commit:
 
-        sleep "$nap"
-        waited=$((waited + nap))
-        if [ "$nap" -lt 15 ]; then
-          nap=$((nap * 2))
-          if [ "$nap" -gt 15 ]; then nap=15; fi
-        fi
-      done
+          {{ (index .Steps "wait-checks").Result }}
 
-  - id: merge
-    name: Merge the pull request
-    type: command
-    shell: sh
-    timeout: 10m
-    # The one irreversible step in the tail, and the reason nothing above it
-    # retries either. A retried merge is a merge attempted against a state this
-    # workflow no longer knows; `merged` reads the real answer back instead.
-    max_retries: 0
-    # `--merge` is the repository's rule, not a preference: squash and rebase
-    # merges are disabled on this repo because a branch's history becomes
-    # master's history (CLAUDE.md). No `--delete-branch`: the repository
-    # deletes the remote branch itself, and gh's flag would also delete the
-    # local branch this worktree is sitting on.
-    #
-    # `--match-head-commit` closes the last gap in the tail: between the final
-    # poll and this call, a push could still land. GitHub refuses the merge if
-    # the head is not the commit whose checks were verified, which is a server
-    # -side guarantee rather than one this workflow has to win a race for.
-    #
-    # The status is set before the call and never after it: this is the
-    # irreversible step, and a message claiming success would be a claim this
-    # step is not entitled to make — `gh pr merge` exiting 0 is the API
-    # accepting the merge, not GitHub having recorded it. `merged` reads the
-    # real answer back and says so. What survives here on a failure —
-    # "merging <sha>" — is exactly the sentence a person needs before deciding
-    # whether to look at the PR.
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          You are in the worktree at {{.Worktree.Path}}, on
+          {{.Task.BranchName}}, rebased onto {{.Task.BaseBranch}} and already
+          pushed. This is pass {{.Loop.Index}} of at most three merge attempts,
+          and the next one rebases, force-pushes and re-runs those same checks
+          against whatever you commit here.
 
-      say "merging $(cut -c1-7 .vincent-issue/head.sha) with a merge commit"
-      gh pr merge "$(cat .vincent-issue/url.txt)" \
-        --merge \
-        --match-head-commit "$(cat .vincent-issue/head.sha)"
+          Say what you are doing as you go — someone may be watching this
+          branch wait on CI:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Name the failing job and then the fault — "ci windows: path separator
+          in config test" beats "investigating". Under ten words after the
+          prefix. If you conclude the check is red for a reason that has
+          nothing to do with this branch, say *that* in the status: it is the
+          one finding that should stop a person from waiting out another hour
+          of CI.
+
+          Read the actual failure before you change anything. The table above
+          names the contexts; the logs are on GitHub, not in this worktree:
+
+              gh pr checks "$(cat .vincent-issue/url.txt)"
+              gh run list --commit "$(cat .vincent-issue/head.sha)"
+              gh run view <run-id> --log-failed
+
+          Then fix the underlying cause:
+
+          - **Do not weaken, skip, delete or `t.Skip` a test**, do not relax a
+            lint rule or add a `//nolint` to silence a finding, and do not edit
+            `.github/workflows/` to stop a red job from running. A check that
+            no longer runs is not a check that passed, and this repository's
+            required contexts are named in branch protection — removing one
+            leaves the wait hanging on a context nothing will ever report.
+          - A failure only CI sees is usually a platform or a race. CI runs the
+            suite and every gate on Windows, macOS and Linux (`CLAUDE.md`) and
+            this machine is one of the three, so reproduce it the way the
+            failing job did — `GOOS=windows go tool golangci-lint run ./...`,
+            `go run mage.go testrace`, the gate script the job named — rather
+            than assuming the host is representative.
+          - Stay inside the scope the brief agreed
+            (`.vincent-issue/brief.md`). If the check is red for a reason that
+            predates this branch, say so plainly and fix only what this branch
+            broke.
+          - Update `.vincent-issue/pr.md` if this repair changed what the
+            change does, and the affected page under `docs/` if it changed a
+            documented claim. A documentation audit already ran on the code you
+            are repairing, so anything you make stale here is stale for good.
+
+          **Commit your fix, and do not push.** The next pass force-pushes what
+          you committed under a lease it takes itself; pushing from here breaks
+          that lease and stops the run.
+
+          Never stage or commit `.vincent-issue/`.
+        # Asserts the repair is a committed, self-consistent branch the next
+        # pass can rebase and push: nothing staged or dirty, the scratch
+        # directory untracked, at least one commit that is not on the remote yet
+        # — which is what says a repair actually happened — and the local legs
+        # green. The local legs are not the checks that failed and cannot be;
+        # what they are is the cheapest way to stop a pass from spending an hour
+        # of CI on a branch that does not build.
+        check: >
+          ! git ls-files .vincent-issue | grep -q . &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          test "$(git rev-list --count origin/{{.Task.BranchName}}..HEAD)" -gt 0 &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 25m
 
   - id: merged
     name: Confirm the merge
@@ -2086,27 +2398,20 @@ steps:
     shell: sh
     timeout: 3m
     max_retries: 0
-    # The read-only postcondition: `gh pr merge` exiting 0 is a claim, and this
-    # is the check of it. It asks two things, because MERGED alone does not say
-    # *what* was merged — the head is asserted against `head.sha` so the run
-    # ends having confirmed that the commit whose checks it waited for is the
-    # commit that landed.
+    # The postcondition, and it sits outside the loop for the reason
+    # `verify-final` sits outside `verify`: a loop that runs out of passes
+    # **succeeds** (§7.8), so the loop cannot be its own assertion. This is.
+    #
+    # It asks two things, because MERGED alone does not say *what* was merged —
+    # the head is asserted against `head.sha`, so the run ends having confirmed
+    # that the commit whose checks it waited for is the commit that landed.
+    # `merge-probe` already waited for the state to settle, so this reads once
+    # rather than polling.
     #
     # Clearing the scratch directory last leaves the worktree clean, so
     # archiving the task does not warn about a dirty tree — and leaves the
     # drafts in place for inspection if anything above failed, which is the
     # same reason nothing deletes them when `publish` fails.
-    #
-    # It gives the state a minute to settle before calling it. `gh pr merge`
-    # returning is the API accepting the merge, not GitHub having finished
-    # recording it: for a second or two afterwards the pull request can still
-    # read OPEN and `mergeCommit` can still be null. Asserting into that window
-    # turns a successful merge into a blocked task. So this polls — 2s doubling
-    # to a 10s ceiling, one minute of budget — and only a state that stays
-    # un-MERGED for the whole minute is reported as one. The assertion itself
-    # is unchanged: this waits for an answer, it does not accept a different
-    # one, and `max_retries: 0` still stands because a postcondition that keeps
-    # being re-attempted is not a postcondition.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -2117,35 +2422,24 @@ steps:
 
       say "confirming the merge landed at $short"
 
-      nap=2
-      waited=0
-      while :; do
-        # A failed read is "no answer yet", the same rule the waits above use:
-        # it must never be mistaken for a state.
-        if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
-          > .vincent-issue/merged.json 2>/dev/null; then
-          printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
-            > .vincent-issue/merged.json
-        fi
-        state=$(jq -r .state .vincent-issue/merged.json)
-        if [ "$state" = MERGED ]; then break; fi
-        if [ "$waited" -ge 60 ]; then break; fi
-
-        sleep "$nap"
-        waited=$((waited + nap))
-        if [ "$nap" -lt 10 ]; then
-          nap=$((nap * 2))
-          if [ "$nap" -gt 10 ]; then nap=10; fi
-        fi
-      done
+      # A failed read is not a state: an unreadable answer is reported as one
+      # below rather than being mistaken for MERGED.
+      if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+        > .vincent-issue/merged.json 2>/dev/null; then
+        printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+          > .vincent-issue/merged.json
+      fi
 
       jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
         .vincent-issue/merged.json
 
+      state=$(jq -r .state .vincent-issue/merged.json)
       if [ "$state" != "MERGED" ]; then
-        say "the PR is ${state:-unreadable}, not MERGED, a minute after the merge call"
-        echo "the pull request is ${state:-unreadable}, not MERGED, a minute after the merge call;" >&2
-        echo "the scratch directory is left in place." >&2
+        say "every merge pass is spent and the PR is ${state:-unreadable}"
+        echo "the pull request is ${state:-unreadable}, not MERGED, after every merge pass." >&2
+        echo "read the last 'wait-checks', 'merge-ready' and 'merge-probe' runs in this task's" >&2
+        echo "transcript for what stopped it. the branch is pushed, the pull request is open," >&2
+        echo "and the scratch directory is left in place." >&2
         exit 1
       fi
 
