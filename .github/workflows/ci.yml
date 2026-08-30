@@ -149,3 +149,12 @@ jobs:
       - name: M10 gate (MCP)
         shell: bash
         run: ./scripts/m10-gate.sh
+
+      # M11: editing the daemon configuration through the API (task 060,
+      # §12.3). The three-OS matrix earns its place twice here — the write is
+      # an atomic rename over an open-ish file, which behaves differently on
+      # Windows, and the 0600 assertion is POSIX-only and says so rather than
+      # pretending Windows has a mode.
+      - name: M11 gate (configuration)
+        shell: bash
+        run: ./scripts/m11-gate.sh

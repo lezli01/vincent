@@ -58,7 +58,7 @@ func TestMCPToolSurfaceMatchesRouteTable(t *testing.T) {
 	}
 }
 
-// TestMCPExcludesDestructiveAdminByName asserts the five exclusions by name,
+// TestMCPExcludesDestructiveAdminByName asserts the six exclusions by name,
 // so removing one from Excluded is a test failure rather than a quiet
 // widening of what an agent may do to the daemon supervising it.
 func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
@@ -66,6 +66,10 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 	want := []struct{ method, path string }{
 		{http.MethodPost, "/v1/daemon/stop"},
 		{http.MethodPost, "/v1/daemon/backup"},
+		// Task 060 decision 4: a step must not rewrite the rules it runs
+		// under — the argv the daemon spawns, what its children inherit, or
+		// whether steps get MCP at all.
+		{http.MethodPatch, "/v1/config"},
 		{http.MethodDelete, "/v1/projects/{id}"},
 		{http.MethodPost, "/v1/maintenance/gc"},
 		{http.MethodPost, "/v1/doctor/fix"},

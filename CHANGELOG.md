@@ -46,6 +46,30 @@ list with the user-facing context a commit subject cannot carry.
   only way to the task's context was `esc`, which discards the repair and
   follow-up drafts outright.
 
+- **The daemon configuration is readable and editable from every client.**
+  `GET /v1/config` now serves every key in `config.yaml` — `branch_template`,
+  `debug`, `environment`, `parallel`, `fan_out`, `loop`, `include`, `github`,
+  `update`, `mcp` and `notify` were absent from it, which meant no client could
+  see them at all — and a new `PATCH /v1/config` changes them. The daemon
+  validates the whole candidate file before writing anything, edits the key in
+  place so your comments and key order survive, writes atomically at `0600`, and
+  puts the result into force before it answers: a read issued straight after a
+  successful patch sees the new value, and nothing needs restarting. An invalid
+  value leaves the file byte-identical. `listen` is the one key that is written
+  and does not take effect until the daemon restarts, and every surface says so.
+- **`vincent config get|set`.** `vincent config get` prints the configuration in
+  effect, one `path = value` per line, or one key; `vincent config set` changes
+  one. Lists and argv are whitespace-separated in a single argument
+  (`vincent config set notify.on "blocked awaiting_gate"`).
+- **The TUI's daemon view edits the configuration.** `tab` moves the arrows onto
+  the config block, which then lists every key rather than the digest, and
+  `enter` opens a typed editor on the selected one — a chooser for the keys with
+  a fixed vocabulary, a field for the rest, with the daemon's own validation
+  error rendered against it. Each row shows the value in force and the built-in
+  default where they differ. `notify.command`, `environment`, `agents.*.path`
+  and `listen` ask for an explicit confirmation before they apply, because they
+  decide what the daemon executes or exposes.
+
 - **A pull-requests screen in the TUI, and a browser to open them in.** A new
   takeover lists every open pull request across every registered project whose
   `origin` is a github.com repository vincent can authenticate to, grouped by

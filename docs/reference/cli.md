@@ -13,6 +13,7 @@ localhost API.
 - [`vincent service`](#vincent-service)
 - [`vincent project`](#vincent-project)
 - [`vincent task`](#vincent-task)
+- [`vincent config`](#vincent-config)
 - [`vincent status`](#vincent-status)
 - [`vincent update`](#vincent-update)
 - [`vincent workflow`](#vincent-workflow)
@@ -790,6 +791,54 @@ verbatim, with `-` reading stdin and no per-flag reconstruction:
 jq -n '{answers: {"Which database?": ["postgres"]}}' |
   vincent task answer 7 --body -
 ```
+
+## `vincent config`
+
+```sh
+vincent config get [key] [--json]
+vincent config set <key> <value> [--json]
+```
+
+Reads and changes the daemon's
+[`config.yaml`](configuration.md) through the daemon, which owns the file and
+hot-reloads it. It is a client of `PATCH /v1/config` like every other command
+here, not a second editor — so a `set` is the same operation, with the same
+validation, that the [TUI's daemon view](../guides/tui.md#daemon) performs.
+
+Keys are the dotted paths `config.yaml` carries, which are the paths the
+[configuration reference](configuration.md) documents:
+
+```sh
+vincent config get                      # every key, one `path = value` per line
+vincent config get max_parallel_tasks   # 3
+vincent config set max_parallel_tasks 6
+vincent config set log_level debug
+vincent config set defaults.agent_timeout 90m
+vincent config set notify.on "blocked awaiting_gate"
+vincent config set notify.command "/usr/local/bin/notify-me"
+vincent config set environment.set "LANG=C.UTF-8 TZ=Etc/UTC"
+```
+
+Details worth knowing:
+
+- **A set takes effect without a restart.** The daemon validates the whole
+  candidate file, writes it and applies the result before answering, so the
+  next `vincent config get` reads the new value. The one exception is `listen`:
+  it is written to the file and the running daemon keeps the address it bound,
+  which the command says out loud.
+- **An invalid value changes nothing.** The file is left byte-identical and the
+  command exits 1 with the daemon's message. There is no partial application.
+- **Your comments survive.** `config.yaml` ships as a documented template, and
+  the daemon edits a key in place — or uncomments its documented block where it
+  stands — rather than regenerating the file. A `notify.on` set turns the
+  commented-out `notify:` block on without flattening the paragraph above it.
+- **Lists and argv are whitespace-separated in one argument**, as in the
+  examples above. An argument containing a space cannot be written this way and
+  has to be edited in the file. Setting a list to `""` empties it, which is how
+  the notify hook is switched off from the command line.
+- **`environment.inherit` takes `all`, `none`, or a list of names.**
+- **Per-project settings are not here.** They live in the database and are
+  edited with [`vincent project`](#vincent-project) or the TUI's projects view.
 
 ## `vincent status`
 

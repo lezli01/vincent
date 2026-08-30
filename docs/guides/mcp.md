@@ -38,16 +38,27 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, and the read-only `health`, `info`, `config_get`,
 `agent_list`, `doctor`, `orphan_list`.
 
-Five things are deliberately **not** tools:
+Six things are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/daemon/backup`
 - `DELETE /v1/projects/{id}`
 - `POST /v1/maintenance/gc`
 - `POST /v1/doctor/fix`
+- `PATCH /v1/config`
 
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
-that is supervising it. Those stay CLI-and-curl only.
+that is supervising it. Those stay CLI-and-curl only. The configuration one is
+the sharpest of the six: a patch can change the argv the daemon spawns
+(`notify.command`, `agents.*.path`), what its children inherit (`environment`),
+and whether steps are wired to MCP at all (`mcp.wire_steps` — a step could
+otherwise switch these tools off for everyone).
+
+`config_get` is the one tool whose body differs from its route's. The HTTP
+response serves `config.yaml` in full; the tool masks `environment.set`'s
+values and `notify.command`'s argv, keeping the names, because a tool result
+lands in the model's context and in the step's transcript. Nothing else is
+changed — see the [security model](../security-model.md).
 
 Each tool takes the route's path parameters by name, plus `body` (for `POST` and
 `PATCH`) or `query` (for `GET`):

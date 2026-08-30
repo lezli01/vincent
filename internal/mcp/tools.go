@@ -35,6 +35,13 @@ type Route struct {
 // Streaming.
 var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/daemon/stop"},
+	// Task 057 decision 4 named this one before it existed: an agent must not
+	// be able to *reconfigure* the daemon supervising it. PATCH /v1/config can
+	// change the argv the daemon spawns (notify.command, agents.*.path), what
+	// its children inherit (environment) and whether steps get MCP at all
+	// (mcp.wire_steps) — a step editing any of those is a step rewriting the
+	// rules it runs under (task 060 decision 4).
+	{Method: http.MethodPatch, Path: "/v1/config"},
 	{Method: http.MethodPost, Path: "/v1/daemon/backup"},
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},
@@ -59,7 +66,7 @@ const WaitTool = "task_wait"
 var routes = []Route{
 	{http.MethodGet, "/v1/health", "health", "Daemon liveness and version."},
 	{http.MethodGet, "/v1/info", "info", "Daemon identity: version, pid, uptime, listen address, agent availability, orphan count and database size."},
-	{http.MethodGet, "/v1/config", "config_get", "The daemon's effective configuration (§12.3), as the daemon currently reads it."},
+	{http.MethodGet, "/v1/config", "config_get", "The daemon's effective configuration (§12.3), as the daemon currently reads it. Read-only, and the values of environment.set and notify.command are masked on this path."},
 	{http.MethodGet, "/v1/agents", "agent_list", "The agent adapters and their selectable models and effort levels (§9.6)."},
 	{http.MethodGet, "/v1/doctor", "doctor", "The diagnostic report: directories, log, database figures and detected problems."},
 	{http.MethodGet, "/v1/update", "update_status", "The daemon's cached release check (§12.3): the latest stable release, when it was last seen, and whether this build is behind it. Read-only — it never downloads or installs anything."},

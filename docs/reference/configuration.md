@@ -971,9 +971,13 @@ spawns. It gets **no** `VINCENT_*` variables — those belong to command steps �
 because the envelope on stdin is this hook's whole contract.
 
 Read per event, so a [reload](#reload-semantics) governs the next transition. It
-is not served on `GET /v1/config`: no client needs it, and `command` can
-reasonably hold a webhook URL with a token in it. See the
-[security model](../security-model.md) for what running it means.
+**is** served on `GET /v1/config`, argv included: that endpoint is loopback-only
+behind the same owner-only token as the file, so a client that can call it can
+already read `config.yaml`. The one exception is the
+[MCP](../guides/mcp.md) rendering of the same route, where the argv is masked —
+a tool result lands in an agent's context and its transcript, which is not that
+boundary. `command` can reasonably hold a webhook URL with a token in it; see
+the [security model](../security-model.md) for what running it means.
 
 ### `tui`
 
@@ -1067,17 +1071,36 @@ Agent, command and check steps additionally receive `VINCENT_TASK_ID`,
 `VINCENT_STEP_ATTEMPT` and `VINCENT_WORKFLOW` — see
 [Writing workflows](../guides/workflows.md#55-environment-variables).
 
-## Reading the config in effect
+## Reading and changing the config in effect
 
-The API exposes it read-only, which is the reliable way to see what the daemon
-actually loaded after a reload:
+The API serves every key on this page, which is the reliable way to see what the
+daemon actually loaded after a reload:
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:$PORT/v1/config | jq
 ```
 
-The TUI's daemon view shows the same thing, alongside the adapters detected and
-the log tail.
+`PATCH /v1/config` changes it. The daemon validates the whole candidate file,
+writes it and puts it into force before answering, so the next read shows the
+new value and nothing needs restarting — except [`listen`](#listen), which is
+written to the file while the running daemon keeps the address it bound. An
+invalid patch leaves the file byte-identical.
+
+```sh
+vincent config get                            # every key, one per line
+vincent config set max_parallel_tasks 6
+vincent config set notify.on "blocked awaiting_gate"
+```
+
+The write is comment-preserving: the daemon edits a key in place, or uncomments
+its documented block where it stands, so the commented template this page
+describes is still there afterwards. See
+[`vincent config`](cli.md#vincent-config).
+
+The TUI's daemon view shows and edits the same thing, alongside the adapters
+detected and the log tail — `tab`, then `enter` on a key. Four keys
+(`notify.command`, `environment`, `agents.*.path`, `listen`) ask for a
+confirmation first.
 
 ---
 

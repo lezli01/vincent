@@ -67,6 +67,10 @@ const (
 	// the reason the other popups have theirs: while it is open it owns the
 	// keyboard, and its two rows are nothing like the form underneath.
 	ctxCreatePR bindingContext = "open a pull request"
+	// ctxConfigEdit is the daemon view's config editor (task 060). Its own
+	// context because while it is open it owns the keyboard, and its keys are
+	// nothing like the log pane's underneath it.
+	ctxConfigEdit bindingContext = "config editor"
 )
 
 // binding is one registry row.
@@ -263,6 +267,18 @@ var bindings = []binding{
 	{key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
 	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon, hint: "↑/↓ scroll", priority: 3},
+	// The config block became editable in task 060. tab is what says whether
+	// ↑/↓ mean the config list or the log pane — the view has two scrollable
+	// things now and one pair of arrows.
+	{key: "tab", label: "move between the config list and the log pane", scope: scopePanel, context: ctxDaemon, hint: "tab config", priority: 4},
+	{key: "enter", label: "edit the selected configuration key (e also opens it)", scope: scopePanel, context: ctxDaemon, hint: "enter edit", priority: 5},
+
+	// The config editor: it owns the keyboard while it is open and prints its
+	// own key line, so these are here to keep ? complete.
+	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
 
 	// Answer form: these exist only while the popup owns the keyboard, and
 	// the popup prints them itself — they are here so ? stays complete.
