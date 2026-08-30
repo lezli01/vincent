@@ -15,6 +15,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - [Tasks](#tasks)
 - [Transcripts and diffs](#transcripts-and-diffs)
 - [Events (SSE)](#events-sse)
+- [MCP](#mcp)
 
 ---
 
@@ -1261,8 +1262,52 @@ store publishes after the database has recorded the event.
 
 ---
 
+## MCP
+
+The daemon also speaks the **Model Context Protocol** at `POST /mcp`, on this
+same listener behind this same bearer token. It exists so an AI coding agent can
+drive vincent with tool discovery, argument schemas and typed errors instead of
+hand-rolled curl. Full guide: **[Driving vincent from an agent](../guides/mcp.md)**.
+
+Every route on this page is a tool, with these exceptions:
+
+| Not a tool | Why |
+|---|---|
+| `POST /v1/daemon/stop` | An agent must not stop the daemon supervising it |
+| `POST /v1/daemon/backup` | Destructive admin |
+| `DELETE /v1/projects/{id}` | Destructive admin |
+| `POST /v1/maintenance/gc` | Destructive admin |
+| `POST /v1/doctor/fix` | Destructive admin |
+| `GET /v1/events` | A tool call is request/response; use `task_wait` |
+| `GET /v1/tasks/{id}/events` | Same |
+
+`task_create` additionally takes an optional `idempotency_key` string, which
+becomes the `Idempotency-Key` header — a tool call has no header surface, and
+replay protection exists for exactly the client an agent is.
+
+A tool call is dispatched by replaying its arguments against the very handler
+this page documents, so the request bounds, the validation and the error
+envelopes above are the same ones a tool sees — a `409` reaches an MCP client
+still carrying `details.state`. One tool result is capped at 256 KiB; use a
+route's own `offset`/`limit` query parameters to page.
+
+`task_wait` is the one tool with no route behind it: it blocks until a task
+reaches `done`, `aborted`, `archived`, `awaiting_input`, `blocked` or
+`awaiting_gate`, or until its timeout (default 5 minutes, hard ceiling 30).
+
+```
+POST /mcp                       shared endpoint; Authorization: Bearer {token}
+POST /mcp/step/{run_id}         per-step endpoint; the daemon wires this to its own agent steps
+```
+
+The per-step endpoint carries a secret minted for one step run. It is **not** a
+security boundary — see the [security model](../security-model.md).
+
+---
+
 ## See also
 
+- [Driving vincent from an agent](../guides/mcp.md) — the MCP surface.
 - [Scripting vincent](../guides/scripting.md) — worked examples.
 - [Task lifecycle](task-lifecycle.md) — what the action endpoints do.
 - Spec [§13](https://github.com/lezli01/vincent/blob/master/docs/spec.md) — the normative definition.

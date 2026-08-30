@@ -3,7 +3,10 @@ package cursor
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -367,5 +370,73 @@ func TestRespondUnsupported(t *testing.T) {
 func TestCuratedInputSupportIsNever(t *testing.T) {
 	if got := New(nil).Curated().InputSupport; got != agent.InputNever {
 		t.Errorf("InputSupport = %q, want %q", got, agent.InputNever)
+	}
+}
+
+// TestBuildArgsMCP covers task 057 decision 8's cursor half's argv: cursor has
+// no per-run MCP flag, so the only thing in the command line is the approval
+// that stops a headless run from hanging on a trust prompt.
+func TestBuildArgsMCP(t *testing.T) {
+	withSandbox(t, true)
+	got, err := buildArgs(agent.RunSpec{
+		PermissionMode: agent.FullAuto,
+		MCP:            &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp", Token: "s"},
+	})
+	if err != nil {
+		t.Fatalf("buildArgs: %v", err)
+	}
+	if !slices.Contains(got, "--approve-mcps") {
+		t.Errorf("argv = %q, want --approve-mcps", got)
+	}
+}
+
+// TestWorkspaceMCPConfigLifecycle is the file half, asserted from the
+// filesystem rather than from the adapter's own bookkeeping: the workspace
+// config exists while the run is up and is gone after Wait (§9.7).
+func TestWorkspaceMCPConfigLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	a := fakeAdapter(t)
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp/step/3", Token: "s3cret"}
+	h, err := a.Start(t.Context(), agent.RunSpec{
+		Prompt: "hi", WorkDir: dir, PermissionMode: agent.FullAuto, MCP: srv,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	path := agent.CursorMCPConfigPath(dir)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("workspace mcp config not written: %v", err)
+	}
+	if !strings.Contains(string(body), srv.URL) || !strings.Contains(string(body), "Bearer s3cret") {
+		t.Errorf("config = %s, want the endpoint and its bearer token", body)
+	}
+	for range h.Events() { //nolint:revive // draining is the contract
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stat after Wait = %v, want the config removed", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, agent.CursorMCPDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf(".cursor still exists after Wait; an empty one must go too")
+	}
+}
+
+// TestNoWorkspaceMCPConfigWithoutAServer is the `mcp.wire_steps: false` half:
+// nothing is written into the worktree at all, so `git status` is untouched.
+func TestNoWorkspaceMCPConfigWithoutAServer(t *testing.T) {
+	dir := t.TempDir()
+	a := fakeAdapter(t)
+	h, err := a.Start(t.Context(), agent.RunSpec{Prompt: "hi", WorkDir: dir, PermissionMode: agent.FullAuto})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for range h.Events() { //nolint:revive // draining is the contract
+	}
+	_, _ = h.Wait()
+	if _, err := os.Stat(filepath.Join(dir, agent.CursorMCPDir)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stat .cursor = %v, want nothing written when no server was wired", err)
 	}
 }

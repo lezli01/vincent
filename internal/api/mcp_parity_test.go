@@ -1,0 +1,112 @@
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"slices"
+	"testing"
+
+	"github.com/lezli01/vincent/internal/mcp"
+)
+
+// TestMCPToolSurfaceMatchesRouteTable is the guard task 057 decision 4 is
+// worth having: the tool surface is the route table minus five destructive
+// admin routes and the two SSE routes, so a route added later cannot be
+// silently unexposed *or* silently exposed. Both directions fail here.
+func TestMCPToolSurfaceMatchesRouteTable(t *testing.T) {
+	t.Parallel()
+	srv := New(Deps{Logger: slog.New(slog.DiscardHandler)})
+
+	type key struct{ method, path string }
+	registered := map[key]bool{}
+	for _, r := range srv.Routes() {
+		registered[key{r.Method, r.Path}] = true
+	}
+
+	exempt := map[key]bool{}
+	for _, r := range append(slices.Clone(mcp.Excluded), mcp.Streaming...) {
+		k := key{r.Method, r.Path}
+		if !registered[k] {
+			t.Errorf("%s %s is listed as not-a-tool but is not a route", r.Method, r.Path)
+		}
+		exempt[k] = true
+	}
+
+	tools := map[key]string{}
+	for _, r := range mcp.Routes() {
+		k := key{r.Method, r.Path}
+		if !registered[k] {
+			t.Errorf("tool %q claims route %s %s, which the server does not register",
+				r.Tool, r.Method, r.Path)
+		}
+		if exempt[k] {
+			t.Errorf("tool %q exposes %s %s, which is deliberately not a tool", r.Tool, r.Method, r.Path)
+		}
+		if prev, dup := tools[k]; dup {
+			t.Errorf("routes %s %s mapped to both %q and %q", r.Method, r.Path, prev, r.Tool)
+		}
+		tools[k] = r.Tool
+	}
+
+	for k := range registered {
+		if exempt[k] || tools[k] != "" {
+			continue
+		}
+		t.Errorf("route %s %s is neither a tool nor listed as not-a-tool; "+
+			"add it to internal/mcp's table or to Excluded/Streaming with a reason",
+			k.method, k.path)
+	}
+}
+
+// TestMCPExcludesDestructiveAdminByName asserts the five exclusions by name,
+// so removing one from Excluded is a test failure rather than a quiet
+// widening of what an agent may do to the daemon supervising it.
+func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
+	t.Parallel()
+	want := []struct{ method, path string }{
+		{http.MethodPost, "/v1/daemon/stop"},
+		{http.MethodPost, "/v1/daemon/backup"},
+		{http.MethodDelete, "/v1/projects/{id}"},
+		{http.MethodPost, "/v1/maintenance/gc"},
+		{http.MethodPost, "/v1/doctor/fix"},
+	}
+	if len(mcp.Excluded) != len(want) {
+		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))
+	}
+	for _, w := range want {
+		if !slices.ContainsFunc(mcp.Excluded, func(r mcp.Route) bool {
+			return r.Method == w.method && r.Path == w.path
+		}) {
+			t.Errorf("%s %s is no longer excluded from the MCP tool surface", w.method, w.path)
+		}
+	}
+	for _, r := range mcp.Excluded {
+		if slices.Contains(mcp.Names(), r.Path) {
+			t.Errorf("%s is exposed as a tool", r.Path)
+		}
+	}
+}
+
+// TestMCPEndpointsAreRegistered proves the two §13.4 endpoints are mounted and
+// behind the §13.1 chain: `/mcp` refuses an unauthenticated request, and the
+// per-step endpoint refuses an unknown run rather than 404ing into the "no
+// such endpoint" fallback.
+func TestMCPEndpointsAreRegistered(t *testing.T) {
+	t.Parallel()
+	ts, _ := newTestServer(t, nil)
+	for _, tc := range []struct {
+		name, path string
+		want       int
+	}{
+		{"shared endpoint needs the daemon token", "/mcp", http.StatusUnauthorized},
+		{"per-step endpoint needs its own secret", mcp.StepPathPrefix + "7", http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			resp, body := doRequest(t, ts, http.MethodPost, tc.path, "")
+			if resp.StatusCode != tc.want {
+				t.Errorf("status = %d, want %d (body %s)", resp.StatusCode, tc.want, body)
+			}
+		})
+	}
+}

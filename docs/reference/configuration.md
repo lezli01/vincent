@@ -181,6 +181,18 @@ github:
 update:
   check: true
   poll_interval: 24h
+# Serve MCP to AI coding agents, and give vincent's own agent steps the tool
+# list (task 057). There is no "enabled" key: /mcp is part of the API the way
+# /v1 is, on the same listener behind the same bearer token. What you can turn
+# off is the wiring into your own steps.
+#
+# max_depth and max_tasks bound a chain of tasks created over MCP — a step's
+# agent creates a task whose step's agent creates a task. That depth is
+# discovered as it happens, so neither fan_out's bounds nor include's cover it.
+mcp:
+  wire_steps: true
+  max_depth: 3
+  max_tasks: 32
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
@@ -834,6 +846,39 @@ switches the check back on.
 
 **Nothing is ever downloaded or installed by the check.** Applying an update is
 [`vincent update`](cli.md#vincent-update), which you run.
+### `mcp`
+
+```yaml
+mcp:
+  wire_steps: true
+  max_depth: 3
+  max_tasks: 32
+```
+
+The daemon serves the [Model Context Protocol](../guides/mcp.md) at
+`http://127.0.0.1:{port}/mcp`, on the same listener as the REST API and behind
+the same bearer token. **There is no `enabled` key**, deliberately: the endpoint
+is part of the API surface the way `/v1` is, so "serving MCP" is not a mode the
+daemon is in.
+
+**`wire_steps`** decides whether vincent registers that endpoint with the agent
+CLI it spawns for an [agent step](../guides/workflows.md), so a step's agent
+gets the vincent tools with no configuration from you. **On by default**, an
+opt-out. Set it to `false` and no adapter is given an MCP server: no
+`--mcp-config` for claude, no `mcp_servers.*` overrides for codex, and no
+`.cursor/mcp.json` written into the task worktree.
+
+**`max_depth`** and **`max_tasks`** bound recursion. A step's agent can create a
+task whose step runs an agent that creates a task, and unlike `fan_out.max_depth`
+or `include.max_depth` that shape is not in any snapshot to check — it is
+discovered one task at a time. `max_depth` is how many levels that chain may
+reach; `max_tasks` is how many tasks one chain may hold in total. Both are
+enforced when the task is created, and the refusal names the key it hit. Both
+must be at least 1; a smaller value fails the load.
+
+An adapter that cannot carry an MCP server fails the step with
+`mcp_unsupported` rather than running an agent that silently has no vincent
+tools. If that is not what you want, turn `wire_steps` off.
 
 ### `notify`
 

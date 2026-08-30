@@ -1640,7 +1640,7 @@ documented design decision, not an oversight — see the
 [Security model](../security-model.md).
 
 `restricted` maps to each adapter's own confinement. Use it for steps that have
-no business running commands — a docs pass, a review. Two things to know:
+no business running commands — a docs pass, a review. Three things to know:
 
 - An adapter that **cannot** restrict on your platform never runs the step
   unrestricted. Vincent knows this without asking the CLI, so **creating** such
@@ -1651,6 +1651,12 @@ no business running commands — a docs pass, a review. Two things to know:
 - It changes agent behaviour in ways that read as bugs if you did not ask for
   them: claude turns every non-allowlisted tool into a permission prompt. That
   is why the shipped examples are all `full-auto`.
+- **It bounds the filesystem and the shell, not vincent.** A restricted step
+  still gets [vincent's own MCP tools](mcp.md) in full, so it can create, cancel
+  and archive tasks. Offering the tool list and denying every call would be
+  worse; if a step should not reach vincent either, that is
+  [`mcp.wire_steps: false`](../reference/configuration.md#mcp), which is a daemon
+  setting rather than a step one.
 
 ### 9.4 Mid-run questions (`on_input`)
 

@@ -130,6 +130,16 @@ denied action surfaces as a `permission` request and the task waits for you —
 subject to `on_input`. Set `on_input: deny` and vincent denies them
 automatically, keeping the run strictly unattended.
 
+**It bounds the filesystem and the shell, not what the step does to vincent.**
+A step wired to vincent's own [MCP server](guides/mcp.md) — the default — keeps
+those tools under `restricted`: claude's allow-list carries `mcp__vincent__*` in
+full, so a restricted step can create, cancel and archive vincent tasks. The
+alternative was worse in both directions: the step would have been offered the
+whole vincent tool list and denied every call, which is a tool list that lies.
+If you want a step that cannot reach vincent either, turn the wiring off with
+[`mcp.wire_steps: false`](reference/configuration.md#mcp) — per daemon, not per
+step.
+
 Use `restricted` for steps that have no business running commands: a docs pass, a
 review, a summarization step. See
 [Writing workflows](guides/workflows.md#93-permission-modes).
@@ -146,7 +156,25 @@ review, a summarization step. See
 - **No TLS**, deliberately: the socket is loopback and the token is the
   authenticator. There is nothing on the wire that does not already require local
   account access to reach.
-- `GET /v1/health` is the single unauthenticated endpoint.
+- `GET /v1/health` is the single endpoint that requires no credential at all.
+- **`POST /mcp` is the same surface, not a second one.** The
+  [MCP server](guides/mcp.md) rides the same loopback listener, the same bearer
+  token and the same `recover → log → auth` chain, and a tool call is dispatched
+  by replaying it against the same handler `/v1` uses — so it grants exactly what
+  the token already granted. Five destructive-admin routes are deliberately not
+  tools (`daemon/stop`, `daemon/backup`, `DELETE /v1/projects/{id}`,
+  `maintenance/gc`, `doctor/fix`): an agent must not be able to stop, back up,
+  garbage-collect or reconfigure the daemon supervising it. That is a design
+  line, **not** a privilege boundary — the token still reaches those routes on
+  `/v1`.
+- **`POST /mcp/step/{run_id}` is not a security boundary**, and is stated here
+  in those words. The daemon wires each agent step to a per-step endpoint that
+  authenticates a secret minted for that one step run instead of the daemon
+  token. It exists so vincent knows *which* step is calling — enough to refuse a
+  wait that would deadlock, and to record which task created which — not to
+  confine the step. A full-auto agent can read `{data_dir}/token` off disk and
+  reach `/mcp` directly, which is the same conclusion as everywhere else on this
+  page: the boundary is the OS user.
 - **`POST /v1/daemon/backup` writes a file at a path the caller names**, as the
   daemon's user, anywhere that user can write. That is stated here rather than
   left to be discovered — but it is not an *additional* grant: the same token
@@ -224,6 +252,17 @@ Everything else vincent writes lives in its
 [config and data directories](reference/files.md), plus the git branches and
 worktrees it creates in your repositories — and the one file you name yourself
 when you run [`vincent daemon backup`](reference/files.md#backup-and-restore).
+
+**One of those worktree files carries a token.** To give a cursor step
+[vincent's own tools](guides/mcp.md) — cursor has no per-run MCP flag — the
+adapter writes `.cursor/mcp.json` into the **task worktree** for the duration of
+the run, holding the step's bearer token. It is created `0600` inside a `0700`
+`.cursor/`, removed when the step ends, and swept on the next daemon start if a
+crash left it behind. Your global `~/.cursor/mcp.json` is never read or written.
+While the step runs, the file is an untracked file in a git worktree: it appears
+in `git status` and in the task diff, so do not commit it. That token authorizes
+what the daemon token already authorizes, from a machine where the agent could
+have read the daemon token anyway.
 
 **A backup archive is sensitive.** It carries every transcript, which means
 every rendered prompt and everything the agents did, plus your `config.yaml`.

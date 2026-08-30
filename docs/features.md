@@ -218,6 +218,28 @@ localhost API.
 Start with [Scripting vincent](guides/scripting.md), then use the complete
 [HTTP API reference](reference/api.md) when you need direct integration.
 
+## Let an AI agent drive it
+
+The daemon serves the Model Context Protocol on the same loopback listener,
+behind the same bearer token, so any MCP client gets the whole API as tools —
+with discovery, argument schemas and typed errors rather than hand-rolled curl.
+
+- The tool surface is the route table, minus five destructive-admin routes an
+  agent has no business calling: stopping, backing up, garbage-collecting or
+  reconfiguring the daemon, and force-deleting a project.
+- One bounded `task_wait` call blocks until a task is done, aborted, archived,
+  or waiting on a human — with a hard ceiling, so a call cannot hang. Step
+  transitions stream as progress notifications, and the result is complete
+  without them.
+- **Your own agent steps get the same tools by default.** A step can file
+  follow-up work, read a sibling lane's transcript, or answer a gate, with
+  nothing to configure. `mcp.wire_steps: false` turns it off.
+- A chain of tasks created this way is bounded by `mcp.max_depth` and
+  `mcp.max_tasks`, because a step's agent can create a task whose step runs an
+  agent that creates a task.
+
+See [Driving vincent from an agent](guides/mcp.md).
+
 ## Start from a GitHub issue
 
 On a project whose `origin` remote points at github.com, the new-task form

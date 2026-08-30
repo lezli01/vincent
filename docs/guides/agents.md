@@ -31,6 +31,7 @@ silently drops.
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
+| Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
 | Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
@@ -52,7 +53,13 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   worktree, **prompt on stdin** — never as an argv element, because Windows caps
   arguments at 8 KB and prompts embed task descriptions.
 - `full-auto` adds `--dangerously-skip-permissions`; `restricted` maps to
-  Claude's allowlist flags with an edit/read/git/test tool set.
+  Claude's allowlist flags with an edit/read/git/test tool set — plus
+  `mcp__vincent__*` in full, so `restricted` bounds the filesystem and the
+  shell, **not** what the step does to vincent. See
+  [Driving vincent from an agent](mcp.md#what-this-is-not).
+- **Carries [vincent's own MCP server](mcp.md#your-own-steps-get-this-too)** on
+  `--mcp-config` with an inline config, alongside `--strict-mcp-config` so your
+  own MCP servers never leak into a step. Per run: nothing global is written.
 - `model:` and `effort:` pass straight through as `--model` / `--effort`.
   Options are discovered by parsing `claude --help` and merged with a curated
   catalog, so a CLI upgrade that adds an effort level makes it selectable without
@@ -105,6 +112,10 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   confining writes to the worktree.
 - `model:` passes as `-m`; `effort:` as `-c model_reasoning_effort=…`. Efforts
   are `minimal, low, medium, high, xhigh`.
+- **Carries [vincent's own MCP server](mcp.md#your-own-steps-get-this-too)** the
+  same way: `-c mcp_servers.vincent.…` dotted overrides, with the bearer token
+  handed to the child in its environment rather than written down. Per run —
+  your `config.toml` is never modified.
 - **No model catalog.** The CLI enumerates nothing, and codex model availability
   is account-dependent — the same id is accepted on one plan and rejected on
   another — so pickers offer free text and the CLI's own default. A model you
@@ -146,7 +157,7 @@ and would open a GUI. **Workflow value:** `agent: cursor`.
   result event" plus the stderr tail, which is what makes an everyday typo
   diagnosable.
 
-Three things about cursor are genuinely different, and all three are visible in
+Four things about cursor are genuinely different, and all four are visible in
 a workflow:
 
 ### 1. Effort lives in the model id
@@ -186,6 +197,28 @@ Falling back to `--force` was rejected outright: it would run full-auto a step
 that explicitly asked not to be, turning a safety choice into its opposite on
 exactly one OS — the failure mode nobody would think to check for. See
 [Windows](../platforms/windows.md#restricted-mode-and-cursor).
+
+### 4. A cursor step writes `.cursor/mcp.json` into the worktree
+
+Cursor has no per-run MCP flag at all — `cursor-agent mcp` reads only
+`.cursor/mcp.json` in the workspace or `~/.cursor/mcp.json` globally. So to give
+a step [vincent's own tools](mcp.md#your-own-steps-get-this-too) the adapter
+writes the **workspace** file into the task worktree before the run, passes
+`--approve-mcps` so a headless run does not stop on a trust prompt for the
+server vincent just configured, and removes the file (and an empty `.cursor/`)
+after the step ends. Your global `~/.cursor/mcp.json` is never touched.
+
+The accepted cost, and the one you can see: while a cursor step is running, that
+file is an untracked file **inside a git worktree**. It shows up in `git status`,
+in the task's diff, and in dirty detection for the duration of the run. It is
+gone once the step ends, and if the daemon dies mid-step
+[recovery](../reference/task-lifecycle.md) sweeps it on the next start. The
+alternative — writing your global config instead — was rejected: a per-task
+change to a file you own outside vincent is worse than a transient file inside a
+worktree vincent already owns.
+
+`mcp.wire_steps: false` skips all of it: no file is written and `--approve-mcps`
+is not passed.
 
 ### The model list is advisory in both directions
 

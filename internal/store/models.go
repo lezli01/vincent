@@ -153,6 +153,18 @@ type Task struct {
 	ParentStepIndex *int
 	LaneID          string
 	LaneOrder       int
+	// CreatedByTaskID names the task whose agent created this one over MCP
+	// (§13.4, task 057 decision 7). NULL — nil — is every task a human, the
+	// CLI, the TUI or a `fan_out` step created; provenance is a fact about
+	// the MCP path only.
+	//
+	// It is deliberately not ParentTaskID. That column is what `subtree.go`
+	// counts children by for the `awaiting_children` join and what
+	// ListTasks's ChildrenExclude filters roots by, so a task placed there
+	// out of band would make its creator's `fan_out` step wait on a lane it
+	// never spawned. This one is walked by nothing but `mcp.max_depth` and
+	// `mcp.max_tasks`.
+	CreatedByTaskID *int64
 	// GitHubIssue is the issue this task was created from (§5.3, task 035),
 	// captured once at creation and nil for every task created without one.
 	// It is never re-fetched: every step renders `.Issue` from this snapshot,

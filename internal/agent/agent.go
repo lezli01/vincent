@@ -64,6 +64,40 @@ const (
 // choice the step made. Cursor on Windows is the one case today (§9.7).
 var ErrRestrictedUnsupported = errors.New("restricted permission mode is unsupported on this platform")
 
+// ErrMCPUnsupported is returned by Start when the adapter — or the installed
+// version of its CLI — cannot carry the MCP server the step asked for (spec
+// §9.1, §13.4, task 057 decision 8). The engine fails the step with
+// `mcp_unsupported`, mirroring ErrRestrictedUnsupported.
+//
+// This is a deliberate departure from the standing rule that a capability an
+// adapter lacks is stated in §9.x and ignored at run time. The reasoning is
+// that a workflow whose prompt depends on the vincent tools should fail loudly
+// rather than run an agent that silently has none: the run would burn minutes
+// and money producing work premised on a channel that was never there. Task
+// 041's version-compatibility surface is where the gap is reported ahead of a
+// run.
+var ErrMCPUnsupported = errors.New("this agent CLI cannot be given an MCP server for a single run")
+
+// MCPServer is the vincent MCP endpoint a step's agent is wired to (spec
+// §9.1, §13.4). Nil — the zero value of RunSpec.MCP — is a run with no
+// vincent tools, which is every run before task 057 and every run under
+// `mcp.wire_steps: false`.
+//
+// Each adapter carries it its own way; none of them share a mechanism, which
+// is why this is a value rather than a rendered flag (decision 8).
+type MCPServer struct {
+	// Name is the registration name. It is load-bearing: claude derives a
+	// tool's namespaced name from it, so §9.4's restricted allow-list matches
+	// `mcp__{Name}__*`.
+	Name string
+	// URL is the streamable-HTTP endpoint — the daemon's per-step one.
+	URL string
+	// Token is the bearer token for URL. It is the per-step secret, not the
+	// daemon token: it is minted for one step run and dead when the step ends
+	// (§13.4).
+	Token string
+}
+
 // Adapter is the only surface the daemon consumes to run agents (spec §9.1);
 // adding an agent CLI is one new implementation with zero core changes.
 type Adapter interface {
@@ -125,6 +159,10 @@ type RunSpec struct {
 	Effort         string // resolved per §8.6; adapter-native; "" = CLI default
 	PermissionMode PermissionMode
 	OnInput        InputPolicy // ignored when the adapter lacks input support
+	// MCP is the vincent MCP server this run is wired to (§13.4, task 057).
+	// nil is a run with no vincent tools. An adapter that cannot carry one
+	// returns ErrMCPUnsupported from Start rather than starting without it.
+	MCP *MCPServer
 	// Env is the child's environment, resolved from §12.3 `environment:`
 	// (T4.23). nil still means "inherit the daemon's", which is what tests
 	// and any other caller get; the engine always populates it, so a running

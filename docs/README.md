@@ -27,6 +27,7 @@ task with the [Quickstart](getting-started/quickstart.md).
 | Build reliable, cost-aware workflows | [Writing workflows](guides/workflows.md) |
 | Operate active workloads from the terminal | [Using the TUI](guides/tui.md) |
 | Integrate vincent with scripts or CI | [Scripting vincent](guides/scripting.md) |
+| Let an AI agent drive vincent | [Driving vincent from an agent](guides/mcp.md) |
 
 ## What makes it different
 
@@ -80,6 +81,7 @@ and design choices that made a durable orchestrator feel necessary.
 | [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
 | [Using the TUI](guides/tui.md) | The board, task detail, the five takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
+| [Driving vincent from an agent](guides/mcp.md) | The MCP server: the API as tools, the bounded wait, and wiring vincent's own steps |
 | [Running at login](guides/running-at-login.md) | `vincent service install` on launchd, systemd and Task Scheduler |
 | [Troubleshooting](guides/troubleshooting.md) | The failures people actually hit, and what each one means |
 

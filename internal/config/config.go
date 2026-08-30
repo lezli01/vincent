@@ -273,6 +273,10 @@ type Config struct {
 	// a reload that switches the poller off, which takes effect without a
 	// restart.
 	Update Update `yaml:"update"`
+	// MCP governs §13.4's Model Context Protocol server (task 057): whether
+	// the daemon wires its own agent steps to it, and how deep an agent may
+	// create tasks that create tasks.
+	MCP MCP `yaml:"mcp"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -520,6 +524,39 @@ type FanOut struct {
 	MaxTasks int `yaml:"max_tasks"`
 }
 
+// MCP configures the daemon's Model Context Protocol server (spec §13.4 —
+// task 057).
+//
+// There is no `enabled` key. The endpoint is part of the API surface the way
+// `/v1` is, behind the same bearer token on the same loopback listener, so
+// "serving MCP" is not a mode the daemon is in — what a user can meaningfully
+// turn off is vincent wiring the server into its *own* agent steps, which is
+// what WireSteps is.
+type MCP struct {
+	// WireSteps registers the per-step endpoint with the agent CLI the daemon
+	// spawns for an agent step, so a step's agent gets the tool list with no
+	// user configuration (decision 10).
+	//
+	// It defaults to **true** and is an opt-*out*, the way github.enabled is
+	// (task 035 decision 6): the acceptance criterion this work exists for is
+	// that a step's agent has the tools by default, and one line turns it
+	// off. A plain bool is right here for the reason it is there — Load
+	// unmarshals into Default(), so an absent key keeps true and an explicit
+	// `false` restores the pre-057 behaviour exactly.
+	WireSteps bool `yaml:"wire_steps"`
+	// MaxDepth bounds a chain of tasks created through MCP: a step's agent
+	// creates a task, whose step's agent creates a task, and so on. The depth
+	// is discovered at run time, so neither §7.6's fan_out bounds nor §7.9's
+	// include bound covers it — both are creation-time checks over a static
+	// snapshot (decision 7).
+	MaxDepth int `yaml:"max_depth"`
+	// MaxTasks bounds how many tasks one MCP-created ancestry chain may
+	// contain in total. It is the count bound beside the depth bound, for the
+	// same reason fan_out has both: a shallow chain that is wide is the same
+	// runaway as a deep one.
+	MaxTasks int `yaml:"max_tasks"`
+}
+
 // Loop configures `type: loop` steps (spec §7.8 — task 016).
 //
 // MaxIterations is both the default for a step that declares no
@@ -601,6 +638,10 @@ func Default() Config {
 		// rather than the throughput.
 		FanOut: FanOut{MaxDepth: 3, MaxTasks: 64},
 		Loop:   Loop{MaxIterations: 10},
+		// Three levels and 32 tasks, a little tighter than fan_out's tree:
+		// this chain is discovered at run time, so a mistake is only visible
+		// once it has already spawned, and the bound is what stops it.
+		MCP: MCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
 		// Five levels, where fan-out gets three: an include costs a splice
 		// rather than a worktree, so the bound is about keeping a mistake
 		// legible rather than about what the machine can afford.
@@ -670,6 +711,12 @@ func (c Config) validate() error {
 	}
 	if c.FanOut.MaxTasks < 1 {
 		return fmt.Errorf("fan_out.max_tasks must be at least 1, got %d", c.FanOut.MaxTasks)
+	}
+	if c.MCP.MaxDepth < 1 {
+		return fmt.Errorf("mcp.max_depth must be at least 1, got %d", c.MCP.MaxDepth)
+	}
+	if c.MCP.MaxTasks < 1 {
+		return fmt.Errorf("mcp.max_tasks must be at least 1, got %d", c.MCP.MaxTasks)
 	}
 	if c.Include.MaxDepth < 1 {
 		return fmt.Errorf("include.max_depth must be at least 1, got %d", c.Include.MaxDepth)

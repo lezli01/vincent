@@ -120,6 +120,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 25 | Conditions between steps | `if:` guards any step (skip and carry on) and any fan-out lane or group sub-step (subset the set); `type: condition` ends the sequence with the task `done`; `allow_failure:` turns the failures a step itself produced into an advance, so a guard has a run's own findings to read. Guards are §8.4 templates that must render exactly `true` or `false`, re-evaluated every time and never cached (§7.7, task 015) |
 | 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here |
 | 27 | GitHub pull requests | **Read-only, daemon-side**, like row 26 and through the same gate and credential. A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29) |
+| 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
 
 ## 4. Architecture
 
@@ -1822,6 +1823,7 @@ type RunSpec struct {
     PermissionMode PermissionMode    // FullAuto | Restricted
     OnInput        InputPolicy       // Wait | Deny (§7.4); ignored when the adapter lacks input support
     Env            []string
+    MCP            *MCPServer        // §13.4 endpoint this run is wired to; nil = no vincent tools (task 057)
 }
 
 type RunHandle interface {
@@ -1980,6 +1982,26 @@ cursor's claude-shaped argv collides with. Both are recorded as M5 tasks
 rather than glossed: "zero core changes" is true of the adapter seam, not of
 every consumer that assumed two adapters.
 
+*Added 2026-08-29 (task 057).* `RunSpec.MCP` carries the §13.4 MCP server a step
+is wired to: `{Name, URL, Token}`, where the URL is the daemon's per-step
+endpoint and the token is a secret minted for that step run. `nil` is a run with
+no vincent tools — every run before task 057, and every run under
+`mcp.wire_steps: false`.
+
+Each adapter carries it its own way (§9.2, §9.3, §9.7); none share a mechanism.
+An adapter — or an installed CLI version — that **cannot** carry one returns
+`ErrMCPUnsupported` from `Start`, and the engine fails the step with
+`mcp_unsupported`, mirroring `ErrRestrictedUnsupported`.
+
+That is a deliberate departure from the standing rule that a capability an
+adapter lacks is stated here and ignored at run time, and it is recorded as a
+departure rather than left to read as an oversight. The reasoning: a workflow
+whose prompt depends on the vincent tools should fail loudly rather than burn an
+agent run producing work premised on a channel that was never there. A user who
+prefers the older behaviour turns the wiring off with one line
+(`mcp.wire_steps: false`, §12.3). Task 041's version-compatibility surface is
+where the gap is reported ahead of a run.
+
 ### 9.2 Claude Code adapter
 
 - Invocation (indicative; exact flags pinned per detected CLI version at
@@ -2042,6 +2064,17 @@ on a current CLI and **changes no behaviour whatsoever**. The separate
 capability and degrades the invocation visibly, which is a different question
 from whether vincent has ever seen this build.
 
+*Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
+`--mcp-config <inline JSON>` with `--strict-mcp-config` beside it, so the
+user's own `.mcp.json` and global servers never leak into a vincent step.
+Per-run, no global state. The bearer token is consequently **on the command
+line** — visible to `ps` for the life of the step — which is a real cost rather
+than an oversight: claude offers no env-var indirection for an inline config,
+the alternative is writing a file into the worktree (which is what cursor has to
+do, §9.7), and the token is a per-step secret against a loopback listener that
+dies when the step ends. The §12.3 `debug` record redacts it, because that
+transcript is something people paste into issues.
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -2086,6 +2119,15 @@ from whether vincent has ever seen this build.
 pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
 `version_verdict` against that list, advisory in exactly the way §9.2 records.
 
+*Added 2026-08-29 (task 057).* codex has no `--mcp-config`, but `codex exec`
+takes `-c key=value` dotted TOML overrides and (verified against 0.150.1)
+supports streamable-HTTP servers with a bearer token read from an environment
+variable. The §13.4 server is wired as `-c mcp_servers.vincent.url=…` plus
+`-c mcp_servers.vincent.bearer_token_env_var=VINCENT_MCP_TOKEN`, with the token
+passed through the step's environment. Per-run: nothing mutates the user's
+`~/.codex/config.toml`. The token is therefore **not** on the command line here,
+unlike claude's — codex offers the indirection and claude does not.
+
 ### 9.4 Permission modes
 
 - `full-auto` (default): permission prompts are bypassed. This is the point of
@@ -2125,6 +2167,17 @@ underneath it — a data directory carried to Windows, or a workflow edited afte
 the task was queued (§18). Retries are deliberately **not** gated: the decision
 was creation-time enforcement, not creation-plus-admission, and a retry that
 would reproduce the condition is caught by that backstop.
+
+*Added 2026-08-29 (task 057).* **`restricted` bounds what a step does to the
+filesystem and the shell, not what it does to vincent.** Claude's restricted
+allow-list carries `mcp__vincent__*` in full, so a restricted step wired to
+§13.4 can create, cancel and archive vincent tasks.
+
+The alternative was leaving it out, and that is worse rather than safer: the
+allow-list does not match `mcp__vincent__*`, so a restricted step would see the
+whole tool list and be denied every call — a tool list that is a lie, and an
+agent burning its turns discovering it. Stated here and in §16 because it is
+only defensible written down.
 
 ### 9.5 Detection
 
@@ -2513,6 +2566,24 @@ would invalidate every one of them.
   installed binary: cursor cannot restrict on Windows whether or not
   `cursor-agent` is there, which is what makes refusing at creation safe.
 
+*Added 2026-08-29 (task 057).* Cursor has **no per-run MCP flag at all**:
+`cursor-agent mcp` reads only `.cursor/mcp.json` in the workspace or
+`~/.cursor/mcp.json` globally. So the adapter writes `.cursor/mcp.json` **into
+the task worktree** before `Start`, removes it after `Wait`, and passes
+`--approve-mcps` (without which a headless run stops on a trust prompt for the
+server vincent just configured). Workspace-scoped and per-task: nothing here
+touches the user's global cursor config. This extends the §16 note about vincent
+writing to cursor's own config.
+
+Two consequences are handled rather than assumed away:
+
+- The file is **untracked inside a git worktree**, so while the step runs it is
+  visible to `git status`, to the task diff and to dirty detection. It is written
+  0600, because unlike claude's argv it persists on disk for the life of the run.
+- A daemon crash leaves it behind, so §12.4 recovery removes a leftover one from
+  every live task's worktree. An empty `.cursor` goes with it; a `.cursor` the
+  user or the agent put something else in stays.
+
 ## 10. Worktree management
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
@@ -2770,6 +2841,25 @@ would invalidate every one of them.
   reconciles such a task, which is why the refusal is permanent for the life of
   the process, why it is logged once rather than every tick, and why
   `GET /v1/doctor` reports the same finding (§17).
+
+*Added 2026-08-29 (task 057).* §13.4's `task_wait` **does not change what a slot
+means.** A step blocked in a wait keeps its slot, because its agent process is
+live — exactly the `awaiting_input` rule above, and the mirror of
+`awaiting_children`, which releases its slot precisely because the parent owns
+no process.
+
+Releasing it was considered and rejected. It would create a fourth quadrant no
+§6 state occupies today — owning a live agent process *and* holding no slot —
+which would redefine what these caps bound, leave live-but-uncounted agent CLIs
+accumulating, and (because `awaiting_children` re-queues on wake) let a parked
+task sit *behind* the caps after its target had already finished, blowing past
+the very ceiling the wait tool promises.
+
+So the deadlock is prevented by **refusal** instead: `task_wait` returns a typed
+error, immediately, when the caller is itself a running step and the target
+cannot be admitted while the caller holds its slot. A silent hang becomes an
+error the agent can act on, no new state is introduced, and these caps keep
+their current meaning.
 
 ## 12. The daemon
 
@@ -3176,10 +3266,25 @@ update:                        # check for a newer vincent release (task 055)
 notify:                        # run a command when a task enters one of these states (task 046)
   on: []                       # §6 state names; [] (the default) fires nothing
   command: []                  # argv, never a shell string; the envelope arrives on stdin
+mcp:                           # the §13.4 MCP server (task 057)
+  wire_steps: true             # give vincent's own agent steps the tool list; opt-out
+  max_depth: 3                 # how deep tasks created over MCP may chain
+  max_tasks: 32                # how many tasks one MCP creation chain may hold
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
+
+**`mcp:` (task 057, added 2026-08-29).** There is deliberately **no `enabled`
+key.** `/mcp` is part of the API surface the way `/v1` is — same listener, same
+bearer token — so "serving MCP" is not a mode the daemon is in. What a user can
+meaningfully turn off is vincent wiring the server into its *own* agent steps,
+which is `wire_steps`. It defaults **true**, an opt-out on the same reasoning as
+`github.enabled` (task 035 decision 6): the whole point of the work is that a
+step's agent has the tools without anyone configuring anything, and one line
+turns it off. `max_depth` and `max_tasks` bound a chain of tasks created over
+MCP; both are read in the task-creation path, so a reload governs the next task
+rather than anything already running.
 
 **`github.poll_interval` and the pull-request reconciler (task 052, added
 2026-08-29).** Every `poll_interval` the daemon lists each GitHub-based
@@ -3538,6 +3643,15 @@ is not killed.* An identity that cannot be read during recovery, when one was
 journaled, is never a kill. A mismatch is a logged warning and nothing more —
 the task re-queues normally, there is no new block reason and no doctor
 problem.
+
+*Added 2026-08-29 (task 057).* Recovery also removes a leftover
+`.cursor/mcp.json` from every live task's worktree. The cursor adapter writes
+that file for the duration of an agent run (§9.7) and removes it in `Wait`; a
+daemon that died mid-step never got there, and the file is untracked inside a
+git worktree — so a leftover shows up in `git status`, in the task diff and in
+dirty detection, on a task that is about to be re-queued. A removal failure is
+logged rather than fatal: its token died with the daemon that minted it, so a
+stale copy is a nuisance and not a correctness problem.
 
 ## 13. HTTP API
 
@@ -4257,6 +4371,89 @@ Two kinds of streams:
    every attempt's file, so a step advance or a retry mid-stream would otherwise have
    its output compared against a position in a different file.
 
+### 13.4 Model Context Protocol (task 057)
+
+*Added 2026-08-29 (task 057, issue #243).*
+
+The daemon serves **MCP over streamable HTTP** on the same listener as `/v1`, so
+an AI coding agent is a first-class client of the same API every other client
+consumes. It is a second protocol, not a second server.
+
+**Transport and auth are §13.1's, unchanged.** `POST /mcp` is registered in
+`internal/api/server.go`'s route table beside the `/v1` routes and sits inside
+the same `recover → log → auth` chain: loopback only, no TLS,
+`Authorization: Bearer {token}` from `{data_dir}/token`, discovery through
+`daemon.json`. There is no new listener and no new auth story. The §13.1 timeout
+posture already suits a long-lived MCP response and is unchanged: a read-header,
+a whole-request *read* and an idle timeout, and deliberately no write timeout —
+the same property §13.3's streams rely on.
+
+**The tool surface is the §13.2 route table minus destructive admin.** Every
+route is one tool, and a call is dispatched by replaying the arguments as an
+in-process request against the same handler the route table built. Parity is
+therefore mechanical rather than maintained: the §13.1 body bounds, the field
+bounds, the validation, the `409` + `details.state` envelopes and
+`Idempotency-Key` all apply by construction. One tool result is capped at 256 KiB
+with an explicit truncation note; a route's own `offset`/`limit` parameters are
+how a client asks for less. `POST /v1/tasks` gains one argument its route does
+not have as a body field: `idempotency_key`, which becomes the header. A tool
+call has no header surface at all, and §13.1's replay protection exists for a
+client whose response got lost — which is exactly what an agent is.
+
+Five routes are **deliberately not tools**, and this is a design line rather than
+an oversight:
+
+    POST   /v1/daemon/stop
+    POST   /v1/daemon/backup
+    DELETE /v1/projects/{id}
+    POST   /v1/maintenance/gc
+    POST   /v1/doctor/fix
+
+An agent must not be able to stop, garbage-collect or reconfigure the daemon
+supervising it — least of all one running as a vincent step. They stay
+CLI-and-curl only. Everything else in §13.2 is a tool, including the three the
+proposal left unclassified: `POST`/`DELETE /v1/tasks/{id}/github/pull`,
+`POST /v1/tasks/{id}/steps/{step_id}/status`, and `POST /v1/tasks/{id}/archive`
+despite its worktree removal and its possible empty-branch delete. The unlink
+one carries a consequence worth stating: decision record row 27 makes a *human*
+unlink **sticky**, so an agent unlink suppresses that link permanently.
+
+§13.3's two SSE routes are not tools. A tool call is a request/response and an
+event stream is not; `task_wait` replaces them for an MCP client.
+
+**`task_wait`** blocks until a task reaches a terminal or human-blocking state —
+`done`, `aborted`, `archived`, `awaiting_input`, `blocked`, `awaiting_gate` — by
+subscribing to the §13.3 broker server-side. It takes a timeout with a hard
+30-minute ceiling, so a call cannot hang forever, and it returns the task's state
+either way with a `woke` flag distinguishing a wake from a timeout. Step
+transitions arrive as MCP progress notifications while the call is open, and the
+result is complete without them: progress is an enhancement to the wait, never
+the means of delivering its result.
+
+A step parked in `task_wait` **keeps its §11 slot**, and the deadlock §7.6 was
+designed around is prevented by refusal instead: the tool returns a typed
+`would_deadlock` error, immediately, when the caller is itself a running step and
+the target cannot be admitted while the caller holds its slot. See §11.
+
+**Per-step endpoints.** The daemon wires each agent step's CLI to
+`/mcp/step/{run_id}`, carrying a secret minted for that step run and forgotten
+when the step ends. Identity comes out of band, so the agent does not have to
+cooperate to be identified, and it is what makes the wait refusal and the
+provenance column correct. It is **not** a security boundary and must not be read
+as one — see §16.
+
+**Recursion is bounded by provenance.** A task created through MCP records
+`created_by_task_id` (§14), deliberately distinct from `parent_task_id`:
+`store/subtree.go` counts children by that column for the `awaiting_children`
+join and `ListTasks`'s `ChildrenExclude` filters roots by it, so an MCP-created
+task placed there would make its creator's `fan_out` step wait on a lane it never
+spawned. `mcp.max_depth` and `mcp.max_tasks` (§12.3) are enforced at task
+creation by walking the new ancestry chain with a recursive CTE, the way
+`subtree.go` walks `parent_task_id`. Neither §7.6's `fan_out` bounds nor §7.9's
+`include.max_depth` covers this path: both are creation-time checks over a static
+snapshot, and this depth is discovered at run time.
+
+
 ## 14. Data model (SQLite)
 
 ```sql
@@ -4442,6 +4639,12 @@ CREATE INDEX idx_idempotency_keys_created_at ON idempotency_keys(created_at);
 
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
+
+*Added 2026-08-29 (task 057).* `tasks.created_by_task_id INTEGER REFERENCES
+tasks(id) ON DELETE SET NULL`, with `idx_tasks_created_by`, records the task
+whose agent step created this one over §13.4's MCP server. NULL is every task a
+human, the CLI, the TUI or a `fan_out` step created. It is not `parent_task_id`
+and must not be conflated with it — see §13.4 for why.
 
 WAL mode, `busy_timeout` set, all writes through the daemon's single connection pool.
 Migrations are embedded in the binary and applied at startup.
@@ -5381,6 +5584,33 @@ currently true to show (§15 view 6).
   secret and not an escalation, but it is the one place vincent mutates state
   outside its own data dir, so it is recorded here rather than discovered.
 
+*Added 2026-08-29 (task 057).* **An agent can now create and cancel vincent
+tasks.** §13.4 serves MCP from the daemon and, by default
+(`mcp.wire_steps: true`), wires vincent's own agent steps to it. In
+blast-radius terms this is not a new privilege — the posture above already says
+an agent step runs arbitrary commands as the user, and a full-auto agent can
+read `{data_dir}/token` and `daemon.json` and drive `/v1` with curl today — but
+it is a change worth stating rather than leaving to be discovered. Three
+specifics:
+
+- **The five destructive-admin routes are not tools** (§13.4). An agent cannot
+  stop, back up, garbage-collect or reconfigure the daemon supervising it, nor
+  force-delete a project.
+- **`restricted` does not restrict what a step does to vincent** (§9.4). The
+  allow-list carries `mcp__vincent__*` in full, so a restricted step can create
+  and cancel tasks. It bounds the filesystem and the shell, and that is all it
+  claims to bound.
+- **The per-step endpoint is not a security boundary.** `/mcp/step/{run_id}`
+  carries a secret minted for one step run, and it exists to make `task_wait`'s
+  deadlock refusal correct and to attribute provenance — not to confine the
+  agent. A full-auto agent can read the daemon token and reach `/mcp` directly.
+  It must not be documented, or relied on, as a sandbox.
+
+The cursor adapter additionally writes `.cursor/mcp.json` into the **task
+worktree** (§9.7), which extends this section's existing note about vincent
+writing to cursor's own config. It is workspace-scoped and per-task; the user's
+global cursor config is untouched.
+
 ## 17. Observability
 
 - **Per step:** duration (active time — time spent `awaiting_input` is tracked
@@ -5727,6 +5957,17 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
 ## 20. Future work (explicitly out of v1)
 
 - Web UI on the same API; auth story for non-loopback exposure.
+- ~~MCP server so agents can drive vincent directly~~ — **promoted out of
+  future work on landing, 2026-08-29** (§13.4, task 057, issue #243). It was
+  never listed here, so this is a new entry recorded as promoted rather than a
+  strike-through of a deferral. Still deferred, and named here so the next
+  person does not have to rediscover them: a **`vincent mcp` stdio subcommand**
+  for MCP clients that cannot set an `Authorization` header (the tool
+  definitions would be shared; it is a process per client, which is why it is
+  not the primary shape), and a **narrower default tool surface for wired
+  steps** specifically, if ~40 tool schemas prove costly in a step agent's
+  context — the answer there is a different default for that one caller, not a
+  different rule for external clients.
 - ~~OS desktop notifications (blocked / gate / awaiting input / done)~~ —
   **the outward-signalling half is done, 2026-08-28** (§12.3 `notify:`, task
   046, issue #90): the daemon runs a command of the user's choosing on any §6

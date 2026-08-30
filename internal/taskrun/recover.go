@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -134,7 +135,41 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 			return requeued, fmt.Errorf("recover task %d: finalize open step runs: %w", id, err)
 		}
 	}
+	if err := sweepCursorMCP(ctx, st, log); err != nil {
+		return requeued, err
+	}
 	return requeued, nil
+}
+
+// sweepCursorMCP removes the `.cursor/mcp.json` a cursor step writes into its
+// task worktree (§9.7, §12.4, task 057). The adapter removes it in Wait; a
+// daemon that died mid-step never got there, and the file is untracked inside
+// a git worktree — so a leftover shows up in `git status`, in the task diff
+// and in dirty detection, on a task that is about to be re-queued.
+//
+// It sweeps every live task's worktree rather than only the ones that were
+// running: the file is only ever written by a run, so removing it where there
+// was none costs a failed os.Remove, and the crash that left it behind is
+// exactly the case where the step_run rows may not say which task had it.
+//
+// A removal failure is logged, not returned: recovery's job is to get the
+// daemon running again, and a stale config file is a nuisance rather than a
+// correctness problem — its token died with the daemon that minted it.
+func sweepCursorMCP(ctx context.Context, st *store.Store, log *slog.Logger) error {
+	claims, err := st.ListWorktreeClaims(ctx)
+	if err != nil {
+		return fmt.Errorf("recover: list worktree claims: %w", err)
+	}
+	for _, c := range claims {
+		if c.Path == "" {
+			continue
+		}
+		if err := agent.RemoveCursorMCPConfig(c.Path); err != nil {
+			log.Warn("remove leftover cursor mcp config",
+				"task", c.TaskID, "path", c.Path, "error", err)
+		}
+	}
+	return nil
 }
 
 // killOwned tree-kills the journaled process of each of one task's open runs.

@@ -70,6 +70,7 @@ the living engineering specification records implementation contracts.
 | [054](054-collapsible-board-groups.md) | Collapsible groups on the task board | ✅ done (1/1) |
 | [055](055-release-check-and-self-update.md) | Check for a newer release, and offer an in-place update | ✅ done (2/2) |
 | [056](056-fetch-base-branch.md) | Fetch the base branch before creating a task worktree | ✅ done (1/1) |
+| [057](057-daemon-mcp-server.md) | Serve MCP from the daemon so agents can drive vincent directly | 🔄 in progress (8/9) |
 
 ## How to add and update a task document
 

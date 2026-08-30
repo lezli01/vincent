@@ -70,6 +70,11 @@
     "description": "Start the vincent daemon automatically with launchd, systemd, or Windows Task Scheduler."
   },
   {
+    "path": "docs/guides/mcp.md",
+    "seo_title": "Driving vincent from an AI agent over MCP",
+    "description": "Connect any MCP client to the vincent daemon: the whole REST API as tools, a bounded wait on a running task, and vincent's own agent steps wired in by default."
+  },
+  {
     "path": "docs/guides/scripting.md",
     "seo_title": "Script and automate vincent",
     "description": "Automate vincent with JSON CLI output, exit codes, the localhost REST API, and server-sent events."

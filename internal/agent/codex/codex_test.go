@@ -310,3 +310,32 @@ func TestCuratedInputSupportIsNever(t *testing.T) {
 		t.Errorf("InputSupport = %q, want %q", got, agent.InputNever)
 	}
 }
+
+// TestBuildArgsMCP covers task 057 decision 8's codex half: dotted TOML
+// overrides rather than a config file, and the token through the environment
+// rather than argv — the indirection codex offers and claude does not.
+func TestBuildArgsMCP(t *testing.T) {
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:7777/mcp/step/4", Token: "s3cret"}
+	got := buildArgs(agent.RunSpec{PermissionMode: agent.FullAuto, MCP: srv})
+	joined := strings.Join(got, " ")
+	for _, want := range []string{
+		`-c mcp_servers.vincent.url="http://127.0.0.1:7777/mcp/step/4"`,
+		`-c mcp_servers.vincent.bearer_token_env_var="` + MCPTokenEnv + `"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("argv = %q, want it to contain %s", got, want)
+		}
+	}
+	if strings.Contains(joined, "s3cret") {
+		t.Errorf("argv = %q, want the token out of argv entirely", got)
+	}
+}
+
+// TestBuildArgsNoMCP is the `mcp.wire_steps: false` half.
+func TestBuildArgsNoMCP(t *testing.T) {
+	for _, a := range buildArgs(agent.RunSpec{PermissionMode: agent.FullAuto}) {
+		if strings.Contains(a, "mcp") {
+			t.Fatalf("argv carries %q; want nothing about MCP", a)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package taskrun
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -69,7 +70,9 @@ func newEngineHarness(t *testing.T) *engineHarness { return newEngineHarnessWith
 // the transcript cap has to be shrunk to be testable, and a test-only
 // override hatch was exactly what the PR V decision rejected in favour of a
 // real config field.
-func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarness {
+func newEngineHarnessWith(
+	t *testing.T, mutate func(*config.Config), deps ...func(*Deps),
+) *engineHarness {
 	t.Helper()
 	fake := agenttest.BuildFakeAgent(t)
 	dataDir := t.TempDir()
@@ -99,7 +102,7 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 		codex.New(func() string { return fake }),
 		cursor.New(func() string { return fake }),
 	)
-	h.runner = New(Deps{
+	rd := Deps{
 		Store:     st,
 		Config:    h.config,
 		Worktrees: worktree.NewManager(git, dataDir),
@@ -110,7 +113,11 @@ func newEngineHarnessWith(t *testing.T, mutate func(*config.Config)) *engineHarn
 		Catalog: agent.NewCatalogCache(agents),
 		DataDir: dataDir,
 		Logger:  log,
-	})
+	}
+	for _, fn := range deps {
+		fn(&rd)
+	}
+	h.runner = New(rd)
 	return h
 }
 
@@ -973,5 +980,78 @@ steps:
 	runs := h.stepRuns(t, task.ID)
 	if len(runs) != 1 || runs[0].FailureReason != ReasonRestrictedUnsupported {
 		t.Errorf("step runs = %+v, want one failed %s", runs, ReasonRestrictedUnsupported)
+	}
+}
+
+// mcpRefusingAdapter is an adapter that cannot carry an MCP server, standing
+// in for a CLI version that has no way to be given one. It embeds a real
+// adapter so it keeps that adapter's name, detection and catalog, and refuses
+// only where task 057 decision 8 says an adapter refuses: at Start.
+type mcpRefusingAdapter struct{ agent.Adapter }
+
+func (a mcpRefusingAdapter) Start(context.Context, agent.RunSpec) (agent.RunHandle, error) {
+	return nil, agent.ErrMCPUnsupported
+}
+
+// TestEngineMCPUnsupportedIsItsOwnReason: an adapter that cannot carry the
+// §13.4 server fails the step loudly rather than running an agent that
+// silently has no vincent tools (task 057 decision 8). Like the restricted
+// case it is deliberately not `agent_unavailable`: the CLI is installed and
+// healthy, and sending the user to reinstall it wastes their time.
+func TestEngineMCPUnsupportedIsItsOwnReason(t *testing.T) {
+	h := newEngineHarnessWith(t, nil, func(d *Deps) {
+		base, _ := d.Agents.Get("cursor")
+		d.Agents = agent.NewRegistry(
+			claude.New(func() string { return "" }),
+			codex.New(func() string { return "" }),
+			mcpRefusingAdapter{Adapter: base},
+		)
+		d.Catalog = agent.NewCatalogCache(d.Agents)
+		d.MCPForStep = func(int64, int64, string) (*agent.MCPServer, func()) {
+			return &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp", Token: "s"}, nil
+		}
+	})
+	task := h.createTask(t, `name: mcp-unsupported
+steps:
+  - id: build
+    type: agent
+    agent: cursor
+    max_retries: 0
+    prompt: do the thing
+`)
+	h.start(t)
+
+	final := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if final.State != store.TaskBlocked {
+		t.Fatalf("task = %s, want blocked — a step wired to the vincent tools must not run without them",
+			final.State)
+	}
+	if final.BlockReason != ReasonMCPUnsupported {
+		t.Errorf("block reason = %q, want %q", final.BlockReason, ReasonMCPUnsupported)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 1 || runs[0].FailureReason != ReasonMCPUnsupported {
+		t.Errorf("step runs = %+v, want one failed %s", runs, ReasonMCPUnsupported)
+	}
+}
+
+// TestRedactMCPTokenScrubsTheDebugArgv: claude carries its MCP configuration
+// inline on the command line (§9.2), and the §12.3 debug record is something
+// people paste into issues.
+func TestRedactMCPTokenScrubsTheDebugArgv(t *testing.T) {
+	t.Parallel()
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp", Token: "s3cret"}
+	argv := []string{"claude", "--mcp-config", `{"headers":{"Authorization":"Bearer s3cret"}}`}
+	got := redactMCPToken(argv, srv)
+	for _, a := range got {
+		if strings.Contains(a, "s3cret") {
+			t.Fatalf("argv = %q, want the token redacted", got)
+		}
+	}
+	if !strings.Contains(strings.Join(got, " "), "[redacted]") {
+		t.Errorf("argv = %q, want the redaction visible rather than the flag dropped", got)
+	}
+	if same := redactMCPToken(argv, nil); &same[0] != &argv[0] {
+		t.Error("a run with no MCP server must not copy its argv")
 	}
 }

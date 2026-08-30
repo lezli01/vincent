@@ -65,6 +65,16 @@ type Deps struct {
 	// clock; nil means time.Now. Injected by tests so input_wait_ms is
 	// assertable without sleeping (phase 2 decision).
 	Now func() time.Time
+	// MCPForStep mints the §13.4 per-step MCP session an agent step is wired
+	// to, and returns the release that retires it when the step ends (task
+	// 057 decision 6). A nil field, or a nil server from a non-nil field, is
+	// a step with no vincent tools — which is what `mcp.wire_steps: false`
+	// produces, and what every build without an API server gets.
+	//
+	// It is a func rather than an interface because the daemon is the only
+	// thing that can answer it: the endpoint's URL comes from the listener
+	// internal/api owns, and this package may not import that.
+	MCPForStep func(runID, taskID int64, stepID string) (*agent.MCPServer, func())
 }
 
 // Runner executes admitted tasks and applies the §6 human actions.

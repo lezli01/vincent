@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -161,8 +163,30 @@ func buildArgs(spec agent.RunSpec) []string {
 	if spec.Effort != "" {
 		args = append(args, "-c", "model_reasoning_effort="+spec.Effort)
 	}
+	if spec.MCP != nil {
+		// codex has no --mcp-config, but `codex exec` takes `-c key=value`
+		// dotted TOML overrides, and 0.150.1's `mcp add` confirms
+		// streamable-HTTP servers with a bearer token read from an env var
+		// (§9.3, task 057 decision 8). Per-run: nothing here mutates
+		// ~/.codex/config.toml, which is the user's file and not vincent's.
+		//
+		// The token goes through the environment rather than argv, because
+		// codex offers the indirection and claude does not. MCPTokenEnv is
+		// where the adapter puts it.
+		prefix := "mcp_servers." + spec.MCP.Name + "."
+		args = append(args,
+			"-c", prefix+"url="+strconv.Quote(spec.MCP.URL),
+			"-c", prefix+"bearer_token_env_var="+strconv.Quote(MCPTokenEnv))
+	}
 	return args
 }
+
+// MCPTokenEnv is the environment variable codex is told to read §13.4's bearer
+// token from. It is exported so a test can assert the child's environment
+// carries it, which is the only place the token appears for this adapter.
+//
+//nolint:gosec // G101: the name of an env var, not a credential.
+const MCPTokenEnv = "VINCENT_MCP_TOKEN"
 
 // Start implements agent.Adapter. The prompt is written via stdin (Windows
 // argv limit); the process tree is killed when ctx is canceled. The caller
@@ -177,6 +201,15 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	cmd.Dir = spec.WorkDir
 	if spec.Env != nil {
 		cmd.Env = spec.Env
+	}
+	if spec.MCP != nil {
+		// Appended after the resolved environment on purpose: §12.3's
+		// `environment.unset` must not be able to strip the channel the step
+		// was wired to, and a later assignment is what the child reads.
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, MCPTokenEnv+"="+spec.MCP.Token)
 	}
 	cmd.Stdin = strings.NewReader(spec.Prompt)
 	stderr := &tailWriter{max: 64 * 1024}
