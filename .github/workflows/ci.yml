@@ -32,7 +32,11 @@ jobs:
 
   ci:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # Wide enough that `go test -timeout` (see magefile.go) is always the
+    # tighter of the two limits: a package that really hangs should be reported
+    # by the test binary's goroutine dump, not killed here with nothing to read.
+    # The Windows leg under the race detector is the one this is sized for.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
