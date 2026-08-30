@@ -75,7 +75,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Nine groups:
+One report answering "why is nothing running?". Ten groups:
 
 | Group | Rows |
 |---|---|
@@ -85,6 +85,7 @@ One report answering "why is nothing running?". Nine groups:
 | Database | path, size, total on disk including WAL/SHM, applied schema version, `PRAGMA integrity_check`, per-table row counts, workflow-snapshot bytes, and how far back the events table reaches |
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
+| Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -108,6 +109,11 @@ leaves task creation without an issue working exactly as before, so the row ends
 with *tasks can still be created without an issue*. The token row names the
 **variable** (`GITHUB_TOKEN` or `GH_TOKEN`), never its value: a diagnostic is
 something people paste into issues.
+The **Container** rows follow the same rule and for the same reason:
+containerization is off by default, so a machine with no runtime — or a Windows
+daemon, which cannot host one — runs every step on the host exactly as it always
+has. The runtime is probed **even when `container.image` is unset**, because
+"would this work if I turned it on" is the question the group exists to answer.
 
 An adapter row also ends with what vincent knows about the build itself:
 `untested version` and the builds it was judged against, `incompatible version`

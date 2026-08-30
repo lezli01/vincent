@@ -147,3 +147,63 @@ func TestDoctorGitHubRowDisabled(t *testing.T) {
 		t.Errorf("a disabled integration is reported as unavailable:\n%s", out)
 	}
 }
+
+// The container-execution row (§16, task 061). Like the GitHub row above it,
+// every "no" it can report leaves task creation and step execution working
+// exactly as they always have — containerization is off by default — so none
+// of this is a Problem and none of it changes the exit code.
+
+// TestDoctorContainerRowOffByDefault: the default installation. The row has to
+// say the steps run here, because "enabled no" alone reads like a fault.
+func TestDoctorContainerRowOffByDefault(t *testing.T) {
+	out := joinRows(doctorContainerRows(apiclient.DoctorContainer{
+		Runtime: "docker", Supported: true, Available: true,
+	}))
+	for _, want := range []string{"enabled", "no", "run on this host", "container.image is unset"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("row does not mention %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestDoctorContainerRowProbesAnAbsentRuntimeAnyway: "would this work if I
+// turned it on" is the question `vincent doctor` is run to answer, so the
+// probe happens whether or not an image is configured.
+func TestDoctorContainerRowProbesAnAbsentRuntimeAnyway(t *testing.T) {
+	out := joinRows(doctorContainerRows(apiclient.DoctorContainer{
+		Runtime: "podman", Supported: true, Message: "podman: executable file not found in $PATH",
+	}))
+	for _, want := range []string{"podman", "unavailable", "not found"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("row does not mention %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestDoctorContainerRowOnAWindowsDaemon: decision 2's refusal is a fact about
+// the host, and the row states it rather than reporting a missing binary the
+// user could go and install.
+func TestDoctorContainerRowOnAWindowsDaemon(t *testing.T) {
+	out := joinRows(doctorContainerRows(apiclient.DoctorContainer{
+		Enabled: true, Image: "ghcr.io/example/dev:latest", Runtime: "docker",
+		Message: "containerized tasks are not supported on a windows daemon",
+	}))
+	if !strings.Contains(out, "unsupported") || !strings.Contains(out, "windows daemon") {
+		t.Errorf("row does not state the windows refusal:\n%s", out)
+	}
+	if !strings.Contains(out, "blocked before a worktree is created") {
+		t.Errorf("row does not state the consequence for a task:\n%s", out)
+	}
+}
+
+// TestDoctorContainerRowEnabledAndUsable names the image, which is the one
+// fact a user comparing two machines needs.
+func TestDoctorContainerRowEnabledAndUsable(t *testing.T) {
+	out := joinRows(doctorContainerRows(apiclient.DoctorContainer{
+		Enabled: true, Image: "ghcr.io/example/dev:latest", Runtime: "docker",
+		Supported: true, Available: true,
+	}))
+	if !strings.Contains(out, "run in ghcr.io/example/dev:latest") {
+		t.Errorf("row does not name the image:\n%s", out)
+	}
+}

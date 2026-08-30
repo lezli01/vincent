@@ -138,6 +138,11 @@ type Defaults struct {
 	MaxRetries     *int             `yaml:"max_retries"`
 	RetryBackoff   *config.Duration `yaml:"retry_backoff"`
 	Timeout        *config.Duration `yaml:"timeout"`
+	// Container overrides the daemon's `container:` block for tasks created
+	// from this workflow (§16, task 061 decision 6). It is the second and
+	// last level of the §8.6 precedence chain for containerization: workflow
+	// `defaults:` beats `config.yaml`, and there is no task level.
+	Container *config.ContainerOverride `yaml:"container"`
 }
 
 // Step is one workflow step. The struct is flat across all three step types;
@@ -614,6 +619,61 @@ func validateDefaults(wf *Workflow, opts Options, add func(string, string, ...an
 	if d.InputTimeout != nil && *d.InputTimeout <= 0 {
 		add("defaults.input_timeout", "input_timeout must be positive, got %s", d.InputTimeout)
 	}
+	validateContainerDefaults(wf, add)
+}
+
+// validateContainerDefaults applies the two container checks load-time
+// validation can actually make (task 061 decision 8).
+//
+// The block itself is always checkable. The `shell:` refusal is not: a
+// containerized `run:` body executes under the container's /bin/sh — the
+// inverse of §8.3 — and containerization also resolves from `config.yaml`,
+// which is hot-reloadable and which a workflow being parsed knows nothing
+// about. So the refusal lands here only when the workflow pins its own image,
+// the one case load time can judge; every other case is refused at task
+// creation, where the config-level and workflow-level images resolve together.
+func validateContainerDefaults(wf *Workflow, add func(string, string, ...any)) {
+	c := wf.Defaults.Container
+	if c == nil {
+		return
+	}
+	if err := (config.Container{Runtime: derefString(c.Runtime), ExtraMounts: c.ExtraMounts}).Validate(); err != nil {
+		add("defaults.container", "%s", err.Error())
+	}
+	if c.Image == nil || strings.TrimSpace(*c.Image) == "" {
+		return
+	}
+	for _, f := range ContainerShellConflicts(wf) {
+		add(f.Path, "%s", f.Message)
+	}
+}
+
+// ContainerShellConflicts lists the steps a containerized run cannot honour:
+// a `shell:` pin of pwsh or cmd, neither of which exists in the Linux image a
+// container runs (§8.3, task 061 decision 8). It is exported because task
+// creation makes the same judgement on the resolved image, and one definition
+// is what keeps the load-time and creation-time messages identical.
+func ContainerShellConflicts(wf *Workflow) []Error {
+	var out []Error
+	WalkSteps(wf.Steps, func(step Step, path string) {
+		if step.Shell == ShellPwsh || step.Shell == ShellCmd {
+			out = append(out, Error{
+				Path: path + ".shell",
+				Message: fmt.Sprintf(
+					"step %q pins shell %q, which a containerized run cannot provide: "+
+						"a container's run bodies execute under the image's /bin/sh (§8.3)",
+					step.ID, step.Shell),
+			})
+		}
+	})
+	return out
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // validateStep checks one step: its type, the fields that type requires, the
@@ -1239,4 +1299,24 @@ func parentPath(path string) string {
 		return path[:i]
 	}
 	return ""
+}
+
+// WalkSteps visits every step in a workflow body, descending into a
+// `parallel` group's and a `loop`'s sub-steps and into a resolved `fan_out`
+// lane's, and reports the dotted path of each. It exists because more than
+// one check needs "every step, wherever it lives" and each of them had been
+// re-deriving the nesting rules.
+func WalkSteps(steps []Step, fn func(step Step, path string)) {
+	walkSteps(steps, "steps", fn)
+}
+
+func walkSteps(steps []Step, base string, fn func(step Step, path string)) {
+	for i, step := range steps {
+		path := fmt.Sprintf("%s[%d]", base, i)
+		fn(step, path)
+		walkSteps(step.Steps, path+".steps", fn)
+		for j, lane := range step.Lanes {
+			walkSteps(lane.Steps, fmt.Sprintf("%s.lanes[%d].steps", path, j), fn)
+		}
+	}
 }

@@ -233,6 +233,17 @@ update:
   check: true
   poll_interval: 24h
 
+# Run a task's steps inside a container instead of on this host (task 061).
+# "image" is the whole switch and "" is the default: no image, and every step
+# runs here exactly as it always has. The image is yours — it must already
+# carry the agent CLI your workflows use, and git. macOS and Linux only.
+container:
+  image: ""
+  runtime: docker
+  mount_agent_config: true
+  network: true
+  extra_mounts: []
+
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
 # and writes a JSON envelope describing the transition to the command's stdin
@@ -918,6 +929,102 @@ must be at least 1; a smaller value fails the load.
 An adapter that cannot carry an MCP server fails the step with
 `mcp_unsupported` rather than running an agent that silently has no vincent
 tools. If that is not what you want, turn `wire_steps` off.
+
+### `container`
+
+```yaml
+container:
+  image: ""
+  runtime: docker
+  mount_agent_config: true
+  network: true
+  extra_mounts: []
+```
+
+Run a task's step processes inside **one container** instead of on this host.
+**`image` is the whole switch.** Empty — the default — means no runtime is
+consulted and every step runs here, byte for byte what it did before this key
+existed. Name an image and the task's steps run inside a container created with
+the task's worktree and removed with it.
+
+**Which steps, today.** Every `command` step, and every `check:` — including a
+check hanging off an agent step. A `manual` step runs no process, so there is
+nothing to contain. The **agent process itself still runs on the host**: moving
+it needs a launch seam across all three adapters and is the next piece of this
+work. A containerized task whose workflow has agent steps is therefore a mixed
+run, and it is neither refused at creation nor warned about.
+
+**The image is yours.** It must already carry the agent CLI your workflows'
+agent steps resolve to, and `git`. Vincent builds no image, publishes none and
+bundles none — the same posture it takes toward `gh` and `cosign`.
+
+Two mounts are made for you and need no `extra_mounts` entry: the project
+repository and the task's worktree, each **at its own absolute host path**. That
+is deliberate — a worktree's `.git` file holds an absolute `gitdir:` into the
+parent repository, so mounting both where they already live makes git work
+inside the container with no translation, and
+[`.Worktree`](workflow-schema.md) and `VINCENT_WORKTREE` name the same
+directory on both sides. It is also why **a Windows daemon refuses a
+containerized task**: `C:\...` cannot exist inside a Linux container.
+
+One consequence is worth knowing before you hit it: "the same absolute path"
+means the **physical** one. A project path that runs through a symlink — the
+common case being macOS's `/tmp` and `/var`, which are symlinks into
+`/private` — is mounted as written while git resolves the worktree's pointer to
+the physical path, and the step then reports `not a git repository`. Register
+such a project by its resolved path (`cd project && pwd -P`).
+
+**`runtime`** is a docker-CLI-compatible binary. Only **`docker`** is verified in
+CI; `podman` and `nerdctl` are accepted because they take the same argv, which
+is not the same claim as tested.
+
+**`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex` and `~/.cursor`
+into the container **read-write**, and is on by default. Subscription-based auth
+takes no key from the environment, and cursor persists `--model` to its own
+config, so without this an agent CLI in the container cannot authenticate. It
+also means the container can read your agent credentials — see
+[the security model](../security-model.md).
+
+**`network`** keeps outbound traffic on, which is the default. `false` drops the
+container off the network entirely; combined with `mcp.wire_steps: true` that is
+a contradiction — a container with no network cannot reach the daemon's per-step
+MCP endpoint — and the task is refused at creation. Turn `mcp.wire_steps` off,
+or leave the network on.
+
+**`extra_mounts`** are additional bind mounts, each `host:container` or
+`host:container:ro`. Both paths must start with `/`, on every platform — a
+relative source would resolve against the daemon's working directory, and a
+`C:\...` source is refused even on Windows, where the containerized task that
+would have used it is itself refused at creation. That keeps one `config.yaml`
+loadable everywhere: a Windows machine reads a Linux daemon's mounts without
+complaining about a key it will never act on.
+
+A workflow may override any of these in its `defaults.container:` block, which
+beats this one per field. There is no per-task override.
+
+**What is refused, and when:**
+
+| Condition | When | What you see |
+|---|---|---|
+| The daemon runs on Windows | task creation | `400 validation_failed` |
+| `runtime` missing or not usable | task creation | `400 validation_failed` naming the binary |
+| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` naming both keys |
+| A step pins `shell: pwsh` or `shell: cmd` | workflow load, or task creation | a validation error naming the step |
+| The image is missing and cannot be pulled | when the task is admitted | the task blocks `container_image_unavailable` |
+| The runtime went away after creation | when the task is admitted | the task blocks `container_unavailable` |
+
+The image check waits until admission on purpose: pulling a multi-gigabyte image
+inside `POST /v1/tasks` would run it against the API's request timeouts, and
+checking only what is already on disk would refuse every first run on a fresh
+machine. Blocking at admission still costs you no worktree, no branch and no
+retry. A step the container was going to run is **never** quietly moved to the
+host when the runtime or the image fails — the task blocks instead. (Agent
+steps, which this delivery has not moved in yet, are a separate matter and are
+described above.)
+
+Run `vincent doctor` to see whether the runtime answers on this machine — it
+probes even when `image` is empty, because "would this work if I turned it on"
+is the question worth asking.
 
 ### `notify`
 

@@ -237,8 +237,37 @@ Every key here is also settable per step, where it wins.
 | `max_retries` | int | `1` | all steps |
 | `retry_backoff` | duration | `0s` | all steps |
 | `timeout` | duration | `60m` agent / `15m` command (config) | all steps |
+| `container` | mapping | daemon `container:` | command steps and checks — where the task's step processes run |
 
 Durations are Go duration strings: `45m`, `1h30m`, `90s`.
+
+`container` is the one key here that is a mapping rather than a scalar, and it
+merges **per field** over the daemon's [`container:`](configuration.md#container)
+block rather than replacing it:
+
+```yaml
+defaults:
+  container:
+    image: ghcr.io/acme/dev:latest   # "" here forces this workflow onto the host
+    network: false                   # inherit runtime, mount_agent_config from config.yaml
+```
+
+Every field is optional and an absent one keeps the daemon's value; `image: ""`
+is a real value meaning "run this workflow's tasks on the host", distinct from
+saying nothing. There is no per-step and no per-task container override.
+
+**What runs inside it today** is every `command` step and every `check:`,
+including a check on an agent step. A `manual` step runs no process. The
+**agent process itself is still spawned on the host**; moving it is the next
+piece of this work, and until it lands a workflow that pins an image and has
+agent steps is a mixed run.
+
+Pinning an image here also makes one check possible at load rather than at task
+creation: a step that pins `shell: pwsh` or `shell: cmd` fails validation
+straight away, because a containerized `run:` body executes under the image's
+`/bin/sh`. A workflow that pins no image is only refused when a task is created
+from it, since containerization can also come from the hot-reloadable
+`config.yaml`.
 
 `max_retries` counts attempts **after** the first, so the default of 1 means up
 to two attempts.

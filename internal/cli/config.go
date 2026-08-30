@@ -310,6 +310,28 @@ func configFields() map[string]configField {
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{Command: v}}
 			}),
+		"container.image": str(func(c apiclient.Config) string { return c.Container.Image },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Image: v}}
+			}),
+		"container.runtime": str(func(c apiclient.Config) string { return c.Container.Runtime },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Runtime: v}}
+			}),
+		"container.mount_agent_config": boolField(
+			func(c apiclient.Config) bool { return c.Container.MountAgentConfig },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{MountAgentConfig: b}}
+			}),
+		"container.network": boolField(
+			func(c apiclient.Config) bool { return c.Container.Network },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Network: b}}
+			}),
+		"container.extra_mounts": listField(func(c apiclient.Config) []string { return c.Container.ExtraMounts },
+			func(v *[]string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{ExtraMounts: v}}
+			}),
 		"tui.board.group_by": listField(func(c apiclient.Config) []string { return c.TUI.Board.GroupBy },
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: v}}}

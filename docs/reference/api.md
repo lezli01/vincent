@@ -123,7 +123,7 @@ are long-lived by contract and no write deadline is set.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
-| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, and the database's byte footprint |
+| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, the database's byte footprint, and the container runtime |
 | `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
 | `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
@@ -406,6 +406,22 @@ directories is a different promise from a report.
 a readdir and one id query — no size walk, no git — so it is cheap and drops the
 moment `gc` runs. It is deliberately **not** on `/v1/health`, which stays
 `{ status, version }` and is the one unauthenticated endpoint.
+
+`container` on `GET /v1/info` reports the container runtime the way `agents[]`
+reports the adapters — presence, never a verdict on an image:
+
+```json
+{ "container": { "enabled": true, "image": "ghcr.io/acme/dev:latest",
+                 "runtime": "docker", "available": true } }
+```
+
+`enabled` is whether `container.image` names an image at all; `available` is
+whether that runtime binary answered, which is probed either way so a client can
+say "this would work if you turned it on". A failure adds `error` with the
+runtime's own words, and on a Windows daemon `available` is `false` with an
+`error` saying containerized tasks are not supported there. Whether a particular
+image exists is **not** here: that is a registry pull, and it happens when a task
+is admitted.
 
 `database` on `GET /v1/info` carries the byte figures and **only** those:
 

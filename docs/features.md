@@ -201,6 +201,33 @@ to workflow default to adapter default. The TUI shows which level won, and free
 text remains available when a newly released model is not in a catalog yet.
 Read [Agent CLIs](guides/agents.md) for installation and capability details.
 
+## Run steps in a container
+
+Point `container.image` at an image you already have and a task's step processes
+run inside one container, created with the task's worktree and removed with it.
+What that confines is the filesystem outside the worktree and the project
+repository, the shell, and the tooling the image carries. Leave the key empty,
+which is the default, and nothing changes: every step runs on the host exactly
+as before.
+
+Today that covers **command steps and every `check:`**, including a check on an
+agent step. The **agent process itself still runs on the host** — putting it in
+the container needs a launch seam across all three adapters, and that is the
+next piece of this work. A containerized task with agent steps is a mixed run
+until then, and vincent neither refuses it nor warns about it.
+
+The image is yours and must already carry your agent CLI and `git` — vincent
+builds, publishes and bundles nothing. The repository and the worktree are
+mounted at their own absolute paths, so a path means the same thing inside and
+out and workflow templates need no translation. A workflow can pin its own image
+in `defaults.container:`.
+
+macOS and Linux hosts only, and the container is a filesystem boundary rather
+than a network or credential one — outbound traffic is open by default and your
+agent's configuration is mounted inside it so it can authenticate. Read
+[the security model](security-model.md) for what that means and
+[`container`](reference/configuration.md#container) for the knobs.
+
 ## Script and integrate it
 
 The TUI, command-line subcommands, and external integrations all use the same

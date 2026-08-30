@@ -1,0 +1,24 @@
+-- 0021_container: the container a step run's process lived in (§16, §20 —
+-- task 061).
+--
+-- §12.4's PID-reuse guard journals a platform-native process identity and
+-- kills a verified orphan by PID. A process inside a container is not the host
+-- PID the row journals, so a containerized run journals the container id
+-- instead: recovery reads it, confirms the container still carries the
+-- `com.vincent.task` label naming this task, and removes the container — which
+-- kills every process inside it. One identity, no second exec path.
+--
+-- A container id is never reused, so the reuse question the `proc_identity`
+-- column exists to answer does not arise here; the label check is against a
+-- container belonging to a *different* task, which is the same "what cannot be
+-- proved is not killed" rule from a different direction.
+--
+-- NULL is the ordinary value and means the step ran on the host — every row
+-- written before this migration, and every row of an installation that never
+-- sets `container.image`. `pid`, `proc_started_at` and `proc_identity` are
+-- unchanged and still journaled for a containerized run: they name the
+-- host-side `docker exec` client, which is a real process the daemon spawned.
+--
+-- Cleared alongside `pid` when a row is terminalized, for the same reason: a
+-- closed row must keep no pointer at something it no longer owns.
+ALTER TABLE step_runs ADD COLUMN container_id TEXT; -- NULL = the step ran on the host

@@ -222,6 +222,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{"DATABASE", doctorDatabaseRows(rep.Database)},
 		{"AGENTS", doctorAgentRows(rep.Agents)},
 		{"GITHUB", doctorGitHubRows(rep.GitHub)},
+		{"CONTAINER", doctorContainerRows(rep.Container)},
 		{"UPDATE", doctorUpdateRows(rep.Update)},
 		{"STORAGE", doctorStorageRows(rep.Storage)},
 		{"TASKS", doctorTaskRows(rep.Tasks)},
@@ -501,6 +502,39 @@ func doctorGitHubRows(gh apiclient.DoctorGitHub) [][]string {
 	default:
 		rows = append(rows, []string{"issues", "unavailable: " + gh.Message +
 			"; tasks can still be created without an issue"})
+	}
+	return rows
+}
+
+// doctorContainerRows renders the container-execution row (§16, task 061).
+//
+// It follows the GitHub row's rule rather than the agents section's: nothing
+// here is a Problem and none of it changes the exit code. Containerization is
+// off by default, so a machine with no runtime — or a Windows daemon, which
+// cannot host one under decision 2 — runs every step on the host exactly as it
+// always has. The runtime is probed even when the feature is off, because
+// "would this work if I turned it on" is the question the row exists to answer.
+func doctorContainerRows(c apiclient.DoctorContainer) [][]string {
+	rows := [][]string{{"enabled", boolWord(c.Enabled)}}
+	if c.Image != "" {
+		rows = append(rows, []string{"image", c.Image})
+	}
+	runtimeState := "available"
+	switch {
+	case !c.Supported:
+		runtimeState = "unsupported: " + c.Message
+	case !c.Available:
+		runtimeState = "unavailable: " + c.Message
+	}
+	rows = append(rows, []string{"runtime", c.Runtime + "  " + runtimeState})
+	switch {
+	case c.Enabled && c.Supported && c.Available:
+		rows = append(rows, []string{"steps", "run in " + c.Image})
+	case c.Enabled:
+		rows = append(rows, []string{"steps", "would run in " + c.Image +
+			", but the task is blocked before a worktree is created"})
+	default:
+		rows = append(rows, []string{"steps", "run on this host (container.image is unset)"})
 	}
 	return rows
 }

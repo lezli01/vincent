@@ -426,6 +426,16 @@ func (r *Runner) execute(ctx context.Context, task *store.Task) {
 	if err := r.ensureWorktree(ctx, task, project, log); err != nil {
 		return // ensureWorktree already blocked or re-queued the task
 	}
+	// The container is created with the worktree and removed with it (§16,
+	// task 061 decision 1): one per task, holding the worktree and the
+	// project repository as bind mounts, so it has to come second. A failure
+	// blocks the task — a containerized step is never quietly run on the host
+	// instead (§9.4's reasoning).
+	tc, err := r.ensureContainer(ctx, task, project, wf, log)
+	if err != nil {
+		return // ensureContainer already blocked or interrupted the task
+	}
+	defer r.setTaskContainer(task.ID, tc)()
 	// An ad-hoc repair the human asked for while the task was blocked (§6,
 	// task 025). It is a whole admission of its own: one agent runs in this
 	// worktree and the task goes back to `blocked` at the same step, so the

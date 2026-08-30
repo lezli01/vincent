@@ -23,6 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -274,7 +275,12 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// the recoverable state a later start can retry — and starting the
 	// scheduler over rows it could not reconcile is how a second attempt
 	// gets admitted against a first one the database still calls `running`.
-	if n, err := taskrun.Recover(ctx, st, logger); err != nil {
+	if n, err := taskrun.Recover(ctx, st, logger,
+		// Recovery reaches the containers a previous daemon left running
+		// (§12.4, task 061 decision 4): removing one kills every process
+		// inside it, which is the identity a host PID cannot supply.
+		taskrun.WithContainers(container.New, cfg.Container.RuntimeBinary()),
+	); err != nil {
 		logger.Error("startup failed: crash recovery", "error", err)
 		return fmt.Errorf("crash recovery: %w", err)
 	} else if n > 0 {

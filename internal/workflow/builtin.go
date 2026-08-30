@@ -392,7 +392,14 @@ steps:
       9. Portability. A run: body is handed to /bin/sh on POSIX and to pwsh on
          Windows, and vincent translates nothing. A body outside the
          intersection of the two is either rewritten into it, or the workflow
-         declares platforms:, or the step carries a .Host.OS guard.
+         declares platforms:, or the step carries a .Host.OS guard. A workflow
+         that already pins defaults.container.image inverts the first half: its
+         run: bodies execute under the image's /bin/sh whatever the host is, a
+         step pinning shell: pwsh or shell: cmd is refused at load, and
+         platforms: still gates on the daemon's host rather than on the image.
+         Do not add a container: block to a workflow that has none — which
+         image a project runs in is a deployment decision, not one this pass
+         gets to make.
       10. Defensive templates. Rendering uses missingkey=error, so an optional
           field is read as {{"{{"}}with index .Task.Fields "x"}}…{{"{{"}}end}}
           and never bare. A required field may be read directly.

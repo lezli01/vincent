@@ -103,6 +103,51 @@ valid siblings stay available. The same 1 MiB bound applies to a source posted t
 content is then allowed to *do* is unchanged — a `command` step is still a shell
 command.
 
+## What the container does and does not isolate
+
+Set [`container.image`](reference/configuration.md#container) and a task's step
+processes run inside one container, created with the task's worktree and removed
+with it. It is the first thing vincent offers that confines a task's work beyond
+the worktree, and it is worth being exact about how far it goes.
+
+**Start with what it does not cover yet.** Today the container holds every
+`command` step and every `check:`. The **agent process itself still runs on the
+host**, with your whole home directory and filesystem in reach — the launch seam
+that moves it is the next piece of this work. Do not read a containerized task
+as a sandboxed agent until that lands.
+
+**Does:** confine the filesystem to two bind mounts — the project repository and
+the task's worktree, each at its own absolute path — plus whatever you list in
+`extra_mounts`. The rest of your home directory, your SSH keys, your other
+repositories and your system are not there. The shell and the tooling are the
+image's, not your machine's.
+
+**Does not:**
+
+- **Close the network.** Outbound traffic is on by default.
+  `container.network: false` closes it, and is refused together with
+  `mcp.wire_steps: true` because a container with no network cannot reach the
+  daemon.
+- **Withhold your agent credentials.** `mount_agent_config` is on by default and
+  bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` into the container
+  **read-write**, because subscription auth takes no key from the environment
+  and cursor writes its model choice back to its own config. Anything running
+  inside the container can read those credentials and write to those
+  directories. Turning
+  the knob off is supported; an agent CLI that then cannot log in is the
+  consequence, not a bug.
+- **Raise a privilege boundary.** On a Linux host every step execs as your own
+  uid and gid, so files land owned correctly — and so an escape lands as the
+  same user the daemon already runs as.
+
+Containerization and `permission_mode` are separate axes and compose: restricted
+in a container is still restricted, full-auto in a container is still full-auto
+with the container's reach. There is no `contained` permission mode.
+
+A Windows daemon refuses a containerized task outright rather than translating
+paths, and the runtime is only ever `docker`-compatible; see the configuration
+reference for both.
+
 ## Restricted mode
 
 `permission_mode: restricted` maps each adapter onto its own confinement:

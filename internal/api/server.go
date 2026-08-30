@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -50,6 +51,11 @@ type Deps struct {
 	Logger *slog.Logger
 	// Store is the persistence layer.
 	Store *store.Store
+	// Containers resolves a `container.runtime` value to the Runtime that
+	// drives it, for the §16 creation gate and `GET /v1/info` (task 061).
+	// Nil means container.New; tests substitute a fake so no handler test
+	// needs docker.
+	Containers func(binary string) container.Runtime
 	// Git runs git commands for registration validation.
 	Git *gitx.Git
 	// GitHub reads GitHub issues for the §13.2 issue endpoints and the
@@ -368,6 +374,11 @@ type infoResponse struct {
 	Orphans int `json:"orphans"`
 	// Database is the store's on-disk footprint (task 029, §17).
 	Database infoDatabase `json:"database"`
+	// Container reports the §16 container runtime the way Agents reports the
+	// adapters: presence, path-free, and never a verdict on an image (task
+	// 061). A machine with no runtime is a healthy machine — this is
+	// information, not a problem.
+	Container map[string]any `json:"container"`
 }
 
 // infoDatabase is the byte half of §17's database figures: the file plus the
@@ -441,6 +452,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		Agents:           agents,
 		Orphans:          orphans,
 		Database:         s.infoDatabase(),
+		Container:        s.containerInfo(r.Context()),
 	})
 }
 

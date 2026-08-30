@@ -633,6 +633,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
 		return
 	}
+	// The container gate (§16, task 061 decision 3), after the three
+	// capability checks: it is a fact about the host and the daemon's config,
+	// not about a field the human just typed, so it is the least surprising
+	// thing to be told about last.
+	if mismatch := s.containerMismatch(ctx, wf); mismatch != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
+		return
+	}
 	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
 	// Resolve before the insert so a bad name is a 400 rather than a task that
 	// blocks later, and so the git-side checks run with no transaction open.

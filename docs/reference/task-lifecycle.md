@@ -271,6 +271,8 @@ same thing wherever it originated.
 | `transcript_io_error` | The attempt's transcript could not be written, encoded or closed — a full disk, a revoked permission, a short write. The step fails rather than reporting a success over a record that is missing the run it describes. Retries as usual (a new attempt writes a new file), then blocks. **Not** what an over-long line produces: those are captured in `partial` pieces |
 | `agent_protocol_error` | Vincent could not read the agent's stream to the end, so the transcript is missing lines the CLI wrote. Not `agent_error` — the CLI may have behaved perfectly; the reader that failed is vincent's |
 | `shell_unavailable` | The requested shell is not installed |
+| `container_image_unavailable` | The task's [`container.image`](configuration.md#container) is not on this machine and could not be pulled. Blocks at **admission**, before a worktree, a branch or a retry is spent — the image check is deliberately not made when the task is created |
+| `container_unavailable` | The container runtime answered when the task was created and does not now, or refused to create the container. A step the container was going to run is **never** moved to the host because of it — the task blocks instead |
 | `rejected` | You rejected a manual gate |
 | `canceled` | You cancelled the task |
 | `invalid_snapshot` | The task's stored workflow snapshot is unusable |

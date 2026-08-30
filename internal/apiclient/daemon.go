@@ -142,10 +142,25 @@ type Config struct {
 	GitHub            ConfigGitHub      `json:"github"`
 	Update            ConfigUpdate      `json:"update"`
 	Notify            ConfigNotify      `json:"notify"`
+	// Container is §16's container execution mode (task 061). Image empty is
+	// the default and means the steps run on this host.
+	Container ConfigContainer `json:"container"`
 	// TUI is the view preference the daemon only relays (§15). It is served
 	// here rather than read from disk because the TUI is a pure API client;
 	// a client that cannot reach the daemon renders its own defaults.
 	TUI ConfigTUI `json:"tui"`
+}
+
+// ConfigContainer is the `container` section of config.yaml as served (§16,
+// task 061). Runtime is the docker-CLI-compatible binary; ExtraMounts are
+// `host:container[:ro]` bind mounts beyond the repository and worktree the
+// daemon mounts on its own.
+type ConfigContainer struct {
+	Image            string   `json:"image"`
+	Runtime          string   `json:"runtime"`
+	MountAgentConfig bool     `json:"mount_agent_config"`
+	Network          bool     `json:"network"`
+	ExtraMounts      []string `json:"extra_mounts"`
 }
 
 // ConfigTUI is the `tui` section of config.yaml as served.
@@ -342,6 +357,7 @@ type ConfigPatch struct {
 	GitHub                      *ConfigGitHubPatch      `json:"github,omitempty"`
 	Update                      *ConfigUpdatePatch      `json:"update,omitempty"`
 	Notify                      *ConfigNotifyPatch      `json:"notify,omitempty"`
+	Container                   *ConfigContainerPatch   `json:"container,omitempty"`
 	TUI                         *ConfigTUIPatch         `json:"tui,omitempty"`
 }
 
@@ -394,6 +410,15 @@ type ConfigUpdatePatch struct {
 type ConfigNotifyPatch struct {
 	On      *[]string `json:"on,omitempty"`
 	Command *[]string `json:"command,omitempty"`
+}
+
+// ConfigContainerPatch is the optional half of ConfigContainer.
+type ConfigContainerPatch struct {
+	Image            *string   `json:"image,omitempty"`
+	Runtime          *string   `json:"runtime,omitempty"`
+	MountAgentConfig *bool     `json:"mount_agent_config,omitempty"`
+	Network          *bool     `json:"network,omitempty"`
+	ExtraMounts      *[]string `json:"extra_mounts,omitempty"`
 }
 
 // ConfigTUIPatch is the optional half of ConfigTUI.

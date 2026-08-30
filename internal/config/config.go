@@ -277,6 +277,10 @@ type Config struct {
 	// the daemon wires its own agent steps to it, and how deep an agent may
 	// create tasks that create tasks.
 	MCP MCP `yaml:"mcp"`
+	// Container governs §16's container execution mode (task 061): the image
+	// a task's steps run in, and how that container is wired. `image: ""` is
+	// the default and means today's behaviour — every step on the host.
+	Container Container `yaml:"container"`
 	// TUI is view preference, not daemon behaviour: the daemon validates it,
 	// hot-reloads it and serves it on `GET /v1/config`, and does nothing else
 	// with it. It lives in this file rather than one of the TUI's own because
@@ -650,6 +654,9 @@ func Default() Config {
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
 		// On by default with a day between calls (task 055 decision 3).
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
+		// Runtime named, mounts and network on: inert until an image is set,
+		// and the shape a container user wants when they set one (§16).
+		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{Board: BoardView{
 			GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow},
 		}},
@@ -773,6 +780,9 @@ func (c Config) validate() error {
 	// and look like it worked.
 	if c.Update.PollInterval < 0 {
 		return fmt.Errorf("update.poll_interval must not be negative, got %s", c.Update.PollInterval)
+	}
+	if err := c.Container.Validate(); err != nil {
+		return err
 	}
 	return c.Environment.validate()
 }

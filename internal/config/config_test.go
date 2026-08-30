@@ -115,7 +115,11 @@ agents:
 		// is what "opt-out" has to mean for it to be true.
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
 		MCP:    MCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
-		TUI:    TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
+		// And for `container:` — the file names no key, so the §16 default
+		// survives: no image, which is the whole switch. An installation that
+		// overrides everything else still runs every step on the host.
+		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
+		TUI:       TUI{Board: BoardView{GroupBy: []BoardGroup{BoardGroupProject, BoardGroupWorkflow}}},
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)

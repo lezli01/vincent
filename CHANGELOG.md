@@ -13,6 +13,36 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Run a task's steps inside a container.** A new `container:` block in
+  `config.yaml` names an image, and a task's step processes run inside **one**
+  container, created with the task's worktree and removed with it. That is every
+  command step and every `check:` today; the **agent process itself still runs
+  on the host**, with your whole filesystem in reach, until the launch seam that
+  moves it lands — so a containerized task with agent steps is a mixed run, and
+  it is neither refused nor warned about. `container.image: ""` is the
+  default, so an installation that sets nothing consults no runtime and behaves
+  exactly as it did. The image is yours and must already carry your agent CLI
+  and `git`; vincent builds, publishes and bundles nothing. The project
+  repository and the task's worktree are bind-mounted **at their own absolute
+  host paths**, so a path means one thing on both sides and `.Worktree`,
+  `VINCENT_WORKTREE` and a worktree's absolute `gitdir:` all resolve with no
+  translation — which is also why a **Windows daemon refuses a containerized
+  task**, since `C:\...` cannot exist in a Linux container. A workflow can pin
+  its own image in `defaults.container:`, which merges over the daemon's block
+  per field. What the container confines is the filesystem outside those two
+  mounts, the shell and the image's tooling; outbound network is open by
+  default and your agent's configuration is mounted inside it so the CLI can
+  authenticate, both stated in [the security model](docs/security-model.md)
+  rather than implied. A missing runtime, a Windows host, a
+  `network: false`/`mcp.wire_steps: true` contradiction and a `shell: pwsh` step
+  are refused when the task is created; a missing or unpullable image blocks the
+  task at admission with `container_image_unavailable`, before a worktree, a
+  branch or a retry is spent. A step timeout signals the process **inside** the
+  container and leaves the container running, so a retry finds what an earlier
+  step installed, and crash recovery removes a container only after confirming
+  it still carries the label naming that task. `vincent doctor` gained a
+  container row, which probes the runtime even when the feature is off.
+
 - **Enum task fields, with a value picker in New task, and a `default:` for
   every field type.** A workflow's `fields:` gains `type: enum`, whose members
   are declared in `values:` and published through `GET /v1/workflows` — which a

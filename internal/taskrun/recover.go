@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -72,7 +74,11 @@ func journalIdentity(pid int, log *slog.Logger) *string {
 // This replaces T1.8's blocking sweep, whose bulk UPDATE also bypassed the
 // TransitionTask compare-and-swap — the invariant that no transition skips
 // the FSM holds here too.
-func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error) {
+func Recover(ctx context.Context, st *store.Store, log *slog.Logger, opts ...RecoverOption) (int, error) {
+	var ro recoverOptions
+	for _, o := range opts {
+		o(&ro)
+	}
 	runs, err := st.ListRunningStepRuns(ctx)
 	if err != nil {
 		return 0, err
@@ -110,7 +116,7 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 			// cannot be rolled back, and killing then failing to commit is
 			// the already-tolerated case — the row stays `running` and the
 			// next recovery finds a dead PID.
-			killOwned(open[id], id, log)
+			killOwned(ctx, open[id], id, ro, log)
 			delete(open, id)
 			if _, _, err := st.InterruptTask(ctx, id, state, tr.To, ReasonInterrupted); err != nil {
 				return requeued, fmt.Errorf("recover task %d from %s: %w", id, state, err)
@@ -130,7 +136,7 @@ func Recover(ctx context.Context, st *store.Store, log *slog.Logger) (int, error
 		if !ok {
 			continue // already reconciled, with its task, above
 		}
-		killOwned(runs, id, log)
+		killOwned(ctx, runs, id, ro, log)
 		if _, err := st.TerminalizeOpenStepRuns(ctx, id, store.StepInterrupted, ReasonInterrupted); err != nil {
 			return requeued, fmt.Errorf("recover task %d: finalize open step runs: %w", id, err)
 		}
@@ -173,10 +179,68 @@ func sweepCursorMCP(ctx context.Context, st *store.Store, log *slog.Logger) erro
 }
 
 // killOwned tree-kills the journaled process of each of one task's open runs.
-func killOwned(runs []*store.StepRun, taskID int64, log *slog.Logger) {
+func killOwned(ctx context.Context, runs []*store.StepRun, taskID int64, ro recoverOptions, log *slog.Logger) {
 	for _, run := range runs {
-		killOrphan(run, log.With("task", taskID, "run", run.ID))
+		l := log.With("task", taskID, "run", run.ID)
+		// A containerized run first: the host PID it journaled names the
+		// runtime client, and removing the container kills every process
+		// inside it, the client's included (task 061 decision 4). The PID
+		// path still runs afterwards — the client is a real process this
+		// daemon spawned, and the same PID-reuse guard applies to it.
+		removeOrphanContainer(ctx, run, taskID, ro, l)
+		killOrphan(run, l)
 	}
+}
+
+// RecoverOption configures a recovery sweep.
+type RecoverOption func(*recoverOptions)
+
+type recoverOptions struct {
+	containers func(binary string) container.Runtime
+	binary     string
+}
+
+// WithContainers lets recovery reach the containers a previous daemon left
+// running (§12.4, task 061 decision 4). Without it — every existing caller and
+// every test that never set an image — recovery is exactly what it was.
+func WithContainers(factory func(binary string) container.Runtime, binary string) RecoverOption {
+	return func(o *recoverOptions) { o.containers, o.binary = factory, binary }
+}
+
+// removeOrphanContainer removes the container a running step run journaled,
+// when that container still claims the task that journaled it.
+//
+// The label check is §12.4's rule from a different direction: a container id
+// is never reused, so there is no reuse to guard against, but a *name* a later
+// task took over would be somebody else's — and what cannot be proved is not
+// killed. Removal kills every process inside, so no second exec-identity path
+// is needed.
+func removeOrphanContainer(
+	ctx context.Context, run *store.StepRun, taskID int64, ro recoverOptions, log *slog.Logger,
+) {
+	if run.ContainerID == nil || *run.ContainerID == "" || ro.containers == nil {
+		return
+	}
+	rt := ro.containers(ro.binary)
+	label, err := rt.TaskLabel(ctx, *run.ContainerID)
+	if err != nil {
+		log.Warn("recovery: container label unreadable; leaving it alone",
+			"container", *run.ContainerID, "error", err)
+		return
+	}
+	if label == "" {
+		return // already gone, which is the outcome recovery wanted anyway
+	}
+	if label != strconv.FormatInt(taskID, 10) {
+		log.Warn("recovery: container belongs to a different task; leaving it alone",
+			"container", *run.ContainerID, "label", label)
+		return
+	}
+	if err := rt.Remove(ctx, *run.ContainerID); err != nil {
+		log.Error("recovery: remove orphaned container", "container", *run.ContainerID, "error", err)
+		return
+	}
+	log.Warn("recovery: removed orphaned container from a previous run", "container", *run.ContainerID)
 }
 
 // killOrphan tree-kills the process a running step run journaled, when it is

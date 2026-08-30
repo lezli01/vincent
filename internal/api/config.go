@@ -66,10 +66,26 @@ type configResponse struct {
 	GitHub            configGitHub       `json:"github"`
 	Update            configUpdateStatus `json:"update"`
 	Notify            configNotify       `json:"notify"`
+	// Container is §16's container execution mode (task 061). Served like
+	// every other key: `image: ""` — the default — is what says the steps run
+	// on the host, and a client that could not see it could not tell a
+	// containerized installation from a plain one.
+	Container configContainer `json:"container"`
 	// TUI is view preference the daemon only relays (§15): it is in the file
 	// the daemon owns and hot-reloads, so this endpoint is how the TUI — which
 	// reads no configuration of its own — gets it.
 	TUI configTUI `json:"tui"`
+}
+
+// configContainer is §16's block. ExtraMounts is always a list, empty
+// included, for the same reason group_by is: `null` would be indistinguishable
+// from a client's own default.
+type configContainer struct {
+	Image            string   `json:"image"`
+	Runtime          string   `json:"runtime"`
+	MountAgentConfig bool     `json:"mount_agent_config"`
+	Network          bool     `json:"network"`
+	ExtraMounts      []string `json:"extra_mounts"`
 }
 
 type configTUI struct {
@@ -249,7 +265,14 @@ func configBody(cfg config.Config) configResponse {
 			PollInterval: cfg.Update.PollInterval.String(),
 		},
 		Notify: configNotify{On: notifyStates(cfg.Notify.On), Command: stringList(cfg.Notify.Command)},
-		TUI:    configTUI{Board: configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)}},
+		Container: configContainer{
+			Image:            cfg.Container.Image,
+			Runtime:          cfg.Container.Runtime,
+			MountAgentConfig: cfg.Container.MountAgentConfig,
+			Network:          cfg.Container.Network,
+			ExtraMounts:      stringList(cfg.Container.ExtraMounts),
+		},
+		TUI: configTUI{Board: configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)}},
 	}
 }
 
@@ -334,6 +357,7 @@ type configPatch struct {
 	GitHub                      *githubPatch       `json:"github"`
 	Update                      *updatePolicyPatch `json:"update"`
 	Notify                      *notifyPatch       `json:"notify"`
+	Container                   *containerPatch    `json:"container"`
 	TUI                         *tuiPatch          `json:"tui"`
 }
 
@@ -395,6 +419,14 @@ type updatePolicyPatch struct {
 type notifyPatch struct {
 	On      *[]string `json:"on"`
 	Command *[]string `json:"command"`
+}
+
+type containerPatch struct {
+	Image            *string   `json:"image"`
+	Runtime          *string   `json:"runtime"`
+	MountAgentConfig *bool     `json:"mount_agent_config"`
+	Network          *bool     `json:"network"`
+	ExtraMounts      *[]string `json:"extra_mounts"`
 }
 
 type tuiPatch struct {
@@ -494,6 +526,15 @@ func (p configPatch) sets() []config.Set {
 		}
 		if v.Command != nil {
 			add("notify.command", config.RenderList(*v.Command))
+		}
+	}
+	if v := p.Container; v != nil {
+		addIfString(add, "container.image", v.Image)
+		addIfString(add, "container.runtime", v.Runtime)
+		addIfBool(add, "container.mount_agent_config", v.MountAgentConfig)
+		addIfBool(add, "container.network", v.Network)
+		if v.ExtraMounts != nil {
+			add("container.extra_mounts", config.RenderList(*v.ExtraMounts))
 		}
 	}
 	if v := p.TUI; v != nil && v.Board != nil && v.Board.GroupBy != nil {

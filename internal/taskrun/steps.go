@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -422,7 +423,7 @@ func (r *Runner) runCommandStep(
 		phase:    "run",
 		script:   script,
 		shellPin: env.step.Shell,
-		env:      commandEnv(r.childEnv(), rc, env.step.Env),
+		env:      commandEnv(r.stepBaseEnv(env.task.ID), rc, env.step.Env),
 		workDir:  env.task.WorktreePath,
 		timeout:  timeout,
 	})
@@ -442,7 +443,7 @@ func (r *Runner) runCheck(
 		phase:    "check",
 		script:   script,
 		shellPin: env.step.Shell,
-		env:      commandEnv(r.childEnv(), rc, env.step.Env),
+		env:      commandEnv(r.stepBaseEnv(env.task.ID), rc, env.step.Env),
 		workDir:  env.task.WorktreePath,
 		timeout:  resolveCheckTimeout(env.step, r.deps.Config()),
 	})
@@ -482,13 +483,30 @@ type shellCommand struct {
 func (r *Runner) runShellCommand(
 	ctx context.Context, env *stepEnv, run *store.StepRun, tr *transcript, sc shellCommand,
 ) stepOutcome {
-	sh, err := r.deps.Shells.For(sc.shellPin)
-	if err != nil {
-		tr.Note("error", map[string]any{"error": err.Error()})
-		env.log.Error("resolve shell", "shell", sc.shellPin, "error", err)
-		return stepOutcome{state: store.StepFailed, reason: ReasonShellUnavailable, result: err.Error()}
+	tc := r.taskContainerOf(env.task.ID)
+	shellName, argv := "", []string(nil)
+	if tc.active() {
+		// A containerized `run:` body executes under the *container's*
+		// /bin/sh — the inverse of §8.3, accepted and documented rather than
+		// translated (task 061 decision 8). The host's shell resolver is not
+		// consulted at all: what it found says nothing about the image, and a
+		// `pwsh` pin is refused at load or at task creation, before a step
+		// ever reaches here.
+		shellName = workflow.ShellSh
+		argv = []string{"/bin/sh", "-c", sc.script}
+	} else {
+		sh, err := r.deps.Shells.For(sc.shellPin)
+		if err != nil {
+			tr.Note("error", map[string]any{"error": err.Error()})
+			env.log.Error("resolve shell", "shell", sc.shellPin, "error", err)
+			return stepOutcome{state: store.StepFailed, reason: ReasonShellUnavailable, result: err.Error()}
+		}
+		shellName, argv = sh.Name, sh.command(sc.script)
 	}
-	argv := sh.command(sc.script)
+	sh := struct {
+		Name string
+		Path string
+	}{Name: shellName, Path: argv[0]}
 	tr.Note("command_started", map[string]any{
 		"phase": sc.phase, "shell": sh.Name, "command": sc.script, "cwd": sc.workDir,
 	})
@@ -505,6 +523,17 @@ func (r *Runner) runShellCommand(
 	runCtx, cancel := context.WithTimeout(ctx, sc.timeout)
 	defer cancel()
 
+	key := execKey(run.ID)
+	if tc.active() {
+		// The step's own environment goes in as `--env` flags, and the host
+		// process is the runtime client — which needs the daemon's own
+		// environment to find its socket. Two environments, and the step's is
+		// the one layered on the image's (decision 7).
+		argv = tc.rt.Exec(tc.id, container.ExecSpec{
+			Key: key, Argv: argv, Env: sc.env, WorkDir: sc.workDir, User: container.HostUser(),
+		})
+		sc.workDir, sc.env = "", nil
+	}
 	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec // the workflow author's own command, by design (§9.4)
 	cmd.Dir = sc.workDir
 	cmd.Env = sc.env
@@ -534,6 +563,13 @@ func (r *Runner) runShellCommand(
 	run.PID = &pid
 	run.ProcStartedAt = &started
 	run.ProcIdentity = journalIdentity(pid, env.log)
+	if tc.active() {
+		// The host PID above names the runtime client, not the process inside
+		// the container; the container id is what §12.4 recovery can act on
+		// (task 061 decision 4, migration 0021).
+		id := tc.id
+		run.ContainerID = &id
+	}
 	if err := r.deps.Store.UpdateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("journal command pid", "error", err)
 	}
@@ -545,7 +581,16 @@ func (r *Runner) runShellCommand(
 	go func() {
 		select {
 		case <-runCtx.Done():
-			killOnce.Do(func() { _ = proc.Kill() })
+			killOnce.Do(func() {
+				// Inside first, then the client. Killing only the host-side
+				// runtime client leaves the process running in the container
+				// (task 061 decision 9); the container itself survives, so a
+				// retry finds what an earlier step installed.
+				if tc.active() {
+					stopInContainer(tc, key, env.log)
+				}
+				_ = proc.Kill()
+			})
 		case <-killed:
 		}
 	}()
@@ -754,6 +799,19 @@ func resultChunks(results []agent.ToolResult) []map[string]any {
 // process it is about to launch.
 func (r *Runner) childEnv() []string {
 	return r.deps.Config().Environment.ResolveProcess()
+}
+
+// stepBaseEnv is childEnv for a host step and the image-based environment for
+// a containerized one (task 061 decision 7). It is one function rather than a
+// branch at each call site because "which base" is a property of the task, and
+// a call site that forgot to ask would silently ship a macOS PATH into a Linux
+// image.
+func (r *Runner) stepBaseEnv(taskID int64) []string {
+	if !r.taskContainerOf(taskID).active() {
+		return r.childEnv()
+	}
+	LogContainerEnvironmentOnce(r.deps.Logger, r.deps.Config().Environment)
+	return r.containerEnv()
 }
 
 // commandEnv builds a step's environment: the §12.3 resolved base, then the

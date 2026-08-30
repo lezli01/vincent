@@ -21,6 +21,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -75,6 +76,10 @@ type Deps struct {
 	// thing that can answer it: the endpoint's URL comes from the listener
 	// internal/api owns, and this package may not import that.
 	MCPForStep func(runID, taskID int64, stepID string) (*agent.MCPServer, func())
+	// Containers resolves a `container.runtime` value to the Runtime that
+	// drives it (§16, task 061). Nil means container.New, which is what the
+	// daemon wires; tests substitute a fake so no `go test` needs docker.
+	Containers func(binary string) container.Runtime
 }
 
 // Runner executes admitted tasks and applies the §6 human actions.
@@ -97,6 +102,10 @@ type Runner struct {
 
 	mu   sync.Mutex
 	live map[int64]*liveRun
+	// containers is the container each admitted task's steps exec into (§16,
+	// task 061). Absent means the host, which is every task of an
+	// installation that never sets `container.image`.
+	containers map[int64]taskContainer
 
 	// status paces the step-authored status message (§13.3, task 036). It is
 	// on the runner rather than on a live run because a status write arrives
