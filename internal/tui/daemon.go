@@ -79,6 +79,21 @@ type daemonView struct {
 	// is the only place the pane's width and height are known.
 	logDirty bool
 
+	// keys is the editable config surface, and cursor is the row under the
+	// selection. focusConfig moves j/k off the log pane and onto that list —
+	// the view has two scrollable things now, and tab is what says which one
+	// the arrows mean.
+	keys        []configKey
+	cursor      int
+	focusConfig bool
+	// form is the open editor, nil when none is. While it is non-nil the view
+	// captures input: every single-key global would otherwise land in the
+	// text field.
+	form *configForm
+	// saved names the key the last successful patch changed, so the block can
+	// say what moved rather than silently re-rendering.
+	saved string
+
 	vp        viewport.Model
 	following bool
 	// visible gates the ticker: a view that is off-screen re-reads nothing,
@@ -95,6 +110,7 @@ func newDaemonView() *daemonView {
 	return &daemonView{
 		now:       time.Now,
 		tail:      daemon.TailFile,
+		keys:      configKeys(),
 		vp:        viewport.New(),
 		following: true,
 	}
@@ -223,6 +239,9 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case daemonConfigMsg:
 		d.applyConfig(msg)
 		return d, nil
+	case configSavedMsg:
+		d.applySaved(msg)
+		return d, nil
 	case daemonDoctorMsg:
 		d.applyDoctor(msg)
 		return d, nil
@@ -288,19 +307,65 @@ func (d *daemonView) applyLog(msg daemonLogMsg) {
 	d.logDirty = true
 }
 
+// applySaved lands the answer to a PATCH. A refusal keeps the editor open
+// with the message against the field — that is the whole reason the form
+// stays up — and a success closes it and adopts the configuration the daemon
+// reported, which is what is in force rather than what was asked for.
+func (d *daemonView) applySaved(msg configSavedMsg) {
+	if d.form == nil {
+		return
+	}
+	d.form.saving = false
+	if msg.err != nil {
+		d.form.err = errString(msg.err)
+		return
+	}
+	d.form = nil
+	d.saved = msg.path
+	d.config = msg.cfg
+	d.configOK = true
+	d.configErr = nil
+	d.configAt = d.now()
+}
+
 func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	if d.form != nil {
+		cmd, done := d.form.update(msg, d.client)
+		if done {
+			d.form = nil
+		}
+		return d, cmd
+	}
 	switch msg.String() {
 	case "esc":
 		// The takeover layer of the §15 esc stack: back to the home screen.
 		return d, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	case "R":
 		return d, d.refreshCmd()
+	case "tab":
+		// Two scrollable things on one view: tab says which one j/k mean.
+		d.focusConfig = !d.focusConfig
+		return d, nil
+	case "enter", "e":
+		if k, ok := d.selectedKey(); ok && d.configOK {
+			d.focusConfig = true
+			d.form = newConfigForm(k, d.config)
+		}
+		return d, nil
 	case "f", "G", "end":
 		d.setFollowing(true)
 		return d, nil
 	case "j", "down":
+		if d.focusConfig {
+			d.moveCursor(1)
+			return d, nil
+		}
 		d.vp.ScrollDown(1)
 	case "k", "up":
+		if d.focusConfig {
+			d.moveCursor(-1)
+			return d, nil
+		}
 		d.vp.ScrollUp(1)
 	default:
 		var cmd tea.Cmd
@@ -310,6 +375,23 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	d.syncFollowToViewport()
 	return d, nil
+}
+
+// selectedKey is the config row under the cursor.
+func (d *daemonView) selectedKey() (configKey, bool) {
+	if d.cursor < 0 || d.cursor >= len(d.keys) {
+		return configKey{}, false
+	}
+	return d.keys[d.cursor], true
+}
+
+// moveCursor walks the config list, clamped rather than wrapped: a list this
+// long is read top to bottom and wrapping past the end reads as a jump.
+func (d *daemonView) moveCursor(delta int) {
+	if len(d.keys) == 0 {
+		return
+	}
+	d.cursor = min(max(d.cursor+delta, 0), len(d.keys)-1)
 }
 
 func (d *daemonView) setFollowing(on bool) {
@@ -326,5 +408,8 @@ func (d *daemonView) syncFollowToViewport() {
 	d.following = d.vp.AtBottom()
 }
 
-// capturesInput is always false: this view has no text entry.
-func (d *daemonView) capturesInput() bool { return false }
+// capturesInput is true exactly while the config editor is open. It was
+// permanently false before this view could edit anything; leaving it that way
+// would send every single-key global — R, f, g, q — into the text field on the
+// first keystroke.
+func (d *daemonView) capturesInput() bool { return d.form != nil }

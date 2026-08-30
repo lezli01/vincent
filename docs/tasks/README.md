@@ -73,6 +73,7 @@ the living engineering specification records implementation contracts.
 | [057](057-daemon-mcp-server.md) | Serve MCP from the daemon so agents can drive vincent directly | 🔄 in progress (8/9) |
 | [058](058-enum-task-fields.md) | Enum task fields: workflow-declared value sets, selectable in New task | ✅ done (1/1) |
 | [059](059-popup-task-details-tab.md) | A task-details tab inside the answer, repair and follow-up popups | ✅ done (5/5) |
+| [060](060-daemon-configuration-editing.md) | Edit the daemon configuration from the TUI | ✅ done (8/8) |
 
 ## How to add and update a task document
 

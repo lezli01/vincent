@@ -281,8 +281,21 @@ you — but it is worth stating rather than leaving implicit:
   every platform, so a task title cannot be interpreted as a command.
 - **Its argv can hold a secret.** A webhook URL with a token in it is the
   obvious case. That is a second reason `config.yaml` and its directory are
-  owner-only, and the reason `notify` is not served on `GET /v1/config` — a
-  client with a valid token still cannot read it back.
+  owner-only. It **is** served on `GET /v1/config`, values included, and so is
+  `environment.set`: that endpoint is loopback-only behind a bearer token read
+  out of an owner-only file, which is the same boundary the file itself has, so
+  a client that can call it can already read the file. What that boundary does
+  not cover is an [MCP](guides/mcp.md) tool result — it lands in an agent's
+  context and in the step's transcript — so the MCP rendering of that route
+  masks `notify.command`'s argv and `environment.set`'s values, keeping the
+  variable names. The daemon's **log** and step transcripts still carry
+  variable names and never values; that rule is unchanged.
+- **`PATCH /v1/config` can change what the daemon executes.** `notify.command`,
+  `agents.*.path` and `environment` are all writable through the API, and so is
+  `listen`. This is not a new privilege — anyone who can call the endpoint holds
+  the daemon's token and can already run an agent step as you — but it is why
+  the route is **not** an MCP tool, and why the TUI puts those four keys behind
+  an explicit confirmation.
 - Whatever your notifier does with the envelope is outside vincent. The envelope
   carries the task title and the agent's question summary, so a hook that posts
   to a shared channel publishes both.

@@ -46,6 +46,14 @@ listen: 127.0.0.1:0
 # on each project.
 max_parallel_tasks: 3
 
+# Naming convention for the branch each task's worktree is cut on. It is a
+# Go text/template rendered with .ID, .Slug, .Project, .Workflow and .Date;
+# the result is sanitised into a legal ref. A project may override it, and
+# the built-in below is what applies when neither is set. A template that
+# does not compile is refused and the previous one stays in force.
+#
+# branch_template: "vincent/{{.ID}}-{{.Slug}}"
+
 # Fallback step timeouts, used when a workflow step declares none.
 # input_timeout bounds each wait for an answer to an agent's input request
 # (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
@@ -140,6 +148,49 @@ agents:
   cursor:
     path: ""
 
+# How many verifications inside one "parallel" step run at once (§7.5).
+# The step is done when its last lane is, and a lane that fails fails the
+# step; this only bounds how many are in flight.
+#
+# parallel:
+#   max_parallel: 4
+
+# Bounds on "fan_out" (§7.6), which creates a task per item. max_depth is how
+# many generations deep a tree may go — a lane that fans out again counts —
+# and max_tasks is the total number of descendants one root may create.
+# Passing either blocks the step rather than truncating the list.
+#
+# fan_out:
+#   max_depth: 3
+#   max_tasks: 64
+
+# Ceiling on iterations of one "loop" step (§7.8). A loop that reaches it
+# blocks with loop_limit, so a condition that never goes false is visible
+# rather than endless.
+#
+# loop:
+#   max_iterations: 10
+
+# How many levels of "include" a workflow may nest (§7.9). Includes are
+# spliced away when the task is created, so this bounds the splice, not the
+# run.
+#
+# include:
+#   max_depth: 5
+
+# The MCP server the daemon serves at /mcp (§13.4), and the per-step endpoint
+# an agent step is wired to. wire_steps: false stops the daemon handing agent
+# steps their endpoint at all, which is how you take vincent's own tools away
+# from a workflow without touching the workflow. max_depth and max_tasks bound
+# the tasks an agent may create through those tools, the way fan_out's pair
+# bounds a tree: a chain discovered at run time is only visible once it has
+# spawned.
+#
+# mcp:
+#   wire_steps: true
+#   max_depth: 3
+#   max_tasks: 32
+
 # Reading GitHub issues, so a task can be created from one (task 035). It
 # applies only to a project whose "origin" remote is a github.com repository,
 # and the daemon makes no call at all until you open the issue picker or name
@@ -181,18 +232,6 @@ github:
 update:
   check: true
   poll_interval: 24h
-# Serve MCP to AI coding agents, and give vincent's own agent steps the tool
-# list (task 057). There is no "enabled" key: /mcp is part of the API the way
-# /v1 is, on the same listener behind the same bearer token. What you can turn
-# off is the wiring into your own steps.
-#
-# max_depth and max_tasks bound a chain of tasks created over MCP — a step's
-# agent creates a task whose step's agent creates a task. That depth is
-# discovered as it happens, so neither fan_out's bounds nor include's cover it.
-mcp:
-  wire_steps: true
-  max_depth: 3
-  max_tasks: 32
 
 # Tell someone when a task needs them, without a client attached (task 046).
 # The daemon runs "command" whenever a task enters one of the states in "on",
@@ -971,9 +1010,13 @@ spawns. It gets **no** `VINCENT_*` variables — those belong to command steps �
 because the envelope on stdin is this hook's whole contract.
 
 Read per event, so a [reload](#reload-semantics) governs the next transition. It
-is not served on `GET /v1/config`: no client needs it, and `command` can
-reasonably hold a webhook URL with a token in it. See the
-[security model](../security-model.md) for what running it means.
+**is** served on `GET /v1/config`, argv included: that endpoint is loopback-only
+behind the same owner-only token as the file, so a client that can call it can
+already read `config.yaml`. The one exception is the
+[MCP](../guides/mcp.md) rendering of the same route, where the argv is masked —
+a tool result lands in an agent's context and its transcript, which is not that
+boundary. `command` can reasonably hold a webhook URL with a token in it; see
+the [security model](../security-model.md) for what running it means.
 
 ### `tui`
 
@@ -1067,17 +1110,36 @@ Agent, command and check steps additionally receive `VINCENT_TASK_ID`,
 `VINCENT_STEP_ATTEMPT` and `VINCENT_WORKFLOW` — see
 [Writing workflows](../guides/workflows.md#55-environment-variables).
 
-## Reading the config in effect
+## Reading and changing the config in effect
 
-The API exposes it read-only, which is the reliable way to see what the daemon
-actually loaded after a reload:
+The API serves every key on this page, which is the reliable way to see what the
+daemon actually loaded after a reload:
 
 ```sh
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:$PORT/v1/config | jq
 ```
 
-The TUI's daemon view shows the same thing, alongside the adapters detected and
-the log tail.
+`PATCH /v1/config` changes it. The daemon validates the whole candidate file,
+writes it and puts it into force before answering, so the next read shows the
+new value and nothing needs restarting — except [`listen`](#listen), which is
+written to the file while the running daemon keeps the address it bound. An
+invalid patch leaves the file byte-identical.
+
+```sh
+vincent config get                            # every key, one per line
+vincent config set max_parallel_tasks 6
+vincent config set notify.on "blocked awaiting_gate"
+```
+
+The write is comment-preserving: the daemon edits a key in place, or uncomments
+its documented block where it stands, so the commented template this page
+describes is still there afterwards. See
+[`vincent config`](cli.md#vincent-config).
+
+The TUI's daemon view shows and edits the same thing, alongside the adapters
+detected and the log tail — `tab`, then `enter` on a key. Four keys
+(`notify.command`, `environment`, `agents.*.path`, `listen`) ask for a
+confirmation first.
 
 ---
 

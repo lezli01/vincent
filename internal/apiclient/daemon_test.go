@@ -83,7 +83,16 @@ func TestConfigCarriesTheSettingsInEffect(t *testing.T) {
 	if cfg.Defaults.AgentTimeout != want {
 		t.Errorf("Defaults.AgentTimeout = %q, want %q", cfg.Defaults.AgentTimeout, want)
 	}
-	if _, ok := cfg.Agents["claude"]; !ok {
-		t.Errorf("Agents = %v, want a claude entry", cfg.Agents)
+	// The whole file is served now (task 060), not the eleven-key subset this
+	// type used to carry: a key the client cannot see is one no client can
+	// edit either.
+	if cfg.Agents.Claude.Path != cfgDefault.Agents.Claude.Path {
+		t.Errorf("Agents.Claude = %+v, want %+v", cfg.Agents.Claude, cfgDefault.Agents.Claude)
+	}
+	if cfg.Environment.Inherit.String() != "all" {
+		t.Errorf("Environment.Inherit = %q, want all", cfg.Environment.Inherit)
+	}
+	if cfg.MCP.MaxTasks != cfgDefault.MCP.MaxTasks || cfg.FanOut.MaxDepth != cfgDefault.FanOut.MaxDepth {
+		t.Errorf("the sections the endpoint used to omit did not arrive: %+v", cfg)
 	}
 }

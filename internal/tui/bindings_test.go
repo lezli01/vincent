@@ -821,6 +821,54 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("down did not reach the log pane's scroll path (follow was never re-synced)")
 			}
 		},
+		"tab": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.updateKey(registryKey(t, "tab"))
+			if !d.focusConfig {
+				t.Fatal("tab did not move the arrows onto the config list")
+			}
+		},
+		"enter": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.update(daemonConfigMsg{config: testConfig()})
+			d.updateKey(registryKey(t, "enter"))
+			if d.form == nil {
+				t.Fatal("enter did not open the config editor")
+			}
+		},
+	},
+
+	ctxConfigEdit: {
+		"left": func(t *testing.T) {
+			d := openConfigForm(t, "log_level")
+			before := d.form.value()
+			d.updateKey(registryKey(t, "left"))
+			if d.form.value() == before {
+				t.Fatal("left did not move the chooser")
+			}
+		},
+		"enter": func(t *testing.T) {
+			d := openConfigForm(t, "listen")
+			d.updateKey(registryKey(t, "enter"))
+			if !d.form.confirming {
+				t.Fatal("enter on a dangerous key did not reach the confirmation step")
+			}
+		},
+		"y": func(t *testing.T) {
+			d := openConfigForm(t, "listen")
+			d.form.confirming = true
+			d.updateKey(registryKey(t, "y"))
+			if d.form.confirming {
+				t.Fatal("y did not answer the confirmation")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := openConfigForm(t, "log_level")
+			d.updateKey(registryKey(t, "esc"))
+			if d.form != nil {
+				t.Fatal("esc did not close the config editor")
+			}
+		},
 	},
 
 	ctxRepairForm: {

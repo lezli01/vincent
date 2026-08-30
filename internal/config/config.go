@@ -671,14 +671,32 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
-	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.DisallowUnknownField()); err != nil {
-		return Config{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if err := cfg.validate(); err != nil {
-		return Config{}, fmt.Errorf("invalid config %s: %w", path, err)
+	cfg, err = Decode(raw)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
 }
+
+// Decode parses and validates config.yaml bytes that are not (yet) on disk.
+// It is what lets PATCH /v1/config reject an edit before anything is written
+// (task 060): the candidate file is decoded through exactly the path Load
+// takes, so a patch that would not survive a restart is refused now.
+func Decode(raw []byte) (Config, error) {
+	cfg := Default()
+	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.DisallowUnknownField()); err != nil {
+		return Config{}, fmt.Errorf("parse: %w", err)
+	}
+	if err := cfg.validate(); err != nil {
+		return Config{}, fmt.Errorf("invalid config: %w", err)
+	}
+	return cfg, nil
+}
+
+// Validate is validate() for callers outside the package. The API needs to
+// reject a configuration before writing it, and the rule it applies has to be
+// the same one Load applies on the next start.
+func (c Config) Validate() error { return c.validate() }
 
 func (c Config) validate() error {
 	host, port, err := net.SplitHostPort(c.Listen)

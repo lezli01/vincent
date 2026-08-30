@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -86,6 +87,12 @@ type Deps struct {
 	// (task 005, §10). Nil is tolerated (tests without a data dir) — the
 	// maintenance endpoints then answer 500 and /v1/info reports no orphans.
 	Reclaimer *taskrun.Reclaimer
+	// ApplyConfig installs a configuration PATCH /v1/config just wrote, before
+	// the response is sent (task 060 decision 5). It is the same function the
+	// config.Watch callback calls, so the `listen` pin and the branch_template
+	// fallback apply on both paths — one applier, two callers, idempotent.
+	// Nil is tolerated (tests without a daemon); the file is still written.
+	ApplyConfig func(config.Config)
 	// UpdateStatus returns the daemon's cached release check (task 055,
 	// §13.2). It serves **only** the cache: GET /v1/update never makes an
 	// outbound call, which is what keeps `update.check: false` a literal
@@ -147,6 +154,10 @@ type Server struct {
 	// so the MCP tool surface can be asserted against it (task 057) rather
 	// than maintained beside it.
 	routes []Route
+	// configMu serializes PATCH /v1/config's read-modify-write of config.yaml
+	// (task 060 decision 6). Two patches cannot interleave; a hand-edit
+	// racing one is last-writer-wins, the posture every other PATCH here has.
+	configMu sync.Mutex
 }
 
 // Route is one registered API route.
@@ -228,6 +239,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/health", s.handleHealth)
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
+	rt.handle(http.MethodPatch, "/v1/config", s.handleConfigPatch)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
 	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
 	rt.handle(http.MethodGet, "/v1/update", s.handleUpdate)
@@ -448,88 +460,6 @@ func (s *Server) infoDatabase() infoDatabase {
 	}
 	out.SizeBytes, out.WALBytes = sizes.MainBytes, sizes.WALBytes
 	out.SHMBytes, out.TotalBytes = sizes.SHMBytes, sizes.TotalBytes
-	return out
-}
-
-// configResponse mirrors config.yaml as snake_case JSON; durations render as
-// Go duration strings (phase 1 decision).
-type configResponse struct {
-	Listen           string         `json:"listen"`
-	MaxParallelTasks int            `json:"max_parallel_tasks"`
-	Defaults         configDefaults `json:"defaults"`
-	// The §10 branch-cleanup pair (task 008). Both are reported because the
-	// remote one is inert without the local one, and a client showing only the
-	// key that is on would describe a policy that cannot run.
-	DeleteEmptyBranchOnArchive  bool  `json:"delete_empty_branch_on_archive"`
-	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
-	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
-	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
-	// MaxTaskCostUSD is the per-task spend ceiling; 0 is no cap (task 033).
-	// Served for the same reason every other key is: the TUI reads no
-	// configuration from disk (§15).
-	MaxTaskCostUSD    float64              `json:"max_task_cost_usd"`
-	UsageLimitRecheck string               `json:"usage_limit_recheck_interval"`
-	LogLevel          string               `json:"log_level"`
-	Agents            map[string]agentPath `json:"agents"`
-	// TUI is view preference the daemon only relays (§15): it is in the file
-	// the daemon owns and hot-reloads, so this endpoint is how the TUI — which
-	// reads no configuration of its own — gets it.
-	TUI configTUI `json:"tui"`
-}
-
-type configTUI struct {
-	Board configBoard `json:"board"`
-}
-
-type configBoard struct {
-	// GroupBy is always present, empty list included: `null` would make a
-	// flat table indistinguishable from a client's own default.
-	GroupBy []string `json:"group_by"`
-}
-
-type configDefaults struct {
-	AgentTimeout   string `json:"agent_timeout"`
-	CommandTimeout string `json:"command_timeout"`
-	InputTimeout   string `json:"input_timeout"`
-}
-
-type agentPath struct {
-	Path string `json:"path"`
-}
-
-func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
-	cfg := s.deps.Config()
-	writeJSON(w, http.StatusOK, configResponse{
-		Listen:           cfg.Listen,
-		MaxParallelTasks: cfg.MaxParallelTasks,
-		Defaults: configDefaults{
-			AgentTimeout:   cfg.Defaults.AgentTimeout.String(),
-			CommandTimeout: cfg.Defaults.CommandTimeout.String(),
-			InputTimeout:   cfg.Defaults.InputTimeout.String(),
-		},
-		DeleteEmptyBranchOnArchive:  cfg.DeleteEmptyBranchOnArchive,
-		DeleteRemoteBranchOnArchive: cfg.DeleteRemoteBranchOnArchive,
-		TranscriptRetentionDays:     cfg.TranscriptRetentionDays,
-		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
-		MaxTaskCostUSD:              cfg.MaxTaskCostUSD,
-		UsageLimitRecheck:           cfg.UsageLimitRecheckInterval.String(),
-		LogLevel:                    cfg.LogLevel,
-		Agents: map[string]agentPath{
-			"claude": {Path: cfg.Agents.Claude.Path},
-			"codex":  {Path: cfg.Agents.Codex.Path},
-			"cursor": {Path: cfg.Agents.Cursor.Path},
-		},
-		TUI: configTUI{Board: configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)}},
-	})
-}
-
-// boardGroupBy renders the grouping levels as strings, never as JSON null: a
-// flat table is a configured choice and has to read as `[]`.
-func boardGroupBy(levels []config.BoardGroup) []string {
-	out := make([]string, 0, len(levels))
-	for _, l := range levels {
-		out = append(out, string(l))
-	}
 	return out
 }
 

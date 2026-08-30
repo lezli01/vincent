@@ -42,6 +42,7 @@ func newRootCmd() *cobra.Command {
 		newDaemonCmd(), newVersionCmd(), newDoctorCmd(),
 		newProjectCmd(), newTaskCmd(), newWorkflowCmd(), newServiceCmd(),
 		newGCCmd(), newGitHubCmd(), newStatusCmd(), newUpdateCmd(),
+		newConfigCmd(),
 	)
 	return root
 }

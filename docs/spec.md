@@ -2924,6 +2924,7 @@ One Go binary, `vincent`:
 | `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
+| `vincent config get [key] / set <key> <value>` | *Added 2026-08-30 (task 060).* Reads and writes `config.yaml` through `GET`/`PATCH /v1/config` (§12.3) — a thin API client like the rest, never a second editor, so the CLI and the TUI's editor are one operation with one validation. `get` with no key prints every key as `path = value` in the file's own order; with one, that key's value alone. Keys are the dotted paths the file carries. Lists and argv are whitespace-separated inside a single argument (`notify.on "blocked awaiting_gate"`), which is also why an argv element containing a space has to be edited in the file. A `set` is in force when it answers; `listen` is the exception the command says out loud. Exit 0 · 1 the daemon refused it, with the file byte-identical · 2 no daemon answered |
 | `vincent github issues / status --project <id>` | *Added 2026-08-26 (task 035).* Read-only GitHub views: the project's issues newest first, and whether they can be read at all. Thin API clients like the rest — the daemon makes every GitHub call. Nothing under this command writes to GitHub |
 | `vincent doctor` | One diagnostic report: paths, daemon, log tail, database, agents, storage, task counts (§17). `--json` for scripting and bug reports; `--fix` (`--force`) reclaims orphaned worktrees and compacts the database. Exit 0 healthy · 1 problems found · 2 no daemon answered. *Amended 2026-08-26 (task 035):* it also reports the GitHub integration — the `github.enabled` toggle, `gh`'s presence, version and login state, whether a token variable is set (its **name**, never its value), and whether issues are readable. It is a **row, not a problem**: every "no" it can report leaves task creation without an issue working exactly as before, so none of it changes the exit code. *Amended 2026-08-29 (task 055):* it also reports the release check (§12.3) — whether `update.check` is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it. Rows, not problems, for the same reason: a newer release and a daemon still running the previous build both leave everything working |
 | `vincent update [--check] [--dry-run] [--require-signature] [--json]` | *Added 2026-08-29 (task 055).* Asks GitHub for the latest **stable** release and, unless `--check` is given, installs it over this binary. It queries the feed **itself** rather than through the daemon, so it works with no daemon and before the daemon's own check has polled — and so `update.check: false` (§12.3) stays a literal promise. A binary a package manager owns is never modified: the channel is detected from the resolved `os.Executable()` path and its upgrade command is printed. A binary vincent owns is verified before anything runs (§16) and swapped in place; on any failure nothing is replaced. `--check`: exit 0 up to date · 1 the check failed · 2 an update is available. Otherwise: 0 nothing to do or swapped · 1 verification or the swap failed and the binary is untouched · 2 an update exists but this install is package-managed. `--json` carries `swapped`, which separates the two 0s |
@@ -3535,6 +3536,21 @@ afternoon should not revert every unrelated edit in the same save.
 curated DTO for clients (§13.2), no client needs this, and `command` can
 reasonably carry a webhook URL with a token in its argv (§16).
 
+*Amended 2026-08-30 (task 060, issue #244).* **Superseded: `notify` is served,
+values included.** The endpoint serves every key in `config.yaml`, because a
+key it omits is a key no client can see — the TUI reads no configuration of its
+own (§15) — and this task makes the file editable from those clients, which
+cannot be done to a value that cannot first be read. The disclosure argument
+does not survive the boundary being named: `GET /v1/config` is loopback-only
+behind the 0600 bearer token, which is the same trust boundary as the 0600
+file, so anyone who can call it can already `cat` it. What the argument was
+really protecting is the **log** and step transcripts, and that rule is
+unchanged and narrowed to say so — the daemon still logs variable names and
+never values. The one place the old reading survives is the MCP rendering of
+this route, where the result lands in an agent's context and its transcript:
+`config_get` masks `environment.set`'s values and `notify.command`'s argv, and
+nothing else (§13.4).
+
 There is deliberately **no token key here**. Vincent stores no credential of
 its own: it drives `gh` when that is installed and authenticated, and otherwise
 reads `GITHUB_TOKEN` or `GH_TOKEN` out of the environment the daemon already
@@ -3596,6 +3612,44 @@ value was *accidental and unrecorded*, not that it was set.
 Config is authoritative in the file; the daemon watches and hot-reloads it. The API
 exposes it read-only (`GET /v1/config`). Per-project settings live in the DB and are
 edited via `PATCH /v1/projects/{id}`.
+
+*Amended 2026-08-30 (task 060, issue #244).* **The API also writes it:
+`PATCH /v1/config`.** The file stays authoritative — the daemon edits it and
+reloads from it; it is not a cache of anything. The endpoint is partial and
+snake_case, mirroring the read shape, on the pattern `PATCH /v1/projects/{id}`
+and `PATCH /v1/tasks/{id}` already set. What it guarantees:
+
+- **The write is comment-preserving.** `config.yaml` ships as a documented
+  template whose `notify:` block is commented out, and for most installations
+  it is the only explanation of what the keys mean. The daemon edits a key in
+  place, uncomments a documented block where it stands, and appends only a key
+  the file has no block for at all. Comments, key order and blank lines survive
+  (`config.Apply`).
+- **Nothing is written when the patch does not hold.** The candidate file is
+  decoded through the path `Load` takes and checked against
+  `worktree.ValidateBranchTemplate`, and a refusal answers §13.1's envelope
+  with the file byte-identical. There is no partial application.
+- **The write is atomic and 0600.** A rename over the target, from a temporary
+  file beside it named so the watcher's base-name filter ignores it (§12.2).
+- **The result is applied before the response is sent.** `daemon.Run`'s reload
+  callback is a named function with two callers — the fsnotify watcher and this
+  handler — so the `listen` pin and the `branch_template` fallback are the same
+  code on both paths, and it is idempotent: the watcher's later fire re-reads
+  identical bytes. A `GET` issued the instant a `200` lands reads the new
+  values, with no sleep.
+- **`listen` is written and does not take effect.** The reload rule above is
+  unchanged, so the running daemon keeps the address it bound and `GET
+  /v1/config` goes on reporting it. Clients say "takes effect on restart"
+  rather than showing the pending value as though it were in force.
+- **Concurrent patches serialize; a hand-edit racing one is last-writer-wins.**
+  One mutex around the read-modify-write, and the file is read fresh at patch
+  time. There is no `ETag`/`If-Match`: a precondition concept no other endpoint
+  in this API carries, for a race between a human and themselves.
+
+`PATCH /v1/config` is **not** an MCP tool (§13.4), and the four keys that decide
+what the daemon executes or exposes — `notify.command`, `environment`,
+`agents.*.path` and `listen` — are behind an explicit confirmation in the TUI
+(§15).
 
 ### 12.4 Crash recovery
 
@@ -3827,7 +3881,16 @@ GET    /v1/info                         daemon version, uptime, agent availabili
                                         on every debounced refresh, and a COUNT(*) over a
                                         multi-million-row events table on the daemon's single
                                         SQLite connection is not that. Nothing here is cached
-GET    /v1/config                       effective global config (read-only)
+GET    /v1/config                       effective global config
+                                        *Amended 2026-08-30 (task 060, issue #244):* it is no
+                                        longer read-only, and no longer a subset. Every key in
+                                        config.yaml is served, values included — a key omitted
+                                        here is one no client can see (§12.3's amendment).
+PATCH  /v1/config                       partial, snake_case, mirroring the read shape. The
+                                        daemon validates the whole candidate file, writes it
+                                        comment-preservingly and atomically at 0600, and applies
+                                        it before answering. An invalid patch writes nothing and
+                                        answers §13.1's envelope. Not an MCP tool (§13.4)
 GET    /v1/agents                       per-adapter availability + model/effort options (§9.6);
                                         ?refresh=true forces a re-probe.
                                         *Added 2026-08-28 (task 041):* the §9.5 health facets
@@ -4453,7 +4516,26 @@ an oversight:
 
 An agent must not be able to stop, garbage-collect or reconfigure the daemon
 supervising it — least of all one running as a vincent step. They stay
-CLI-and-curl only. Everything else in §13.2 is a tool, including the three the
+CLI-and-curl only.
+
+*Amended 2026-08-30 (task 060, issue #244).* **Six**, with `PATCH /v1/config`.
+The sentence above already named the case before the route existed: a patch can
+change the argv the daemon spawns (`notify.command`, `agents.*.path`), what its
+children inherit (`environment`), and whether steps are wired to MCP at all
+(`mcp.wire_steps`) — a step editing any of those is a step rewriting the rules
+it runs under. The route-table parity test fails on either an unexposed or a
+silently exposed route, so this cannot drift.
+
+*Added 2026-08-30 (task 060, issue #244).* **`config_get` is the one tool whose
+body differs from its route's.** §12.3 serves `environment.set`'s values and
+`notify.command`'s argv over HTTP, where the boundary is loopback plus an 0600
+bearer token. An MCP tool result is not that boundary: it is replayed on behalf
+of an agent step and lands in the model's context and in the step's transcript.
+So the MCP rendering masks those two fields — values only; the variable names
+survive, which is the same line §12.3 draws for the log — and nothing else. A
+test asserts the two bodies differ in exactly those fields and nowhere else.
+
+Everything else in §13.2 is a tool, including the three the
 proposal left unclassified: `POST`/`DELETE /v1/tasks/{id}/github/pull`,
 `POST /v1/tasks/{id}/steps/{step_id}/status`, and `POST /v1/tasks/{id}/archive`
 despite its worktree removal and its possible empty-branch delete. The unlink
@@ -5064,11 +5146,33 @@ stream for the live tail.
    one green word per adapter is what makes the one warning invisible.
    The view reports, it does not act: stopping the daemon from the TUI is out
    of v1 — `vincent daemon stop` owns that, and a TUI that auto-started the daemon
-   at launch has no business killing it. The log tail is read straight from
-   `{data_dir}/logs/daemon.log`, the one place the TUI is not a pure API client:
-   an endpoint cannot serve the log when the daemon is the thing that died, which
-   is when the log is worth reading — so it is the one view with something true to
-   show while disconnected. See *Disconnected* below for what the rest of the UI
+   at launch has no business killing it.
+
+   *Amended 2026-08-30 (task 060, issue #244).* **The configuration block is the
+   one exception, and only it.** "It reports, it does not act" still holds for
+   stopping the daemon and for `vincent gc`: both act on the **process
+   supervising the TUI**, and that is the whole of the argument above. A
+   configuration edit is a different object — a **file the daemon owns and
+   already hot-reloads**, which a human may edit by hand at any moment anyway,
+   and which no client could previously even see in full. So the block becomes
+   navigable (`tab`, then `↑`/`↓`), `enter` opens a typed editor on the selected
+   key, and applying it is `PATCH /v1/config` (§12.3, §13.2). Each row shows the
+   value in force and, when they differ, the built-in default; the endpoint
+   carries no provenance, so what the marker claims is "differs from the
+   default", not "written in the file". Four keys — `notify.command`,
+   `environment.*`, `agents.*.path` and `listen` — are behind an explicit
+   confirmation, because they decide what the daemon executes or exposes and
+   agents already run full-auto by default (§16). `listen` is written and does
+   not take effect until a restart, and the editor says so before it applies
+   rather than showing a pending value as though it were in force. While the
+   editor is open the view **captures input**, which it never did before: every
+   single-key global would otherwise land in the text field. There is still no
+   seventh view — the daemon view already owned this block.
+
+   The log tail is read straight from `{data_dir}/logs/daemon.log`, the one
+   place the TUI is not a pure API client: an endpoint cannot serve the log when
+   the daemon is the thing that died, which is when the log is worth reading —
+   so it is the one view with something true to show while disconnected. See *Disconnected* below for what the rest of the UI
    does in that state.
 
 7. **Pull requests.** *Added 2026-08-29 (task 052.6).* Every available project's
@@ -5670,6 +5774,16 @@ currently true to show (§15 view 6).
   is why `notify` is not served on `GET /v1/config`. And it is argv, never a
   shell string, on every platform: nothing is expanded, split or quoted, so a
   task title cannot reach a shell through it.
+
+  *Amended 2026-08-30 (task 060, issue #244).* The clause about `GET
+  /v1/config` is superseded: `notify` **is** served, values included, because
+  that endpoint sits behind the same loopback-plus-0600 boundary as the file
+  (§12.3's amendment). The MCP rendering masks the argv, because that one does
+  not. And `notify.command` is now writable over `PATCH /v1/config` — which is
+  to say a client can change what the daemon executes as you, without a
+  restart. That is why the route is excluded from the MCP tool surface
+  (§13.4), and why the TUI's editor puts it, `environment`, `agents.*.path`
+  and `listen` behind an explicit confirmation.
 - **Vincent writes to one CLI's own config**: a cursor step passes `--model`,
   which cursor persists to `~/.cursor/cli-config.json` (§9.7). It is not a
   secret and not an escalation, but it is the one place vincent mutates state

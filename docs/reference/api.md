@@ -124,7 +124,8 @@ are long-lived by contract and no write deadline is set.
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
 | `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, and the database's byte footprint |
-| `GET` | `/v1/config` | The effective global config, read-only — including the `tui` section the daemon only relays |
+| `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
+| `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
 | `GET` | `/v1/doctor` | The whole diagnostic report. Read-only. `?probe=false` skips the forced adapter re-probe — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
@@ -1300,6 +1301,7 @@ Every route on this page is a tool, with these exceptions:
 | `DELETE /v1/projects/{id}` | Destructive admin |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
+| `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 
@@ -1312,6 +1314,11 @@ this page documents, so the request bounds, the validation and the error
 envelopes above are the same ones a tool sees — a `409` reaches an MCP client
 still carrying `details.state`. One tool result is capped at 256 KiB; use a
 route's own `offset`/`limit` query parameters to page.
+
+`config_get` is the one tool whose **body** differs from its route's: it masks
+`environment.set`'s values and `notify.command`'s argv, keeping the names,
+because a tool result lands in the model's context and in the step's transcript.
+`GET /v1/config` itself serves them.
 
 `task_wait` is the one tool with no route behind it: it blocks until a task
 reaches `done`, `aborted`, `archived`, `awaiting_input`, `blocked` or

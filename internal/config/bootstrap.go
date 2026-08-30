@@ -24,6 +24,14 @@ listen: 127.0.0.1:0
 # on each project.
 max_parallel_tasks: 3
 
+# Naming convention for the branch each task's worktree is cut on. It is a
+# Go text/template rendered with .ID, .Slug, .Project, .Workflow and .Date;
+# the result is sanitised into a legal ref. A project may override it, and
+# the built-in below is what applies when neither is set. A template that
+# does not compile is refused and the previous one stays in force.
+#
+# branch_template: "vincent/{{.ID}}-{{.Slug}}"
+
 # Fallback step timeouts, used when a workflow step declares none.
 # input_timeout bounds each wait for an answer to an agent's input request
 # (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
@@ -117,6 +125,49 @@ agents:
   # editor launcher (§9.7).
   cursor:
     path: ""
+
+# How many verifications inside one "parallel" step run at once (§7.5).
+# The step is done when its last lane is, and a lane that fails fails the
+# step; this only bounds how many are in flight.
+#
+# parallel:
+#   max_parallel: 4
+
+# Bounds on "fan_out" (§7.6), which creates a task per item. max_depth is how
+# many generations deep a tree may go — a lane that fans out again counts —
+# and max_tasks is the total number of descendants one root may create.
+# Passing either blocks the step rather than truncating the list.
+#
+# fan_out:
+#   max_depth: 3
+#   max_tasks: 64
+
+# Ceiling on iterations of one "loop" step (§7.8). A loop that reaches it
+# blocks with loop_limit, so a condition that never goes false is visible
+# rather than endless.
+#
+# loop:
+#   max_iterations: 10
+
+# How many levels of "include" a workflow may nest (§7.9). Includes are
+# spliced away when the task is created, so this bounds the splice, not the
+# run.
+#
+# include:
+#   max_depth: 5
+
+# The MCP server the daemon serves at /mcp (§13.4), and the per-step endpoint
+# an agent step is wired to. wire_steps: false stops the daemon handing agent
+# steps their endpoint at all, which is how you take vincent's own tools away
+# from a workflow without touching the workflow. max_depth and max_tasks bound
+# the tasks an agent may create through those tools, the way fan_out's pair
+# bounds a tree: a chain discovered at run time is only visible once it has
+# spawned.
+#
+# mcp:
+#   wire_steps: true
+#   max_depth: 3
+#   max_tasks: 32
 
 # Reading GitHub issues, so a task can be created from one (task 035). It
 # applies only to a project whose "origin" remote is a github.com repository,

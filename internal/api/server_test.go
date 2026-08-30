@@ -155,7 +155,7 @@ func TestConfigView(t *testing.T) {
 	if cfg.Defaults.AgentTimeout != want.Defaults.AgentTimeout.String() {
 		t.Errorf("agent_timeout = %q, want %q", cfg.Defaults.AgentTimeout, want.Defaults.AgentTimeout)
 	}
-	if _, ok := cfg.Agents["claude"]; !ok {
+	if !strings.Contains(string(body), `"claude"`) {
 		t.Error("agents.claude missing")
 	}
 	// Both halves of the §10 branch-cleanup pair, and both by name: a client

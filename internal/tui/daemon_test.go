@@ -50,9 +50,8 @@ func testConfig() apiclient.Config {
 		},
 		TranscriptRetentionDays: 90,
 		LogLevel:                "info",
-		Agents: map[string]apiclient.AgentPath{
-			"claude": {Path: "/usr/bin/claude"},
-			"codex":  {Path: ""},
+		Agents: apiclient.ConfigAgents{
+			Claude: apiclient.AgentPath{Path: "/usr/bin/claude"},
 		},
 	}
 }
@@ -402,4 +401,21 @@ func TestDaemonViewSingularOrphanLine(t *testing.T) {
 	if _, ok := orphanLine(0); ok {
 		t.Error("orphanLine(0) produced a line")
 	}
+}
+
+// openConfigForm is the probe helper: a daemon view with a configuration
+// loaded and the editor open on one named key.
+func openConfigForm(t *testing.T, path string) *daemonView {
+	t.Helper()
+	d := newTestDaemonView([]string{"a log line"}, nil)
+	d.update(daemonConfigMsg{config: testConfig()})
+	for i, k := range d.keys {
+		if k.path == path {
+			d.cursor = i
+			d.form = newConfigForm(k, d.config)
+			return d
+		}
+	}
+	t.Fatalf("no config key %q", path)
+	return nil
 }

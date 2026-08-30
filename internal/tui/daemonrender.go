@@ -16,12 +16,23 @@ import (
 // worth scrolling, so it takes whatever is left but never less than this.
 const logPaneMinHeight = 3
 
+// configRowsShown is how many config keys the block lists at once. Ten fits
+// beside the other three blocks and the log pane on an 80x24 terminal, which
+// is the size the rest of this view is laid out for.
+const configRowsShown = 10
+
 func (d *daemonView) render(width, height int) string {
 	if width > 0 {
 		d.width = width
 	}
 	if height > 0 {
 		d.height = height
+	}
+	if d.form != nil {
+		// The editor is a takeover, not an overlay: while it is open it owns
+		// the keyboard (capturesInput), and rendering the blocks underneath it
+		// would suggest the keys they document still work.
+		return strings.Join(d.form.render(d.width), "\n")
 	}
 	var out []string
 	out = append(out, d.identityLines()...)
@@ -93,42 +104,143 @@ func orphanLine(n int) (string, bool) {
 
 // configLines is the configuration the daemon actually has loaded, which is
 // not always the file on disk — it hot-reloads, and nothing announces it.
+//
+// Every key config.yaml carries is here and every one of them is editable
+// (task 060). The block used to show nine of the eleven GET /v1/config served,
+// which meant `branch_template`, `environment` and `notify` could not be seen
+// from any client at all, let alone changed.
 func (d *daemonView) configLines() []string {
-	out := []string{" " + styleTitle.Render("config in effect")}
+	head := " " + styleTitle.Render("config in effect")
 	if !d.configOK {
-		return append(out, "  "+d.unavailable(d.configErr, "config"))
+		return []string{head, "  " + d.unavailable(d.configErr, "config")}
 	}
+	if d.focusConfig {
+		head += styleDim.Render("   ↑/↓ select   enter edit   tab back to the log")
+	} else {
+		head += styleDim.Render("   tab for every key, and to edit")
+	}
+	out := []string{head}
+	if d.focusConfig {
+		out = append(out, d.configListLines()...)
+	} else {
+		out = append(out, d.configSummaryLines()...)
+	}
+	if d.saved != "" {
+		out = append(out, "   "+styleDim.Render(d.saved+" saved to config.yaml"))
+	}
+	if line, ok := d.staleLine(d.configErr, d.configAt); ok {
+		out = append(out, line)
+	}
+	return out
+}
+
+// configSummaryLines is the digest this block has always been: the settings
+// someone opens this view to check, at a glance, with the log still on screen
+// underneath. Tab swaps it for the full list.
+func (d *daemonView) configSummaryLines() []string {
 	c := d.config
-	out = append(out,
+	out := []string{
 		field("max parallel tasks", strconv.Itoa(c.MaxParallelTasks)),
-		field("agent timeout", c.Defaults.AgentTimeout)+
+		field("agent timeout", c.Defaults.AgentTimeout) +
 			styleDim.Render("   command "+c.Defaults.CommandTimeout+
 				"   input "+c.Defaults.InputTimeout),
-		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days")+
+		field("transcript retention", strconv.Itoa(c.TranscriptRetentionDays)+" days") +
 			styleDim.Render("   cap "+humanBytes(c.TranscriptMaxBytes)+" per run"),
-		costCapLine(c.MaxTaskCostUSD),
+		field("max task cost", costCapText(c)),
 		// Both halves of the §10 pair on one line: the remote one is inert
 		// while the local one is off, so showing either alone would describe a
 		// policy that cannot run.
-		field("delete empty branch", onOff(c.DeleteEmptyBranchOnArchive))+
+		field("delete empty branch", onOff(c.DeleteEmptyBranchOnArchive)) +
 			styleDim.Render("   remote "+onOff(c.DeleteRemoteBranchOnArchive)),
 		field("usage limit recheck", c.UsageLimitRecheck),
 		field("log level", c.LogLevel),
 		// What the file says, which is not necessarily what the board is
 		// showing: `g` regroups for the session without writing anything.
 		field("task grouping", groupSummary(c.TUI.Board.GroupBy)),
-	)
-	for _, name := range sortedKeys(c.Agents) {
-		path := c.Agents[name].Path
+	}
+	for _, a := range []struct {
+		name string
+		path string
+	}{
+		{"claude", c.Agents.Claude.Path},
+		{"codex", c.Agents.Codex.Path},
+		{"cursor", c.Agents.Cursor.Path},
+	} {
+		path := a.path
 		if path == "" {
 			path = styleDim.Render("(resolved from PATH)")
 		}
-		out = append(out, field(name+" path", path))
-	}
-	if line, ok := d.staleLine(d.configErr, d.configAt); ok {
-		out = append(out, line)
+		out = append(out, field(a.name+" path", path))
 	}
 	return out
+}
+
+// configListLines is the editable table: every key config.yaml carries, one
+// per row, scrolling under the cursor. It is what the summary above cannot
+// be — `branch_template`, `environment` and `notify` have no digest line, and
+// before task 060 that meant no client could see them at all.
+func (d *daemonView) configListLines() []string {
+	var out []string
+	first, last := d.configWindow()
+	if first > 0 {
+		out = append(out, "   "+styleDim.Render(fmt.Sprintf("↑ %d more", first)))
+	}
+	for i := first; i < last; i++ {
+		out = append(out, d.configRow(i, d.keys[i]))
+	}
+	if rest := len(d.keys) - last; rest > 0 {
+		out = append(out, "   "+styleDim.Render(fmt.Sprintf("↓ %d more", rest)))
+	}
+	return out
+}
+
+// configWindow is the slice of the key list the block shows. The full table
+// is thirty-odd rows, which is taller than the log pane it shares the view
+// with — the log is the thing worth watching here, and a config block that
+// pushes it off the screen would have taken away the reason this view exists.
+// So the list scrolls with the cursor, and says how many rows are out of
+// sight in each direction.
+func (d *daemonView) configWindow() (first, last int) {
+	if len(d.keys) <= configRowsShown {
+		return 0, len(d.keys)
+	}
+	first = min(max(d.cursor-configRowsShown/2, 0), len(d.keys)-configRowsShown)
+	return first, first + configRowsShown
+}
+
+// configRow renders one key: what it is, what it is set to, and — when they
+// differ — what it would be if the file said nothing.
+//
+// "differs from the default" is what the marker claims, and it is all this
+// view can honestly claim: GET /v1/config serves effective values and carries
+// no provenance, so a value that happens to equal the built-in is
+// indistinguishable from one the file never mentions.
+func (d *daemonView) configRow(i int, k configKey) string {
+	value := k.display(d.config)
+	if value == "" {
+		value = styleDim.Render("(empty)")
+	}
+	line := field(k.label, value)
+	if def := k.def(); def != k.read(d.config) {
+		line += styleDim.Render("   default " + defaultOrEmpty(def))
+	}
+	if k.restart {
+		line += styleDim.Render("   restart to apply")
+	}
+	if i != d.cursor {
+		return " " + line
+	}
+	if d.focusConfig {
+		return styleFocus.Render("›") + line
+	}
+	return styleDim.Render("›") + line
+}
+
+func defaultOrEmpty(s string) string {
+	if s == "" {
+		return "(empty)"
+	}
+	return s
 }
 
 // databaseLines is §17's footprint (task 029): how big the database is, which
@@ -366,11 +478,11 @@ func onOff(v bool) string {
 //
 // The suffix earns its space on a machine running fan-outs: the cap counts
 // one task, and every lane of a tree is its own task with its own budget.
-func costCapLine(v float64) string {
-	if v <= 0 {
-		return field("max task cost", "off")
+func costCapText(c apiclient.Config) string {
+	if c.MaxTaskCostUSD <= 0 {
+		return "off"
 	}
-	return field("max task cost", "$"+strconv.FormatFloat(v, 'f', -1, 64)) +
+	return "$" + strconv.FormatFloat(c.MaxTaskCostUSD, 'f', -1, 64) +
 		styleDim.Render("   per task; fan-out lanes count separately")
 }
 
@@ -514,13 +626,4 @@ func shortCommit(c string) string {
 		return c[:12]
 	}
 	return c
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

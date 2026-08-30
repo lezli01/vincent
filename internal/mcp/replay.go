@@ -189,7 +189,7 @@ func (s *Server) dispatch(ctx context.Context, r Route, raw json.RawMessage) (*m
 	if rec.status == 0 {
 		rec.status = http.StatusOK
 	}
-	body := rec.body.Bytes()
+	body := redactBody(r, rec.status, rec.body.Bytes())
 	if rec.status >= http.StatusBadRequest {
 		var env errorEnvelope
 		if json.Unmarshal(body, &env) == nil && env.Error.Code != "" {

@@ -817,6 +817,47 @@ Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
 
+The **configuration block is the exception**, and only it. `tab` moves `↑`/`↓`
+off the log pane and onto the config list, which then shows every key
+`config.yaml` carries rather than the digest; `enter` opens a typed editor on
+the selected key, and applying it writes the file through the daemon. Stopping
+the daemon and `vincent gc` act on the process supervising this TUI, which is
+what that sentence is about; a configuration edit changes a file the daemon owns
+and already reloads, and which you can edit by hand at any moment anyway.
+
+Each row shows the value in force and, where they differ, the built-in default.
+The daemon serves the values it has loaded and not where they came from, so a
+row says "differs from the default" rather than "set in the file". A refusal
+renders against the field, with the value that caused it still there to fix, and
+nothing is written.
+
+Four keys ask before they apply: `notify.command`, `environment.*`,
+`agents.*.path` and `listen`. They decide what the daemon executes or exposes,
+and [agents run full-auto by default](../security-model.md) — a stray keystroke
+must not change the argv the daemon spawns as you. `listen` is written to the
+file and the running daemon keeps the address it bound until it is restarted;
+the editor says so before you apply it.
+
+| Key | Does |
+|---|---|
+| `tab` | Move `↑`/`↓` between the config list and the log pane |
+| `↑` / `↓` | Select a configuration key, once the list has the arrows |
+| `enter` / `e` | Open the editor on the selected key |
+| `R` | Re-read the daemon info, the config and the log |
+| `f` / `G` | Follow the end of the log again |
+
+And inside the editor:
+
+| Key | Does |
+|---|---|
+| `←` / `→` | Choose a value, for a key with a fixed vocabulary |
+| `enter` | Apply the change — the daemon validates and writes `config.yaml` |
+| `y` | Confirm one of the four keys that decide what the daemon executes or exposes |
+| `esc` | Close without saving; on the confirmation it returns to the field |
+
+Everything here is also
+[`vincent config get|set`](../reference/cli.md#vincent-config).
+
 Each adapter row carries what vincent knows about its usage window: `usage
 limit → 14:20` when the CLI stated that reset, `usage limit ≈ 14:20` when
 vincent estimated it from

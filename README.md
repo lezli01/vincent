@@ -201,6 +201,7 @@ vincent workflow init my-flow              # or --from feature-pr, --project 1
 vincent workflow ls
 vincent workflow validate .vincent/workflows/feature-pr.yaml
 vincent workflow render .vincent/workflows/feature-pr.yaml
+vincent config get                         # or set max_parallel_tasks 6
 ```
 
 Every subcommand takes `--json` for scripting. Exit codes are `0` success,

@@ -415,41 +415,20 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		selfupdate.CleanLeftovers(exe)
 	}
 
-	srv := api.New(api.Deps{
-		Token:        token,
-		Config:       currentConfig,
-		StartedAt:    startedAt,
-		ListenAddr:   ln.Addr().String(),
-		Dirs:         dirs,
-		LogPath:      LogPath(dirs.Data),
-		TailLog:      TailFile,
-		RequestStop:  requestStop,
-		Logger:       logger,
-		Store:        st,
-		Git:          git,
-		GitHub:       githubClient,
-		Worktrees:    worktrees,
-		Agents:       agents,
-		Catalog:      catalog,
-		Workflows:    workflows,
-		Runner:       runner,
-		WakeRunner:   sched.Wake,
-		Broker:       broker,
-		Reclaimer:    reclaimer,
-		UpdateStatus: updateCheck.Result,
-		OnProjectsChanged: func() {
-			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := syncWorkflowProjects(pctx, st, workflows); err != nil {
-				logger.Warn("project workflow scopes not refreshed", "error", err)
-			}
-			// A project's max_parallel_tasks may have changed (§11).
-			sched.Wake()
-		},
-	})
-	apiHolder.Store(srv)
-
-	if err := config.Watch(ctx, logger, dirs.Config, func(next config.Config) {
+	// One applier, two callers (task 060 decision 5). The fsnotify watcher
+	// below and PATCH /v1/config both hand a freshly loaded configuration to
+	// this function, so the `listen` pin, the branch_template fallback and the
+	// warning re-report happen on both paths and cannot drift apart. It is
+	// idempotent: applying identical bytes twice — which is exactly what the
+	// watcher does after a patch wrote the file — changes nothing and logs
+	// nothing new.
+	//
+	// applyMu guards its own carried state (prevWarnings, envNames) now that
+	// two goroutines reach it: the watch loop and an API request.
+	var applyMu sync.Mutex
+	applyConfig := func(next config.Config) {
+		applyMu.Lock()
+		defer applyMu.Unlock()
 		prev := current.Load()
 		if next.Listen != prev.Listen {
 			logger.Warn("listen change ignored until restart",
@@ -495,7 +474,44 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		shells.Reprobe()
 		// max_parallel_tasks may have changed (§11).
 		sched.Wake()
-	}); err != nil {
+	}
+
+	srv := api.New(api.Deps{
+		Token:        token,
+		Config:       currentConfig,
+		StartedAt:    startedAt,
+		ListenAddr:   ln.Addr().String(),
+		Dirs:         dirs,
+		LogPath:      LogPath(dirs.Data),
+		TailLog:      TailFile,
+		RequestStop:  requestStop,
+		Logger:       logger,
+		Store:        st,
+		Git:          git,
+		GitHub:       githubClient,
+		Worktrees:    worktrees,
+		Agents:       agents,
+		Catalog:      catalog,
+		Workflows:    workflows,
+		Runner:       runner,
+		WakeRunner:   sched.Wake,
+		Broker:       broker,
+		Reclaimer:    reclaimer,
+		UpdateStatus: updateCheck.Result,
+		ApplyConfig:  applyConfig,
+		OnProjectsChanged: func() {
+			pctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := syncWorkflowProjects(pctx, st, workflows); err != nil {
+				logger.Warn("project workflow scopes not refreshed", "error", err)
+			}
+			// A project's max_parallel_tasks may have changed (§11).
+			sched.Wake()
+		},
+	})
+	apiHolder.Store(srv)
+
+	if err := config.Watch(ctx, logger, dirs.Config, applyConfig); err != nil {
 		logger.Warn("config hot-reload unavailable", "error", err)
 	}
 
