@@ -32,6 +32,20 @@ list with the user-facing context a commit subject cannot carry.
   is a visibly invalid workflow with a source path, not a surprise at task
   creation.
 
+- **A task-details tab inside the answer, repair and follow-up popups.** All
+  three form popups now carry a two-tab strip of their own — the form and
+  **Task details** — switched with `ctrl+t` while the popup stays open. The
+  second tab is the same read-only inspector the task workspace's Task Details
+  tab shows, with its own sidebar and scroll, so the prompt, the workflow and
+  step that is asking, the agent and model, the timings and the linked GitHub
+  issue are all readable while you decide. Nothing about the draft changes
+  across the switch: picked options, typed answers and half-written repair or
+  follow-up prompts are exactly where you left them. `ctrl+t` works while a text
+  field or a picker has the keyboard and types nothing into it; on the details
+  tab `esc` returns to the form rather than closing the popup. Previously the
+  only way to the task's context was `esc`, which discards the repair and
+  follow-up drafts outright.
+
 - **A pull-requests screen in the TUI, and a browser to open them in.** A new
   takeover lists every open pull request across every registered project whose
   `origin` is a github.com repository vincent can authenticate to, grouped by
@@ -226,6 +240,13 @@ list with the user-facing context a commit subject cannot carry.
   filesystem and the shell, and that is all it claims to bound.
 
 ### Fixed
+
+- **The footer and `?` described the wrong surface while an answer, repair or
+  follow-up popup was open.** The task workspace fell through to the current
+  tab's context, so a popup that owned the keyboard was documented as the Steps
+  tab and the keys registered for the three forms were unreachable from the
+  footer. The `?` sheet also never printed a follow-up form section at all. All
+  three popups now name themselves, and the sheet prints all three.
 
 - **`GET /v1/tasks/{id}/diff` measured the diff from the wrong commit once a task
   started from a fetched base.** The merge-base was computed against the base

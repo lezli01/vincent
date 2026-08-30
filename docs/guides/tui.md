@@ -424,6 +424,7 @@ this task's worktree, on this task's branch.
 | `enter` | Open the row under the cursor — the prompt field, or that row's picker |
 | `e` | Write the prompt in `$EDITOR` instead |
 | `ctrl+s` | Start the repair |
+| `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without repairing — the draft is discarded |
 
 The prompt is the only required row, and it is prose: write what you want done,
@@ -457,6 +458,7 @@ the commit a reviewer asked for, drop the stray file the agent left.
 | `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker |
 | `e` | Write the prompt or command in `$EDITOR` instead |
 | `ctrl+s` | Start the follow-up |
+| `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without running anything — the draft is discarded |
 
 The top row picks what kind of run this is, and it decides what the row under it
@@ -502,6 +504,7 @@ answer form.
 | `space` | Pick an option (toggles, for a multi-select question) |
 | `e` | Type your own answer — options are suggestions, never a list |
 | `enter` | Submit; the run resumes in the same session where it stopped |
+| `ctrl+t` | Switch between the question and this task's details, without leaving the popup |
 | `esc` | Close without answering (what you picked is kept) |
 
 While `e` has a field open, `enter` keeps what you typed and `esc` discards it —
@@ -512,6 +515,33 @@ the same way.
 
 The form is a popup, and it **never steals focus**: auto-opening under a
 keystroke is how an answer gets lost. It announces itself and waits for you.
+
+### Reading the task without leaving the popup
+
+All three popups — the answer form, the repair form and the follow-up form —
+have a two-tab strip of their own along the top:
+
+```
+ Question │ Task details   ctrl+t
+```
+
+`ctrl+t` switches between them and the popup stays open. **Task details** is
+the same inspector the workspace's Task Details tab shows, with the same
+sidebar and the same `↑`/`↓` and `pgup`/`pgdn` keys: the original prompt, the
+project, the workflow and the step that is asking, the agent, model and effort,
+the timings and cost, and the linked GitHub issue or pull request.
+
+Nothing about your draft changes while you read. Options you picked, an answer
+you typed, a half-written repair or follow-up prompt and the agent/model/effort
+you chose are all exactly where you left them when you press `ctrl+t` again.
+That matters most on the repair and follow-up forms, where `esc` throws the
+draft away — before this, looking something up meant retyping the prompt.
+
+`ctrl+t` works while a text field or a picker is open, and types nothing into
+it. On the Task details tab the pane is strictly read-only: no task action
+fires from it, and it offers neither `o` nor `P`. `esc` there goes back to the
+form rather than closing the popup — one layer per press — so closing a popup
+from the details tab takes two.
 
 ## The takeover screens
 
@@ -859,7 +889,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `!` | Jump to the next task needing a human |
 | `n` | New task |
 | `M` | Toggle the mouse |
-| `esc` | Close one layer: popup → screen → selection → filter — never quits |
+| `esc` | Close one layer: popup tab → popup → screen → selection → filter — never quits |
 | `q` | Quit the TUI (the daemon keeps running) |
 | `ctrl+c` | Quit |
 

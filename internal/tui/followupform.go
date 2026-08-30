@@ -474,7 +474,7 @@ func (f *followUpForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  queueing the follow-up…"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · ctrl+s start the follow-up · esc leave the form"))
+			"  enter edit · e $EDITOR · ctrl+s start the follow-up · ctrl+t task details · esc leave the form"))
 	}
 	return out
 }

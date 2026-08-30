@@ -359,7 +359,7 @@ func (f *repairForm) lines(width int) []string {
 		out = append(out, styleDim.Render("  starting the repair agent…"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · ctrl+s start the repair · esc leave the form"))
+			"  enter edit · e $EDITOR · ctrl+s start the repair · ctrl+t task details · esc leave the form"))
 	}
 	return out
 }

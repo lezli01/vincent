@@ -4901,13 +4901,38 @@ stream for the live tail.
    auto-opening under a keystroke is how an answer gets lost, so it announces
    itself with a badge on the row and a footer hint, and the human opens it.
 
+   **The popup's own tab strip (task 059, added 2026-08-30).** All three form
+   popups below — answer, repair and follow-up — carry a two-tab strip of their
+   own as their first body line: the form (**Question** / **Repair** /
+   **Follow-up**) and **Task details**. `ctrl+t` cycles them while the popup
+   stays open. The second tab is the same read-only inspector the workspace's
+   Task Details tab shows — the section sidebar, every section, its own scroll —
+   and it is the popup's own instance of it, so reading inside the popup never
+   moves the workspace tab behind it and switching tabs never disturbs the
+   draft. That is the point: deciding what to answer needs the prompt, the
+   workflow and step asking, the agent, and the linked GitHub issue, and until
+   this the only way to any of them was `esc`, which costs the repair and
+   follow-up forms their draft outright.
+
+   Inside the popup the details tab is read-only more strictly than the
+   workspace tab is: unhandled keys stop at the pane rather than reaching the
+   task's actions, and neither `o` (open the pull request) nor `P` (open the
+   compare-URL editor) is offered — a popup that can raise a second popup is
+   not a reference surface. `ctrl+t` is taken by the workspace *before* the form
+   sees the press, which is what makes it work while the free-text editor, a
+   prompt `textarea` or an agent/model/effort picker has the keyboard. A popup
+   with tabs takes the whole height budget on both tabs rather than shrinking to
+   its form, so the frame does not resize under the reader on a `ctrl+t`. The
+   compare-URL editor (§13.2, task 052.6) has no tab strip.
+
    **Repair popup (task 025, added 2026-08-24).** On a `blocked` task, `R` opens
    a second popup that owns the keyboard the way the answer form does: a
    required free-text prompt (`enter` edits it inline, `e` opens it in
    `$EDITOR`) and optional agent/model/effort rows fed by the same
    `GET /v1/agents` pickers the new-task flow uses (§8.6, with the request
    standing in for the step level). `ctrl+s` starts the repair, `esc` closes it
-   and discards the draft. It is a popup and not an action key because a repair
+   and discards the draft — which is why `ctrl+t` (above, task 059) rather than
+   `esc` is the way out to the task's details. It is a popup and not an action key because a repair
    needs prose written for this one task — which is also why it is excluded from
    bulk actions.
 
@@ -4925,7 +4950,9 @@ stream for the live tail.
    "prompt" and "shell command" would guess wrong half the time. The chooser
    decides what the row under it means — a prompt, a command, or a workflow
    picked from `GET /v1/workflows` — and the same agent/model/effort pickers
-   follow. `ctrl+s` starts the run, `esc` closes and discards the draft. Like
+   follow. `ctrl+s` starts the run, `esc` closes and discards the draft; as with
+   repair, `ctrl+t` (above, task 059) is the way to read the task's details
+   without paying that. Like
    repair it is excluded from bulk actions (task 011): the input is written for
    one task, and the batch case is `vincent task follow-up` (§12.1).
 
@@ -5523,9 +5550,12 @@ re-reads a registry or the daemon blocks. One key jumps to the next task needing
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
 
-**`esc` cancels one layer per press**, by a fixed stack: popup (palette,
-confirmation, answer form) → takeover screen → bulk selection → active filter →
-nothing. It is a
+**`esc` cancels one layer per press**, by a fixed stack: *(amended 2026-08-30,
+task 059)* a form popup's Task details tab → popup (palette, confirmation,
+answer form) → takeover screen → bulk selection → active filter →
+nothing. The innermost layer is the newest: on a form popup's details tab `esc`
+returns to the form tab with the draft untouched and the popup still open, and
+only a second press carries the popup's own `esc` meaning. It is a
 no-op at the bottom and it **never quits** — `esc`-to-exit surprises anyone who
 pressed it meaning "back". "Back to the board" is not among its meanings any more,
 because the board is always on screen.

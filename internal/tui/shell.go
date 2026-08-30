@@ -726,7 +726,7 @@ func (s *shell) render(width, height int) string {
 	}
 	out := strings.Join(parts, "\n")
 	if s.popup && (s.detail.form != nil || s.detail.repair != nil || s.detail.followUp != nil) {
-		out = s.overlayPopup(out)
+		out = overlayPopup(out, s.bodyW, s.bodyH, popupOverlayFor(s.detail))
 	}
 	return out
 }
@@ -822,43 +822,112 @@ func (s *shell) detailPlaceholder() (string, bool) {
 	}
 }
 
-// overlayPopup draws the answer form over the panels. A popup gets the full
-// width a quarter-pane could not give multi-select options and free text
-// (§15), and the panels stay visible around it — the tail underneath is
-// what says why the agent is asking.
-func (s *shell) overlayPopup(bg string) string {
+// popupForm is what the three §6/§7.4 popups have in common as far as drawing
+// them goes: each lays itself out at the width it will be drawn at, so a long
+// question wraps inside the popup instead of losing its tail to the frame.
+type popupForm interface {
+	height(width int) int
+	render(width, height int) string
+}
+
+// popupOverlay is one form popup's drawing. The tab state is deliberately a
+// field rather than something overlayPopup can reach: taskView.render builds
+// this fresh every frame, so a popup's tab and its details pane live on the
+// view that owns the popup, not in its picture (task 059).
+type popupOverlay struct {
+	title string
+	// tabName is what the form's own tab is called on the strip — "Question",
+	// "Repair", "Follow-up" — as opposed to title, which names the task too.
+	tabName string
+	form    popupForm
+	tab     popupTab
+	// details draws the Task details tab. Nil means this popup has no tabs,
+	// and then no strip is drawn and the frame is sized to the form.
+	details func(width, height int) string
+}
+
+// popupOverlayFor picks the open form and names it. The three are mutually
+// exclusive; the precedence here is the one updatePopupKey dispatches in.
+func popupOverlayFor(d *detail) popupOverlay {
+	switch {
+	case d.followUp != nil:
+		return popupOverlay{
+			title:   fmt.Sprintf("Follow-up — #%d", d.taskID),
+			tabName: "Follow-up", form: d.followUp,
+		}
+	case d.repair != nil:
+		return popupOverlay{
+			title:   fmt.Sprintf("Repair — #%d", d.taskID),
+			tabName: "Repair", form: d.repair,
+		}
+	case d.form != nil:
+		return popupOverlay{
+			title:   fmt.Sprintf("Answer — #%d", d.taskID),
+			tabName: "Question", form: d.form,
+		}
+	}
+	return popupOverlay{}
+}
+
+// overlayPopup draws a form popup over whatever is behind it. A popup gets the
+// full width a quarter-pane could not give multi-select options and free text
+// (§15), and what is behind it stays visible around it — the tail underneath
+// is what says why the agent is asking.
+//
+// It is a free function rather than a method because taskView borrows it for
+// its own popup path and has no shell to hang it on (task 059).
+func overlayPopup(bg string, bodyW, bodyH int, p popupOverlay) string {
+	if p.form == nil {
+		return bg
+	}
 	// Take nearly the whole body: a §7.4 question is prose and its options are
-	// sentences, so every column the popup gives back to the panels behind it
+	// sentences, so every column the popup gives back to what is behind it
 	// is another wrapped line to read. The cap is a reading measure, not a
 	// layout constraint — past it a line stops being comfortable to scan.
-	pw := min(s.bodyW-6, 120)
+	pw := min(bodyW-6, 120)
 	if pw < 20 {
-		pw = s.bodyW
+		pw = bodyW
 	}
-	// The form lays itself out at the width it will be drawn at, so a long
-	// question wraps inside the popup instead of losing its tail to frame.
 	inner := pw - 2
-	var (
-		height func(int) int
-		render func(int, int) string
-		title  string
-	)
-	if f := s.detail.followUp; f != nil {
-		height, render = f.height, f.render
-		title = fmt.Sprintf("Follow-up — #%d", s.detail.taskID)
-	} else if f := s.detail.repair; f != nil {
-		height, render = f.height, f.render
-		title = fmt.Sprintf("Repair — #%d", s.detail.taskID)
+
+	var ph int
+	var body string
+	if p.details == nil {
+		ph = min(p.form.height(inner)+2, max(bodyH-4, 6))
+		body = p.form.render(inner, ph-2)
 	} else {
-		f := s.detail.form
-		height, render = f.height, f.render
-		title = fmt.Sprintf("Answer — #%d", s.detail.taskID)
+		// With tabs the popup takes the whole height budget rather than
+		// shrinking to the form (task 059 decision 3): the frame must not
+		// resize under the reader on a ctrl+t, and the details tab wants
+		// every line it can have.
+		ph = max(bodyH-4, 6)
+		contentH := max(ph-4, 1) // the two border rows, the strip, its blank
+		content := p.form.render(inner, contentH)
+		if p.tab == popupTabDetails {
+			content = p.details(inner, contentH)
+		}
+		body = popupTabStrip(p.tabName, p.tab) + "\n\n" + content
 	}
-	ph := min(height(inner)+2, max(s.bodyH-4, 6))
-	popup := frame(title, render(inner, ph-2), pw, ph, true)
-	x := max((s.bodyW-pw)/2, 0)
-	y := max((s.bodyH-ph)/3, 1)
+
+	popup := frame(p.title, body, pw, ph, true)
+	x := max((bodyW-pw)/2, 0)
+	y := max((bodyH-ph)/3, 1)
 	return overlay(bg, popup, x, y)
+}
+
+// popupTabStrip is the popup's own two-tab strip, drawn as its first body
+// line the way the task workspace draws its five (task 059).
+func popupTabStrip(formName string, active popupTab) string {
+	var b strings.Builder
+	b.WriteString(" ")
+	for i, name := range []string{formName, "Task details"} {
+		if i > 0 {
+			b.WriteString(styleDim.Render(" │ "))
+		}
+		b.WriteString(tabLabel(name, active == popupTab(i)))
+	}
+	b.WriteString(styleDim.Render("   ctrl+t"))
+	return b.String()
 }
 
 // frame draws content inside a bordered box of exactly w×h cells, the title
