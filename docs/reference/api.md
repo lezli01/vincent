@@ -13,6 +13,7 @@ The daemon serves REST + SSE on loopback. Every client — the TUI, the
 - [Projects](#projects)
 - [Workflows](#workflows)
 - [Tasks](#tasks)
+- [Chats](#chats)
 - [Transcripts and diffs](#transcripts-and-diffs)
 - [Events (SSE)](#events-sse)
 - [MCP](#mcp)
@@ -1181,7 +1182,9 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/chats/3/send   -H "Authorization: Bear
 ```
 
 `202` with the new turn. Poll `GET /v1/chats/3` or follow `GET /v1/events` for
-`chat.turn_changed`; live output rides the same broker a step's does.
+`chat.turn_changed`. A chat has no live-output stream over HTTP: the turn's
+normalized output goes to the turn's transcript file, and `result_text` on the
+finished turn is the answer.
 
 Over `max_parallel_chats` it is **`409 chat_cap_reached`, immediately** — never
 queued. A chat is a foreground reply, and waiting behind batch work is the thing
@@ -1192,8 +1195,11 @@ The chat is left exactly as it was: still `idle`, with no turn row behind it.
 
 Each turn carries the accounting a step run does — `input_tokens`,
 `output_tokens`, `cost_usd`, `exit_code`, `duration_ms` — plus `session_id`, the
-session it actually ran in, and its own transcript. A turn is `running`, then
-`done`, `failed` or `interrupted`, forever.
+session it actually ran in, and its own transcript at
+`{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. That file is not served by
+any route: [`/v1/tasks/{id}/transcript`](#transcripts-and-diffs) is task-only,
+and a chat's is read from disk. A turn is `running`, then `done`, `failed` or
+`interrupted`, forever.
 
 Two failure reasons are worth knowing:
 
@@ -1305,6 +1311,8 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
+chat.created            chat.state_changed      chat.turn_changed
+chat.archived
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1338,6 +1346,14 @@ they need.
   retires an observation — never on a re-observation identical to what is
   already stored, and never merely because a window lapsed. Re-fetch
   [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
+- The `chat.*` events belong to the [chat](#chats) family and carry the chat's
+  `project_id`, so `?project_id=` filters them the way it filters a task's.
+  Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
+  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`.
+  Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
+  stream and no live-output route**: a chat's normalized output is written to
+  the turn's transcript file, and over HTTP a finished turn's `result_text` is
+  what you read.
 - `task.github_pull_changed` carries `{ repo, number, source, suppressed }` —
   empty when the link was cleared — and says a task's pull-request link changed:
   the daemon's reconciler matched one, or a human linked or unlinked one. It is

@@ -16,6 +16,7 @@ localhost API.
 - [`vincent config`](#vincent-config)
 - [`vincent status`](#vincent-status)
 - [`vincent update`](#vincent-update)
+- [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
 - [`vincent gc`](#vincent-gc)
@@ -994,6 +995,14 @@ on stdout. A failed turn prints its reason on stderr and exits 1 — including
 `session_lost`, which means the agent CLI no longer knows the session this chat
 was resuming. The chat stays usable; starting a fresh conversation is a
 decision you make, not one vincent makes silently.
+
+There is **no `vincent chat answer`**. If the agent asks a question mid-turn the
+chat enters `awaiting_input` and the send keeps waiting, because the turn has
+not ended; answering it means calling `POST /v1/chats/{id}/answer`
+[over the API](api.md#chats). Nothing bounds that wait today — a chat turn has
+no timeout of its own — so an unanswered question leaves the turn live in the
+daemon and the send waiting on it. Interrupting `vincent chat send` stops the
+polling, not the turn; `POST /v1/chats/{id}/cancel` is what ends it.
 
 Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.

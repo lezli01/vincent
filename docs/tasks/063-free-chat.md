@@ -111,6 +111,7 @@ existing first-run acknowledgement already covers it. §6's task FSM,
 |---|---|---|
 | 063.1 | The entity end to end: `internal/chatstate`, `internal/chatrun`, migration 0022, store CRUD + claims, `internal/agent` resume capability + claude `--resume`, the `/v1/chats` route family, `internal/apiclient`, `vincent chat`, daemon wiring, `max_parallel_chats`, gc claim sets, owner-named worktree directories, spec and docs | ✅ done |
 | 063.2 | The chats view in the TUI, and `scripts/m13-gate.sh` wired into `ci.yml`'s `gates` job on all three platforms | [ ] |
+| 063.3 | The three gaps the 063.1 documentation audit found, none of which changes a decision above: a chat turn is bounded by **no clock at all** — `internal/chatrun` applies neither `input_timeout` nor `agent_timeout`, so a turn (and the `max_parallel_chats` slot it holds) runs until it is answered or cancelled, and §13.2 carries a dated correction saying so; `vincent chat` has **no `answer` and no `cancel`**, so a chat that enters `awaiting_input` can only be moved on over the API, and `vincent chat send` blocks meanwhile; and the transcript plumbing is task-scoped at both ends — `internal/taskrun`'s pruner walks archived *tasks*, so an **archived chat's transcripts are never reclaimed** by `transcript_retention_days`, and only `internal/taskrun/engine.go` calls `Writer.SetMax`, so a chat turn's transcript is written with **no `transcript_max_bytes` cap**. `vincent chat` also has no `--json`, which is why the blanket claim in the scripting guide was narrowed | [ ] |
 
 ### Why 063.2 is separate
 

@@ -46,10 +46,6 @@ listen: 127.0.0.1:0
 # on each project.
 max_parallel_tasks: 3
 
-# Cap on chats holding a live agent process. Independent of the task caps: a
-# send over it is refused 409, never queued.
-max_parallel_chats: 3
-
 # Naming convention for the branch each task's worktree is cut on. It is a
 # Go text/template rendered with .ID, .Slug, .Project, .Workflow and .Date;
 # the result is sanitised into a legal ref. A project may override it, and
@@ -331,7 +327,8 @@ max_parallel_chats: 3
 
 Cap on **chats** holding a live agent process — a separate dimension from
 `max_parallel_tasks`, which never sees a chat and is never delayed by one. Must
-be at least 1.
+be at least 1. It is **not** in the generated default file above; omitting it
+keeps the default, as omitting any key does.
 
 A chat counts while it is `running` or `awaiting_input`, for the same reason a
 task does: the process is alive. A `send` over the cap is refused immediately
@@ -540,6 +537,11 @@ reboots rather than only on the restarts it no longer has.
 
 Task and step rows are **never** deleted — only the transcript files.
 
+**Chats are outside this.** The pruner walks archived *tasks*, so an archived
+[chat](cli.md#vincent-chat)'s turn transcripts under
+`{data_dir}/transcripts/chat-{chat_id}/` are kept until you delete them
+yourself.
+
 That same pass also drops
 [idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This
 setting does not govern them: `0` keeps every transcript, and expired keys still
@@ -561,6 +563,9 @@ ends — a half-written line would turn a size failure into a parse failure for
 every later reader.
 
 `0` disables the cap.
+
+**Chats are outside this too**: a chat turn's transcript is written with no cap,
+so nothing latches it and no turn fails with `transcript_limit`.
 
 ### `max_task_cost_usd`
 

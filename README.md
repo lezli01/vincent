@@ -77,10 +77,11 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 | **Structured, reusable workflows** | Combine agent prompts, deterministic commands, approval gates, parallel groups, isolated fan-out, conditions, loops, breaks, and reusable includes in validated YAML. |
 | **Agent choice at every level** | Run Claude Code, Codex, or Cursor using the CLIs and authentication already on your machine; choose the agent, model, effort, and permission mode per workflow, step, or task. |
 | **Safe parallel development** | Every task receives its own git worktree and branch. Global and per-project concurrency caps, priorities, and platform restrictions keep many workloads organized without touching your checkout. |
+| **Conversations, not just tasks** | Start a chat with an agent in its own worktree and branch, continued through the agent CLI's own session, with every turn's transcript, tokens and cost recorded. Chats run outside the task scheduler under their own cap. |
 | **Verification and recovery** | Checks decide whether work succeeded, retries receive the real failure, timeouts are enforced, transcripts are durable, and interrupted steps recover after a daemon restart. |
 | **Human control where it matters** | Pause at approval gates, answer supported agents mid-run, inspect file-grouped diffs, edit and retry blocked steps, and decide when publishing happens. |
 | **A TUI built for active workloads** | Use a grouped task board, guided task creation, project and workflow workspaces, bulk actions, live output, cost and duration metrics, and a navigable workflow graph. |
-| **Automation-ready interfaces** | Every operation is available through CLI subcommands and a localhost REST + SSE API. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
+| **Automation-ready interfaces** | Every operation is available through the localhost REST + SSE API, and all but a chat's answer and cancel have a CLI subcommand too. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
 | **Drivable by an agent over MCP** | The daemon serves the Model Context Protocol on the same listener, so any MCP client gets the API as tools with discovery, schemas, typed errors, and one bounded call that waits for a task. Vincent's own agent steps are wired in by default. |
 | **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, WinGet, Scoop, mise, deb/rpm packages, or release archives. |
 
@@ -197,6 +198,8 @@ vincent task add --project 1 --title "Add a health endpoint"
 vincent task ls --state running
 vincent task show 7
 vincent task cancel 7
+vincent chat start "poke at the parser" --project 1
+vincent chat send 3 "what does buildArgs do with an empty model?"
 vincent workflow init my-flow              # or --from feature-pr, --project 1
 vincent workflow ls
 vincent workflow validate .vincent/workflows/feature-pr.yaml
@@ -204,7 +207,7 @@ vincent workflow render .vincent/workflows/feature-pr.yaml
 vincent config get                         # or set max_parallel_tasks 6
 ```
 
-Every subcommand takes `--json` for scripting. Exit codes are `0` success,
+Every subcommand except `vincent chat` takes `--json` for scripting. Exit codes are `0` success,
 `1` the request was rejected — by the daemon, or by a daemon-free command such as
 `workflow validate` on an invalid file — and `2` no daemon answered
 — so a script can tell "start the daemon" from "fix your request" without

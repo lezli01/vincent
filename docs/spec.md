@@ -4386,8 +4386,15 @@ POST   /v1/chats/{id}/send              { message } → 202 with the new turn. `
                                         `max_parallel_chats` chats already hold a live process
                                         — **refused, never queued** (§11)
 POST   /v1/chats/{id}/answer            the §7.4 answer flow verbatim: same normalized request,
-                                        same `Respond()`, same `input_timeout`. `409` outside
-                                        `awaiting_input`
+                                        same `Respond()`. `409` outside `awaiting_input`.
+                                        *Corrected 2026-08-30 (task 063, same PR): the wait is
+                                        **not** bounded by `input_timeout`. `internal/chatrun`
+                                        applies no clock at all — neither `input_timeout` nor
+                                        `agent_timeout` — so a chat turn runs, and an
+                                        `awaiting_input` chat waits, until it is answered or
+                                        cancelled. It holds its `max_parallel_chats` slot for as
+                                        long as it does. Bounding it is open work, recorded in
+                                        `docs/tasks/063-free-chat.md`*
 POST   /v1/chats/{id}/cancel            stops the live turn and kills its process tree
 POST   /v1/chats/{id}/archive           removes the worktree and deletes the branch when it
                                         received nothing (§10, task 008 semantics), `?force=`
