@@ -181,8 +181,9 @@ type and pattern validation.
 
 An `enum` publishes its members, which is what a regex cannot do: a client can
 build a picker from a list and not from `'^(dev|staging|prod)$'`. New task opens
-a scrollable value list on `enter` and steps through the members in place with
-`←`/`→`, the way a boolean cycles.
+a scrollable value list on `enter`, and for a single-choice field steps through
+the members in place with `←`/`→`, the way a boolean cycles. A `multiple` field
+is changed only through the list.
 
 A `multiple: true` field stores the picked members joined with `,` in **declared
 order**, deduplicated, with no spaces — `dev,prod`. `POST /v1/tasks` normalizes

@@ -531,9 +531,12 @@ descriptions, type/required badges, and regex help; boolean values toggle betwee
 `true` and `false`. An [`enum`](../reference/workflow-schema.md#enum-fields) row
 opens a scrollable, filterable list of its declared values on `enter` — `esc`
 cancels, `enter` commits, and a `multiple` field toggles membership with the
-list open — while `←`/`→` step through the values in place without opening it,
-the way a boolean cycles. A declared `default:` seeds the row when the workflow
-is selected. Workflow-owned names are locked, but their values remain
+list open — while `←`/`→` step a single-choice row through the values in place
+without opening it, the way a boolean cycles. A `multiple` row is not stepped:
+"the next set" has no meaning, so the list is the only way to change one. An
+optional single-choice row also stops at `(unset)`, which is the only way back
+to empty for a row the workflow owns and that therefore cannot be deleted. A
+declared `default:` seeds the row when the workflow is selected. Workflow-owned names are locked, but their values remain
 editable. You can still add and delete custom key/value rows — additional,
 undeclared fields remain valid and are recorded on the task. Values are kept
 when you switch workflows, including fields that the new workflow does not

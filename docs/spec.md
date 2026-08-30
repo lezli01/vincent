@@ -4981,6 +4981,22 @@ stream for the live tail.
    priority, Execution, Review. The stage is derived from the field cursor,
    not independently navigated; Review summarizes the whole request and the
    existing `ctrl+s` shortcut still submits from anywhere.
+   **Enum rows (task 058, added 2026-08-30):** the boolean toggle gains a
+   sibling. `enter` on a declared `enum` row opens the same windowed,
+   type-filterable picker every other catalog uses, listing the declared
+   `values:` with the current selection highlighted and the `default:` noted;
+   `←`/`→` step a single-choice row through the members in place the way the
+   boolean toggle cycles, so a two- or three-value field stays a single
+   keypress. A `multiple: true` row is not stepped — "the next set" has no
+   meaning — and is changed only through the list, which toggles membership
+   with itself open and rewrites the row in **declared** order on every toggle,
+   so it always shows the canonical string the daemon would store. An optional
+   single-choice row gets an `(unset)` stop,
+   which is the only way back to empty for a row the workflow owns and that
+   therefore cannot be deleted. A declared `default:` seeds its row when the
+   workflow is selected, and never over a value already entered: seeding is the
+   client's job for an optional field, because the daemon deliberately does not
+   invent one (§8.1.2).
 4. **Projects.** List/add/edit/remove; per-project cap and defaults. On a wide
    terminal the project list remains as a rail while the selected repository's
    configuration, execution defaults, current workload, or add/edit form uses
