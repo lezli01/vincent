@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,46 @@ steps:
 const brokenLiveYAML = `name: publish
 description: Build then publish.
 `
+
+// registryEventHook wires registry reloads to the store's durable
+// workflow.registry_changed event the way daemon.Run does (§13.3) — and,
+// unlike the daemon, whose store outlives its registry, retires the hook
+// before the store closes.
+//
+// The watcher reloads on its own goroutine behind a 100 ms debounce, so a
+// write made at the end of a test is still in flight when cleanups begin: the
+// reload lands after the store's cleanup has closed the database and the
+// append fails with "sql: database is closed". The daemon only logs that at
+// warn level; a test calls t.Errorf and goes red. Windows is where it
+// actually fires, because removing a t.TempDir there is slow enough — and
+// noisy enough on the watch — to keep the goroutine busy well into teardown.
+//
+// The retiring cleanup is registered here rather than beside the store's so
+// that it runs first: cleanups are LIFO, and this helper is always called
+// after the store's own t.Cleanup. Taking the same lock a fire holds is what
+// makes it a barrier and not a second race — once it returns, no hook call is
+// in AppendEvent and none ever will be again.
+func registryEventHook(t *testing.T, st *store.Store, registry *workflow.Registry) {
+	t.Helper()
+	var mu sync.Mutex
+	live := true
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		live = false
+	})
+	registry.OnChange(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if !live {
+			return
+		}
+		if err := st.AppendEvent(context.Background(),
+			&store.Event{Type: store.EventWorkflowRegistryChanged}); err != nil {
+			t.Errorf("AppendEvent: %v", err)
+		}
+	})
+}
 
 // TestWorkflowsViewReflectsFileEdit is the T3.6 done-when: a workflow file
 // edited on disk updates the view without a restart.
@@ -81,12 +122,7 @@ func TestWorkflowsViewReflectsFileEdit(t *testing.T) {
 	registry.Reload()
 	// Registered after the initial load, exactly as the daemon wires it, so
 	// boot churn stays out of the event log.
-	registry.OnChange(func() {
-		if err := st.AppendEvent(context.Background(),
-			&store.Event{Type: store.EventWorkflowRegistryChanged}); err != nil {
-			t.Errorf("AppendEvent: %v", err)
-		}
-	})
+	registryEventHook(t, st, registry)
 	if err := registry.Watch(watchCtx); err != nil {
 		t.Fatalf("Watch: %v", err)
 	}

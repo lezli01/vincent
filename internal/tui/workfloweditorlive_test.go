@@ -70,12 +70,7 @@ func editorLive(t *testing.T) (*root, *pump, string) {
 	registry := workflow.NewRegistry(globalDir, workflow.Options{KnownAgents: agents.Names()}, nil)
 	registry.SetProjects(map[int64]string{project.ID: repo})
 	registry.Reload()
-	registry.OnChange(func() {
-		if err := st.AppendEvent(context.Background(),
-			&store.Event{Type: store.EventWorkflowRegistryChanged}); err != nil {
-			t.Errorf("AppendEvent: %v", err)
-		}
-	})
+	registryEventHook(t, st, registry)
 	if err := registry.Watch(watchCtx); err != nil {
 		t.Fatalf("Watch: %v", err)
 	}
