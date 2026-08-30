@@ -330,6 +330,51 @@ func configKeys() []configKey {
 			},
 		},
 		{
+			// §16's container execution mode (task 061). Shown and edited here
+			// for the same reason every other key is (task 060): the daemon
+			// view is the whole file, and a key it omitted would be one no
+			// client could see. Not marked dangerous — whether image and
+			// extra_mounts belong in that set is task 060's call to extend,
+			// not this one's to assume.
+			path: "container.image", label: "container image", kind: kindText,
+			help: "image a task's steps run in; empty runs them on this host",
+			read: func(c apiclient.Config) string { return c.Container.Image },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.TrimSpace(s)
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Image: &v}}, nil
+			},
+		},
+		{
+			path: "container.runtime", label: "container runtime", kind: kindText,
+			help: "docker-CLI-compatible binary; empty uses docker",
+			read: func(c apiclient.Config) string { return c.Container.Runtime },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.TrimSpace(s)
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Runtime: &v}}, nil
+			},
+		},
+		boolKey("container.mount_agent_config", "container agent config",
+			"bind-mount the agent CLI's configuration into the container",
+			func(c apiclient.Config) bool { return c.Container.MountAgentConfig },
+			func(b bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{MountAgentConfig: &b}}
+			}),
+		boolKey("container.network", "container network",
+			"leave the container on the network; false drops it off entirely",
+			func(c apiclient.Config) bool { return c.Container.Network },
+			func(b bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{Network: &b}}
+			}),
+		{
+			path: "container.extra_mounts", label: "container mounts", kind: kindList,
+			help: "extra host:container[:ro] bind mounts, whitespace-separated",
+			read: func(c apiclient.Config) string { return strings.Join(c.Container.ExtraMounts, " ") },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.Fields(s)
+				return apiclient.ConfigPatch{Container: &apiclient.ConfigContainerPatch{ExtraMounts: &v}}, nil
+			},
+		},
+		{
 			path: "tui.board.group_by", label: "task grouping", kind: kindList, choices: groupByChoices,
 			help: "grouping levels for the board, outermost first; empty is a flat table",
 			read: func(c apiclient.Config) string { return strings.Join(c.TUI.Board.GroupBy, " ") },
@@ -507,7 +552,14 @@ func defaultClientConfig() apiclient.Config {
 		GitHub: apiclient.ConfigGitHub{Enabled: d.GitHub.Enabled, PollInterval: d.GitHub.PollInterval.String()},
 		Update: apiclient.ConfigUpdate{Check: d.Update.Check, PollInterval: d.Update.PollInterval.String()},
 		Notify: apiclient.ConfigNotify{On: notifyStateNames(d), Command: d.Notify.Command},
-		TUI:    apiclient.ConfigTUI{Board: apiclient.ConfigBoard{GroupBy: boardGroupNames(d)}},
+		Container: apiclient.ConfigContainer{
+			Image:            d.Container.Image,
+			Runtime:          d.Container.Runtime,
+			MountAgentConfig: d.Container.MountAgentConfig,
+			Network:          d.Container.Network,
+			ExtraMounts:      d.Container.ExtraMounts,
+		},
+		TUI: apiclient.ConfigTUI{Board: apiclient.ConfigBoard{GroupBy: boardGroupNames(d)}},
 	}
 }
 
