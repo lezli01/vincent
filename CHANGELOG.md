@@ -404,6 +404,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **New task fell back to `adhoc` for a project whose `default_workflow` lives in
+  its own `.vincent/workflows/`.** The form loads its workflow catalog before a
+  project is selected, so that first, unscoped listing cannot contain a
+  project-scoped workflow (§5.2); when the form then selected the project itself
+  — from the board's cursor, or because exactly one is registered — the Workflow
+  row settled on `adhoc` and the project-scoped listing that arrived a moment
+  later was ignored, because `adhoc` still resolved. Since the form submits what
+  it displays, a task created without noticing ran `adhoc`. The row now tracks
+  whether it was chosen by hand and re-derives the default when the
+  project-scoped catalog lands; a workflow picked in the picker still survives
+  it. Picking the project by hand, and a global or built-in `default_workflow`,
+  worked before and are unchanged.
+
 - **The footer and `?` described the wrong surface while an answer, repair or
   follow-up popup was open.** The task workspace fell through to the current
   tab's context, so a popup that owned the keyboard was documented as the Steps
