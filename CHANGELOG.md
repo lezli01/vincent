@@ -14,9 +14,12 @@ list with the user-facing context a commit subject cannot carry.
 ### Added
 
 - **Run a task's steps inside a container.** A new `container:` block in
-  `config.yaml` names an image, and every step process of a task — commands,
-  checks and gates today, agents next — runs inside **one** container, created
-  with the task's worktree and removed with it. `container.image: ""` is the
+  `config.yaml` names an image, and a task's step processes run inside **one**
+  container, created with the task's worktree and removed with it. That is every
+  command step and every `check:` today; the **agent process itself still runs
+  on the host**, with your whole filesystem in reach, until the launch seam that
+  moves it lands — so a containerized task with agent steps is a mixed run, and
+  it is neither refused nor warned about. `container.image: ""` is the
   default, so an installation that sets nothing consults no runtime and behaves
   exactly as it did. The image is yours and must already carry your agent CLI
   and `git`; vincent builds, publishes and bundles nothing. The project

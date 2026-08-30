@@ -503,7 +503,8 @@ The container runtime answered when the task was created and does not now — th
 desktop app quit, the socket was revoked, the binary was uninstalled — or it
 refused to create the container. Start the runtime and retry.
 
-A containerized step is **never** run on the host instead. A step that is not
+A step the container was going to run is **never** moved to the host because
+the runtime failed — the task blocks instead. A step that is not
 contained after asking to be contained has inverted the choice the workflow
 made, which is the same rule that makes an agent refuse an unsupported
 `restricted` mode rather than quietly running full-auto.

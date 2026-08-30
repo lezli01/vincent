@@ -105,10 +105,16 @@ command.
 
 ## What the container does and does not isolate
 
-Set [`container.image`](reference/configuration.md#container) and every step
-process of a task runs inside one container, created with the task's worktree
-and removed with it. It is the first thing vincent offers that confines an agent
-beyond the worktree, and it is worth being exact about how far it goes.
+Set [`container.image`](reference/configuration.md#container) and a task's step
+processes run inside one container, created with the task's worktree and removed
+with it. It is the first thing vincent offers that confines a task's work beyond
+the worktree, and it is worth being exact about how far it goes.
+
+**Start with what it does not cover yet.** Today the container holds every
+`command` step and every `check:`. The **agent process itself still runs on the
+host**, with your whole home directory and filesystem in reach — the launch seam
+that moves it is the next piece of this work. Do not read a containerized task
+as a sandboxed agent until that lands.
 
 **Does:** confine the filesystem to two bind mounts — the project repository and
 the task's worktree, each at its own absolute path — plus whatever you list in
@@ -125,8 +131,9 @@ image's, not your machine's.
 - **Withhold your agent credentials.** `mount_agent_config` is on by default and
   bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` into the container
   **read-write**, because subscription auth takes no key from the environment
-  and cursor writes its model choice back to its own config. An agent inside the
-  container can read those credentials and write to those directories. Turning
+  and cursor writes its model choice back to its own config. Anything running
+  inside the container can read those credentials and write to those
+  directories. Turning
   the knob off is supported; an agent CLI that then cannot log in is the
   consequence, not a bug.
 - **Raise a privilege boundary.** On a Linux host every step execs as your own

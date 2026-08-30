@@ -203,12 +203,18 @@ Read [Agent CLIs](guides/agents.md) for installation and capability details.
 
 ## Run steps in a container
 
-Point `container.image` at an image you already have and every step of a task —
-commands, checks, gates and agents — runs inside one container, created with the
-task's worktree and removed with it. What that confines is the filesystem
-outside the worktree and the project repository, the shell, and the tooling the
-image carries. Leave the key empty, which is the default, and nothing changes:
-every step runs on the host exactly as before.
+Point `container.image` at an image you already have and a task's step processes
+run inside one container, created with the task's worktree and removed with it.
+What that confines is the filesystem outside the worktree and the project
+repository, the shell, and the tooling the image carries. Leave the key empty,
+which is the default, and nothing changes: every step runs on the host exactly
+as before.
+
+Today that covers **command steps and every `check:`**, including a check on an
+agent step. The **agent process itself still runs on the host** — putting it in
+the container needs a launch seam across all three adapters, and that is the
+next piece of this work. A containerized task with agent steps is a mixed run
+until then, and vincent neither refuses it nor warns about it.
 
 The image is yours and must already carry your agent CLI and `git` — vincent
 builds, publishes and bundles nothing. The repository and the worktree are

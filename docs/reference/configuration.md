@@ -941,12 +941,18 @@ container:
   extra_mounts: []
 ```
 
-Run every step process of a task inside **one container** instead of on this
-host. **`image` is the whole switch.** Empty — the default — means no runtime is
+Run a task's step processes inside **one container** instead of on this host.
+**`image` is the whole switch.** Empty — the default — means no runtime is
 consulted and every step runs here, byte for byte what it did before this key
-existed. Name an image and every `command`, `check`, `manual` and `agent` step
-of the task runs inside a container created with the task's worktree and removed
-with it.
+existed. Name an image and the task's steps run inside a container created with
+the task's worktree and removed with it.
+
+**Which steps, today.** Every `command` step, and every `check:` — including a
+check hanging off an agent step. A `manual` step runs no process, so there is
+nothing to contain. The **agent process itself still runs on the host**: moving
+it needs a launch seam across all three adapters and is the next piece of this
+work. A containerized task whose workflow has agent steps is therefore a mixed
+run, and it is neither refused at creation nor warned about.
 
 **The image is yours.** It must already carry the agent CLI your workflows'
 agent steps resolve to, and `git`. Vincent builds no image, publishes none and
@@ -1006,7 +1012,10 @@ The image check waits until admission on purpose: pulling a multi-gigabyte image
 inside `POST /v1/tasks` would run it against the API's request timeouts, and
 checking only what is already on disk would refuse every first run on a fresh
 machine. Blocking at admission still costs you no worktree, no branch and no
-retry. A containerized step is **never** quietly run on the host instead.
+retry. A step the container was going to run is **never** quietly moved to the
+host when the runtime or the image fails — the task blocks instead. (Agent
+steps, which this delivery has not moved in yet, are a separate matter and are
+described above.)
 
 Run `vincent doctor` to see whether the runtime answers on this machine — it
 probes even when `image` is empty, because "would this work if I turned it on"

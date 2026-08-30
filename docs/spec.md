@@ -85,8 +85,10 @@ amendments in this specification record superseded boundaries, while
   see §7.5 and §20.*
 - Sandboxing agents beyond worktree isolation (a worktree is not a security
   boundary). *Amended 2026-08-30 (task 061, issue #256): the **container** half
-  of this is no longer deferred — §16's container execution mode runs every step
-  process of a task inside one container, on an image the user supplies. The
+  of this is no longer deferred — §16's container execution mode runs a task's
+  step processes inside one container, on an image the user supplies. Agent
+  steps are the one kind still spawned on the host in this delivery; task 062
+  moves them in. The
   boundary the parenthesis names is unchanged and still true: a worktree is not
   a security boundary, and neither is a container whose network is open and
   whose agent credentials are mounted inside it (§16 says so in those words).
@@ -3362,10 +3364,15 @@ tui:                           # view preference; the daemon validates and relay
 **`container:` (task 061, added 2026-08-30).** `image` is the whole switch and
 `""` is the default: no image means every step runs on this host, no runtime is
 consulted, and an existing installation is byte-for-byte unchanged. Set it and
-every step process of a task — `command`, `check`, `manual` and `agent` alike —
-runs inside **one** container, created with the task's worktree and removed with
-it. The image is the user's: it must already carry the agent CLI a workflow's
-agent steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
+the task's step processes run inside **one** container, created with the task's
+worktree and removed with it. *As of task 061 that is every `command` step, and
+every `check:` — including a check hanging off an agent step; a `manual` step
+runs no process, so containerizing it is vacuous. The **agent** process itself
+is still spawned on the host: moving it needs a spawn seam across all three
+adapters and is task 062. Until that lands, a containerized task whose workflow
+has agent steps is a mixed run, and it is neither refused nor warned about.* The
+image is the user's: it must already carry the agent CLI a workflow's agent
+steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
 bundles nothing, the posture it already takes toward `gh` and `cosign`.
 
 The block resolves at **two** levels — a workflow's `defaults.container:` over
@@ -3396,8 +3403,9 @@ purpose: pulling inside `POST /v1/tasks` runs a multi-gigabyte download against
 on a fresh machine. Task 041 decision 4 re-affirms task 003 decision 4 — there
 is no pre-flight refusal on an unhealthy environment — and an image's contents
 sit on that side of the line. A containerized step is never quietly run on the
-host instead: that would invert the choice the workflow made, which is §9.4's
-reasoning verbatim.
+host *because the runtime or the image failed*: that would invert the choice
+the workflow made, which is §9.4's reasoning verbatim. It is not a claim about
+agent steps, which task 061 has not moved into the container at all.
 
 **`mcp:` (task 057, added 2026-08-29).** There is deliberately **no `enabled`
 key.** `/mcp` is part of the API surface the way `/v1` is — same listener, same
@@ -4797,6 +4805,14 @@ CREATE TABLE step_runs (
   -- falls back to the proc_started_at tolerance. Cleared with `pid` when the
   -- row is terminalized.
   proc_identity       TEXT,
+  -- The container this run's process lived in (§16, task 061, migration 0021).
+  -- NULL is the ordinary value and means the step ran on the host. `pid`,
+  -- `proc_started_at` and `proc_identity` stay journaled for a containerized
+  -- run — they name the host-side runtime *client*, a real process the daemon
+  -- spawned — but recovery acts on this id instead: removing the container
+  -- kills every process inside it, which is the identity a host PID cannot
+  -- supply. Cleared with `pid` when the row is terminalized.
+  container_id        TEXT,
   exit_code           INTEGER,
   check_exit_code     INTEGER,
   failure_reason      TEXT,
@@ -5822,8 +5838,12 @@ currently true to show (§15 view 6).
   itself because a parse failed has failed in the wrong direction.
 - **Container execution confines the filesystem, not the network or the
   credentials (task 061, added 2026-08-30).** With `container.image` set (§12.3)
-  every step process of a task runs inside one container created with the task's
-  worktree and removed with it. What that confines is real and is the point: the
+  a task's step processes run inside one container created with the task's
+  worktree and removed with it — every `command` step and every `check:` as of
+  task 061, and the **agent** process itself once task 062 lands the spawn seam.
+  Until then a containerized task's agent steps still run on the host, so the
+  confinement below is the container's and does not yet reach them. What that
+  confines is real and is the point: the
   filesystem outside the two bind mounts — the project repository and the task's
   worktree, both at their own absolute paths — the shell, and whatever tooling
   the image carries. An agent that `rm -rf`s the wrong directory reaches the
@@ -5840,11 +5860,13 @@ currently true to show (§15 view 6).
     therefore read the host's agent credentials and write to those directories.
     The knob turns it off; an agent CLI that then cannot authenticate is the
     documented consequence, not a bug.
-  - **The daemon is reachable.** A wired agent step gets
-    `--add-host=host.docker.internal:host-gateway` and an endpoint rewritten to
-    it, so the container can call the daemon's MCP surface — with the same
-    per-run token scoping §13.4 already specifies, and the same caveat that the
-    endpoint is not a boundary.
+  - **The daemon is reachable.** Every container is created with
+    `--add-host=host.docker.internal:host-gateway` whenever it has a network at
+    all, so a process inside it can call the daemon's MCP surface — with the
+    same per-run token scoping §13.4 already specifies, and the same caveat that
+    the endpoint is not a boundary. The per-step endpoint's *host rewrite* to
+    `host.docker.internal`, which is what makes a containerized **agent** step
+    use it, is task 062.
   - **It is not a privilege boundary.** On a Linux host every exec runs as the
     invoking user's uid:gid so files land owned correctly, which means a
     container escape lands on the same user the daemon already runs as.
@@ -6377,8 +6399,10 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   is a sibling column (migration 0018) rather than a widening.
 - ~~Container/VM-sandboxed step execution~~ — **the container half is
   promoted out of future work, 2026-08-30** (§16, task 061, issue #256): a
-  `container:` block names an image, and every step process of a task runs
-  inside one container created with its worktree and removed with it. The image
+  `container:` block names an image, and a task's step processes run inside one
+  container created with its worktree and removed with it — command steps and
+  checks as of task 061, agent steps once **062** lands the spawn seam the three
+  adapters need. The image
   is the user's and must already carry the agent CLI and `git`; vincent builds,
   publishes and bundles nothing, which is the posture it already takes toward
   `gh` and `cosign`. **VM-level** sandboxing stays deferred, and so do three

@@ -380,9 +380,15 @@ step, where the step wins.
 | `max_retries` | all steps | `1` |
 | `retry_backoff` | all steps | `0s` — an immediate retry ([§8.2](#82-retries)) |
 | `timeout` | all steps | `defaults.agent_timeout` (60m) or `defaults.command_timeout` (15m) in config |
+| `container` | command steps and checks | the daemon's [`container:`](../reference/configuration.md#container) block, merged per field |
 
 Durations are Go duration strings: `90s`, `45m`, `1h30m`. A bare number is a
 validation error.
+
+`container` is the one mapping here rather than a scalar, and it merges over the
+daemon's block key by key — see
+[the schema page](../reference/workflow-schema.md#defaults) for the fields and
+[`container`](../reference/configuration.md#container) for what they do.
 
 Three deliberate absences:
 
