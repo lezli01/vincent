@@ -190,11 +190,28 @@ func splitMount(spec string) []string {
 // able to stop a task from being archived, and `docker rm -f` on a container
 // that is already gone is the ordinary case after a crash.
 func (r *Runner) removeTaskContainer(ctx context.Context, task *store.Task, log *slog.Logger) {
-	c := r.deps.Config().Container
-	// The workflow's own override may have named a different runtime binary;
-	// the snapshot is the only place that survives here, and reading it for
-	// one string is not worth a parse. Runtime binaries are docker-compatible
-	// by definition, so the configured one can address any of them.
+	// The task's own settings, resolved from its snapshot exactly the way
+	// ensureContainer resolved them when it created the container: created iff
+	// enabled, removed iff enabled, one rule read from one place. The
+	// snapshot is also where a workflow's own `defaults.container.runtime`
+	// survives, so parsing it answers both questions at once.
+	//
+	// The `Enabled` guard is not an optimization. Consulting the runtime
+	// unconditionally spawns `docker` on every archive of every task on any
+	// host that has docker installed — including installations that never set
+	// `container.image`, whose behaviour `image: ""` promises is byte-for-byte
+	// what it was before task 061.
+	wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{})
+	if err != nil {
+		// An unparseable snapshot is not a reason to leak a container: fall
+		// back to the daemon's own block, which is what a task with no
+		// workflow override would have resolved to anyway.
+		wf = nil
+	}
+	c := r.containerSettings(wf)
+	if !c.Enabled() {
+		return
+	}
 	rt := r.runtimeFor(c)
 	name := container.Name(task.ID)
 	id, err := rt.Lookup(ctx, name)

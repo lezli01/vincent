@@ -21,6 +21,11 @@ type fakeRuntime struct {
 	labels  map[string]string
 	removed []string
 	signals []string
+	// consulted counts every call that would have shelled out to docker. It
+	// is what proves the negative: an uncontainerized task must not reach the
+	// runtime at all, and "removed nothing" alone would also be true of a
+	// task that spawned `docker inspect` and found nothing.
+	consulted int
 }
 
 func newFakeRuntime() *fakeRuntime { return &fakeRuntime{labels: map[string]string{}} }
@@ -58,6 +63,7 @@ func (f *fakeRuntime) Remove(_ context.Context, id string) error {
 func (f *fakeRuntime) Lookup(_ context.Context, name string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.consulted++
 	if _, ok := f.labels[name]; !ok {
 		return "", nil
 	}
@@ -74,6 +80,12 @@ func (f *fakeRuntime) removals() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.removed...)
+}
+
+func (f *fakeRuntime) calls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.consulted
 }
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -202,5 +214,91 @@ func TestContainerMountsAreIdenticalInsideAndOut(t *testing.T) {
 func TestExecKeyIsPerRun(t *testing.T) {
 	if execKey(1) == execKey(2) {
 		t.Fatal("two step runs share a pid file")
+	}
+}
+
+// hostSnapshot and imageSnapshot are the two workflow snapshots archiving has
+// to tell apart. They carry a real step because Parse refuses an empty
+// `steps:` — a snapshot that does not parse is a snapshot the fallback path
+// handles, not this one.
+const (
+	hostSnapshot = "name: adhoc\nsteps:\n  - id: s\n    type: command\n    run: exit 0\n"
+
+	imageSnapshot = "name: adhoc\ndefaults:\n  container:\n    image: alpine:3\n" +
+		"steps:\n  - id: s\n    type: command\n    run: exit 0\n"
+)
+
+// containerRunner is the smallest Runner removeTaskContainer needs: the
+// resolved config and the runtime factory, no store and no worktree manager.
+func containerRunner(image string, rt container.Runtime) *Runner {
+	cfg := config.Default()
+	cfg.Container.Image = image
+	return &Runner{deps: Deps{
+		Config:     func() config.Config { return cfg },
+		Containers: func(string) container.Runtime { return rt },
+		Logger:     discardLogger(),
+	}}
+}
+
+// TestArchiveWithoutAnImageNeverConsultsTheRuntime is the archive end of the
+// `image: ""` promise, and the regression that produced it: removeTaskContainer
+// used to look the container up unconditionally, so every archive of every
+// task on any host with docker installed spawned `docker inspect`. That is not
+// merely wasted work — on the Windows CI leg it took the archive past the API
+// client's 10 s deadline and reddened a build that had nothing to do with
+// containers.
+func TestArchiveWithoutAnImageNeverConsultsTheRuntime(t *testing.T) {
+	rt := newFakeRuntime()
+	r := containerRunner("", rt)
+	task := &store.Task{ID: 7, WorkflowSnapshot: hostSnapshot}
+
+	r.removeTaskContainer(context.Background(), task, discardLogger())
+
+	if got := rt.calls(); got != 0 {
+		t.Errorf("an uncontainerized archive reached the runtime %d time(s)", got)
+	}
+}
+
+// TestArchiveRemovesAContainerizedTasksContainer is the other half: the guard
+// must not have turned the removal off for the tasks that do have one.
+func TestArchiveRemovesAContainerizedTasksContainer(t *testing.T) {
+	rt := newFakeRuntime()
+	r := containerRunner("alpine:3", rt)
+	task := &store.Task{ID: 7, WorkflowSnapshot: hostSnapshot}
+	name := container.Name(task.ID)
+	if _, err := rt.Create(context.Background(), container.CreateSpec{
+		Name:   name,
+		Labels: map[string]string{container.LabelTask: strconv.FormatInt(task.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	r.removeTaskContainer(context.Background(), task, discardLogger())
+
+	if got := rt.removals(); len(got) != 1 || got[0] != name {
+		t.Errorf("removed = %v, want [%s]", got, name)
+	}
+}
+
+// TestArchiveHonoursTheWorkflowsOwnImage pins where the verdict is read from.
+// A workflow that names an image the daemon's own block does not is a
+// containerized task, and the snapshot is the only record of that once the
+// task is being archived.
+func TestArchiveHonoursTheWorkflowsOwnImage(t *testing.T) {
+	rt := newFakeRuntime()
+	r := containerRunner("", rt)
+	task := &store.Task{ID: 7, WorkflowSnapshot: imageSnapshot}
+	name := container.Name(task.ID)
+	if _, err := rt.Create(context.Background(), container.CreateSpec{
+		Name:   name,
+		Labels: map[string]string{container.LabelTask: strconv.FormatInt(task.ID, 10)},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	r.removeTaskContainer(context.Background(), task, discardLogger())
+
+	if got := rt.removals(); len(got) != 1 || got[0] != name {
+		t.Errorf("removed = %v, want [%s]", got, name)
 	}
 }
