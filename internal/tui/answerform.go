@@ -340,7 +340,7 @@ func (f *answerForm) lines(width int) (lines []string, from, to int) {
 		lines = append(lines, styleDim.Render("  submitting…"))
 	default:
 		lines = append(lines, styleDim.Render(
-			"  space select · e type an answer · enter submit · esc leave the form"))
+			"  space select · e type an answer · enter submit · ctrl+t task details · esc leave the form"))
 	}
 	return lines, from, to
 }

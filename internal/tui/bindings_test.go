@@ -50,6 +50,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}
 	case "ctrl+c":
 		msg = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	case "ctrl+t":
+		msg = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
 	default:
 		r := []rune(key)
 		if len(r) != 1 {
@@ -122,6 +124,34 @@ func foldingShell(t *testing.T) *shell {
 
 func followUpFormFixture() *followUpForm {
 	return newFollowUpForm(7, 1, "done")
+}
+
+// popupTaskViewFixture is a task workspace with one of the three form popups
+// raised on it. ctrl+t belongs to the view rather than to a form (task 059
+// decision 4) — it is taken before the form ever sees the press — so its
+// probes drive this rather than a bare form.
+func popupTaskViewFixture(t *testing.T, open func(*detail)) *taskView {
+	t.Helper()
+	v := newTaskView(taskDetailFixture(t))
+	open(v.detail)
+	v.openPopup()
+	v.width, v.height = 100, 30
+	return v
+}
+
+// popupTabProbe is the shared ctrl+t assertion: the press reaches the view
+// through whatever the form has open, and the popup changes tab.
+func popupTabProbe(open func(*detail)) func(*testing.T) {
+	return func(t *testing.T) {
+		v := popupTaskViewFixture(t, open)
+		v.updateKey(registryKey(t, "ctrl+t"))
+		if v.popupTab != popupTabDetails {
+			t.Fatal("ctrl+t did not switch the popup to its Task details tab")
+		}
+		if !v.popup {
+			t.Fatal("ctrl+t closed the popup instead of switching its tab")
+		}
+	}
 }
 
 // panelKeyProbes proves one panel-scoped binding each. A probe drives the
@@ -316,8 +346,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.renderDetails(100, 24)
 			v.updateKey(registryKey(t, "down"))
-			if v.detailsSection != "Overview" {
-				t.Fatalf("down selected %q, want Overview", v.detailsSection)
+			if v.details.section != "Overview" {
+				t.Fatalf("down selected %q, want Overview", v.details.section)
 			}
 		},
 		"o": func(t *testing.T) {
@@ -825,6 +855,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the repair form")
 			}
 		},
+		"ctrl+t": popupTabProbe(func(d *detail) { d.repair = repairFormFixture() }),
 	},
 
 	ctxFollowUpForm: {
@@ -868,6 +899,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the follow-up form")
 			}
 		},
+		"ctrl+t": popupTabProbe(func(d *detail) { d.followUp = followUpFormFixture() }),
 	},
 
 	ctxForm: {
@@ -900,6 +932,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the form")
 			}
 		},
+		"ctrl+t": popupTabProbe(func(d *detail) { d.form = newAnswerForm(questionRequest()) }),
 	},
 
 	ctxCreatePR: {

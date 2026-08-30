@@ -269,6 +269,7 @@ var bindings = []binding{
 	{key: "space", label: "pick an option (toggles, for a multi-select question)", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "e", label: "type your own answer — options are suggestions, never a list", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "enter", label: "submit the answer; the run resumes where it stopped", scope: scopePanel, context: ctxForm, noPalette: true},
+	{key: "ctrl+t", label: "read this task's details without leaving the form — the picks and the typed answer are kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxForm, noPalette: true},
 	{key: "esc", label: "close the popup without answering (what you picked is kept)", scope: scopePanel, context: ctxForm, noPalette: true},
 
 	// Repair form: as with the answer form, these exist only while the popup
@@ -276,6 +277,7 @@ var bindings = []binding{
 	{key: "enter", label: "edit the row under the cursor — the prompt, or the agent/model/effort list", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "e", label: "write the repair prompt in $EDITOR", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "ctrl+s", label: "start the repair agent", scope: scopePanel, context: ctxRepairForm, noPalette: true},
+	{key: "ctrl+t", label: "read this task's details without leaving the form — the draft is kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 	{key: "esc", label: "close the popup without repairing (the draft is discarded)", scope: scopePanel, context: ctxRepairForm, noPalette: true},
 
 	// Follow-up form: same again — the popup owns the keyboard while it is
@@ -283,6 +285,7 @@ var bindings = []binding{
 	{key: "enter", label: "edit the row under the cursor — the run form, what to run, or the agent/model/effort list", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "e", label: "write the prompt or command in $EDITOR", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "ctrl+s", label: "start the follow-up run", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
+	{key: "ctrl+t", label: "read this task's details without leaving the form — the draft is kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 
 	// The compare-URL editor (task 052.6). Same again: the popup owns the

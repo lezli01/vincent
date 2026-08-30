@@ -62,17 +62,29 @@ type taskView struct {
 	width     int
 	height    int
 
-	detailsTop        int
-	detailsCount      int
-	detailsH          int
-	detailsSection    string
-	detailsSections   []string
-	detailsSidebarW   int
-	detailsSidebarY   int
-	detailsSidebarTop int
-	tabHits           []taskTabHit
-	bodyY             int
+	// details is the Task Details tab's inspector. popupDetails is the
+	// second instance of the same pane, owned by whichever answer, repair or
+	// follow-up popup is open (task 059): a popup's reading position is its
+	// own, and switching to Task details inside the popup must not move the
+	// workspace tab behind it.
+	details      detailsPane
+	popupDetails detailsPane
+	popupTab     popupTab
+
+	tabHits []taskTabHit
+	bodyY   int
 }
+
+// popupTab names the two tabs the three §6/§7.4 form popups carry (task 059).
+// The form is first: the popup opened to ask something, and Task details is
+// the reference you reach for while answering it.
+type popupTab int
+
+const (
+	popupTabForm popupTab = iota
+	popupTabDetails
+	popupTabCount
+)
 
 func newTaskView(detail *detail) *taskView {
 	return &taskView{detail: detail, connected: true, workflow: newWorkflowTab()}
@@ -125,6 +137,20 @@ func (t *taskView) bindingContext() bindingContext {
 	if t.createPR != nil {
 		return ctxCreatePR
 	}
+	// While a form popup owns the keyboard it owns the footer and the ? sheet
+	// too. Without these three arms both described the tab underneath, which
+	// is what kept the rows tasks 025 and 027 registered unreachable from the
+	// footer on the shipped surface (task 059).
+	if t.popup {
+		switch {
+		case t.detail.followUp != nil:
+			return ctxFollowUpForm
+		case t.detail.repair != nil:
+			return ctxRepairForm
+		case t.detail.form != nil:
+			return ctxForm
+		}
+	}
 	switch t.tab {
 	case taskTabDetails:
 		return ctxTaskDetails
@@ -149,8 +175,8 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case selectTaskMsg:
 		t.tab = taskTabSteps
 		t.workflow = newWorkflowTab()
-		t.detailsTop = 0
-		t.detailsSection = ""
+		t.details.reset()
+		t.popupDetails.reset()
 		t.popup = false
 		t.createPR = nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
@@ -249,7 +275,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return func() tea.Msg { return selectViewMsg{id: viewHome} }
 	case "enter":
 		if t.detail.form != nil {
-			t.popup = true
+			t.openPopup()
 			return nil
 		}
 		if t.tab == taskTabSteps && t.detail.selectedRun != 0 {
@@ -258,13 +284,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "R":
 		cmd := t.detail.update(msg)
 		if t.detail.repair != nil {
-			t.popup = true
+			t.openPopup()
 		}
 		return cmd
 	case "F":
 		cmd := t.detail.update(msg)
 		if t.detail.followUp != nil {
-			t.popup = true
+			t.openPopup()
 		}
 		return cmd
 	}
@@ -297,6 +323,21 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	return t.detail.update(msg)
 }
 
+// openPopup raises one of the three form popups on its own Question/Repair/
+// Follow-up tab, with a fresh reading position for its Task details tab.
+func (t *taskView) openPopup() {
+	t.popup = true
+	t.popupTab = popupTabForm
+	t.popupDetails.reset()
+}
+
+// hasFormPopup reports whether the open popup is one of the three that carry
+// the task-details tab. The compare-URL editor (task 052.6) does not.
+func (t *taskView) hasFormPopup() bool {
+	return t.createPR == nil &&
+		(t.detail.followUp != nil || t.detail.repair != nil || t.detail.form != nil)
+}
+
 func (t *taskView) updatePopupKey(msg tea.KeyPressMsg) tea.Cmd {
 	if f := t.createPR; f != nil {
 		cmd, exit := f.update(msg)
@@ -304,6 +345,11 @@ func (t *taskView) updatePopupKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.createPR, t.popup = nil, false
 		}
 		return cmd
+	}
+	if t.hasFormPopup() && t.popupTabKey(msg) {
+		// Nothing the strip or the read-only pane does posts a command; that
+		// is the point of decision 6, not an oversight.
+		return nil
 	}
 	if f := t.detail.followUp; f != nil {
 		cmd, exit := f.update(msg, t.detail.client)
@@ -328,6 +374,35 @@ func (t *taskView) updatePopupKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	t.popup = false
 	return nil
+}
+
+// popupTabKey is the seam that makes the popup's tab strip survive a focused
+// editor (task 059 decision 4): ctrl+t is taken here, before the form sees the
+// press, so it works while the answer form's free-text textarea, the repair or
+// follow-up prompt, or an agent/model/effort picker is open. The forms
+// themselves stay unaware that they have tabs.
+//
+// While the Task details tab shows, the pane is a strictly read-only
+// reference: unhandled keys stop here rather than reaching the task actions,
+// and neither `o` nor `P` is offered — a popup that can raise a second popup
+// is not a reference surface (decision 6).
+func (t *taskView) popupTabKey(msg tea.KeyPressMsg) bool {
+	if msg.String() == "ctrl+t" {
+		t.popupTab = (t.popupTab + 1) % popupTabCount
+		return true
+	}
+	if t.popupTab != popupTabDetails {
+		return false
+	}
+	// esc closes one layer, which here is the tab and not the popup: the
+	// draft underneath is exactly what the tab exists to protect (§15, 017
+	// decision 13).
+	if msg.String() == "esc" {
+		t.popupTab = popupTabForm
+		return true
+	}
+	t.popupDetails.updateKey(msg)
+	return true
 }
 
 func (t *taskView) switchTab(delta int) tea.Cmd {
@@ -355,57 +430,20 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 }
 
 func (t *taskView) updateDetailsKey(msg tea.KeyPressMsg) tea.Cmd {
-	page := max(t.detailsH-1, 1)
 	switch msg.String() {
-	case "up", "k":
-		t.moveDetailsSection(-1)
-	case "down", "j":
-		t.moveDetailsSection(1)
-	case "pgup":
-		t.detailsTop -= page
-	case "pgdown":
-		t.detailsTop += page
 	case "o":
-		// The pull-request section's two keys (decision 2). Both only reach
-		// a browser, which is what keeps the tab a read-only inspector.
+		// The pull-request section's two keys (task 052.6 decision 2). Both
+		// only reach a browser, which is what keeps the tab a read-only
+		// inspector. Neither is offered inside a popup (task 059 decision 6).
 		return t.openPullCmd()
 	case "P":
 		return t.openCreatePR()
-	case "home", "g":
-		t.selectDetailsSection(0)
-	case "end", "G":
-		t.selectDetailsSection(len(t.detailsSections) - 1)
-	default:
-		// Task actions remain available from the read-only details tab.
-		return t.detail.update(msg)
 	}
-	t.detailsTop = min(max(t.detailsTop, 0), max(t.detailsCount-t.detailsH, 0))
-	return nil
-}
-
-func (t *taskView) moveDetailsSection(delta int) {
-	if len(t.detailsSections) == 0 {
-		return
+	if t.details.updateKey(msg) {
+		return nil
 	}
-	i := 0
-	for at, title := range t.detailsSections {
-		if title == t.detailsSection {
-			i = at
-			break
-		}
-	}
-	t.selectDetailsSection(min(max(i+delta, 0), len(t.detailsSections)-1))
-}
-
-func (t *taskView) selectDetailsSection(i int) {
-	if i < 0 || i >= len(t.detailsSections) {
-		return
-	}
-	if t.detailsSection == t.detailsSections[i] {
-		return
-	}
-	t.detailsSection = t.detailsSections[i]
-	t.detailsTop = 0
+	// Task actions remain available from the read-only details tab.
+	return t.detail.update(msg)
 }
 
 func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
@@ -425,11 +463,7 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	case taskTabSteps:
 		return t.detail.clickTimeline(msg.Y - t.bodyY)
 	case taskTabDetails:
-		row := msg.Y - t.bodyY - t.detailsSidebarY
-		section := t.detailsSidebarTop + row
-		if msg.X <= t.detailsSidebarW+1 && row >= 0 && section < len(t.detailsSections) {
-			t.selectDetailsSection(section)
-		}
+		t.details.clickSidebar(msg.X, msg.Y-t.bodyY)
 	case taskTabDiff:
 		t.detail.diff.clickRow(msg.Y - t.bodyY)
 	case taskTabWorkflow:
@@ -449,11 +483,7 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	case taskTabSteps:
 		return t.detail.moveSelection(delta)
 	case taskTabDetails:
-		if msg.X <= t.detailsSidebarW+1 {
-			t.moveDetailsSection(delta)
-		} else {
-			t.detailsTop = min(max(t.detailsTop+delta, 0), max(t.detailsCount-t.detailsH, 0))
-		}
+		t.details.scrollAt(msg.X, delta)
 	case taskTabOutput:
 		if delta > 0 {
 			t.detail.vp.ScrollDown(1)
@@ -502,8 +532,9 @@ func (t *taskView) render(width, height int) string {
 		if t.createPR != nil {
 			out = t.overlayCreatePR(out)
 		} else {
-			host := shell{detail: t.detail, bodyW: t.width, bodyH: t.height}
-			out = host.overlayPopup(out)
+			p := popupOverlayFor(t.detail)
+			p.tab, p.details = t.popupTab, t.renderPopupDetails
+			out = overlayPopup(out, t.width, t.height, p)
 		}
 	}
 	return out
@@ -583,67 +614,22 @@ func (t *taskView) renderOutputAttemptSelector(width int) string {
 	return ansi.Truncate(line, max(width, 1), "…")
 }
 
+// renderDetails is the workspace's Task Details tab. Both it and the popup's
+// own tab (task 059) draw the same pane against the same document; only the
+// instance holding the scroll and the selection differs.
 func (t *taskView) renderDetails(width, height int) string {
-	if !t.detail.loaded || t.detail.taskID == 0 {
-		lines := t.detailLines(width)
-		t.detailsCount, t.detailsH = len(lines), height
-		t.detailsTop = min(max(t.detailsTop, 0), max(len(lines)-height, 0))
-		return strings.Join(windowRange(lines, t.detailsTop, t.detailsTop+height, height), "\n")
-	}
+	return t.details.render(width, height, t.detailsReady(), t.detailLines)
+}
 
-	t.detailsSidebarW = min(24, max(width/3, 16))
-	contentWidth := max(width-t.detailsSidebarW-3, 12)
-	document := splitTaskDetailDocument(t.detailLines(contentWidth))
-	if len(document.sections) == 0 {
-		return strings.Join(document.header, "\n")
-	}
+// renderPopupDetails is the Task details tab inside an open form popup.
+func (t *taskView) renderPopupDetails(width, height int) string {
+	return t.popupDetails.render(width, height, t.detailsReady(), t.detailLines)
+}
 
-	t.detailsSections = t.detailsSections[:0]
-	selected := 0
-	for i, item := range document.sections {
-		t.detailsSections = append(t.detailsSections, item.title)
-		if item.title == t.detailsSection {
-			selected = i
-		}
-	}
-	if t.detailsSection == "" || t.detailsSections[selected] != t.detailsSection {
-		t.detailsSection = t.detailsSections[0]
-		t.detailsTop = 0
-		selected = 0
-	}
-
-	header := append([]string(nil), document.header...)
-	for len(header) > 0 && header[len(header)-1] == "" {
-		header = header[:len(header)-1]
-	}
-	if len(header) > 0 && len(header) < height {
-		header = append(header, "")
-	}
-	t.detailsSidebarY = len(header)
-	bodyH := max(height-len(header), 1)
-	content := document.sections[selected].lines
-	t.detailsCount, t.detailsH = len(content), bodyH
-	t.detailsTop = min(max(t.detailsTop, 0), max(len(content)-bodyH, 0))
-	visible := windowRange(content, t.detailsTop, t.detailsTop+bodyH, bodyH)
-	sidebar := t.renderDetailsSidebar(bodyH)
-
-	lines := make([]string, 0, len(header)+bodyH)
-	for _, line := range header {
-		lines = append(lines, ansi.Truncate(line, max(width, 1), "…"))
-	}
-	separator := " " + styleDim.Render("│") + " "
-	for row := range bodyH {
-		left := ""
-		if row < len(sidebar) {
-			left = sidebar[row]
-		}
-		right := ""
-		if row < len(visible) {
-			right = ansi.Truncate(visible[row], contentWidth, "…")
-		}
-		lines = append(lines, padDisplayWidth(left, t.detailsSidebarW)+separator+right)
-	}
-	return strings.Join(lines, "\n")
+// detailsReady says the document is the task rather than a placeholder, which
+// is what decides whether the pane draws a sidebar at all.
+func (t *taskView) detailsReady() bool {
+	return t.detail.loaded && t.detail.taskID != 0
 }
 
 type taskDetailSection struct {
@@ -695,33 +681,6 @@ func taskDetailSectionTitle(line string) string {
 		}
 	}
 	return ""
-}
-
-func (t *taskView) renderDetailsSidebar(height int) []string {
-	lines := make([]string, 0, height)
-	selected := 0
-	for i, title := range t.detailsSections {
-		if title == t.detailsSection {
-			selected = i
-			break
-		}
-	}
-	t.detailsSidebarTop = windowStart(len(t.detailsSections), selected, height)
-	end := min(t.detailsSidebarTop+height, len(t.detailsSections))
-	for _, title := range t.detailsSections[t.detailsSidebarTop:end] {
-		label := "  " + ansi.Truncate(title, max(t.detailsSidebarW-4, 1), "…")
-		label = padDisplayWidth(label, t.detailsSidebarW)
-		if title == t.detailsSection {
-			label = styleSelected.Render("› " + strings.TrimPrefix(label, "  "))
-		} else {
-			label = styleDim.Render(label)
-		}
-		lines = append(lines, label)
-	}
-	if t.detailsSidebarTop == 0 && end == len(t.detailsSections) && len(lines)+3 <= height {
-		lines = append(lines, "", styleDim.Render("  ↑/↓ select"), styleDim.Render("  pgup/pgdn scroll"))
-	}
-	return lines
 }
 
 func (t *taskView) detailLines(width int) []string {

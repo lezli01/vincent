@@ -179,8 +179,8 @@ func TestTaskDetailsSidebarSelectsOneSectionAtATime(t *testing.T) {
 	v.tab = taskTabDetails
 
 	got := ansi.Strip(v.renderDetails(100, 30))
-	if v.detailsSection != "Description" || !strings.Contains(got, "A complete description") {
-		t.Fatalf("default section = %q, want visible Description:\n%s", v.detailsSection, got)
+	if v.details.section != "Description" || !strings.Contains(got, "A complete description") {
+		t.Fatalf("default section = %q, want visible Description:\n%s", v.details.section, got)
 	}
 	if !strings.Contains(got, "Warnings") || strings.Contains(got, "review the generated lockfile") {
 		t.Fatalf("dynamic Warnings section was missing or leaked its content:\n%s", got)
@@ -188,8 +188,8 @@ func TestTaskDetailsSidebarSelectsOneSectionAtATime(t *testing.T) {
 
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnd})
 	got = ansi.Strip(v.renderDetails(100, 30))
-	if v.detailsSection != "Workflow snapshot" || !strings.Contains(got, "write the change") {
-		t.Fatalf("end selected %q, want Workflow snapshot:\n%s", v.detailsSection, got)
+	if v.details.section != "Workflow snapshot" || !strings.Contains(got, "write the change") {
+		t.Fatalf("end selected %q, want Workflow snapshot:\n%s", v.details.section, got)
 	}
 	if strings.Contains(got, "A complete description") {
 		t.Fatalf("Workflow snapshot leaked Description content:\n%s", got)
@@ -203,7 +203,7 @@ func TestTaskDetailsSidebarSupportsMouseSelection(t *testing.T) {
 	v.renderDetails(100, 30)
 
 	fields := -1
-	for i, title := range v.detailsSections {
+	for i, title := range v.details.sections {
 		if title == "Fields" {
 			fields = i
 			break
@@ -214,12 +214,12 @@ func TestTaskDetailsSidebarSupportsMouseSelection(t *testing.T) {
 	}
 	v.updateClick(tea.MouseClickMsg{
 		X: 3,
-		Y: v.bodyY + v.detailsSidebarY + fields - v.detailsSidebarTop,
+		Y: v.bodyY + v.details.sidebarY + fields - v.details.sidebarTop,
 	})
 
 	got := ansi.Strip(v.renderDetails(100, 30))
-	if v.detailsSection != "Fields" || !strings.Contains(got, "OPS-42") {
-		t.Fatalf("mouse selected %q, want visible Fields:\n%s", v.detailsSection, got)
+	if v.details.section != "Fields" || !strings.Contains(got, "OPS-42") {
+		t.Fatalf("mouse selected %q, want visible Fields:\n%s", v.details.section, got)
 	}
 }
 
