@@ -386,6 +386,11 @@ func (r *Runner) Archive(
 	if err != nil {
 		return nil, worktree.BranchOutcome{}, err
 	}
+	// The container is removed before the worktree, because it holds that
+	// worktree as a bind mount and a live mount is a reason a removal fails
+	// (§16, task 061). It is best-effort: a container that will not die must
+	// not be able to stop a task from being archived.
+	r.removeTaskContainer(ctx, task, r.deps.Logger)
 	// Remove-then-clear runs under the manager's claim lock, the mirror of
 	// creation's create-then-claim (task 005). Between the two the row still
 	// names a directory that is already gone, and a gc scan landing there

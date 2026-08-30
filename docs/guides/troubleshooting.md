@@ -478,6 +478,36 @@ The shell a command step asked for is not installed. On Windows vincent uses
 `shell: sh` on a machine with no POSIX shell fails here. Pin a shell that exists,
 or write the command so the platform default can run it.
 
+### `container_image_unavailable`
+
+The task's `container.image` is not on this machine and could not be pulled —
+a typo in the tag, a private registry the daemon is not logged in to, or no
+network. The task blocks **before** a worktree or a branch is created and
+**without** spending a retry, so nothing has to be cleaned up: fix the image or
+the login, then retry the task.
+
+The check is deliberately not made when the task is created. Pulling a
+multi-gigabyte image inside the create request would run it against the API's
+timeouts, and refusing anything not already on disk would reject every first run
+on a fresh machine.
+
+Pull it by hand to see the runtime's own error:
+
+```sh
+docker pull ghcr.io/acme/dev:latest
+```
+
+### `container_unavailable`
+
+The container runtime answered when the task was created and does not now — the
+desktop app quit, the socket was revoked, the binary was uninstalled — or it
+refused to create the container. Start the runtime and retry.
+
+A containerized step is **never** run on the host instead. A step that is not
+contained after asking to be contained has inverted the choice the workflow
+made, which is the same rule that makes an agent refuse an unsupported
+`restricted` mode rather than quietly running full-auto.
+
 ### Validation warns about a model
 
 A value in no catalog at all passes with a **warning** rather than an error: the

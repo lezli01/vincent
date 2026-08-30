@@ -77,6 +77,35 @@ type workflowDefaults struct {
 	MaxRetries     *int    `json:"max_retries,omitempty"`
 	RetryBackoff   *string `json:"retry_backoff,omitempty"`
 	Timeout        *string `json:"timeout,omitempty"`
+	// Container is the §16 containerization override, absent when the
+	// workflow sets none. It is on the wire because it changes where every
+	// step of a task runs, which a graph editor and the workflow detail view
+	// both have to be able to say (task 061).
+	Container *workflowContainerDef `json:"container,omitempty"`
+}
+
+// workflowContainerDef is `defaults.container:` on the wire. Every field is a
+// pointer for the reason the YAML's are: `image: ""` in a workflow means "run
+// this one on the host" and must stay distinguishable from an absent key.
+type workflowContainerDef struct {
+	Image            *string  `json:"image,omitempty"`
+	Runtime          *string  `json:"runtime,omitempty"`
+	MountAgentConfig *bool    `json:"mount_agent_config,omitempty"`
+	Network          *bool    `json:"network,omitempty"`
+	ExtraMounts      []string `json:"extra_mounts,omitempty"`
+}
+
+func toWorkflowContainerDef(c *config.ContainerOverride) *workflowContainerDef {
+	if c == nil {
+		return nil
+	}
+	return &workflowContainerDef{
+		Image:            c.Image,
+		Runtime:          c.Runtime,
+		MountAgentConfig: c.MountAgentConfig,
+		Network:          c.Network,
+		ExtraMounts:      c.ExtraMounts,
+	}
 }
 
 // workflowStepDef is one step, flat across every type the way the YAML is
@@ -235,6 +264,7 @@ func toWorkflowDefinition(wf *workflow.Workflow) *workflowDefinition {
 			MaxRetries:     wf.Defaults.MaxRetries,
 			RetryBackoff:   durationString(wf.Defaults.RetryBackoff),
 			Timeout:        durationString(wf.Defaults.Timeout),
+			Container:      toWorkflowContainerDef(wf.Defaults.Container),
 		},
 		Steps: toWorkflowStepDefs(wf.Steps),
 	}

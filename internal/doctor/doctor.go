@@ -62,6 +62,11 @@ type Report struct {
 	// creation without an issue is unaffected by every "no" it can report, so
 	// nothing here makes `vincent doctor` exit 1.
 	GitHub GitHub `json:"github"`
+	// Container is the container-execution row (§16, task 061). Like GitHub
+	// it is a **row, not a problem**: containerization is off by default, and
+	// a machine with no runtime runs every step on the host exactly as it
+	// always has.
+	Container Container `json:"container"`
 	// Update is the release check (task 055): what the daemon last learned
 	// from the release feed, and whether the running daemon is older than the
 	// binary on disk after a swap.
@@ -397,6 +402,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 		r.Agents = DetectAgents(ctx, cfg)
 	}
 	r.GitHub = DetectGitHub(ctx, cfg)
+	r.Container = DetectContainer(ctx, cfg)
 	r.Update = updateRow(cfg, opts.Update, r.Daemon.Version)
 	r.Storage = inspectStorage(ctx, opts)
 	r.Evaluate()

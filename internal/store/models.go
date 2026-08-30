@@ -269,7 +269,16 @@ type StepRun struct {
 	// means none was journaled — a pre-0013 row, or a spawn whose identity
 	// read failed — and recovery then falls back to the ProcStartedAt
 	// tolerance.
-	ProcIdentity  *string
+	ProcIdentity *string
+	// ContainerID is the container the step's process ran inside (§16,
+	// migration 0021). nil means the host, which is every row of an
+	// installation that never sets `container.image`.
+	//
+	// It is the recovery identity for a containerized run: the host PID a row
+	// journals names the `docker exec` client, not the process inside, so
+	// §12.4 removes the container instead of killing a PID — after confirming
+	// the container still carries the label naming this task.
+	ContainerID   *string
 	ExitCode      *int
 	CheckExitCode *int
 	FailureReason string

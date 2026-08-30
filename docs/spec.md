@@ -83,7 +83,16 @@ amendments in this specification record superseded boundaries, while
 - Workflow branching or conditionals within one task. *Amended 2026-08-17
   (task 014): parallel steps and step fan-out are no longer deferred —
   see §7.5 and §20.*
-- Sandboxing agents beyond worktree isolation (a worktree is not a security boundary).
+- Sandboxing agents beyond worktree isolation (a worktree is not a security
+  boundary). *Amended 2026-08-30 (task 061, issue #256): the **container** half
+  of this is no longer deferred — §16's container execution mode runs every step
+  process of a task inside one container, on an image the user supplies. The
+  boundary the parenthesis names is unchanged and still true: a worktree is not
+  a security boundary, and neither is a container whose network is open and
+  whose agent credentials are mounted inside it (§16 says so in those words).
+  What moved is that the filesystem outside the two mounts, the shell and the
+  installed tooling can now be confined, which is what people were actually
+  asking this non-goal for. VM-level sandboxing stays deferred (§20).*
 - Secret management (daemon inherits the user's environment).
 
 ## 3. Decision record
@@ -1707,6 +1716,19 @@ steps is the workflow author's responsibility; the spec makes no attempt to tran
 *Amended 2026-08-16 (task 010):* an author who did not attempt it says so with
 `platforms:` (§8.1.1), which is enforced rather than translated.
 
+*Amended 2026-08-30 (task 061):* a **containerized** step (§16) inverts the
+first rule and the inversion is documented rather than translated. The body
+executes under the **container's** `/bin/sh`, not the daemon host's shell — on
+a POSIX host that is the same spelling but a different `sh`, and the image's
+`PATH` and installed tooling are what the body sees. `platforms:` keeps gating
+on the **host**, which is where the daemon and its worktrees are. A step that
+pins `shell: pwsh` or `shell: cmd` cannot be honoured by a Linux image and is
+refused: at **load** when the workflow's own `defaults.container.image` pins an
+image, which is the only case load-time validation can judge, and at **task
+creation** with `400 validation_failed` naming the step otherwise — because
+containerization also resolves from the hot-reloadable `config.yaml`, and a
+workflow being parsed does not know which task will run it.
+
 ### 8.4 Template context
 
 Templates are Go `text/template`, rendered with `missingkey=error`. Rendering failures
@@ -1784,6 +1806,18 @@ load-bearing.*
 
 Inherits the daemon's environment (which inherits the user's), with cwd set to the
 worktree, plus:
+
+*Amended 2026-08-30 (task 061):* a **containerized** step's base is the
+**image's** environment, not the daemon's. `environment.inherit: all` — §12.3's
+default — is read as `none` for such a step and logged once per task, because a
+macOS or Linux host's `PATH`, `HOME`, `TMPDIR` and `SHELL` inside a Linux image
+is a broken container rather than an inherited one. An explicit name list in
+`environment.inherit` is honoured verbatim, and `environment.unset`,
+`environment.set` and the `VINCENT_*` block below apply exactly as specified on
+top of the image's own environment. The `VINCENT_*` values stay true on both
+sides because the worktree and the repository are mounted at their own absolute
+paths (§16), so `VINCENT_WORKTREE` and `VINCENT_PROJECT_PATH` name the same
+directory inside the container as out.
 
 ```
 VINCENT_TASK_ID, VINCENT_TASK_TITLE, VINCENT_PROJECT_NAME, VINCENT_PROJECT_PATH,
@@ -3294,6 +3328,7 @@ log_level: info
 debug: false                 # record each step's resolved settings and full argv in its transcript
 environment:                 # what child processes inherit (T4.23)
   inherit: all               # all (default) | none | [PATH, HOME, …]; an empty list means none
+                             # a containerized step reads `all` as `none` (§8.5, task 061)
   unset: []                  # names dropped after inherit
   set: {}                    # literal values, applied last; no expansion
 agents:
@@ -3313,10 +3348,56 @@ mcp:                           # the §13.4 MCP server (task 057)
   wire_steps: true             # give vincent's own agent steps the tool list; opt-out
   max_depth: 3                 # how deep tasks created over MCP may chain
   max_tasks: 32                # how many tasks one MCP creation chain may hold
+container:                     # run a task's steps in a container (§16, task 061)
+  image: ""                    # "" (default) = every step runs on this host
+  runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
+  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write
+  network: true                # false drops the container off the network entirely
+  extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
+
+**`container:` (task 061, added 2026-08-30).** `image` is the whole switch and
+`""` is the default: no image means every step runs on this host, no runtime is
+consulted, and an existing installation is byte-for-byte unchanged. Set it and
+every step process of a task — `command`, `check`, `manual` and `agent` alike —
+runs inside **one** container, created with the task's worktree and removed with
+it. The image is the user's: it must already carry the agent CLI a workflow's
+agent steps resolve to, and `git`. Vincent builds nothing, publishes nothing and
+bundles nothing, the posture it already takes toward `gh` and `cosign`.
+
+The block resolves at **two** levels — a workflow's `defaults.container:` over
+this one, per field (task 061 decision 6). There is no task level, no
+`POST /v1/tasks` field and no CLI flag; §20 records the trigger for adding one.
+`runtime` names a docker-CLI-compatible binary, and only `docker` is verified in
+CI — podman and nerdctl are accepted because they take the same argv, which is
+a different claim from "tested". The repository and the worktree are mounted
+**at their own absolute host paths**, so §8.4's `.Worktree` and §8.5's
+`VINCENT_WORKTREE` are true on both sides and no path in a workflow means two
+things; `extra_mounts` is for anything else. Reads happen per admission, so a
+hot reload governs the next task admitted rather than one already running.
+
+What is refused, and where (task 061 decision 3):
+
+| Condition | Where | Outcome |
+|---|---|---|
+| The daemon runs on **Windows** | task creation | `400 validation_failed` — a `C:\...` path cannot exist in a Linux container, and paths are identical inside and out |
+| `runtime` is missing or cannot talk to a daemon | task creation | `400 validation_failed` — cheap, local, one `docker version` |
+| `network: false` with `mcp.wire_steps: true` | task creation | `400 validation_failed` — a container with no network cannot reach the daemon's per-step MCP endpoint |
+| A step pins `shell: pwsh` or `shell: cmd` | load (workflow pins its own image) or task creation | validation error naming the step (§8.3) |
+| The image is missing and cannot be pulled | **admission** | task blocks `container_image_unavailable`, before a worktree, a branch or a retry is spent |
+| The runtime disappeared under a created task | **admission** | task blocks `container_unavailable` |
+
+The image check is an admission block rather than a creation refusal on
+purpose: pulling inside `POST /v1/tasks` runs a multi-gigabyte download against
+§13.1's request timeouts, and inspecting local-only would `400` every first run
+on a fresh machine. Task 041 decision 4 re-affirms task 003 decision 4 — there
+is no pre-flight refusal on an unhealthy environment — and an image's contents
+sit on that side of the line. A containerized step is never quietly run on the
+host instead: that would invert the choice the workflow made, which is §9.4's
+reasoning verbatim.
 
 **`mcp:` (task 057, added 2026-08-29).** There is deliberately **no `enabled`
 key.** `/mcp` is part of the API surface the way `/v1` is — same listener, same
@@ -3672,6 +3753,22 @@ what the daemon executes or exposes — `notify.command`, `environment`,
 - Because agent steps are fresh sessions operating on a worktree whose committed state
   survives, re-running an interrupted step is safe by construction; workflow authors
   are advised to have agents commit incrementally.
+- *Added 2026-08-30 (task 061).* A **containerized** run journals the container
+  it ran in alongside its PID (`step_runs.container_id`, migration 0021). The
+  host PID such a row carries names the runtime *client*, not the process inside
+  the container, so recovery does not rely on it: it reads the container id,
+  confirms the container still carries the `com.vincent.task` label naming this
+  task, and **removes the container**, which kills every process inside it. The
+  label check is the PID-reuse rule from the other direction — a container id is
+  never reused, so there is nothing to guard there, but a container whose label
+  names a *different* task is somebody else's and what cannot be proved is not
+  killed. `procx.Identity` and the PID-reuse guard below are untouched for host
+  steps, and still apply to the runtime client the daemon really did spawn. A
+  **step** timeout, cancel or graceful shutdown is the opposite of this and does
+  **not** remove the container: it signals the process inside by the pid file the
+  step wrote to a container-private scratch mount, waits the same 15 s, then
+  kills. The task's container survives a step, so a retry finds whatever an
+  earlier step installed.
 - *Added 2026-08-15 (task 005).* Recovery reconciles **rows and processes, not
   directories**. The directory tree is reconciled by a separate startup pass that only
   reports (§10): it logs one warning per orphan and raises the `orphans` count on
@@ -5723,6 +5820,38 @@ currently true to show (§15 view 6).
   it is shown — a quit two seconds in must not bury it. Every failure reading or
   writing that file shows the notice again: a security warning that suppresses
   itself because a parse failed has failed in the wrong direction.
+- **Container execution confines the filesystem, not the network or the
+  credentials (task 061, added 2026-08-30).** With `container.image` set (§12.3)
+  every step process of a task runs inside one container created with the task's
+  worktree and removed with it. What that confines is real and is the point: the
+  filesystem outside the two bind mounts — the project repository and the task's
+  worktree, both at their own absolute paths — the shell, and whatever tooling
+  the image carries. An agent that `rm -rf`s the wrong directory reaches the
+  worktree and the repository and nothing else of the user's machine.
+  What it does **not** confine is stated here with the same honesty §16 already
+  applies to `/mcp/step/{run_id}` not being a boundary:
+  - **Outbound network is open by default.** `container.network: false` closes
+    it, and is refused together with `mcp.wire_steps: true` because a container
+    with no network cannot reach the daemon's per-step MCP endpoint.
+  - **The agent's credentials are inside it.** `mount_agent_config` defaults to
+    true and bind-mounts `~/.claude`, `~/.codex` and `~/.cursor` **read-write**,
+    because subscription auth takes no key from the environment and cursor
+    persists `--model` to its own config (§9.7). An agent in the container can
+    therefore read the host's agent credentials and write to those directories.
+    The knob turns it off; an agent CLI that then cannot authenticate is the
+    documented consequence, not a bug.
+  - **The daemon is reachable.** A wired agent step gets
+    `--add-host=host.docker.internal:host-gateway` and an endpoint rewritten to
+    it, so the container can call the daemon's MCP surface — with the same
+    per-run token scoping §13.4 already specifies, and the same caveat that the
+    endpoint is not a boundary.
+  - **It is not a privilege boundary.** On a Linux host every exec runs as the
+    invoking user's uid:gid so files land owned correctly, which means a
+    container escape lands on the same user the daemon already runs as.
+  Containerization and `permission_mode` are orthogonal axes that compose:
+  `restricted` inside a container is still restricted, and full-auto inside a
+  container is still full-auto with the container's own reach. There is no
+  `contained` permission mode.
 - **The release check and `vincent update` (task 055, added 2026-08-29).** The
   check sends **one unauthenticated GET** of the project's public
   latest-release feed and nothing else: no `Authorization` header, no
@@ -6246,4 +6375,19 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   task column could *not* carry a PR shape, because `github_issue_json` is
   defined as "NULL = no linked issue" holding a bare `Issue`, so `github_pull_json`
   is a sibling column (migration 0018) rather than a widening.
-- Container/VM-sandboxed step execution.
+- ~~Container/VM-sandboxed step execution~~ — **the container half is
+  promoted out of future work, 2026-08-30** (§16, task 061, issue #256): a
+  `container:` block names an image, and every step process of a task runs
+  inside one container created with its worktree and removed with it. The image
+  is the user's and must already carry the agent CLI and `git`; vincent builds,
+  publishes and bundles nothing, which is the posture it already takes toward
+  `gh` and `cosign`. **VM-level** sandboxing stays deferred, and so do three
+  container-shaped things, named here so they are not rediscovered: a
+  **per-task image override** (task 061 decision 6 — two levels ship, workflow
+  `defaults:` over `config.yaml`; the trigger is the first person who needs one
+  task run against a different image), **canonical-path mounting for Windows
+  hosts** (decision 2 — paths are identical inside and out, so a Windows daemon
+  refuses a containerized task rather than translating `C:\...` into something
+  a Linux container could hold; the trigger is a Windows user asking), and
+  **Windows container images**, a no-network-by-default profile,
+  `devcontainer.json` support and vincent-published images.

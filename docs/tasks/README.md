@@ -74,6 +74,8 @@ the living engineering specification records implementation contracts.
 | [058](058-enum-task-fields.md) | Enum task fields: workflow-declared value sets, selectable in New task | ✅ done (1/1) |
 | [059](059-popup-task-details-tab.md) | A task-details tab inside the answer, repair and follow-up popups | ✅ done (5/5) |
 | [060](060-daemon-configuration-editing.md) | Edit the daemon configuration from the TUI | ✅ done (8/8) |
+| [061](061-container-step-execution.md) | Run a task's steps inside a container: the exec seam | ✅ done (1/1) |
+| [062](062-agent-steps-in-containers.md) | Agent steps inside the task's container | 📋 planned (0/1) |
 
 ## How to add and update a task document
 
