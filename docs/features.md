@@ -201,6 +201,12 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
   details on wider terminals and fall back to compact layouts when needed.
+- Workflows are authored where they are listed: structured forms create, edit
+  and fork them without leaving the TUI. The forms are rendered from a schema
+  the daemon serves, so a field the step you are editing cannot carry is one you
+  are never offered, and saving preserves the comments and key order of the file
+  you did not touch. `$EDITOR` is still one key away for anything the forms
+  cannot load.
 - A pull-requests screen lists what is open across every GitHub-based project at
   once, with the task claiming each one, and is where a link is made or removed
   by hand. It is offered only when at least one project qualifies.
@@ -482,5 +488,6 @@ installation, service, shell, and restricted-mode differences are documented in
 
 Ready to try it? Follow the [Quickstart](getting-started/quickstart.md), write
 your first workflow with `vincent workflow init` (`--from` starts it from one of
-the [example workflows](../examples)), or install the
+the [example workflows](../examples)) or from the TUI's workflows screen, or
+install the
 [workflow-authoring skill](../skills/vincent-workflows/SKILL.md).

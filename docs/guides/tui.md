@@ -724,10 +724,11 @@ form on the entry under the cursor: rows, not YAML.
 top-level rows — name, description, platforms, fields, defaults, steps — then
 the workflow's two steps with their types, and the row under the cursor
 explaining itself](../assets/tui-workflow-editor.png)
- Every row comes from the
-schema the daemon serves, so a field that is not legal on the step you are
-editing is one the form does not offer — an `agent` step has no `run:` row, and
-the `type` row inside a `parallel` group lists only what may go there.
+
+Every row comes from the schema the daemon serves, so a field that is not legal
+on the step you are editing is one the form does not offer — an `agent` step has
+no `run:` row, and the `type` row inside a `parallel` group lists only what may
+go there.
 
 `a` creates a workflow: choose a scope (global, or one of your projects) and a
 file name, and the editor opens on what was written. `f` forks the entry under
@@ -744,6 +745,32 @@ notes you left in it survive.
 If two things write the same file — an agent running `create-workflow`, or your
 own `$EDITOR` — the second save is refused rather than silently overwriting the
 first. The form says the file changed on disk and `R` re-reads it.
+
+Inside the form:
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between rows |
+| `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `R` | Re-read the file — the reload a refused save offers |
+| `esc` | Leave the nested body, then the editor |
+
+There is no save key, because there is nothing to save: committing a row with
+`enter` **is** the write. Each row becomes one edit operation carrying the
+version the last read handed back, and a value the daemon refuses stays on
+screen beside its error rather than being reverted under you.
+
+And in the prompt `a` and `f` open:
+
+| Key | Does |
+|---|---|
+| `tab` | Move between the scope and the file name |
+| `←` / `→` | Choose the scope |
+| `enter` | Write the file and open the editor on it |
+| `esc` | Close the prompt |
+
+For a fork the name row is the **file** name, not the workflow's — the `name:`
+inside stays the source's, which is the point.
 
 `e` still means `$EDITOR`, here and everywhere else. It is the escape hatch for
 a file broken badly enough that the forms cannot load it.

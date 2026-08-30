@@ -29,7 +29,7 @@ platform where data nests inside config's directory.
 ```
 {config_dir}/          # created 0700
   config.yaml          # daemon configuration — you or a client edit this, created 0600
-  workflows/*.yaml     # global workflows, available to every project
+  workflows/*.yaml     # global workflows, available to every project; 0644
 ```
 
 Both are watched. Editing `config.yaml` hot-reloads valid changes; saving a
@@ -40,6 +40,17 @@ workflow file reloads the registry. Neither needs a restart.
 [`vincent config set`](cli.md#vincent-config) and the TUI's daemon view call. It
 edits the key in place, so your comments and key order survive, and replaces the
 file atomically at `0600`. A hand-edit racing a client edit is last-writer-wins.
+
+`workflows/` is written by the daemon too, on
+[`POST` and `PATCH /v1/workflows`](api.md#writing-a-workflow) — what the TUI's
+[workflows screen](../guides/tui.md#authoring--i-a-f) calls when you create,
+fork or edit an entry. The directory is created when it does not exist yet, a
+new file is written `0644` rather than config's `0600` because a workflow
+carries no secret and is meant to be shared, and an existing file keeps its
+mode. Edits are applied to the file's own bytes, so your comments and key order
+survive. Unlike `config.yaml`, a workflow write is **not** last-writer-wins: a
+read hands back a version token and a write carrying a stale one is refused, so
+a hand-edit made since the client read the file cannot be silently overwritten.
 
 **The directory and `config.yaml` are owner-only**, because
 [`environment.set`](configuration.md#environment) values are literal and people
@@ -54,9 +65,9 @@ ACL of `%APPDATA%` applies instead.
 Everything here is yours: it is safe to put under version control, sync between
 machines, or hand-edit — with one caveat from the modes above: a literal
 [`environment.set`](configuration.md#environment) value travels with the file,
-so prefer inheriting the name. Nothing in this directory is generated after
-first start — the modes above are the one thing a later start touches, and it
-touches no content.
+so prefer inheriting the name. Nothing in this directory changes behind your
+back: a later start touches the modes above and no content, and the only other
+writes are the two above, which happen when a client asks for them.
 
 Project-scoped workflows live in the repository instead, at
 `.vincent/workflows/*.yaml`, and shadow a global file of the same name.
