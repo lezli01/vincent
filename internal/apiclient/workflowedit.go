@@ -78,7 +78,9 @@ type WorkflowSchema struct {
 	Steps    []WorkflowSchemaStepType `json:"steps"`
 	Lane     []WorkflowSchemaField    `json:"lane"`
 	Merge    []WorkflowSchemaField    `json:"merge"`
-	Contexts []string                 `json:"contexts"`
+	// Container is the shape of `defaults.container` (§8.6).
+	Container []WorkflowSchemaField `json:"container"`
+	Contexts  []string              `json:"contexts"`
 }
 
 // WorkflowSchemaField is one editable row. Control says what to draw, not
@@ -106,23 +108,24 @@ type WorkflowSchemaStepType struct {
 // Control kinds a client branches on. Anything else is drawn as a text row,
 // which is what keeps an older client usable against a newer daemon.
 const (
-	WorkflowControlString   = "string"
-	WorkflowControlText     = "text"
-	WorkflowControlEnum     = "enum"
-	WorkflowControlBool     = "bool"
-	WorkflowControlInt      = "int"
-	WorkflowControlDuration = "duration"
-	WorkflowControlList     = "list"
-	WorkflowControlMap      = "map"
-	WorkflowControlAgent    = "agent"
-	WorkflowControlModel    = "model"
-	WorkflowControlEffort   = "effort"
-	WorkflowControlSteps    = "steps"
-	WorkflowControlLanes    = "lanes"
-	WorkflowControlMerge    = "merge"
-	WorkflowControlWorkflow = "workflow"
-	WorkflowControlFields   = "fields"
-	WorkflowControlTemplate = "template"
+	WorkflowControlString    = "string"
+	WorkflowControlText      = "text"
+	WorkflowControlEnum      = "enum"
+	WorkflowControlBool      = "bool"
+	WorkflowControlInt       = "int"
+	WorkflowControlDuration  = "duration"
+	WorkflowControlList      = "list"
+	WorkflowControlMap       = "map"
+	WorkflowControlAgent     = "agent"
+	WorkflowControlModel     = "model"
+	WorkflowControlEffort    = "effort"
+	WorkflowControlSteps     = "steps"
+	WorkflowControlLanes     = "lanes"
+	WorkflowControlMerge     = "merge"
+	WorkflowControlContainer = "container"
+	WorkflowControlWorkflow  = "workflow"
+	WorkflowControlFields    = "fields"
+	WorkflowControlTemplate  = "template"
 )
 
 // Step contexts (§8.2's nesting rules).

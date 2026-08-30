@@ -42,11 +42,16 @@ const (
 	ControlAgent  = "agent"
 	ControlModel  = "model"
 	ControlEffort = "effort"
-	// ControlSteps, ControlLanes and ControlMerge are the nested bodies a
-	// client descends into rather than typing into.
+	// ControlSteps, ControlLanes, ControlMerge and ControlContainer are the
+	// nested bodies a client descends into rather than typing into.
 	ControlSteps = "steps"
 	ControlLanes = "lanes"
 	ControlMerge = "merge"
+	// ControlContainer is `defaults.container` (§8.6, task 061): the
+	// workflow level of the containerization precedence chain. Every key is
+	// a pointer in `config.ContainerOverride` because unset and set-to-zero
+	// are different answers, so a form must be able to leave a row alone.
+	ControlContainer = "container"
 	// ControlWorkflow names another registry entry.
 	ControlWorkflow = "workflow"
 	// ControlFields is the §8.1.2 field declaration list.
@@ -107,7 +112,11 @@ type Schema struct {
 	Steps    []SchemaStepType `json:"steps"`
 	Lane     []SchemaField    `json:"lane"`
 	Merge    []SchemaField    `json:"merge"`
-	Contexts []string         `json:"contexts"`
+	// Container is the shape of `defaults.container` (§8.6), served for the
+	// same reason Merge and Lane are: a nested block a client must be able
+	// to build a form for without re-deriving it from the spec.
+	Container []SchemaField `json:"container"`
+	Contexts  []string      `json:"contexts"`
 }
 
 // commonStepFields are the fields every step type shares in principle; each
@@ -180,6 +189,10 @@ func SchemaDescriptor() Schema {
 			{Name: "max_retries", Control: ControlInt},
 			{Name: "retry_backoff", Control: ControlDuration},
 			{Name: "timeout", Control: ControlDuration},
+			{
+				Name: "container", Control: ControlContainer,
+				Help: "run this workflow's steps in a container; beats config.yaml (§8.6)",
+			},
 		},
 		Field: []SchemaField{
 			{Name: "name", Control: ControlString, Required: true},
@@ -287,6 +300,13 @@ func SchemaDescriptor() Schema {
 				Name: "agent", Control: ControlMerge,
 				Help: "the resolving agent step; required by and only valid with on_conflict: agent",
 			},
+		},
+		Container: []SchemaField{
+			{Name: "image", Control: ControlString, Help: "the image to run in; empty runs on the host (§16)"},
+			{Name: "runtime", Control: ControlString, Help: "the container CLI, e.g. docker or podman"},
+			{Name: "mount_agent_config", Control: ControlBool, Help: "mount the agent CLI's credentials into the container"},
+			{Name: "network", Control: ControlBool, Help: "give the container a network"},
+			{Name: "extra_mounts", Control: ControlList, Help: "additional host paths to mount"},
 		},
 		Contexts: []string{ContextBody, ContextParallel, ContextLoop, ContextMerge},
 	}

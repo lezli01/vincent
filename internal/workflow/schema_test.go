@@ -162,6 +162,15 @@ func TestSchemaCoversEveryStepField(t *testing.T) {
 		}
 		assertFieldsCovered(t, reflect.TypeOf(FieldDefinition{}), fields)
 	})
+	// `defaults.container` is `config.ContainerOverride` (§8.6, task 061), so
+	// a key added there is a key the forms would silently not offer.
+	t.Run("container", func(t *testing.T) {
+		container := map[string]bool{}
+		for _, f := range SchemaDescriptor().Container {
+			container[f.Name] = true
+		}
+		assertFieldsCovered(t, reflect.TypeOf(config.ContainerOverride{}), container)
+	})
 }
 
 func assertFieldsCovered(t *testing.T, typ reflect.Type, known map[string]bool) {

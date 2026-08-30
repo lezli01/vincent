@@ -4552,11 +4552,12 @@ PATCH  /v1/workflows?name=&project_id=  *Added 2026-08-30 (task 065).*
                                         carrying the current one in `details.version`. A patch that
                                         would not parse is a 400 and writes nothing
 GET    /v1/workflows/schema             *Added 2026-08-30 (task 065).* §8.2 as data: the top-level,
-                                        `defaults`, field-declaration, lane and merge rows, the
-                                        common step fields, and every step type with the fields it
-                                        accepts and the contexts it may be nested in. Generated from
-                                        the table `workflow.Parse` validates against, so a client
-                                        renders forms from it instead of carrying a second copy
+                                        `defaults`, field-declaration, lane, merge and
+                                        `defaults.container` rows, the common step fields, and every
+                                        step type with the fields it accepts and the contexts it may
+                                        be nested in. Generated from the table `workflow.Parse`
+                                        validates against, so a client renders forms from it
+                                        instead of carrying a second copy
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
