@@ -167,6 +167,12 @@ type Server struct {
 	// so the MCP tool surface can be asserted against it (task 057) rather
 	// than maintained beside it.
 	routes []Route
+	// workflowMu serializes the workflow write routes' read-modify-write of a
+	// workflow file (task 065). It is one mutex for every file rather than
+	// one per file: a form submits a handful of operations and the window is
+	// a read plus a rename, so contention between two clients editing two
+	// different workflows is not worth a map of locks to avoid.
+	workflowMu sync.Mutex
 	// configMu serializes PATCH /v1/config's read-modify-write of config.yaml
 	// (task 060 decision 6). Two patches cannot interleave; a hand-edit
 	// racing one is last-writer-wins, the posture every other PATCH here has.
@@ -270,6 +276,9 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/pulls", s.handleProjectGitHubPulls)
 	rt.handle(http.MethodGet, "/v1/workflows", s.handleWorkflowList)
+	rt.handle(http.MethodPost, "/v1/workflows", s.handleWorkflowCreate)
+	rt.handle(http.MethodPatch, "/v1/workflows", s.handleWorkflowPatch)
+	rt.handle(http.MethodGet, "/v1/workflows/schema", s.handleWorkflowSchema)
 	rt.handle(http.MethodPost, "/v1/workflows/validate", s.handleWorkflowValidate)
 	rt.handle(http.MethodGet, "/v1/workflows/definition", s.handleWorkflowDefinition)
 	rt.handle(http.MethodPost, "/v1/resolve", s.handleResolve)

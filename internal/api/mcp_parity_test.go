@@ -62,12 +62,12 @@ func TestMCPToolSurfaceMatchesRouteTable(t *testing.T) {
 // removing one from Excluded is a test failure rather than a quiet widening of
 // what an agent may do to the daemon supervising it.
 //
-// It covers two families: the six destructive-admin routes (task 057's five,
-// plus `PATCH /v1/config` from task 060), and task 063's chat routes. The chat
-// family is excluded for a different reason — starting an agent process that
-// no §11 cap admitted and no scheduler ordered — and the list is asserted
-// whole so a new chat route added without a decision about it fails here
-// rather than appearing as a tool.
+// It covers three families: the six destructive-admin routes (task 057's five,
+// plus `PATCH /v1/config` from task 060), task 063's chat routes, and task
+// 065's workflow writes. The chat family is excluded for a different reason —
+// starting an agent process that no §11 cap admitted and no scheduler ordered
+// — and the list is asserted whole so a new chat route added without a
+// decision about it fails here rather than appearing as a tool.
 func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 	t.Parallel()
 	want := []struct{ method, path string }{
@@ -87,6 +87,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/chats/{id}/answer"},
 		{http.MethodPost, "/v1/chats/{id}/cancel"},
 		{http.MethodPost, "/v1/chats/{id}/archive"},
+		// Task 065 decision 5, under the same wording: a workflow file is
+		// what the daemon runs, so an agent editing one is an agent
+		// rewriting the rules it runs under.
+		{http.MethodPost, "/v1/workflows"},
+		{http.MethodPatch, "/v1/workflows"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

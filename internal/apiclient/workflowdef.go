@@ -16,6 +16,9 @@ import (
 // response, not an error: the findings are in Errors, the same way the list
 // shows a broken file rather than hiding it.
 type WorkflowDefinition struct {
+	// Version is the token a PatchWorkflow of this entry must carry (task
+	// 065). Empty for a built-in, which has no file.
+	Version           string            `json:"version,omitempty"`
 	Name              string            `json:"name"`
 	Scope             string            `json:"scope"`
 	ProjectID         *int64            `json:"project_id"`

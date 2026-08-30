@@ -709,11 +709,44 @@ entry with its surrounding scopes still in view.
 |---|---|
 | `enter` | Show the entry's steps |
 | `g` | Draw the entry as a control-flow graph |
+| `i` | Edit the entry in a structured form |
+| `a` | Create a workflow in a chosen scope |
+| `f` | Fork the entry into another scope, where it shadows the original |
 | `e` | Open the file in `$EDITOR` — the view updates when you save |
 | `R` | Re-read the registry |
 
-The view **reads** the registry; it does not author it. New workflow files are
-written in your editor and appear on the next reload.
+#### Authoring — `i`, `a`, `f`
+
+The view authors the registry as well as reading it. `i` opens a structured
+form on the entry under the cursor: rows, not YAML.
+
+![The Workflows view with the structured editor open on a global workflow: the
+top-level rows — name, description, platforms, fields, defaults, steps — then
+the workflow's two steps with their types, and the row under the cursor
+explaining itself](../assets/tui-workflow-editor.png)
+ Every row comes from the
+schema the daemon serves, so a field that is not legal on the step you are
+editing is one the form does not offer — an `agent` step has no `run:` row, and
+the `type` row inside a `parallel` group lists only what may go there.
+
+`a` creates a workflow: choose a scope (global, or one of your projects) and a
+file name, and the editor opens on what was written. `f` forks the entry under
+the cursor — including a built-in, which is the only way to change one. **A
+fork keeps the source's own `name:`**, which is what makes the copy shadow the
+original; pick a project scope and the project's copy wins from then on.
+
+There is no delete. Removing a workflow means removing its file.
+
+Saving preserves everything you did not edit — comments, key order, blank
+lines. The daemon owns the file and applies your change to its bytes, so the
+notes you left in it survive.
+
+If two things write the same file — an agent running `create-workflow`, or your
+own `$EDITOR` — the second save is refused rather than silently overwriting the
+first. The form says the file changed on disk and `R` re-reads it.
+
+`e` still means `$EDITOR`, here and everywhere else. It is the escape hatch for
+a file broken badly enough that the forms cannot load it.
 
 #### The graph — `g`
 

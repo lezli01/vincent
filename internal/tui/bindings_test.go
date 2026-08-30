@@ -703,6 +703,107 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("g did not open the graph layer")
 			}
 		},
+		"i": func(t *testing.T) {
+			w := newWorkflowsView()
+			w.client = offlineClient()
+			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			w.updateKey(registryKey(t, "i"))
+			if w.editor == nil {
+				t.Fatal("i did not open the structured editor")
+			}
+		},
+		"a": func(t *testing.T) {
+			w := newWorkflowsView()
+			w.client = offlineClient()
+			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			w.updateKey(registryKey(t, "a"))
+			if w.create == nil || w.create.fork {
+				t.Fatal("a did not open the create prompt")
+			}
+		},
+		"f": func(t *testing.T) {
+			w := newWorkflowsView()
+			w.client = offlineClient()
+			loadedWorkflows(w, wfBlock{name: "global", entries: []apiclient.WorkflowEntry{globalEntry("review")}})
+			w.updateKey(registryKey(t, "f"))
+			if w.create == nil || !w.create.fork {
+				t.Fatal("f did not open the fork prompt")
+			}
+		},
+	},
+
+	ctxWorkflowEditor: {
+		"up/down": func(t *testing.T) {
+			w := editorFixture(t)
+			w.updateKey(registryKey(t, "down"))
+			if w.editor.cursor == 0 {
+				t.Fatal("down did not move the row cursor")
+			}
+			w.updateKey(registryKey(t, "up"))
+			if w.editor.cursor != 0 {
+				t.Fatalf("up did not move back (cursor %d)", w.editor.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			w := editorFixture(t)
+			w.editor.cursor = editorRowIndex(t, w, "description")
+			w.updateKey(registryKey(t, "enter"))
+			if w.editor.input == nil {
+				t.Fatal("enter on a text row did not focus a field")
+			}
+		},
+		"R": func(t *testing.T) {
+			w := editorFixture(t)
+			w.editor.err, w.editor.stale = "the file moved", true
+			_, cmd := w.updateKey(registryKey(t, "R"))
+			if cmd == nil {
+				t.Fatal("R did not re-read the file")
+			}
+			if w.editor.err != "" || w.editor.stale {
+				t.Error("R left the stale-write offer on screen")
+			}
+		},
+		"esc": func(t *testing.T) {
+			w := editorFixture(t)
+			w.updateKey(registryKey(t, "esc"))
+			if w.editor != nil {
+				t.Fatal("esc did not close the editor")
+			}
+		},
+	},
+
+	ctxWorkflowCreate: {
+		"tab": func(t *testing.T) {
+			w := createFixture(t)
+			before := w.create.row
+			w.updateKey(registryKey(t, "tab"))
+			if w.create.row == before {
+				t.Fatal("tab did not move between the rows")
+			}
+		},
+		"left/right": func(t *testing.T) {
+			w := createFixture(t)
+			w.create.row = wfCreateRowScope
+			before := w.create.scope
+			w.updateKey(registryKey(t, "right"))
+			if w.create.scope == before && len(w.create.scopes) > 1 {
+				t.Fatal("right did not change the scope")
+			}
+		},
+		"enter": func(t *testing.T) {
+			w := createFixture(t)
+			w.create.name.SetValue("fresh")
+			if _, cmd := w.updateKey(registryKey(t, "enter")); cmd == nil {
+				t.Fatal("enter did not submit the create")
+			}
+		},
+		"esc": func(t *testing.T) {
+			w := createFixture(t)
+			w.updateKey(registryKey(t, "esc"))
+			if w.create != nil {
+				t.Fatal("esc did not close the prompt")
+			}
+		},
 	},
 
 	ctxWorkflowGraph: {

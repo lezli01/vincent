@@ -248,6 +248,27 @@ DB; the daemon maintains a registry of parsed workflows from three scopes:
 The daemon watches both locations (fsnotify) and reloads on change. Invalid files are
 surfaced as registry errors (visible in TUI/API) without breaking valid ones.
 
+*Amended 2026-08-30 (task 065, issue #261).* **A client may author these files
+through the daemon**, with `POST` and `PATCH /v1/workflows` (§13.2). Three
+properties come with that and are part of this section, not of the endpoint:
+
+- **A file the daemon creates is mode 0644**, not `config.yaml`'s 0600. A
+  project workflow is meant to be committed and shared with a team, and it
+  carries no secret — the agent options it names are not credentials. An
+  existing file keeps whatever mode it already has: the daemon is not the
+  authority on a file a repository owns.
+- **A name a scope already declares is refused.** Two files in one directory
+  declaring the same `name:` is the duplicate this section already describes,
+  and the write endpoint makes that judgement before the second file exists
+  rather than after the registry lists one of them as an error.
+- **Concurrent writers are real here**, unlike for `config.yaml`. The
+  `create-workflow` built-in writes the live registry directory from an agent
+  run, `$EDITOR` is one key away in the workflows view, and an external editor
+  is always possible — so a `PATCH` carries a version token (mtime + hash) and
+  a file that moved underneath is a 409. Task 060 decision 6's refusal of
+  preconditions still stands for `PATCH /v1/config`, where the race is a human
+  against themselves; this is a scoped extension, not a reversal of it.
+
 *Amended 2026-08-23 (issue #136).* What a scope may source is bounded, because a
 project scope is whatever a registered repository contains and it is read while the
 scope is **catalogued** — at daemon start, at project registration, and on every
@@ -3979,6 +4000,16 @@ what the daemon executes or exposes — `notify.command`, `environment`,
 `agents.*.path` and `listen` — are behind an explicit confirmation in the TUI
 (§15).
 
+*Amended 2026-08-30 (task 065, issue #261).* **The workflow write routes carry
+the same posture, with one deliberate difference.** `POST` and
+`PATCH /v1/workflows` (§13.2) are line-oriented, write nothing when the
+candidate does not parse, write atomically, and put the result in force before
+answering — every one of the guarantees above, for the same reasons. What
+differs is the precondition: a workflow file has second writers that are not
+the same human (§5.2), so a `PATCH` carries a version token and a file that
+moved underneath is a 409. The refusal of preconditions in the last bullet is
+about `config.yaml` and stays about `config.yaml`.
+
 ### 12.4 Crash recovery
 
 - Before starting any step process, the daemon persists the StepRun (`running`) with
@@ -4427,7 +4458,10 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         (shadowing applied); each entry:
                                         { name, scope, project_id, file, description, fields[], steps[],
                                           platforms[]?, platform_supported, requires_input,
-                                          includes[]?, errors[]?, warnings[]?, error? }
+                                          includes[]?, version?, errors[]?, warnings[]?, error? }
+                                        `version` (added 2026-08-30, task 065) is the token a
+                                        `PATCH /v1/workflows` of that entry must carry; a built-in
+                                        has no file and so no version
                                         fields is the ordered §8.1.2 declaration list; an empty
                                         list means the workflow publishes no task-input contract
                                         platform_supported is this daemon's own verdict on the
@@ -4495,6 +4529,34 @@ GET    /v1/workflows/definition         one workflow's whole recursive structure
                                         findings and `definition: null`, the same way the list
                                         shows a broken file rather than hiding it; 404 means no
                                         entry of that name in that project's view at all
+POST   /v1/workflows                    *Added 2026-08-30 (task 065).*
+                                        { scope, project_id?, name, from?, from_project_id? } →
+                                        { name, scope, file, version, errors[], warnings[] }
+                                        Creates a workflow file in the named scope. The daemon
+                                        resolves the path and chooses the bytes — the §8 skeleton
+                                        with `name:` rewritten, or a fork source copied verbatim —
+                                        so **no YAML travels on the wire in either direction**.
+                                        A fork keeps the source's own `name:`, because §5.2 shadows
+                                        by name. 409 when the file exists, or when another file in
+                                        the target scope already declares that name
+PATCH  /v1/workflows?name=&project_id=  *Added 2026-08-30 (task 065).*
+                                        { version, ops[] } → the create response's shape.
+                                        Each op is { op: set|insert|remove|move, path, value?,
+                                        block?, item[]?, to? }; `path` is dotted with list indices
+                                        (`steps[2].prompt`, `steps[3].lanes[0].merge.on_conflict`).
+                                        The daemon holds the original bytes end to end and applies
+                                        the ops to them line by line, so an untouched region comes
+                                        back **byte-identical** — comments, key order and blank
+                                        lines included. `version` is the token the read handed back
+                                        (mtime + hash); a file that moved underneath is a **409**
+                                        carrying the current one in `details.version`. A patch that
+                                        would not parse is a 400 and writes nothing
+GET    /v1/workflows/schema             *Added 2026-08-30 (task 065).* §8.2 as data: the top-level,
+                                        `defaults`, field-declaration, lane and merge rows, the
+                                        common step fields, and every step type with the fields it
+                                        accepts and the contexts it may be nested in. Generated from
+                                        the table `workflow.Parse` validates against, so a client
+                                        renders forms from it instead of carrying a second copy
 POST   /v1/workflows/validate           { yaml } → { valid, errors[], warnings[] }
 POST   /v1/resolve                      { workflow, project_id?, agent?, model?, effort?,
                                           title?, fields?, base_branch?, branch_name? } →
@@ -4978,6 +5040,13 @@ chain, so making chats reachable would mean inventing depth semantics for a
 non-task rather than reusing the ones that exist. An agent that needs a
 conversation already has its own session; it does not need vincent to hold one
 for it.
+
+*Amended 2026-08-30 (task 065, issue #261).* **Fifteen**, with `POST` and
+`PATCH /v1/workflows`, under the same wording task 057 decision 4 gave the
+config route: an agent must not reconfigure the daemon supervising it, and a
+workflow file is what that daemon runs. Nothing regresses — the
+`create-workflow` built-in writes its deliverable through the filesystem, not
+through this API. `GET /v1/workflows/schema` is an ordinary tool.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -5620,10 +5689,37 @@ stream for the live tail.
    configuration, execution defaults, current workload, or add/edit form uses
    the focused surface (task 020, added 2026-08-20).
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
-   the file in `$EDITOR`; live reload reflects saves immediately. The view reads the
-   registry, it does not author it: creating a workflow file from the TUI is out of
-   v1 — new files are written in the editor and appear on the next reload. §19's M3
-   acceptance loop says "author workflow"; it means this edit path.
+   the file in `$EDITOR`; live reload reflects saves immediately.
+   *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry
+   as well as reading it.** The PR M decision this replaces — "creating a
+   workflow file from the TUI is out of v1 — new files are written in the
+   editor and appear on the next reload" — named three blockers, and every one
+   of them has since been removed: `workflow.SkeletonSource` and `--from` are
+   the starter template (task 034); the write endpoint takes
+   `{scope, project_id, name}` and the daemon resolves the path itself, so no
+   server-exposed global workflows directory is needed at all; and a filename
+   prompt is a form row. Task 060 supplies the affirmative argument: a file the
+   daemon owns and already hot-reloads, which a human may edit by hand at any
+   moment, is a different object from the process supervising the TUI. What
+   PR M decided about `e` is **unamended** — `e` still edits the real file in
+   place and the view still waits for `workflow.registry_changed`; validation
+   moved to the daemon endpoint, not into the TUI.
+
+   | Key | Operation |
+   |---|---|
+   | `i` | edit the entry under the cursor in a structured form |
+   | `a` | create a workflow in a chosen scope (global, or a project's own) |
+   | `f` | fork a built-in or global entry into another scope, where it shadows the original per §5.2 |
+   | `e` | **unchanged** — open the file in `$EDITOR` |
+
+   `e` keeps its one meaning: it means `$EDITOR` in all seven contexts
+   `internal/tui/bindings.go` gives it, and taking it for the structured
+   editor would give one key two meanings depending on the view. The forms
+   are rendered from `GET /v1/workflows/schema` (§8.2 as data), not from a
+   second copy of §8.2 in the client — PR L recorded that re-deriving the
+   daemon's checks in the TUI is how the two drift. There is **no delete**:
+   the view gains no destructive action. A file the forms cannot load is what
+   `e` is still there for.
    **A control-flow graph (task 017, added 2026-08-18):** `g` draws the entry under
    the cursor as a graph — sequence, `parallel` groups, `fan_out` lanes and their
    merge, guards, `condition`, `loop` and `break` — in a sub-layer over the list.
@@ -6549,12 +6645,18 @@ else.
 | **M4 — Polish** | `service install` for all 3 OSes, CLI subcommands, retention pruning, docs, first-run experience, packaged releases (signed binaries†) | Fresh-machine install to first completed task in under 10 minutes on each OS |
 | **M5 — Cursor adapter** (post-v1‡) | `internal/agent/cursor` (§9.7), fakeagent cursor dialect, config/registry wiring, picker viewport + filter, `logged_in` on the wire, docs | A workflow whose steps name `agent: cursor` runs unattended to completion against the real `cursor-agent`, on each OS |
 
-\* **"author workflow" means editing in place,** not creating a file. §15 view 5
-records that creating a workflow file from the TUI is out of v1: `e` opens an
-existing entry in `$EDITOR` and the registry reload reflects the save, while new
-files are written in the editor and appear on the next reload. The M3 acceptance
-walkthrough exercises the edit path; it does not require a create path the TUI
-deliberately does not have.
+\* **"author workflow" meant editing in place** when M3 was accepted, not
+creating a file: `e` opened an existing entry in `$EDITOR`, the registry reload
+reflected the save, and new files were written in the editor and appeared on the
+next reload. The M3 walkthrough exercised that edit path and required no create
+path, because the TUI deliberately had none.
+
+*Amended 2026-08-30 (task 065, issue #261).* It now means either. The TUI
+creates, edits and forks workflow files through structured forms (§15 view 5,
+`a`/`i`/`f`), backed by `POST` and `PATCH /v1/workflows` (§13.2). This does not
+rewrite M3's history — the milestone was accepted on the edit path, and that
+path is unchanged — it records what the phrase means to a reader walking the
+loop today.
 
 ‡ **M5 is sequenced after M4, 2026-08-11** (Phase 5 grill session). Cursor
 support is a feature, and M4's charter is polish; more concretely, T4.6's

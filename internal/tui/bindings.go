@@ -34,6 +34,13 @@ const (
 	ctxWorkflows   bindingContext = "workflows"
 	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
 	ctxPullRequests bindingContext = "pull requests"
+	// ctxWorkflowEditor is the structured editor sub-layer of the workflows
+	// takeover (task 065). Its keys are its own for the same reason the
+	// graph's are: nothing the list offers means the same thing inside a
+	// form.
+	ctxWorkflowEditor bindingContext = "workflow editor"
+	// ctxWorkflowCreate is the create/fork prompt in front of it.
+	ctxWorkflowCreate bindingContext = "workflow create"
 	// ctxWorkflowGraph is the graph sub-layer of the workflows takeover. It
 	// is its own context because its keys are entirely different from the
 	// list's, and the footer and the ? overlay must say which set is live.
@@ -223,6 +230,27 @@ var bindings = []binding{
 	{key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2},
 	{key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3},
 	{key: "g", label: "draw the workflow as a control-flow graph", scope: scopePanel, context: ctxWorkflows, hint: "g graph", priority: 4},
+	// The structured editor (task 065). `e` keeps meaning $EDITOR — it means
+	// that in every other context too, and one key with two meanings
+	// depending on the view is the confusion decision 6 refused.
+	{key: "i", label: "edit the entry in a structured form", scope: scopePanel, context: ctxWorkflows, hint: "i form", priority: 5},
+	{key: "a", label: "create a workflow in a chosen scope", scope: scopePanel, context: ctxWorkflows, hint: "a new", priority: 6},
+	{key: "f", label: "fork the entry into another scope, where it shadows the original", scope: scopePanel, context: ctxWorkflows, hint: "f fork", priority: 7},
+
+	// The structured editor sub-layer.
+	{key: "up/down", label: "move between rows", scope: scopePanel, context: ctxWorkflowEditor, hint: "↑↓ rows", priority: 1},
+	{key: "enter", label: "edit the row, cycle its values, or descend into a nested body", scope: scopePanel, context: ctxWorkflowEditor, hint: "enter edit", priority: 2},
+	{key: "R", label: "re-read the file (what a stale-write 409 offers)", scope: scopePanel, context: ctxWorkflowEditor, hint: "R reload", priority: 3},
+	{key: "esc", label: "leave the nested body, then the editor", scope: scopePanel, context: ctxWorkflowEditor, hint: "esc back", priority: 4},
+
+	// The create/fork prompt. noPalette for the reason the step-detail
+	// modal's rows are: a form holds the keyboard on a text field, so `:`
+	// types a colon rather than opening the palette. The prompt prints its
+	// own keys instead.
+	{key: "tab", label: "move between the scope and the file name", scope: scopePanel, context: ctxWorkflowCreate, hint: "tab row", priority: 1, noPalette: true},
+	{key: "left/right", label: "choose the scope", scope: scopePanel, context: ctxWorkflowCreate, hint: "←→ scope", priority: 2, noPalette: true},
+	{key: "enter", label: "write the file and open it in the editor", scope: scopePanel, context: ctxWorkflowCreate, hint: "enter create", priority: 3, noPalette: true},
+	{key: "esc", label: "close the prompt", scope: scopePanel, context: ctxWorkflowCreate, hint: "esc cancel", priority: 4, noPalette: true},
 
 	// The graph sub-layer (task 017). Arrows move the selection and the
 	// viewport follows it; panning is deliberately a separate, shifted key,

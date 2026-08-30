@@ -54,6 +54,10 @@ type WorkflowEntry struct {
 	// from "includes nothing" and treated as such.
 	Includes []string `json:"includes,omitempty"`
 
+	// Version is the token a PatchWorkflow of this entry must carry (task
+	// 065). Empty for a built-in, which has no file to be stale against.
+	Version string `json:"version,omitempty"`
+
 	Errors []WorkflowFinding `json:"errors,omitempty"`
 	// Warnings are non-fatal §8.2 catalog findings; the entry stays valid.
 	Warnings []WorkflowFinding `json:"warnings,omitempty"`

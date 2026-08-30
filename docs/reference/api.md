@@ -80,7 +80,7 @@ echoed back.
 | Limit | Bytes | Applies to |
 |---|---|---|
 | Ordinary request body | 64 KiB | every route not listed below |
-| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate` — the bodies that carry a prompt or a workflow source |
+| Large request body | 4 MiB | `POST /v1/tasks`, `POST /v1/resolve`, `POST /v1/tasks/{id}/retry`, `/repair`, `/answer`, `POST /v1/workflows/validate`, `PATCH /v1/workflows` — the bodies that carry a prompt or a workflow source |
 | `yaml` in `POST /v1/workflows/validate` | 1 MiB | the same bound a workflow file gets when the registry loads it |
 
 Individual fields are bounded too — over one is `400 validation_failed` naming
@@ -666,6 +666,9 @@ carrying the reason a client can branch on:
 |---|---|---|
 | `GET` | `/v1/workflows?project_id=` | The merged registry: built-in + global + that project's, with shadowing applied |
 | `GET` | `/v1/workflows/definition?name=&project_id=` | One workflow's whole recursive structure, with the same shadowing applied |
+| `GET` | `/v1/workflows/schema` | The workflow schema as data: which fields are legal on which step type, and where each type may be nested |
+| `POST` | `/v1/workflows` | `{ scope, project_id?, name, from? }` → the written file and its version. Creates a workflow; `from` forks an existing entry, keeping its `name:` so the copy shadows it |
+| `PATCH` | `/v1/workflows?name=&project_id=` | `{ version, ops[] }` → the same shape. Applies edit operations to a workflow file, preserving every byte outside the region they touch |
 | `POST` | `/v1/workflows/validate` | `{ yaml }` → `{ valid, errors[], warnings[] }` |
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 

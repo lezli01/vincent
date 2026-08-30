@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -528,4 +530,87 @@ func fallbackName(src []byte, path string) string {
 	}
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// ProjectDir is the workflow directory of a registered project
+// ({repo}/.vincent/workflows), and whether that project has a scope at all.
+func (r *Registry) ProjectDir(projectID int64) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ps, ok := r.projects[projectID]
+	if !ok {
+		return "", false
+	}
+	return ps.dir, true
+}
+
+// Destination resolves a scope and a name to the file a write must land in,
+// creating the scope directory when it does not exist yet (task 065). The
+// daemon resolves the path itself rather than taking one from a client: that
+// is CLAUDE.md's ownership invariant, and it is the shape task 060 used for
+// config.yaml.
+//
+// The built-in scope has no destination: builtins are compiled in, and a
+// client that wants to change one forks it into a project scope, where §5.2's
+// shadowing does the rest.
+func (r *Registry) Destination(scope Scope, projectID int64, name string) (string, error) {
+	file, err := FileName(name)
+	if err != nil {
+		return "", err
+	}
+	var dir string
+	switch scope {
+	case ScopeGlobal:
+		if r.globalDir == "" {
+			return "", fmt.Errorf("no global workflow directory is configured")
+		}
+		dir = r.globalDir
+	case ScopeProject:
+		d, ok := r.ProjectDir(projectID)
+		if !ok {
+			return "", fmt.Errorf("project %d has no workflow scope", projectID)
+		}
+		dir = d
+	case ScopeBuiltin:
+		return "", fmt.Errorf("built-in workflows have no file; fork one into a project or global scope instead")
+	default:
+		return "", fmt.Errorf("unknown scope %q (one of %s, %s)", scope, ScopeGlobal, ScopeProject)
+	}
+	// 0750 rather than 0755: the directory is created by the daemon on
+	// behalf of one user, and the files inside it are the shareable artifact
+	// (0644), not the directory listing.
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("create workflow directory: %w", err)
+	}
+	return filepath.Join(dir, file), nil
+}
+
+// Version is an opaque token for a workflow file's current contents: its
+// modification time and the hash of its bytes. A PATCH carries the token its
+// read handed back and the daemon refuses a mismatch with a 409.
+//
+// Task 060 decision 6 rejected preconditions for PATCH /v1/config, and that
+// still stands there: the race is a human against themselves. Workflows are
+// the scoped exception, because the second writer is not the same human — the
+// create-workflow built-in writes the live registry directory from an agent
+// run (§5.2), $EDITOR is a key away in the same view, and a structured form
+// stays open across a whole editing session.
+func Version(path string) (string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	//nolint:gosec // G304: path came from Destination or from a registry entry
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return VersionOf(fi.ModTime().UTC().UnixNano(), b), nil
+}
+
+// VersionOf builds the token from a modification time and the bytes it goes
+// with, so a caller holding both does not read the file twice.
+func VersionOf(modUnixNano int64, b []byte) string {
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("%d-%s", modUnixNano, hex.EncodeToString(sum[:8]))
 }

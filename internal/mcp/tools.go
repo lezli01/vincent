@@ -42,6 +42,13 @@ var Excluded = []Route{
 	// (mcp.wire_steps) — a step editing any of those is a step rewriting the
 	// rules it runs under (task 060 decision 4).
 	{Method: http.MethodPatch, Path: "/v1/config"},
+	// The workflow write routes, under the same wording (task 065
+	// decision 5): a workflow file is what the daemon runs, so an agent
+	// editing one is an agent rewriting the rules it runs under. Nothing
+	// regresses — the create-workflow built-in writes its deliverable through
+	// the filesystem, not through this API.
+	{Method: http.MethodPost, Path: "/v1/workflows"},
+	{Method: http.MethodPatch, Path: "/v1/workflows"},
 	{Method: http.MethodPost, Path: "/v1/daemon/backup"},
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},
@@ -98,6 +105,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/projects/{id}/github/issues", "project_github_issues", "Open GitHub issues for this project's origin repository."},
 	{http.MethodGet, "/v1/projects/{id}/github/pulls", "project_github_pulls", "Open GitHub pull requests for this project's origin repository."},
 	{http.MethodGet, "/v1/workflows", "workflow_list", "The workflow registry (§5.2): built-in, global and project workflows after shadowing."},
+	{http.MethodGet, "/v1/workflows/schema", "workflow_schema", "The §8.2 workflow schema as data: which fields are legal on which step type, and where each type may be nested. Read-only."},
 	{http.MethodPost, "/v1/workflows/validate", "workflow_validate", "Validate workflow YAML without running it (§8.2). Body: {source}."},
 	{http.MethodGet, "/v1/workflows/definition", "workflow_definition", "One workflow's parsed definition, by name and scope."},
 	{http.MethodPost, "/v1/resolve", "resolve", "Resolve a path to the project that owns it."},

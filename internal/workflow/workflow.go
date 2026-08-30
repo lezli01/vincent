@@ -69,12 +69,18 @@ const (
 	StepInclude = "include"
 )
 
-// stepTypeList is the step-type vocabulary as one string, so the two "one of
-// …" messages cannot drift apart as the set grows.
-var stepTypeList = strings.Join([]string{
+// StepTypes is the step-type vocabulary (§8.2), in the order the spec lists
+// it. It is exported because the served schema descriptor (task 065) is
+// checked against it: a type added here without a form is a type the editor
+// silently cannot write.
+var StepTypes = []string{
 	StepAgent, StepCommand, StepManual, StepParallel, StepFanOut, StepCondition,
 	StepLoop, StepBreak, StepInclude,
-}, ", ")
+}
+
+// stepTypeList is the same vocabulary as one string, so the two "one of …"
+// messages cannot drift apart as the set grows.
+var stepTypeList = strings.Join(StepTypes, ", ")
 
 // Conflict policies for a fan_out step's join (§7.6, task 014 decision 8).
 const (

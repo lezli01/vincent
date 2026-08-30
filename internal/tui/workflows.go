@@ -89,6 +89,12 @@ type workflowsView struct {
 	// that just changed is exactly the one whose resolution may have moved.
 	resolutions map[wfResolveKey]apiclient.Resolution
 
+	// editor is the open structured editor, nil when the list has the
+	// keyboard. It is the same nullable-sub-model shape as graph (task 065).
+	editor *wfEditorLayer
+	// create is the open create/fork prompt, nil otherwise.
+	create *wfCreateForm
+
 	// graph is the open graph sub-layer, nil when the list has the keyboard.
 	// It follows the shape projectsView uses for its form: a nullable
 	// sub-model that takes the keys and renders in place (decision 13).
@@ -195,6 +201,12 @@ func (w *workflowsView) scheduleRefresh() tea.Cmd {
 }
 
 func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if p, cmd, handled := w.updateEditorMsg(msg); handled {
+		return p, cmd
+	}
+	if p, cmd, handled := w.updateCreateMsg(msg); handled {
+		return p, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		w.width, w.height = msg.Width, msg.Height
@@ -330,7 +342,12 @@ func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 }
 
 func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	if w.graph != nil {
+	switch {
+	case w.create != nil:
+		return w.updateCreateKey(msg)
+	case w.editor != nil:
+		return w.updateEditorKey(msg)
+	case w.graph != nil:
 		return w.updateGraphKey(msg)
 	}
 	switch msg.String() {
@@ -346,7 +363,18 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "g":
 		return w, w.openGraph()
 	case "e":
+		// Unchanged: `e` means $EDITOR here and in the six other contexts
+		// bindings.go gives it, so the structured editor takes its own keys
+		// rather than giving one key two meanings (task 065 decision 6).
 		return w, w.editCmd()
+	case "i":
+		return w, w.openEditor()
+	case "a":
+		w.openCreate(false)
+		return w, nil
+	case "f":
+		w.openCreate(true)
+		return w, nil
 	case "R":
 		w.err = ""
 		return w, w.loadCmd()
@@ -432,6 +460,11 @@ func (w *workflowsView) lines() []wfLine {
 	return out
 }
 
-// capturesInput is always false: this view has no text entry, so the global
-// single-key bindings keep working throughout.
-func (w *workflowsView) capturesInput() bool { return false }
+// capturesInput is true only while a form row or the create prompt has a
+// focused text field: typing "q" into a workflow's description must not quit.
+func (w *workflowsView) capturesInput() bool {
+	if w.create != nil {
+		return w.create.capturing()
+	}
+	return w.editor != nil && w.editor.input != nil
+}

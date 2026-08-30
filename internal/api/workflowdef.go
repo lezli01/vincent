@@ -38,16 +38,19 @@ import (
 // list's derived fields because the graph is opened against one workflow and
 // must not have to join against a list row the client may not hold.
 type workflowDefinitionResponse struct {
-	Name              string           `json:"name"`
-	Scope             string           `json:"scope"`
-	ProjectID         *int64           `json:"project_id"`
-	File              string           `json:"file,omitempty"`
-	Platforms         []string         `json:"platforms,omitempty"`
-	PlatformSupported bool             `json:"platform_supported"`
-	RequiresInput     bool             `json:"requires_input"`
-	Errors            []workflow.Error `json:"errors,omitempty"`
-	Warnings          []workflow.Error `json:"warnings,omitempty"`
-	Error             *string          `json:"error"`
+	Name              string   `json:"name"`
+	Scope             string   `json:"scope"`
+	ProjectID         *int64   `json:"project_id"`
+	File              string   `json:"file,omitempty"`
+	Platforms         []string `json:"platforms,omitempty"`
+	PlatformSupported bool     `json:"platform_supported"`
+	RequiresInput     bool     `json:"requires_input"`
+	// Version is the token a PATCH of this entry must carry (task 065
+	// decision 4). Empty for a built-in, which has no file.
+	Version  string           `json:"version,omitempty"`
+	Errors   []workflow.Error `json:"errors,omitempty"`
+	Warnings []workflow.Error `json:"warnings,omitempty"`
+	Error    *string          `json:"error"`
 	// Definition is null when the file did not parse. Its findings are in
 	// Errors, which is the whole reason this is a 200.
 	Definition *workflowDefinition `json:"definition"`
@@ -80,7 +83,7 @@ type workflowDefaults struct {
 	// Container is the §16 containerization override, absent when the
 	// workflow sets none. It is on the wire because it changes where every
 	// step of a task runs, which a graph editor and the workflow detail view
-	// both have to be able to say (task 061).
+	// both have to be able to say (task 065).
 	Container *workflowContainerDef `json:"container,omitempty"`
 }
 
@@ -228,6 +231,11 @@ func toWorkflowDefinitionResponse(e workflow.Entry) workflowDefinitionResponse {
 		File:              e.File,
 		PlatformSupported: e.RunsHere(),
 		RequiresInput:     e.NeedsInputAgent(),
+	}
+	if e.File != "" {
+		if v, err := workflow.Version(e.File); err == nil {
+			out.Version = v
+		}
 	}
 	if e.ProjectID != 0 {
 		id := e.ProjectID
