@@ -38,7 +38,7 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, and the read-only `health`, `info`, `config_get`,
 `agent_list`, `doctor`, `orphan_list`.
 
-Eight routes are deliberately **not** tools:
+Nine routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/daemon/backup`
@@ -48,10 +48,11 @@ Eight routes are deliberately **not** tools:
 - `PATCH /v1/config`
 - `POST /v1/workflows`
 - `PATCH /v1/workflows`
+- `POST /v1/tasks/{id}/github/pull/create`
 
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
 that is supervising it. Those stay CLI-and-curl only. The configuration one is
-the sharpest of the eight: a patch can change the argv the daemon spawns
+the sharpest of them: a patch can change the argv the daemon spawns
 (`notify.command`, `agents.*.path`), what its children inherit (`environment`),
 and whether steps are wired to MCP at all (`mcp.wire_steps` — a step could
 otherwise switch these tools off for everyone). The two workflow writes are the
@@ -60,6 +61,13 @@ agent must not edit one. Nothing regresses — the built-in `create-workflow`
 workflow writes its deliverable through the filesystem, not through this API —
 and the read side is untouched: `workflow_list`, `workflow_definition`,
 `workflow_validate` and `workflow_schema` are all ordinary tools.
+
+The last one is the [one route that writes to GitHub](../features.md#open-a-pull-request):
+it pushes a task's branch and opens its pull request, and the only thing gating
+it is a human pressing the key — no config switch, no confirmation the daemon
+can check. An agent-callable version would be consent nobody gave. Nothing is
+lost: an agent that wants a pull request has a shell in its own worktree and
+runs `git push` and `gh pr create` there.
 
 `config_get` is the one tool whose body differs from its route's. The HTTP
 response serves `config.yaml` in full; the tool masks `environment.set`'s

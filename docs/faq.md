@@ -18,10 +18,12 @@ installed and authenticated. There is no vincent account and no telemetry.
 Almost every call vincent makes is on your behalf: whatever your agent CLI and
 your workflow's own git commands do, plus reading GitHub — an issue or a pull
 request when you create a task from one, and a project's pull requests when you
-ask for them.
-That reading uses your existing `gh` login, or a `GITHUB_TOKEN`/`GH_TOKEN`
-already in the daemon's environment; vincent stores neither, and never writes
-anything to GitHub.
+ask for them — and, when you press the key for it, pushing a task's branch and
+opening its pull request.
+Both use your existing `gh` login, or a `GITHUB_TOKEN`/`GH_TOKEN`
+already in the daemon's environment; vincent stores neither. Opening a pull
+request is the **only** thing it writes to GitHub: it never updates, comments
+on, closes or merges anything, and it happens only when you ask.
 
 Two calls the daemon makes **without** being asked, both switchable:
 

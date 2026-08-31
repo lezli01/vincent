@@ -45,6 +45,16 @@ const (
 	// side of speaking a shape this package does not know, which is a bug
 	// report rather than a network condition.
 	ReasonBadResponse = "bad_response"
+	// ReasonPullExists: a pull request already exists for this head and base
+	// (task 069). It is the write path's one *expected* refusal and GitHub's
+	// own backstop against a double submission, so it is named rather than
+	// folded into unreachable: "there is already one" is an answer a human
+	// can act on, and "GitHub could not be reached" is not.
+	ReasonPullExists = "pull_exists"
+	// ReasonBadRequest: GitHub refused the values as unusable (HTTP 422 that
+	// is not a duplicate head), or this package refused them before sending.
+	// A base branch that does not exist and an empty title both land here.
+	ReasonBadRequest = "bad_request"
 )
 
 // reasonMessages are the one-line explanations clients render. Keeping them
@@ -55,12 +65,17 @@ var reasonMessages = map[string]string{ //nolint:gosec // G101: these are the re
 	ReasonNotGitHub:    "this project's origin remote is not a github.com repository",
 	ReasonNoCredential: "no GitHub credential: gh is not installed or not authenticated, and neither GITHUB_TOKEN nor GH_TOKEN is set",
 	ReasonUnauthorized: "GitHub rejected the credential",
-	ReasonForbidden:    "the credential may not read this repository's issues",
-	ReasonNotFound:     "GitHub has no such repository or issue",
-	ReasonRateLimited:  "the GitHub API rate limit is spent",
-	ReasonTimeout:      "GitHub did not answer in time",
-	ReasonUnreachable:  "GitHub could not be reached",
-	ReasonBadResponse:  "GitHub returned a response vincent could not read",
+	// Not "this repository's issues": the same 403 now answers a pull-request
+	// creation, and a message naming issues would be wrong on the write path
+	// (task 069 decision 2).
+	ReasonForbidden:   "the credential may not do this in this repository",
+	ReasonNotFound:    "GitHub has no such repository or issue",
+	ReasonRateLimited: "the GitHub API rate limit is spent",
+	ReasonTimeout:     "GitHub did not answer in time",
+	ReasonUnreachable: "GitHub could not be reached",
+	ReasonBadResponse: "GitHub returned a response vincent could not read",
+	ReasonPullExists:  "a pull request for this branch already exists",
+	ReasonBadRequest:  "GitHub refused these values for a pull request",
 }
 
 // Message renders a reason for a human. An unknown reason renders as itself

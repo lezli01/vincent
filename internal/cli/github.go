@@ -11,17 +11,20 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// `vincent github` (spec §12.1, task 035). It exists so issues can be browsed
-// without opening the TUI — the same reason every other data view has a
-// subcommand — and it is read-only: nothing under this command writes to
-// GitHub, which is decision 10's boundary held at the CLI as well as in the
-// daemon.
+// `vincent github` (spec §12.1, task 035, task 069). It exists so issues can
+// be browsed without opening the TUI — the same reason every other data view
+// has a subcommand.
+//
+// It was read-only until task 069 and now has exactly one write, `pr create`,
+// which is the same amendment decision record row 27 took: one write path, for
+// pull-request creation, on a human's say-so. `issues`, `prs` and `status`
+// still write nothing.
 func newGitHubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "github",
-		Short: "Read GitHub issues and pull requests for a project",
+		Short: "Read GitHub issues and pull requests, and open one for a task",
 	}
-	cmd.AddCommand(newGitHubIssuesCmd(), newGitHubPullsCmd(), newGitHubStatusCmd())
+	cmd.AddCommand(newGitHubIssuesCmd(), newGitHubPullsCmd(), newGitHubPRCmd(), newGitHubStatusCmd())
 	return cmd
 }
 
@@ -183,4 +186,80 @@ func githubPullSummary(t apiclient.TaskDetail) string {
 		out += " (a fork: the branch has no upstream, so nothing can be pushed back)"
 	}
 	return out
+}
+
+// `vincent github pr create` is the write path without the TUI (task 069).
+//
+// It exists for the reason every other subcommand does — the TUI holds no
+// state and no action the daemon does not — and because a gate script has to
+// be able to drive the one route that writes to a forge without driving a
+// terminal.
+//
+// It is the only thing under `vincent github` that writes, and it writes only
+// when a human runs it. `--draft` is the popup's toggle; the title and body
+// are the prefill a human edits, and `--body` is optional because a pull
+// request with no description is a legal one.
+func newGitHubPRCreateCmd() *cobra.Command {
+	var (
+		taskID int64
+		title  string
+		body   string
+		draft  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Push a task's branch and open its pull request",
+		Long: "Push a task's branch to origin and create its pull request.\n\n" +
+			"Only committed work is pushed: anything uncommitted in the task's\n" +
+			"worktree is not in the pull request. The push never forces — a\n" +
+			"diverged or rejected push creates nothing and changes nothing on\n" +
+			"the remote.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				out, err := c.CreateGitHubPull(ctx, taskID, apiclient.GitHubPullCreateRequest{
+					Title: title, Body: body, Draft: draft,
+				})
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), out)
+				}
+				// The fallback is not a failure and does not exit non-zero: the
+				// branch is on the remote, and the URL is the page that opens
+				// GitHub's own form for it.
+				if !out.Created {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"Pushed %s to %s.\nvincent could not create the pull request (%s).\nOpen this instead:\n%s\n",
+						out.Branch, out.Remote, dash(out.Reason), out.CompareURL)
+					return nil
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Pushed %s to %s.\nCreated %s#%d (%s)\n%s\n",
+					out.Branch, out.Remote, out.Pull.Repo, out.Pull.Number,
+					out.Pull.Status(), out.Pull.URL)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().Int64Var(&taskID, "task", 0, "Task id (required)")
+	cmd.Flags().StringVar(&title, "title", "", "Pull request title (required)")
+	cmd.Flags().StringVar(&body, "body", "", "Pull request description")
+	cmd.Flags().BoolVar(&draft, "draft", false, "Open the pull request as a draft")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("title")
+	jsonFlag(cmd)
+	return cmd
+}
+
+// newGitHubPRCmd groups the write path under its own noun, so `prs` stays the
+// listing and nothing that writes hides inside it.
+func newGitHubPRCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pr",
+		Short: "Act on one task's pull request",
+	}
+	cmd.AddCommand(newGitHubPRCreateCmd())
+	return cmd
 }

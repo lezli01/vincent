@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -11,7 +12,15 @@ import (
 	"github.com/lezli01/vincent/internal/github"
 )
 
-// The task workspace's pull-request section (task 052.6).
+// createPullTimeout bounds the one client call that causes a write to
+// GitHub (task 069). It is longer than actionTimeout because the daemon does
+// two network round trips inside it — a `git push` bounded at
+// gitx.RemoteTimeout and a create bounded at github.RemoteTimeout — and a
+// client that gave up between them would leave a human looking at a form for
+// a pull request that had in fact been created.
+const createPullTimeout = 3 * time.Minute
+
+// The task workspace's pull-request section (task 052.6, task 069).
 //
 // GET /v1/tasks/{id}/github/pull always answers 200, deliberately: a task
 // workspace asks it on every open, and refusing the whole row because GitHub
@@ -57,6 +66,14 @@ func (t *taskView) applyPull(msg taskPullMsg) {
 	}
 	t.pull, t.pullErr = msg.pull, ""
 	t.leaveAbsentPullTab()
+	if t.pullFormPending {
+		// The takeover's intent, now that the prefill it needs has arrived.
+		// openCreatePR reports its own refusal into pullNote when the task
+		// turns out not to be eligible after all, which is the same sentence
+		// pressing P here would have produced.
+		t.pullFormPending = false
+		t.openCreatePR()
+	}
 }
 
 // pullWebURL is the page `o` opens: GitHub's own URL when the live fetch
@@ -88,9 +105,10 @@ func (t *taskView) openPullCmd() tea.Cmd {
 	return openURLCmd(url)
 }
 
-// openCreatePR is `P`: the compare-URL editor. The offer exists only while
+// openCreatePR is `P`: the pull-request form. The offer exists only while
 // nothing is linked and the daemon could build a compare URL, which needs the
-// task to have both a branch and a base.
+// task to have both a branch and a base — the same two fields the push and
+// the create need, so one condition covers both actions (task 069).
 func (t *taskView) openCreatePR() tea.Cmd {
 	if t.pull.Linked {
 		t.pullNote, t.pullNoteBad = "this task already has a pull request — press o to open it", true
@@ -106,6 +124,7 @@ func (t *taskView) openCreatePR() tea.Cmd {
 		return nil
 	}
 	form.openEditor = t.detail.editCreatePRBody
+	form.submit = t.createPullCmd
 	t.createPR = form
 	t.popup = true
 	t.pullNote, t.pullNoteBad = "", false
@@ -158,7 +177,7 @@ func (t *taskView) pullSectionLines(width int) []string {
 			{"base", valueOr(t.detail.task.BaseBranch, "unknown")},
 		})...)
 		out = append(out, "", styleDim.Render(
-			"  P opens GitHub's own page with an editable prefill — vincent sends nothing"))
+			"  P pushes this branch to origin and opens its pull request — the prefill is editable first"))
 	default:
 		out = append(out, styleDim.Render("  No pull request is linked to this task."))
 		out = append(out, "", styleDim.Render(
@@ -191,4 +210,68 @@ func (t *taskView) linkedPullFacts() []taskDetailFact {
 		return facts
 	}
 	return append(facts, taskDetailFact{"url", t.pullWebURL()})
+}
+
+// taskPullCreatedMsg carries POST /v1/tasks/{id}/github/pull/create.
+type taskPullCreatedMsg struct {
+	taskID  int64
+	created apiclient.GitHubPullCreated
+	err     error
+}
+
+// createPullCmd is the form's ctrl+s: the daemon pushes the task's branch to
+// origin and opens the pull request (task 069).
+//
+// It is the only command in the TUI that causes a write to GitHub, and the
+// client still makes no request there — it posts to the daemon, per the
+// ownership invariant, and the daemon owns the credential, the push and the
+// create.
+//
+// actionTimeout is not used: this call runs a network git push and a GitHub
+// create back to back, each bounded daemon-side at its own remote timeout,
+// and a client that gave up first would leave a human looking at a form for
+// a pull request that was in fact created.
+func (t *taskView) createPullCmd(title, body string, draft bool) tea.Cmd {
+	client, id := t.detail.client, t.detail.taskID
+	if client == nil || id == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), createPullTimeout)
+		defer cancel()
+		created, err := client.CreateGitHubPull(ctx, id, apiclient.GitHubPullCreateRequest{
+			Title: title, Body: body, Draft: draft,
+		})
+		return taskPullCreatedMsg{taskID: id, created: created, err: err}
+	}
+}
+
+// applyCreatedPull is what comes back. Three outcomes, and only one of them
+// closes the form:
+//
+//   - the pull request exists — the form closes, the section refetches, and
+//     the link the daemon already wrote renders as `human`;
+//   - the daemon pushed but could not create it — the form stays open and
+//     ctrl+o now leads to a page whose branch is on the remote, which is the
+//     issue's second complaint fixed even here;
+//   - the call itself failed — the form stays open with the reason, so the
+//     human can fix it and press ctrl+s again.
+func (t *taskView) applyCreatedPull(msg taskPullCreatedMsg) tea.Cmd {
+	if msg.taskID != t.detail.taskID || t.createPR == nil {
+		return nil
+	}
+	if msg.err != nil {
+		t.createPR.failed(errString(msg.err))
+		return nil
+	}
+	if !msg.created.Created {
+		t.createPR.failed("pushed " + msg.created.Branch + " to " + msg.created.Remote +
+			", but could not open the pull request (" + msg.created.Reason +
+			") — ctrl+o opens GitHub's page for the pushed branch")
+		return nil
+	}
+	t.createPR, t.popup = nil, false
+	t.pullNote, t.pullNoteBad = "opened "+msg.created.Pull.Repo+"#"+
+		strconv.Itoa(msg.created.Pull.Number), false
+	return t.pullCmd()
 }

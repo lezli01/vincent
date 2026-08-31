@@ -66,6 +66,13 @@ type (
 	selectTaskMsg struct {
 		id    int64
 		state string
+		// openPR asks the workspace to open its pull-request form as soon as
+		// the section has loaded (task 069). It is how the Pull Requests
+		// takeover reaches the create action: that screen's question is
+		// "what is open across everything I run", so it has no task rows —
+		// it picks a task and hands the intent here rather than growing a
+		// second implementation of a form the workspace already owns.
+		openPR bool
 	}
 )
 

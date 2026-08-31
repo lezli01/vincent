@@ -169,15 +169,24 @@ agents:
 #   max_depth: 3
 #   max_tasks: 32
 
-# Reading GitHub issues, so a task can be created from one (task 035). It
-# applies only to a project whose "origin" remote is a github.com repository,
-# and the daemon makes no call at all until you open the issue picker or name
-# an issue on the command line.
+# The GitHub integration (task 035, task 052, task 069). It applies only to a
+# project whose "origin" remote is a github.com repository, and the daemon
+# makes no call at all until you open the issue picker, name an issue on the
+# command line, or ask for a pull request.
+#
+# It reads GitHub, with one exception: pressing P on a task pushes that task's
+# branch to origin and opens its pull request. That is the only thing vincent
+# writes to GitHub — it never updates, comments on, closes or merges anything
+# — and it happens only when you ask for it, from a form you edit first. The
+# push never forces: a diverged or rejected push creates no pull request and
+# changes nothing on the remote.
 #
 # vincent stores no credential: it drives the "gh" CLI when it is installed
 # and authenticated, and otherwise reads GITHUB_TOKEN or GH_TOKEN out of the
-# environment the daemon inherited. Set enabled to false to stop the daemon
-# reading GitHub at all.
+# environment the daemon inherited. A credential that cannot write is fine —
+# vincent then falls back to opening GitHub's own new-pull-request page in
+# your browser. Set enabled to false to stop the daemon talking to GitHub at
+# all, reads and that one write together.
 #
 # poll_interval is how often the daemon reconciles the link between a task and
 # its pull request, by matching an open pull request's head branch against the

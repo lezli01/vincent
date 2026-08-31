@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; read-only, no stored credential |
+| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent, the one thing vincent writes to GitHub. No stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -338,10 +338,12 @@ touches the network. Fan-out lanes inherit their parent's issue.
 explicit flags winning, and `vincent github issues` lists issues without the TUI.
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
-`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Access is read-only —
-nothing is ever written to GitHub. When it is unavailable the row does not
-appear, `vincent doctor` reports why, and everything else is unaffected. Set
-`github.enabled: false` in `config.yaml` to switch it off entirely.
+`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Nothing about an issue
+is ever written back — the only thing vincent writes to GitHub is a pull
+request you ask it to open, [below](#open-a-pull-request). When it is
+unavailable the row does not appear, `vincent doctor` reports why, and
+everything else is unaffected. Set `github.enabled: false` in `config.yaml` to
+switch it off entirely.
 
 See the [new-task form](guides/tui.md), the
 [configuration reference](reference/configuration.md), and the
@@ -357,7 +359,7 @@ and links the ones whose head branch is a task's own branch. It never overwrites
 a link you made by hand, and a link you removed is never re-applied.
 
 The TUI's pull-requests screen shows every GitHub-based project's listing at
-once and carries the two human actions — link a pull request the head-branch
+once and carries the two linking actions — link a pull request the head-branch
 rule missed, unlink one it got wrong — and a task's own workspace shows its
 pull request beside its branch, on a **Pull Request** tab that adds one row per
 CI check on its head commit and carries a second copy of unlink.
@@ -365,9 +367,38 @@ CI check on its head commit and carries a second copy of unlink.
 the task each one belongs to. Only the *link* is stored: a pull request's title,
 state, draft and merged status — and every check on it — are re-read every time
 they are shown, which is what lets a task still name a pull request that has
-since merged and dropped off the open listing. A task with no pull request is offered a prefilled compare URL
-instead — GitHub's own "open a pull request" page, carrying the task's title and
-description, and `Closes #N` when the task came from an issue.
+since merged and dropped off the open listing.
+
+## Open a pull request
+
+A task with a branch and no pull request can get one without leaving vincent.
+Press `P` in the task workspace — or `P` on the pull-requests screen, which
+offers a picker of every task that has a branch and no pull request — and a form
+opens with the title, the body and a **draft / ready** toggle, all editable
+first. The body is prefilled from the task's description, plus `Closes #N` when
+the task came from an issue. `ctrl+s` pushes the branch to `origin` and opens
+the pull request; the link appears immediately.
+`vincent github pr create --task ID --title TITLE [--draft]` does the same
+thing without the TUI.
+
+This is the **only** thing vincent writes to GitHub. It never updates, comments
+on, closes or merges anything, it happens only when you ask for it, and
+[`github.enabled`](reference/configuration.md#github) turns it off along with
+every read. Agents cannot reach it: it is deliberately not an MCP tool, and an
+agent that wants a pull request runs `git push` and `gh pr create` in its own
+worktree, as it always could.
+
+Two things it will not do. It **never force-pushes** — a diverged, protected or
+rejected push creates no pull request and changes nothing on the remote, because
+your branch may hold commits nobody has pushed and throwing them away quietly is
+not vincent's call. And it pushes **committed work only**: anything uncommitted
+in the task's worktree is not in the pull request, which the form says before
+you confirm.
+
+If there is no credential with write scope, or GitHub refuses the create, the
+branch is still pushed and vincent falls back to opening GitHub's own "open a
+pull request" page in your browser — the same hand-off it always did, except
+that the branch behind it now exists.
 
 ## Run a pull request
 
@@ -397,8 +428,8 @@ other is the release check under [Run it on your platform](#run-it-on-your-platf
 — and it has its own switch: `github.poll_interval: 0` stops the background
 listing and leaves everything else working on demand. It fires only for projects
 whose `origin` is a github.com repository, so a daemon with no such project never
-makes it. It writes nothing to GitHub either — the compare URL is built, never
-fetched, and a human presses GitHub's button.
+makes it. It writes nothing to GitHub either: the reconciler only reads, and the
+one write vincent makes there happens when you ask for it, never on a tick.
 
 See the [pull-requests screen](guides/tui.md#pull-requests), the
 [CLI reference](reference/cli.md#vincent-github-prs) and the

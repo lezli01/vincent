@@ -48,12 +48,18 @@ matched against.
 5. **The compare URL is built, never fetched.** A task with a branch and no
    link carries a `compare_url` on a github.com compare page, and the fake
    `gh`'s argv log — every call the daemon actually made — contains nothing
-   about it and no `pr create`. Decision record row 11 stands: vincent pushes
-   nothing, opens nothing and merges nothing.
+   about it and no `pr create`. That assertion still holds after task 069 gave
+   vincent one write path, and it is the point of it: the compare URL is still
+   built by string construction, and nothing pushes or opens a pull request
+   unless a human asks through
+   `POST /v1/tasks/{id}/github/pull/create`, which this gate never calls. Row 11
+   is amended for that one human-initiated exception and for nothing automatic;
+   merging is still untouched.
 
 ## What the script does not assert
 
-The TUI. The takeover, the workspace section and the compare-URL editor are
+The TUI. The takeover, the workspace section and the pull-request form (the
+compare-URL editor this gate was written against) are
 covered by `internal/tui`'s own tests, including a `*live_test.go` against the
 real API handlers and the same `cmd/fakegh`; what a screen *looks like* is a
 judgement, the way M3's and 017's are, and this gate deliberately stops at the

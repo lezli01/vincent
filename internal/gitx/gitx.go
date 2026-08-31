@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -73,12 +74,19 @@ func New() *Git { return &Git{path: "git"} }
 // Run executes git with args in dir and returns trimmed stdout. Failures are
 // returned as *Error with stderr captured.
 func (g *Git) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return g.run(ctx, dir, nil, args...)
+}
+
+func (g *Git) run(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	// G204: g.path is "git" (or a test's stand-in) and args is an argument
 	// slice assembled by callers in this repository — no shell, so no quoting
 	// or metacharacter question arises for the branch and path values in it.
 	cmd := exec.CommandContext(ctx, g.path, args...) //nolint:gosec // G204: see above
 	hideConsole(cmd)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -149,4 +157,19 @@ func parseVersion(raw string) (major, minor int, ok bool) {
 	major, err1 := strconv.Atoi(m[1])
 	minor, err2 := strconv.Atoi(m[2])
 	return major, minor, err1 == nil && err2 == nil
+}
+
+// RunEnv is Run with extra environment variables layered over the daemon's
+// own (task 069). It exists for exactly one caller — the non-forcing branch
+// push, which sets `GIT_TERMINAL_PROMPT=0` so a credential helper that wants
+// a terminal fails instead of parking a request handler on a prompt nobody
+// can answer — and it is a separate method rather than a field on Git because
+// every other invocation in vincent wants the user's environment untouched
+// (spec §2).
+//
+// The daemon's own environment is inherited first and env is appended, which
+// is exec's own last-wins rule: a user who has already set GIT_TERMINAL_PROMPT
+// does not get two conflicting entries, they get this one.
+func (g *Git) RunEnv(ctx context.Context, dir string, env []string, args ...string) (string, error) {
+	return g.run(ctx, dir, env, args...)
 }

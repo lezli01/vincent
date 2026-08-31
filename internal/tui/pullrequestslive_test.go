@@ -85,3 +85,66 @@ func TestPullRequestsRefreshesOnAReconcilerTick(t *testing.T) {
 		return strings.Contains(v.render(160, 30), "(auto)")
 	})
 }
+
+// `P` on the takeover: the picker of tasks that could have a pull request and
+// do not, against the real handlers (task 069).
+//
+// This screen has no task rows and is not given any — its question is "what is
+// open across everything I run", and a task with no pull request is not an
+// open pull request. So the offer is a picker, and choosing a task navigates
+// to that task's workspace with the form up: the offer to create still lives
+// in the workspace (052 decision 6), widened rather than reversed.
+func TestPullRequestsCreatePickerOffersOnlyEligibleTasks(t *testing.T) {
+	h, _ := newGitHubLiveHarness(t, liveOptions{remote: ghLiveOrigin})
+	h.p.until(10*time.Second, "the GitHub probes to answer", func() bool {
+		return h.m.githubAvailable()
+	})
+	v := pullsView(t, h)
+	h.p.until(10*time.Second, "the pull-request listing", func() bool {
+		return v.loaded && len(v.rows()) > 0
+	})
+
+	// Eligible: a branch, and no pull request claiming it.
+	eligible := &store.Task{
+		ProjectID: h.projectID, Title: "Not yet on GitHub", WorkflowName: "implement",
+		BaseBranch: "main", BranchName: "vincent/7-not-yet", State: store.TaskQueued,
+	}
+	if err := h.st.CreateTask(context.Background(), eligible, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	// Not eligible: fakegh's open pull request #412 has this head branch, so
+	// the listing claims it.
+	claimed := &store.Task{
+		ProjectID: h.projectID, Title: "Already has one", WorkflowName: "implement",
+		BaseBranch: "main", BranchName: "vincent/1-add-a-thing", State: store.TaskQueued,
+	}
+	if err := h.st.CreateTask(context.Background(), claimed, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if _, err := h.st.SetTaskGitHubPull(context.Background(), claimed.ID, &github.PullLink{
+		Repo: "octo/repo", Number: 412, Source: "auto", LinkedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SetTaskGitHubPull: %v", err)
+	}
+	h.p.until(10*time.Second, "the claim to reach the view", func() bool {
+		return strings.Contains(v.render(160, 30), "(auto)")
+	})
+
+	v.updateKey(keyPress("P"))
+	if v.picker == nil {
+		t.Fatal("P did not open a picker")
+	}
+	out := strings.Join(v.picker.renderBody(), "\n")
+	if !strings.Contains(out, "Not yet on GitHub") {
+		t.Errorf("the eligible task is missing from the picker:\n%s", out)
+	}
+	if strings.Contains(out, "Already has one") {
+		t.Errorf("a task that already has a pull request is offered:\n%s", out)
+	}
+	// Choosing it hands the intent to the workspace rather than opening a
+	// second copy of the form here.
+	sel, ok := drain(v.openTaskWithPRForm(eligible.ID)).(selectTaskMsg)
+	if !ok || sel.id != eligible.ID || !sel.openPR {
+		t.Fatalf("choosing a task produced %#v", sel)
+	}
+}

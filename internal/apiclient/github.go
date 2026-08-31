@@ -373,3 +373,47 @@ func (c *Client) TaskGitHubChecks(ctx context.Context, taskID int64) (GitHubTask
 	}
 	return out, nil
 }
+
+// GitHubPullCreateRequest is what POST /v1/tasks/{id}/github/pull/create
+// takes: the three values the human edited in the popup (task 069). The head
+// and base branches are the task's own and are never sent — a client choosing
+// its own head is a client pushing a branch the task does not own.
+type GitHubPullCreateRequest struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Draft bool   `json:"draft"`
+}
+
+// GitHubPullCreated is the answer, and it carries both outcomes behind one
+// 200 (task 069).
+//
+// Created true is the happy path: Pull is the new pull request and Task is
+// the task with its link already written as `human`, so nothing has to be
+// refetched to render it. Created false means the branch was pushed and the
+// create call could not be made — CompareURL is then GitHub's own page for a
+// branch that is now *on the remote*, and Reason names why in the daemon's
+// vocabulary. A failed **push** is not this shape at all: it is a 409.
+type GitHubPullCreated struct {
+	Created bool   `json:"created"`
+	Pushed  bool   `json:"pushed"`
+	Branch  string `json:"branch,omitempty"`
+	Remote  string `json:"remote,omitempty"`
+
+	Pull *GitHubPullRequest `json:"pull,omitempty"`
+	Task *Task              `json:"task,omitempty"`
+
+	CompareURL string `json:"compare_url,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+// CreateGitHubPull pushes a task's branch to `origin` and opens its pull
+// request (task 069). It is the only call in this client that writes to a
+// forge, and it is made only when a human asks for it.
+func (c *Client) CreateGitHubPull(ctx context.Context, taskID int64, req GitHubPullCreateRequest) (GitHubPullCreated, error) {
+	var out GitHubPullCreated
+	if err := c.send(ctx, http.MethodPost, taskPullPath(taskID)+"/create", req, &out); err != nil {
+		return GitHubPullCreated{}, err
+	}
+	return out, nil
+}

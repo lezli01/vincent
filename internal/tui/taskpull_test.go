@@ -40,10 +40,16 @@ func TestTaskWorkspacePullSectionRendersEveryState(t *testing.T) {
 		t.Error("an unusable integration rendered as an error")
 	}
 
+	// The offer, and what it now says it will do: `P` pushes the branch and
+	// opens the pull request from here (task 069), rather than handing the
+	// branch to a browser and sending nothing.
 	offered := taskPullFixture(t, apiclient.GitHubTaskPull{CompareURL: compareURLFixture})
 	out = strings.Join(offered.pullSectionLines(100), "\n")
-	if !strings.Contains(out, "No pull request is linked") || !strings.Contains(out, "P opens") {
-		t.Errorf("the compare-URL offer does not render:\n%s", out)
+	if !strings.Contains(out, "No pull request is linked") || !strings.Contains(out, "P pushes") {
+		t.Errorf("the create offer does not render:\n%s", out)
+	}
+	if strings.Contains(out, "vincent sends nothing") {
+		t.Errorf("the section still claims vincent sends nothing:\n%s", out)
 	}
 
 	// And the section is in the tab's own sidebar order, so it is reachable.

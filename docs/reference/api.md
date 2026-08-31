@@ -610,6 +610,7 @@ pushed back. Both are absent on a link a reconciler or a human made.
 | `POST` | `/v1/tasks/{id}/github/pull` | `{ number }` — link by hand |
 | `DELETE` | `/v1/tasks/{id}/github/pull` | Unlink, and remember the refusal |
 | `GET` | `/v1/tasks/{id}/github/pull/checks` | The live check rollup for the linked pull request's head commit |
+| `POST` | `/v1/tasks/{id}/github/pull/create` | `{ title, body, draft }` — push the branch and open the pull request |
 
 ```json
 {
@@ -661,8 +662,60 @@ For a task with no link, the response carries `compare_url` instead: GitHub's
 own "open a pull request" page for the task's branch, prefilled with the task's
 title and description plus `Closes #N` when the task carries an issue snapshot
 from the same repository. It is **built, never fetched** — producing it makes no
-request to GitHub. vincent pushes nothing, opens nothing and merges nothing; a
-human presses GitHub's button.
+request to GitHub — and it is the fallback behind
+`POST /v1/tasks/{id}/github/pull/create` below.
+
+### Opening a pull request
+
+`POST /v1/tasks/{id}/github/pull/create` is the **one route in vincent that
+writes to GitHub**. It pushes the task's branch to `origin` and creates its pull
+request:
+
+```sh
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Add rate limiting","body":"Closes #12","draft":true}' \
+  http://127.0.0.1:8765/v1/tasks/61/github/pull/create
+```
+
+It is gated by [`github.enabled`](configuration.md#github) and the same
+capability probe every read is, and there is no second switch: the consent is a
+person asking for it. It is deliberately **not** an
+[MCP tool](#mcp) — an agent that wants a pull request has a shell in its own
+worktree and can run `git push` and `gh pr create` there.
+
+The push uses `--set-upstream` and **never** `--force`. Only committed work
+reaches it: anything uncommitted in the task's worktree is not in the pull
+request.
+
+There are three answers, and only one of them is an error.
+
+**Created** — 200, with the pull request and the task whose link was written
+immediately as `human`, so nothing has to wait for the reconciler's next tick:
+
+```json
+{ "created": true, "pushed": true, "branch": "vincent/61-add-rate-limiting",
+  "remote": "origin", "pull": { "number": 412, "draft": true, "…": "…" },
+  "task": { "id": 61, "…": "…" } }
+```
+
+**Pushed, not created** — also 200, and also not a failure. There was no
+credential with write scope, or GitHub refused the create; the branch is on the
+remote, so GitHub's own page works and a client opens it exactly as it would
+have before:
+
+```json
+{ "created": false, "pushed": true, "branch": "vincent/61-add-rate-limiting",
+  "remote": "origin", "reason": "forbidden",
+  "message": "the credential may not do this in this repository",
+  "compare_url": "https://github.com/octo/repo/compare/main...vincent%2F61-add-rate-limiting?expand=1&title=…" }
+```
+
+**Push refused** — 409, and nothing was attempted at GitHub, because a pull
+request for a head the remote does not have would be a dead page. The reason is
+`push_rejected` (a non-fast-forward, a protected branch, a declined hook),
+`push_no_credential` or `push_failed`. A task that already has a live link is
+also 409, with `pull_already_linked`: unlink it first.
 
 `POST` is the human link, for a pull request the head-branch rule misses (one
 opened from a branch vincent did not create) or gets wrong. It writes vincent's
@@ -675,7 +728,8 @@ human link is never overwritten by the daemon.
 the repo and number. That is what makes a human unlink stick — the daemon has to
 be able to read the refusal, and an empty column would only say "never matched".
 
-Both write routes return the updated task.
+`POST` and `DELETE` both return the updated task, as does a create that
+succeeded.
 
 Linking otherwise happens in the background. Every
 [`github.poll_interval`](configuration.md#github) the daemon lists each
@@ -683,9 +737,10 @@ GitHub-based project's open pull requests and links the ones whose head branch
 equals a task's branch, marking them `auto`. It never overwrites a `human` link
 and never un-suppresses one. Set the interval to `0` to switch it off.
 
-The two listings, `POST /v1/tasks` naming a `github_issue`, and `POST
-/v1/tasks/{id}/github/pull` answer **409** when the integration is not usable,
-carrying the reason a client can branch on:
+The two listings, `POST /v1/tasks` naming a `github_issue`, `POST
+/v1/tasks/{id}/github/pull` and `POST /v1/tasks/{id}/github/pull/create` answer
+**409** when the integration is not usable, carrying the reason a client can
+branch on:
 
 ```json
 { "error": { "code": "invalid_state",
@@ -1631,6 +1686,7 @@ Every route on this page is a tool, with these exceptions:
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
 | `POST /v1/workflows` | Same line: a workflow file is what that daemon runs. `GET /v1/workflows/schema` is an ordinary tool |
 | `PATCH /v1/workflows` | Same |
+| `POST /v1/tasks/{id}/github/pull/create` | The one route that writes to a forge. Nothing gates it behind the keypress it exists for — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
