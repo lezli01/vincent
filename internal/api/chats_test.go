@@ -26,9 +26,10 @@ import (
 )
 
 // chatHarness is the chat spine over the *real* handlers: server + store +
-// worktrees + a chat runner, with all three adapters pointed at fakeagent so
-// the refusal of codex and cursor is decided by the adapters themselves rather
-// than by a test double.
+// worktrees + a chat runner, with all three shipped adapters pointed at
+// fakeagent so what a chat may be created on is decided by the adapters
+// themselves rather than by a test double. agenttest.StubNonResuming rides
+// alongside them for the one thing none of the three says any more: no.
 type chatHarness struct {
 	*projectHarness
 	runner    *chatrun.Runner
@@ -49,7 +50,10 @@ func newChatHarness(t *testing.T) *chatHarness {
 	git := gitx.New()
 	wt := worktree.NewManager(git, dataDir)
 	bin := func() string { return fake }
-	reg := agent.NewRegistry(claude.New(bin), codex.New(bin), cursor.New(bin))
+	reg := agent.NewRegistry(
+		claude.New(bin), codex.New(bin), cursor.New(bin),
+		agenttest.StubNonResuming{},
+	)
 	h := &chatHarness{cfg: config.Default()}
 	cfg := func() config.Config { return h.cfg }
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -109,28 +113,82 @@ func (h *chatHarness) create(t *testing.T, agentName string) (int, map[string]an
 	return resp.StatusCode, out
 }
 
-// TestChatCreateRefusesAdaptersThatCannotResume is decision 3: the capability
-// is stated, never emulated. The refusal happens at creation, so a human never
-// gets a chat that cannot hold a conversation.
+// TestChatCreateRefusesAdaptersThatCannotResume is task 063 decision 3: the
+// capability is stated, never emulated. The refusal happens at creation, so a
+// human never gets a chat that cannot hold a conversation.
+//
+// The subject is the stub, not a shipped adapter. Task 070 taught codex and
+// cursor to resume and the two names this used to iterate then asserted the
+// opposite of the truth — which is exactly the failure mode a refusal pinned
+// to whichever CLI happens to lack the capability today will keep having.
 func TestChatCreateRefusesAdaptersThatCannotResume(t *testing.T) {
 	h := newChatHarness(t)
-	// cursor alone, since task 070. codex was refused here for want of a
-	// captured `exec resume` argv; that capture exists now, so a codex chat
-	// is created like a claude one and the refusal has one adapter left to
-	// state it over (§9.7).
-	for _, name := range []string{"cursor"} {
-		code, body := h.create(t, name)
-		if code != http.StatusBadRequest {
-			t.Fatalf("create on %s = %d, want 400 (%v)", name, code, body)
-		}
-		errObj, _ := body["error"].(map[string]any)
-		if got := errObj["code"]; got != CodeAgentCannotResume {
-			t.Fatalf("create on %s error code = %v, want %q", name, got, CodeAgentCannotResume)
-		}
+	code, body := h.create(t, agenttest.NonResumingName)
+	if code != http.StatusBadRequest {
+		t.Fatalf("create on %s = %d, want 400 (%v)", agenttest.NonResumingName, code, body)
 	}
-	for _, name := range []string{"claude", "codex"} {
+	errObj, _ := body["error"].(map[string]any)
+	if got := errObj["code"]; got != CodeAgentCannotResume {
+		t.Fatalf("error code = %v, want %q", got, CodeAgentCannotResume)
+	}
+	// And every shipped adapter is now on the other side of it (task 070).
+	for _, name := range []string{"claude", "codex", "cursor"} {
 		if code, body := h.create(t, name); code != http.StatusCreated {
 			t.Fatalf("create on %s = %d, want 201 (%v)", name, code, body)
+		}
+	}
+}
+
+// TestChatsAreAlwaysFullAuto is task 072 decision 1's structural guard, and it
+// is a guard rather than a happy-path assertion.
+//
+// A resumed codex run has no argv spelling for `restricted`: `codex exec
+// resume` carries no --sandbox at all, so the adapter always passes
+// --dangerously-bypass-approvals-and-sandbox (§9.3). That is only safe while
+// nothing can ask a chat for a restricted turn — POST /v1/chats hardcodes
+// full_auto and exposes no request field to override it, and no other caller
+// sets RunSpec.ResumeSessionID.
+//
+// So this asserts the absence: a request that tries to pick a mode does not
+// get one. The day chats gain a permission mode, this fails, and the decision
+// is reopened deliberately rather than discovered as a silent escalation on a
+// user's machine.
+func TestChatsAreAlwaysFullAuto(t *testing.T) {
+	h := newChatHarness(t)
+	// There is no field to ask with. The decoder rejects unknown ones, which
+	// is the guard: adding `permission_mode` to the request type turns this
+	// 400 into a 201 and fails here.
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/chats", map[string]any{
+		"project_id": h.projectID, "title": "a talk",
+		"agent": "codex", "permission_mode": string(agent.Restricted),
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("create with permission_mode = %d, want 400; a chat's mode is not "+
+			"requestable (task 072 decision 1) (%s)", resp.StatusCode, body)
+	}
+	// And what creation does produce is full_auto, on every adapter.
+	for _, name := range []string{"claude", "codex", "cursor"} {
+		resp, body := h.doJSON(t, http.MethodPost, "/v1/chats", map[string]any{
+			"project_id": h.projectID, "title": "a talk", "agent": name,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create on %s = %d (%s)", name, resp.StatusCode, body)
+		}
+		var out struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("chat body: %v", err)
+		}
+		// Read the row rather than the DTO: the wire shape does not carry a
+		// permission mode either, which is half of why this is safe.
+		c, err := h.store.GetChat(t.Context(), out.ID)
+		if err != nil {
+			t.Fatalf("GetChat: %v", err)
+		}
+		if c.PermissionMode != string(agent.FullAuto) {
+			t.Fatalf("chat on %s = %q, want %q: a resumed codex run has no argv "+
+				"spelling for restricted (§9.3)", name, c.PermissionMode, agent.FullAuto)
 		}
 	}
 }

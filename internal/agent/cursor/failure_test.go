@@ -10,6 +10,12 @@ import "testing"
 //
 // The §9.5 `logged_in` probe is unaffected: an unauthenticated cursor is still
 // flagged before a task is created. This is only about a run that has failed.
+//
+// Task 070 left this whole-hearted "nothing" intact, unlike codex's, and for a
+// stronger reason than a missing fixture: cursor has no session-lost refusal
+// either. Handed a `--resume` id it has never seen it starts a fresh chat and
+// exits 0 (testdata/resume_unknown_2026.08.11.jsonl), so there is no wording
+// to match, and TestUnknownSessionIsAdoptedNotRefused says so directly.
 func TestQuotaAndAuthStopsStayUnclassified(t *testing.T) {
 	for _, scenario := range []string{"usage-limit", "unauthenticated"} {
 		t.Run(scenario, func(t *testing.T) {

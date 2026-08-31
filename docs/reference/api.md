@@ -190,8 +190,8 @@ answered even for a CLI that is missing.
 `GET /v1/info`'s and `GET /v1/doctor`'s `agents[]`, beside `supports_input`.
 
 `supports_resume` is whether the adapter can resume its own session, and so
-whether it may hold a [chat](cli.md#vincent-chat): `true` for claude and codex,
-`false` for cursor. It is the same answer `POST /v1/chats` gates on, so a
+whether it may hold a [chat](cli.md#vincent-chat): `true` for all three shipped
+adapters. It is the same answer `POST /v1/chats` gates on, so a
 picker built on it and the `agent_cannot_resume` refusal cannot disagree, and
 like `restricted_verdict` it is answered for a CLI that is missing. It is
 `null` — never `false` — when the daemon has no adapter registry to ask, and a
@@ -337,7 +337,7 @@ daemon running.
   "agents":   [ { "name": "codex", "available": true, "path": "…",
                   "version": "0.147.0", "logged_in": true,
                   "supports_input": false, "version_verdict": "tested",
-                  "tested_versions": "0.142.5, 0.147.0",
+                  "tested_versions": "0.142.5, 0.147.0, 0.150.1",
                   "restricted_verdict": "supported" } ],
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
                 "disk_total_bytes": 494384795648,
@@ -1403,14 +1403,14 @@ continuity. An adapter that cannot resume is refused:
 
 ```json
 {"error": {"code": "agent_cannot_resume",
-           "message": "agent \"cursor\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
+           "message": "agent \"someagent\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
 ```
 
-Today that is cursor alone. codex joined claude when its `exec resume
-<thread_id>` was pinned by a capture against a named build; cursor-agent has a
-`--resume` of some shape and vincent does not read it yet, and faking continuity
-by replaying the log into the prompt is exactly what this refusal exists to
-prevent.
+All three shipped adapters can resume, so today nothing hits this. It is kept
+because it is the contract for the next adapter: faking continuity by replaying
+the log into the prompt is exactly what the refusal exists to prevent. Ask
+[`GET /v1/agents`](#get-v1agents) for `supports_resume` rather than assuming a
+list.
 
 ### States
 
@@ -1485,7 +1485,10 @@ Two failure reasons are worth knowing:
   fails, the chat stays usable and keeps its id, and nothing starts a fresh
   session behind your back: an agent answering with none of the conversation in
   context reads exactly like one that has it, so starting over is a decision you
-  make explicitly.
+  make explicitly. claude and codex both report this; **cursor cannot** — it
+  adopts an unknown session id and answers — so a cursor chat is the one place
+  that reading is unavoidable, and it is a property of the CLI rather than a
+  choice vincent makes.
 - **`interrupted`** — the daemon restarted under a live turn. It is **not**
   re-run, unlike a task's step: re-running would re-send your message into a
   session that died with the process. The chat returns to `idle`.

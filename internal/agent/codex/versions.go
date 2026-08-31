@@ -5,11 +5,12 @@ import "github.com/lezli01/vincent/internal/agent"
 // Version compatibility for the codex CLI (spec §9.3, task 041).
 
 // testedVersions are the builds vincent's parsers were captured against:
-// 0.142.5 is the invocation pinned in §9.3, and reasoning_0.147.0.jsonl pins
-// the reasoning dialect. A build outside this list is `untested`, which is
+// 0.142.5 is the fresh invocation pinned in §9.3, reasoning_0.147.0.jsonl
+// pins the reasoning dialect, and 0.150.1 pins `exec resume` — its argv, its
+// `thread.started`, and its refusal of an unknown id (task 070). A build outside this list is `untested`, which is
 // the normal state for a user on a current CLI and changes nothing about how
 // a step runs.
-var testedVersions = []string{"0.142.5", "0.147.0"}
+var testedVersions = []string{"0.142.5", "0.147.0", "0.150.1"}
 
 // incompatibleVersions are builds vincent knows break. It ships empty: no
 // codex release has been observed to break these parsers. Tests inject one

@@ -35,25 +35,28 @@ func codexLoginStatus() {
 }
 
 // codexMain is the codex dialect (T2.9): argv shaped like
-// `codex exec --json …`, prompt from stdin, `codex exec --json` JSONL on
+// `codex exec --json …` or `codex exec resume --json … <id> -`, prompt from
+// stdin, `codex exec --json` JSONL on
 // stdout. The emitted shapes mirror the fixtures captured from a real
 // codex-cli 0.142.5 (internal/agent/codex/testdata).
 func codexMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
 
-	// The conversation is resolved before a line is emitted, as in the
-	// claude dialect: `codex exec --json resume <id>` of an id the store
-	// does not hold ends here (task 070). codex reports the thread id on
+	// The conversation is resolved before a single stream line is emitted,
+	// as in the claude dialect: `codex exec --json resume <id>` of an id the
+	// store does not hold ends here (task 070), with the refusal on stderr
+	// and no stream at all, which is the shape internal/agent/codex
+	// classifies as `session_lost`. codex reports the thread id on
 	// `thread.started`, and a resumed run reports the *same* id — which is
 	// what the real 0.150.1 capture shows (testdata/resume_0.150.1.jsonl).
-	prior := openSession()
+	prior := openSession(dialectCodex)
 	rememberPrompt(prompt)
 
 	emit(map[string]any{"type": "thread.started", "thread_id": codexThreadID()})
 	emit(map[string]any{"type": "turn.started"})
 	if line := recallLine(prior); line != "" {
 		// What a resumed thread remembers. A fresh one says nothing here, so
-		// a vincent that dropped the resume argv fails by omission.
+		// a vincent that dropped the resume id fails by omission.
 		emitCodexMessage(line)
 	}
 	switch scenario {

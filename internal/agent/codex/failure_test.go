@@ -3,9 +3,16 @@ package codex
 import "testing"
 
 // TestQuotaAndAuthStopsStayUnclassified pins the codex half of task 003's
-// decision: this adapter recognizes nothing, because its usage-limit and
-// unauthenticated wordings are not fixture-verified, so a run stopped by
-// either reads exactly as it did before — an ordinary failure under §7.2.
+// decision: this adapter recognizes neither of these two, because its
+// usage-limit and unauthenticated wordings are not fixture-verified, so a run
+// stopped by either reads exactly as it did before — an ordinary failure under
+// §7.2.
+//
+// "Neither of these two", not "nothing at all", since task 070: a thread codex
+// refused to resume *is* classified, because a bad id costs nothing to
+// reproduce and its wording has a fixture. These scenarios pass no resume id,
+// so they never reach that classifier — which is the same guard stated from
+// the other side in TestClassifyResumeIsNarrow.
 //
 // The test exists rather than the classification because the risk here is the
 // opposite of a missing feature: an adapter that starts guessing would send a

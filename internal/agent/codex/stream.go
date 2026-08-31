@@ -238,6 +238,21 @@ func commandOutput(it *execItem) *agent.CommandOutput {
 	}
 }
 
+// threadIDOf reads codex's `thread_id` off one verbatim JSONL line, or ""
+// when the line has none or does not parse. Only `thread.started` carries
+// one, and both a fresh and a resumed run open with it (verified against
+// 0.150.1). It is deliberately separate from parse: a thread id is not an
+// event — it is a property of the run, and the run records it (§9.1, §9.3).
+func threadIDOf(raw []byte) string {
+	var line struct {
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return ""
+	}
+	return line.ThreadID
+}
+
 // stream normalizes codex JSONL lines into agent.Events. Unlike claude,
 // codex has no single result event: the result text is the last
 // agent_message and usage arrives with turn.completed, so normalization
@@ -270,6 +285,10 @@ func (s *stream) parse(raw []byte) agent.Event {
 		// Not an event in its own right: nothing renders a thread id, and
 		// the run it identifies has not produced anything yet. It is held
 		// for the terminal result, which is what a chat reads (task 070).
+		// It falls through to EventUnknown, which still transcripts the line
+		// verbatim. threadIDOf reads the same field off the raw line for the
+		// run itself, which is what carries the id when a run produces no
+		// terminal result at all — a refused resume (failure.go).
 		s.threadID = line.ThreadID
 	case "item.started":
 		if line.Item == nil {

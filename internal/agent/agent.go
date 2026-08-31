@@ -96,9 +96,11 @@ var ErrResumeUnsupported = errors.New("this agent CLI cannot resume a previous s
 // It is an optional interface rather than an Adapter method so that "adding an
 // agent CLI is one new implementation with zero core changes" stays true: an
 // adapter that says nothing cannot resume. All three shipped adapters
-// implement it anyway, because §9.x states a missing capability positively —
-// codex and cursor return false with the reason in their doc comment rather
-// than leaving a reader to infer it from an absence.
+// implement it, and since task 070 all three return true, each pinned to a
+// fixture from a named CLI build. The false leg is exercised against
+// agenttest.StubNonResuming — a refusal proven only against whichever CLI
+// happens to lack the capability today inverts itself the day that CLI gains
+// it, which is exactly what happened here.
 type Resumer interface {
 	// SupportsResume reports whether Start honors RunSpec.ResumeSessionID.
 	SupportsResume() bool
@@ -597,6 +599,12 @@ const (
 	// FailureSessionLost is a resume the CLI refused because the session id
 	// it was given is gone or expired (task 063 decision 4). Only a chat
 	// turn can produce it — nothing else sets RunSpec.ResumeSessionID.
+	//
+	// claude and codex report it; cursor cannot, and that is the CLI's doing
+	// rather than a gap in its adapter — handed an id it has never seen,
+	// cursor-agent starts a fresh chat under that id and answers (§9.7, task
+	// 070 decision 2). So a cursor chat is the one place the reading below
+	// actually happens, and it is stated rather than emulated.
 	//
 	// The engine fails the turn with `session_lost` rather than falling back
 	// to a fresh session: the human asked to continue a conversation, and an

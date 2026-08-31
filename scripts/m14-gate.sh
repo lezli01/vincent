@@ -3,10 +3,10 @@
 # drive a chat end to end over the wire, against the committed fakeagent so CI
 # never calls a real agent CLI.
 #
-#   1. POST /v1/chats creates a chat with a worktree and a branch; an adapter
-#      that cannot resume is refused with the typed reason
+#   1. POST /v1/chats creates a chat with a worktree and a branch
 #   2. two sends in a row: turn 2 answers with what only turn 1 supplied, so
-#      continuity came from the agent resuming its own session
+#      continuity came from the agent resuming its own session — walked on
+#      every shipped adapter, since each spells resume differently (task 070)
 #   3. GET /v1/chats/{id}/turns/{seq}/transcript serves the turn, and a
 #      resume from its X-Next-Offset returns only what was appended
 #   4. GET /v1/chats/{id}/events streams this chat's events and nobody else's
@@ -15,6 +15,13 @@
 #      never queued — and leaves no turn row behind
 #   7. cancel stops a live turn; archive removes the worktree
 #   8. chats never appear in GET /v1/tasks
+#
+# The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
+# no shipped adapter is refused, so a real daemon has no subject to reach it
+# with; it stays proven in Go against agenttest.StubNonResuming, in
+# internal/api and internal/chatrun. Registering a fake adapter in the
+# daemon's own registry to keep the leg would put a test double in the
+# production registry, which is the §9.1 property the refusal exists to guard.
 #
 # There are no workflow `run:` bodies to spell in the sh∩pwsh intersection —
 # a chat has no workflow — but this script's own bash obeys the two standing
@@ -78,6 +85,8 @@ agents:
     path: "$(hostpath "$FAKEAGENT")"
   codex:
     path: "$(hostpath "$FAKEAGENT")"
+  cursor:
+    path: "$(hostpath "$FAKEAGENT")"
 EOF
 
 echo "== start the daemon"
@@ -137,17 +146,7 @@ PROJECT="$(api POST /projects -d "{\"path\": \"$(hostpath "$REPO")\"}")" \
   || fail "POST /v1/projects failed"
 PROJECT_ID="$(printf '%s' "$PROJECT" | jq -r .id)"
 
-echo "== 1. create a chat; an adapter that cannot resume is refused"
-# cursor, since task 070: codex gained `exec resume <thread_id>` and is
-# created like claude now, so cursor is the adapter left to state the refusal
-# over. An adapter that cannot resume is refused at creation, never emulated.
-CODE="$(api_status POST /chats \
-  -d "{\"project_id\": $PROJECT_ID, \"title\": \"no memory\", \"agent\": \"cursor\"}")"
-[[ "$CODE" == "400" ]] || fail "a cursor chat answered $CODE, want 400"
-REASON="$(jq -r .error.code < "$TMP/body.json")"
-[[ "$REASON" == "agent_cannot_resume" ]] \
-  || fail "the refusal is $REASON, want the typed agent_cannot_resume"
-
+echo "== 1. create a chat"
 CHAT="$(api POST /chats \
   -d "{\"project_id\": $PROJECT_ID, \"title\": \"gate talk\", \"agent\": \"claude\"}")" \
   || fail "POST /v1/chats failed"
@@ -185,32 +184,41 @@ case "$RECALL" in
   *) fail "turn 2 ran a fresh session rather than resuming one" ;;
 esac
 
-echo "== 2b. a codex chat resumes its own thread"
-CODEX_CHAT="$(api POST /chats \
-  -d "{\"project_id\": $PROJECT_ID, \"title\": \"codex talk\", \"agent\": \"codex\"}")" \
-  || fail "a codex chat was refused; task 070 made codex resumable"
-CODEX_ID="$(printf '%s' "$CODEX_CHAT" | jq -r .id)"
-api POST "/chats/$CODEX_ID/send" -d '{"message": "my favourite colour is heliotrope"}' >/dev/null \
-  || fail "the first codex send failed"
-STATE="$(wait_turn "$CODEX_ID" 1)"
-[[ "$STATE" == "done" ]] || fail "codex turn 1 is $STATE, want done"
-CODEX_SESSION="$(api GET "/chats/$CODEX_ID" | jq -r .chat.session_id)"
-[[ -n "$CODEX_SESSION" && "$CODEX_SESSION" != "null" ]] \
-  || fail "the codex chat recorded no thread id, so there is nothing to resume"
-api POST "/chats/$CODEX_ID/send" -d '{"message": "what is my favourite colour?"}' >/dev/null \
-  || fail "the second codex send failed"
-STATE="$(wait_turn "$CODEX_ID" 2)"
-[[ "$STATE" == "done" ]] || fail "codex turn 2 is $STATE, want done"
-# The stand-in has no model, so this proves the plumbing and not the memory:
-# vincent handed the thread id back on argv, and the child recognized it.
-# That context genuinely survives is the owner walkthrough's job — the same
-# division m5 draws, and the reason m3 seeds rather than asserts.
-CODEX_RECALL="$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  "$BASE/chats/$CODEX_ID/turns/2/transcript" | tr -d '\r')"
-case "$CODEX_RECALL" in
-  *heliotrope*) ;;
-  *) fail "codex turn 2 did not see turn 1; transcript: $CODEX_RECALL" ;;
-esac
+echo "== 2b. the same two turns on codex and cursor"
+# Each adapter spells resume differently — claude and cursor take
+# `--resume <id>`, codex an `exec --json resume <id>` subcommand — and each
+# reports its id off a different stream shape. A daemon that dropped the id for
+# one of them fails here by omission: a fresh session emits no recall line.
+for AGENT in codex cursor; do
+  OTHER="$(api POST /chats \
+    -d "{\"project_id\": $PROJECT_ID, \"title\": \"$AGENT talk\", \"agent\": \"$AGENT\"}")" \
+    || fail "POST /v1/chats on $AGENT failed"
+  OTHER_ID="$(printf '%s' "$OTHER" | jq -r .id)"
+  api POST "/chats/$OTHER_ID/send" \
+    -d '{"message": "my favourite colour is heliotrope"}' >/dev/null \
+    || fail "the first send on $AGENT failed"
+  STATE="$(wait_turn "$OTHER_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "$AGENT turn 1 is $STATE, want done"
+  SESSION="$(api GET "/chats/$OTHER_ID" | jq -r .chat.session_id)"
+  [[ -n "$SESSION" && "$SESSION" != "null" ]] \
+    || fail "the $AGENT chat recorded no session id, so there is nothing to resume"
+
+  api POST "/chats/$OTHER_ID/send" -d '{"message": "what is my favourite colour?"}' >/dev/null \
+    || fail "the second send on $AGENT failed"
+  STATE="$(wait_turn "$OTHER_ID" 2)"
+  [[ "$STATE" == "done" ]] || fail "$AGENT turn 2 is $STATE, want done"
+  RECALL="$(curl -sS -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$OTHER_ID/turns/2/transcript" | tr -d '\r')"
+  case "$RECALL" in
+    *heliotrope*) ;;
+    *) fail "$AGENT turn 2 did not see turn 1; transcript: $RECALL" ;;
+  esac
+  case "$RECALL" in
+    *recalled:*) ;;
+    *) fail "$AGENT turn 2 ran a fresh session rather than resuming one" ;;
+  esac
+  api POST "/chats/$OTHER_ID/archive" >/dev/null || fail "archiving the $AGENT chat failed"
+done
 
 echo "== 3. the per-turn transcript, and its offset seam"
 HEADERS="$TMP/transcript.headers"

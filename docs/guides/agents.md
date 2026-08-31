@@ -27,13 +27,14 @@ silently drops.
 | Binary | `claude` | `codex` | **`cursor-agent`** |
 | `agent:` value | `claude` | `codex` | `cursor` |
 | Mid-run questions (`awaiting_input`) | ✅ | — | — |
-| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume <thread_id>` | — |
+| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` |
+| Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
 | Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
-| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
+| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | — | — | — |
@@ -138,11 +139,23 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   `awaiting_input`, and `on_input: wait|deny` has no effect on it. `on_input:
   require` is the one that does: a step declaring it cannot use codex at all,
   and a workflow pinning `agent: codex` on such a step fails validation.
-- **Resumes its own thread**, so codex holds a chat like Claude Code does.
-  vincent reads the `thread_id` the stream reports and hands it back as
-  `codex exec --json resume <thread_id>` on the next turn. The argv is pinned
-  by a capture against codex-cli 0.150.1; nothing is emulated, and vincent
-  never replays a conversation into the prompt.
+- **Resumes its own session**, so codex holds a
+  [chat](../reference/cli.md#vincent-chat) like Claude Code does. Resume is a
+  subcommand rather than a flag — `codex exec --json resume <thread_id>` —
+  and the prompt stays on stdin, because `exec resume` reads stdin when it is
+  given no prompt argument. vincent stores the `thread_id` the stream reports
+  on `thread.started` and hands it back on the next turn. The argv is pinned by
+  a capture against codex-cli 0.150.1; nothing is emulated, and vincent never
+  replays a conversation into the prompt. Workflow steps never set it: every
+  step still gets a fresh session. Two consequences, both stated rather than
+  worked around:
+  - A **resumed run is always full-auto.** `codex exec resume` has no
+    `--sandbox`, so `restricted` has no spelling on it. Only a chat turn ever
+    resumes, and a chat is always full-auto — there is no permission mode to
+    ask for on one — so this is a combination you cannot reach rather than a
+    restriction that gets dropped.
+  - A thread codex no longer knows fails that turn with `session_lost` rather
+    than quietly starting a new one.
 - **The plan and command output are surfaced.** Codex reports a running to-do
   list, which the pane shows with a `☰` gutter at the `normal` and `verbose`
   output levels, ticking over as the agent works. What a command printed shows
@@ -182,9 +195,12 @@ and would open a GUI. **Workflow value:** `agent: cursor`.
 - Reports token usage but **no cost**, and `supports_input: false` — so, like
   codex, cursor cannot back a step declaring `on_input: require`, and pinning it
   on one is a validation error.
-- **Cannot resume a session** either, and is refused for chats the same way.
-  `cursor-agent` has a `--resume` and emits a `session_id`; as with codex,
-  neither is wired here and no fixture pins the flag against a named build.
+- **Resumes its own session** too, with `--resume <session_id>` — the same
+  `session_id` its stream stamps on every line — so cursor can hold a chat.
+  Unlike claude and codex it has **no way to tell you a session is gone**:
+  handed a `--resume` id it has never seen it starts a fresh chat under that
+  id and answers normally, so a cursor chat whose session has aged out replies
+  without remembering the conversation instead of failing `session_lost`.
 - Errors do not arrive in the stream — an invalid model id exits 1 with a message
   on stderr and no result line — so the adapter reports "stream ended without a
   result event" plus the stderr tail, which is what makes an everyday typo
@@ -420,7 +436,8 @@ authority there, and you find out at run time.
 ## Choosing between them
 
 - **Anything where you may want to answer a question mid-run** — claude. It is
-  the only adapter that can be asked and resumed.
+  the only adapter that can be asked something mid-run; all three can be
+  resumed, so all three can hold a chat.
 - **Cost tracking matters** — claude. The other two report none, so the board's
   cost column stays empty for them and a configured per-task spend cap never
   fires. Vincent will not estimate money from token counts.

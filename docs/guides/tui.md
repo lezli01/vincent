@@ -1027,9 +1027,10 @@ project's actual default branch and follows the project row; leave it empty and
 the daemon resolves that default at creation.
 
 Only an agent that can resume its own session can hold a chat, so the agent
-list offers only those. The daemon refuses the rest at creation with that
-reason rather than a generic failure, and the form still renders it — it is the
-backstop, not the thing you are expected to walk into.
+picker offers only those — which today is all three of them. The daemon refuses
+anything else at creation with that reason rather than a generic failure, and
+the form still renders it — it is the backstop for the next adapter, not
+something you are expected to walk into.
 
 The draft owns the keyboard while it is open: every row, and every open list, so
 no keystroke leaks out to the global keys. `esc` closes an open list and leaves

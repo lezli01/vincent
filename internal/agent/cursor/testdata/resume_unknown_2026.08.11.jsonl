@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/worktree","session_id":"00000000-0000-4000-8000-000000000000","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]},"session_id":"00000000-0000-4000-8000-000000000000"}
+{"type":"thinking","subtype":"delta","text":"The user sent a greeting.","session_id":"00000000-0000-4000-8000-000000000000","timestamp_ms":1788192685934}
+{"type":"thinking","subtype":"delta","text":"\n\nPreparing a friendly","session_id":"00000000-0000-4000-8000-000000000000","timestamp_ms":1788192685937}
+{"type":"thinking","subtype":"delta","text":" response and offering","session_id":"00000000-0000-4000-8000-000000000000","timestamp_ms":1788192685937}
+{"type":"thinking","subtype":"delta","text":" assistance.","session_id":"00000000-0000-4000-8000-000000000000","timestamp_ms":1788192685937}
+{"type":"thinking","subtype":"completed","session_id":"00000000-0000-4000-8000-000000000000","timestamp_ms":1788192685938}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello! How can I help you today? I can assist with code, debugging, exploring this repo, or anything else you're working on."}]},"session_id":"00000000-0000-4000-8000-000000000000"}
+{"type":"result","subtype":"success","duration_ms":2667,"duration_api_ms":2667,"is_error":false,"result":"Hello! How can I help you today? I can assist with code, debugging, exploring this repo, or anything else you're working on.","session_id":"00000000-0000-4000-8000-000000000000","request_id":"REQUEST","usage":{"inputTokens":10946,"outputTokens":64,"cacheReadTokens":5746,"cacheWriteTokens":0}}

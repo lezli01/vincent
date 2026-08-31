@@ -1022,8 +1022,9 @@ Chats are not tasks. They never appear on the board, they run no workflow, and
 a chat turn never waits for a scheduler slot: it starts when you send it, or it
 is refused because `max_parallel_chats` chats are already running.
 
-Only an agent CLI that can resume its own session can hold a chat. Today that
-is `claude` and `codex`; `cursor` is refused at creation with
+Only an agent CLI that can resume its own session can hold a chat. All three
+shipped adapters can — `claude` with `--resume`, `codex` with `exec --json resume <id>`,
+`cursor` with `--resume`. An adapter that cannot is refused at creation with
 `agent_cannot_resume` rather than having the conversation faked by replaying
 the log as prompt context.
 
@@ -1048,7 +1049,10 @@ Sends a message and blocks until the turn ends, then prints the agent's answer
 on stdout. A failed turn prints its reason on stderr and exits 1 — including
 `session_lost`, which means the agent CLI no longer knows the session this chat
 was resuming. The chat stays usable; starting a fresh conversation is a
-decision you make, not one vincent makes silently.
+decision you make, not one vincent makes silently. `cursor` is the exception,
+and not one vincent can fix: it never refuses an unknown session id — it
+starts a fresh chat under it and answers — so a cursor chat whose session has
+aged out replies without remembering rather than failing.
 
 If the agent asks a question mid-turn the chat enters `awaiting_input` and the
 send keeps waiting, because the turn has not ended. Answer it from another

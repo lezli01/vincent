@@ -184,7 +184,7 @@ var errRestricted = fmt.Errorf(
 	agent.ErrRestrictedUnsupported)
 
 // buildArgs assembles the pinned CLI invocation (spec §9.7, verified against
-// cursor-agent 2026.08.04-aaa8809).
+// cursor-agent 2026.08.04-aaa8809, and 2026.08.11-e8db854 for --resume).
 //
 // --trust rides in both permission modes: every task runs in a git worktree
 // the CLI has never seen, and a workspace-trust prompt in a headless run is a
@@ -220,6 +220,14 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 		// run stops on a trust prompt for the server vincent just configured,
 		// which is a hang rather than a question (§9.7).
 		args = append(args, "--approve-mcps")
+	}
+	if spec.ResumeSessionID != "" {
+		// `--resume [chatId]` takes an *optional* value, which would be a
+		// hazard for a CLI that also takes a positional prompt — the prompt
+		// would be swallowed as the flag's value. It is safe here because
+		// this adapter never passes one: the prompt goes on stdin (above),
+		// so the id is the only thing that can follow the flag (§9.7).
+		args = append(args, "--resume", spec.ResumeSessionID)
 	}
 	// spec.Effort is deliberately dropped: cursor has no effort flag, and
 	// reasoning depth is selected through the model id (spec §9.7).
@@ -297,6 +305,13 @@ type run struct {
 
 	mu       sync.Mutex
 	terminal *agent.RunResult // assembled from the result event
+	// sessionID is the last `session_id` cursor stamped on a stream line.
+	// Every line carries it, claude's shape rather than codex's, so the last
+	// one seen is the session the run actually ran in — and a resumed run
+	// repeats the id it was given (verified against 2026.08.11-e8db854,
+	// testdata/resume_2026.08.11.jsonl). Last-wins regardless, matching
+	// claude (§9.2).
+	sessionID string
 	// streamErr is readLoop's own reader failing, latched for Wait. It is
 	// vincent losing the stream, not the CLI failing, and Wait says so with
 	// agent.FailureStreamError rather than letting the exit code speak for a
@@ -329,6 +344,11 @@ func (r *run) readLoop(rd io.Reader) {
 		copy(line, sc.Bytes())
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
+		}
+		if sid := sessionIDOf(line); sid != "" {
+			r.mu.Lock()
+			r.sessionID = sid
+			r.mu.Unlock()
 		}
 		ev := parse(line)
 		if ev.Type == agent.EventResult && ev.Result != nil {
@@ -385,6 +405,13 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 // reads exactly as it did before task 003. Note that the §9.5 `logged_in`
 // probe is unaffected and still flags an unauthenticated CLI *before* a task
 // is created — this is only about classifying a run that already failed.
+//
+// FailureSessionLost is absent for a different and stronger reason: cursor
+// never produces it. Asked to `--resume` an id it has never seen, 2026.08.11
+// does not refuse — it starts a fresh chat under that id, exits 0 and answers
+// normally (testdata/resume_unknown_2026.08.11.jsonl). There is no wording to
+// match because there is no refusal, so this adapter states the gap rather
+// than inventing a match for it (§9.7, task 072 decision 2).
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
@@ -404,8 +431,9 @@ func (r *run) Wait() (agent.RunResult, error) {
 		}
 		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
 		r.mu.Lock()
-		terminal, streamErr := r.terminal, r.streamErr
+		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		r.mu.Unlock()
+		res.SessionID = sessionID
 		if terminal != nil {
 			res.IsError = terminal.IsError
 			res.ErrorMessage = terminal.ErrorMessage
@@ -461,9 +489,10 @@ func (w *tailWriter) String() string {
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.cmd.Args }
 
-// SupportsResume implements agent.Resumer, in the negative (§9.7, task 063
-// decision 3). cursor-agent has a `--resume` of its own and emits a
-// `session_id`, but as with codex neither is wired here and no captured
-// fixture pins the flag against a named cursor-agent build. Chat creation
-// refuses cursor rather than replaying the log as prompt context.
-func (a *Adapter) SupportsResume() bool { return false }
+// SupportsResume implements agent.Resumer: cursor-agent reloads one of its
+// own chats with `--resume <session_id>` (§9.7), which is what lets a chat
+// (§5.5) run on this adapter. Pinned against cursor-agent 2026.08.11-e8db854:
+// the `session_id` the stream stamps on every line is the id `--resume`
+// accepts, and a resumed run answers from the earlier turn
+// (testdata/resume_2026.08.11.jsonl).
+func (a *Adapter) SupportsResume() bool { return true }

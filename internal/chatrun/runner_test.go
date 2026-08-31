@@ -36,6 +36,10 @@ type harness struct {
 	// agent remembering, not from anything vincent kept.
 	sessionDir string
 	cfg        config.Config
+	// flood is the stub adapter drain_test.go drives. It is registered here
+	// rather than there because the registry is built once, and an adapter
+	// nothing selects costs the other tests nothing.
+	flood *floodAdapter
 }
 
 func newHarness(t *testing.T) *harness {
@@ -54,7 +58,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{
 		store: st, repo: repo, project: project, dataDir: dataDir,
-		sessionDir: t.TempDir(), cfg: config.Default(),
+		sessionDir: t.TempDir(), cfg: config.Default(), flood: &floodAdapter{},
 	}
 	t.Setenv("FAKEAGENT_SESSION_DIR", h.sessionDir)
 	h.runner = New(Deps{
@@ -65,6 +69,7 @@ func newHarness(t *testing.T) *harness {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return fake }),
 			cursor.New(func() string { return fake }),
+			h.flood,
 		),
 		DataDir: dataDir,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -74,15 +79,17 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
-// chat creates a chat with a real worktree, the way the API does. It is always
-// on claude: the other two adapters cannot resume, so a chat on one never gets
-// past creation — which is asserted at the adapter level in
-// TestAdaptersThatCannotResume and over the wire in internal/api.
-func (h *harness) chat(t *testing.T) *store.Chat {
+// chat creates a chat with a real worktree, the way the API does, on claude —
+// the adapter whose dialect every scenario in this file was written against.
+func (h *harness) chat(t *testing.T) *store.Chat { return h.chatOn(t, "claude") }
+
+// chatOn is chat, on a named adapter. All three shipped adapters can resume
+// since task 070, so the tests that are *about* resuming run on each of them.
+func (h *harness) chatOn(t *testing.T, agentName string) *store.Chat {
 	t.Helper()
 	c := &store.Chat{
 		ProjectID: h.project.ID, Title: "a talk", State: chatstate.Idle,
-		Agent: "claude", PermissionMode: string(agent.FullAuto), BaseBranch: "main",
+		Agent: agentName, PermissionMode: string(agent.FullAuto), BaseBranch: "main",
 	}
 	if err := h.store.CreateChat(t.Context(), c); err != nil {
 		t.Fatalf("CreateChat: %v", err)
@@ -156,38 +163,50 @@ func (h *harness) waitTurn(t *testing.T, turnID int64) *store.ChatTurn {
 // reason the feature exists: the second turn answers with something only the
 // first supplies. Nothing here replays a log — the fake CLI is asked to resume
 // its own session, and it says what it remembers.
+//
+// It runs on all three adapters since task 070. Each subtest exercises a
+// different argv and a different stream: claude's `--resume <id>` with the id
+// on every line, codex's `exec resume <id> -` with a `thread_id` on one, and
+// cursor's `--resume <id>` with a `session_id` on every line. A vincent that
+// dropped the id for any one of them fails by omission — a fresh session emits
+// no recall line at all — rather than by a difference a reader has to squint
+// at.
 func TestTurnTwoSeesTurnOne(t *testing.T) {
-	h := newHarness(t)
-	c := h.chat(t)
+	for _, agentName := range []string{"claude", "codex", "cursor"} {
+		t.Run(agentName, func(t *testing.T) {
+			h := newHarness(t)
+			c := h.chatOn(t, agentName)
 
-	first := h.sendAndWait(t, c.ID, "my favourite colour is heliotrope")
-	if first.State != chatstate.TurnDone {
-		t.Fatalf("turn 1 = %s (%s: %s)", first.State, first.FailReason, first.ErrorMessage)
-	}
-	if first.SessionID == "" {
-		t.Fatal("turn 1 recorded no session id, so there is nothing to resume")
-	}
-	// The chat, not the turn, is what the next turn resumes.
-	after := h.waitIdle(t, c.ID)
-	if after.SessionID != first.SessionID {
-		t.Fatalf("chat session id = %q, want the turn's %q", after.SessionID, first.SessionID)
-	}
+			first := h.sendAndWait(t, c.ID, "my favourite colour is heliotrope")
+			if first.State != chatstate.TurnDone {
+				t.Fatalf("turn 1 = %s (%s: %s)", first.State, first.FailReason, first.ErrorMessage)
+			}
+			if first.SessionID == "" {
+				t.Fatal("turn 1 recorded no session id, so there is nothing to resume")
+			}
+			// The chat, not the turn, is what the next turn resumes.
+			after := h.waitIdle(t, c.ID)
+			if after.SessionID != first.SessionID {
+				t.Fatalf("chat session id = %q, want the turn's %q", after.SessionID, first.SessionID)
+			}
 
-	second := h.sendAndWait(t, c.ID, "what is it again?")
-	if second.State != chatstate.TurnDone {
-		t.Fatalf("turn 2 = %s (%s: %s)", second.State, second.FailReason, second.ErrorMessage)
-	}
-	// The recall line is only ever emitted by a run that was handed a
-	// session the store already held, so its presence is the proof.
-	body := h.transcript(t, c.ID, second.Seq)
-	if !strings.Contains(body, "heliotrope") {
-		t.Fatalf("turn 2 does not recall turn 1; transcript:\n%s", body)
-	}
-	if !strings.Contains(body, "recalled:") {
-		t.Fatalf("turn 2 ran a fresh session, not a resume; transcript:\n%s", body)
-	}
-	if second.Seq != 2 {
-		t.Fatalf("turn 2 seq = %d, want 2", second.Seq)
+			second := h.sendAndWait(t, c.ID, "what is it again?")
+			if second.State != chatstate.TurnDone {
+				t.Fatalf("turn 2 = %s (%s: %s)", second.State, second.FailReason, second.ErrorMessage)
+			}
+			// The recall line is only ever emitted by a run that was handed a
+			// session the store already held, so its presence is the proof.
+			body := h.transcript(t, c.ID, second.Seq)
+			if !strings.Contains(body, "heliotrope") {
+				t.Fatalf("turn 2 does not recall turn 1; transcript:\n%s", body)
+			}
+			if !strings.Contains(body, "recalled:") {
+				t.Fatalf("turn 2 ran a fresh session, not a resume; transcript:\n%s", body)
+			}
+			if second.Seq != 2 {
+				t.Fatalf("turn 2 seq = %d, want 2", second.Seq)
+			}
+		})
 	}
 }
 
@@ -203,34 +222,73 @@ func (h *harness) transcript(t *testing.T, chatID int64, seq int) string {
 	return string(b)
 }
 
-// TestSessionLostFailsTheTurnAndLeavesTheChatUsable is decision 4. A silently
-// fresh session would answer as if it had context it does not have, and a
-// reader could not tell that apart from a working conversation.
+// TestSessionLostFailsTheTurnAndLeavesTheChatUsable is task 063 decision 4. A
+// silently fresh session would answer as if it had context it does not have,
+// and a reader could not tell that apart from a working conversation.
+//
+// claude and codex both refuse an id they never minted, in their own wordings,
+// and both fixtures back their adapter's markers. cursor is absent on purpose
+// and TestCursorAdoptsAnUnknownSession is why.
 func TestSessionLostFailsTheTurnAndLeavesTheChatUsable(t *testing.T) {
+	for _, agentName := range []string{"claude", "codex"} {
+		t.Run(agentName, func(t *testing.T) {
+			h := newHarness(t)
+			c := h.chatOn(t, agentName)
+			if _, err := h.store.SetChatSession(t.Context(), c.ID, "fake-session-gone"); err != nil {
+				t.Fatalf("SetChatSession: %v", err)
+			}
+
+			turn := h.sendAndWait(t, c.ID, "still there?")
+			if turn.State != chatstate.TurnFailed {
+				t.Fatalf("turn state = %s, want failed", turn.State)
+			}
+			if turn.FailReason != ReasonSessionLost {
+				t.Fatalf("fail reason = %q, want %q", turn.FailReason, ReasonSessionLost)
+			}
+			after := h.waitIdle(t, c.ID)
+			if after.SessionID != "fake-session-gone" {
+				t.Fatalf("session id = %q; a lost session is not silently cleared", after.SessionID)
+			}
+			// And nothing was fabricated: no fresh conversation was written.
+			entries, err := os.ReadDir(h.sessionDir)
+			if err != nil {
+				t.Fatalf("read session dir: %v", err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("a fresh session was started behind the human's back: %v", entries)
+			}
+		})
+	}
+}
+
+// TestCursorAdoptsAnUnknownSession states cursor's gap positively, which is
+// the project's rule for a capability an adapter lacks (§9.7, task 070
+// decision 2).
+//
+// cursor-agent 2026.08.11 does not refuse `--resume` of an id it has never
+// seen: it starts a fresh chat *under that id*, exits 0 and answers normally
+// (internal/agent/cursor/testdata/resume_unknown_2026.08.11.jsonl). There is
+// no wording to classify because there is no refusal, so a cursor chat whose
+// id has aged out gets an answer with no memory rather than `session_lost`.
+// The turn succeeds, and the test says so rather than pretending otherwise.
+func TestCursorAdoptsAnUnknownSession(t *testing.T) {
 	h := newHarness(t)
-	c := h.chat(t)
+	c := h.chatOn(t, "cursor")
 	if _, err := h.store.SetChatSession(t.Context(), c.ID, "fake-session-gone"); err != nil {
 		t.Fatalf("SetChatSession: %v", err)
 	}
 
 	turn := h.sendAndWait(t, c.ID, "still there?")
-	if turn.State != chatstate.TurnFailed {
-		t.Fatalf("turn state = %s, want failed", turn.State)
+	if turn.State != chatstate.TurnDone {
+		t.Fatalf("turn = %s (%s: %s), want done: cursor has no session-lost refusal to classify",
+			turn.State, turn.FailReason, turn.ErrorMessage)
 	}
-	if turn.FailReason != ReasonSessionLost {
-		t.Fatalf("fail reason = %q, want %q", turn.FailReason, ReasonSessionLost)
+	if body := h.transcript(t, c.ID, turn.Seq); strings.Contains(body, "recalled:") {
+		t.Fatalf("a chat with no prior turns recalled something; transcript:\n%s", body)
 	}
 	after := h.waitIdle(t, c.ID)
 	if after.SessionID != "fake-session-gone" {
-		t.Fatalf("session id = %q; a lost session is not silently cleared", after.SessionID)
-	}
-	// And nothing was fabricated: no fresh conversation was written.
-	entries, err := os.ReadDir(h.sessionDir)
-	if err != nil {
-		t.Fatalf("read session dir: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("a fresh session was started behind the human's back: %v", entries)
+		t.Fatalf("session id = %q; cursor keeps the id it was handed", after.SessionID)
 	}
 }
 
@@ -348,9 +406,15 @@ func TestRecoverFinalizesInterruptedAndDoesNotResend(t *testing.T) {
 	}
 }
 
-// TestAdaptersThatCannotResume states the capability positively, in both
-// directions (decision 3). No adapter ever replays a log as prompt context.
-func TestAdaptersThatCannotResume(t *testing.T) {
+// TestAdaptersThatCanResume states the capability positively, in both
+// directions (task 063 decision 3, task 070). No adapter ever replays a log as
+// prompt context; the ones that cannot resume are refused instead.
+//
+// The false leg is agenttest.StubNonResuming rather than a shipped adapter.
+// Until task 070 it was codex and cursor, and the day they learned to resume
+// this test asserted the opposite of the truth — which is what any refusal
+// pinned to whichever CLI happens to lack a capability today will keep doing.
+func TestAdaptersThatCanResume(t *testing.T) {
 	fake := agenttest.BuildFakeAgent(t)
 	bin := func() string { return fake }
 	for _, tc := range []struct {
@@ -360,7 +424,8 @@ func TestAdaptersThatCannotResume(t *testing.T) {
 	}{
 		{"claude", claude.New(bin), true},
 		{"codex", codex.New(bin), true},
-		{"cursor", cursor.New(bin), false},
+		{"cursor", cursor.New(bin), true},
+		{agenttest.NonResumingName, agenttest.StubNonResuming{}, false},
 	} {
 		if got := agent.CanResume(tc.a); got != tc.want {
 			t.Errorf("CanResume(%s) = %v, want %v", tc.name, got, tc.want)

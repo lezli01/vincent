@@ -78,13 +78,16 @@
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
 //	FAKEAGENT_SPAWN_CHILD hang: spawn a sleeping child first and emit its pid
-//	FAKEAGENT_SESSION_DIR gives the claude dialect a memory (task 063): a
+//	FAKEAGENT_SESSION_DIR gives every dialect a memory (task 063, 070): a
 //	                      directory of conversations keyed by the session id
-//	                      it mints and stamps on every line. `--resume <id>`
-//	                      reloads one and the run says what it recalls; an id
-//	                      the directory does not hold is refused on stderr
-//	                      with a nonzero exit and no stream, which is the
-//	                      `session_lost` leg. Unset, the run mints an id,
+//	                      it mints. Resume is spelled per dialect — `--resume
+//	                      <id>` for claude and cursor, `exec resume … <id> -`
+//	                      for codex — and the run then says what it recalls.
+//	                      An id the directory does not hold is refused on
+//	                      stderr with a nonzero exit and no stream by claude
+//	                      and codex (the `session_lost` leg); cursor adopts
+//	                      it and starts a fresh chat, because that is what the
+//	                      real one does. Unset, the run mints an id,
 //	                      remembers nothing, and behaves exactly as before
 //	                      as {"type":"fakeagent.child","pid":N} — lets tests
 //	                      verify tree-kill reaps grandchildren
@@ -240,7 +243,7 @@ func main() {
 	// (task 063): a `--resume` of an id the store does not hold ends here,
 	// with the refusal on stderr and no stream at all, which is the shape
 	// internal/agent/claude classifies as `session_lost`.
-	prior := openSession()
+	prior := openSession(dialectClaude)
 	rememberPrompt(prompt)
 
 	emit(map[string]any{"type": "system", "subtype": "init", "model": "fake-1"})
@@ -596,11 +599,11 @@ func askPermission(prompt []byte, rd *bufio.Reader) {
 }
 
 func emit(v map[string]any) {
-	// Every claude stream line carries the session id (task 063), which is
-	// how internal/agent/claude learns the id to resume next turn. The
-	// global is only ever set by the claude dialect, so the codex and cursor
-	// emissions below are untouched.
-	if sessionID != "" {
+	// Every claude and cursor stream line carries the session id (task 063,
+	// 070), which is how those adapters learn the id to resume next turn. The
+	// codex dialect sets its own `thread_id` on `thread.started` and carries
+	// no session_id at all, which is what stampSessionID switches off.
+	if stampSessionID && sessionID != "" {
 		if _, ok := v["session_id"]; !ok {
 			v["session_id"] = sessionID
 		}
