@@ -1026,7 +1026,6 @@ the log as prompt context.
 ```sh
 vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
                   [--base BRANCH] [--message TEXT] [--json]
-                         [--base BRANCH] [--message TEXT]
 ```
 
 Starts a chat and prints its id, agent and branch. `--agent` defaults to the

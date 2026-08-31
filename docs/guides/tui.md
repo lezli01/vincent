@@ -956,6 +956,13 @@ you straight into the workspace. Only an agent that can resume its own session
 can hold a chat, and picking one that cannot is refused on the form with that
 reason, not with a generic failure.
 
+| Key | Does, in the create form |
+|---|---|
+| `tab` / `shift+tab` | Next / previous field |
+| `←` / `→` | Choose on the project and agent fields |
+| `ctrl+s` | Create the chat and open it |
+| `esc` | Discard the draft |
+
 ### Chat workspace
 
 One conversation: the finished turns above, the running turn's live output below

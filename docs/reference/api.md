@@ -1482,9 +1482,12 @@ are excluded — a documented limitation.
 ```
 GET /v1/events?types=&project_id=
 GET /v1/tasks/{id}/events
+GET /v1/chats/{id}/events
 ```
 
-Two kinds of stream, with deliberately different guarantees.
+Two kinds of stream, with deliberately different guarantees. The per-chat one is
+the per-task one's twin, over a [chat](#chats) instead of a task, and is
+documented there.
 
 ### State events — durable
 

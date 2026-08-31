@@ -3733,6 +3733,16 @@ tui:                           # view preference; the daemon validates and relay
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
 
+*Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
+(§5.5) as well as tasks, and none of them gains a chat-specific twin:
+`defaults.agent_timeout` bounds a running turn and `defaults.input_timeout` an
+`awaiting_input` one, either expiry failing the turn and releasing its
+`max_parallel_chats` slot (§11, §13.2); `transcript_max_bytes` caps a turn's
+transcript and fails it `transcript_limit`; and `transcript_retention_days`
+reclaims an **archived** chat's transcripts on the same pass as an archived
+task's (§17). `notify:` stays the one exception, silent on chats for the reason
+its own comment gives.
+
 **`container:` (task 061, added 2026-08-30).** `image` is the whole switch and
 `""` is the default: no image means every step runs on this host, no runtime is
 consulted, and an existing installation is byte-for-byte unchanged. Set it and
@@ -6768,7 +6778,11 @@ global cursor config is untouched.
   small, and useless once the retry window it covers has passed, so there is no
   operator reason to keep one. The table is counted in
   `GET /v1/doctor`'s `database.table_rows` like every other, by enumeration
-  rather than by name.
+  rather than by name. *Amended 2026-08-31 (task 067, issue #269):* an
+  **archived chat**'s turn transcripts (§5.5) are pruned by the same pass under
+  the same key, measured from when the chat was archived. The pruner walked
+  archived tasks alone until then, so a chat's transcripts outlived every
+  retention window.
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took

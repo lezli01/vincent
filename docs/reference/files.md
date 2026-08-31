@@ -170,9 +170,11 @@ Transcripts are bounded by `transcript_max_bytes` per attempt and pruned for
 **archived** tasks past `transcript_retention_days` — see
 [Configuration](configuration.md).
 
-Both of those are **task-scoped**. A chat's turn transcripts are written with no
-size cap and are not pruned when the chat is archived; they stay until you
-remove them.
+Both of those cover a [chat](cli.md#vincent-chat) too: a turn's transcript is
+capped by `transcript_max_bytes`, and an **archived** chat's directory under
+`transcripts/chat-{chat_id}/` is reclaimed by the same retention pass, measured
+from when the chat was archived. A chat nobody archived keeps its transcripts
+however old they are, exactly as a task does.
 
 **What reclaims a transcript.** Retention, for as long as the task row exists.
 Deleting a project deletes its task rows, and retention walks rows — so those
