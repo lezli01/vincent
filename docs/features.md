@@ -338,10 +338,12 @@ touches the network. Fan-out lanes inherit their parent's issue.
 explicit flags winning, and `vincent github issues` lists issues without the TUI.
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
-`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Access is read-only —
-nothing is ever written to GitHub. When it is unavailable the row does not
-appear, `vincent doctor` reports why, and everything else is unaffected. Set
-`github.enabled: false` in `config.yaml` to switch it off entirely.
+`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Nothing about an issue
+is ever written back — the only thing vincent writes to GitHub is a pull
+request you ask it to open, [below](#open-a-pull-request). When it is
+unavailable the row does not appear, `vincent doctor` reports why, and
+everything else is unaffected. Set `github.enabled: false` in `config.yaml` to
+switch it off entirely.
 
 See the [new-task form](guides/tui.md), the
 [configuration reference](reference/configuration.md), and the
@@ -357,7 +359,7 @@ and links the ones whose head branch is a task's own branch. It never overwrites
 a link you made by hand, and a link you removed is never re-applied.
 
 The TUI's pull-requests screen shows every GitHub-based project's listing at
-once and carries the two human actions — link a pull request the head-branch
+once and carries the two linking actions — link a pull request the head-branch
 rule missed, unlink one it got wrong — and a task's own workspace shows its
 pull request beside its branch, on a **Pull Request** tab that adds one row per
 CI check on its head commit and carries a second copy of unlink.
@@ -426,8 +428,8 @@ other is the release check under [Run it on your platform](#run-it-on-your-platf
 — and it has its own switch: `github.poll_interval: 0` stops the background
 listing and leaves everything else working on demand. It fires only for projects
 whose `origin` is a github.com repository, so a daemon with no such project never
-makes it. It writes nothing to GitHub either — the compare URL is built, never
-fetched, and a human presses GitHub's button.
+makes it. It writes nothing to GitHub either: the reconciler only reads, and the
+one write vincent makes there happens when you ask for it, never on a tick.
 
 See the [pull-requests screen](guides/tui.md#pull-requests), the
 [CLI reference](reference/cli.md#vincent-github-prs) and the

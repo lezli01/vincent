@@ -876,14 +876,16 @@ github:
   poll_interval: 5m
 ```
 
-Whether the daemon may read GitHub issues and pull requests, so a task can be
-created from an issue and linked to the pull request opened from its branch. It
-is an **opt-out**: on by default, and it costs nothing until you use it.
+Whether the daemon may talk to GitHub — read a project's issues and pull
+requests, so a task can be created from an issue and linked to the pull request
+opened from its branch, and open a pull request for a task when you ask it to.
+It is an **opt-out**: on by default, and it costs nothing until you use it.
 
-It governs **reading only**. Nothing under this key writes to GitHub, and no
-GitHub call happens while a step runs — the daemon calls when you open the issue
-picker, when it creates a task from an issue, when a client asks for a pull
-request, and on the reconciler's tick. The issue is stored on the task at that
+It governs **reading, plus the one write below**. Nothing else under this key
+writes to GitHub, and no GitHub call happens while a step runs — the daemon
+calls when you open the issue picker, when it creates a task from an issue, when
+a client asks for a pull request, when you ask it to open one, and on the
+reconciler's tick. The issue is stored on the task at that
 moment and never re-read, which is why a step's `.Issue` renders offline and
 cannot fail because GitHub is down. A pull request is the opposite: only the
 *link* is stored, and its title, state, draft and merged status are re-read

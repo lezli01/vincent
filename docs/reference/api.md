@@ -728,7 +728,8 @@ human link is never overwritten by the daemon.
 the repo and number. That is what makes a human unlink stick — the daemon has to
 be able to read the refusal, and an empty column would only say "never matched".
 
-Both write routes return the updated task.
+`POST` and `DELETE` both return the updated task, as does a create that
+succeeded.
 
 Linking otherwise happens in the background. Every
 [`github.poll_interval`](configuration.md#github) the daemon lists each
@@ -736,9 +737,10 @@ GitHub-based project's open pull requests and links the ones whose head branch
 equals a task's branch, marking them `auto`. It never overwrites a `human` link
 and never un-suppresses one. Set the interval to `0` to switch it off.
 
-The two listings, `POST /v1/tasks` naming a `github_issue`, and `POST
-/v1/tasks/{id}/github/pull` answer **409** when the integration is not usable,
-carrying the reason a client can branch on:
+The two listings, `POST /v1/tasks` naming a `github_issue`, `POST
+/v1/tasks/{id}/github/pull` and `POST /v1/tasks/{id}/github/pull/create` answer
+**409** when the integration is not usable, carrying the reason a client can
+branch on:
 
 ```json
 { "error": { "code": "invalid_state",
@@ -1684,6 +1686,7 @@ Every route on this page is a tool, with these exceptions:
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
 | `POST /v1/workflows` | Same line: a workflow file is what that daemon runs. `GET /v1/workflows/schema` is an ordinary tool |
 | `PATCH /v1/workflows` | Same |
+| `POST /v1/tasks/{id}/github/pull/create` | The one route that writes to a forge. Nothing gates it behind the keypress it exists for — no config key, no confirmation the daemon can check — so an agent-callable version would be consent nobody gave. An agent that wants a pull request runs `git push` and `gh pr create` in its own worktree |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
