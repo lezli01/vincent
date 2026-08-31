@@ -113,10 +113,11 @@
 # The check is what keeps an audit from becoming a rewrite: this step's own
 # commits (everything after `pre-docs.sha`) may touch only `docs/`, `skills/`,
 # `CHANGELOG.md`, `README.md` and `internal/workflow/builtin.go`, the repo's own
-# `.vincent/workflows/*.yaml` must still validate against the schema, and the
-# four packages whose tests assert what the published pages and the embedded
-# skill say must still pass. `docs: none needed` is a first-class outcome —
-# what it may not be is empty.
+# `.vincent/workflows/*.yaml` must still validate *and* still render — the
+# second is not the first, since `validate` parses a template and `render`
+# executes it — and the four packages whose tests assert what the published
+# pages and the embedded skill say must still pass. `docs: none needed` is a
+# first-class outcome — what it may not be is empty.
 #
 # Screenshots are the one thing it may not fix. Every `docs/assets/tui-*.png`
 # is a capture from `scripts/screenshots.sh`, which needs VHS, ttyd and ffmpeg
@@ -1106,8 +1107,10 @@ steps:
         commits are documentation commits.
 
       This repository's own `.vincent/workflows/*.yaml` are consumers of the
-      schema too. If the schema changed under them, fix them — they are
-      validated after this step.
+      schema too. If the schema changed under them, fix them — this step's
+      check runs both `vincent workflow validate` and `vincent workflow render`
+      over every one of them, so a template that parses but no longer executes
+      fails here rather than at the first task created from it.
 
       Then:
 
@@ -1134,8 +1137,12 @@ steps:
     # clause names the paths on stderr rather than exiting silently, because
     # §8.4 hands the retry this output and "check failed" tells an agent
     # nothing. And the tree still builds, the repo's own workflow files still
-    # parse against the schema, and the packages whose tests assert what the
-    # published pages and the embedded skill say still pass.
+    # validate *and* still render — `validate` only parses a template, so a
+    # `{{.Task.Titel}}` or a `.Steps.plan.Reslt` this change introduced passes
+    # it and fails at the first task created from the file; `render` executes
+    # every one of them offline and is the half that catches that — and the
+    # packages whose tests assert what the published pages and the embedded
+    # skill say still pass.
     #
     # It deliberately does not re-run the full suite: `verify` is next.
     check: >
@@ -1146,7 +1153,7 @@ steps:
       git diff --cached --quiet &&
       { offenders=$(git diff --name-only "$(cat .vincent-issue/pre-docs.sha)"..HEAD | grep -vE '^(docs/|skills/|CHANGELOG\.md$|README\.md$|internal/workflow/builtin\.go$)'); test -z "$offenders" || { echo 'docs-sync changed files outside docs/, skills/, CHANGELOG.md, README.md and internal/workflow/builtin.go:' >&2; echo "$offenders" >&2; false; }; } &&
       go build -o .vincent-issue/vincent ./cmd/vincent &&
-      { for f in .vincent/workflows/*.yaml; do .vincent-issue/vincent workflow validate "$f" || exit 1; done; } &&
+      { for f in .vincent/workflows/*.yaml; do .vincent-issue/vincent workflow validate "$f" && .vincent-issue/vincent workflow render "$f" > /dev/null || exit 1; done; } &&
       go test ./internal/config ./internal/cli ./internal/workflow ./internal/api
     check_timeout: 15m
 

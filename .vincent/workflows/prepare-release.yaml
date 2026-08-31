@@ -104,9 +104,9 @@ fields:
       `go get -u ./...` and `go mod tidy` first, then repair whatever that
       breaks. Anything but `none` may open a pull request this workflow then
       merges into the base branch.
-    type: string
+    type: enum
     required: true
-    pattern: '^(none|security|all)$'
+    values: [none, security, all]
 
   - name: docs
     label: Release-facing documentation and site metadata
@@ -117,9 +117,9 @@ fields:
       in the documentation, and block on a finding. fix = also repair what the
       audit reports, in the same pull request as any dependency work. none =
       skip the audit entirely.
-    type: string
+    type: enum
     required: true
-    pattern: '^(none|check|fix)$'
+    values: [none, check, fix]
 
   - name: dry-run
     label: Dry-run the Release workflow
