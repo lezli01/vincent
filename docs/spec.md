@@ -5729,9 +5729,11 @@ stream for the live tail.
    after Workflow and selected by `6`, for the reason Workflow was appended
    after Diff — `1`–`5` keep the tabs they had. It is the first **conditional**
    tab: it is on the strip only when the task has a live pull-request link and
-   the integration is usable, and with none linked `6` does nothing rather than
-   landing on an empty screen. Being last is what makes its absence cost
-   nothing, since no other tab's number moves; the **cycle** is the part that
+   the integration is not switched off — `github.enabled: false` hides it as it
+   hides the rest, while a link that cannot be *fetched* for any other reason
+   keeps the tab and renders that reason on it — and with none linked `6` does
+   nothing rather than landing on an empty screen. Being last is what makes its
+   absence cost nothing, since no other tab's number moves; the **cycle** is the part that
    changes, and `tab`/`shift+tab` and `[`/`]` walk the strip as it currently
    stands rather than a fixed count. The tab renders the facts view 2's
    pull-request section renders, read from the same row so the two cannot
@@ -6102,7 +6104,11 @@ stream for the live tail.
 The list above is also the screen contract. View 1 is the board-only home
 screen. `enter` on its selected row opens view 2, the full-screen task workspace;
 `esc` returns. The workspace's five tabs each take its whole body (four until
-task 051, 2026-08-29, added the Workflow tab). Views 3–7 are
+task 051, 2026-08-29, added the Workflow tab). *Amended 2026-08-31 (task
+068.3): six on a task whose pull request is linked, five on one whose is not.
+The Pull Request tab is conditional, so the strip's length is a property of the
+task rather than a constant of the view, and the tab cycle walks the strip as it
+stands rather than a fixed count.* Views 3–7 are
 full-screen takeovers reached from the command palette (view 7 added
 2026-08-29 by task 052.6).
 

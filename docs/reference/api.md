@@ -625,6 +625,7 @@ check on the pull request's **head commit**:
 {
   "linked": true, "repo": "lezli01/vincent", "number": 412,
   "ref": "d3adb33f…", "state": "failure",
+  "fetched_at": "2026-08-31T09:14:02Z",
   "runs": [
     { "name": "test", "state": "in_progress",
       "url": "https://github.com/lezli01/vincent/actions/runs/5150/job/72",
@@ -643,8 +644,10 @@ older commit statuses are folded onto the same shape, so the two credential
 legs cannot be told apart. `run_id` is the GitHub Actions workflow run behind a
 row and is **absent** for a third-party check run or a legacy commit status —
 that is what distinguishes a row an operation like re-run could honestly be
-offered on. Nothing here is cached or stored: a check result a minute old reads
-exactly like a current one while being wrong.
+offered on. A row also carries `started_at` and `completed_at` when GitHub
+reported them. Nothing here is cached or stored: a check result a minute old
+reads exactly like a current one while being wrong, so `fetched_at` is the only
+honest answer to how old this one is.
 
 Both `GET`s answer **200 whatever GitHub says**. A task workspace asks it on every
 open, and refusing the whole row because the integration is off would take a

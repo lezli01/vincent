@@ -264,8 +264,9 @@ one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
 `ctrl+s` without one says so rather than opening a page GitHub cannot use.
 vincent builds that URL and never fetches it — nothing is created on GitHub
 until you press the button on GitHub's own page. `o` and `P` are absent unless
-at least one registered project's GitHub integration is usable. Linking and
-unlinking live on the pull-requests screen below.
+at least one registered project's GitHub integration is usable. Linking lives on
+the pull-requests screen below; unlinking lives there and on the Pull Request
+tab.
 
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
