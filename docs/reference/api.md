@@ -1403,7 +1403,7 @@ continuity. An adapter that cannot resume is refused:
 
 ```json
 {"error": {"code": "agent_cannot_resume",
-           "message": "agent \"codex\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
+           "message": "agent \"cursor\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
 ```
 
 Today that is codex and cursor. Both CLIs have a resume of some shape; vincent
@@ -1565,6 +1565,18 @@ The transcript is the attempt's JSONL file, ranged:
   the tool call a subagent's line belongs to. **Every one of those keys is
   omitted when unreported**, so absent and zero are distinguishable — only
   [Claude Code](../guides/agents.md#claude-code) fills them today.
+- `agent.plan` carries `items` (`[{text, completed}]`) and `plan_call_id` — the
+  agent's running to-do list, **whole on every record** rather than as a delta,
+  so a client that joins mid-run learns where the agent is. `agent.command_output`
+  carries `output`, `truncated`, `call_id` and `name` — what a command printed,
+  which `agent.tool_result` deliberately never carries, capped with the cut
+  reported rather than silent. `agent.result` additionally carries
+  `reasoning_tokens`. Only [Codex](../guides/agents.md#codex) fills these today,
+  and the same omitted-when-unreported rule applies.
+- One stream line can produce **two** records: codex reports a command's outcome
+  and the body it printed on a single event, and they are separate records
+  because clients show them at different verbosity levels. Read the NDJSON as a
+  record stream, not one record per source line.
 
 Because normalization runs **on read**, enriching a parser improves transcripts
 already on disk.
@@ -1649,7 +1661,8 @@ they need.
 ### Live output — ephemeral
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
-`agent.run_header`, `agent.usage` and `command.output` chunks stream on the
+`agent.run_header`, `agent.plan`, `agent.command_output`, `agent.usage` and
+`command.output` chunks stream on the
 **per-task** stream only and are **not** written to the events table. Their
 durable copy is the transcript file.
 

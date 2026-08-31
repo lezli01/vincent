@@ -1017,7 +1017,7 @@ a chat turn never waits for a scheduler slot: it starts when you send it, or it
 is refused because `max_parallel_chats` chats are already running.
 
 Only an agent CLI that can resume its own session can hold a chat. Today that
-is `claude`; `codex` and `cursor` are refused at creation with
+is `claude` and `codex`; `cursor` is refused at creation with
 `agent_cannot_resume` rather than having the conversation faked by replaying
 the log as prompt context.
 

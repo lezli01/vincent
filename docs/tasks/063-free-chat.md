@@ -60,6 +60,14 @@ Spec: §5.5 (the entity and its lifecycle), §7.3 (the chat-only amendment), §9
    `--resume` are follow-up work, each landing with a fixture captured against
    a named CLI version, the way every other adapter capability has.
 
+   *Codex half satisfied 2026-08-31 (task 070, issue #268).* Not reversed —
+   executed. The follow-up work this decision described is exactly what landed:
+   a capture against a named build (codex-cli 0.150.1,
+   `internal/agent/codex/testdata/resume_0.150.1.jsonl`) pins the argv, so
+   `SupportsResume()` is true for codex and a codex chat is created rather than
+   refused. The cursor half stands unchanged, and `m14`'s refusal leg states it
+   over cursor now (§9.7, §20).
+
 4. **A turn whose stored session is gone fails.** Reason `session_lost`,
    rendered against the turn; the chat stays usable and keeps its id, and the
    human decides whether to start fresh. A silent fresh session answers as if it

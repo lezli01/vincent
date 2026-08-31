@@ -13,6 +13,33 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A codex step's output pane now shows what codex actually reported.** The
+  adapter read the subset of `codex exec --json` real captures existed for, and
+  the upstream schema had grown well past it — so a codex step's pane was
+  markedly thinner than a claude step's. It now surfaces the agent's **running
+  to-do list** (`☰`, ticked over live, at `normal` and `verbose`), **what a
+  command printed** (`verbose` only, capped and with the cut stated rather than
+  silent), **file changes named by their paths and kinds** instead of the bare
+  word `file_change`, and **MCP calls named by server and tool**. Two new
+  transcript and live-output records carry them — `agent.plan` and
+  `agent.command_output` — in the shared vocabulary rather than a codex-only
+  one, so a second adapter that reports a plan fills the same record. Because
+  transcripts are re-normalized on every read, this improves codex transcripts
+  **already on disk**. Full detail in spec §9.3, §13.2, §13.3 and §15.
+- **Chats work on codex.** `codex exec resume <thread_id>` is wired and
+  `thread.started`'s id is read, so a chat on codex holds context across turns
+  instead of being refused at creation with `agent_cannot_resume`. The argv is
+  pinned by a capture against codex-cli 0.150.1, in which the resumed turn
+  reports the same thread id and answers a question about the previous one —
+  the fixture requirement task 063 attached to this. cursor still cannot resume
+  and is still refused, which is stated rather than emulated (spec §9.7).
+- **`agent.result` reports codex's cache and reasoning token spend.** All five
+  of `turn.completed.usage`'s counters are read now, not two:
+  `cached_input_tokens` and `cache_write_input_tokens` land in the existing
+  `cache_read_tokens`/`cache_write_tokens` keys, and `reasoning_output_tokens`
+  in a new `reasoning_tokens`. A codex turn's cache behaviour and reasoning
+  spend were previously unobservable.
+
 - **A Pull Request tab on the task workspace, with live CI checks.** A sixth
   full-screen tab, appended after Workflow and selected by `6`, showing the
   linked pull request's facts plus one row per check on its head commit — its

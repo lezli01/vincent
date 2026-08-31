@@ -2097,6 +2097,10 @@ type RunResult struct {
     TerminalReason      string             // why the run stopped ("completed")
     CacheReadTokens     int64
     CacheCreationTokens int64
+    // task 070, added 2026-08-31. codex's cached_input_tokens and
+    // cache_write_input_tokens are the two counts above under the other
+    // dialect's names, so this task added exactly one field.
+    ReasoningOutputTokens int64            // share of OutputTokens spent thinking; 0 = unreported
     ModelUsage          []ModelUsage       // per-model share; nil = unreported
     PermissionDenials   []PermissionDenial // refused calls; nil = unreported and none
 }
@@ -2383,26 +2387,68 @@ transcript is something people paste into issues.
   `item.completed` reports an outcome in prose with no structured type and no
   non-execution kind, so `ToolResult.Verb` and `.Blocked` stay empty. The one
   field codex's dialect *does* carry that claude's new ones parallel is
-  `turn.completed.usage.cached_input_tokens`; it is **not** read, and that is
-  scope rather than absence — this task widened one adapter, the dialects
-  diverge, and each deserves its own fixtures (task 066). Until then every one
-  of the fields stays zero here and **nothing emulates a value**, which is the
-  standing §9.x rule and is asserted over every codex fixture by
-  `TestNoRunHeaderOrResultMetadata`.
-- **Cannot resume (stated positively, 2026-08-30, task 063).** `agent.CanResume`
-  is false for codex, so a chat on it is refused at creation (§13.2,
-  `agent_cannot_resume`). codex does have `exec resume <thread_id>` and its
-  stream does carry a `thread_id` — neither is read here yet, and no fixture
-  captured against a named codex build proves the argv, so the capability is
-  absent rather than approximate. Replaying the conversation as prompt context
-  would be an emulation, which §9.x forbids; a refusal a human can read is the
-  honest alternative. Deferred to §20 with the fixture requirement attached.
+  `turn.completed.usage.cached_input_tokens`. *Amended 2026-08-31 (task 070):*
+  the sentence that said it "is **not** read, and that is scope rather than
+  absence" is retired — it is read now, into `RunResult.CacheReadTokens`,
+  alongside `cache_write_input_tokens` into `.CacheCreationTokens` and
+  `reasoning_output_tokens` into the one new field this task added,
+  `.ReasoningOutputTokens`. Everything else in this bullet stands: every
+  remaining field stays zero here and **nothing emulates a value**, which is
+  the standing §9.x rule and is what `TestNoRunHeaderOrResultMetadata`, now
+  narrowed to exactly those fields, asserts over every codex fixture.
+- **Resumes its own thread** (*replaces "Cannot resume (stated positively,
+  2026-08-30, task 063)", 2026-08-31, task 070*). `agent.CanResume` is **true**
+  for codex, and a chat on it is created like a claude one. The precondition
+  task 063 decision 3 attached to this is met: `thread.started.thread_id` is
+  read into `RunResult.SessionID`, and the argv is
+  `codex exec --json resume <thread_id> …` — pinned by a capture against
+  codex-cli **0.150.1** (`testdata/resume_0.150.1.jsonl`), in which the resumed
+  turn reports the *same* `thread_id` and answers a question about the previous
+  turn. The prompt stays off argv: `codex exec resume` documents `-` for stdin,
+  but a run with no `PROMPT` argument reads stdin anyway, which is what
+  `RunSpec.Prompt`'s stdin-only contract (the Windows argv limit) requires.
+  Nothing is emulated — codex resumes its own session, and vincent never
+  replays a conversation as prompt context. cursor still cannot (§9.7), and is
+  the adapter `m14`'s refusal leg now states this over.
 - Normalizes Codex's JSONL events (`thread.started`, `item.started`,
-  `item.completed`, `turn.completed`, `turn.failed`, `error`); token usage
-  comes from `turn.completed` (`input_tokens` taken verbatim, as with claude);
-  `CostUSD` is nil. The final `agent_message` item is the result text; a
-  stream ending without `turn.completed`/`turn.failed` is an error result,
-  mirroring the claude adapter.
+  `item.updated`, `item.completed`, `turn.completed`, `turn.failed`, `error`);
+  token usage comes from `turn.completed` (`input_tokens` taken verbatim, as
+  with claude); `CostUSD` is nil. The final `agent_message` item is the result
+  text; a stream ending without `turn.completed`/`turn.failed` is an error
+  result, mirroring the claude adapter.
+- **The event and item surface, and what is deliberately outside it**
+  (*added 2026-08-31, task 070; captures against codex-cli 0.150.1*):
+  - `item.updated` is handled for `todo_list` — the agent's running plan,
+    normalized to `EventPlan` and the shared `agent.plan` record (§13.2). Every
+    version arrives whole, so the record carries the whole list rather than a
+    delta.
+  - `turn.started` is **not** an event vincent normalizes. It appears in every
+    fixture and carries nothing a client renders; it stays `EventUnknown`,
+    transcripted verbatim. Stated here so its absence reads as a decision.
+  - `thread.started` is still not an event either — it carries a thread id and
+    nothing else — but the id is now held for the terminal result.
+  - `command_execution.aggregated_output` is read into `EventCommandOutput` /
+    `agent.command_output`, capped at `agent.CommandOutputMax` runes with the
+    truncation visible. It rides on the same line as the outcome, so one
+    `item.completed` produces two records (§13.2).
+  - `file_change` and `mcp_tool_call` summaries are built **by this adapter**,
+    not by widening `agent.toolSummaryKeys`: `changes` is an array of objects
+    the shared extractor cannot read, and `server`/`tool` are codex-shaped
+    names in a list whose design is names that converge across dialects
+    (task 070 decision 4).
+  - **Deferred, with the fixture requirement attached.** These are named rather
+    than implemented from the upstream schema, which is the rule that kept
+    codex reasoning unimplemented until `testdata/reasoning_0.147.0.jsonl`
+    existed: `item.updated` on a running `command_execution` (0.150.1 goes
+    `started → completed` even for a command that runs for half a minute, so
+    no capture shows a streaming body); `mcp_tool_call.error.message` (the
+    capture in `testdata/mcp_0.150.1.jsonl` reports `error: null` even on a
+    call the same line marks `status: "failed"` — the server's explanation came
+    back inside `result`, so a populated `error` has never been seen);
+    `collab_tool_call`; and `web_search.action`. Each stays `EventUnknown` with
+    `Raw` intact, which `TestUnmodelledShapesStayUnknown` asserts rather than
+    assumes.
+  - Verified builds for this section: **0.142.5, 0.147.0, 0.150.1**.
 - Model passes through as `-m` (a first-class flag as of 0.142.x); effort as
   `-c model_reasoning_effort=…`.
 - The CLI enumerates nothing (`--help` documents only `-c key=value`), so
@@ -5076,6 +5122,26 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         handler, the §13.3 live publisher and the in-tree
                                         clients moved in one commit rather than carrying two
                                         shapes.
+                                        **v0 wire change (task 070, 2026-08-31):** two more
+                                        record types, both in the **shared** vocabulary
+                                        rather than a codex namespace — `agent.plan`
+                                        (`items: [{text, completed}]`, `plan_call_id`: the
+                                        agent's running to-do list, whole on every record so a
+                                        reader who joins mid-run learns where it *is*, not how
+                                        it got there) and `agent.command_output` (`output`,
+                                        `truncated`, `call_id`, `name`: the output body
+                                        `agent.tool_result` refuses to carry, capped at
+                                        `agent.CommandOutputMax` runes with the cut stated).
+                                        `agent.result` gains `reasoning_tokens`. codex fills
+                                        all three today and claude and cursor fill none, which
+                                        their adapters' tests state positively — the same
+                                        answer task 066 gave for `agent.run_header`, and the
+                                        reason these are not per-adapter types. One stream
+                                        line may now produce **two** records: codex reports a
+                                        command's outcome and what it printed on one
+                                        `item.completed`, and the two are separate records
+                                        because clients show them at different verbosity
+                                        levels.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
 
@@ -5182,6 +5248,9 @@ Two kinds of streams:
    it is the *first* line of the stream, so a reader who opens the pane on a
    running step sees the run's frame before its first word rather than only once
    the step has finished),
+   `agent.plan` and `agent.command_output` (task 070 — the same two records
+   §13.2 adds, published as chunks with the same keys, because a client renders
+   the live tail and the fetched scrollback through one path),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -6501,6 +6570,26 @@ on an error, where it is the error and may be the only content there is.
   and, on wrapped continuation lines of the same record, the cache read/write
   split and the per-model breakdown.
 
+*Amended 2026-08-31 (task 070).* One more gutter mark, and one record with no
+mark at all:
+
+- **`☰ ` — the agent's plan.** `agent.plan` renders the whole to-do list on one
+  wrapping line, done entries `✓ ` and dimmed, pending ones `○ ` and not, so the
+  list scans to the entry the agent is on. Every version of the list arrives
+  whole, so the pane shows the current state rather than a diff — a reader who
+  opens the pane mid-run wants to know where the agent *is*. Like the run
+  header it appears at **`normal` and `verbose`** and never at `compact`: a
+  plan is what the agent *intends*, which is neither what it said nor what it
+  did.
+- **`agent.command_output` is `verbose`-only, and gutterless.** It is the body
+  a command printed, so it renders like the output of a command step — flush
+  left and dim — rather than as vincent's account of one. It is absent below
+  `verbose` for the reason it has its own record type at all: a step running
+  `go test ./...` must not be able to flood the level most readers use. A body
+  the record's cap cut ends in `… output truncated`, because truncation a
+  reader cannot see is indistinguishable from a command that printed exactly
+  that much.
+
 Still **no timestamps**, and `parent_call_id` — which every record may now carry
 — is deliberately **not rendered**: the gutter is two columns and flat, and
 nesting subagent work under its parent is its own design problem with its own
@@ -7332,11 +7421,13 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   future work on landing, 2026-08-30** (§5.5, task 063, issue #255). Like the
   MCP entry above it was never listed here, so it is recorded as promoted rather
   than struck through. Named here so the next person does not rediscover them,
-  the pieces deliberately left out of the first cut: **codex `exec resume
-  <thread_id>` and cursor `--resume`**, each of which lands with a fixture
-  captured against a named CLI version the way every other adapter capability
-  has — until then those adapters are *refused* at chat creation, never
-  emulated by replaying a log as prompt context; a **`notify.chat_on` key**, if
+  the pieces deliberately left out of the first cut: ~~**codex `exec resume
+  <thread_id>`**~~ — **landed 2026-08-31 (task 070, issue #268)**, with the
+  fixture that entry required, captured against codex-cli 0.150.1 (§9.3) — and
+  **cursor `--resume`**, which still lands with a fixture captured against a
+  named CLI version the way every other adapter capability has; until then
+  cursor is *refused* at chat creation, never emulated by replaying a log as
+  prompt context; a **`notify.chat_on` key**, if
   `awaiting_input` on a long-open chat proves to need an outward signal (§12.3);
   and **chat routes as MCP tools**, which stays refused on the design line in
   §13.4 rather than merely deferred.

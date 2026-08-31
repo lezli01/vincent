@@ -138,12 +138,18 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   `awaiting_input`, and `on_input: wait|deny` has no effect on it. `on_input:
   require` is the one that does: a step declaring it cannot use codex at all,
   and a workflow pinning `agent: codex` on such a step fails validation.
-- **Cannot resume a session**, so codex cannot hold a chat: creating one on it
-  is refused with `agent_cannot_resume`. The CLI does have `exec resume`, and
-  its stream does carry a `thread_id`, but vincent reads neither yet and no
-  captured fixture pins the argv against a named build. Replaying the
-  conversation into the prompt would be an emulation of continuity, which is
-  what the refusal exists to prevent.
+- **Resumes its own thread**, so codex holds a chat like Claude Code does.
+  vincent reads the `thread_id` the stream reports and hands it back as
+  `codex exec --json resume <thread_id>` on the next turn. The argv is pinned
+  by a capture against codex-cli 0.150.1; nothing is emulated, and vincent
+  never replays a conversation into the prompt.
+- **The plan and command output are surfaced.** Codex reports a running to-do
+  list, which the pane shows with a `☰` gutter at the `normal` and `verbose`
+  output levels, ticking over as the agent works. What a command printed shows
+  at `verbose` only — it is the output body, and a step running `go test ./...`
+  would otherwise flood the level most readers use; a body long enough to hit
+  the cap ends in `… output truncated`. File changes are named by their paths
+  and kinds, and MCP calls by server and tool.
 - **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
   shows at the `normal` and `verbose` output levels (`v` cycles them) and the
   transcript records as `agent.thinking`. Whether any are emitted depends on
