@@ -133,3 +133,44 @@ func TestLeavingQueuedClearsHold(t *testing.T) {
 		})
 	}
 }
+
+// TestCreateTaskPersistsAHold: a task may be born held. The insert has to
+// carry admit_not_before and queued_reason for that to be one statement —
+// setting them afterwards leaves a window in which the task is admissible,
+// and the scheduler's tick is entitled to take it.
+func TestCreateTaskPersistsAHold(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+
+	until := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+	task := newTask(p.ID, "born held", TaskQueued)
+	task.AdmitNotBefore = &until
+	task.QueuedReason = "usage_limit"
+	if err := s.CreateTask(ctx, task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	got, err := s.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.AdmitNotBefore == nil || !got.AdmitNotBefore.Equal(until) {
+		t.Errorf("admit_not_before = %v, want %s", got.AdmitNotBefore, until)
+	}
+	if got.QueuedReason != "usage_limit" {
+		t.Errorf("queued_reason = %q, want usage_limit", got.QueuedReason)
+	}
+
+	// Leaving queued drops the hold, exactly as it does for one written later.
+	if _, _, err := s.TransitionTask(ctx, task.ID, TaskQueued, TaskRunning, TaskChange{}); err != nil {
+		t.Fatalf("admit: %v", err)
+	}
+	admitted, err := s.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if admitted.AdmitNotBefore != nil || admitted.QueuedReason != "" {
+		t.Errorf("hold survived admission: %v / %q", admitted.AdmitNotBefore, admitted.QueuedReason)
+	}
+}

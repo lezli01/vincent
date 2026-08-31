@@ -138,9 +138,12 @@ PROJECT="$(api POST /projects -d "{\"path\": \"$(hostpath "$REPO")\"}")" \
 PROJECT_ID="$(printf '%s' "$PROJECT" | jq -r .id)"
 
 echo "== 1. create a chat; an adapter that cannot resume is refused"
+# cursor, since task 070: codex gained `exec resume <thread_id>` and is
+# created like claude now, so cursor is the adapter left to state the refusal
+# over. An adapter that cannot resume is refused at creation, never emulated.
 CODE="$(api_status POST /chats \
-  -d "{\"project_id\": $PROJECT_ID, \"title\": \"no memory\", \"agent\": \"codex\"}")"
-[[ "$CODE" == "400" ]] || fail "a codex chat answered $CODE, want 400"
+  -d "{\"project_id\": $PROJECT_ID, \"title\": \"no memory\", \"agent\": \"cursor\"}")"
+[[ "$CODE" == "400" ]] || fail "a cursor chat answered $CODE, want 400"
 REASON="$(jq -r .error.code < "$TMP/body.json")"
 [[ "$REASON" == "agent_cannot_resume" ]] \
   || fail "the refusal is $REASON, want the typed agent_cannot_resume"
@@ -180,6 +183,33 @@ esac
 case "$RECALL" in
   *recalled:*) ;;
   *) fail "turn 2 ran a fresh session rather than resuming one" ;;
+esac
+
+echo "== 2b. a codex chat resumes its own thread"
+CODEX_CHAT="$(api POST /chats \
+  -d "{\"project_id\": $PROJECT_ID, \"title\": \"codex talk\", \"agent\": \"codex\"}")" \
+  || fail "a codex chat was refused; task 070 made codex resumable"
+CODEX_ID="$(printf '%s' "$CODEX_CHAT" | jq -r .id)"
+api POST "/chats/$CODEX_ID/send" -d '{"message": "my favourite colour is heliotrope"}' >/dev/null \
+  || fail "the first codex send failed"
+STATE="$(wait_turn "$CODEX_ID" 1)"
+[[ "$STATE" == "done" ]] || fail "codex turn 1 is $STATE, want done"
+CODEX_SESSION="$(api GET "/chats/$CODEX_ID" | jq -r .chat.session_id)"
+[[ -n "$CODEX_SESSION" && "$CODEX_SESSION" != "null" ]] \
+  || fail "the codex chat recorded no thread id, so there is nothing to resume"
+api POST "/chats/$CODEX_ID/send" -d '{"message": "what is my favourite colour?"}' >/dev/null \
+  || fail "the second codex send failed"
+STATE="$(wait_turn "$CODEX_ID" 2)"
+[[ "$STATE" == "done" ]] || fail "codex turn 2 is $STATE, want done"
+# The stand-in has no model, so this proves the plumbing and not the memory:
+# vincent handed the thread id back on argv, and the child recognized it.
+# That context genuinely survives is the owner walkthrough's job — the same
+# division m5 draws, and the reason m3 seeds rather than asserts.
+CODEX_RECALL="$(curl -sS -H "Authorization: Bearer $TOKEN" \
+  "$BASE/chats/$CODEX_ID/turns/2/transcript" | tr -d '\r')"
+case "$CODEX_RECALL" in
+  *heliotrope*) ;;
+  *) fail "codex turn 2 did not see turn 1; transcript: $CODEX_RECALL" ;;
 esac
 
 echo "== 3. the per-turn transcript, and its offset seam"

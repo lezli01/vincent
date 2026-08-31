@@ -359,7 +359,7 @@ func TestAdaptersThatCannotResume(t *testing.T) {
 		want bool
 	}{
 		{"claude", claude.New(bin), true},
-		{"codex", codex.New(bin), false},
+		{"codex", codex.New(bin), true},
 		{"cursor", cursor.New(bin), false},
 	} {
 		if got := agent.CanResume(tc.a); got != tc.want {

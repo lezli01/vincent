@@ -160,13 +160,42 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 	return &actionLiveHarness{st: st, broker: broker, m: m, p: p, projectID: proj.ID}
 }
 
+// createTask queues a task the harness's real scheduler will admit and run,
+// the way the daemon does.
 func (h *actionLiveHarness) createTask(t *testing.T, title string) *store.Task {
+	t.Helper()
+	return h.queueTask(t, title, nil)
+}
+
+// createParkedTask queues a task the scheduler must leave alone, for the
+// tests that drive its state by hand.
+//
+// This harness runs the real scheduler, and the scheduler is the only place
+// `queued → running` may happen. Its 5 s safety-net tick admits any
+// admissible queued task, so a test that performs a `queued → …` transition
+// itself is racing it over a window that grows with everything it does in
+// between — a few keystrokes on a loaded CI runner is enough, and losing the
+// race reads as "admit: task N is running, not queued".
+//
+// §11's admission hold is the daemon's own way to say "queued, but not yet",
+// so a far-future one leaves the task in exactly the state these tests need
+// to observe while leaving admission where it belongs. Leaving queued clears
+// the hold (store.TransitionTask), so the follow-up or repair round that
+// comes after is admitted normally.
+func (h *actionLiveHarness) createParkedTask(t *testing.T, title string) *store.Task {
+	t.Helper()
+	until := time.Now().Add(24 * time.Hour)
+	return h.queueTask(t, title, &until)
+}
+
+func (h *actionLiveHarness) queueTask(t *testing.T, title string, hold *time.Time) *store.Task {
 	t.Helper()
 	task := &store.Task{
 		ProjectID: h.projectID, Title: title, WorkflowName: "ask",
 		WorkflowSnapshot: askWorkflow,
 		BaseBranch:       "main", BranchName: "vincent/live-" + title,
-		State: store.TaskQueued,
+		State:          store.TaskQueued,
+		AdmitNotBefore: hold,
 	}
 	if err := h.st.CreateTask(context.Background(), task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -244,7 +273,7 @@ func TestDetailAnswersLiveAgentQuestion(t *testing.T) {
 // triage happens: the key acts on the row under the cursor.
 func TestBoardApprovesGateFromTheRow(t *testing.T) {
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "gated")
+	task := h.createParkedTask(t, "gated")
 	ctx := context.Background()
 
 	// Park the task at a gate with its open manual row, the way the engine

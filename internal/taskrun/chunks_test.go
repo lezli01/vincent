@@ -87,3 +87,43 @@ func marshal(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+// TestPlanChunkShape pins the agent.plan live chunk against the wire record
+// internal/api writes for the same event (task 070). The whole list rides on
+// every chunk: a client that joins mid-run needs where the agent *is*, and a
+// delta would leave it guessing.
+func TestPlanChunkShape(t *testing.T) {
+	got := marshal(t, planChunk(&agent.Plan{
+		CallID: "item_1",
+		Items: []agent.PlanItem{
+			{Text: "Run `ls -la`", Completed: true},
+			// `completed` is omitted rather than sent false, matching the
+			// record's omitempty: absent and false mean the same thing.
+			{Text: "Append to notes.txt"},
+		},
+	}))
+	want := `{"items":[{"completed":true,"text":"Run ` + "`ls -la`" +
+		`"},{"text":"Append to notes.txt"}],"plan_call_id":"item_1"}`
+	if got != want {
+		t.Errorf("plan chunk =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestCommandOutputChunkShape pins agent.command_output. The key is `output`
+// and not `text`: `text` is agent.output's prose, and a reader must be able
+// to tell what the agent said from what a command printed.
+func TestCommandOutputChunkShape(t *testing.T) {
+	got := marshal(t, outputChunk(&agent.CommandOutput{
+		CallID: "item_2", Name: "command_execution", Text: "total 8\n", Truncated: true,
+	}))
+	want := `{"call_id":"item_2","name":"command_execution","output":"total 8\n","truncated":true}`
+	if got != want {
+		t.Errorf("output chunk =\n%s\nwant\n%s", got, want)
+	}
+	// Untruncated output omits the flag, so a client can tell a cut body
+	// from a whole one without comparing lengths.
+	got = marshal(t, outputChunk(&agent.CommandOutput{Text: "hi"}))
+	if got != `{"output":"hi"}` {
+		t.Errorf("untruncated chunk = %s", got)
+	}
+}

@@ -47,7 +47,7 @@ func (h *actionLiveHarness) finishTask(t *testing.T, id int64, end store.TaskSta
 func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "hang")
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "finishable")
+	task := h.createParkedTask(t, "finishable")
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
 	h.p.push(cmd)
@@ -169,7 +169,7 @@ func TestFollowUpFormPostsEachRunForm(t *testing.T) {
 func TestTimelineRendersAFollowUpAsItsOwnRound(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "hang")
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "finishable")
+	task := h.createParkedTask(t, "finishable")
 	h.finishTask(t, task.ID, store.TaskDone)
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})

@@ -60,8 +60,10 @@ func normalizeTranscript(w io.Writer, src io.Reader, parse agent.LineParser) err
 		line, err := br.ReadBytes('\n')
 		if len(line) > 0 {
 			if trimmed := trimLine(line); len(trimmed) > 0 {
-				if encErr := enc.Encode(normalizeLine(trimmed, parse)); encErr != nil {
-					return encErr
+				for _, rec := range normalizeLine(trimmed, parse) {
+					if encErr := enc.Encode(rec); encErr != nil {
+						return encErr
+					}
 				}
 			}
 		}
@@ -122,6 +124,31 @@ type normalizedLine struct {
 	CacheWriteTokens  int64                `json:"cache_write_tokens,omitempty"`
 	ModelUsage        []modelUsageLine     `json:"model_usage,omitempty"`
 	PermissionDenials []permissionDenyLine `json:"permission_denials,omitempty"`
+	// ReasoningTokens is the share of output_tokens the model spent
+	// thinking (task 070). Absent is unreported, which is every adapter but
+	// codex.
+	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
+	// Items is an agent.plan record's to-do list, whole on every record
+	// (task 070). PlanCallID ties successive versions of one plan together.
+	Items      []planItemLine `json:"items,omitempty"`
+	PlanCallID string         `json:"plan_call_id,omitempty"`
+	// Output and Truncated are the agent.command_output record: what a
+	// command printed, and whether the cap cut it. `text` is taken by
+	// agent.output's prose, and a reader must be able to tell the two apart
+	// (§13.2).
+	Output    string `json:"output,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+	// CallID correlates an agent.command_output with the agent.tool_use
+	// whose command produced it. Name repeats that tool, when the dialect
+	// named it on the outcome.
+	CallID string `json:"call_id,omitempty"`
+	Name   string `json:"name,omitempty"`
+}
+
+// planItemLine is one entry of an agent.plan record (§13.2, task 070).
+type planItemLine struct {
+	Text      string `json:"text"`
+	Completed bool   `json:"completed,omitempty"`
 }
 
 // modelUsageLine is one model's share of a run. It carries what the run
@@ -234,15 +261,20 @@ func vincentLine(raw []byte) (json.RawMessage, bool) {
 	return json.RawMessage(raw), true
 }
 
-// normalizeLine maps one transcript line to its normalized form.
-func normalizeLine(raw []byte, parse agent.LineParser) any {
+// normalizeLine maps one transcript line to its normalized form. It returns
+// a slice because one stream line can carry two records: codex reports a
+// command's outcome and the body it printed on the same `item.completed`,
+// and the two are separate records because they are shown at different
+// verbosity levels (task 070 decision 2). Every other line yields exactly
+// one, which is what it yielded before.
+func normalizeLine(raw []byte, parse agent.LineParser) []any {
 	if passthrough, ok := vincentLine(raw); ok {
-		return passthrough
+		return []any{passthrough}
 	}
 	if parse == nil {
 		// A step with no agent: nothing but vincent's own lines is expected,
 		// so anything else is surfaced verbatim rather than guessed at.
-		return normalizedLine{Type: "agent.raw", Line: string(raw)}
+		return []any{normalizedLine{Type: "agent.raw", Line: string(raw)}}
 	}
 	return normalizedEvent(parse(raw), raw)
 }
@@ -250,9 +282,39 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 // normalizedEvent maps one parsed event onto its wire record. It is split
 // from normalizeLine so that ParentCallID — which rides on any record, of any
 // type — is attached in one place rather than in each arm (task 066).
-func normalizedEvent(ev agent.Event, raw []byte) normalizedLine {
+func normalizedEvent(ev agent.Event, raw []byte) []any {
 	out := normalizedRecord(ev, raw)
 	out.ParentCallID = ev.ParentCallID
+	recs := []any{out}
+	// An output body that arrived on an event of another type becomes its
+	// own record, after the one the line's own type produced: a reader sees
+	// the command's outcome and then what it printed, which is the order
+	// they happened in.
+	if ev.Type != agent.EventCommandOutput && ev.Output != nil {
+		extra := commandOutputLine(ev.Output)
+		extra.ParentCallID = ev.ParentCallID
+		recs = append(recs, extra)
+	}
+	return recs
+}
+
+// commandOutputLine maps a command's output body onto its wire record.
+func commandOutputLine(out *agent.CommandOutput) normalizedLine {
+	return normalizedLine{
+		Type:      "agent.command_output",
+		Name:      out.Name,
+		CallID:    out.CallID,
+		Output:    out.Text,
+		Truncated: out.Truncated,
+	}
+}
+
+// planItemLines maps a plan's entries onto their wire shape.
+func planItemLines(items []agent.PlanItem) []planItemLine {
+	out := make([]planItemLine, 0, len(items))
+	for _, it := range items {
+		out = append(out, planItemLine{Text: it.Text, Completed: it.Completed})
+	}
 	return out
 }
 
@@ -275,6 +337,18 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 			out.AvailableTools = ev.Header.Tools
 		}
 		return out
+	case agent.EventPlan:
+		out := normalizedLine{Type: "agent.plan"}
+		if ev.Plan != nil {
+			out.PlanCallID = ev.Plan.CallID
+			out.Items = planItemLines(ev.Plan.Items)
+		}
+		return out
+	case agent.EventCommandOutput:
+		if ev.Output == nil {
+			return normalizedLine{Type: "agent.command_output"}
+		}
+		return commandOutputLine(ev.Output)
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:
@@ -293,6 +367,7 @@ func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 			out.TerminalReason = ev.Result.TerminalReason
 			out.CacheReadTokens = ev.Result.CacheReadTokens
 			out.CacheWriteTokens = ev.Result.CacheCreationTokens
+			out.ReasoningTokens = ev.Result.ReasoningOutputTokens
 			out.ModelUsage = modelUsageLines(ev.Result.ModelUsage)
 			out.PermissionDenials = permissionDenyLines(ev.Result.PermissionDenials)
 		}

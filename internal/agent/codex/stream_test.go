@@ -280,14 +280,17 @@ func TestParseReasoningWithoutText(t *testing.T) {
 	}
 }
 
-// TestNoRunHeaderOrResultMetadata states positively what task 066 did *not*
-// do to this adapter. The shared vocabulary grew a run header, a structured
-// tool verb and the result's own account of a run; codex reports no run header
-// at all (`thread.started` is a thread id and nothing else) and no structured
-// tool outcome, and the one field it does carry that parallels the new ones —
-// `turn.completed.usage.cached_input_tokens` — is deliberately not read: task
-// 066 widened one adapter, and each dialect deserves its own fixtures. Every
-// new field therefore stays zero here, and nothing emulates a value (§9.3).
+// TestNoRunHeaderOrResultMetadata states positively what this adapter does
+// *not* report. codex has no run header line at all, no structured tool verb
+// and no per-model or permission-denial accounting, so those stay zero
+// whatever the fixture — nothing emulates a value (§9.3).
+//
+// It no longer covers the cache counters. Task 066 defined
+// CacheReadTokens/CacheCreationTokens on RunResult and left codex unread for
+// want of its own fixtures; task 070 captured them, and codex's
+// `cached_input_tokens`/`cache_write_input_tokens` are those two quantities
+// under the other dialect's names. They are asserted in TestUsageFields
+// instead, which is where a field that *is* read belongs.
 func TestNoRunHeaderOrResultMetadata(t *testing.T) {
 	for _, name := range []string{"success.jsonl", "tooluse.jsonl", "failure.jsonl", "reasoning_0.147.0.jsonl"} {
 		for i, ev := range parseFixture(t, name) {
@@ -305,7 +308,6 @@ func TestNoRunHeaderOrResultMetadata(t *testing.T) {
 			if res := ev.Result; res != nil {
 				if res.Duration != 0 || res.APIDuration != 0 || res.NumTurns != 0 ||
 					res.StopReason != "" || res.TerminalReason != "" ||
-					res.CacheReadTokens != 0 || res.CacheCreationTokens != 0 ||
 					res.ModelUsage != nil || res.PermissionDenials != nil {
 					t.Errorf("%s line %d: result carries claude-only metadata: %+v", name, i, res)
 				}

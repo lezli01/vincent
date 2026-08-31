@@ -1072,6 +1072,22 @@ func (d *detail) renderRecord(rec apiclient.TranscriptRecord, sawOutput bool) (p
 			return paneLine{}, false
 		}
 		return runHeaderLine(rec), true
+	case "agent.plan":
+		// levelCompact is "what the agent said and did, nothing else". A
+		// plan is neither — it is what the agent intends — so it appears
+		// from normal up, where the run header does (task 070).
+		if d.level == levelCompact || len(rec.Items) == 0 {
+			return paneLine{}, false
+		}
+		return planLine(rec.Items), true
+	case "agent.command_output":
+		// Verbose only. This is the output body, and a step that runs
+		// `go test ./...` would otherwise flood the level most readers use
+		// (task 070 decision 2).
+		if d.level != levelVerbose || rec.Output == "" {
+			return paneLine{}, false
+		}
+		return commandOutputLine(rec), true
 	case "agent.usage":
 		if d.level != levelVerbose {
 			return paneLine{}, false

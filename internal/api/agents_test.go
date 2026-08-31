@@ -311,7 +311,9 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 	}
 
 	got := probe(t, true)
-	for name, want := range map[string]bool{"claude": true, "codex": false, "cursor": false} {
+	// codex joined claude with task 070: `exec resume <thread_id>`, pinned by
+	// a capture. cursor is the one that still cannot (§9.7).
+	for name, want := range map[string]bool{"claude": true, "codex": true, "cursor": false} {
 		switch v := got[name]; {
 		case v == nil:
 			t.Errorf("%s supports_resume = null, want %v — the registry was asked", name, want)
