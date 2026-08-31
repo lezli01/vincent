@@ -10,6 +10,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -463,6 +464,76 @@ func TestNormalizeOmitsUnreportedResultMetadata(t *testing.T) {
 	} {
 		if strings.Contains(buf.String(), absent) {
 			t.Errorf("unreported %s reached the wire: %s", absent, buf.String())
+		}
+	}
+}
+
+// TestNormalizePlanAndCommandOutput pins the wire names of the two records
+// task 070 added, and the one line that produces two of them: codex reports
+// a command's outcome and the body it printed on the same `item.completed`,
+// and the two are separate records because clients show them at different
+// verbosity levels.
+func TestNormalizePlanAndCommandOutput(t *testing.T) {
+	var buf bytes.Buffer
+	parser := codex.New(func() string { return "" }).NewLineParser()
+	lines := strings.Join([]string{
+		`{"type":"item.updated","item":{"id":"item_1","type":"todo_list",` +
+			`"items":[{"text":"first","completed":true},{"text":"second","completed":false}]}}`,
+		`{"type":"item.completed","item":{"id":"item_2","type":"command_execution",` +
+			`"command":"ls","aggregated_output":"total 8\n","exit_code":0,"status":"completed"}}`,
+	}, "\n") + "\n"
+	if err := normalizeTranscript(&buf, strings.NewReader(lines), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	out := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(out) != 3 {
+		t.Fatalf("records = %d, want 3 (plan, tool_result, command_output):\n%s", len(out), buf.String())
+	}
+	want := []string{
+		`{"type":"agent.plan","items":[{"text":"first","completed":true},{"text":"second"}],"plan_call_id":"item_1"}`,
+		`{"type":"agent.tool_result","results":[{"call_id":"item_2","name":"command_execution","summary":"exit 0"}]}`,
+		`{"type":"agent.command_output","output":"total 8\n","call_id":"item_2","name":"command_execution"}`,
+	}
+	for i, w := range want {
+		if out[i] != w {
+			t.Errorf("record %d =\n%s\nwant\n%s", i, out[i], w)
+		}
+	}
+}
+
+// TestNormalizeOmitsUnreportedPlanFields is the other half: an adapter that
+// reports none of task 070's fields emits none of the keys, so a client can
+// tell "unreported" from "zero" and from "empty".
+func TestNormalizeOmitsUnreportedPlanFields(t *testing.T) {
+	var buf bytes.Buffer
+	parser := claude.New(func() string { return "" }).NewLineParser()
+	line := `{"type":"result","subtype":"success","result":"done"}` + "\n"
+	if err := normalizeTranscript(&buf, strings.NewReader(line), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	for _, absent := range []string{"reasoning_tokens", "items", "plan_call_id", "output", "truncated"} {
+		if strings.Contains(buf.String(), absent) {
+			t.Errorf("unreported %s reached the wire: %s", absent, buf.String())
+		}
+	}
+}
+
+// TestNormalizeCodexUsageFields: codex's five usage counters land on
+// agent.result, two of them in the keys task 066 already defined.
+func TestNormalizeCodexUsageFields(t *testing.T) {
+	var buf bytes.Buffer
+	parser := codex.New(func() string { return "" }).NewLineParser()
+	line := `{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":7,` +
+		`"cache_write_input_tokens":3,"output_tokens":5,"reasoning_output_tokens":2}}` + "\n"
+	if err := normalizeTranscript(&buf, strings.NewReader(line), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	for _, want := range []string{
+		`"input_tokens":10`, `"output_tokens":5`, `"cache_read_tokens":7`,
+		`"cache_write_tokens":3`, `"reasoning_tokens":2`,
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("missing %s in %s", want, buf.String())
 		}
 	}
 }

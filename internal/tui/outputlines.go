@@ -114,6 +114,10 @@ const (
 	// gutterResult is four columns: a result is indented under its call, so
 	// a run of calls and outcomes reads as a tree rather than a list.
 	gutterResult = "    "
+	// gutterPlan marks the agent's running to-do list (task 070). Two
+	// columns like the rest, and its own glyph because a plan is neither
+	// something the agent said nor something it ran.
+	gutterPlan = "☰ "
 )
 
 // wrapLine lays a paneLine out across a pane of the given width, styling each
@@ -282,6 +286,47 @@ func runHeaderLine(rec apiclient.TranscriptRecord) paneLine {
 		})
 	}
 	return paneLine{gutter: gutterHeader, gutterStyle: styleDim, segs: segs}
+}
+
+// planLine renders the agent's running to-do list — the plan it wrote for
+// itself, ticked over as it works (task 070). Every version of the list
+// arrives whole, so this renders the current state rather than a diff: a
+// reader who joins mid-run wants to know where the agent is, not how it got
+// there.
+//
+// Done items are dimmed and pending ones are not, so the list scans to the
+// line the agent is on. It is one paneLine, which the pane wraps to the
+// hanging indent under gutterPlan rather than clipping.
+func planLine(items []apiclient.TranscriptPlanItem) paneLine {
+	segs := make([]segment, 0, len(items)*2)
+	for i, item := range items {
+		if i > 0 {
+			segs = append(segs, segment{text: " · ", style: styleDim})
+		}
+		mark, style := "○ ", lipgloss.NewStyle()
+		if item.Completed {
+			mark, style = "✓ ", styleOKDim
+		}
+		segs = append(segs, segment{text: mark + item.Text, style: style})
+	}
+	return paneLine{gutter: gutterPlan, gutterStyle: styleDim, segs: segs}
+}
+
+// commandOutputLine renders what a command printed. It is dim and gutterless
+// like the output of a command step, because it is the same thing: the body
+// a tool wrote, not vincent's account of it. Truncation is stated rather than
+// silent — output that stops mid-line and says nothing is indistinguishable
+// from a command that printed exactly that much (task 070 decision 2).
+func commandOutputLine(rec apiclient.TranscriptRecord) paneLine {
+	text := strings.TrimRight(rec.Output, "\n")
+	if rec.Truncated {
+		text += "\n… output truncated"
+	}
+	return paneLine{
+		gutter:      gutterNone,
+		gutterStyle: styleDim,
+		segs:        []segment{{text: text, style: styleDim}},
+	}
 }
 
 // toolResultLine renders one outcome under its call.

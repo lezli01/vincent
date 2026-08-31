@@ -541,3 +541,92 @@ func TestBlockedToolResultHasItsOwnMark(t *testing.T) {
 		t.Errorf("verb = %q", verb[0])
 	}
 }
+
+// TestPlanFromNormalUp: a plan is what the agent *intends*, which is neither
+// what it said nor what it ran, so levelCompact stays byte-identical to what
+// it rendered before task 070 and the list appears from normal up.
+func TestPlanFromNormalUp(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 80
+	plan := apiclient.TranscriptRecord{
+		Type:       "agent.plan",
+		PlanCallID: "item_1",
+		Items: []apiclient.TranscriptPlanItem{
+			{Text: "Run `ls -la`", Completed: true},
+			{Text: "Append to notes.txt"},
+		},
+	}
+	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "working"}, plan}
+
+	d.level = levelCompact
+	compact := plainLines(d.outputLines())
+	if len(compact) != 1 || strings.TrimSpace(compact[0]) != "working" {
+		t.Errorf("compact = %q, want only the agent's own words", compact)
+	}
+	for _, level := range []outputLevel{levelNormal, levelVerbose} {
+		d.level = level
+		got := plainLines(d.outputLines())
+		if len(got) != 2 {
+			t.Fatalf("%s = %q, want the output and the plan", level, got)
+		}
+		if !strings.HasPrefix(got[1], "☰ ✓ Run `ls -la`") ||
+			!strings.HasSuffix(got[1], "○ Append to notes.txt") {
+			t.Errorf("%s plan = %q, want done items ticked and pending ones not", level, got[1])
+		}
+	}
+}
+
+// TestLongPlanWraps: a plan longer than the pane wraps to the hanging indent
+// under its gutter rather than clipping, which is the whole reason it is one
+// paneLine rather than pre-joined text.
+func TestLongPlanWraps(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 40
+	d.level = levelNormal
+	d.records = []apiclient.TranscriptRecord{{Type: "agent.plan", Items: []apiclient.TranscriptPlanItem{
+		{Text: "read the whole specification carefully", Completed: true},
+		{Text: "then rewrite the parser and its tests"},
+	}}}
+	got := plainLines(d.outputLines())
+	if len(got) < 2 {
+		t.Fatalf("lines = %q, want the plan wrapped across several", got)
+	}
+	for i, line := range got {
+		if len([]rune(line)) > d.width {
+			t.Errorf("line %d overflows the pane: %q", i, line)
+		}
+		if i > 0 && !strings.HasPrefix(line, "  ") {
+			t.Errorf("continuation %d = %q, want the hanging indent", i, line)
+		}
+	}
+	if !strings.Contains(strings.Join(got, ""), "rewrite the parser") {
+		t.Errorf("plan clipped: %q", got)
+	}
+}
+
+// TestCommandOutputOnlyAtVerbose: the output body is the one record a step
+// running `go test ./...` could flood the pane with, so it is absent below
+// verbose (task 070 decision 2). Truncation is stated when it happened —
+// output that stops and says nothing is indistinguishable from a command
+// that printed exactly that much.
+func TestCommandOutputOnlyAtVerbose(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 80
+	d.records = []apiclient.TranscriptRecord{
+		{Type: "agent.command_output", CallID: "item_2", Output: "total 8\n", Truncated: true},
+	}
+	for _, level := range []outputLevel{levelCompact, levelNormal} {
+		d.level = level
+		if got := d.outputLines(); len(got) != 0 {
+			t.Errorf("%s rendered a command's output body: %q", level, got)
+		}
+	}
+	d.level = levelVerbose
+	got := plainLines(d.outputLines())
+	if len(got) != 2 || !strings.Contains(got[0], "total 8") {
+		t.Fatalf("verbose = %q, want the body", got)
+	}
+	if !strings.Contains(got[1], "truncated") {
+		t.Errorf("truncation is silent: %q", got)
+	}
+}

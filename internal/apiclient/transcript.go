@@ -71,9 +71,32 @@ type TranscriptRecord struct {
 	CacheWriteTokens  int64                        `json:"cache_write_tokens"`
 	ModelUsage        []TranscriptModelUsage       `json:"model_usage"`
 	PermissionDenials []TranscriptPermissionDenial `json:"permission_denials"`
+	// ReasoningTokens is the share of output_tokens spent thinking; zero is
+	// unreported, which is every adapter but codex.
+	ReasoningTokens int64 `json:"reasoning_tokens"`
+	// Items and PlanCallID are the agent.plan record: the agent's running
+	// to-do list, whole on every record, and the stream item successive
+	// versions of one plan share.
+	Items      []TranscriptPlanItem `json:"items"`
+	PlanCallID string               `json:"plan_call_id"`
+	// Output and Truncated are the agent.command_output record: what a
+	// command printed, and whether the record's cap cut it. It is not
+	// `text`, which is the agent's own prose.
+	Output    string `json:"output"`
+	Truncated bool   `json:"truncated"`
+	// CallID correlates an agent.command_output with the agent.tool_use
+	// whose command produced it.
+	CallID string `json:"call_id"`
+	Name   string `json:"name"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
+}
+
+// TranscriptPlanItem is one entry of an agent.plan record.
+type TranscriptPlanItem struct {
+	Text      string `json:"text"`
+	Completed bool   `json:"completed"`
 }
 
 // TranscriptModelUsage is one model's share of a run. It says what the run

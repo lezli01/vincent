@@ -265,6 +265,25 @@ const (
 	// Only claude reports one today (§9.2); codex and cursor emit no
 	// equivalent line and never produce this event (§9.3, §9.7).
 	EventRunHeader EventType = "run_header"
+	// EventPlan carries the agent's running to-do list — the plan it wrote
+	// for itself and ticks over as it works (task 070). It is emitted every
+	// time the list changes, each event carrying the whole list rather than
+	// a delta, because a reader who joins mid-run needs the current state
+	// and not the history of one.
+	//
+	// Only codex reports one today (§9.3); claude's `TodoWrite` and cursor's
+	// equivalent are tool calls, not a dedicated stream item, and neither
+	// adapter produces this event (§9.2, §9.7).
+	EventPlan EventType = "plan"
+	// EventCommandOutput carries what a command a tool ran actually printed
+	// — the output body ToolResult refuses to hold (task 070). It is a
+	// separate event for that reason: an outcome is two words and always
+	// worth showing, while an output body is unbounded and worth showing
+	// only to a reader who asked for the machine.
+	//
+	// Only codex reports one today, from `command_execution.aggregated_output`
+	// (§9.3). claude and cursor report a tool's output nowhere vincent parses.
+	EventCommandOutput EventType = "command_output"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -296,7 +315,16 @@ type Event struct {
 	Request *InputRequest // EventInputRequest
 	Result  *RunResult    // EventResult
 	Header  *RunHeader    // EventRunHeader
-	Message string        // EventError: what went wrong
+	Plan    *Plan         // EventPlan
+	// Output is a command's output body. It rides on EventCommandOutput,
+	// and also on the EventToolResult of a dialect that reports the outcome
+	// and the output on one line — codex's `item.completed` for a
+	// `command_execution` is exactly that (task 070). A consumer that
+	// renders both must therefore check Output on a result event too; the
+	// two are separate *records* precisely because they are shown at
+	// different verbosity levels.
+	Output  *CommandOutput
+	Message string // EventError: what went wrong
 	// ParentCallID attributes this event to the tool call that spawned the
 	// sub-run it came from — claude's `parent_tool_use_id`, which is stamped
 	// on every line a `Task` subagent produces (task 066). Empty is the main
@@ -327,6 +355,43 @@ type RunHeader struct {
 	// it. "What could this agent actually reach" has no other answer in a
 	// transcript.
 	Tools []string
+}
+
+// Plan is the agent's running to-do list (task 070, §9.3): every item it
+// wrote for itself, in the order it wrote them, with the ones it has
+// finished marked. An adapter whose dialect has no such item never produces
+// one, and nothing synthesizes a plan out of tool calls.
+type Plan struct {
+	// CallID is the stream item the list belongs to, so successive versions
+	// of one plan can be recognized as the same plan rather than as several.
+	CallID string
+	Items  []PlanItem
+}
+
+// PlanItem is one entry of a Plan.
+type PlanItem struct {
+	// Text is the item as the agent wrote it, flattened to one line: a plan
+	// is a list, and an entry that wrapped to a paragraph would stop being
+	// one.
+	Text      string
+	Completed bool
+}
+
+// CommandOutput is what a command printed — stdout and stderr as the dialect
+// merged them (task 070, §9.3). It exists because ToolResult documents itself
+// as an outcome and never the output body; this is the body, carried under
+// its own size discipline.
+type CommandOutput struct {
+	// CallID matches the ToolUse whose command produced this output, and
+	// Name is that tool. Both are empty when the dialect gave neither.
+	CallID string
+	Name   string
+	// Text is the output, capped at CommandOutputMax runes.
+	Text string
+	// Truncated says the cap was hit and Text is a prefix. Truncation that a
+	// reader cannot see is indistinguishable from a command that printed
+	// exactly that much.
+	Truncated bool
 }
 
 // ToolUse is one tool invocation surfaced by the agent.
@@ -452,6 +517,10 @@ type RunResult struct {
 	// plain counts above do not account for.
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	// ReasoningOutputTokens is the share of OutputTokens the model spent
+	// thinking rather than answering (codex's `reasoning_output_tokens`,
+	// task 070). 0 is unreported, which is claude and cursor.
+	ReasoningOutputTokens int64
 	// ModelUsage is the per-model breakdown of a run that used more than one
 	// model, in the order the adapter reported it. nil is unreported.
 	ModelUsage []ModelUsage

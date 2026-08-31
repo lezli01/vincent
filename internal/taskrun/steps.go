@@ -746,6 +746,23 @@ func (r *Runner) publishAgentEvent(taskID, runID, offset int64, ev agent.Event) 
 		publish("agent.tool_use", map[string]any{"tools": toolChunks(ev.Tools)})
 	case agent.EventToolResult:
 		publish("agent.tool_result", map[string]any{"results": resultChunks(ev.Results)})
+		// The outcome and the body the command printed arrive on one codex
+		// line and become two records; the live tail publishes the same two,
+		// in the same order, because a client renders both through one path
+		// (task 070 decision 2, task 066 decision 5).
+		if ev.Output != nil {
+			publish("agent.command_output", outputChunk(ev.Output))
+		}
+	case agent.EventPlan:
+		if ev.Plan == nil {
+			return
+		}
+		publish("agent.plan", planChunk(ev.Plan))
+	case agent.EventCommandOutput:
+		if ev.Output == nil {
+			return
+		}
+		publish("agent.command_output", outputChunk(ev.Output))
 	case agent.EventThinking:
 		// Thinking goes live like everything else (T4.16). §9.7 held it back
 		// when it meant one chunk per token; coalescing removed that, and a
@@ -775,6 +792,42 @@ func headerChunk(h *agent.RunHeader) map[string]any {
 	}
 	if len(h.Tools) > 0 {
 		chunk["available_tools"] = h.Tools
+	}
+	return chunk
+}
+
+// planChunk maps the agent's running plan onto the §13.3 live-chunk shape,
+// matching what api.normalizeLine writes for the same event.
+func planChunk(p *agent.Plan) map[string]any {
+	items := make([]map[string]any, 0, len(p.Items))
+	for _, it := range p.Items {
+		item := map[string]any{"text": it.Text}
+		if it.Completed {
+			item["completed"] = true
+		}
+		items = append(items, item)
+	}
+	chunk := map[string]any{"items": items}
+	if p.CallID != "" {
+		chunk["plan_call_id"] = p.CallID
+	}
+	return chunk
+}
+
+// outputChunk maps a command's output body onto the §13.3 live-chunk shape.
+// The key is `output` rather than `text`: `text` is agent.output's prose, and
+// a client must be able to tell what the agent said from what a command
+// printed.
+func outputChunk(o *agent.CommandOutput) map[string]any {
+	chunk := map[string]any{"output": o.Text}
+	if o.CallID != "" {
+		chunk["call_id"] = o.CallID
+	}
+	if o.Name != "" {
+		chunk["name"] = o.Name
+	}
+	if o.Truncated {
+		chunk["truncated"] = true
 	}
 	return chunk
 }

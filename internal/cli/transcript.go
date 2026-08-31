@@ -315,6 +315,26 @@ func renderTranscriptRecord(rec apiclient.TranscriptRecord, sawOutput bool) (str
 			mark = "! "
 		}
 		return mark + strings.TrimSpace(res.Name+" "+res.Summary), true
+	case "agent.plan":
+		if len(rec.Items) == 0 {
+			return "", false
+		}
+		parts := make([]string, 0, len(rec.Items))
+		for _, item := range rec.Items {
+			box := "[ ] "
+			if item.Completed {
+				box = "[x] "
+			}
+			parts = append(parts, box+item.Text)
+		}
+		return "# plan: " + strings.Join(parts, "; "), true
+	case "agent.command_output":
+		// Skipped, deliberately. The pane shows this at `verbose` only
+		// (task 070 decision 2) and this command has no verbosity control,
+		// so the alternative to skipping is showing every command's whole
+		// output to every reader. `--format raw` still carries it verbatim,
+		// which is what a reader who wants the body asks for.
+		return "", false
 	case "agent.error":
 		return "! " + firstNonEmpty(rec.Message, "agent error"), true
 	case "agent.result":
