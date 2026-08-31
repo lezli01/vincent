@@ -125,3 +125,47 @@ func TestCommandOutputChunkShape(t *testing.T) {
 		t.Errorf("untruncated chunk = %s", got)
 	}
 }
+
+// TestToolResultWithOutputSplits pins the one event that becomes two chunks.
+// codex reports a command's outcome and the body it printed on a single line;
+// internal/api's transcript route already splits that into two records, so the
+// live tail has to publish the same two in the same order — a client renders
+// both through one path, and a tail that emitted one record where the refetch
+// has two would change on screen the moment the step finished.
+func TestToolResultWithOutputSplits(t *testing.T) {
+	chunks := LiveChunks(Event{
+		Type:    EventToolResult,
+		Results: []ToolResult{{CallID: "item_2", Name: "command_execution"}},
+		Output:  &CommandOutput{CallID: "item_2", Text: "total 8\n"},
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %d, want the result and its output body: %+v", len(chunks), chunks)
+	}
+	if chunks[0].Type != "agent.tool_result" || chunks[1].Type != "agent.command_output" {
+		t.Errorf("types = %q, %q; want agent.tool_result then agent.command_output",
+			chunks[0].Type, chunks[1].Type)
+	}
+	// A result with no body stays one chunk: an empty agent.command_output
+	// would be a line the transcript route never hands back.
+	if got := LiveChunks(Event{Type: EventToolResult}); len(got) != 1 {
+		t.Errorf("bodiless result = %d chunks, want 1", len(got))
+	}
+}
+
+// TestParentCallIDRidesEveryChunk is why LiveChunks attaches it once rather
+// than each arm doing it: a split line's second chunk is as nested as its
+// first, and a client that indents by parent_call_id would otherwise put the
+// body back at the top level.
+func TestParentCallIDRidesEveryChunk(t *testing.T) {
+	chunks := LiveChunks(Event{
+		Type:         EventToolResult,
+		ParentCallID: "call_1",
+		Results:      []ToolResult{{CallID: "item_2"}},
+		Output:       &CommandOutput{Text: "hi"},
+	})
+	for _, c := range chunks {
+		if c.Payload["parent_call_id"] != "call_1" {
+			t.Errorf("%s dropped parent_call_id: %+v", c.Type, c.Payload)
+		}
+	}
+}
