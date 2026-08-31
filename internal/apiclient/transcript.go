@@ -184,7 +184,15 @@ func (c *Client) TranscriptRaw(
 func (c *Client) transcript(
 	ctx context.Context, taskID, runID int64, opts TranscriptOptions, format string,
 ) (resp *http.Response, nextOffset int64, err error) {
-	path := fmt.Sprintf("/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query(format))
+	return c.transcriptAt(ctx, fmt.Sprintf(
+		"/v1/tasks/%d/steps/%d/transcript%s", taskID, runID, opts.query(format)))
+}
+
+// transcriptAt performs one transcript GET and hands back the open body plus
+// the X-Next-Offset resume cursor; the caller closes it. Both the step route
+// and the chat-turn route go through here, so their range semantics cannot
+// drift apart in the client.
+func (c *Client) transcriptAt(ctx context.Context, path string) (resp *http.Response, nextOffset int64, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("build transcript request: %w", err)

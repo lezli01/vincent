@@ -1025,6 +1025,7 @@ the log as prompt context.
 
 ```sh
 vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
+                  [--base BRANCH] [--message TEXT] [--json]
                          [--base BRANCH] [--message TEXT]
 ```
 
@@ -1035,7 +1036,7 @@ turn straight away and waits for it, which is `start` plus `send` in one call.
 ### `vincent chat send`
 
 ```sh
-vincent chat send CHAT_ID MESSAGE
+vincent chat send CHAT_ID MESSAGE [--json]
 ```
 
 Sends a message and blocks until the turn ends, then prints the agent's answer
@@ -1044,38 +1045,68 @@ on stdout. A failed turn prints its reason on stderr and exits 1 — including
 was resuming. The chat stays usable; starting a fresh conversation is a
 decision you make, not one vincent makes silently.
 
-There is **no `vincent chat answer`**. If the agent asks a question mid-turn the
-chat enters `awaiting_input` and the send keeps waiting, because the turn has
-not ended; answering it means calling `POST /v1/chats/{id}/answer`
-[over the API](api.md#chats). Nothing bounds that wait today — a chat turn has
-no timeout of its own — so an unanswered question leaves the turn live in the
-daemon and the send waiting on it. Interrupting `vincent chat send` stops the
-polling, not the turn; `POST /v1/chats/{id}/cancel` is what ends it.
+If the agent asks a question mid-turn the chat enters `awaiting_input` and the
+send keeps waiting, because the turn has not ended. Answer it from another
+terminal with [`vincent chat answer`](#vincent-chat-answer).
+
+A chat turn is bounded by the same two clocks a workflow step is: it fails with
+`timeout` past `defaults.agent_timeout` (60 minutes by default) and with
+`input_timeout` if nobody answers within `defaults.input_timeout` (24 hours).
+Either expiry kills the process, returns the chat to `idle` and releases its
+`max_parallel_chats` slot.
+
+Interrupting `vincent chat send` stops the polling, not the turn: the turn
+belongs to the daemon. [`vincent chat cancel`](#vincent-chat-cancel) is what
+ends it.
 
 Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.
 
+### `vincent chat answer`
+
+```sh
+vincent chat answer CHAT_ID (--answer N=VALUE... | --allow | --deny) [--json]
+```
+
+Answers the request an `awaiting_input` chat is parked on; the turn resumes in
+place. Questions are answered by the number `vincent chat show` prints them
+under — repeat `--answer` for one index to give a multi-select several values —
+and a permission request takes `--allow` or `--deny`. It is `vincent task
+answer` for a chat, flag for flag, because it is the same request.
+
+### `vincent chat cancel`
+
+```sh
+vincent chat cancel CHAT_ID [--json]
+```
+
+Stops the chat's live turn and kills its process tree, returning the chat to
+`idle` and releasing its slot. This is what `send` cannot do by being
+interrupted.
+
 ### `vincent chat list`
 
 ```sh
-vincent chat list [--project ID]
+vincent chat list [--project ID] [--json]
 ```
 
-One line per chat: id, state, agent, title.
+One line per chat: id, state, agent, title. `--json` emits the chat objects.
 
 ### `vincent chat show`
 
 ```sh
-vincent chat show CHAT_ID
+vincent chat show CHAT_ID [--json]
 ```
 
 The chat's header and every turn in order, with each turn's prompt, answer and
-— where it failed — its reason.
+— where it failed — its reason. A chat parked in `awaiting_input` prints the
+request first, with its questions numbered: those are the numbers
+`vincent chat answer --answer N=VALUE` reads.
 
 ### `vincent chat archive`
 
 ```sh
-vincent chat archive CHAT_ID [--force]
+vincent chat archive CHAT_ID [--force] [--json]
 ```
 
 Removes the chat's worktree and, under `delete_empty_branch_on_archive`, an

@@ -39,6 +39,7 @@ type harness struct {
 	broker    *events.Broker
 	projectID int64
 	taskID    int64
+	dataDir   string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -80,10 +81,14 @@ func newHarness(t *testing.T) *harness {
 		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	s := api.New(api.Deps{
-		Token:       testToken,
-		Config:      config.Default,
-		StartedAt:   time.Now(),
-		ListenAddr:  "127.0.0.1:0",
+		Token:      testToken,
+		Config:     config.Default,
+		StartedAt:  time.Now(),
+		ListenAddr: "127.0.0.1:0",
+		// The chat-turn transcript route derives its path from the data dir
+		// (a chat turn has no stored TranscriptPath), so the harness has to
+		// name the same directory the runner writes into.
+		Dirs:        config.Dirs{Data: dataDir},
 		RequestStop: func() {},
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
@@ -97,7 +102,10 @@ func newHarness(t *testing.T) *harness {
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &harness{ts: ts, st: st, broker: broker, projectID: p.ID, taskID: task.ID}
+	return &harness{
+		ts: ts, st: st, broker: broker,
+		projectID: p.ID, taskID: task.ID, dataDir: dataDir,
+	}
 }
 
 // append writes one durable event; the store hook publishes it to the broker.
@@ -368,4 +376,21 @@ func TestDiscover(t *testing.T) {
 	if want := "http://127.0.0.1:4242"; c.BaseURL() != want {
 		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), want)
 	}
+}
+
+// getStatus performs an authenticated GET and returns the status code, for
+// the refusals a typed client method cannot express.
+func (h *harness) getStatus(t *testing.T, url string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
 }

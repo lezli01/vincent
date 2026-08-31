@@ -1,7 +1,7 @@
 # 063 — Free chat: conversational agent sessions beside tasks
 
 **Issue:** #255
-**Status:** 🔄 in progress (1/2)
+**Status:** ✅ done (3/3)
 
 ## Why
 
@@ -110,8 +110,8 @@ existing first-run acknowledgement already covers it. §6's task FSM,
 | ID | What | Status |
 |---|---|---|
 | 063.1 | The entity end to end: `internal/chatstate`, `internal/chatrun`, migration 0022, store CRUD + claims, `internal/agent` resume capability + claude `--resume`, the `/v1/chats` route family, `internal/apiclient`, `vincent chat`, daemon wiring, `max_parallel_chats`, gc claim sets, owner-named worktree directories, spec and docs | ✅ done |
-| 063.2 | The chats view in the TUI, and `scripts/m13-gate.sh` wired into `ci.yml`'s `gates` job on all three platforms | [ ] |
-| 063.3 | The three gaps the 063.1 documentation audit found, none of which changes a decision above: a chat turn is bounded by **no clock at all** — `internal/chatrun` applies neither `input_timeout` nor `agent_timeout`, so a turn (and the `max_parallel_chats` slot it holds) runs until it is answered or cancelled, and §13.2 carries a dated correction saying so; `vincent chat` has **no `answer` and no `cancel`**, so a chat that enters `awaiting_input` can only be moved on over the API, and `vincent chat send` blocks meanwhile; and the transcript plumbing is task-scoped at both ends — `internal/taskrun`'s pruner walks archived *tasks*, so an **archived chat's transcripts are never reclaimed** by `transcript_retention_days`, and only `internal/taskrun/engine.go` calls `Writer.SetMax`, so a chat turn's transcript is written with **no `transcript_max_bytes` cap**. `vincent chat` also has no `--json`, which is why the blanket claim in the scripting guide was narrowed | [ ] |
+| 063.2 | The chats view in the TUI — a chats board and a chat workspace, two `viewID`s of their own — and an end-to-end chat gate wired into `ci.yml`'s `gates` job on all three platforms. *The gate is `scripts/m14-gate.sh`, not `m13`: task 065 took that name for the workflow editor.* Closed by task 067 | [x] |
+| 063.3 | Closed by task 067. The three gaps the 063.1 documentation audit found, none of which changes a decision above: a chat turn is bounded by **no clock at all** — `internal/chatrun` applies neither `input_timeout` nor `agent_timeout`, so a turn (and the `max_parallel_chats` slot it holds) runs until it is answered or cancelled, and §13.2 carries a dated correction saying so; `vincent chat` has **no `answer` and no `cancel`**, so a chat that enters `awaiting_input` can only be moved on over the API, and `vincent chat send` blocks meanwhile; and the transcript plumbing is task-scoped at both ends — `internal/taskrun`'s pruner walks archived *tasks*, so an **archived chat's transcripts are never reclaimed** by `transcript_retention_days`, and only `internal/taskrun/engine.go` calls `Writer.SetMax`, so a chat turn's transcript is written with **no `transcript_max_bytes` cap**. `vincent chat` also has no `--json`, which is why the blanket claim in the scripting guide was narrowed | [x] |
 
 ### Why 063.2 is separate
 
@@ -124,6 +124,11 @@ written in the sh∩pwsh intersection that has actually been run on all three
 platforms before it is claimed to pass on them. §15 carries a note saying the
 view is not there yet, so the spec does not describe a screen that does not
 exist.
+
+*Closed 2026-08-31 by [task 067](067-chats-in-the-tui.md), issue #269*, which
+landed 063.2 and 063.3 together — the 063.3 gaps are what make a chat drivable
+without curl, and the view is the client that proves it. §15's note is gone
+because the screens it described as absent are there.
 
 ## What the tests prove
 

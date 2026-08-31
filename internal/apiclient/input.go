@@ -50,6 +50,21 @@ func (t TaskDetail) PendingRequest() (req InputRequest, ok bool, err error) {
 	return req, req.Kind != "", nil
 }
 
+// PendingRequest decodes a chat's parked §7.4 request, the same decode a
+// task's takes. It is the same wire shape because it is the same request:
+// internal/chatrun stores what the adapter emitted, unaltered, so the answer
+// popup and `vincent chat answer` need no chat-shaped variant of either
+// (task 063 decision 8).
+func (c Chat) PendingRequest() (req InputRequest, ok bool, err error) {
+	if len(c.PendingInput) == 0 {
+		return InputRequest{}, false, nil
+	}
+	if err := json.Unmarshal(c.PendingInput, &req); err != nil {
+		return InputRequest{}, false, fmt.Errorf("decode pending_input: %w", err)
+	}
+	return req, req.Kind != "", nil
+}
+
 // InputResponse answers an InputRequest. Answers is keyed by question text;
 // Allow decides a permission request.
 type InputResponse struct {

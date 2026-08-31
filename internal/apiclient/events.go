@@ -48,8 +48,15 @@ type EventNote struct{ Event Event }
 // plus the transcript offset just past its line, which is what lets a client
 // join a transcript fetch to the live stream exactly.
 type OutputNote struct {
-	Type    string
+	Type string
+	// RunID names the step_run on a per-task stream; TurnID and ChatID name
+	// the chat turn on a per-chat one. A chunk carries one pair or the other,
+	// never both — a chat turn is its own run, so there is no step_run behind
+	// it — and the pair a client seams a transcript fetch against is
+	// (TurnID, Offset) exactly as it is (RunID, Offset) for a task.
 	RunID   int64
+	TurnID  int64
+	ChatID  int64
 	Offset  int64
 	Payload json.RawMessage
 }
@@ -277,10 +284,13 @@ func outputNote(name, data string) OutputNote {
 	note := OutputNote{Type: name, Payload: json.RawMessage(data)}
 	var ident struct {
 		RunID  int64 `json:"run_id"`
+		TurnID int64 `json:"turn_id"`
+		ChatID int64 `json:"chat_id"`
 		Offset int64 `json:"offset"`
 	}
 	if err := json.Unmarshal([]byte(data), &ident); err == nil {
 		note.RunID, note.Offset = ident.RunID, ident.Offset
+		note.TurnID, note.ChatID = ident.TurnID, ident.ChatID
 	}
 	return note
 }

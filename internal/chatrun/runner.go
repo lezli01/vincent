@@ -41,6 +41,31 @@ const (
 	// written. As on the task path, a run that cannot record what happened
 	// does not get to claim success.
 	ReasonTranscriptIOError = "transcript_io_error"
+	// ReasonTimeout is a turn that ran past `defaults.agent_timeout`
+	// (§7.2, task 067 decision 1). It is the engine's constant spelled the
+	// same, not a chat-shaped variant: a chat turn is bounded by the same
+	// number a step is, and a second vocabulary for one clock would make
+	// §12.3 carry two names for it.
+	ReasonTimeout = "timeout"
+	// ReasonInputTimeout is a chat that sat in `awaiting_input` past
+	// `defaults.input_timeout` (§7.4, task 067 decision 1). This is the hole
+	// §11 named in its own words — a live agent CLI holding a
+	// `max_parallel_chats` slot for a human who walked away.
+	ReasonInputTimeout = "input_timeout"
+	// ReasonTranscriptLimit is a turn that hit `transcript_max_bytes`
+	// (§12.3). It is a failure and not a truncation for the reason the task
+	// engine gives: past the cap the turn stops being recorded, and a run
+	// nobody can read afterwards does not get to claim success.
+	ReasonTranscriptLimit = "transcript_limit"
+)
+
+// The cancel causes the turn's own clocks raise. They are internal: the
+// reason a client sees is the snake_case constant above.
+var (
+	errTurnTimeout     = errors.New("turn timeout")
+	errInputTimeout    = errors.New("input timeout")
+	errTranscriptLimit = errors.New("transcript limit")
+	errCanceled        = errors.New("canceled")
 )
 
 // ErrChatCapReached is a send refused because `max_parallel_chats` chats
@@ -89,6 +114,11 @@ type liveTurn struct {
 	turnID int64
 	handle agent.RunHandle
 	cancel context.CancelFunc
+	// answered wakes the turn's clock loop when a human answers a §7.4
+	// request, so the `input_timeout` stops and the `agent_timeout` resumes.
+	// Buffered so Answer never blocks on a loop that is between selects, and
+	// depth 1 because a coalesced wake is still a wake.
+	answered chan struct{}
 }
 
 // New returns a runner over deps.
@@ -178,6 +208,10 @@ func (r *Runner) Answer(ctx context.Context, chatID int64, resp agent.InputRespo
 	if _, err := r.deps.Store.SetChatState(ctx, chatID, chatstate.Running); err != nil {
 		return err
 	}
+	select {
+	case live.answered <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -204,8 +238,12 @@ func (r *Runner) Running(chatID int64) bool {
 // runTurn is the actor: one goroutine, sole writer of this chat's state and
 // this turn's row, living for exactly one turn.
 func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
-	ctx, cancel := context.WithCancel(r.base)
-	defer cancel()
+	ctx, cancelCause := context.WithCancelCause(r.base)
+	// Cancel is a cause-setting cancel so the ending can tell a human's stop
+	// from a clock's (§7.2, §7.4). The deferred one is last and therefore
+	// never the cause a live path observed.
+	cancel := func() { cancelCause(errCanceled) }
+	defer cancelCause(errCanceled)
 	adapter, ok := r.deps.Agents.Get(chat.Agent)
 	if !ok {
 		r.finish(turn, chatstate.TurnFailed, ReasonAgentUnavailable,
@@ -218,6 +256,11 @@ func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
 		return
 	}
 	defer tr.Close()
+	// The cap is read per turn, not cached: config hot-reloads (§12.3), and
+	// an operator who lowers it after a runaway turn should see the new value
+	// on the next send rather than after a daemon restart. Only the task
+	// engine used to do this, which left chat transcripts unbounded.
+	tr.SetMax(r.cfg().TranscriptMaxBytes.Bytes())
 
 	spec := agent.RunSpec{
 		Prompt:          turn.Prompt,
@@ -237,11 +280,15 @@ func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
 		r.finish(turn, chatstate.TurnFailed, reason, err.Error(), nil)
 		return
 	}
-	r.track(chat.ID, &liveTurn{turnID: turn.ID, handle: handle, cancel: cancel})
+	live := &liveTurn{
+		turnID: turn.ID, handle: handle, cancel: cancel,
+		answered: make(chan struct{}, 1),
+	}
+	r.track(chat.ID, live)
 	defer r.untrack(chat.ID)
 	r.journal(turn, handle)
 
-	r.consume(ctx, chat, turn, handle, tr)
+	r.consume(ctx, cancelCause, live, chat, turn, handle, tr)
 
 	res, waitErr := handle.Wait()
 	turn.ExitCode = &res.ExitCode
@@ -250,11 +297,20 @@ func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
 	if res.SessionID != "" {
 		turn.SessionID = res.SessionID
 	}
-	switch {
+	switch cause := context.Cause(ctx); {
 	case ctx.Err() != nil && r.base.Err() != nil:
 		// The daemon is going away under a live turn. It is interrupted, not
 		// failed, and it is never re-run (decision 5).
 		r.finish(turn, chatstate.TurnInterruptedState, "", "", chat)
+	case errors.Is(cause, errTurnTimeout):
+		r.finish(turn, chatstate.TurnFailed, ReasonTimeout,
+			fmt.Sprintf("turn ran past agent_timeout (%s)", r.agentTimeout()), chat)
+	case errors.Is(cause, errTranscriptLimit):
+		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptLimit,
+			"the turn's transcript reached transcript_max_bytes", chat)
+	case errors.Is(cause, errInputTimeout):
+		r.finish(turn, chatstate.TurnFailed, ReasonInputTimeout,
+			fmt.Sprintf("no answer within input_timeout (%s)", r.inputTimeout()), chat)
 	case ctx.Err() != nil:
 		r.finish(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
 	case waitErr != nil:
@@ -272,49 +328,186 @@ func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
 }
 
 // consume drains the run's normalized events into the transcript and the live
-// output stream, and applies the §7.4 states as they arrive.
+// output stream, applies the §7.4 states as they arrive, and runs the turn's
+// two clocks (task 067 decision 1).
+//
+// The clocks are a pair, not a sum. `agent_timeout` bounds *work*: it runs
+// while the agent is running and stops while the chat sits in
+// `awaiting_input`, because a human thinking is not the agent burning time.
+// `input_timeout` bounds *that wait*, and is the clock §11 was missing — an
+// unanswered request used to hold a `max_parallel_chats` slot forever. Either
+// expiry cancels the run context with its own cause, which kills the process
+// tree; runTurn maps the cause onto the failure reason and returns the chat
+// to idle, releasing the slot.
+//
+// It is a select loop rather than a `range` over the event channel because a
+// range cannot also watch a timer. The events channel closing is what ends
+// the loop, exactly as before.
 func (r *Runner) consume(
-	ctx context.Context, chat *store.Chat, turn *store.ChatTurn,
-	handle agent.RunHandle, tr *transcript.Writer,
+	ctx context.Context, cancelCause context.CancelCauseFunc, live *liveTurn,
+	chat *store.Chat, turn *store.ChatTurn, handle agent.RunHandle, tr *transcript.Writer,
 ) {
-	for ev := range handle.Events() {
-		if len(ev.Raw) > 0 {
-			at := tr.Raw(ev.Raw)
-			if r.deps.Events != nil {
-				r.deps.Events.PublishOutput(chatOutputKey(chat.ID), events.Chunk{
-					Type: "output",
-					Payload: map[string]any{
-						"chat_id": chat.ID, "turn_id": turn.ID,
-						"raw": string(ev.Raw), "offset": at,
-					},
-				})
+	events := handle.Events()
+	work := time.NewTimer(r.agentTimeout())
+	defer work.Stop()
+	wait := time.NewTimer(r.inputTimeout())
+	// The input clock starts stopped: nothing is pending until the agent
+	// asks. stopTimer drains so a later Reset cannot fire an already-queued
+	// tick.
+	stopTimer(wait)
+	defer wait.Stop()
+	parked := false
+	for {
+		select {
+		case <-ctx.Done():
+			// The daemon is going away, or a human canceled. Either way the
+			// adapter's stream is about to close; runTurn classifies from the
+			// cause.
+			return
+		case <-work.C:
+			tr.Note("timeout", map[string]any{"timeout": r.agentTimeout().String()})
+			r.deps.Logger.Warn("chat turn timed out",
+				"chat", chat.ID, "turn", turn.ID, "timeout", r.agentTimeout())
+			cancelCause(errTurnTimeout)
+			return
+		case <-wait.C:
+			tr.Note("input_timeout", map[string]any{"timeout": r.inputTimeout().String()})
+			r.deps.Logger.Warn("chat input request timed out",
+				"chat", chat.ID, "turn", turn.ID, "timeout", r.inputTimeout())
+			cancelCause(errInputTimeout)
+			return
+		case <-live.answered:
+			// A human answered through Answer, which already CAS'd
+			// awaiting_input → running. The wait clock stops and the work
+			// clock resumes from a full budget: the agent is starting fresh
+			// work on the answer, not resuming a run it was halfway through.
+			if parked {
+				parked = false
+				stopTimer(wait)
+				resetTimer(work, r.agentTimeout())
 			}
-		}
-		switch ev.Type {
-		case agent.EventInputRequest:
-			req, err := json.Marshal(ev.Request)
-			if err != nil {
-				continue
+		case ev, chOpen := <-events:
+			if !chOpen {
+				return
 			}
-			if _, err := r.deps.Store.SetChatPendingInput(ctx, chat.ID, req); err != nil {
-				r.deps.Logger.Warn("store chat pending input", "chat", chat.ID, "error", err)
-				continue
+			r.record(chat, turn, tr, ev)
+			if tr.Exceeded() {
+				r.deps.Logger.Warn("chat transcript hit its cap",
+					"chat", chat.ID, "turn", turn.ID,
+					"limit", r.cfg().TranscriptMaxBytes.Bytes())
+				cancelCause(errTranscriptLimit)
+				return
 			}
-			if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.AwaitingInput); err != nil {
-				r.deps.Logger.Warn("chat awaiting input", "chat", chat.ID, "error", err)
+			switch ev.Type {
+			case agent.EventInputRequest:
+				if !r.park(ctx, chat, ev) {
+					continue
+				}
+				parked = true
+				stopTimer(work)
+				resetTimer(wait, r.inputTimeout())
+			case agent.EventInputCanceled:
+				if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.Running); err != nil {
+					r.deps.Logger.Warn("chat input closed", "chat", chat.ID, "error", err)
+				}
+				if parked {
+					parked = false
+					stopTimer(wait)
+					resetTimer(work, r.agentTimeout())
+				}
+			case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
+				agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
+				agent.EventError, agent.EventUnknown:
+				// Rendering is the client's job: every one of these is already
+				// in the transcript and on the stream, and internal/tui's
+				// outputlines.go decides what a verbosity level shows.
 			}
-		case agent.EventInputCanceled:
-			if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.Running); err != nil {
-				r.deps.Logger.Warn("chat input closed", "chat", chat.ID, "error", err)
-			}
-		case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
-			agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
-			agent.EventError, agent.EventUnknown:
-			// Rendering is the client's job: every one of these is already
-			// in the transcript and on the stream, and internal/tui's
-			// outputlines.go decides what a verbosity level shows.
 		}
 	}
+}
+
+// record writes one event's raw line to the transcript and republishes it on
+// the chat's live-output key. The offset it returns is what a client seams a
+// transcript fetch against (§13.3): chunks at or before the fetch's
+// X-Next-Offset are the ones it already has.
+func (r *Runner) record(chat *store.Chat, turn *store.ChatTurn, tr *transcript.Writer, ev agent.Event) {
+	if len(ev.Raw) == 0 {
+		return
+	}
+	at := tr.Raw(ev.Raw)
+	if r.deps.Events == nil {
+		return
+	}
+	r.deps.Events.PublishOutput(chatOutputKey(chat.ID), events.Chunk{
+		Type: "output",
+		Payload: map[string]any{
+			"chat_id": chat.ID, "turn_id": turn.ID,
+			"raw": string(ev.Raw), "offset": at,
+		},
+	})
+}
+
+// park records a §7.4 request and moves the chat to awaiting_input. It reports
+// whether the chat actually parked: a request that could not be stored is not
+// one a human can answer, so the input clock must not start on it.
+func (r *Runner) park(ctx context.Context, chat *store.Chat, ev agent.Event) bool {
+	req, err := json.Marshal(ev.Request)
+	if err != nil {
+		return false
+	}
+	if _, err := r.deps.Store.SetChatPendingInput(ctx, chat.ID, req); err != nil {
+		r.deps.Logger.Warn("store chat pending input", "chat", chat.ID, "error", err)
+		return false
+	}
+	if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.AwaitingInput); err != nil {
+		r.deps.Logger.Warn("chat awaiting input", "chat", chat.ID, "error", err)
+		return false
+	}
+	return true
+}
+
+// stopTimer stops a timer and drains a tick that already fired, so a later
+// Reset starts from now rather than firing immediately.
+func stopTimer(t *time.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+}
+
+// resetTimer restarts a timer at d, draining first for the same reason.
+func resetTimer(t *time.Timer, d time.Duration) {
+	stopTimer(t)
+	t.Reset(d)
+}
+
+// cfg returns the current effective configuration, tolerating a runner built
+// without one (tests) by falling back to the shipped defaults.
+func (r *Runner) cfg() config.Config {
+	if r.deps.Config == nil {
+		return config.Default()
+	}
+	return r.deps.Config()
+}
+
+// agentTimeout is §7.2's clock, applied verbatim to a chat turn. There is no
+// per-turn override: §8.2's `timeout` is a workflow step field, and a chat has
+// no workflow (task 067 decision 1).
+func (r *Runner) agentTimeout() time.Duration {
+	if d := r.cfg().Defaults.AgentTimeout.Std(); d > 0 {
+		return d
+	}
+	return config.Default().Defaults.AgentTimeout.Std()
+}
+
+// inputTimeout is §7.4's clock, likewise verbatim and likewise unoverridable.
+func (r *Runner) inputTimeout() time.Duration {
+	if d := r.cfg().Defaults.InputTimeout.Std(); d > 0 {
+		return d
+	}
+	return config.Default().Defaults.InputTimeout.Std()
 }
 
 // journal records the process identity beside the pid, so §12.4 recovery can

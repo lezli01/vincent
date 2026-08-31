@@ -55,7 +55,8 @@ max_parallel_tasks: 3
 # branch_template: "vincent/{{.ID}}-{{.Slug}}"
 
 # Fallback step timeouts, used when a workflow step declares none.
-# input_timeout bounds each wait for an answer to an agent's input request
+# input_timeout bounds each wait for an answer to an agent's input request.
+# Both clocks bound a chat turn as well as a workflow step.
 # (awaiting_input, §7.4); on expiry the attempt fails under the retry policy.
 defaults:
   agent_timeout: 60m
@@ -411,15 +412,21 @@ strings (`45m`, `1h30m`, `90s`) and all must be positive.
 
 | Key | Applies to |
 |---|---|
-| `agent_timeout` | One attempt of an agent step |
+| `agent_timeout` | One attempt of an agent step, **and one chat turn** |
 | `command_timeout` | One attempt of a command step, and checks |
-| `input_timeout` | Each wait in `awaiting_input` — measured **per request**, so a new question starts a fresh window |
+| `input_timeout` | Each wait in `awaiting_input` — measured **per request**, so a new question starts a fresh window — on a task **and on a chat** |
 
 A timed-out process is killed and the attempt counts as a failure under the
 normal retry policy. The step clock **pauses** while a task is
 `awaiting_input`: it measures agent work, not human latency.
 
 Workflow `defaults:` and per-step fields override these.
+
+A [chat](cli.md#vincent-chat) turn gets `agent_timeout` and `input_timeout`
+verbatim, with the same pause rule and **no override**: `defaults:` and per-step
+fields are workflow things, and a chat has no workflow. An expiry fails the turn
+with `timeout` or `input_timeout`, kills the process tree, returns the chat to
+`idle` and releases its `max_parallel_chats` slot.
 
 ### `delete_empty_branch_on_archive`
 
@@ -552,10 +559,11 @@ reboots rather than only on the restarts it no longer has.
 
 Task and step rows are **never** deleted — only the transcript files.
 
-**Chats are outside this.** The pruner walks archived *tasks*, so an archived
-[chat](cli.md#vincent-chat)'s turn transcripts under
-`{data_dir}/transcripts/chat-{chat_id}/` are kept until you delete them
-yourself.
+This covers [chats](cli.md#vincent-chat) too: an archived chat's turn
+transcripts under `{data_dir}/transcripts/chat-{chat_id}/` are pruned on the
+same pass, under the same setting, measured from when the chat was archived. A
+chat that was never archived keeps its transcripts however old it is, exactly as
+a task does. Chat and turn rows are never deleted either.
 
 That same pass also drops
 [idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This
@@ -572,7 +580,8 @@ Per-attempt transcript cap. Written as a human size (`512MB`, `1GB`, `4096` for
 bare bytes); suffixes are binary multiples.
 
 Past the limit, the transcript latches, later writes are dropped, the process
-tree is killed, and the step fails with `transcript_limit`. The tripping
+tree is killed, and the step — or the [chat](cli.md#vincent-chat) turn, which
+the same cap bounds — fails with `transcript_limit`. The tripping
 annotation is written whole and bypasses the cap, so the file records *why* it
 ends — a half-written line would turn a size failure into a parse failure for
 every later reader.

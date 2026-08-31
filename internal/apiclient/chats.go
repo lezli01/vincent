@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -132,4 +133,31 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 		return nil, err
 	}
 	return &out, nil
+}
+
+// StreamChat subscribes to GET /v1/chats/{id}/events: that chat's durable
+// events interleaved with its live output (§13.3). It is the per-task stream's
+// twin — Last-Event-ID resumes the durable events, live output is ephemeral
+// and never replayed — so a reconnect catches up by re-fetching the running
+// turn's transcript and discarding chunks at or before its NextOffset.
+func (c *Client) StreamChat(ctx context.Context, chatID int64, opts StreamOptions) <-chan Note {
+	ch := make(chan Note)
+	go c.streamLoop(ctx, "/v1/chats/"+strconv.FormatInt(chatID, 10)+"/events", opts, ch)
+	return ch
+}
+
+// ChatTurnTranscript fetches one turn's transcript in normalized form,
+// returning the records and the offset to resume from. The turn is named by
+// its 1-based seq, not by a run id: a chat turn is its own run.
+func (c *Client) ChatTurnTranscript(
+	ctx context.Context, chatID int64, seq int, opts TranscriptOptions,
+) (records []TranscriptRecord, nextOffset int64, err error) {
+	path := fmt.Sprintf("/v1/chats/%d/turns/%d/transcript%s", chatID, seq, opts.query("normalized"))
+	resp, nextOffset, err := c.transcriptAt(ctx, path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	records, err = decodeTranscript(resp.Body)
+	return records, nextOffset, err
 }

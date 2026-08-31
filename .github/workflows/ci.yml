@@ -183,3 +183,12 @@ jobs:
       - name: M13 gate (workflow editor)
         shell: bash
         run: ./scripts/m13-gate.sh
+
+      # M14: a chat end to end (task 067, closing 063.2; §5.5, §11, §13.2,
+      # §13.3). The three-OS matrix earns its keep here too: a chat's whole
+      # premise is an agent CLI resuming a session it wrote to disk, and the
+      # per-chat SSE stream and the transcript route are read back with the
+      # platform's own line endings.
+      - name: M14 gate (chats end to end)
+        shell: bash
+        run: ./scripts/m14-gate.sh

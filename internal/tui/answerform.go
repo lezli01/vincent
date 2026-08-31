@@ -142,6 +142,17 @@ func (f *answerForm) paste(text string) tea.Cmd {
 
 // update handles one key. exit=true asks the caller to leave the form.
 func (f *answerForm) update(msg tea.KeyPressMsg, client *apiclient.Client, taskID int64) (cmd tea.Cmd, exit bool) {
+	return f.updateWith(msg, func(resp apiclient.InputResponse) tea.Cmd {
+		return f.submitTask(resp, client, taskID)
+	})
+}
+
+// updateWith is the form's keyboard over an arbitrary submitter. It exists so
+// a chat's answer popup is *this* popup rather than a fork of it: structured
+// options, multi-select and the permission allow/deny distinction are the same
+// because the request is the same request, and only where the answer is POSTed
+// differs (task 063 decision 8, task 067).
+func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.InputResponse) tea.Cmd) (cmd tea.Cmd, exit bool) {
 	if f.editing {
 		switch msg.String() {
 		case "enter":
@@ -167,11 +178,26 @@ func (f *answerForm) update(msg tea.KeyPressMsg, client *apiclient.Client, taskI
 	case "e":
 		f.startFreeText()
 	case "enter":
-		return f.submit(client, taskID), false
+		return f.submitTo(submit), false
 	case "esc":
 		return nil, true
 	}
 	return nil, false
+}
+
+// submitTo validates locally, then hands the response to the caller's poster.
+// Local validation is a convenience and never the authority — the daemon
+// checks the same rules — but a form that can say "answer the second
+// question" without a round trip should.
+func (f *answerForm) submitTo(post func(apiclient.InputResponse) tea.Cmd) tea.Cmd {
+	resp := f.response()
+	if err := f.req.Validate(resp); err != nil {
+		f.err = errString(err)
+		return nil
+	}
+	f.err = ""
+	f.submitting = true
+	return post(resp)
 }
 
 // nextSelectable walks past header lines in the given direction, staying put
@@ -286,21 +312,14 @@ func (f *answerForm) response() apiclient.InputResponse {
 	return apiclient.InputResponse{Answers: f.answers, Allow: f.allow}
 }
 
-// submit validates locally first — the daemon validates too and stays the
-// authority, but a form that can say "answer the second question" without a
-// round trip should.
-func (f *answerForm) submit(client *apiclient.Client, taskID int64) tea.Cmd {
-	resp := f.response()
-	if err := f.req.Validate(resp); err != nil {
-		f.err = errString(err)
-		return nil
-	}
+// submitTask posts the answer to a task. It is the submitter the task path
+// hands updateWith.
+func (f *answerForm) submitTask(resp apiclient.InputResponse, client *apiclient.Client, taskID int64) tea.Cmd {
 	if client == nil {
 		f.err = "not connected"
+		f.submitting = false
 		return nil
 	}
-	f.err = ""
-	f.submitting = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()

@@ -924,6 +924,63 @@ the picture never moves under you while you are reading it.
 select nodes. There is no `e` or `R`: a snapshot has no file to open and no
 registry entry to re-read.
 
+### Chats
+
+A second board, for [chats](../reference/cli.md#vincent-chat) — conversations
+with an agent, each in its own worktree. Chats are not tasks and never appear on
+the task board, so they get a board of their own: one row per conversation, with
+its id, state, agent, last activity and title, grouped by project.
+
+Grouping is by project only: `tui.board.group_by`'s workflow levels mean nothing
+for a chat, which runs no workflow, so `g` is not offered here. Folds persist in
+`{data_dir}/tui.json` separately from the task board's, so folding a project
+here does not fold it there.
+
+A chat waiting on you is sorted to the top and counted in this header's badge —
+**and nowhere else**. `!` and the task board's needs-attention count stay
+task-only.
+
+| Key | Does |
+|---|---|
+| `enter` | Open the chat's workspace |
+| `n` | Start a chat in the project you are looking at |
+| `a` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty |
+| `/` | Filter by title, agent or branch |
+| `←` / `→` | Collapse or expand a project group |
+| `r` | Reload the board |
+
+`n` is the one key whose meaning depends on where you are: on this board it
+starts a chat, everywhere else it opens the new-task form. The create form takes
+project, title, agent, model, effort and base branch; `ctrl+s` creates and drops
+you straight into the workspace. Only an agent that can resume its own session
+can hold a chat, and picking one that cannot is refused on the form with that
+reason, not with a generic failure.
+
+### Chat workspace
+
+One conversation: the finished turns above, the running turn's live output below
+them, and a composer at the bottom.
+
+| Key | Does |
+|---|---|
+| `enter` | Send the message |
+| `ctrl+x` | Stop the running turn — its process tree is killed |
+| `esc` | Back to the chats board |
+
+When the agent asks something mid-turn, the chat enters `awaiting_input` and
+**the same popup a task's question opens** appears here — same options, same
+multi-select, same allow/deny for a permission request. Answering it from
+`vincent chat answer` or over the API closes it here too: the popup follows the
+chat's state rather than its own.
+
+A send refused because `max_parallel_chats` chats are already running says so
+and creates nothing. It is a refusal, not a queue: finish or stop another
+conversation and send again.
+
+A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
+fails and returns the chat to `idle` — the slot comes back rather than being
+held by a conversation nobody came back to.
+
 ### Daemon
 
 Version, uptime, the config in effect, the adapters detected, and a live tail of

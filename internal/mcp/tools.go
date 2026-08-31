@@ -72,6 +72,14 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/answer"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
+	// The chat read routes are excluded under the same rule, not merely
+	// because they are streams. `GET /v1/chats/{id}/events` follows a live
+	// conversation and the transcript route reads its durable record; both
+	// are the surface a human drives a chat through, and neither is
+	// something an agent needs, since an agent calling one already has a
+	// session of its own (task 063 decision 2, task 067 decision 2).
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/events"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
 }
 
 // Streaming lists the §13.3 SSE routes. They are not tools because a tool call

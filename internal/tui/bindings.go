@@ -57,8 +57,14 @@ const (
 	// owns the keyboard, and a row shared with the graph could only describe
 	// one of the two.
 	ctxWorkflowStep bindingContext = "step detail"
-	ctxDaemon       bindingContext = "daemon"
-	ctxForm         bindingContext = "answer form"
+	// The chat surfaces (task 067). Three contexts for two views: the
+	// new-chat form is a layer over the chats board with its own keyboard,
+	// which is exactly what a bindingContext names.
+	ctxChats   bindingContext = "chats"
+	ctxChat    bindingContext = "chat"
+	ctxNewChat bindingContext = "new chat"
+	ctxDaemon  bindingContext = "daemon"
+	ctxForm    bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -143,6 +149,10 @@ var bindings = []binding{
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
 	{label: "pull requests — what is open across every GitHub project", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
+	// Chats get a palette row and no direct key, the pattern every takeover
+	// but new task follows. `n` is not shared: on the chats board it makes a
+	// chat, everywhere else it still makes a task.
+	{label: "chats — conversations with an agent, each in its own worktree", scope: scopeGlobal, nav: true, navTarget: viewChats},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -217,6 +227,26 @@ var bindings = []binding{
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
 	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5},
 	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+
+	// Chats board.
+	{key: "enter", label: "open the chat's workspace", scope: scopePanel, context: ctxChats, hint: "enter open", priority: 1},
+	{key: "n", label: "start a chat in the project you are looking at", scope: scopePanel, context: ctxChats, hint: "n new", priority: 2},
+	{key: "a", label: "archive the chat (asks first — the worktree is removed)", scope: scopePanel, context: ctxChats, hint: "a archive", priority: 3},
+	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4},
+	{key: "left", label: "collapse the project group", scope: scopePanel, context: ctxChats, hint: "← fold", priority: 5},
+	{key: "right", label: "expand the project group", scope: scopePanel, context: ctxChats, hint: "→ unfold", priority: 6},
+	{key: "r", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "r reload", priority: 7},
+
+	// Chat workspace.
+	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
+	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 3},
+
+	// New chat.
+	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
+	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 2},
+	{key: "left", label: "previous choice on the project and agent fields", scope: scopePanel, context: ctxNewChat, hint: "← →  choose", priority: 3},
+	{key: "esc", label: "discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 4},
 
 	// Projects.
 	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1},

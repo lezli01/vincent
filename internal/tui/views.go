@@ -9,7 +9,8 @@ import (
 )
 
 // viewID indexes the root's routed screens: the board-only home screen, the
-// full-screen task workspace, and the five management takeovers (§15).
+// full-screen task workspace, the five management takeovers, and the two chat
+// screens (§15).
 type viewID int
 
 const (
@@ -20,6 +21,11 @@ const (
 	viewWorkflows
 	viewDaemon
 	viewPullRequests
+	// The two chat screens (§15, task 067). They are routed exactly as
+	// viewHome/viewTask are — a board and the workspace one row opens —
+	// because that is the shape of the thing, not because chats are tasks.
+	viewChats
+	viewChat
 	viewCount
 )
 
@@ -117,5 +123,7 @@ func newViews(ctx context.Context) [viewCount]panel {
 		// is the *nav row* that is withheld, not the screen, so nothing here
 		// has to know the answer before the probes land.
 		viewPullRequests: newPullRequestsView(),
+		viewChats:        newChatsView(),
+		viewChat:         newChatView(),
 	}
 }

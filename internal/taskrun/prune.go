@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // PruneInterval is how often the daemon re-runs retention pruning.
@@ -71,7 +73,7 @@ func (p *TranscriptPruner) once(ctx context.Context) {
 		p.deps.Logger.Error("prune transcripts", "error", err)
 	case removed > 0:
 		p.deps.Logger.Info("pruned transcripts",
-			"tasks", removed, "freed_bytes", freed,
+			"dirs", removed, "freed_bytes", freed,
 			"retention_days", p.deps.Config().TranscriptRetentionDays)
 	default:
 		p.deps.Logger.Debug("prune transcripts: nothing to do")
@@ -98,9 +100,9 @@ func (p *TranscriptPruner) PruneKeys(ctx context.Context, now time.Time) (int64,
 	return p.deps.Store.PruneIdempotencyKeys(ctx, now.Add(-IdempotencyRetention))
 }
 
-// Prune deletes the transcript directory of every task archived before
-// now-retention, returning how many task directories went and how many bytes
-// that freed. A retention of zero or less disables pruning entirely, which is
+// Prune deletes the transcript directory of every task *and every chat*
+// archived before now-retention, returning how many directories went and how
+// many bytes that freed. A retention of zero or less disables pruning entirely, which is
 // how an operator keeps everything.
 //
 // now is a parameter so tests can age data without sleeping.
@@ -114,9 +116,25 @@ func (p *TranscriptPruner) Prune(ctx context.Context, now time.Time) (removed in
 	if err != nil {
 		return 0, 0, err
 	}
+	// Chats keep transcripts under the same root and under the same
+	// retention setting (§17, task 067): a conversation nobody archived is
+	// live, and one archived past the window is as stale as a task's. They
+	// are walked here rather than in a second pruner because the directory,
+	// the config key and the pass are all one.
+	chatIDs, err := p.deps.Store.ArchivedChatIDsBefore(ctx, cutoff)
+	if err != nil {
+		return 0, 0, err
+	}
 	root := filepath.Join(p.deps.DataDir, "transcripts")
+	dirs := make([]string, 0, len(ids)+len(chatIDs))
 	for _, id := range ids {
-		dir := filepath.Join(root, strconv.FormatInt(id, 10))
+		dirs = append(dirs, strconv.FormatInt(id, 10))
+	}
+	for _, id := range chatIDs {
+		dirs = append(dirs, worktree.ChatOwner(id).Dir())
+	}
+	for _, name := range dirs {
+		dir := filepath.Join(root, name)
 		size, err := dirSize(dir)
 		if err != nil {
 			// Already gone is the common case — a task pruned on an earlier
@@ -128,12 +146,12 @@ func (p *TranscriptPruner) Prune(ctx context.Context, now time.Time) (removed in
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			p.deps.Logger.Warn("measure transcript dir", "task", id, "error", err)
+			p.deps.Logger.Warn("measure transcript dir", "dir", name, "error", err)
 		}
 		if err := os.RemoveAll(dir); err != nil {
 			// Report the first real failure but keep going: one undeletable
 			// directory must not strand every task behind it.
-			p.deps.Logger.Warn("prune transcript dir", "task", id, "error", err)
+			p.deps.Logger.Warn("prune transcript dir", "dir", name, "error", err)
 			continue
 		}
 		removed++

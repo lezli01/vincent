@@ -54,6 +54,16 @@ func (s *Store) SetEventHook(fn func(*Event)) { s.eventHook.Store(&fn) }
 
 // notify runs the event hook, if one is registered.
 func (s *Store) notify(e *Event) {
+	// A nil event is a write that had nothing to announce — updateChat takes
+	// an empty type for the columns no client is told about (session id,
+	// worktree path, pending input) and hands the nil straight here. Publishing
+	// it reached every open SSE stream, each of which dereferences the event it
+	// is handed, so writing a chat's session id panicked
+	// `GET /v1/events` for everyone. Dropped here rather than guarded in three
+	// handlers: "there is no event" is this function's business (task 067).
+	if e == nil {
+		return
+	}
 	if fn := s.eventHook.Load(); fn != nil && *fn != nil {
 		(*fn)(e)
 	}
