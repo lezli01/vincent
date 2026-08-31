@@ -26,6 +26,13 @@
 // snapshotted onto the task at creation and every later render reads the
 // snapshot, so a step render still cannot fail for an external reason (§8.4).
 //
+// Checks are the third shape, and they are neither: they are fetched on
+// demand and never held at all. A check rollup is a fact about a *commit*,
+// not about a pull request, so CheckRollup names the ref it is about — a pull
+// request that gains a push while a fetch is in flight has checks belonging
+// to the previous head, and rendering them under the new one would show a
+// green build for code nobody ran.
+//
 // Issues and pull requests are stored differently on purpose. An Issue is
 // snapshotted, because a run has to be reproducible and `.Issue` has to
 // render offline. A pull request is only ever *pointed at* — a PullLink of

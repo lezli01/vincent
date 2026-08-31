@@ -1,0 +1,53 @@
+{
+  "number": 271,
+  "title": "Pull request tab on the task workspace",
+  "body": "",
+  "url": "https://github.com/lezli01/vincent/pull/271",
+  "state": "OPEN",
+  "isDraft": false,
+  "headRefName": "vincent/129-pull-request-tab",
+  "headRefOid": "3f1c8a0d9e2b4c6a8d0f1e2b3c4d5e6f70819a2b",
+  "headRepository": { "name": "vincent" },
+  "headRepositoryOwner": { "login": "lezli01" },
+  "baseRefName": "master",
+  "author": { "login": "lezli01" },
+  "createdAt": "2026-08-31T06:33:54Z",
+  "updatedAt": "2026-08-31T07:10:02Z",
+  "mergedAt": null,
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "name": "test (ubuntu-latest)",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384756",
+      "startedAt": "2026-08-31T06:34:10Z",
+      "completedAt": "2026-08-31T06:41:52Z"
+    },
+    {
+      "__typename": "CheckRun",
+      "name": "gates (windows-latest)",
+      "status": "IN_PROGRESS",
+      "conclusion": "",
+      "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384757",
+      "startedAt": "2026-08-31T06:34:11Z",
+      "completedAt": null
+    },
+    {
+      "__typename": "CheckRun",
+      "name": "license/cla",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://cla.example.test/lezli01/vincent/pull/271",
+      "startedAt": "2026-08-31T06:34:20Z",
+      "completedAt": "2026-08-31T06:34:25Z"
+    },
+    {
+      "__typename": "StatusContext",
+      "context": "ci/legacy-builder",
+      "state": "FAILURE",
+      "targetUrl": "https://legacy.example.test/build/8812",
+      "createdAt": "2026-08-31T06:35:00Z"
+    }
+  ]
+}

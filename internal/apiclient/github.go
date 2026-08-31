@@ -150,7 +150,10 @@ type GitHubPullRequest struct {
 	// HeadRepo is `owner/name` of the repository the head lives in. A value
 	// different from Repo is a fork: its branch can be fetched and run, and
 	// nothing can push back to it (task 064 decision 5).
-	HeadRepo   string    `json:"head_repo,omitempty"`
+	HeadRepo string `json:"head_repo,omitempty"`
+	// HeadSHA is the commit the head branch points at — the commit the check
+	// rollup is about (task 068).
+	HeadSHA    string    `json:"head_sha,omitempty"`
 	BaseBranch string    `json:"base_branch,omitempty"`
 	Author     string    `json:"author,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitzero"`
@@ -300,4 +303,73 @@ func (c *Client) UnlinkGitHubPull(ctx context.Context, taskID int64) (Task, erro
 
 func taskPullPath(taskID int64) string {
 	return "/v1/tasks/" + strconv.FormatInt(taskID, 10) + "/github/pull"
+}
+
+// GitHubCheckRun is one row of GET /v1/tasks/{id}/github/pull/checks, in the
+// daemon's normalized shape (task 068). GitHub's check runs and its older
+// commit statuses arrive here as the same thing, because a human reading "did
+// the build pass" is not asking which API answered.
+type GitHubCheckRun struct {
+	Name string `json:"name"`
+	// State is one word: queued, in_progress, success, failure, cancelled,
+	// skipped, neutral, timed_out, action_required or stale.
+	State string `json:"state"`
+	URL   string `json:"url,omitempty"`
+	// RunID is the GitHub Actions workflow run behind this check, and 0 when
+	// the row is not Actions-backed — a third-party check run or a legacy
+	// commit status. Re-run is offered only where it is set (task 068
+	// decision 3): a key that is offered and then refuses is the thing the
+	// reason vocabulary exists to avoid.
+	RunID       int64     `json:"run_id,omitempty"`
+	StartedAt   time.Time `json:"started_at,omitzero"`
+	CompletedAt time.Time `json:"completed_at,omitzero"`
+}
+
+// Actions reports that re-run has an honest meaning for this row.
+func (c GitHubCheckRun) Actions() bool { return c.RunID > 0 }
+
+// Running reports that the check has not concluded yet.
+func (c GitHubCheckRun) Running() bool { return c.State == "queued" || c.State == "in_progress" }
+
+// Failed reports a conclusion a human would call a failure.
+func (c GitHubCheckRun) Failed() bool {
+	switch c.State {
+	case "failure", "timed_out", "action_required", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+// GitHubTaskChecks is GET /v1/tasks/{id}/github/pull/checks: the live check
+// rollup for the linked pull request's head commit.
+//
+// Like the pull-request row it answers 200 even when it has nothing to show,
+// carrying the daemon's named Reason instead: a tab that refuses to render
+// because GitHub is unreachable is worse than one that says so.
+type GitHubTaskChecks struct {
+	Linked bool   `json:"linked"`
+	Repo   string `json:"repo,omitempty"`
+	Number int    `json:"number,omitempty"`
+	// Ref is the head commit the rows belong to. It is reported because the
+	// rollup is only meaningful against it.
+	Ref  string           `json:"ref,omitempty"`
+	Runs []GitHubCheckRun `json:"runs,omitempty"`
+	// State is the one word for the whole commit: failure if anything failed,
+	// in_progress while anything is still running, success when everything
+	// that concluded passed, empty when there are no checks at all.
+	State     string    `json:"state,omitempty"`
+	FetchedAt time.Time `json:"fetched_at,omitzero"`
+	// Reason is the daemon's named reason when nothing could be fetched.
+	Reason string `json:"reason,omitempty"`
+}
+
+// TaskGitHubChecks fetches the live check rollup for a task's pull request.
+func (c *Client) TaskGitHubChecks(ctx context.Context, taskID int64) (GitHubTaskChecks, error) {
+	var out GitHubTaskChecks
+	path := "/v1/tasks/" + strconv.FormatInt(taskID, 10) + "/github/pull/checks"
+	if err := c.get(ctx, path, &out); err != nil {
+		return GitHubTaskChecks{}, err
+	}
+	return out, nil
 }

@@ -12,10 +12,13 @@ import (
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
-// The GitHub pull-request endpoints (spec §13.2, task 052). Read-only against
-// GitHub throughout: the listing fetches and returns, the single fetch
-// fetches and returns, and the two write routes touch only vincent's own
-// `github_pull_json` column. Nothing here sends anything to GitHub.
+// The GitHub pull-request endpoints (spec §13.2, tasks 052 and 068).
+// Read-only against GitHub throughout *as of 068.3*: the listing fetches and
+// returns, the single fetch fetches and returns, the check rollup fetches and
+// returns, and the two write routes touch only vincent's own
+// `github_pull_json` column. Nothing here sends anything to GitHub yet — task
+// 068 decision 1 settled that it will, and 068.4 is where merge, close,
+// re-run and comment land beside these.
 
 // githubPullResponse is one row of GET /v1/projects/{id}/github/pulls, and
 // the `pull` half of GET /v1/tasks/{id}/github/pull.
@@ -315,4 +318,82 @@ func (s *Server) handleTaskGitHubPullUnlink(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, toTaskResponse(updated, s.snaps.get(updated.ID, updated.WorkflowSnapshot)))
+}
+
+// githubTaskChecksResponse is GET /v1/tasks/{id}/github/pull/checks: what CI
+// says about the linked pull request's head commit right now (task 068).
+//
+// It is a separate route from the pull-request row rather than a field on it
+// because the two have different costs and different lifetimes. The row is
+// asked for on every workspace open; the rollup is asked for only while the
+// Pull Request tab is up, and it is refetched on a timer that the row is not.
+// Folding them together would make every task open pay for a check fetch
+// nobody is looking at.
+//
+// It answers 200 with a Reason for every failure, for the reason the row
+// does: a tab that refuses to render because GitHub is unreachable is worse
+// than one that says so.
+type githubTaskChecksResponse struct {
+	Linked bool   `json:"linked"`
+	Repo   string `json:"repo,omitempty"`
+	Number int    `json:"number,omitempty"`
+	// Ref is the head commit the rows belong to, echoed because a rollup is
+	// only meaningful against the commit it was read for.
+	Ref       string            `json:"ref,omitempty"`
+	Runs      []github.CheckRun `json:"runs,omitempty"`
+	State     string            `json:"state,omitempty"`
+	FetchedAt time.Time         `json:"fetched_at,omitzero"`
+	Reason    string            `json:"reason,omitempty"`
+}
+
+// handleTaskGitHubPullChecks implements GET /v1/tasks/{id}/github/pull/checks.
+//
+// Two GitHub reads, in order: the pull request, then its head commit's
+// checks. The first is not redundant with the caller's own — the REST leg
+// needs the head SHA and only GetPull knows it, and re-reading it here is
+// what keeps the rollup's ref and the pull request it describes from coming
+// from two different moments.
+func (s *Server) handleTaskGitHubPullChecks(w http.ResponseWriter, r *http.Request) {
+	task, ok := s.taskFromPath(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	project, err := s.deps.Store.GetProject(ctx, task.ProjectID)
+	if err != nil {
+		s.internalError(w, "get project", err)
+		return
+	}
+	out := githubTaskChecksResponse{}
+	if task.GitHubPull != nil {
+		out.Repo, out.Number = task.GitHubPull.Repo, task.GitHubPull.Number
+		out.Linked = task.GitHubPull.Linked()
+	}
+	gate := s.githubGateFor(ctx, project)
+	if !gate.avail.Available {
+		out.Reason = gate.avail.Reason
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if !out.Linked {
+		// Not a 404. "This task has no pull request" is an answer, and the
+		// same answer the row route gives; a client polling this while a
+		// human unlinks must not start seeing errors.
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	pull, err := s.deps.GitHub.GetPull(ctx, gate.repo, task.GitHubPull.Number)
+	if err != nil {
+		out.Reason = github.ReasonOf(err)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	rollup, err := s.deps.GitHub.Checks(ctx, gate.repo, pull)
+	if err != nil {
+		out.Reason = github.ReasonOf(err)
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	out.Ref, out.Runs, out.State, out.FetchedAt = rollup.Ref, rollup.Runs, rollup.State, rollup.FetchedAt
+	writeJSON(w, http.StatusOK, out)
 }

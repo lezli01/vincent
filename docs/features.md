@@ -16,7 +16,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
-| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from; read-only, no stored credential |
+| GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; read-only, no stored credential |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, WinGet, Scoop, mise, deb/rpm, and archives |
@@ -200,7 +200,8 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   Groups fold away, and a folded one still carries its task count and its
   needs-attention badge.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
-  Output, Diff, and Workflow tabs; each tab uses the whole view.
+  Output, Diff, and Workflow tabs, plus a Pull Request tab on a task that has
+  one linked; each tab uses the whole view.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
@@ -358,11 +359,13 @@ a link you made by hand, and a link you removed is never re-applied.
 The TUI's pull-requests screen shows every GitHub-based project's listing at
 once and carries the two human actions — link a pull request the head-branch
 rule missed, unlink one it got wrong — and a task's own workspace shows its
-pull request beside its branch. `vincent github prs --project ID` prints one
-project's open pull requests with the task each one belongs to. Only the *link*
-is stored: a pull request's title, state, draft and merged status are re-read
-every time it is shown, which is what lets a task still name a pull request that
-has since merged and dropped off the open listing. A task with no pull request is offered a prefilled compare URL
+pull request beside its branch, on a **Pull Request** tab that adds one row per
+CI check on its head commit and carries a second copy of unlink.
+`vincent github prs --project ID` prints one project's open pull requests with
+the task each one belongs to. Only the *link* is stored: a pull request's title,
+state, draft and merged status — and every check on it — are re-read every time
+they are shown, which is what lets a task still name a pull request that has
+since merged and dropped off the open listing. A task with no pull request is offered a prefilled compare URL
 instead — GitHub's own "open a pull request" page, carrying the task's title and
 description, and `Closes #N` when the task came from an issue.
 

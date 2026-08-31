@@ -46,7 +46,12 @@ type PullRequest struct {
 	// when the leg that answered did not report it — a deleted fork reports
 	// no head repository at all — which reads as "same repository", the
 	// answer that was implied everywhere before this field existed.
-	HeadRepo   string `json:"head_repo,omitempty"`
+	HeadRepo string `json:"head_repo,omitempty"`
+	// HeadSHA is the commit the head branch points at. It is what the check
+	// rollup is *about* (task 068): checks belong to a commit, not to a pull
+	// request, and asking for "this pull request's checks" without naming the
+	// commit is how a green build for code nobody ran ends up on the screen.
+	HeadSHA    string `json:"head_sha,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
 	Author     string `json:"author,omitempty"`
 

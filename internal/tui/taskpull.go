@@ -52,9 +52,11 @@ func (t *taskView) applyPull(msg taskPullMsg) {
 	t.pullLoaded = true
 	if msg.err != nil {
 		t.pull, t.pullErr = apiclient.GitHubTaskPull{}, errString(msg.err)
+		t.leaveAbsentPullTab()
 		return
 	}
 	t.pull, t.pullErr = msg.pull, ""
+	t.leaveAbsentPullTab()
 }
 
 // pullWebURL is the page `o` opens: GitHub's own URL when the live fetch

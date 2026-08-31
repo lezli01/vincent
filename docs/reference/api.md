@@ -609,6 +609,7 @@ pushed back. Both are absent on a link a reconciler or a human made.
 | `GET` | `/v1/tasks/{id}/github/pull` | This task's pull request, fetched live |
 | `POST` | `/v1/tasks/{id}/github/pull` | `{ number }` — link by hand |
 | `DELETE` | `/v1/tasks/{id}/github/pull` | Unlink, and remember the refusal |
+| `GET` | `/v1/tasks/{id}/github/pull/checks` | The live check rollup for the linked pull request's head commit |
 
 ```json
 {
@@ -617,7 +618,38 @@ pushed back. Both are absent on a link a reconciler or a human made.
 }
 ```
 
-`GET` answers **200 whatever GitHub says**. A task workspace asks it on every
+`GET /v1/tasks/{id}/github/pull/checks` answers with one normalized row per
+check on the pull request's **head commit**:
+
+```json
+{
+  "linked": true, "repo": "lezli01/vincent", "number": 412,
+  "ref": "d3adb33f…", "state": "failure",
+  "fetched_at": "2026-08-31T09:14:02Z",
+  "runs": [
+    { "name": "test", "state": "in_progress",
+      "url": "https://github.com/lezli01/vincent/actions/runs/5150/job/72",
+      "run_id": 5150 },
+    { "name": "license/cla", "state": "success", "url": "https://cla.example/…" }
+  ]
+}
+```
+
+`state` is one word, on the rollup and on each row: `queued`, `in_progress`,
+`success`, `failure`, `cancelled`, `skipped`, `neutral`, `timed_out`,
+`action_required` or `stale`. Failure wins over running on the rollup — a pull
+request with one failed job and five still going is failed, and calling it in
+progress would hide the only fact worth acting on. GitHub's check runs and its
+older commit statuses are folded onto the same shape, so the two credential
+legs cannot be told apart. `run_id` is the GitHub Actions workflow run behind a
+row and is **absent** for a third-party check run or a legacy commit status —
+that is what distinguishes a row an operation like re-run could honestly be
+offered on. A row also carries `started_at` and `completed_at` when GitHub
+reported them. Nothing here is cached or stored: a check result a minute old
+reads exactly like a current one while being wrong, so `fetched_at` is the only
+honest answer to how old this one is.
+
+Both `GET`s answer **200 whatever GitHub says**. A task workspace asks it on every
 open, and refusing the whole row because the integration is off would take a
 fact vincent owns away from a client that can still render it — so the stored
 link is always served, and `reason` carries the named vocabulary above when the

@@ -213,7 +213,13 @@ func (c *Client) ghVersion(ctx context.Context, path string) string {
 // ghPullFields is the `--json` field set both `gh pr list` and `gh pr view`
 // are asked for, for the reason ghFields is one list: the two calls cannot
 // drift into producing different PullRequests for the same pull request.
-const ghPullFields = "number,title,body,url,state,isDraft,headRefName,headRepositoryOwner,headRepository,baseRefName,author,createdAt,updatedAt,mergedAt"
+//
+// It carries `statusCheckRollup` because that is the only way to ask `gh` for
+// a pull request's checks at all (task 068): there is no `gh pr checks
+// --json` shape both legs could be normalized from, and splitting the rollup
+// into a second field list would reintroduce exactly the drift one list
+// exists to prevent.
+const ghPullFields = "number,title,body,url,state,isDraft,headRefName,headRefOid,headRepositoryOwner,headRepository,baseRefName,author,createdAt,updatedAt,mergedAt,statusCheckRollup"
 
 // ghPull is `gh pr --json`'s shape. Its own type, for the reason ghIssue is:
 // `gh` and the REST API disagree about almost every name (`isDraft` vs
@@ -226,6 +232,7 @@ type ghPull struct {
 	State   string `json:"state"`
 	IsDraft bool   `json:"isDraft"`
 	Head    string `json:"headRefName"`
+	HeadOid string `json:"headRefOid"`
 	// `gh` splits the head repository across two fields and neither is
 	// `owner/name`: `headRepository` is the bare name and
 	// `headRepositoryOwner` is the login. Both are null for a pull request
@@ -244,6 +251,55 @@ type ghPull struct {
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	MergedAt  *time.Time `json:"mergedAt"`
+	// StatusCheckRollup is GitHub's own folding of check runs and legacy
+	// commit statuses into one array, discriminated by `__typename`. The two
+	// shapes share almost no field names, which is why both sets are declared
+	// here and read according to the typename rather than by hoping one is
+	// empty.
+	StatusCheckRollup []ghCheck `json:"statusCheckRollup"`
+}
+
+// ghCheck is one row of `statusCheckRollup`. `CheckRun` and `StatusContext`
+// arrive in the same array with disjoint fields; `__typename` is what says
+// which one this is.
+type ghCheck struct {
+	TypeName string `json:"__typename"`
+	// CheckRun fields.
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	Conclusion  string    `json:"conclusion"`
+	DetailsURL  string    `json:"detailsUrl"`
+	StartedAt   time.Time `json:"startedAt"`
+	CompletedAt time.Time `json:"completedAt"`
+	// StatusContext fields.
+	Context   string    `json:"context"`
+	State     string    `json:"state"`
+	TargetURL string    `json:"targetUrl"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// normalize folds one rollup row onto a CheckRun. A row with no name at all
+// is dropped by the caller rather than rendered as a blank line: `gh` returns
+// one for a check suite that has been requested and not yet named.
+func (g ghCheck) normalize() CheckRun {
+	if strings.EqualFold(g.TypeName, "StatusContext") {
+		return CheckRun{
+			Name:  g.Context,
+			State: normalizeStatusState(g.State),
+			URL:   g.TargetURL,
+			// A legacy commit status is never Actions-backed: it predates
+			// check runs entirely, so no run id is looked for.
+			StartedAt: g.CreatedAt,
+		}
+	}
+	return CheckRun{
+		Name:        g.Name,
+		State:       normalizeCheckState(g.Status, g.Conclusion),
+		URL:         g.DetailsURL,
+		RunID:       actionsRunID(g.DetailsURL),
+		StartedAt:   g.StartedAt,
+		CompletedAt: g.CompletedAt,
+	}
 }
 
 func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
@@ -256,6 +312,7 @@ func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
 		State:      normalizeState(g.State),
 		Draft:      g.IsDraft,
 		HeadBranch: g.Head,
+		HeadSHA:    g.HeadOid,
 		HeadRepo:   joinRepo(g.HeadRepoOwner.Login, g.HeadRepo.Name),
 		BaseBranch: g.Base,
 		Author:     g.Author.Login,
@@ -319,4 +376,40 @@ func parseGHPull(out []byte, repo Repo, now time.Time) (PullRequest, error) {
 		return PullRequest{}, newError(ReasonBadResponse, "gh pr view returned no pull request number")
 	}
 	return raw.normalize(repo, now), nil
+}
+
+// ghChecks reads a pull request's checks. It is the same `gh pr view` call
+// GetPull makes, with the same field list, so the rollup a client renders and
+// the pull request it is rendered under cannot come from two different
+// answers about different heads.
+func (c *Client) ghChecks(ctx context.Context, cred credential, repo Repo, number int) (CheckRollup, error) {
+	out, err := c.runGH(ctx, cred.ghPath,
+		"pr", "view", strconv.Itoa(number),
+		"--repo", repo.String(),
+		"--json", ghPullFields)
+	if err != nil {
+		return CheckRollup{}, err
+	}
+	return parseGHChecks(out, c.now())
+}
+
+// parseGHChecks is the decoding half of the leg, split from the exec so the
+// table tests can drive it straight from captured output.
+func parseGHChecks(out []byte, now time.Time) (CheckRollup, error) {
+	var raw ghPull
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return CheckRollup{}, newError(ReasonBadResponse, "decode gh pr view checks: %v", err)
+	}
+	if raw.Number == 0 {
+		return CheckRollup{}, newError(ReasonBadResponse, "gh pr view returned no pull request number")
+	}
+	runs := make([]CheckRun, 0, len(raw.StatusCheckRollup))
+	for _, g := range raw.StatusCheckRollup {
+		run := g.normalize()
+		if run.Name == "" {
+			continue
+		}
+		runs = append(runs, run)
+	}
+	return newRollup(raw.HeadOid, runs, now), nil
 }

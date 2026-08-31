@@ -1046,6 +1046,49 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxTaskPull: {
+		"6": func(t *testing.T) {
+			v := pullTabFixture(t)
+			v.tab = taskTabDetails
+			v.updateKey(registryKey(t, "6"))
+			if v.tab != taskTabPull {
+				t.Fatalf("6 moved to %v, want the Pull Request tab", v.tab)
+			}
+		},
+		"down": func(t *testing.T) {
+			v := pullTabFixture(t)
+			v.updateKey(registryKey(t, "down"))
+			if v.pullTab.cursor != 1 {
+				t.Fatalf("down selected row %d, want 1", v.pullTab.cursor)
+			}
+		},
+		"c": func(t *testing.T) {
+			withFakeOpener(t, nil)
+			v := pullTabFixture(t)
+			if cmd := v.updateKey(registryKey(t, "c")); cmd == nil {
+				t.Fatal("c did not open the selected check")
+			}
+		},
+		"o": func(t *testing.T) {
+			withFakeOpener(t, nil)
+			v := pullTabFixture(t)
+			if cmd := v.updateKey(registryKey(t, "o")); cmd == nil {
+				t.Fatal("o did not open the pull request")
+			}
+		},
+		"r": func(t *testing.T) {
+			v := pullTabFixture(t)
+			if cmd := v.updateKey(registryKey(t, "r")); cmd == nil {
+				t.Fatal("r did not refetch the pull request and its checks")
+			}
+		},
+		"u": func(t *testing.T) {
+			v := pullTabFixture(t)
+			if cmd := v.updateKey(registryKey(t, "u")); cmd == nil {
+				t.Fatal("u did not unlink the pull request")
+			}
+		},
+	},
 	ctxTaskWorkflow: {
 		"down": func(t *testing.T) {
 			v := workflowTabFixture(t)

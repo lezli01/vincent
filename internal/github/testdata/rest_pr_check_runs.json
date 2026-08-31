@@ -1,0 +1,35 @@
+{
+  "total_count": 3,
+  "check_runs": [
+    {
+      "name": "test (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384756",
+      "details_url": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384756",
+      "started_at": "2026-08-31T06:34:10Z",
+      "completed_at": "2026-08-31T06:41:52Z",
+      "app": { "slug": "github-actions" }
+    },
+    {
+      "name": "gates (windows-latest)",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384757",
+      "details_url": "https://github.com/lezli01/vincent/actions/runs/9911223344/job/27384757",
+      "started_at": "2026-08-31T06:34:11Z",
+      "completed_at": null,
+      "app": { "slug": "github-actions" }
+    },
+    {
+      "name": "license/cla",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://cla.example.test/lezli01/vincent/pull/271",
+      "details_url": "https://cla.example.test/lezli01/vincent/pull/271",
+      "started_at": "2026-08-31T06:34:20Z",
+      "completed_at": "2026-08-31T06:34:25Z",
+      "app": { "slug": "cla-assistant" }
+    }
+  ]
+}
