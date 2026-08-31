@@ -244,6 +244,47 @@ func pullCorpus() []map[string]any {
 			"createdAt":           "2026-08-26T19:21:29Z",
 			"updatedAt":           "2026-08-26T19:30:00Z",
 			"mergedAt":            nil,
+			"headRefOid":          "d3adb33fd3adb33fd3adb33fd3adb33fd3adb33f",
+			// The rollup carries all three kinds on purpose (task 068): an
+			// Actions-backed check run, a third-party one, and a legacy
+			// commit status. They are what tells an offered re-run from an
+			// absent one, and the gate has to be able to drive that.
+			"statusCheckRollup": []map[string]any{
+				{
+					"__typename":  "CheckRun",
+					"name":        "build",
+					"status":      "COMPLETED",
+					"conclusion":  "FAILURE",
+					"detailsUrl":  "https://github.com/octo/repo/actions/runs/5150/job/71",
+					"startedAt":   "2026-08-26T19:22:00Z",
+					"completedAt": "2026-08-26T19:26:00Z",
+				},
+				{
+					"__typename":  "CheckRun",
+					"name":        "test",
+					"status":      "IN_PROGRESS",
+					"conclusion":  "",
+					"detailsUrl":  "https://github.com/octo/repo/actions/runs/5150/job/72",
+					"startedAt":   "2026-08-26T19:22:01Z",
+					"completedAt": nil,
+				},
+				{
+					"__typename":  "CheckRun",
+					"name":        "license/cla",
+					"status":      "COMPLETED",
+					"conclusion":  "SUCCESS",
+					"detailsUrl":  "https://cla.example.test/octo/repo/pull/412",
+					"startedAt":   "2026-08-26T19:22:02Z",
+					"completedAt": "2026-08-26T19:22:09Z",
+				},
+				{
+					"__typename": "StatusContext",
+					"context":    "ci/legacy-builder",
+					"state":      "SUCCESS",
+					"targetUrl":  "https://legacy.example.test/build/9",
+					"createdAt":  "2026-08-26T19:23:00Z",
+				},
+			},
 		},
 		{
 			"number":              401,

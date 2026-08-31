@@ -13,6 +13,22 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A Pull Request tab on the task workspace, with live CI checks.** A sixth
+  full-screen tab, appended after Workflow and selected by `6`, showing the
+  linked pull request's facts plus one row per check on its head commit — its
+  name, its state and its own GitHub page. It is the first conditional tab: it
+  is on the strip only when the task has a live link and `github.enabled` is
+  on, and `tab`/`shift+tab` skip it when it is not there. `↑`/`↓` select a
+  check, `c` opens it, `o` opens the pull request, `r` re-reads both and `u`
+  unlinks — unlink now has a second home here, alongside the pull-requests
+  screen it has lived on since task 052. Checks are fetched live and never
+  stored: a stored check result reads exactly like a current one while being
+  wrong. Both credential legs answer into the same rows, so GitHub's check
+  runs and its older commit statuses render identically whether `gh` or a
+  token answered. New route `GET /v1/tasks/{id}/github/pull/checks` and MCP
+  tool `task_github_pull_checks`. vincent still writes nothing to GitHub
+  (task 068.1–068.3).
+
 - **Free chat: conversational agent sessions beside tasks.** A `chat` is a
   titled conversation with an agent, scoped to a project, running in its own git
   worktree and `vincent/{id}-{slug}` branch. Each turn resumes the agent CLI's

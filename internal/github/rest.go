@@ -216,6 +216,7 @@ type restPull struct {
 	Draft   bool   `json:"draft"`
 	Head    struct {
 		Ref string `json:"ref"`
+		SHA string `json:"sha"`
 		// Repo is null when the head's fork has been deleted, which is why
 		// this is a pointer: an absent repository must normalize to an empty
 		// HeadRepo rather than to `"/"`.
@@ -247,6 +248,7 @@ func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
 		State:      normalizeState(r.State),
 		Draft:      r.Draft,
 		HeadBranch: r.Head.Ref,
+		HeadSHA:    r.Head.SHA,
 		BaseBranch: r.Base.Ref,
 		Author:     r.User.Login,
 		CreatedAt:  r.CreatedAt,
@@ -306,4 +308,104 @@ func parseRESTPull(body []byte, repo Repo, now time.Time) (PullRequest, error) {
 		return PullRequest{}, newError(ReasonBadResponse, "pull request response carried no number")
 	}
 	return raw.normalize(repo, now), nil
+}
+
+// restCheckRuns is GET /repos/{o}/{r}/commits/{sha}/check-runs. The REST leg
+// needs two calls where `gh` needs one, because check runs and legacy commit
+// statuses are separate APIs there and `statusCheckRollup` is a GraphQL
+// convenience with no REST equivalent (task 068).
+type restCheckRuns struct {
+	CheckRuns []struct {
+		Name        string     `json:"name"`
+		Status      string     `json:"status"`
+		Conclusion  string     `json:"conclusion"`
+		HTMLURL     string     `json:"html_url"`
+		DetailsURL  string     `json:"details_url"`
+		StartedAt   *time.Time `json:"started_at"`
+		CompletedAt *time.Time `json:"completed_at"`
+	} `json:"check_runs"`
+}
+
+// restCommitStatus is GET /repos/{o}/{r}/commits/{sha}/status — the legacy
+// half, which `gh` folds into the same array and this leg has to fetch
+// separately.
+type restCommitStatus struct {
+	Statuses []struct {
+		Context   string    `json:"context"`
+		State     string    `json:"state"`
+		TargetURL string    `json:"target_url"`
+		CreatedAt time.Time `json:"created_at"`
+	} `json:"statuses"`
+}
+
+func (c *Client) restChecks(ctx context.Context, cred credential, repo Repo, ref string) (CheckRollup, error) {
+	// per_page is pinned rather than left to the default 30: a repository
+	// with more matrix legs than that would report a partial rollup, and a
+	// partial rollup reads exactly like a complete one.
+	runsBody, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs?per_page=100",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), url.PathEscape(ref)))
+	if err != nil {
+		return CheckRollup{}, err
+	}
+	statusBody, err := c.restGET(ctx, cred, fmt.Sprintf("/repos/%s/%s/commits/%s/status?per_page=100",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name), url.PathEscape(ref)))
+	if err != nil {
+		return CheckRollup{}, err
+	}
+	return parseRESTChecks(runsBody, statusBody, ref, c.now())
+}
+
+// parseRESTChecks is the decoding half of the leg, split from the HTTP calls
+// so the table tests can drive it straight from captured API output.
+func parseRESTChecks(runsBody, statusBody []byte, ref string, now time.Time) (CheckRollup, error) {
+	var rawRuns restCheckRuns
+	if err := json.Unmarshal(runsBody, &rawRuns); err != nil {
+		return CheckRollup{}, newError(ReasonBadResponse, "decode check runs: %v", err)
+	}
+	var rawStatus restCommitStatus
+	if err := json.Unmarshal(statusBody, &rawStatus); err != nil {
+		return CheckRollup{}, newError(ReasonBadResponse, "decode commit status: %v", err)
+	}
+	runs := make([]CheckRun, 0, len(rawRuns.CheckRuns)+len(rawStatus.Statuses))
+	for _, r := range rawRuns.CheckRuns {
+		if r.Name == "" {
+			continue
+		}
+		// html_url is the page a human opens; details_url is what the app
+		// pointed at. They are the same page for Actions, and only the app's
+		// own for a third-party check — so html_url wins for display, and
+		// details_url still decides provenance.
+		link := r.HTMLURL
+		if link == "" {
+			link = r.DetailsURL
+		}
+		run := CheckRun{
+			Name:  r.Name,
+			State: normalizeCheckState(r.Status, r.Conclusion),
+			URL:   link,
+			RunID: actionsRunID(link),
+		}
+		if run.RunID == 0 {
+			run.RunID = actionsRunID(r.DetailsURL)
+		}
+		if r.StartedAt != nil {
+			run.StartedAt = *r.StartedAt
+		}
+		if r.CompletedAt != nil {
+			run.CompletedAt = *r.CompletedAt
+		}
+		runs = append(runs, run)
+	}
+	for _, st := range rawStatus.Statuses {
+		if st.Context == "" {
+			continue
+		}
+		runs = append(runs, CheckRun{
+			Name:      st.Context,
+			State:     normalizeStatusState(st.State),
+			URL:       st.TargetURL,
+			StartedAt: st.CreatedAt,
+		})
+	}
+	return newRollup(ref, runs, now), nil
 }

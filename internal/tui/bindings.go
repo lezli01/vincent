@@ -52,6 +52,12 @@ const (
 	// snapshot, and because `tab` belongs to the workspace's tab cycle here
 	// rather than to the graph's source-order walk (decision 5).
 	ctxTaskWorkflow bindingContext = "task workflow"
+	// ctxTaskPull is the task workspace's Pull Request tab (task 068). Its
+	// own context rather than more rows on ctxTaskDetails because the tab
+	// only exists for a task with a linked pull request, and a footer that
+	// advertised `c open check` on a task with no checks would be describing
+	// a screen that is not there.
+	ctxTaskPull bindingContext = "task pull request"
 	// ctxWorkflowStep is the step-detail modal over the graph (task 053). Its
 	// own context for the reason the popups have theirs: while it is open it
 	// owns the keyboard, and a row shared with the graph could only describe
@@ -309,6 +315,18 @@ var bindings = []binding{
 	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxTaskWorkflow, hint: "⇧ pan", priority: 2},
 	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, hint: "5 workflow", priority: 3},
 
+	// The task workspace's Pull Request tab (task 068). The tab is on the
+	// strip only when this task has a live link and the integration is
+	// usable, which is why `6` is registered here and nowhere else: on a task
+	// with no pull request the key does nothing, and a row promising
+	// otherwise would be the lie the availability filter exists to prevent.
+	{key: "6", label: "this task's pull request, with a live row per check on its head commit", scope: scopePanel, context: ctxTaskPull, hint: "6 pull request", priority: 1, github: true},
+	{key: "down", label: "select a check (↑/↓ or j/k)", scope: scopePanel, context: ctxTaskPull, hint: "↑/↓ checks", priority: 2, github: true},
+	{key: "c", label: "open the selected check's own page in a browser", scope: scopePanel, context: ctxTaskPull, hint: "c open check", priority: 3, github: true},
+	{key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true},
+	{key: "r", label: "re-read the pull request and its checks now (they also refresh on their own while the tab is open)", scope: scopePanel, context: ctxTaskPull, hint: "r refresh", priority: 5, github: true},
+	{key: "u", label: "unlink this pull request from the task — the refusal sticks, and the reconciler will not link it again", scope: scopePanel, context: ctxTaskPull, hint: "u unlink", priority: 6, github: true},
+
 	// Pull requests (task 052.6). Link and unlink live only here: they are the
 	// two actions that write vincent's own column, and they belong on the one
 	// screen that can see a pull request no task claims — the case they exist
@@ -377,7 +395,7 @@ var bindings = []binding{
 // management takeover.
 func isHomeContext(ctx bindingContext) bool {
 	switch ctx {
-	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow:
+	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow, ctxTaskPull:
 		return true
 	default:
 		return false

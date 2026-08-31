@@ -305,6 +305,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPull)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullLink)
 	rt.handle(http.MethodDelete, "/v1/tasks/{id}/github/pull", s.handleTaskGitHubPullUnlink)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/github/pull/checks", s.handleTaskGitHubPullChecks)
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)

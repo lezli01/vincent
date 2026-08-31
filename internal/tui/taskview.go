@@ -15,10 +15,18 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// taskViewTab names the five full-screen task surfaces. Steps is deliberately
+// taskViewTab names the full-screen task surfaces. Steps is deliberately
 // first: entering a task lands on the execution history people most often came
-// to inspect. Workflow is deliberately last (task 051): appending it leaves
-// 1-4 bound to the tabs task 049 built the muscle memory on.
+// to inspect. Workflow was deliberately last (task 051): appending it leaves
+// 1-4 bound to the tabs task 049 built the muscle memory on, and Pull Request
+// is appended after it for the same reason (task 068).
+//
+// Pull Request is the first **conditional** tab: it exists only for a task
+// with a live pull-request link and a usable integration. Being last is what
+// makes that free — no other tab's number moves when it is absent — but it is
+// not free for the *cycle*, which used to be modulo taskTabCount and would
+// otherwise land on a tab that is not on the strip. taskView.tabs is the
+// strip as it currently stands, and tab/⇧tab walk that instead.
 type taskViewTab int
 
 const (
@@ -27,6 +35,7 @@ const (
 	taskTabOutput
 	taskTabDiff
 	taskTabWorkflow
+	taskTabPull
 	taskTabCount
 )
 
@@ -57,6 +66,12 @@ type taskView struct {
 	pullNote    string
 	pullNoteBad bool
 	createPR    *createPRForm
+	// pullTab is the §15 Pull Request tab (task 068). Its checks are fetched
+	// and never stored, so it holds a rollup and a cursor and nothing else —
+	// everything about the pull request itself is read off `pull` above, so
+	// the tab and the Task Details section cannot disagree about what is
+	// linked.
+	pullTab taskPullTab
 
 	connected bool
 	width     int
@@ -160,6 +175,8 @@ func (t *taskView) bindingContext() bindingContext {
 		return ctxDiff
 	case taskTabWorkflow:
 		return ctxTaskWorkflow
+	case taskTabPull:
+		return ctxTaskPull
 	default:
 		return ctxTimeline
 	}
@@ -181,6 +198,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.createPR = nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
 		t.pullNote, t.pullNoteBad = "", false
+		t.pullTab = taskPullTab{}
 		t.detail.active = true
 		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd())
 	case viewActivatedMsg:
@@ -211,6 +229,16 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case taskPullMsg:
 		t.applyPull(msg)
 		return t, nil
+	case taskChecksMsg:
+		t.applyChecks(msg)
+		return t, nil
+	case taskChecksTickMsg:
+		// The tick is dropped unless the tab is still open on the same task:
+		// a human who has moved on is not asking GitHub anything.
+		if msg.taskID != t.detail.taskID || t.tab != taskTabPull || !t.detail.active {
+			return t, nil
+		}
+		return t, tea.Batch(t.checksCmd(), t.checksTickCmd())
 	case createPREditMsg:
 		if t.createPR != nil {
 			t.createPR.applyEdit(msg)
@@ -234,7 +262,13 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		cmd := t.detail.update(msg)
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {
-			return t, tea.Batch(cmd, t.pullCmd())
+			cmds := []tea.Cmd{cmd, t.pullCmd()}
+			if t.tab == taskTabPull {
+				// The reconciler moved the link; the checks under it are
+				// about a different pull request now.
+				cmds = append(cmds, t.checksCmd())
+			}
+			return t, tea.Batch(cmds...)
 		}
 		return t, cmd
 	}
@@ -266,6 +300,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.setTab(taskTabDiff)
 	case "5":
 		return t.setTab(taskTabWorkflow)
+	case "6":
+		// Absent means absent: with no pull request linked, 6 does nothing
+		// rather than landing on an empty screen (task 068).
+		if !t.pullTabAvailable() {
+			return nil
+		}
+		return t.setTab(taskTabPull)
 	case "d":
 		if t.tab == taskTabDiff {
 			return t.setTab(taskTabOutput)
@@ -300,6 +341,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if t.tab == taskTabWorkflow {
 		return t.updateWorkflowKey(msg)
+	}
+	if t.tab == taskTabPull {
+		return t.updatePullTabKey(msg)
 	}
 	if t.tab == taskTabOutput {
 		switch msg.String() {
@@ -405,8 +449,16 @@ func (t *taskView) popupTabKey(msg tea.KeyPressMsg) bool {
 	return true
 }
 
+// switchTab walks the strip as it currently stands rather than the whole enum
+// (task 068). The modulo is over len(tabs), which is what makes the cycle skip
+// a Pull Request tab that is not there — the arithmetic was the first thing a
+// conditional tab was going to get wrong.
 func (t *taskView) switchTab(delta int) tea.Cmd {
-	next := taskViewTab((int(t.tab) + delta + int(taskTabCount)) % int(taskTabCount))
+	tabs := t.tabs()
+	if len(tabs) == 0 {
+		return nil
+	}
+	next := tabs[(t.tabIndex(t.tab)+delta+len(tabs))%len(tabs)]
 	return t.setTab(next)
 }
 
@@ -425,6 +477,11 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 	}
 	if tab == taskTabWorkflow {
 		return t.openWorkflowTab()
+	}
+	if tab == taskTabPull {
+		// Fetched on open, never per render: a stored check result reads
+		// exactly like a current one while being wrong.
+		return tea.Batch(t.checksCmd(), t.checksTickCmd())
 	}
 	return nil
 }
@@ -497,6 +554,8 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		if t.workflow != nil {
 			t.workflow.graph.Scroll(delta)
 		}
+	case taskTabPull:
+		t.movePullCursor(delta)
 	}
 	return nil
 }
@@ -540,23 +599,33 @@ func (t *taskView) render(width, height int) string {
 	return out
 }
 
+// taskTabNames are the strip's labels, indexed by taskViewTab.
+var taskTabNames = [taskTabCount]string{
+	taskTabSteps:    "Steps & Attempts",
+	taskTabDetails:  "Task Details",
+	taskTabOutput:   "Output",
+	taskTabDiff:     "Diff",
+	taskTabWorkflow: "Workflow",
+	taskTabPull:     "Pull Request",
+}
+
 func (t *taskView) renderTabs() string {
-	names := []string{"Steps & Attempts", "Task Details", "Output", "Diff", "Workflow"}
+	tabs := t.tabs()
 	t.tabHits = t.tabHits[:0]
 	var b strings.Builder
 	b.WriteString("  ")
 	x := 3 // root frame border plus the two-cell indent above
-	for i, name := range names {
+	for i, tab := range tabs {
 		if i > 0 {
 			b.WriteString(styleDim.Render(" │ "))
 			x += 3
 		}
-		tab := taskViewTab(i)
+		name := taskTabNames[tab]
 		t.tabHits = append(t.tabHits, taskTabHit{tab: tab, x0: x, x1: x + len(name)})
 		b.WriteString(tabLabel(name, t.tab == tab))
 		x += len(name)
 	}
-	b.WriteString(styleDim.Render("   tab/⇧tab or 1–5"))
+	b.WriteString(styleDim.Render(fmt.Sprintf("   tab/⇧tab or 1–%d", len(tabs))))
 	return b.String()
 }
 
@@ -574,6 +643,8 @@ func (t *taskView) renderTabBody(width, height int) string {
 		return t.detail.diff.render(width, height)
 	case taskTabWorkflow:
 		return t.renderWorkflow(width, height)
+	case taskTabPull:
+		return t.renderPullTab(width, height)
 	default:
 		t.detail.focus = focusTimeline
 		t.detail.width = width

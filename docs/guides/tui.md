@@ -270,6 +270,16 @@ unlinking live on the pull-requests screen below.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
+**Pull Request** is the sixth tab, and the only one that is sometimes not
+there: it appears when the task has a pull request linked and `github.enabled`
+is on. It carries the pull request's facts and one row per check on its head
+commit — name, state, and the check's own page — read live from the daemon on
+open, on a reconciler tick, on its own poll and on `r`. Nothing about a check
+is stored, because a stored check result reads exactly like a current one
+while being wrong. `↑`/`↓` select a row, `c` opens it in a browser, `o` opens
+the pull request and `u` unlinks it from the task; the refusal is sticky, so
+the reconciler will not link it again. Nothing here writes to GitHub.
+
 **Diff** gives the task's file-grouped git diff the entire view. **Workflow**
 draws the workflow this task ran as a control-flow graph with its run state on
 it; it is documented beside the workflows screen's graph, under *Workflows*
@@ -313,6 +323,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
 | `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
+| `6` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
 | `enter` | From Steps & Attempts, open the selected attempt in Output |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |

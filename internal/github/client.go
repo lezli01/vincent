@@ -379,3 +379,39 @@ func (c *Client) Detect(ctx context.Context) Detection {
 	}
 	return d
 }
+
+// Checks returns every check on a pull request's head commit, live (task
+// 068). It is never cached and never snapshotted: a stored check result reads
+// exactly like a current one while being wrong, which is the same reason
+// PullRequest is a pointer rather than a snapshot.
+//
+// It takes the whole PullRequest rather than a number because the two legs
+// need different halves of it: `gh` asks about the pull request, and the REST
+// leg asks about a *commit*, so it needs the head SHA that GetPull already
+// read. Passing a pull request whose head SHA is empty is a bad_response
+// rather than a call against an unnamed ref — checks belong to a commit, and
+// guessing which one is how a green build for code nobody ran ends up on the
+// screen.
+func (c *Client) Checks(ctx context.Context, repo Repo, pull PullRequest) (CheckRollup, error) {
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return CheckRollup{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	var rollup CheckRollup
+	switch {
+	case cred.via == ViaGH:
+		rollup, err = c.ghChecks(ctx, cred, repo, pull.Number)
+	case pull.HeadSHA == "":
+		err = newError(ReasonBadResponse, "pull request #%d carries no head commit", pull.Number)
+	default:
+		rollup, err = c.restChecks(ctx, cred, repo, pull.HeadSHA)
+	}
+	if err != nil {
+		c.logf("github check rollup fetch failed", "repo", repo.String(), "pull", pull.Number,
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return CheckRollup{}, err
+	}
+	return rollup, nil
+}

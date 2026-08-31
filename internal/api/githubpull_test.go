@@ -287,3 +287,92 @@ func TestTaskPullRendersWhenGitHubIsOff(t *testing.T) {
 		t.Fatalf("a disabled integration invoked gh:\n%s", calls)
 	}
 }
+
+// TestTaskPullChecks: the rollup route answers with one row per check on the
+// head commit, in vincent's own normalized shape — including the legacy
+// commit status `gh` folds in beside the check runs, which is where the two
+// legs' shapes differ most.
+func TestTaskPullChecks(t *testing.T) {
+	t.Setenv("FAKEGH_PR_BRANCH", "vincent/1-a-task")
+	h := newGitHubHarness(t, nil, ghOrigin)
+	task := h.seedTask(t, "vincent/1-a-task")
+	if _, err := h.store.SetTaskGitHubPull(t.Context(), task.ID,
+		store.LinkPull("octo/repo", 412, github.SourceAuto, task.CreatedAt)); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	out := h.taskChecks(t, task.ID)
+	if !out.Linked || out.Number != 412 {
+		t.Fatalf("checks answered for %+v, want the linked pull request", out)
+	}
+	if out.State != github.CheckFailure {
+		t.Fatalf("rollup state %q, want failure", out.State)
+	}
+	if len(out.Runs) != 4 {
+		t.Fatalf("got %d check rows, want 4: %+v", len(out.Runs), out.Runs)
+	}
+	// Unfinished first, then failed: the order is applied by the daemon, so
+	// it is not a difference a user can see.
+	if out.Runs[0].Name != "test" || !out.Runs[0].Running() {
+		t.Fatalf("first row is %+v, want the unfinished one", out.Runs[0])
+	}
+	byName := map[string]github.CheckRun{}
+	for _, run := range out.Runs {
+		byName[run.Name] = run
+	}
+	if !byName["build"].Actions() || byName["build"].RunID != 5150 {
+		t.Fatalf("build reports run %d, want an Actions run", byName["build"].RunID)
+	}
+	for _, name := range []string{"license/cla", "ci/legacy-builder"} {
+		if byName[name].Actions() {
+			t.Fatalf("%s claims an Actions run; re-run has no meaning for it", name)
+		}
+	}
+}
+
+// A task with no pull request is answered, not refused: a client polling this
+// while a human unlinks must not start seeing errors.
+func TestTaskPullChecksWithoutALink(t *testing.T) {
+	h := newGitHubHarness(t, nil, ghOrigin)
+	task := h.seedTask(t, "vincent/1-a-task")
+	out := h.taskChecks(t, task.ID)
+	if out.Linked || len(out.Runs) != 0 || out.Reason != "" {
+		t.Fatalf("checks answered %+v, want an empty unlinked row", out)
+	}
+}
+
+// `github.enabled: false` answers with the named reason and makes no call, as
+// every other GitHub route does.
+func TestTaskPullChecksWhenGitHubIsOff(t *testing.T) {
+	off := func() config.Config {
+		c := config.Default()
+		c.GitHub.Enabled = false
+		return c
+	}
+	h := newGitHubHarness(t, off, ghOrigin)
+	task := h.seedTask(t, "vincent/1-a-task")
+	if _, err := h.store.SetTaskGitHubPull(t.Context(), task.ID,
+		store.LinkPull("octo/repo", 412, github.SourceAuto, task.CreatedAt)); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	out := h.taskChecks(t, task.ID)
+	if out.Reason != github.ReasonDisabled {
+		t.Fatalf("reason %q, want %q", out.Reason, github.ReasonDisabled)
+	}
+	if len(out.Runs) != 0 {
+		t.Fatalf("a disabled integration returned %d check rows", len(out.Runs))
+	}
+}
+
+func (h *githubHarness) taskChecks(t *testing.T, id int64) githubTaskChecksResponse {
+	t.Helper()
+	resp, body := h.doJSON(t, http.MethodGet,
+		"/v1/tasks/"+strconv.FormatInt(id, 10)+"/github/pull/checks", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("task checks: %d %s", resp.StatusCode, body)
+	}
+	var out githubTaskChecksResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("task checks body: %v (%s)", err, body)
+	}
+	return out
+}

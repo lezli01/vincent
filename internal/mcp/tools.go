@@ -139,6 +139,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/tasks/{id}/diff", "task_diff", "The task branch's diff against its recorded base."},
 	{http.MethodGet, "/v1/tasks/{id}/github/pull", "task_github_pull", "The pull request this task is linked to, if any (task 052)."},
 	{http.MethodPost, "/v1/tasks/{id}/github/pull", "task_github_pull_link", "Link this task to a pull request. Body: {number}."},
+	{http.MethodGet, "/v1/tasks/{id}/github/pull/checks", "task_github_pull_checks", "What CI says about this task's pull request right now: one row per check on the head commit, with its state and its own GitHub URL (task 068). Live on every call — a check result is never stored, because a stored one reads exactly like a current one while being wrong."},
 	{http.MethodDelete, "/v1/tasks/{id}/github/pull", "task_github_pull_unlink", "Unlink this task's pull request. A human unlink is sticky (decision record row 27): the reconciler never re-applies it, so this suppresses the link permanently."},
 }
 
