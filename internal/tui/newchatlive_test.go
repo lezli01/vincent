@@ -13,12 +13,18 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // newChatLiveRoot is the shell a human has on screen on a fresh installation
@@ -42,13 +48,32 @@ func newChatLiveRoot(t *testing.T) *root {
 	t.Cleanup(broker.Close)
 	st.SetEventHook(broker.Publish)
 
+	// alpha is a real repository on a non-default branch name, so the base
+	// row's claim — that an empty BaseBranch resolves to *this project's*
+	// default — is falsifiable rather than accidentally right.
 	ctx := context.Background()
+	repos := map[string]string{
+		"alpha": testrepo.Init(t, "trunk"),
+		"beta":  testrepo.Init(t, "main"),
+	}
 	for _, name := range []string{"alpha", "beta"} {
-		p := &store.Project{Name: name, Path: "/nowhere/" + name, DefaultBranch: "main"}
+		p := &store.Project{
+			Name: name, Path: repos[name],
+			DefaultBranch: map[string]string{"alpha": "trunk", "beta": "main"}[name],
+		}
 		if err := st.CreateProject(ctx, p); err != nil {
 			t.Fatalf("CreateProject(%s): %v", name, err)
 		}
 	}
+
+	// The adapter registry is the same one `GET /v1/agents` serves the form
+	// from and the one `POST /v1/chats` gates resume support on: claude
+	// pointed at fakeagent, which is what makes the catalogs in the pickers
+	// the daemon's own rather than a stub's.
+	fake := agenttest.BuildFakeAgent(t)
+	dataDir := t.TempDir()
+	git := gitx.New()
+	agents := agent.NewRegistry(claude.New(func() string { return fake }))
 
 	s := api.New(api.Deps{
 		Token:       token,
@@ -59,6 +84,10 @@ func newChatLiveRoot(t *testing.T) *root {
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
 		Broker:      broker,
+		Git:         git,
+		Agents:      agents,
+		Catalog:     agent.NewCatalogCache(agents),
+		Worktrees:   worktree.NewManager(git, dataDir),
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -114,8 +143,9 @@ func chatsForm(t *testing.T, m *root) *newChatForm {
 	return v.create
 }
 
-// TestNewChatFormPickersPopulateThroughRoot holds §15's new-chat form: "`←`/`→`
-// choose on the project and agent fields" (amended 2026-08-31, task 067).
+// TestNewChatFormPickersPopulateThroughRoot holds §15's new-chat form: `←`/`→`
+// step the project and agent fields in place (amended 2026-08-31, task 067 and
+// issue #281).
 //
 // It drives the form through the **root** model, which is the layer a real
 // keystroke and a real fetch both take. `newChatForm.init` produces a
@@ -172,5 +202,103 @@ func TestNewChatFormPickersPopulateThroughRoot(t *testing.T) {
 	}
 	if name := f.projectName(); name != "alpha" && name != "beta" {
 		t.Fatalf("the project row renders %q, want one of the registered names", name)
+	}
+}
+
+// TestNewChatFormPickersRenderTheServedCatalogs holds issue #281's seam: the
+// lists the human chooses from are the catalogs `GET /v1/agents` and
+// `GET /v1/projects` actually serve, and a model chosen from one of them
+// travels to `POST /v1/chats` and comes back on the created chat — with the
+// base branch the daemon resolved from the project, because the form sent
+// none.
+//
+// It is wired to the real handlers rather than a stub for the usual reason:
+// the claim is about the seam. A form that built its options from a hand-made
+// `apiclient.Agent` would keep passing the day the wire type changed.
+func TestNewChatFormPickersRenderTheServedCatalogs(t *testing.T) {
+	m := newChatLiveRoot(t)
+
+	_, cmd := m.Update(registryKey(t, "n"))
+	if cmd == nil {
+		t.Fatal("n opened no fetch for the lists' contents")
+	}
+	m.Update(runCmd(t, cmd, 10*time.Second))
+
+	f := chatsForm(t, m)
+	if len(f.agents) == 0 {
+		t.Fatal("the form holds no adapter after GET /v1/agents landed")
+	}
+
+	// What the daemon serves, fetched again through the same client the form
+	// used: the lists must be built from this and nothing else.
+	served, err := m.client.ListAgents(t.Context(), false)
+	if err != nil {
+		t.Fatalf("GET /v1/agents: %v", err)
+	}
+	want, ok := served.Find(f.agentName())
+	if !ok {
+		t.Fatalf("the form selected %q, which GET /v1/agents does not list", f.agentName())
+	}
+	if len(want.Models) == 0 {
+		t.Fatalf("the daemon serves no model catalog for %q, so the list under test would be empty", want.Name)
+	}
+
+	// Walk to the model row the way a human does — the form opens on the
+	// title — and open its list.
+	m.Update(registryKey(t, "tab"))
+	m.Update(registryKey(t, "tab"))
+	f = chatsForm(t, m)
+	if f.focus != ncModel {
+		t.Fatalf("two tabs left the cursor on row %d, want the model row", f.focus)
+	}
+	m.Update(registryKey(t, "enter"))
+	f = chatsForm(t, m)
+	if f.pick == nil {
+		t.Fatal("enter on the model row opened no list")
+	}
+	if got, wantN := len(f.pick.options), len(want.Models)+1; got != wantN {
+		t.Fatalf("the model list has %d rows, want the %d served models plus the (agent default) row",
+			got, len(want.Models))
+	}
+	if f.pick.options[0].note != want.DefaultModel {
+		t.Errorf("the default row is noted %q, want the served default model %q",
+			f.pick.options[0].note, want.DefaultModel)
+	}
+	for i, o := range want.Models {
+		got := f.pick.options[i+1]
+		if got.value != o.Value || got.note != o.Source {
+			t.Errorf("row %d offers %q/%q, want the served %q/%q", i+1, got.value, got.note, o.Value, o.Source)
+		}
+	}
+
+	// Choose the first served model, name the chat, and create.
+	m.Update(registryKey(t, "down"))
+	m.Update(registryKey(t, "enter"))
+	f = chatsForm(t, m)
+	if f.model != want.Models[0].Value {
+		t.Fatalf("the form holds model %q, want the one chosen from the served catalog", f.model)
+	}
+	f.title.SetValue("a live chat")
+
+	_, cmd = m.Update(registryKey(t, "ctrl+s"))
+	if cmd == nil {
+		t.Fatal("ctrl+s posted nothing")
+	}
+	msg, ok := runCmd(t, cmd, 10*time.Second).(chatCreatedMsg)
+	if !ok {
+		t.Fatalf("ctrl+s produced %T, want chatCreatedMsg", msg)
+	}
+	if msg.err != nil {
+		t.Fatalf("POST /v1/chats: %v", msg.err)
+	}
+	if msg.chat.Model != want.Models[0].Value {
+		t.Errorf("the created chat runs model %q, want the chosen %q", msg.chat.Model, want.Models[0].Value)
+	}
+	// The base row was never touched, so the request carried no branch and
+	// the daemon resolved the project's own default — which is `trunk` here
+	// and not the `main` a hard-coded fallback would have produced.
+	if msg.chat.BaseBranch != "trunk" {
+		t.Errorf("the created chat is based on %q, want the project's default branch resolved by the daemon",
+			msg.chat.BaseBranch)
 	}
 }
