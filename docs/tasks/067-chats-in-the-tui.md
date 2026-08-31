@@ -104,6 +104,58 @@ create in: `ctrl+s` could only answer `pick a project`, and no field on the form
 accepts one. Only a positive answer refuses — a board that has not listed the
 projects, or whose listing failed, opens the form as before.
 
+**10. The new-chat form uses the picker every other create form uses.**
+*(Added 2026-08-31, issue #281.)* Project, agent, model and effort became
+`picker` rows; title and base stayed text. The component was already there when
+this form was written, and this was the only create surface in the TUI not
+using it — filtering, the bounded window, the `cli`/`curated` provenance note
+and `allowFree` were all being re-decided by hand here, badly. Four decisions
+qualify the move:
+
+- **`←`/`→` stay, as a fast in-place step.** `enter` opens the list; `←`/`→`
+  continue to step the project and agent rows without opening it. This is the
+  enum-row precedent from the new-task fields editor verbatim
+  (`internal/tui/newtaskpicker.go`): left/right step the members the way a
+  boolean cycles, enter opens the list, which is the only workable control for
+  a long one. The issue proposed retiring the cyclers; the cycler was never the
+  defect — the *absence of a list* was — and two adapters are quicker to step
+  than to open. They are not added to the model and effort rows, which are
+  catalogs of a hundred and more (§9.7) where "next" answers nothing.
+
+- **`base` shows the project's real default branch as a placeholder, and
+  submits empty.** The row reads `main (the project's default)` — the branch
+  name, not the phrase — re-derived whenever the project row changes, while
+  `CreateChatRequest.BaseBranch` stays empty so `handleChatCreate` resolves
+  `base = project.DefaultBranch` as it does today. Seeding the input's *value*
+  was rejected: it pins a branch at draft time and needs a rule for re-seeding
+  after a project change over text the human may have typed. No
+  `GET /v1/projects/{id}/branches`: the new-task form has the same free-text
+  base row, and the two should be decided together rather than one of them
+  smuggled in here.
+
+- **Decision 9 is unchanged.** The agent list keeps hiding adapters that do not
+  publish `supports_resume`; `resumableAgents` is untouched and the daemon's
+  `agent_cannot_resume` refusal stays the authority. A picker *can* now show a
+  row disabled with its reason — the new-task precedent from tasks 010 and 013
+  — and that was considered and declined: an adapter that cannot hold a
+  conversation is out of reach for every chat, not for this one draft, which is
+  the case that precedent covers.
+
+- **TUI only; the daemon is not touched.** The issue's rationale is wrong on
+  one fact and it does not change the outcome. `POST /v1/chats` never validates
+  `model` or `effort` — it stores what it is sent, with no catalog check and no
+  warning, unlike task create, repair and follow-up, which run
+  `checkTaskCatalog`. A typo therefore does not come back as a rejection; it
+  comes back as a failed first turn when the CLI refuses the model, which is a
+  worse failure and a stronger argument for the picker. Giving chat creation
+  §8.2's warnings is a real gap, with its own DTO, apiclient, `docs/reference/api.md`
+  and spec amendments — and is not this issue.
+
+Decision 8 is unchanged in substance and its arithmetic is not: the form now
+has *two* live text rows, not four, and an open list adds a filter row and a
+free-text row on top of them, so `capturesInput` stays unconditionally true for
+a stronger reason than before.
+
 ## Sub-tasks
 
 | ID | What | Status |
@@ -112,6 +164,18 @@ projects, or whose listing failed, opens the form as before.
 
 ## What the tests prove
 
+- **The lists are the daemon's catalogs** *(issue #281)* — `internal/tui`'s
+  `newchat_test.go` at form level and `newchatlive_test.go` against the real
+  handlers: the project list offers every registered project with its path, the
+  agent list only the resumers, the model and effort lists the selected
+  adapter's served catalog with its `cli`/`curated` tags, an `(agent default)`
+  row naming that adapter's default and a free-text row; changing the agent
+  re-scopes both and clears what was chosen under the previous one; `←`/`→`
+  still step the two short rows without opening a list; the base row's
+  placeholder follows the project and an untouched row submits empty, so the
+  daemon resolves the project's default branch; `enter` never creates and
+  `ctrl+s` creates from any row; `esc` with a list open closes the list and
+  leaves the draft.
 - **The stream is a stream** — `internal/apiclient`'s `*live_test.go` against the
   real handlers: a chat's durable `chat.*` events arrive filtered to that chat,
   another chat's and a task's do not leak onto it, `Last-Event-ID` resumes the

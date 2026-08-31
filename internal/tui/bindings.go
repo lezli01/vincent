@@ -250,9 +250,10 @@ var bindings = []binding{
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
-	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 2},
-	{key: "left", label: "previous choice on the project and agent fields", scope: scopePanel, context: ctxNewChat, hint: "← →  choose", priority: 3},
-	{key: "esc", label: "discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 4},
+	{key: "enter", label: "open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter list", priority: 2},
+	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
+	{key: "left", label: "step the project and agent fields in place (← →); enter opens their list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
+	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 
 	// Projects.
 	{key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1},

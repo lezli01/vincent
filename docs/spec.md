@@ -6706,29 +6706,49 @@ board**: `enter` opens the workspace, `n` starts a chat, `a` archives, `/`
 filters, `←`/`→` fold a project group and `r` re-lists. In the **chat
 workspace**: `enter` sends, `ctrl+x` stops the live turn, `esc` returns to the
 board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
-between fields, `←`/`→` choose on the project and agent fields, `esc` discards.
+between fields, `enter` opens the focused field's list, `←`/`→` step the
+project and agent fields in place, `esc` discards.
 `n` is the one key whose meaning depends on where you are, deliberately: on the
 chats board it makes a chat, and everywhere else it still makes a task. `!` is
 **not** extended to chats — an `awaiting_input` chat is pinned and badged on
 its own board and nowhere else.
 
-*Amended 2026-08-31 (issue #279).* The new-chat form's two pickers are fed by
-`GET /v1/projects` and `GET /v1/agents`, and the agent picker offers **only
-adapters that report `supports_resume`** (§9.6, decision row 29) — the
-daemon's `agent_cannot_resume` refusal stays the authority and is still
-rendered, it is simply unreachable from this form. `n` on a chats board with no
-registered project does not open the form at all: it says so on the board,
-because a form with no project to create in cannot be submitted and offers no
-field that would accept one.
+*Amended 2026-08-31 (issue #279).* The new-chat form's project and agent
+pickers are fed by `GET /v1/projects` and `GET /v1/agents`, and the agent
+picker offers **only adapters that report `supports_resume`** (§9.6, decision
+row 29) — the daemon's `agent_cannot_resume` refusal stays the authority and is
+still rendered, it is simply unreachable from this form. `n` on a chats board
+with no registered project does not open the form at all: it says so on the
+board, because a form with no project to create in cannot be submitted and
+offers no field that would accept one.
 
-An **open new-chat draft captures input on every row**, not only on the four
+*Amended 2026-08-31 (issue #281).* Four of the new-chat form's six rows —
+project, agent, model and effort — are the same `picker` the new-task,
+follow-up and repair forms use, so the TUI has one idiom for "choose one of a
+list": incremental filtering, a bounded window, the `cli`/`curated` provenance
+note on the model and effort catalogs, and free text on those two because an
+adapter's catalog is a suggestion (§9.6). Both catalogs scope to the selected
+adapter and are cleared when it changes, and both lead with an "(agent
+default)" row naming that adapter's own default — a chat has no workflow, so
+"(workflow default)" would be the wrong words. Title and base branch stay text
+fields; the base row's placeholder names the selected project's real default
+branch, and submitting it untouched sends no branch at all, so the daemon
+resolves the project's default as before. `enter` opens the focused row's list
+or moves on from a text one, uniformly: `ctrl+s` is the sole create key.
+`←`/`→` survive on the project and agent rows as a fast in-place step — the
+enum-row idiom from the new-task fields editor — and are not offered on the
+two catalog rows, where "next" answers nothing.
+
+An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the
 shell consults the focused panel for capture and leaves the global single-key
-bindings live: four of this form's six rows are text fields and a live draft
-sits behind the two that are not, so a global `q` on the project row quit the
-TUI with the draft. The rule is unchanged for every other form — the new-task
-form still leaves the globals live while navigating — and `esc`, this form's
-layer of the stack below, stays the way out.
+bindings live: only title and base are text fields, a live draft sits behind
+the other four, and a global `q` on the project row quit the TUI with the
+draft. An open list adds a filter row and a free-text row on top of that. The
+rule is unchanged for every other form — the new-task form still leaves the
+globals live while navigating — and `esc`, this form's layer of the stack
+below, stays the way out: with a list open it closes the list only, and the
+draft survives.
 
 **`esc` cancels one layer per press**, by a fixed stack: *(amended 2026-08-30,
 task 063)* a form popup's Task details tab → popup (palette, confirmation,

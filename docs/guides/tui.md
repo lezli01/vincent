@@ -989,21 +989,41 @@ you straight into the workspace. With no project registered, `n` says so on the
 board instead of opening a form you could not submit — add a repository in the
 Projects view (`4`) first.
 
+Four of the six rows are lists — project, agent, model and effort — and they are
+the same list the new-task and follow-up forms use: `enter` opens one, `/`
+filters it as you type, `↑`/`↓` walk it and `enter` picks. The model and effort
+lists are the selected agent's own catalog, tagged `cli` where the CLI itself
+reported the value and `curated` where it comes from vincent's built-in list and
+may be stale; both lead with an `(agent default)` row naming what that agent
+would use, and both end with a row for typing a value the catalog has never
+heard of — a model shipped this morning is not in it. Changing the agent
+re-scopes both lists and clears anything chosen under the previous one.
+
+`←`/`→` still step the project and agent rows one at a time without opening
+their list, which is quicker when you have two of something. They are not
+offered on the model and effort rows, where stepping through a hundred values
+answers nothing.
+
+Title and base branch are typed. The base row's placeholder names the selected
+project's actual default branch and follows the project row; leave it empty and
+the daemon resolves that default at creation.
+
 Only an agent that can resume its own session can hold a chat, so the agent
-picker offers only those. The daemon refuses the rest at creation with that
+list offers only those. The daemon refuses the rest at creation with that
 reason rather than a generic failure, and the form still renders it — it is the
 backstop, not the thing you are expected to walk into.
 
-The draft owns the keyboard while it is open: every row, including the two
-pickers, so no keystroke leaks out to the global keys. `esc` discards it and
-returns you to the board.
+The draft owns the keyboard while it is open: every row, and every open list, so
+no keystroke leaks out to the global keys. `esc` closes an open list and leaves
+the draft alone; a second press discards the draft and returns you to the board.
 
 | Key | Does, in the create form |
 |---|---|
 | `tab` / `shift+tab` | Next / previous field |
-| `←` / `→` | Choose on the project and agent fields |
+| `enter` | Open the focused field's list, or move on from a text field |
+| `←` / `→` | Step the project and agent fields in place |
 | `ctrl+s` | Create the chat and open it |
-| `esc` | Discard the draft |
+| `esc` | Close an open list, else discard the draft |
 
 ### Chat workspace
 

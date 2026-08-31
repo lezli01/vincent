@@ -495,6 +495,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 					}())
 			}
 		},
+		"enter": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 0)
+			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{
+				{ID: 1, Name: "one"}, {ID: 2, Name: "two"},
+			}})
+			v.create.focus = ncProject
+			v.updateKey(registryKey(t, "enter"))
+			if v.create == nil || v.create.pick == nil {
+				t.Fatal("enter on the project row opened no list")
+			}
+		},
 		"tab": func(t *testing.T) {
 			v := chatsFixture()
 			v.create = newNewChatForm(nil, 7)
@@ -510,10 +522,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{
 				{ID: 1, Name: "one"}, {ID: 2, Name: "two"},
 			}})
-			v.create.focus = 0
+			v.create.focus = ncProject
 			v.updateKey(registryKey(t, "left"))
 			if v.create.projectID != 2 {
 				t.Fatalf("left chose project %d, want the previous one", v.create.projectID)
+			}
+			if v.create.pick != nil {
+				t.Fatal("left opened the project list; it steps in place")
 			}
 		},
 		"esc": func(t *testing.T) {
