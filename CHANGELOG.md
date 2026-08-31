@@ -510,6 +510,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **`n` on the chats board opened the new-task form.** The chats board's own
+  `n` — "start a chat in the project you are looking at", the one key whose
+  meaning depends on where you are — never reached the board: the root's global
+  `n` consumed it first and swapped the screen for the new-task form. The
+  palette row went the same way, since a keyed palette entry replays its
+  keypress through that same handler, which left the new-chat form with no
+  route into it from the TUI at all (chats were still creatable with `vincent
+  chat start` and over the API). A global single-key binding now stands down
+  when the surface underneath it declares the same key in the binding registry,
+  so the collision is answered by the registry rather than by a list of views;
+  the palette's "new task" row still opens the new-task form from the chats
+  board, by navigating instead of replaying the key.
+
 - **Writing a chat's session id crashed every open event stream.** The store
   publishes an event after each write, and the three chat columns no client is
   told about — session id, worktree path, pending input — handed it a `nil`
