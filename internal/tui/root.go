@@ -317,8 +317,15 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		// Not while the form is already up: there, n is "no" to the discard
 		// prompt, and re-opening would throw away the draft it is asking
-		// about.
-		if m.phase == phaseConnected && m.active != viewNewTask {
+		// about. And not when the active surface declares n as a row of its
+		// own — §15 makes n the one key whose meaning depends on where you
+		// are, so on the chats board it falls through to delegate and makes a
+		// chat. The yield is scoped to this arm rather than sitting ahead of
+		// the switch because n is the only global key that both collides with
+		// a panel row and consumes the key unconditionally: esc is declared by
+		// ctxChat and ctxNewChat too, and must still close the help overlay
+		// first.
+		if m.phase == phaseConnected && m.active != viewNewTask && !m.panelOwnsKey(key) {
 			return m, m.openNewTask()
 		}
 	case "r":
@@ -341,7 +348,11 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if run == nil {
 		return m, cmd
 	}
-	if run.nav && run.key == "" {
+	// A keyed nav entry replays its key — except where the active surface owns
+	// that key as a row of its own, since the replay would then run the
+	// panel's command instead of the navigation the entry names. On the chats
+	// board that is "new task", whose key n now makes a chat.
+	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
 		return m, m.switchTo(run.navTarget)
 	}
 	return m.updateKey(synthKey(run.key))
@@ -361,6 +372,19 @@ func (m *root) openPalette() {
 	}
 	m.palette = newPalette(paletteEntries(
 		ctx, target, editable, m.phase == phaseConnected, m.githubAvailable()))
+}
+
+// panelOwnsKey reports whether the active surface declares key as one of its
+// own panel rows. It is what a global single-key binding consults before
+// consuming a key the view underneath it also claims, so the registry answers
+// the collision rather than a list of view special cases in updateKey.
+func (m *root) panelOwnsKey(key string) bool {
+	for _, b := range bindingsFor(m.activeContext()) {
+		if b.key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // activeContext names the active surface for the binding registry.
