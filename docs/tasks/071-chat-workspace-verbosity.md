@@ -125,8 +125,12 @@ unrecognized lines — so a reconnect changed what was on screen.
 
 ## Not done here
 
-The chat panel's appearance changed, so its `docs/assets/tui-*.png` captures are
-stale. `scripts/screenshots.sh` was **not** run in this PR — it is macOS/Linux
-workstation-only, needs VHS, ttyd and ffmpeg, and CI does not run it. The
-captures are re-made on the next screenshot pass, the way task 067 recorded the
-same gap. Nothing here is hand-drawn to stand in for them.
+The screenshots. The chat workspace's appearance changed, but there is nothing
+stale to re-make: **the chat views have never been captured.**
+`scripts/screenshots.sh` seeds no chat and has no chat tape, so no
+`docs/assets/tui-*.png` shows this panel — the gap task 067 recorded when it
+added the two views is still open, now covering a body that renders through the
+output pane. Closing it is a seeded VHS run on a macOS or Linux workstation
+(VHS, ttyd, ffmpeg; CI does not run it) that first grows a chat tape. Until
+then `docs/guides/tui.md` describes the panel in prose and a key table, and
+nothing here is hand-drawn to stand in for a capture.

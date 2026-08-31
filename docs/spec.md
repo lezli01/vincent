@@ -5292,8 +5292,13 @@ with `turn_id` where `run_id` stands — a chat turn is its own run.
 *Amended 2026-08-31 (task 071, issue #282).* A chat's live-output chunks carry
 **the same normalized types and fields a task's do** — `agent.output`,
 `agent.thinking`, `agent.tool_use`, `agent.tool_result`, `agent.run_header`,
-`agent.usage`, and `agent.raw` for a line vincent's parsers do not model — with
-the verbatim stream line retained beside them as `raw`. Until this, a chat
+`agent.usage` — with the verbatim stream line retained beside them as `raw`,
+plus one type a task's stream does not publish: **`agent.raw`**, for a line
+vincent's parsers do not model. A task leaves those to the transcript route,
+which its output pane fetches beside a timeline of steps; a chat has no such
+timeline, so a turn whose stream is entirely unmodeled lines would show nothing
+at all while it runs. They are collapsed behind a count by the client below its
+verbose level, never hidden by the daemon (§12.2). Until this, a chat
 published one chunk type, `output`, whose only content was that raw line, so a
 client had to parse the dialect itself to render anything. It is normalized in
 the daemon and not in the client for the reason §13.3 exists at all:

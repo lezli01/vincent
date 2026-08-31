@@ -1057,7 +1057,7 @@ them, and a composer at the bottom.
 | `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |
 
-The body is the task workspace's [output pane](#task-workspace), same records
+The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
 `#` the run header, `✓`/`✗` the result. `ctrl+r` cycles the same three levels
 `v` cycles there, and it is the **same level** — set it in either place and the
