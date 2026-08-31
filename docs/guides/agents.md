@@ -27,7 +27,7 @@ silently drops.
 | Binary | `claude` | `codex` | **`cursor-agent`** |
 | `agent:` value | `claude` | `codex` | `cursor` |
 | Mid-run questions (`awaiting_input`) | ✅ | — | — |
-| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | — | — |
+| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume <thread_id>` | — |
 | Reports cost | ✅ | — | — |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
@@ -150,6 +150,10 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   would otherwise flood the level most readers use; a body long enough to hit
   the cap ends in `… output truncated`. File changes are named by their paths
   and kinds, and MCP calls by server and tool.
+- **Token usage is read whole.** All five of the counters codex reports land in
+  the run's accounting, so `verbose` shows a codex turn's cache read/write split
+  and its reasoning spend rather than leaving them blank. Cost is still absent,
+  because the CLI does not report one — see the bullet above.
 - **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
   shows at the `normal` and `verbose` output levels (`v` cycles them) and the
   transcript records as `agent.thinking`. Whether any are emitted depends on

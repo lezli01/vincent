@@ -190,8 +190,8 @@ answered even for a CLI that is missing.
 `GET /v1/info`'s and `GET /v1/doctor`'s `agents[]`, beside `supports_input`.
 
 `supports_resume` is whether the adapter can resume its own session, and so
-whether it may hold a [chat](cli.md#vincent-chat): `true` for claude, `false`
-for codex and cursor. It is the same answer `POST /v1/chats` gates on, so a
+whether it may hold a [chat](cli.md#vincent-chat): `true` for claude and codex,
+`false` for cursor. It is the same answer `POST /v1/chats` gates on, so a
 picker built on it and the `agent_cannot_resume` refusal cannot disagree, and
 like `restricted_verdict` it is answered for a CLI that is missing. It is
 `null` — never `false` — when the daemon has no adapter registry to ask, and a
@@ -1406,9 +1406,11 @@ continuity. An adapter that cannot resume is refused:
            "message": "agent \"cursor\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
 ```
 
-Today that is codex and cursor. Both CLIs have a resume of some shape; vincent
-does not read it yet, and faking continuity by replaying the log into the prompt
-is exactly what this refusal exists to prevent.
+Today that is cursor alone. codex joined claude when its `exec resume
+<thread_id>` was pinned by a capture against a named build; cursor-agent has a
+`--resume` of some shape and vincent does not read it yet, and faking continuity
+by replaying the log into the prompt is exactly what this refusal exists to
+prevent.
 
 ### States
 

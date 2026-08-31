@@ -642,9 +642,15 @@ task has parallel steps or fan-out lanes).
 
 | Output | What it is |
 |---|---|
-| default | The records rendered as text, the vocabulary the TUI's output pane renders: assistant output, tool calls and their outcomes, command output, vincent's own annotations. Token usage is dropped — `task show` carries it |
+| default | The records rendered as text, the vocabulary the TUI's output pane renders: assistant output, tool calls and their outcomes, command output, the agent's running to-do list as a `# plan:` line, vincent's own annotations. Token usage is dropped — `task show` carries it |
 | `--json` | The normalized records as NDJSON, one JSON object per line, in vincent's vocabulary including its `vincent.*` annotations. This is the `jq` route |
 | `--raw` | The agent's own JSONL, byte for byte, exactly as it was recorded |
+
+What an *agent's* command printed is the one record the default rendering drops.
+The output pane shows it at `verbose` only and this command has no verbosity
+control, so the alternative to dropping it is showing every command's whole
+output to every reader; `--raw` and `--json` both carry it for a reader who
+wants the body.
 
 Everything a reader reads goes to **stdout**, including a command step's stderr,
 which is tagged `[stderr]` rather than split onto the other file descriptor: a

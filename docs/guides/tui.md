@@ -361,9 +361,25 @@ ordinary one — why it stopped. `stop: max_tokens` on that line is the differen
 between a model that finished and a model that ran out, which both read as a
 bare success before.
 
+`normal` also carries the agent's **running to-do list**, on a `☰` line, for a
+CLI that reports one. Every version of the list arrives whole rather than as a
+change to the last one, so the line shows where the agent *is* — done entries
+`✓` and dimmed, pending ones `○` — and a reader who opens the pane mid-run does
+not have to reconstruct it. It sits at `normal` for the reason the run header
+does: a plan is what the agent *intends*, which is neither what it said nor what
+it did.
+
 `verbose` adds the API-time split, the cache read/write token split, a per-model
 breakdown for a run that used more than one, and the lines vincent's parsers do
 not model, expanded out from behind their count.
+
+`verbose` is also the only level that shows **what a command printed** — the
+output body itself, flush left and dim, the way a command step's own output
+renders, because it is the same thing rather than vincent's account of one. It
+is held back below `verbose` deliberately: a step running `go test ./...` would
+otherwise flood the level most readers use. A body long enough to hit the cap
+ends in **… output truncated**, because a cut a reader cannot see is
+indistinguishable from a command that printed exactly that much.
 
 A tool call that a permission rule **refused** is marked `⊘` rather than `✗`, at
 every level. The distinction is worth a glyph: `✗` is the agent's problem, and
@@ -371,7 +387,9 @@ every level. The distinction is worth a glyph: `✗` is the agent's problem, and
 
 Only [Claude Code](agents.md#claude-code) reports the run header and the run
 metadata today. On codex and cursor those lines simply do not appear — vincent
-does not synthesise one from what it happens to know.
+does not synthesise one from what it happens to know. The plan and the command
+output run the other way: only [Codex](agents.md#codex) reports those, and on
+claude and cursor they are absent for the same reason rather than invented.
 
 ### Reading the whole transcript
 
