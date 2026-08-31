@@ -46,7 +46,7 @@ func (h *actionLiveHarness) blockTask(t *testing.T, id int64, reason string) {
 func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "hang")
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "repairable")
+	task := h.createParkedTask(t, "repairable")
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})
 	h.p.push(cmd)
@@ -123,7 +123,7 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 func TestTimelineRendersARepairAsItsOwnEntry(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "hang")
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "repairable")
+	task := h.createParkedTask(t, "repairable")
 	h.blockTask(t, task.ID, "check_failed")
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})

@@ -18,7 +18,7 @@ import (
 func TestRepairPopupTaskDetailsTabLive(t *testing.T) {
 	t.Setenv("FAKEAGENT_SCENARIO", "hang")
 	h := newActionLiveHarness(t)
-	task := h.createTask(t, "inspectable")
+	task := h.createParkedTask(t, "inspectable")
 	h.blockTask(t, task.ID, "check_failed")
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID})

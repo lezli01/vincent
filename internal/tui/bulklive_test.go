@@ -19,7 +19,7 @@ func TestBulkArchiveLive(t *testing.T) {
 
 	ids := make([]int64, 0, 2)
 	for _, title := range []string{"finished-one", "finished-two"} {
-		task := h.createTask(t, title)
+		task := h.createParkedTask(t, title)
 		if _, _, err := h.st.TransitionTask(ctx, task.ID,
 			store.TaskQueued, store.TaskDone, store.TaskChange{}); err != nil {
 			t.Fatalf("park %s at done: %v", title, err)

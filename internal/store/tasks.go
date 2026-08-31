@@ -184,15 +184,21 @@ func insertTaskTx(
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tasks (project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 			base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
-			state, current_step, block_reason,
+			state, current_step, block_reason, admit_not_before, queued_reason,
 			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id,
 			created_at, updated_at, started_at, finished_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, nullString(t.WorktreePath), nullString(t.BaseSHA), t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
 		string(t.State), t.CurrentStep, nullString(t.BlockReason),
+		// The §11 hold rides along with the row it describes. UpdateTask has
+		// always written these two, so an insert that dropped them made
+		// "created already held" a two-statement affair with a window in the
+		// middle — long enough for the scheduler's tick to admit the task
+		// between them (task 003).
+		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
 		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
 		pullJSON, originJSON, t.CreatedByTaskID,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
