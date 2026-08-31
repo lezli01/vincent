@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
@@ -107,6 +108,9 @@ const (
 	gutterNone     = "  "
 	gutterThinking = "· "
 	gutterTool     = "▸ "
+	// gutterHeader marks the run header — the frame of the run rather than
+	// anything that happened inside it (task 066).
+	gutterHeader = "# "
 	// gutterResult is four columns: a result is indented under its call, so
 	// a run of calls and outcomes reads as a tree rather than a list.
 	gutterResult = "    "
@@ -255,19 +259,63 @@ func splitWords(para string, avail int) []string {
 	return out
 }
 
+// runHeaderLine renders what the CLI announced about the run before it
+// started: where it ran and what it was allowed to reach (task 066). It is
+// the answer to "what could this agent actually do", which the pane could not
+// give at any level before.
+//
+// It is dim throughout, gutter included: it is context for everything below
+// it rather than a thing that happened, and it must not compete with the
+// first assistant line for a reader's eye.
+func runHeaderLine(rec apiclient.TranscriptRecord) paneLine {
+	dir := rec.WorkDir
+	if dir == "" {
+		// A header with no cwd still says the run began and lists its tools,
+		// which is the half a reader cannot get anywhere else.
+		dir = "run started"
+	}
+	segs := []segment{{text: dir, style: styleDim}}
+	if len(rec.AvailableTools) > 0 {
+		segs = append(segs, segment{
+			text:  " · " + plural(len(rec.AvailableTools), "tool", "tools") + ": " + strings.Join(rec.AvailableTools, ", "),
+			style: styleDim,
+		})
+	}
+	return paneLine{gutter: gutterHeader, gutterStyle: styleDim, segs: segs}
+}
+
 // toolResultLine renders one outcome under its call.
 func toolResultLine(r apiclient.TranscriptToolResult) paneLine {
 	mark, style := "✓ ", styleOKDim
-	if r.IsError {
+	switch {
+	case r.Blocked:
+		// A call a permission rule refused never ran at all. It gets its own
+		// mark because "the tool failed" and "the tool was not allowed" send
+		// a reader to two different places — one is the agent's problem, the
+		// other is the step's permission mode (task 066).
+		mark, style = "⊘ ", styleErrDim
+	case r.IsError:
 		mark, style = "✗ ", styleErrDim
 	}
 	text := r.Summary
+	if r.Verb != "" {
+		// The verb leads: it is the dialect's own structured account of what
+		// happened, where the summary is the tool's prose about it.
+		text = r.Verb
+		if r.Summary != "" {
+			text += " · " + r.Summary
+		}
+	}
 	if text == "" {
 		// An outcome with nothing to say still says whether it worked, which
 		// is the question a reader is asking.
-		text = "done"
-		if r.IsError {
+		switch {
+		case r.Blocked:
+			text = "blocked"
+		case r.IsError:
 			text = "failed"
+		default:
+			text = "done"
 		}
 	}
 	return paneLine{
@@ -295,4 +343,16 @@ func thinkingBlock(text string, level outputLevel, width int) []string {
 	hidden := len(lines) - thinkingLines
 	return append(lines[:thinkingLines:thinkingLines],
 		gutterNone+styleDim.Render(fmt.Sprintf("… +%d lines (v)", hidden)))
+}
+
+// formatAgentDuration renders a duration the agent itself reported. Under a
+// minute it keeps a decimal, because most agent runs are seconds long and
+// "0s" for a 400 ms turn is worse than no number at all; above that it hands
+// over to the board's own formatter so one duration does not spell two ways.
+func formatAgentDuration(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return formatElapsed(d)
 }

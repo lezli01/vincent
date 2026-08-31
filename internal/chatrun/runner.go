@@ -308,7 +308,8 @@ func (r *Runner) consume(
 				r.deps.Logger.Warn("chat input closed", "chat", chat.ID, "error", err)
 			}
 		case agent.EventUsage, agent.EventResult, agent.EventOutput, agent.EventToolUse,
-			agent.EventToolResult, agent.EventThinking, agent.EventError, agent.EventUnknown:
+			agent.EventToolResult, agent.EventThinking, agent.EventRunHeader,
+			agent.EventError, agent.EventUnknown:
 			// Rendering is the client's job: every one of these is already
 			// in the transcript and on the stream, and internal/tui's
 			// outputlines.go decides what a verbosity level shows.

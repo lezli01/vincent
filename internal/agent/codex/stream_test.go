@@ -279,3 +279,37 @@ func TestParseReasoningWithoutText(t *testing.T) {
 		t.Errorf("empty reasoning normalized to %v, want unknown", ev.Type)
 	}
 }
+
+// TestNoRunHeaderOrResultMetadata states positively what task 066 did *not*
+// do to this adapter. The shared vocabulary grew a run header, a structured
+// tool verb and the result's own account of a run; codex reports no run header
+// at all (`thread.started` is a thread id and nothing else) and no structured
+// tool outcome, and the one field it does carry that parallels the new ones —
+// `turn.completed.usage.cached_input_tokens` — is deliberately not read: task
+// 066 widened one adapter, and each dialect deserves its own fixtures. Every
+// new field therefore stays zero here, and nothing emulates a value (§9.3).
+func TestNoRunHeaderOrResultMetadata(t *testing.T) {
+	for _, name := range []string{"success.jsonl", "tooluse.jsonl", "failure.jsonl", "reasoning_0.147.0.jsonl"} {
+		for i, ev := range parseFixture(t, name) {
+			if ev.Type == agent.EventRunHeader || ev.Header != nil {
+				t.Errorf("%s line %d: produced a run header", name, i)
+			}
+			if ev.ParentCallID != "" {
+				t.Errorf("%s line %d: parent = %q", name, i, ev.ParentCallID)
+			}
+			for _, r := range ev.Results {
+				if r.Verb != "" || r.Blocked {
+					t.Errorf("%s line %d: result = %+v, want no verb and no block", name, i, r)
+				}
+			}
+			if res := ev.Result; res != nil {
+				if res.Duration != 0 || res.APIDuration != 0 || res.NumTurns != 0 ||
+					res.StopReason != "" || res.TerminalReason != "" ||
+					res.CacheReadTokens != 0 || res.CacheCreationTokens != 0 ||
+					res.ModelUsage != nil || res.PermissionDenials != nil {
+					t.Errorf("%s line %d: result carries claude-only metadata: %+v", name, i, res)
+				}
+			}
+		}
+	}
+}

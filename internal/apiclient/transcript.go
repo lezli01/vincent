@@ -50,9 +50,48 @@ type TranscriptRecord struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 	CostUSD      *float64 `json:"cost_usd"`
+	// ParentCallID names the subagent call a record was produced inside,
+	// empty for the main loop and for every adapter that does not report it.
+	// It is on the wire ahead of any renderer for it.
+	ParentCallID string `json:"parent_call_id"`
+	// WorkDir and AvailableTools are the agent.run_header record: what the
+	// CLI announced about the run before starting it.
+	WorkDir        string   `json:"work_dir"`
+	AvailableTools []string `json:"available_tools"`
+	// The rest is the run's own account of itself, on the terminal
+	// agent.result. Zero means unreported, which is every adapter but
+	// claude. Durations are milliseconds; the duration is the CLI's own and
+	// is not vincent's — claude's excludes the time an input wait adds.
+	DurationMS        int64                        `json:"duration_ms"`
+	APIDurationMS     int64                        `json:"api_duration_ms"`
+	NumTurns          int                          `json:"num_turns"`
+	StopReason        string                       `json:"stop_reason"`
+	TerminalReason    string                       `json:"terminal_reason"`
+	CacheReadTokens   int64                        `json:"cache_read_tokens"`
+	CacheWriteTokens  int64                        `json:"cache_write_tokens"`
+	ModelUsage        []TranscriptModelUsage       `json:"model_usage"`
+	PermissionDenials []TranscriptPermissionDenial `json:"permission_denials"`
 	// Raw is the whole record, for the annotation fields this struct does not
 	// name.
 	Raw json.RawMessage `json:"-"`
+}
+
+// TranscriptModelUsage is one model's share of a run. It says what the run
+// spent, not what the model is — `GET /v1/agents` answers the latter.
+type TranscriptModelUsage struct {
+	Model            string   `json:"model"`
+	InputTokens      int64    `json:"input_tokens"`
+	OutputTokens     int64    `json:"output_tokens"`
+	CacheReadTokens  int64    `json:"cache_read_tokens"`
+	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	CostUSD          *float64 `json:"cost_usd"`
+}
+
+// TranscriptPermissionDenial is one tool call a permission rule refused over
+// the whole run — the run-level counterpart of a result's Blocked.
+type TranscriptPermissionDenial struct {
+	ToolName string `json:"tool_name"`
+	CallID   string `json:"call_id"`
 }
 
 // TranscriptTool is one tool invocation inside an agent.tool_use record.
@@ -73,6 +112,11 @@ type TranscriptToolResult struct {
 	CallID  string `json:"call_id"`
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
+	// Verb is the dialect's own structured outcome ("created"), empty when
+	// it reported none. Blocked is a call a permission rule refused, which a
+	// reader wants told apart from one that ran and failed.
+	Verb    string `json:"verb"`
+	Blocked bool   `json:"blocked"`
 	IsError bool   `json:"is_error"`
 }
 

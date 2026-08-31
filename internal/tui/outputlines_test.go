@@ -352,3 +352,192 @@ func TestOutputTitleNamesNonDefaultLevel(t *testing.T) {
 		t.Errorf("title = %q, want it to name the level", got)
 	}
 }
+
+// TestRunHeaderLevels covers the record task 066 added to the pane. It is the
+// run's frame rather than something the agent said or did, so levelCompact —
+// whose stated meaning is "what the agent said and did, nothing else" — does
+// not grow, and it renders identically at normal and verbose.
+func TestRunHeaderLevels(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 80
+	d.records = []apiclient.TranscriptRecord{{
+		Type:           "agent.run_header",
+		WorkDir:        "/work/repo",
+		AvailableTools: []string{"Task", "Bash", "Write"},
+	}}
+
+	d.level = levelCompact
+	if got := d.outputLines(); len(got) != 0 {
+		t.Errorf("compact rendered the run header: %q", got)
+	}
+
+	var atNormal string
+	for _, level := range []outputLevel{levelNormal, levelVerbose} {
+		d.level = level
+		got := plainLines(d.outputLines())
+		if len(got) != 1 {
+			t.Fatalf("%s = %q, want one line", level, got)
+		}
+		want := "# /work/repo · 3 tools: Task, Bash, Write"
+		if got[0] != want {
+			t.Errorf("%s = %q, want %q", level, got[0], want)
+		}
+		if level == levelNormal {
+			atNormal = got[0]
+		} else if got[0] != atNormal {
+			t.Errorf("verbose = %q, normal = %q: the header does not grow", got[0], atNormal)
+		}
+	}
+}
+
+// TestRunHeaderWrapsRatherThanClips is the case a real run produces: claude
+// hands a step a dozen tools, and the list is past 80 columns before it is
+// half printed. It must fold to the hanging indent, which is the whole reason
+// this pane wraps its own lines.
+func TestRunHeaderWrapsRatherThanClips(t *testing.T) {
+	tools := []string{
+		"Task", "AskUserQuestion", "Bash", "BashOutput", "Edit", "Glob",
+		"Grep", "KillShell", "NotebookEdit", "Read", "TodoWrite", "WebFetch",
+		"WebSearch", "Write",
+	}
+	d := newTestDetail(t)
+	d.width = 80
+	d.level = levelNormal
+	d.records = []apiclient.TranscriptRecord{{
+		Type:           "agent.run_header",
+		WorkDir:        "/work/repo",
+		AvailableTools: tools,
+	}}
+	got := plainLines(d.outputLines())
+	if len(got) < 2 {
+		t.Fatalf("lines = %q, want the tool list wrapped", got)
+	}
+	for i, line := range got {
+		if cols(line) > 80 {
+			t.Errorf("line %d is %d columns: %q", i, cols(line), line)
+		}
+		if i > 0 && !strings.HasPrefix(line, "  ") {
+			t.Errorf("continuation %d = %q, want the hanging indent", i, line)
+		}
+	}
+	// Nothing was dropped on the way: clipping is what this replaces.
+	joined := strings.Join(got, " ")
+	for _, tool := range tools {
+		if !strings.Contains(joined, tool) {
+			t.Errorf("tool %q clipped out of %q", tool, joined)
+		}
+	}
+}
+
+// TestResultMetadataByLevel is the level contract for the enriched result
+// line (task 066). Compact is byte-identical to what it rendered before —
+// the acceptance criterion that "compact does not grow" — normal carries the
+// run's condensed account of itself, and the per-model and cache breakdown is
+// verbose only.
+func TestResultMetadataByLevel(t *testing.T) {
+	cost := 0.02206225
+	modelCost := 0.02206225
+	rec := apiclient.TranscriptRecord{
+		Type:             "agent.result",
+		ResultText:       "all done",
+		CostUSD:          &cost,
+		DurationMS:       7324,
+		APIDurationMS:    5706,
+		NumTurns:         2,
+		StopReason:       "end_turn",
+		TerminalReason:   "completed",
+		CacheReadTokens:  60280,
+		CacheWriteTokens: 6835,
+		ModelUsage: []apiclient.TranscriptModelUsage{{
+			Model: "claude-haiku-4-5", InputTokens: 18, OutputTokens: 536,
+			CacheReadTokens: 60280, CostUSD: &modelCost,
+		}},
+	}
+	d := newTestDetail(t)
+	d.width = 100
+	// An assistant line first, so the result renders its outcome rather than
+	// repeating its text (T4.16).
+	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "all done"}, rec}
+
+	d.level = levelCompact
+	compact := plainLines(d.outputLines())
+	if compact[len(compact)-1] != "✓ done · $0.02" {
+		t.Errorf("compact = %q, want exactly what it rendered before task 066",
+			compact[len(compact)-1])
+	}
+
+	d.level = levelNormal
+	normal := plainLines(d.outputLines())
+	if got := normal[len(normal)-1]; got != "✓ done · 7.3s · 2 turns · $0.02" {
+		t.Errorf("normal = %q", got)
+	}
+	// The ordinary stop reasons stay off the line: every successful claude
+	// run ends end_turn/completed, so printing them says nothing.
+	for _, line := range normal {
+		if strings.Contains(line, "end_turn") || strings.Contains(line, "completed") ||
+			strings.Contains(line, "cache") || strings.Contains(line, "claude-haiku") {
+			t.Errorf("normal carries a verbose-only detail: %q", line)
+		}
+	}
+
+	d.level = levelVerbose
+	verbose := strings.Join(plainLines(d.outputLines()), "\n")
+	for _, want := range []string{
+		"✓ done · 7.3s (5.7s api) · 2 turns · $0.02",
+		"cache 60280 read / 6835 written",
+		"claude-haiku-4-5 · 18 in / 536 out · 60280 cached · $0.02",
+	} {
+		if !strings.Contains(verbose, want) {
+			t.Errorf("verbose missing %q:\n%s", want, verbose)
+		}
+	}
+}
+
+// TestResultNamesAnUnusualStop covers what the metadata is *for*: a run that
+// hit a limit and one that finished read identically before task 066.
+func TestResultNamesAnUnusualStop(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 100
+	d.level = levelNormal
+	d.records = []apiclient.TranscriptRecord{
+		{Type: "agent.output", Text: "working"},
+		{
+			Type: "agent.result", StopReason: "max_tokens", TerminalReason: "interrupted",
+			NumTurns: 1, PermissionDenials: []apiclient.TranscriptPermissionDenial{
+				{ToolName: "Write", CallID: "toolu_02"},
+			},
+		},
+	}
+	got := plainLines(d.outputLines())
+	last := got[len(got)-1]
+	for _, want := range []string{"stop: max_tokens", "interrupted", "1 denied"} {
+		if !strings.Contains(last, want) {
+			t.Errorf("result = %q, want it to carry %q", last, want)
+		}
+	}
+}
+
+// TestBlockedToolResultHasItsOwnMark separates the two verdicts a reader acts
+// on differently: a tool that ran and failed is the agent's problem, a tool a
+// permission rule refused is the step's permission mode.
+func TestBlockedToolResultHasItsOwnMark(t *testing.T) {
+	blocked := plainLines(wrapLine(toolResultLine(apiclient.TranscriptToolResult{
+		Summary: "permission denied", Blocked: true, IsError: true,
+	}), 60))
+	if strings.TrimSpace(blocked[0]) != "⊘ permission denied" {
+		t.Errorf("blocked = %q, want the ⊘ mark", blocked[0])
+	}
+	bare := plainLines(wrapLine(toolResultLine(apiclient.TranscriptToolResult{
+		Blocked: true, IsError: true,
+	}), 60))
+	if strings.TrimSpace(bare[0]) != "⊘ blocked" {
+		t.Errorf("bare blocked = %q, want it to say so", bare[0])
+	}
+	// The verb leads the tool's own prose about what it did.
+	verb := plainLines(wrapLine(toolResultLine(apiclient.TranscriptToolResult{
+		Verb: "created", Summary: "File created successfully at: hello.txt",
+	}), 80))
+	if strings.TrimSpace(verb[0]) != "✓ created · File created successfully at: hello.txt" {
+		t.Errorf("verb = %q", verb[0])
+	}
+}

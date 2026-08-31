@@ -1065,6 +1065,13 @@ func (d *detail) renderRecord(rec apiclient.TranscriptRecord, sawOutput bool) (p
 		// One record can report several outcomes; the first owns the line
 		// and the rest are rare enough to share it rather than earn rows.
 		return toolResultLine(rec.Results[0]), true
+	case "agent.run_header":
+		// levelCompact is "what the agent said and did, nothing else"; the
+		// run header is neither, so it appears from normal up (task 066).
+		if d.level == levelCompact {
+			return paneLine{}, false
+		}
+		return runHeaderLine(rec), true
 	case "agent.usage":
 		if d.level != levelVerbose {
 			return paneLine{}, false
@@ -1073,7 +1080,7 @@ func (d *detail) renderRecord(rec apiclient.TranscriptRecord, sawOutput bool) (p
 	case "agent.error":
 		return marked("✗ ", rec.Message, styleBad), true
 	case "agent.result":
-		return renderResult(rec, sawOutput), true
+		return renderResult(rec, sawOutput, d.level), true
 	case "command.output", "vincent.output":
 		if rec.Stream == "stderr" {
 			return plain(rec.Text, styleStderr, false), true
@@ -1150,25 +1157,89 @@ func toolUsePane(tools []apiclient.TranscriptTool) paneLine {
 // it again is the same words twice. The text is kept when nothing else
 // rendered, which is what a codex turn with no agent_message looks like, and
 // always on error, where it is the error and may be the only content there is.
-func renderResult(rec apiclient.TranscriptRecord, sawOutput bool) paneLine {
+func renderResult(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) paneLine {
 	if rec.IsError {
 		return marked("✗ ", firstNonEmpty(rec.Message, rec.ResultText, "run failed"), styleBad)
 	}
 	if !sawOutput {
 		return marked("✓ ", firstNonEmpty(rec.ResultText, "run finished"), styleOK)
 	}
-	return marked("✓ ", resultOutcome(rec), styleOK)
+	return marked("✓ ", resultOutcome(rec, level), styleOK)
 }
 
 // resultOutcome is the one-line summary that replaces a repeated result text.
-// Tokens are deliberately absent — the attempt's own timeline row already
-// carries them, and the point of this line is to stop saying things twice.
-// Cost is here because it is reported nowhere else in this view.
-func resultOutcome(rec apiclient.TranscriptRecord) string {
-	if rec.CostUSD != nil {
-		return fmt.Sprintf("done · %s", formatCost(rec.CostUSD))
+// Plain token counts are deliberately absent — the attempt's own timeline row
+// already carries them, and the point of this line is to stop saying things
+// twice. Cost is here because it is reported nowhere else in this view.
+//
+// Task 066 widened it by level rather than unconditionally. levelCompact is
+// byte-for-byte what it always rendered: that level means "what the agent
+// said and did, nothing else", and how long a run took is neither. From
+// normal up it carries what the run said about itself, and the per-model and
+// cache breakdown — the part that is several lines, not several words — is
+// verbose only.
+func resultOutcome(rec apiclient.TranscriptRecord, level outputLevel) string {
+	if level == levelCompact {
+		if rec.CostUSD != nil {
+			return fmt.Sprintf("done · %s", formatCost(rec.CostUSD))
+		}
+		return "done"
 	}
-	return "done"
+	parts := []string{"done"}
+	if rec.DurationMS > 0 {
+		elapsed := formatAgentDuration(rec.DurationMS)
+		if level == levelVerbose && rec.APIDurationMS > 0 {
+			elapsed += fmt.Sprintf(" (%s api)", formatAgentDuration(rec.APIDurationMS))
+		}
+		parts = append(parts, elapsed)
+	}
+	if rec.NumTurns > 0 {
+		parts = append(parts, plural(rec.NumTurns, "turn", "turns"))
+	}
+	// The ordinary reasons are not printed: every successful claude run ends
+	// `end_turn`/`completed`, so naming them on every line would spend two
+	// columns saying nothing. An unusual one is exactly what distinguishes
+	// "the model finished" from "it hit a limit".
+	if rec.StopReason != "" && rec.StopReason != "end_turn" {
+		parts = append(parts, "stop: "+rec.StopReason)
+	}
+	if rec.TerminalReason != "" && rec.TerminalReason != "completed" {
+		parts = append(parts, rec.TerminalReason)
+	}
+	if n := len(rec.PermissionDenials); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d denied", n))
+	}
+	if rec.CostUSD != nil {
+		parts = append(parts, formatCost(rec.CostUSD))
+	}
+	line := strings.Join(parts, " · ")
+	if level != levelVerbose {
+		return line
+	}
+	return line + resultBreakdown(rec)
+}
+
+// resultBreakdown is the verbose-only tail of the result line: the cache
+// split the two plain token counts do not account for, and the per-model
+// share of a run. They ride as newline-separated segments of the same record
+// rather than as records of their own, so the pane's own wrapping gives them
+// the hanging indent under the ✓ for free.
+func resultBreakdown(rec apiclient.TranscriptRecord) string {
+	var b strings.Builder
+	if rec.CacheReadTokens > 0 || rec.CacheWriteTokens > 0 {
+		fmt.Fprintf(&b, "\ncache %d read / %d written",
+			rec.CacheReadTokens, rec.CacheWriteTokens)
+	}
+	for _, u := range rec.ModelUsage {
+		fmt.Fprintf(&b, "\n%s · %d in / %d out", u.Model, u.InputTokens, u.OutputTokens)
+		if u.CacheReadTokens > 0 {
+			fmt.Fprintf(&b, " · %d cached", u.CacheReadTokens)
+		}
+		if u.CostUSD != nil {
+			fmt.Fprintf(&b, " · %s", formatCost(u.CostUSD))
+		}
+	}
+	return b.String()
 }
 
 // fieldOf reads one string field out of a record's raw JSON — the annotation

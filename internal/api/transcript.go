@@ -99,6 +99,47 @@ type normalizedLine struct {
 	InputTokens  int64        `json:"input_tokens,omitempty"`
 	OutputTokens int64        `json:"output_tokens,omitempty"`
 	CostUSD      *float64     `json:"cost_usd,omitempty"`
+	// ParentCallID rides on any record produced inside a subagent call
+	// (task 066). It is carried on the wire ahead of any renderer: the pane
+	// is flat today, and a transcript recorded now renders under whatever
+	// nesting lands later, because §13.2 re-normalizes on every read.
+	ParentCallID string `json:"parent_call_id,omitempty"`
+	// WorkDir and AvailableTools are the agent.run_header record (task 066):
+	// where the CLI said it was running and what it said it could reach.
+	// The tool list cannot ride on `tools` — that is agent.tool_use's
+	// objects, and a bare name list is a different shape.
+	WorkDir        string   `json:"work_dir,omitempty"`
+	AvailableTools []string `json:"available_tools,omitempty"`
+	// The rest enrich agent.result with the run's own account of itself
+	// (task 066). Durations are milliseconds, matching the dialect they came
+	// from and needing no unit in the name a reader has to remember.
+	DurationMS        int64                `json:"duration_ms,omitempty"`
+	APIDurationMS     int64                `json:"api_duration_ms,omitempty"`
+	NumTurns          int                  `json:"num_turns,omitempty"`
+	StopReason        string               `json:"stop_reason,omitempty"`
+	TerminalReason    string               `json:"terminal_reason,omitempty"`
+	CacheReadTokens   int64                `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens  int64                `json:"cache_write_tokens,omitempty"`
+	ModelUsage        []modelUsageLine     `json:"model_usage,omitempty"`
+	PermissionDenials []permissionDenyLine `json:"permission_denials,omitempty"`
+}
+
+// modelUsageLine is one model's share of a run. It carries what the run
+// spent, never what the model is — §9.6's catalog answers that (§13.2).
+type modelUsageLine struct {
+	Model            string   `json:"model"`
+	InputTokens      int64    `json:"input_tokens,omitempty"`
+	OutputTokens     int64    `json:"output_tokens,omitempty"`
+	CacheReadTokens  int64    `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64    `json:"cache_write_tokens,omitempty"`
+	CostUSD          *float64 `json:"cost_usd,omitempty"`
+}
+
+// permissionDenyLine is one tool call a permission rule refused over the
+// whole run — the run-level counterpart of a result's `blocked` (§13.2).
+type permissionDenyLine struct {
+	ToolName string `json:"tool_name,omitempty"`
+	CallID   string `json:"call_id,omitempty"`
 }
 
 // resultLine reports one tool invocation's outcome. It never carries the
@@ -108,6 +149,11 @@ type resultLine struct {
 	CallID  string `json:"call_id,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Summary string `json:"summary,omitempty"`
+	// Verb is the dialect's structured outcome ("created"), absent when it
+	// reported none; Blocked marks a call a permission rule refused, which
+	// is a different thing from one that ran and failed (task 066).
+	Verb    string `json:"verb,omitempty"`
+	Blocked bool   `json:"blocked,omitempty"`
 	IsError bool   `json:"is_error,omitempty"`
 }
 
@@ -135,8 +181,40 @@ func resultLines(results []agent.ToolResult) []resultLine {
 	out := make([]resultLine, 0, len(results))
 	for _, r := range results {
 		out = append(out, resultLine{
-			CallID: r.CallID, Name: r.Name, Summary: r.Summary, IsError: r.IsError,
+			CallID: r.CallID, Name: r.Name, Summary: r.Summary,
+			Verb: r.Verb, Blocked: r.Blocked, IsError: r.IsError,
 		})
+	}
+	return out
+}
+
+// modelUsageLines maps a run's per-model breakdown onto its wire shape.
+func modelUsageLines(usage []agent.ModelUsage) []modelUsageLine {
+	if len(usage) == 0 {
+		return nil
+	}
+	out := make([]modelUsageLine, 0, len(usage))
+	for _, u := range usage {
+		out = append(out, modelUsageLine{
+			Model:            u.Model,
+			InputTokens:      u.InputTokens,
+			OutputTokens:     u.OutputTokens,
+			CacheReadTokens:  u.CacheReadTokens,
+			CacheWriteTokens: u.CacheCreationTokens,
+			CostUSD:          u.CostUSD,
+		})
+	}
+	return out
+}
+
+// permissionDenyLines maps the run-level denial list onto its wire shape.
+func permissionDenyLines(denials []agent.PermissionDenial) []permissionDenyLine {
+	if len(denials) == 0 {
+		return nil
+	}
+	out := make([]permissionDenyLine, 0, len(denials))
+	for _, d := range denials {
+		out = append(out, permissionDenyLine{ToolName: d.ToolName, CallID: d.CallID})
 	}
 	return out
 }
@@ -166,7 +244,19 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 		// so anything else is surfaced verbatim rather than guessed at.
 		return normalizedLine{Type: "agent.raw", Line: string(raw)}
 	}
-	ev := parse(raw)
+	return normalizedEvent(parse(raw), raw)
+}
+
+// normalizedEvent maps one parsed event onto its wire record. It is split
+// from normalizeLine so that ParentCallID — which rides on any record, of any
+// type — is attached in one place rather than in each arm (task 066).
+func normalizedEvent(ev agent.Event, raw []byte) normalizedLine {
+	out := normalizedRecord(ev, raw)
+	out.ParentCallID = ev.ParentCallID
+	return out
+}
+
+func normalizedRecord(ev agent.Event, raw []byte) normalizedLine {
 	switch ev.Type {
 	case agent.EventOutput:
 		return normalizedLine{Type: "agent.output", Text: ev.Text}
@@ -178,6 +268,13 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 		return normalizedLine{Type: "agent.thinking", Text: ev.Text}
 	case agent.EventUsage:
 		return normalizedLine{Type: "agent.usage", Raw: string(ev.Raw)}
+	case agent.EventRunHeader:
+		out := normalizedLine{Type: "agent.run_header"}
+		if ev.Header != nil {
+			out.WorkDir = ev.Header.WorkDir
+			out.AvailableTools = ev.Header.Tools
+		}
+		return out
 	case agent.EventError:
 		return normalizedLine{Type: "agent.error", Message: ev.Message}
 	case agent.EventResult:
@@ -189,6 +286,15 @@ func normalizeLine(raw []byte, parse agent.LineParser) any {
 			out.InputTokens = ev.Result.InputTokens
 			out.OutputTokens = ev.Result.OutputTokens
 			out.CostUSD = ev.Result.CostUSD
+			out.DurationMS = ev.Result.Duration.Milliseconds()
+			out.APIDurationMS = ev.Result.APIDuration.Milliseconds()
+			out.NumTurns = ev.Result.NumTurns
+			out.StopReason = ev.Result.StopReason
+			out.TerminalReason = ev.Result.TerminalReason
+			out.CacheReadTokens = ev.Result.CacheReadTokens
+			out.CacheWriteTokens = ev.Result.CacheCreationTokens
+			out.ModelUsage = modelUsageLines(ev.Result.ModelUsage)
+			out.PermissionDenials = permissionDenyLines(ev.Result.PermissionDenials)
 		}
 		return out
 	case agent.EventInputRequest, agent.EventInputCanceled, agent.EventUnknown:

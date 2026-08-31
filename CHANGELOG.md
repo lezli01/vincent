@@ -349,6 +349,32 @@ list with the user-facing context a commit subject cannot carry.
   a fresh install has nothing folded. See
   [Using the TUI](docs/guides/tui.md#folding-groups).
 
+- **The output pane shows much more of what a Claude Code run reported about
+  itself.** Claude's `stream-json` carries far more than vincent read, and the
+  discarded part was exactly what a reader watching a run wants: a run now opens
+  with a `#` header naming the working directory the CLI reported and the tools
+  it was given — the only place *"what could this agent actually reach"* is
+  written down — and closes with a line carrying its duration, turn count,
+  refused tool calls and, when it is not the ordinary one, why it stopped.
+  `stop: max_tokens` on that line is the difference between a model that
+  finished and a model that ran out; both read as a bare success before. At
+  `verbose` the line also splits API time out of wall clock, splits cache reads
+  from cache writes, and breaks the spend down per model. A tool call a
+  permission rule **refused** is now marked `⊘` rather than `✗`, because that is
+  the step's permission mode rather than the agent's problem, and an outcome the
+  dialect described structurally leads with its verb (`✓ created · …`).
+
+  `compact` is unchanged — that level means "what the agent said and did,
+  nothing else", and the run's own account of itself is neither. The same
+  material is on the API: `GET …/transcript?format=normalized` gains an
+  `agent.run_header` record and a richer `agent.result`, `agent.tool_result`
+  entries gain `verb` and `blocked`, and any record may carry `parent_call_id`.
+  Every new key is omitted when unreported, so "absent" stays distinguishable
+  from "zero". Because transcripts are normalized **on read**, this improves
+  runs already on disk — a claude run recorded last week renders with all of it
+  today. Codex and cursor report none of it and nothing is synthesised for them.
+  See [Using the TUI](docs/guides/tui.md#what-v-adds).
+
 ### Changed
 
 - **Archiving never deletes a branch vincent did not cut.**

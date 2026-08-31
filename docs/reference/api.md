@@ -1423,6 +1423,15 @@ The transcript is the attempt's JSONL file, ranged:
   the live-output shapes plus `agent.result`, `agent.error`, the `vincent.*`
   kinds, and `agent.raw` for anything unrecognized. That is one render path for
   live tail and scrollback alike. Absent, you get the raw file byte for byte.
+- `agent.run_header` carries `work_dir` and `available_tools` — what the CLI
+  announced about the run before starting it. `agent.result` additionally
+  carries `duration_ms`, `api_duration_ms`, `num_turns`, `stop_reason`,
+  `terminal_reason`, `cache_read_tokens`, `cache_write_tokens`, `model_usage`
+  and `permission_denials` where the adapter reports them; `agent.tool_result`
+  entries carry `verb` and `blocked`; and any record may carry `parent_call_id`,
+  the tool call a subagent's line belongs to. **Every one of those keys is
+  omitted when unreported**, so absent and zero are distinguishable — only
+  [Claude Code](../guides/agents.md#claude-code) fills them today.
 
 Because normalization runs **on read**, enriching a parser improves transcripts
 already on disk.
@@ -1504,7 +1513,8 @@ they need.
 ### Live output — ephemeral
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
-`agent.usage` and `command.output` chunks stream on the **per-task** stream only
+`agent.run_header`, `agent.usage` and `command.output` chunks stream on the
+**per-task** stream only
 and are **not** written to the events table. Their durable copy is the transcript
 file.
 
