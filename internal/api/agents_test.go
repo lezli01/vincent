@@ -262,8 +262,9 @@ func TestAgentsWithoutCatalog(t *testing.T) {
 // 2026-08-31, issue #279): the field the TUI's chat picker filters on. It
 // comes from the same `agent.CanResume` the creation gate in
 // POST /v1/chats consults, so the picker and the `agent_cannot_resume`
-// refusal cannot disagree (decision row 29) — claude yes, codex and cursor
-// no, whether or not a binary is installed.
+// refusal cannot disagree (decision row 29). All three shipped adapters
+// answer yes since task 070, and agenttest.StubNonResuming carries the no —
+// the answer comes from the adapter, whether or not a binary is installed.
 //
 // Null is a fourth answer rather than a false: a daemon with no registry to
 // ask says nothing, and no client may filter an adapter out on that.
@@ -274,6 +275,7 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return "/nonexistent/codex-not-here" }),
 			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+			agenttest.StubNonResuming{},
 		)
 	}
 	probe := func(t *testing.T, withRegistry bool) map[string]*bool {
@@ -311,9 +313,13 @@ func TestAgentsReportSupportsResume(t *testing.T) {
 	}
 
 	got := probe(t, true)
-	// codex joined claude with task 070: `exec resume <thread_id>`, pinned by
-	// a capture. cursor is the one that still cannot (§9.7).
-	for name, want := range map[string]bool{"claude": true, "codex": true, "cursor": false} {
+	// Every shipped adapter resumes since task 070: claude and codex reload a
+	// session, cursor a chat, each pinned by a capture against a named build.
+	// The stub is what states the false case now that no shipped adapter does.
+	for name, want := range map[string]bool{
+		"claude": true, "codex": true, "cursor": true,
+		agenttest.NonResumingName: false,
+	} {
 		switch v := got[name]; {
 		case v == nil:
 			t.Errorf("%s supports_resume = null, want %v — the registry was asked", name, want)

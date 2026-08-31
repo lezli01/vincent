@@ -1,0 +1,14 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp/worktree","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","model":"Auto","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"What word did I ask you to remember? Reply with just that word."}]},"session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14"}
+{"type":"thinking","subtype":"delta","text":"The user wants me to","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192676229}
+{"type":"thinking","subtype":"delta","text":" recall a word from ","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192676231}
+{"type":"thinking","subtype":"delta","text":"a previous message.","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192676231}
+{"type":"thinking","subtype":"delta","text":"\n\nThe word is \"pomegranate\".","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192676231}
+{"type":"thinking","subtype":"completed","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192676231}
+{"type":"thinking","subtype":"delta","text":"The user wants me to","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678135}
+{"type":"thinking","subtype":"delta","text":" recall a word they ","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678187}
+{"type":"thinking","subtype":"delta","text":"previously asked me ","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678188}
+{"type":"thinking","subtype":"delta","text":"to remember.","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678188}
+{"type":"thinking","subtype":"delta","text":"\n\nThe word is \"pomegranate\".","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678188}
+{"type":"thinking","subtype":"completed","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","timestamp_ms":1788192678188}
+{"type":"result","subtype":"success","duration_ms":4741,"duration_api_ms":4741,"is_error":false,"result":"","session_id":"4b7d1e28-3a90-4f6c-8b21-5d0c7e93af14","request_id":"REQUEST","usage":{"inputTokens":92,"outputTokens":93,"cacheReadTokens":35318,"cacheWriteTokens":0}}

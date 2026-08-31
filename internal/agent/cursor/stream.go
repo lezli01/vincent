@@ -47,6 +47,21 @@ type streamLine struct {
 	} `json:"usage"`
 }
 
+// sessionIDOf reads cursor's `session_id` off one verbatim stream line, or ""
+// when the line has none or does not parse. Every line carries it, including
+// the opening `system`/`init`. It is deliberately separate from parse: a
+// session id is not an event — it is a property of the run, and the run
+// records it (§9.1, §9.7).
+func sessionIDOf(raw []byte) string {
+	var line struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return ""
+	}
+	return line.SessionID
+}
+
 // stream normalizes cursor stream-json lines. The result text needs no state
 // — cursor's terminal `result` carries it whole, unlike codex — but thinking
 // does: reasoning arrives as token-level `delta` lines and is accumulated

@@ -132,7 +132,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here |
 | 27 | GitHub pull requests | **Daemon-side, and read-only until task 069**, like row 26 and through the same gate and credential. *Amended 2026-08-31 (task 068): the read side grows a live **check rollup** for a linked pull request's head commit — `GET /v1/tasks/{id}/github/pull/checks`, one normalized row per check run and per legacy commit status from either leg, never stored — and unlink gains a second home on the task workspace's Pull Request tab (§15 view 2). Task 068 decision 1 settled that merge, close, re-run and comment are written from the TUI only, human-triggered, and 068.4 is the sub-task that lands them and rewrites row 11.* A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29). *Narrowed 2026-08-30 (task 064):* the read-only posture holds in full — no write method, no `POST`, no mutating `gh` subcommand — and a task may now be created **from** a pull request and run on its head branch. That adds a flag to the same envelope (`branch`, `fork`) rather than a snapshot: nothing renderable is stored, so "a pointer, never a snapshot" is unchanged, and there is still no `.Pull` template variable. The consequences live in §10 (a second worktree creation mode, and archive never touching a branch vincent did not cut) and in §5.3's branch-name chain, which gains `pull` above the per-task literal. The listing above is narrowed the same way: it still **defaults** to open, but `?state=` (§13.2) makes a closed or merged pull request reachable, because acting on a merged one and redoing a reverted one are exactly what creating a task from one is for *Amended 2026-08-31 (task 069, issue #273):* the read-only posture gains **exactly one write path** — pull-request creation, from a human. `internal/github.CreatePull` is the only method here that writes, on both legs (`gh pr create`, `POST /repos/{owner}/{name}/pulls`); nothing updates, comments on, closes or merges anything, and `github.enabled` is the only gate on it (§12.3, decision 2: the consent is the keypress and the editable popup in front of it, not a second config key nobody would turn on). Every *other* half of this row is unchanged and load-bearing: the link is still a pointer and never a snapshot, the listing is still pure, the reconciler still never overwrites a human link, and the compare URL is still built by string construction with no request made — it is now the **fallback**, opened when there is no write credential or the create call fails, and the branch behind it has been pushed, so it is no longer a dead page. A create writes the link immediately as `source: human`, which is why the reconciler's poll interval does not make a just-created pull request read as unlinked |
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
-| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary |
+| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7) |
 
 ## 4. Architecture
 
@@ -2021,8 +2021,10 @@ type RunSpec struct {
 // resume its own session (task 063). Optional rather than a method on
 // AgentAdapter so "a new adapter is one implementation with zero core changes"
 // stays true — an adapter that says nothing cannot resume. All three shipped
-// adapters implement it anyway, because §9.x states a missing capability
-// positively: codex and cursor return false with the reason written down.
+// adapters implement it anyway. Since task 070 (2026-08-31) all three return
+// true, each pinned to a named build; the false leg is exercised against a
+// stub adapter in internal/agent/agenttest, which is what keeps the refusal
+// proven now that nothing shipped answers no.
 type Resumer interface {
     SupportsResume() bool
 }
@@ -2408,8 +2410,31 @@ transcript is something people paste into issues.
   but a run with no `PROMPT` argument reads stdin anyway, which is what
   `RunSpec.Prompt`'s stdin-only contract (the Windows argv limit) requires.
   Nothing is emulated — codex resumes its own session, and vincent never
-  replays a conversation as prompt context. cursor still cannot (§9.7), and is
-  the adapter `m14`'s refusal leg now states this over.
+  replays a conversation as prompt context. *Amended 2026-08-31 (task 072,
+  issue #283):* the sentence that said "cursor still cannot" is retired —
+  cursor resumes too (§9.7), so `m14` has no shipped adapter left to state a
+  refusal over and that leg moved to a stub in Go.
+- **A resumed codex run is always full-auto (2026-08-31, task 072 decision
+  1).** `codex exec resume` carries no `-s/--sandbox` at all, so `restricted`
+  has no argv spelling on it and the adapter does not invent one — it always
+  passes `--dangerously-bypass-approvals-and-sandbox`. That is safe only
+  because the combination is unreachable rather than merely unreached:
+  `POST /v1/chats` hardcodes `full_auto` and exposes no request field to
+  override it, and nothing else in vincent sets `RunSpec.ResumeSessionID`. The
+  guard is structural — an `internal/api` test asserts chat creation cannot
+  produce a chat in any other mode — so the day chats gain a permission mode
+  this decision is reopened deliberately instead of being discovered as a
+  silent escalation in the field. Dropping a restriction quietly is the one
+  outcome worth spending a test on.
+- **`session_lost` is the only failure codex classifies (2026-08-31, task 072
+  decision 2).** A thread id codex no longer knows is refused on stderr with a
+  nonzero exit and no JSONL at all — `no rollout found for thread id <id>
+  (code -32600)`, captured from 0.150.1 — and that wording is matched **only**
+  for a run that actually passed a resume id, so no workflow step can be
+  misdiagnosed (§9.2's rule, verbatim). The usage-limit and unauthenticated
+  wordings stay unclassified, and task 003's decision still holds for them: an
+  account cannot be made to hit its quota on demand, so those have no
+  capturable fixture, while a bad thread id costs nothing to reproduce.
 - Normalizes Codex's JSONL events (`thread.started`, `item.started`,
   `item.updated`, `item.completed`, `turn.completed`, `turn.failed`, `error`);
   token usage comes from `turn.completed` (`input_tokens` taken verbatim, as
@@ -2812,15 +2837,28 @@ would invalidate every one of them.
   fixtures — and the shared vocabulary was designed so cursor can fill these
   later without another wire change. Until it does, all of them stay zero and
   none of them is emulated, asserted over every cursor fixture.
-- **Cannot resume (stated positively, 2026-08-30, task 063).**
-  `agent.CanResume` is false and a chat on cursor is refused at creation.
-  cursor-agent has a `--resume`, and its stream carries `session_id`, but the
-  adapter reads neither and no captured fixture pins the behaviour. Same rule,
-  same reason, same deferral (§20). *Amended 2026-08-31 (task 070):* this used
-  to open "As with codex" — it no longer holds. codex met exactly this bullet's
-  precondition and resumes now (§9.3), which leaves cursor the only adapter a
-  chat is refused on, and the one `m14`'s refusal leg is written against.
-- Invocation (pinned against cursor-agent 2026.08.04-aaa8809):
+- **Resume (pinned against cursor-agent 2026.08.11-e8db854, 2026-08-31, task
+  072).** `agent.CanResume` is true for cursor, so a chat may run on it (§5.5,
+  §13.2), replacing task 063's "cannot resume" on that decision's own deferral
+  terms. The flag is `--resume <chatId>`, and the id it accepts **is** the
+  `session_id` the stream stamps on every line — the single open question this
+  work carried, settled by capture, and the reason no `SessionCreator` seam
+  was built. `--resume` takes an *optional* value, which would be a hazard for
+  a CLI that also took a positional prompt; it is safe here only because this
+  adapter passes none (the prompt is piped on stdin), so the id is the last
+  thing on argv with nothing after it to swallow.
+- **cursor cannot report a lost session (stated positively, 2026-08-31, task
+  072 decision 2).** Handed a `--resume` id it has never seen, cursor-agent
+  does not refuse: it starts a fresh chat *under that id*, stamps it on every
+  line and exits 0 (captured against 2026.08.11-e8db854). So this adapter
+  ships no `session_lost` classifier — there is no refusal to recognize, and
+  inventing a match for a CLI that answered would be exactly the emulation
+  §9.x forbids. A cursor chat whose id has aged out gets an answer with no
+  memory of the conversation rather than a `session_lost` failure. The
+  usage-limit and unauthenticated wordings stay unclassified for task 003's
+  original reason, unchanged.
+- Invocation (pinned against cursor-agent 2026.08.04-aaa8809, and
+  2026.08.11-e8db854 for `--resume`):
   `cursor-agent -p --output-format stream-json --trust`, cwd = worktree,
   prompt via **stdin** (piped, no prompt argument — verified: the echoed
   `user` line carries the piped text). Full-auto adds `--force`; restricted
@@ -7475,13 +7513,16 @@ the † descoping at roughly its gap to Linux. Details in tasks.md T4.6.
   future work on landing, 2026-08-30** (§5.5, task 063, issue #255). Like the
   MCP entry above it was never listed here, so it is recorded as promoted rather
   than struck through. Named here so the next person does not rediscover them,
-  the pieces deliberately left out of the first cut: ~~**codex `exec resume
-  <thread_id>`**~~ — **landed 2026-08-31 (task 070, issue #268)**, with the
-  fixture that entry required, captured against codex-cli 0.150.1 (§9.3) — and
-  **cursor `--resume`**, which still lands with a fixture captured against a
-  named CLI version the way every other adapter capability has; until then
-  cursor is *refused* at chat creation, never emulated by replaying a log as
-  prompt context; a **`notify.chat_on` key**, if
+  the pieces deliberately left out of the first cut. Two are now done:
+  ~~**codex `exec resume <thread_id>`**~~ — **landed 2026-08-31 (task 070,
+  issue #268)** — and ~~**cursor `--resume`**~~ — **landed 2026-08-31 (task
+  072, issue #283)** — each pinned to a captured fixture from a named build,
+  codex-cli 0.150.1 and cursor-agent 2026.08.11-e8db854, which is the
+  condition this entry and task 063 decision 3 both attached (§9.3, §9.7). No
+  shipped adapter is refused at chat creation any more; the
+  `agent_cannot_resume` path itself is kept, is still the contract for the
+  next adapter, and is proven against a stub. Still open: a
+  **`notify.chat_on` key**, if
   `awaiting_input` on a long-open chat proves to need an outward signal (§12.3);
   and **chat routes as MCP tools**, which stays refused on the design line in
   §13.4 rather than merely deferred.

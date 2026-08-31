@@ -26,13 +26,19 @@ list with the user-facing context a commit subject cannot carry.
   one, so a second adapter that reports a plan fills the same record. Because
   transcripts are re-normalized on every read, this improves codex transcripts
   **already on disk**. Full detail in spec §9.3, §13.2, §13.3 and §15.
-- **Chats work on codex.** `codex exec resume <thread_id>` is wired and
-  `thread.started`'s id is read, so a chat on codex holds context across turns
-  instead of being refused at creation with `agent_cannot_resume`. The argv is
-  pinned by a capture against codex-cli 0.150.1, in which the resumed turn
-  reports the same thread id and answers a question about the previous one —
-  the fixture requirement task 063 attached to this. cursor still cannot resume
-  and is still refused, which is stated rather than emulated (spec §9.7).
+- **Chats work on codex and cursor.** Both adapters now resume their own
+  session, so a chat can be created on either and turn 2 sees turn 1 — codex
+  through `codex exec --json resume <thread_id>`, cursor through
+  `--resume <session_id>`. Each half is pinned to a fixture captured from a
+  named CLI build (codex-cli 0.150.1, cursor-agent 2026.08.11-e8db854), which
+  was the condition task 063 attached to this. Nothing replays a log as prompt
+  context; the `agent_cannot_resume` refusal is kept as the contract for the
+  next adapter, and now has no shipped adapter to refuse. Two limitations are
+  stated rather than worked around: a resumed codex run is always full-auto
+  (`codex exec resume` has no `--sandbox`, and a chat has no permission mode to
+  ask for), and cursor never reports `session_lost` — handed an id it does not
+  know it starts a fresh chat under that id and answers, so a cursor chat whose
+  session has aged out replies without remembering (spec §9.3, §9.7).
 - **`agent.result` reports codex's cache and reasoning token spend.** All five
   of `turn.completed.usage`'s counters are read now, not two:
   `cached_input_tokens` and `cache_write_input_tokens` land in the existing

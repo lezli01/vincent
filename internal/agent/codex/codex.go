@@ -1,7 +1,8 @@
 // Package codex implements the agent adapter for the Codex CLI: headless
 // `codex exec --json` runs with JSONL event parsing, model/effort
 // passthrough, and tree-kill support (spec §9.3; T2.9). Invocation and
-// stream shapes are pinned against codex-cli 0.142.5.
+// stream shapes are pinned against codex-cli 0.142.5, and the resumed
+// invocation (`exec resume`, §5.5) against 0.150.1.
 package codex
 
 import (
@@ -144,15 +145,31 @@ func (a *Adapter) loggedIn(ctx context.Context, path string) *bool {
 }
 
 // buildArgs assembles the pinned CLI invocation (spec §9.3, verified against
-// codex-cli 0.142.5). Full-auto is the documented automation switch;
-// restricted confines writes to the worktree — note that a `git commit` from
-// a restricted step may be denied in a linked worktree, whose real git dir
-// lives under the main repo (vincent itself never needs commits). The prompt
-// is never an argv element: with stdin piped and no prompt argument, codex
-// reads the instructions from stdin.
+// codex-cli 0.142.5 for a fresh run and 0.150.1 for a resumed one). Full-auto
+// is the documented automation switch; restricted confines writes to the
+// worktree — note that a `git commit` from a restricted step may be denied in
+// a linked worktree, whose real git dir lives under the main repo (vincent
+// itself never needs commits).
+//
+// A resumed run is a different subcommand, not a flag: `codex exec resume
+// [SESSION_ID] [PROMPT]`. Two consequences the fresh shape does not have:
+//
+//   - The prompt must be the literal `-`. `codex exec` with no prompt
+//     argument reads stdin, which is why a fresh run passes none; `exec
+//     resume` reads stdin only "if `-` is used" (0.150.1 --help). Omitting it
+//     leaves the child waiting on a stdin nobody reads until the step
+//     timeout.
+//   - `exec resume` has no `-s/--sandbox`, so restricted has no argv spelling
+//     here at all and a resumed run is always full-auto (task 072 decision 1).
+//     Nothing in vincent can reach that combination: only a chat turn sets
+//     ResumeSessionID, and POST /v1/chats hardcodes full_auto with no request
+//     field to override it. The day that stops being true, this needs an
+//     answer rather than a silently dropped restriction, which is what
+//     TestChatsAreAlwaysFullAuto in internal/api exists to force.
 func buildArgs(spec agent.RunSpec) []string {
+	resuming := spec.ResumeSessionID != ""
 	args := []string{"exec", "--json"}
-	if spec.ResumeSessionID != "" {
+	if resuming {
 		// `codex exec resume [SESSION_ID] [PROMPT]`, verified against
 		// codex-cli 0.150.1 (task 070). The prompt is left off argv on
 		// purpose: `resume`'s help documents `-` for stdin, but a run with
@@ -160,13 +177,25 @@ func buildArgs(spec agent.RunSpec) []string {
 		// "Reading prompt from stdin…" — which is what `exec` does and what
 		// RunSpec.Prompt's stdin-only contract needs (Windows argv limit).
 		//
-		// `resume` takes the same options as `exec`, so everything below
-		// still applies; only the subcommand and the id are inserted here.
+		// `resume` takes the same options as `exec` bar one, so everything
+		// below still applies; only the subcommand and the id are inserted
+		// here.
 		args = append(args, "resume", spec.ResumeSessionID)
 	}
-	if spec.PermissionMode == agent.Restricted {
+	switch {
+	case resuming:
+		// The one option `exec resume` does not take is `-s/--sandbox`; it
+		// carries only --dangerously-bypass-approvals-and-sandbox. So
+		// Restricted has no argv spelling on a resumed run, and such a run is
+		// always full-auto (§9.3, task 072 decision 1). That is guarded
+		// structurally rather than by a run-time check: POST /v1/chats
+		// hardcodes full_auto with no request field to override it, nothing
+		// else in the codebase sets RunSpec.ResumeSessionID, and
+		// TestChatsAreAlwaysFullAuto fails the day either changes.
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+	case spec.PermissionMode == agent.Restricted:
 		args = append(args, "--sandbox", "workspace-write")
-	} else {
+	default:
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}
 	if spec.Model != "" {
@@ -236,6 +265,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	}
 	r := &run{
 		cmd:        cmd,
+		resuming:   spec.ResumeSessionID != "",
 		proc:       proc,
 		stderr:     stderr,
 		events:     make(chan agent.Event, 64),
@@ -263,8 +293,20 @@ type run struct {
 	readerDone chan struct{}
 	procDone   chan struct{}
 
+	// resuming records that this run was started with a thread id, so Wait
+	// can tell a thread codex refused to load from any other failure
+	// (task 072 decision 2).
+	resuming bool
+
 	mu       sync.Mutex
 	terminal *agent.RunResult // assembled from turn.completed / turn.failed
+	// sessionID is the last `thread_id` codex reported. Only `thread.started`
+	// carries one — unlike claude, codex does not stamp it on every line — and
+	// a resumed run repeats the id it was given (verified against 0.150.1,
+	// testdata/resume_0.150.1.jsonl). Last-wins anyway, matching claude (§9.2):
+	// what a future build does with a forked thread is its business, and the
+	// id the run actually finished in is the one a chat must store.
+	sessionID string
 	// streamErr is readLoop's own reader failing, latched for Wait. It is
 	// vincent losing the stream, not the CLI failing, and Wait says so with
 	// agent.FailureStreamError rather than letting the exit code speak for a
@@ -291,6 +333,11 @@ func (r *run) readLoop(rd io.Reader) {
 		copy(line, sc.Bytes())
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
+		}
+		if tid := threadIDOf(line); tid != "" {
+			r.mu.Lock()
+			r.sessionID = tid
+			r.mu.Unlock()
 		}
 		ev := st.parse(line)
 		if ev.Type == agent.EventResult && ev.Result != nil {
@@ -336,13 +383,12 @@ func (r *run) PID() int { return r.cmd.Process.Pid }
 // consumed and the process has exited, then assembles the RunResult per
 // §7.1: the terminal turn event plus the exit code.
 //
-// RunResult.Failure is deliberately left nil (task 003): codex's usage-limit
-// and unauthenticated wordings are not fixture-verified, and this adapter
-// ships no guess in their place. A quota stop here therefore reads exactly as
-// it did before task 003 — nonzero_exit or agent_error — rather than as an
-// invented match. Adding it later is a `classify` beside this call and a
-// `usage-limit` case in cmd/fakeagent's codex dialect, which is already there
-// and already asserted to produce today's behaviour.
+// A usage-limit or unauthenticated stop is still deliberately left
+// unclassified (task 003): those wordings are not fixture-verified, and this
+// adapter ships no guess in their place. A quota stop here therefore reads
+// exactly as it did before task 003 — nonzero_exit or agent_error. The one
+// condition it does name is a thread codex refused to resume, which is
+// fixture-verified (task 070; testdata/resume_lost_0.150.1.txt).
 func (r *run) Wait() (agent.RunResult, error) {
 	r.waitOnce.Do(func() {
 		<-r.readerDone
@@ -356,8 +402,9 @@ func (r *run) Wait() (agent.RunResult, error) {
 		}
 		res := agent.RunResult{ExitCode: r.cmd.ProcessState.ExitCode()}
 		r.mu.Lock()
-		terminal, streamErr := r.terminal, r.streamErr
+		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		r.mu.Unlock()
+		res.SessionID = sessionID
 		if terminal != nil {
 			res.IsError = terminal.IsError
 			res.ErrorMessage = terminal.ErrorMessage
@@ -378,6 +425,12 @@ func (r *run) Wait() (agent.RunResult, error) {
 				res.ErrorMessage += ": " + tail
 			}
 		}
+		// The adapter's verdict on *why* the run stopped (§9.1). It happens
+		// here because this is the one place that holds both the terminal
+		// result and the stderr tail; the engine sees neither. A refused
+		// resume is the only thing codex classifies, and only for a run that
+		// actually passed a thread id (task 072 decision 2).
+		res.Failure = classifyResume(res, r.stderr.String(), r.resuming)
 		// A stream vincent could not read to the end outranks whatever the
 		// exit code says: the run may well have finished cleanly, but the
 		// record of it is missing lines, and §7.1 success is a claim about
@@ -427,4 +480,8 @@ func (r *run) Argv() []string { return r.cmd.Args }
 // thread_id and answers a question about the previous turn). Nothing is
 // emulated: codex resumes its own session, and vincent never replays a
 // conversation as prompt context.
+//
+// Resuming is what lets a chat (§5.5) run on this adapter. Each of its three
+// halves has a captured fixture under testdata/: the argv in buildArgs, the
+// `thread_id` in stream.go, and the refusal of a dead id in failure.go.
 func (a *Adapter) SupportsResume() bool { return true }

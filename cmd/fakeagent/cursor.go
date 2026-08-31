@@ -23,21 +23,34 @@ Tip: use --model <id> (or /model <id> in interactive mode) to switch.
 `
 
 // cursorMain is the cursor dialect (T5.2): argv shaped like
-// `cursor-agent -p --output-format stream-json --trust …`, prompt from stdin,
+// `cursor-agent -p --output-format stream-json --trust [--resume <id>] …`,
+// prompt from stdin,
 // cursor stream-json on stdout. The emitted shapes mirror the fixtures
 // captured from a real cursor-agent 2026.08.04-aaa8809
 // (internal/agent/cursor/testdata).
 func cursorMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
 
+	// The conversation is resolved before a single stream line is emitted
+	// (task 072). Unlike the other two dialects there is no refusal leg:
+	// cursor adopts an id it does not know and starts a fresh chat under it.
+	// The session id then rides on every line, which emit fills in.
+	prior := openSession(dialectCursor)
+	rememberPrompt(prompt)
+
 	emit(map[string]any{
 		"type": "system", "subtype": "init", "apiKeySource": "login",
-		"session_id": "fake-session-1", "model": "Fake", "permissionMode": "default",
+		"model": "Fake", "permissionMode": "default",
 	})
 	emit(map[string]any{"type": "user", "message": map[string]any{
 		"role":    "user",
 		"content": []any{map[string]any{"type": "text", "text": string(prompt)}},
-	}, "session_id": "fake-session-1"})
+	}})
+	if line := recallLine(prior); line != "" {
+		// What a resumed chat remembers. A fresh one says nothing here, so a
+		// vincent that dropped --resume fails by omission.
+		emitCursorText(line)
+	}
 
 	switch scenario {
 	case "error-event":

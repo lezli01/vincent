@@ -46,7 +46,8 @@ ask the next question with the first still in context.
 
 Continuity is the agent CLI resuming **its own** session, not vincent replaying
 the conversation into the next prompt. That means only an adapter that can
-resume may hold a chat: today that is `claude` and `codex`, and `cursor` is
+resume may hold a chat — all three of `claude`, `codex` and `cursor` can, each
+pinned to a captured fixture from a named CLI build. One that could not would be
 refused at creation rather than having continuity faked for it.
 
 A chat is real work, not a scratchpad. The agent may commit to the chat's

@@ -26,9 +26,15 @@ import (
 // produce.
 const (
 	// ReasonSessionLost is a turn whose stored session id the CLI no longer
-	// knows (decision 4). The chat stays usable; whether to start a fresh
-	// conversation is a human decision, because an agent answering with none
-	// of the thread in context reads exactly like one that has it.
+	// knows (task 063 decision 4). The chat stays usable; whether to start a
+	// fresh conversation is a human decision, because an agent answering with
+	// none of the thread in context reads exactly like one that has it.
+	//
+	// Only an adapter that recognizes its CLI's refusal can reach this:
+	// claude and codex do, cursor cannot, because cursor-agent adopts an
+	// unknown resume id and answers rather than refusing (§9.7, task 070
+	// decision 2). Nothing here compensates for that — the runner acts on the
+	// adapter's verdict and never guesses at one.
 	ReasonSessionLost = "session_lost"
 	// ReasonAgentError is the generic "the run failed" reason, spelled the
 	// same as the engine's.
