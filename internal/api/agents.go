@@ -16,6 +16,16 @@ type agentResponse struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// SupportsResume is whether this adapter can resume its own session, and
+	// so whether it may hold a chat (§5.5, decision row 29). It comes from
+	// the same `agent.CanResume` the chat-creation gate consults, so a picker
+	// built on it and the `agent_cannot_resume` refusal cannot disagree.
+	//
+	// Like `restricted_verdict` it needs no installed binary — it is a fact
+	// about the adapter — but it is null rather than false when there is no
+	// registry to ask, because "nobody can say" and "no" are different
+	// answers and only the second may filter anything out.
+	SupportsResume *bool `json:"supports_resume"`
 	// InputVerdict is the daemon's answer to whether this adapter may back a
 	// step declaring `on_input: require` (§7.4, task 013): supported,
 	// unsupported, or unknown. It is not derivable from supports_input alone —
@@ -82,6 +92,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			Path:              e.Availability.Path,
 			Version:           e.Availability.Version,
 			SupportsInput:     e.Availability.SupportsInput,
+			SupportsResume:    s.resumeSupport(name),
 			InputVerdict:      string(e.InputVerdict()),
 			VersionVerdict:    string(e.Availability.VersionVerdict),
 			TestedVersions:    e.Availability.TestedVersions,
@@ -108,4 +119,18 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": out})
+}
+
+// resumeSupport answers `supports_resume` for one adapter, or nil when there
+// is no registry to ask.
+func (s *Server) resumeSupport(name string) *bool {
+	if s.deps.Agents == nil {
+		return nil
+	}
+	a, ok := s.deps.Agents.Get(name)
+	if !ok {
+		return nil
+	}
+	can := agent.CanResume(a)
+	return &can
 }

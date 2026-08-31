@@ -257,3 +257,72 @@ func TestAgentsWithoutCatalog(t *testing.T) {
 	resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
 	wantError(t, resp, body, http.StatusInternalServerError, CodeInternal)
 }
+
+// TestAgentsReportSupportsResume pins §9.6's `supports_resume` (added
+// 2026-08-31, issue #279): the field the TUI's chat picker filters on. It
+// comes from the same `agent.CanResume` the creation gate in
+// POST /v1/chats consults, so the picker and the `agent_cannot_resume`
+// refusal cannot disagree (decision row 29) — claude yes, codex and cursor
+// no, whether or not a binary is installed.
+//
+// Null is a fourth answer rather than a false: a daemon with no registry to
+// ask says nothing, and no client may filter an adapter out on that.
+func TestAgentsReportSupportsResume(t *testing.T) {
+	fake := agenttest.BuildFakeAgent(t)
+	newReg := func() *agent.Registry {
+		return agent.NewRegistry(
+			claude.New(func() string { return fake }),
+			codex.New(func() string { return "/nonexistent/codex-not-here" }),
+			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+		)
+	}
+	probe := func(t *testing.T, withRegistry bool) map[string]*bool {
+		t.Helper()
+		reg := newReg()
+		deps := Deps{
+			Token:       testToken,
+			Config:      config.Default,
+			StartedAt:   time.Now(),
+			ListenAddr:  "127.0.0.1:0",
+			RequestStop: func() {},
+			Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Catalog:     agent.NewCatalogCache(reg),
+		}
+		if withRegistry {
+			deps.Agents = reg
+		}
+		ts := httptest.NewServer(New(deps).Handler())
+		t.Cleanup(ts.Close)
+		resp, body := doRequest(t, ts, http.MethodGet, "/v1/agents", testToken)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("agents: %d %s", resp.StatusCode, body)
+		}
+		var out struct {
+			Agents []agentResponse `json:"agents"`
+		}
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("agents body: %v", err)
+		}
+		got := map[string]*bool{}
+		for _, a := range out.Agents {
+			got[a.Name] = a.SupportsResume
+		}
+		return got
+	}
+
+	got := probe(t, true)
+	for name, want := range map[string]bool{"claude": true, "codex": false, "cursor": false} {
+		switch v := got[name]; {
+		case v == nil:
+			t.Errorf("%s supports_resume = null, want %v — the registry was asked", name, want)
+		case *v != want:
+			t.Errorf("%s supports_resume = %v, want %v (§9.2, §9.3, §9.7)", name, *v, want)
+		}
+	}
+
+	for name, v := range probe(t, false) {
+		if v != nil {
+			t.Errorf("%s supports_resume = %v with no registry to ask, want null", name, *v)
+		}
+	}
+}

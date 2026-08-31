@@ -33,7 +33,11 @@ type (
 	chatsLoadedMsg struct {
 		chats []apiclient.Chat
 		names map[int64]string
-		err   error
+		// projectsListed reports that the load reached the project
+		// registry, so an empty names map means "none registered" rather
+		// than "not asked yet" or "the listing failed".
+		projectsListed bool
+		err            error
 	}
 	// chatArchivedMsg reports a completed archive, or the refusal that came
 	// back instead — a dirty worktree answers 409 and is offered the force.
@@ -64,6 +68,10 @@ type chatsView struct {
 
 	chats []apiclient.Chat
 	names map[int64]string
+	// projectsListed is what makes an empty names map readable: only a load
+	// that actually reached the project registry may be quoted as "there is
+	// no project here".
+	projectsListed bool
 
 	loaded   bool
 	loading  bool
@@ -164,6 +172,18 @@ func (v *chatsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case chatsLoadedMsg:
 		v.applyLoaded(msg)
 		return v, nil
+	case newChatFieldsMsg:
+		// The new-chat form's own fetch landing. The form is a layer over
+		// this board rather than a view, so it has no `update` for anything
+		// but keys: this is its only message entry point, and without this
+		// case the projects the daemon listed are dropped and both pickers
+		// stay empty for the life of the form (issue #279). A draft
+		// discarded before its fetch landed must not be resurrected by it,
+		// so a closed form drops the message rather than reopening.
+		if v.create != nil {
+			v.create.applyFields(msg)
+		}
+		return v, nil
 	case chatArchivedMsg:
 		return v, v.applyArchived(msg)
 	case chatCreatedMsg:
@@ -204,14 +224,16 @@ func (v *chatsView) loadCmd() tea.Cmd {
 			return chatsLoadedMsg{err: err}
 		}
 		names := map[int64]string{}
+		listed := false
 		// A project listing that fails is not a board that fails: the
 		// headings fall back to the id, which is still a stable grouping.
 		if projects, perr := client.ListProjects(ctx); perr == nil {
+			listed = true
 			for _, p := range projects {
 				names[p.ID] = p.Name
 			}
 		}
-		return chatsLoadedMsg{chats: chats, names: names}
+		return chatsLoadedMsg{chats: chats, names: names, projectsListed: listed}
 	}
 }
 
@@ -226,6 +248,7 @@ func (v *chatsView) applyLoaded(msg chatsLoadedMsg) {
 	v.lastLoad = v.now()
 	sortChats(msg.chats)
 	v.chats, v.names = msg.chats, msg.names
+	v.projectsListed = msg.projectsListed
 	v.folds = pruneChatFolds(v.folds, v.chats, v.names)
 	v.restoreSelection()
 }
@@ -396,6 +419,15 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, func() tea.Msg { return openChatMsg{id: id} }
 		}
 	case "n":
+		// A chat needs a project, and the form offers no way to register
+		// one: opening it on an installation that has none is a dead end
+		// whose only exit is `esc` (issue #279). Refuse only on a positive
+		// answer — a board that has not listed the projects yet, or whose
+		// listing failed, knows nothing and opens the form as before.
+		if v.projectsListed && len(v.names) == 0 {
+			v.note, v.noteBad = "register a project first — the Projects view (4) adds one", true
+			return v, nil
+		}
 		v.create = newNewChatForm(v.client, v.hintedProject())
 		return v, v.create.init()
 	case "a":

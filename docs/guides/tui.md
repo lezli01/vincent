@@ -985,9 +985,18 @@ task-only.
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes
 project, title, agent, model, effort and base branch; `ctrl+s` creates and drops
-you straight into the workspace. Only an agent that can resume its own session
-can hold a chat, and picking one that cannot is refused on the form with that
-reason, not with a generic failure.
+you straight into the workspace. With no project registered, `n` says so on the
+board instead of opening a form you could not submit — add a repository in the
+Projects view (`4`) first.
+
+Only an agent that can resume its own session can hold a chat, so the agent
+picker offers only those. The daemon refuses the rest at creation with that
+reason rather than a generic failure, and the form still renders it — it is the
+backstop, not the thing you are expected to walk into.
+
+The draft owns the keyboard while it is open: every row, including the two
+pickers, so no keystroke leaks out to the global keys. `esc` discards it and
+returns you to the board.
 
 | Key | Does, in the create form |
 |---|---|

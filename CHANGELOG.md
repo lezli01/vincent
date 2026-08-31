@@ -510,6 +510,27 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The new-chat form's pickers never filled, and its picker rows leaked
+  keys.** The form fetched the projects and the adapters and then dropped the
+  answer on the floor: the message it comes back in had no case in the chats
+  board's update, which is the form's only message entry point. Both pickers
+  stayed empty for the life of the form, so `←`/`→` did nothing on either row,
+  the project row showed a numeric id instead of the project's name, the agent
+  row read "the daemon's default" and could not be moved off it, and a failed
+  `GET /v1/projects` was swallowed — a broken form looked exactly like a
+  working one. On a fresh installation with nothing on the board the form
+  opened with no project at all and answered `ctrl+s` with `pick a project`,
+  with no field that would accept one; `n` there now says to register a project
+  first rather than opening a dead end. The agent picker offers only adapters
+  that can hold a chat, using a new `supports_resume` field on
+  `GET /v1/agents` — the daemon's `agent_cannot_resume` refusal is unchanged
+  and stays the authority, it is just no longer something the form walks you
+  into. An adapter whose daemon is too old to send the field is not judged and
+  not filtered out. Finally, an open draft now owns the keyboard on every row:
+  `q` on the project or agent row used to quit the TUI with the draft, and
+  `n`, `!`, `:`, `?` and `M` fired straight through the open form. `esc` is
+  still the way out.
+
 - **`n` on the chats board opened the new-task form.** The chats board's own
   `n` — "start a chat in the project you are looking at", the one key whose
   meaning depends on where you are — never reached the board: the root's global

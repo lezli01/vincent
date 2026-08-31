@@ -28,6 +28,12 @@ type Agent struct {
 	Path          string `json:"path,omitempty"`
 	Version       string `json:"version,omitempty"`
 	SupportsInput bool   `json:"supports_input"`
+	// SupportsResume is whether this adapter can resume its own session, and
+	// so whether it may hold a chat (§5.5, decision row 29). It is a pointer
+	// for the same reason LoggedIn is: nil is "no judgement" — a daemon that
+	// predates the field, or one with no adapter registry to ask — and
+	// nothing may be refused on the strength of a field that was never sent.
+	SupportsResume *bool `json:"supports_resume"`
 	// InputVerdict is the daemon's verdict on backing an `on_input: require`
 	// step (§7.4, task 013): "supported", "unsupported" or "unknown". Empty
 	// means the daemon predates the field, which is treated as unknown —
@@ -156,6 +162,12 @@ const (
 // a daemon too old to send one, both answer false, exactly as the daemon's own
 // gate does.
 func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUnsupported }
+
+// CannotResume reports an adapter the daemon would refuse a chat on (§5.5,
+// decision row 29). Only a positive no counts: a nil SupportsResume — an
+// older daemon, or one that cannot say — answers false, exactly as the
+// input and restricted verdicts do.
+func (a Agent) CannotResume() bool { return a.SupportsResume != nil && !*a.SupportsResume }
 
 // VersionVerdict values as GET /v1/agents reports them (task 041).
 const (
