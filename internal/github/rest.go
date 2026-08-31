@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -408,4 +409,92 @@ func parseRESTChecks(runsBody, statusBody []byte, ref string, now time.Time) (Ch
 		})
 	}
 	return newRollup(ref, runs, now), nil
+}
+
+// restCreatePull is the REST half of the one write path (task 069):
+// `POST /repos/{owner}/{name}/pulls`. It is the only non-GET this package
+// makes, and the response it decodes is the same restPull the read side
+// already normalizes — a created pull request and a fetched one are the same
+// resource, so a second shape for one of them would be a second place for the
+// names to drift.
+func (c *Client) restCreatePull(ctx context.Context, cred credential, repo Repo, opts CreateOptions) (PullRequest, error) {
+	body, err := c.restPOST(ctx, cred, fmt.Sprintf("/repos/%s/%s/pulls",
+		url.PathEscape(repo.Owner), url.PathEscape(repo.Name)), map[string]any{
+		"title": opts.Title,
+		"body":  opts.Body,
+		"head":  opts.Head,
+		"base":  opts.Base,
+		"draft": opts.Draft,
+	})
+	if err != nil {
+		return PullRequest{}, err
+	}
+	return parseRESTPull(body, repo, c.now())
+}
+
+// restPOST is restGET's write counterpart. The two are separate functions
+// rather than one with a method argument so that "this package makes exactly
+// one kind of write" is a thing a reader can check by looking at the callers
+// of this one.
+func (c *Client) restPOST(ctx context.Context, cred credential, path string, payload any) ([]byte, error) {
+	base := c.opts.BaseURL
+	if base == "" {
+		base = DefaultBaseURL
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, newError(ReasonBadRequest, "encode request: %v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(base, "/")+path, bytes.NewReader(encoded))
+	if err != nil {
+		return nil, newError(ReasonUnreachable, "build request: %v", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Api-Version", apiVersion)
+	req.Header.Set("User-Agent", "vincent")
+	req.Header.Set("Authorization", "Bearer "+cred.token)
+
+	client := c.opts.HTTP
+	if client == nil {
+		client = &http.Client{Timeout: RemoteTimeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, newError(ReasonTimeout, "%v", err)
+		}
+		return nil, newError(ReasonUnreachable, "%v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, restWriteError(resp, respBody)
+	}
+	if readErr != nil {
+		return nil, newError(ReasonUnreachable, "read response: %v", readErr)
+	}
+	return respBody, nil
+}
+
+// restWriteError is restError plus the two statuses only a write produces.
+// GitHub answers 422 both for "a pull request already exists for this head"
+// and for every other unusable value, and the two are separated by the
+// message the API itself writes — the one place this package reads a GitHub
+// sentence, because the status alone cannot tell a duplicate from a typo'd
+// base branch. The sentence itself never leaves as anything but Detail.
+func restWriteError(resp *http.Response, body []byte) *Error {
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 512 {
+			detail = detail[:512]
+		}
+		reason := ReasonBadRequest
+		if strings.Contains(strings.ToLower(detail), "already exists") {
+			reason = ReasonPullExists
+		}
+		return &Error{Reason: reason, Detail: fmt.Sprintf("http 422: %s", detail)}
+	}
+	return restError(resp, body)
 }

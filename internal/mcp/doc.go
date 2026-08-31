@@ -19,9 +19,11 @@
 // marshal/unmarshal round trip per call and one place — errorFromEnvelope —
 // that turns an HTTP error envelope into an MCP error.
 //
-// Five routes are deliberately absent, and the exclusion is a design line
+// Several routes are deliberately absent, and the exclusion is a design line
 // rather than an oversight (decision 4, spec §13.4): an agent must not be able
-// to stop, garbage-collect or reconfigure the daemon supervising it. They are
+// to stop, garbage-collect or reconfigure the daemon supervising it, and — since
+// task 069 gave vincent one write path to GitHub — must not be the one opening
+// a pull request in a human's name. They are
 // listed in Excluded and asserted absent by name.
 //
 // # Dependency direction

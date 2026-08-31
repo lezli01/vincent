@@ -82,7 +82,7 @@ const (
 	// a chooser above its text, and a row shared with the others could only
 	// describe one of them.
 	ctxFollowUpForm bindingContext = "follow-up form"
-	// ctxCreatePR is the compare-URL editor (task 052.6). Its own context for
+	// ctxCreatePR is the pull-request form (task 052.6, task 069). Its own context for
 	// the reason the other popups have theirs: while it is open it owns the
 	// keyboard, and its two rows are nothing like the form underneath.
 	ctxCreatePR bindingContext = "open a pull request"
@@ -205,7 +205,7 @@ var bindings = []binding{
 	// reach a browser: neither writes anything in vincent, which is what
 	// keeps §15's "read-only inspector" true in the sense it was written.
 	{key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskDetails, hint: "o pull request", priority: 4, github: true},
-	{key: "P", label: "open a pull request for this task's branch — the prefill is editable first, and nothing is sent to GitHub from here", scope: scopePanel, context: ctxTaskDetails, hint: "P open a PR", priority: 5, github: true},
+	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskDetails, hint: "P open a PR", priority: 5, github: true},
 
 	// Output pane.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
@@ -335,6 +335,11 @@ var bindings = []binding{
 	{key: "o", label: "open the selected pull request in a browser", scope: scopePanel, context: ctxPullRequests, hint: "o browser", priority: 2},
 	{key: "c", label: "create a task from this pull request — it runs on the pull request's head branch, and the form is editable first", scope: scopePanel, context: ctxPullRequests, hint: "c new task", priority: 3},
 	{key: "l", label: "link this pull request to a task in the same project", scope: scopePanel, context: ctxPullRequests, hint: "l link", priority: 4},
+	// The takeover's half of task 069. This screen has no task rows — its
+	// question is "what is open across everything I run" — so the offer is a
+	// picker of tasks that have a branch and no pull request, and choosing
+	// one opens that task's workspace with the form up.
+	{key: "P", label: "open a pull request for a task that has none — pick the task, then push its branch and create it", scope: scopePanel, context: ctxPullRequests, hint: "P open a PR", priority: 5, github: true},
 	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
 	{key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6},
 	{key: "R", label: "re-list every project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7},
@@ -382,12 +387,14 @@ var bindings = []binding{
 	{key: "ctrl+t", label: "read this task's details without leaving the form — the draft is kept (ctrl+t again, or esc, comes back)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 	{key: "esc", label: "close the popup without running anything (the draft is discarded)", scope: scopePanel, context: ctxFollowUpForm, noPalette: true},
 
-	// The compare-URL editor (task 052.6). Same again: the popup owns the
+	// The pull-request form (task 052.6, task 069). Same again: the popup owns the
 	// keyboard while it is open and prints its own key line.
-	{key: "enter", label: "edit the row under the cursor — the pull request's title or its body", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "enter", label: "edit the row under the cursor — the pull request's title or its body, or toggle the draft row", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "space", label: "toggle draft / ready for review, on the draft row", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 	{key: "e", label: "write the body in $EDITOR", scope: scopePanel, context: ctxCreatePR, noPalette: true},
-	{key: "ctrl+s", label: "open GitHub's own new-pull-request page with this prefill", scope: scopePanel, context: ctxCreatePR, noPalette: true},
-	{key: "esc", label: "close the popup without opening anything (the draft is discarded)", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "ctrl+s", label: "push the branch to origin and open the pull request", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "ctrl+o", label: "open GitHub's own new-pull-request page with this prefill instead", scope: scopePanel, context: ctxCreatePR, noPalette: true},
+	{key: "esc", label: "close the popup without sending anything (the draft is discarded)", scope: scopePanel, context: ctxCreatePR, noPalette: true},
 }
 
 // isHomeContext reports whether a context belongs to the board/task daily loop

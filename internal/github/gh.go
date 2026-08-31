@@ -413,3 +413,98 @@ func parseGHChecks(out []byte, now time.Time) (CheckRollup, error) {
 	}
 	return newRollup(raw.HeadOid, runs, now), nil
 }
+
+// ghCreatePull is the `gh` half of the one write path (task 069).
+//
+// `gh pr create` prints the new pull request's web URL on stdout and nothing
+// else — there is no `--json` on it — so the number is parsed out of that
+// URL and the pull request is then *read back* through the existing
+// ghGetPull. Parsing `gh`'s human output into a PullRequest was rejected: it
+// would be a second normalizer for a shape this package already has one of,
+// and it would drift the moment `gh` changed a word.
+//
+// The body arrives on stdin via `--body-file -`. A body is prose a human just
+// typed and can be any length; putting it in argv would put it under the
+// platform's command-line limit, which is 32 KiB on Windows.
+func (c *Client) ghCreatePull(ctx context.Context, cred credential, repo Repo, opts CreateOptions) (PullRequest, error) {
+	args := ghCreateArgs(repo, opts)
+	out, err := c.runGHStdin(ctx, cred.ghPath, opts.Body, args...)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	number, ok := pullNumberFromURL(string(out))
+	if !ok {
+		return PullRequest{}, newError(ReasonBadResponse,
+			"gh pr create printed no pull request URL")
+	}
+	return c.ghGetPull(ctx, cred, repo, number)
+}
+
+// ghCreateArgs is the whole argv, in one place so a test can assert on it.
+// `--draft` is present exactly when the human asked for it: `gh` has no
+// `--ready` counterpart, and a pull request created without `--draft` is
+// ready by definition.
+func ghCreateArgs(repo Repo, opts CreateOptions) []string {
+	args := []string{
+		"pr", "create",
+		"--repo", repo.String(),
+		"--base", opts.Base,
+		"--head", opts.Head,
+		"--title", opts.Title,
+		"--body-file", "-",
+	}
+	if opts.Draft {
+		args = append(args, "--draft")
+	}
+	return args
+}
+
+// pullNumberFromURL reads the trailing number out of a
+// https://github.com/owner/name/pull/N line. `gh` may print a warning line
+// first, so the last non-empty line is the one read.
+func pullNumberFromURL(out string) (int, bool) {
+	var line string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			line = t
+		}
+	}
+	_, tail, ok := strings.Cut(line, "/pull/")
+	if !ok {
+		return 0, false
+	}
+	tail, _, _ = strings.Cut(tail, "/")
+	tail, _, _ = strings.Cut(tail, "?")
+	n, err := strconv.Atoi(strings.TrimSpace(tail))
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+// runGHStdin is runGH with a body on the child's stdin, for `--body-file -`.
+func (c *Client) runGHStdin(ctx context.Context, path, stdin string, args ...string) ([]byte, error) {
+	// G204: path is the configured or PATH-resolved `gh`, args are an argument
+	// slice built by this package. Never a shell string.
+	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204: see above
+	hideConsole(cmd)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, ghCreateError(err, stderr.String(), ctx.Err())
+	}
+	return stdout.Bytes(), nil
+}
+
+// ghCreateError is ghError plus the one failure only a create can have: a
+// pull request already exists for this head and base. `gh` reports it as an
+// ordinary exit 1 with the API's own sentence on stderr, so it is recognized
+// before the generic mapping runs and never surfaces as "unreachable".
+func ghCreateError(runErr error, stderr string, ctxErr error) *Error {
+	if strings.Contains(strings.ToLower(stderr), "already exists") {
+		return &Error{Reason: ReasonPullExists, Detail: strings.TrimSpace(stderr)}
+	}
+	return ghError(runErr, stderr, ctxErr)
+}

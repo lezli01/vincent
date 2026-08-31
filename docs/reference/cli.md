@@ -1266,9 +1266,11 @@ honest answer offline, and the one place a preview and a real run can differ.
 
 ## `vincent github`
 
-Read-only views of a project's GitHub issues and pull requests. Nothing under
-this command writes to GitHub, and the daemon makes every call — a client never
-talks to GitHub. All three subcommands need a daemon.
+A project's GitHub issues and pull requests, and the one action that opens a
+pull request for a task. `issues`, `prs` and `status` are read-only;
+[`pr create`](#vincent-github-pr-create) is the single command here that writes
+to GitHub, and it writes only when you run it. The daemon makes every call — a
+client never talks to GitHub. All of these need a daemon.
 
 ### `vincent github issues`
 
@@ -1310,6 +1312,47 @@ link in the background every
 [`github.poll_interval`](configuration.md#github), matching a pull request's
 head branch against a task's own branch; a link made or removed by hand over
 [the API](api.md#github-pull-requests) wins over it.
+
+### `vincent github pr create`
+
+```sh
+vincent github pr create --task ID --title TITLE [--body TEXT] [--draft] [--json]
+```
+
+Pushes the task's branch to `origin` and opens its pull request. This is the
+**only** command under `vincent github` that writes to GitHub, and the only
+write vincent makes there at all — it never updates, comments on, closes or
+merges anything.
+
+```
+$ vincent github pr create --task 61 --title "List a project's open pull requests" --draft
+Pushed vincent/61-list-open-pull-requests to origin.
+Created octo/repo#412 (draft)
+https://github.com/octo/repo/pull/412
+```
+
+Only **committed** work is pushed: anything uncommitted in the task's worktree
+is not in the pull request. The push never forces — a diverged, protected or
+rejected push creates no pull request, changes nothing on the remote, and
+fails with a named reason (`push_rejected`, `push_no_credential`,
+`push_failed`).
+
+When the branch pushes but the pull request cannot be created — a credential
+with no write scope, say — this is **not** an error. It prints the compare URL
+instead and exits 0, because the branch is on the remote and GitHub's own page
+now works:
+
+```
+$ vincent github pr create --task 61 --title "List a project's open pull requests"
+Pushed vincent/61-list-open-pull-requests to origin.
+vincent could not create the pull request (forbidden).
+Open this instead:
+https://github.com/octo/repo/compare/main...vincent%2F61-list-open-pull-requests?expand=1&title=…
+```
+
+A task that already has a linked pull request is refused: unlink it first. The
+same action is `P` in the TUI, in the task workspace and on the Pull Requests
+takeover.
 
 ### `vincent github status`
 

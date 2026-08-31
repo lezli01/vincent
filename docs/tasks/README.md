@@ -82,6 +82,7 @@ the living engineering specification records implementation contracts.
 | [066](066-claude-stream-json-surface.md) | Surface more of claude's stream-json in the output view | 🔄 in progress (4/5) |
 | [067](067-chats-in-the-tui.md) | A chats view in the TUI: a chats board beside the task board | ✅ done (1/1) |
 | [068](068-pull-request-tab.md) | Pull request tab on the task workspace, with checks and PR actions | 🔄 in progress (3/5) |
+| [069](069-open-a-pull-request-from-vincent.md) | Open a pull request from vincent itself | 🔄 in progress (7/8) |
 
 ## How to add and update a task document
 

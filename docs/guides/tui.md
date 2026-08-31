@@ -241,32 +241,44 @@ the inspector never edits anything.
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
 reason the integration is unusable, or — when nothing is linked — the offer to
-open one. Two keys work there, and both only reach a browser:
+open one. Two keys work there:
 
 | Key | Does |
 |---|---|
 | `o` | Open this task's pull request in a browser |
-| `P` | Open a pull request for this task's branch — the prefilled title and body are editable first, and nothing is sent to GitHub from here |
+| `P` | Push this task's branch to `origin` and open its pull request — the title, body and draft flag are editable first |
 
 `P` opens a small popup with the title and body vincent guessed from the task,
-both editable:
+plus a draft toggle — all three editable:
 
 | Key | Does |
 |---|---|
-| `↑` / `↓` | Move between the title and the body |
-| `enter` | Edit the row under the cursor |
+| `↑` / `↓` | Move between the title, the body and the draft row |
+| `enter` | Edit the row under the cursor, or toggle the draft row |
+| `space` | Toggle draft / ready for review, on the draft row |
 | `e` | Write that row in `$EDITOR` instead |
-| `ctrl+s` | Open GitHub's own new-pull-request page with this prefill |
-| `esc` | Close without opening anything — the draft is discarded |
+| `ctrl+s` | Push the branch and open the pull request |
+| `ctrl+o` | Open GitHub's own new-pull-request page with this prefill instead |
+| `esc` | Close without sending anything — the draft is discarded |
 
 Inside a field `enter` is a newline (a pull-request body usually wants more than
 one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
-`ctrl+s` without one says so rather than opening a page GitHub cannot use.
-vincent builds that URL and never fetches it — nothing is created on GitHub
-until you press the button on GitHub's own page. `o` and `P` are absent unless
-at least one registered project's GitHub integration is usable. Linking lives on
-the pull-requests screen below; unlinking lives there and on the Pull Request
-tab.
+`ctrl+s` without one says so rather than sending something GitHub cannot use.
+
+`ctrl+s` is **the one thing vincent writes to GitHub.** It pushes committed work
+only — anything uncommitted in the task's worktree is not in the pull request,
+which the popup says above the rows — and it never force-pushes: a diverged,
+protected or rejected push creates no pull request and changes nothing on the
+remote. Pressing it twice sends once.
+
+If there is no credential with write scope, or GitHub refuses the create, the
+branch is still pushed and the popup points you at `ctrl+o`, whose page now
+works because the branch is on the remote. The TUI itself never talks to GitHub:
+every call is the daemon's.
+
+`o` and `P` are absent unless at least one registered project's GitHub
+integration is usable. Linking lives on the pull-requests screen below;
+unlinking lives there and on the Pull Request tab.
 
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
@@ -713,11 +725,20 @@ that links or unlinks a pull request re-renders the screen with no keypress.
 | `o` | Open the selected pull request in a browser |
 | `c` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
 | `l` | Link it to a task in the same project |
+| `P` | Open a pull request for a task that has none — pick the task, then push its branch and create it |
 | `u` | Unlink it (asks first) |
 | `s` | Cycle the listing between open, closed and all |
 | `R` | Re-list every project |
 | `↑`/`↓` | Move the selection |
 | `/` | Filter by number, title, branch or project |
+
+`P` is the one key here that is not about the selected row. This screen has no
+task rows — its question is "what is open across everything I run", and a task
+with no pull request is not an open pull request — so `P` offers a picker of
+every task with a branch and no pull request, and choosing one opens that task's
+workspace with the form already up. Eligibility is exactly that: a branch, and
+no pull request. Anything else is reported by the push or the create failing
+with a named reason rather than guessed at in advance.
 
 `u` is a **sticky** refusal, not a reset: the daemon records that a human
 removed this link, and the reconciler will not re-apply it on its next tick.

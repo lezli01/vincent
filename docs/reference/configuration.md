@@ -904,11 +904,21 @@ It applies only to a project whose `origin` remote parses as a github.com
 repository. On every other project it does nothing at all — the issue row is not
 offered, and no `gh` process is started.
 
-Setting it to `false` stops the daemon reading GitHub entirely: the TUI's issue
-row disappears, `GET /v1/projects/{id}/github` reports `disabled`, the pull
-request listing answers `409`, the reconciler stops, and creating a task with
-`--github-issue` is refused. Read per use, so a
-[reload](#reload-semantics) governs the next call and the next tick.
+Setting it to `false` stops the daemon talking to GitHub entirely: the TUI's
+issue row disappears, `GET /v1/projects/{id}/github` reports `disabled`, the
+pull request listing answers `409`, the reconciler stops, creating a task with
+`--github-issue` is refused, and **opening a pull request is refused too**. Read
+per use, so a [reload](#reload-semantics) governs the next call and the next
+tick.
+
+**This key is also the only gate on the one thing vincent writes to GitHub.**
+`POST /v1/tasks/{id}/github/pull/create` — `P` in the TUI, or
+`vincent github pr create` — pushes a task's branch to `origin` and opens its
+pull request. There is deliberately no second switch for it: the consent is a
+person asking for it, not a line in this file nobody would turn on, so `enabled:
+false` turns it off along with every read. Nothing else under this key writes —
+no update, no comment, no close, no merge — and an agent cannot reach it, since
+the route is deliberately not an MCP tool.
 
 **There is deliberately no token key here.** Vincent stores no credential of its
 own. It uses the `gh` CLI when that is installed and logged in — which carries

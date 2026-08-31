@@ -28,6 +28,31 @@ list with the user-facing context a commit subject cannot carry.
   token answered. New route `GET /v1/tasks/{id}/github/pull/checks` and MCP
   tool `task_github_pull_checks`. vincent still writes nothing to GitHub
   (task 068.1–068.3).
+- **Open a pull request from vincent itself.** A task with a branch and no pull
+  request can get one without leaving the TUI: `P` in the task workspace opens a
+  form with the title, the body and a **draft / ready** toggle, all editable
+  first, and `ctrl+s` pushes the branch to `origin` and creates the pull
+  request. The link appears immediately rather than waiting for the next
+  reconciler tick. The Pull Requests screen reaches the same action through
+  `P`, which offers a picker of every task that has a branch and no pull
+  request. `vincent github pr create --task ID --title TITLE [--draft]` does it
+  without the TUI, over the new
+  `POST /v1/tasks/{id}/github/pull/create`.
+
+  This also fixes a page that could not work. The compare URL vincent offered
+  before was built for branches nobody had pushed, so it led to a dead GitHub
+  page and the fix was a manual `git push` in the worktree. The branch is now
+  pushed first — and when there is no credential with write scope, or GitHub
+  refuses the create, vincent still falls back to opening that compare page,
+  which now works.
+
+  **This is the only thing vincent writes to GitHub.** It never updates,
+  comments on, closes or merges anything; it happens only when a human asks for
+  it; `github.enabled` turns it off along with every read; and it is
+  deliberately not an MCP tool, so an agent cannot reach it. The push **never
+  forces** — a diverged, protected or rejected push creates no pull request and
+  changes nothing on the remote — and it sends committed work only, which the
+  form says before you confirm.
 
 - **Free chat: conversational agent sessions beside tasks.** A `chat` is a
   titled conversation with an agent, scoped to a project, running in its own git

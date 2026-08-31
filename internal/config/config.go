@@ -267,9 +267,11 @@ type Config struct {
 	// in the task-creation path, like FanOut, so a reload governs the next
 	// task rather than anything already running.
 	Include Include `yaml:"include"`
-	// GitHub governs the read-only GitHub issue integration (§12.3, task
-	// 035): whether the daemon may ask GitHub about a project whose `origin`
-	// is a github.com repository, so a task can be created from an issue.
+	// GitHub governs the GitHub integration (§12.3, task 035, task 069):
+	// whether the daemon may talk to GitHub about a project whose `origin` is
+	// a github.com repository, so a task can be created from an issue — and,
+	// since task 069, so a human can push a task's branch and open its pull
+	// request from inside vincent.
 	//
 	// It is read per use, so a hot reload reaches the next call rather than
 	// requiring a restart — the same rule the rest of §12.3 follows.
@@ -302,19 +304,30 @@ type Config struct {
 	TUI TUI `yaml:"tui"`
 }
 
-// GitHub configures the read-only GitHub issue integration (spec §12.3 —
-// task 035).
+// GitHub configures the GitHub integration (spec §12.3 — task 035, task 069).
 //
-// There is deliberately no token key here. vincent stores no credential of
-// its own: it drives `gh`, or reads GITHUB_TOKEN/GH_TOKEN from the
-// environment the daemon already inherited, which is what keeps §2's "secret
-// management" non-goal intact (decision 1).
+// It was read-only until task 069, which gave it **one** write path:
+// pull-request creation, from a human pressing a key in vincent. There is
+// deliberately no second key gating that write (task 069 decision 2) — the
+// consent is the keypress and the editable popup in front of it, not a line
+// in config.yaml nobody would turn on — so `enabled: false` turns the write
+// off with everything else, and is the one switch there is.
+//
+// There is deliberately no token key here either. vincent stores no
+// credential of its own: it drives `gh`, or reads GITHUB_TOKEN/GH_TOKEN from
+// the environment the daemon already inherited, which is what keeps §2's
+// "secret management" non-goal intact (decision 1). A credential with no
+// write scope is not a misconfiguration — the create falls back to GitHub's
+// own compare page, which is what vincent did before task 069.
 type GitHub struct {
 	// Enabled turns the integration on. It defaults to **true** and is an
 	// opt-*out*: it is inert on every project whose origin is not a
 	// github.com repository, and makes no call at all until a human opens the
-	// issue picker or names an issue, so on-by-default costs nothing unasked
-	// for (decision 6).
+	// issue picker, names an issue, or asks for a pull request, so
+	// on-by-default costs nothing unasked for (decision 6).
+	//
+	// It is also the **only** gate on task 069's one write path. Nothing is
+	// pushed and no pull request is opened while this is false.
 	//
 	// A plain bool is right here, as it is for
 	// DeleteEmptyBranchOnArchive: Load unmarshals into Default(), so an

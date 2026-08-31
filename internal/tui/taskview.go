@@ -59,7 +59,12 @@ type taskView struct {
 
 	// pull is this task's pull-request row (task 052.6), refetched rather
 	// than snapshotted: draft, state and merged status are live by nature.
-	// createPR is the compare-URL editor, open only while a human has it up.
+	// pullFormPending is a create-a-pull-request intent that arrived before
+	// the section it needs (task 069). The Pull Requests takeover picks a
+	// task and navigates here, and the form needs the daemon's prefill, so
+	// the intent waits for the fetch rather than opening an empty form.
+	pullFormPending bool
+	// createPR is the pull-request form, open only while a human has it up.
 	pull        apiclient.GitHubTaskPull
 	pullLoaded  bool
 	pullErr     string
@@ -199,6 +204,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
+		t.pullFormPending = msg.openPR
 		t.detail.active = true
 		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd())
 	case viewActivatedMsg:
@@ -239,6 +245,8 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 			return t, nil
 		}
 		return t, tea.Batch(t.checksCmd(), t.checksTickCmd())
+	case taskPullCreatedMsg:
+		return t, t.applyCreatedPull(msg)
 	case createPREditMsg:
 		if t.createPR != nil {
 			t.createPR.applyEdit(msg)

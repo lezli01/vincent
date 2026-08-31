@@ -49,6 +49,17 @@ var Excluded = []Route{
 	// the filesystem, not through this API.
 	{Method: http.MethodPost, Path: "/v1/workflows"},
 	{Method: http.MethodPatch, Path: "/v1/workflows"},
+	// The one route that writes to a forge (task 069 decision 3). Row 27 was
+	// amended to let a *human* push a task's branch and open its pull
+	// request; "the keypress is the consent" (decision 2) is only true while
+	// a human is the one pressing it, and there is no second gate behind it —
+	// no config key, no confirmation the daemon can check — so an
+	// agent-callable version of it would be consent nobody gave.
+	//
+	// Nothing is lost. A step's agent already has a full-auto shell in its own
+	// worktree and can run `git push` and `gh pr create` there, which is
+	// decision record row 11's original path and stays open.
+	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/create"},
 	{Method: http.MethodPost, Path: "/v1/daemon/backup"},
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},

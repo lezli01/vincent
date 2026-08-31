@@ -106,23 +106,103 @@ func TestCreatePRFormRefusesAnEmptyTitle(t *testing.T) {
 // the whole editor path contacts nothing. Mirrors internal/github's
 // TestCompareURLMakesNoRequest — vincent still writes nothing at GitHub, and
 // decision record row 11 stands.
-func TestCreatePRFormMakesNoRequest(t *testing.T) {
-	var reached bool
+// The form contacts GitHub directly from the client: never (task 069).
+//
+// The claim this test makes changed when the form's primary action did. It
+// used to be "nothing is sent from here at all"; ctrl+s now posts to the
+// **daemon**, which pushes the branch and creates the pull request. What
+// still holds — and is the ownership invariant, not a nicety — is that the
+// client itself makes no request to GitHub: every byte that reaches
+// github.com is the daemon's.
+//
+// So this asserts two things. ctrl+s goes to the injected submit and nowhere
+// else, and the fallback path still opens a URL and sends nothing.
+func TestCreatePRFormNeverReachesGitHubDirectly(t *testing.T) {
+	var reached []string
 	prev := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-		reached = true
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		reached = append(reached, r.URL.Host)
 		return nil, errNoOpener
 	})
 	t.Cleanup(func() { http.DefaultTransport = prev })
 	withFakeOpener(t, nil)
 
 	f := createPRFixture(t)
+	var submitted int
+	f.submit = func(string, string, bool) tea.Cmd {
+		submitted++
+		return nil
+	}
 	f.update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	f.setRow(cprBody, "edited")
+
+	// ctrl+s: the daemon call, made through the injected seam.
+	drain(f.send())
+	if submitted != 1 {
+		t.Fatalf("ctrl+s made %d daemon calls, want 1", submitted)
+	}
+	// The fallback: a browser hand-off, and still nothing sent.
+	f.sending = false
 	drain(f.open())
 	_ = f.render(80, 20)
-	if reached {
-		t.Fatal("the compare-URL editor made an HTTP request")
+	if len(reached) > 0 {
+		t.Fatalf("the pull-request form reached %v itself; every GitHub call is the daemon's", reached)
+	}
+}
+
+// A second ctrl+s while the first is in flight is refused at the client
+// (task 069 decision 7). The daemon refuses it too — the link is written the
+// moment the pull request exists, so the second call sees a live link and is
+// 409'd — and GitHub refuses a third for the same head and base.
+func TestCreatePRFormRefusesDoubleSubmit(t *testing.T) {
+	withFakeOpener(t, nil)
+	f := createPRFixture(t)
+	var submitted int
+	f.submit = func(string, string, bool) tea.Cmd {
+		submitted++
+		return nil
+	}
+	drain(f.send())
+	drain(f.send())
+	if submitted != 1 {
+		t.Fatalf("the form submitted %d times, want 1", submitted)
+	}
+	// A refusal from the daemon re-arms it: a title GitHub would not take is
+	// a thing a human fixes and sends again.
+	f.failed("GitHub refused these values for a pull request")
+	drain(f.send())
+	if submitted != 2 {
+		t.Fatalf("the form did not re-arm after a failure: %d submissions", submitted)
+	}
+}
+
+// The draft toggle is space on its own row, and it is what reaches the
+// daemon as `draft`.
+func TestCreatePRFormDraftToggle(t *testing.T) {
+	withFakeOpener(t, nil)
+	f := createPRFixture(t)
+	var got bool
+	f.submit = func(_, _ string, draft bool) tea.Cmd {
+		got = draft
+		return nil
+	}
+	f.cursor = cprDraft
+	f.update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	if !f.draft {
+		t.Fatal("space did not toggle the draft row")
+	}
+	drain(f.send())
+	if !got {
+		t.Fatal("the draft flag did not reach the daemon call")
+	}
+	// The row says which state it is in, because a toggle nobody can read is
+	// a guess.
+	if v := f.rowValue(cprDraft); v != "draft" {
+		t.Fatalf("draft row renders %q", v)
+	}
+	f.update(tea.KeyPressMsg{Code: ' ', Text: " "})
+	if v := f.rowValue(cprDraft); v != "ready for review" {
+		t.Fatalf("un-drafted row renders %q", v)
 	}
 }
 
@@ -130,16 +210,19 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// esc leaves the draft behind and ctrl+s opens; both close the popup, which
-// is what lets the task view drop it.
-func TestCreatePRFormClosesOnEscAndSubmit(t *testing.T) {
+// esc leaves the draft behind and ctrl+o hands off to the browser; both
+// close the popup, which is what lets the task view drop it. ctrl+s no longer
+// does (task 069): the daemon's answer has to have somewhere to land, and a
+// form that vanished before it arrived would have nowhere to report a
+// failure.
+func TestCreatePRFormClosesOnEscAndBrowserHandoff(t *testing.T) {
 	withFakeOpener(t, nil)
 	f := createPRFixture(t)
 	if _, exit := f.update(tea.KeyPressMsg{Code: tea.KeyEscape}); !exit {
 		t.Error("esc did not close the form")
 	}
 	f = createPRFixture(t)
-	if _, exit := f.update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}); !exit {
-		t.Error("ctrl+s did not close the form")
+	if _, exit := f.update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}); !exit {
+		t.Error("ctrl+o did not close the form")
 	}
 }

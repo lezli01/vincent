@@ -62,9 +62,10 @@ func TestMCPToolSurfaceMatchesRouteTable(t *testing.T) {
 // removing one from Excluded is a test failure rather than a quiet widening of
 // what an agent may do to the daemon supervising it.
 //
-// It covers three families: the six destructive-admin routes (task 057's five,
-// plus `PATCH /v1/config` from task 060), task 063's chat routes, and task
-// 065's workflow writes. The chat family is excluded for a different reason —
+// It covers four families: the six destructive-admin routes (task 057's five,
+// plus `PATCH /v1/config` from task 060), task 063's chat routes, task 065's
+// workflow writes, and task 069's one write to a forge. The chat family is
+// excluded for a different reason —
 // starting an agent process that no §11 cap admitted and no scheduler ordered
 // — and the list is asserted whole so a new chat route added without a
 // decision about it fails here rather than appearing as a tool.
@@ -99,6 +100,12 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// rewriting the rules it runs under.
 		{http.MethodPost, "/v1/workflows"},
 		{http.MethodPatch, "/v1/workflows"},
+		// Task 069 decision 3: the one route that writes to a forge. Row 27
+		// was amended to let a *human* push a task's branch and open its pull
+		// request, and "the keypress is the consent" is only true while a
+		// human is the one pressing it. An agent's path to the same outcome —
+		// `git push` and `gh pr create` in its own worktree — is untouched.
+		{http.MethodPost, "/v1/tasks/{id}/github/pull/create"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

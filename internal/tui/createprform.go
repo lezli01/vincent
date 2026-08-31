@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The compare-URL editor (task 052.6, decision 4).
+// The pull-request form (task 052.6 decision 4, task 069).
 //
 // `compare_url` arrives from the daemon with a title and a body already
 // encoded as query parameters — a guess of the same kind task 035 decision 2
@@ -20,9 +20,16 @@ import (
 // satisfies the letter of "editable before submit" only by relying on a
 // surface vincent does not own.
 //
-// Nothing here talks to GitHub. The form parses a URL, edits two strings and
-// re-encodes it; opening it is a hand-off to a browser, and vincent still
-// writes nothing there.
+// **The form's primary action is now a daemon call** (task 069). ctrl+s posts
+// the edited title, body and draft flag to
+// POST /v1/tasks/{id}/github/pull/create, which pushes the branch and opens
+// the pull request; ctrl+o is the browser hand-off, and it is also what the
+// form falls back to when the daemon answers that it could not write.
+//
+// What has not changed is that **this client never talks to GitHub**. It
+// parses a URL, edits three values and either hands them to the daemon or
+// re-encodes them into a URL for a browser. Every request to GitHub is the
+// daemon's, per the ownership invariant.
 
 // cprRow is one line of the form.
 type cprRow int
@@ -30,6 +37,7 @@ type cprRow int
 const (
 	cprTitle cprRow = iota
 	cprBody
+	cprDraft
 	cprRowCount
 )
 
@@ -49,9 +57,18 @@ type createPRForm struct {
 	branch  string
 	title   string
 	body    string
+	draft   bool
 	cursor  cprRow
 	editor  textarea.Model
 	editing bool
+	// sending is set from the moment ctrl+s posts until the daemon answers.
+	// It is what refuses a double submission at the client (task 069
+	// decision 7); the daemon refuses it too — a second call sees a live link
+	// and is 409'd — and GitHub refuses a third for the same head and base.
+	sending bool
+	// submit posts the edited values to the daemon. Injected by the task
+	// view, which owns the API client, for the reason openEditor is.
+	submit func(title, body string, draft bool) tea.Cmd
 
 	// openEditor hands the focused row's text to $EDITOR. Injected by the
 	// task view, which owns the exec path, so the form needs no terminal.
@@ -156,13 +173,32 @@ func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	case "down", "j":
 		f.cursor = min(f.cursor+1, cprRowCount-1)
 	case "enter":
+		if f.cursor == cprDraft {
+			f.draft = !f.draft
+			f.err = ""
+			return nil, false
+		}
 		f.startEdit(f.cursor)
 	case "e":
+		if f.cursor == cprDraft {
+			return nil, false
+		}
 		if f.openEditor != nil {
 			return f.openEditor(f.rowValue(f.cursor)), false
 		}
 		f.startEdit(f.cursor)
+	case " ", "space":
+		// The draft toggle is space on its own row rather than a key of its
+		// own: it is one of the three values this form carries, and a
+		// separate global key would be a fourth thing to remember for a
+		// field that is right there under the cursor.
+		if f.cursor == cprDraft {
+			f.draft = !f.draft
+			f.err = ""
+		}
 	case "ctrl+s":
+		return f.send(), false
+	case "ctrl+o":
 		return f.open(), true
 	case "esc":
 		return nil, true
@@ -170,9 +206,38 @@ func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	return nil, false
 }
 
-// open hands the re-encoded URL to a browser. The title is required because
-// GitHub's form is unusable without one and finding that out in a browser tab
-// is a round trip wasted.
+// send hands the edited values to the daemon: the branch is pushed and the
+// pull request opened without leaving vincent (task 069). It does not close
+// the form — the answer comes back as a message, and a form that vanished
+// before it arrived would have nowhere to report a failure.
+func (f *createPRForm) send() tea.Cmd {
+	if f.sending {
+		return nil
+	}
+	if strings.TrimSpace(f.title) == "" {
+		f.err = "give the pull request a title first"
+		return nil
+	}
+	if f.submit == nil {
+		// No client wired. The browser hand-off is still there and is
+		// exactly what this form did before task 069.
+		return f.open()
+	}
+	f.sending, f.err = true, ""
+	return f.submit(f.title, f.body, f.draft)
+}
+
+// failed reports what the daemon said and re-arms the form, so a human can
+// fix a title GitHub refused and press ctrl+s again.
+func (f *createPRForm) failed(msg string) {
+	f.sending = false
+	f.err = msg
+}
+
+// open hands the re-encoded URL to a browser — ctrl+o, and the fallback the
+// daemon's own answer sends a client to when it could not write. The title is
+// required because GitHub's form is unusable without one and finding that out
+// in a browser tab is a round trip wasted.
 func (f *createPRForm) open() tea.Cmd {
 	if strings.TrimSpace(f.title) == "" {
 		f.err = "give the pull request a title first"
@@ -196,13 +261,25 @@ func (f *createPRForm) commit() {
 }
 
 func (f *createPRForm) rowValue(row cprRow) string {
-	if row == cprBody {
+	switch row {
+	case cprBody:
 		return f.body
+	case cprDraft:
+		if f.draft {
+			return "draft"
+		}
+		return "ready for review"
+	default:
+		return f.title
 	}
-	return f.title
 }
 
 func (f *createPRForm) setRow(row cprRow, value string) {
+	if row == cprDraft {
+		// The draft row is a toggle, not text: an $EDITOR session or a paste
+		// landing on it changes nothing rather than storing a word.
+		return
+	}
 	if row == cprBody {
 		f.body = strings.TrimRight(value, "\n")
 		return
@@ -224,35 +301,41 @@ func (f *createPRForm) lines(width int) []string {
 	out := make([]string, 0, 16)
 	out = append(out, styleDim.Render("  "+f.subject()))
 	out = append(out, "")
-	for _, row := range []cprRow{cprTitle, cprBody} {
+	for _, row := range []cprRow{cprTitle, cprBody, cprDraft} {
 		out = append(out, f.rowLines(row, width)...)
 	}
 	out = append(out, "")
-	// The URL is shown because it is what will actually be opened, and
-	// because a prefill nobody can see the effect of is the thing decision 4
-	// exists to prevent.
-	out = append(out, styleDim.Render("  opens"))
+	// The URL is shown because it is what ctrl+o opens and what the daemon's
+	// fallback sends a client to, and because a prefill nobody can see the
+	// effect of is the thing decision 4 exists to prevent.
+	out = append(out, styleDim.Render("  ctrl+o opens"))
 	for _, line := range wrapPlain(f.url(), max(width-4, 20)) {
 		out = append(out, styleDim.Render("    "+line))
 	}
 	switch {
 	case f.err != "":
 		out = append(out, styleBad.Render("  ⚠ "+f.err))
+	case f.sending:
+		out = append(out, styleDim.Render("  pushing the branch and opening the pull request…"))
 	case f.editing:
 		out = append(out, styleDim.Render("  ctrl+s keeps this text · esc discards it"))
 	default:
 		out = append(out, styleDim.Render(
-			"  enter edit · e $EDITOR · ctrl+s open in a browser · esc leave the form"))
+			"  enter edit · e $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
 	}
 	return out
 }
 
+// subject is the one line above the rows, and it states the consequence a
+// human cannot otherwise see: a push sends commits, so uncommitted work in
+// the task's worktree is not in the pull request (task 069 decision 4). It is
+// said here, before the confirmation, rather than discovered afterwards.
 func (f *createPRForm) subject() string {
 	out := "a pull request for this task's branch"
 	if f.branch != "" {
 		out = "a pull request for " + f.branch
 	}
-	return out + " — GitHub's own page opens with this prefill; nothing is sent from here"
+	return out + " — ctrl+s pushes the committed work on it to origin and opens the pull request"
 }
 
 func (f *createPRForm) rowLines(row cprRow, width int) []string {
@@ -261,8 +344,11 @@ func (f *createPRForm) rowLines(row cprRow, width int) []string {
 		cursor = styleFocus.Render("› ")
 	}
 	label := "title"
-	if row == cprBody {
+	switch row {
+	case cprBody:
 		label = "body "
+	case cprDraft:
+		label = "draft"
 	}
 	out := []string{cursor + label}
 	if f.cursor == row && f.editing {

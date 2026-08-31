@@ -46,6 +46,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "ctrl+s":
 		msg = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+	case "ctrl+o":
+		msg = tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}
 	case "ctrl+v":
 		msg = tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}
 	case "ctrl+c":
@@ -545,6 +547,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "l"))
 			if v.picker == nil {
 				t.Fatal("l did not open the task picker")
+			}
+		},
+		// Task 069: the takeover's own offer to create. It picks a task with
+		// a branch and no pull request rather than acting on the row under
+		// the cursor, because a task with no pull request is not a row here.
+		"P": func(t *testing.T) {
+			v := pullRequestsFixture(testPull(11, "unclaimed"))
+			v.updateKey(registryKey(t, "P"))
+			if v.picker == nil || !v.pickerCreate {
+				t.Fatal("P did not open the create picker")
 			}
 		},
 		"u": func(t *testing.T) {
@@ -1317,16 +1329,37 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("e did not reach $EDITOR")
 			}
 		},
+		"space": func(t *testing.T) {
+			f := createPRFixture(t)
+			f.cursor = cprDraft
+			f.update(registryKey(t, "space"))
+			if !f.draft {
+				t.Fatal("space did not toggle the draft row")
+			}
+		},
+		// ctrl+s is the daemon call now (task 069): it posts and leaves the
+		// popup open, because the answer has to have somewhere to land.
 		"ctrl+s": func(t *testing.T) {
+			f := createPRFixture(t)
+			sent := false
+			f.submit = func(string, string, bool) tea.Cmd { sent = true; return nil }
+			if _, exit := f.update(registryKey(t, "ctrl+s")); exit {
+				t.Fatal("ctrl+s closed the popup before the daemon answered")
+			}
+			if !sent {
+				t.Fatal("ctrl+s did not reach the daemon")
+			}
+		},
+		"ctrl+o": func(t *testing.T) {
 			opened := withFakeOpener(t, nil)
 			f := createPRFixture(t)
-			cmd, exit := f.update(registryKey(t, "ctrl+s"))
+			cmd, exit := f.update(registryKey(t, "ctrl+o"))
 			if !exit {
-				t.Fatal("ctrl+s did not close the popup")
+				t.Fatal("ctrl+o did not close the popup")
 			}
 			drain(cmd)
 			if len(*opened) != 1 {
-				t.Fatalf("ctrl+s opened %v, want the compare URL", *opened)
+				t.Fatalf("ctrl+o opened %v, want the compare URL", *opened)
 			}
 		},
 		"esc": func(t *testing.T) {

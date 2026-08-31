@@ -178,10 +178,14 @@ func (l *PullLink) FromPull() bool { return l != nil && l.Number > 0 && l.Branch
 // the title and body prefilled as query parameters.
 //
 // **No request is made to GitHub here.** This is string construction over a
-// Repo this package parsed and text the human just edited; it is the whole of
-// what task 052 does in the direction of GitHub, and decision record row 11 —
-// vincent pushes nothing, opens nothing, merges nothing — stands unamended. A
-// human presses GitHub's own button.
+// Repo this package parsed and text the human just edited, and it stays that
+// way: TestCompareURLMakesNoRequest holds unchanged across task 069.
+//
+// What changed is its place. It was the whole of what vincent did in the
+// direction of GitHub; it is now the *fallback* behind CreatePull, opened
+// when there is no write credential or the create call failed. A human still
+// presses GitHub's own button on that path — and after task 069 the branch
+// behind the page has been pushed, so the page is no longer dead.
 func CompareURL(repo Repo, base, head, title, body string) string {
 	q := url.Values{}
 	q.Set("expand", "1")

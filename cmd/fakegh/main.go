@@ -10,12 +10,20 @@
 //	gh issue view N --repo owner/name --json FIELDS
 //	gh pr list --repo owner/name --state S --limit N --json FIELDS
 //	gh pr view N --repo owner/name --json FIELDS
+//	gh pr create --repo owner/name --base B --head H --title T --body-file - [--draft]
 //
 // Scenario selection is environment-driven:
 //
 //	FAKEGH_SCENARIO  success (default) | logged-out | empty | not-found |
 //	                 unauthorized | rate-limited | forbidden | bad-json |
-//	                 hang
+//	                 hang | pr-exists (a `pr create` refused because one
+//	                 already exists for the head — the write path's one
+//	                 expected refusal, task 069)
+//	FAKEGH_CREATED_FILE
+//	                 when set, `pr create` writes the pull request it made
+//	                 here and `pr view`/`pr list` read it back, so the
+//	                 create-then-read sequence internal/github performs
+//	                 answers without a network.
 //	FAKEGH_PR_BRANCH when set, the head branch of the first pull request in
 //	                 the corpus, so a gate or a test can point one at the
 //	                 branch a real task was given.
@@ -28,6 +36,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -52,6 +61,8 @@ func main() {
 		issueView(scenario, args[2])
 	case len(args) >= 2 && args[0] == "pr" && args[1] == "list":
 		pullList(scenario, flagValue(args, "--state"))
+	case len(args) >= 2 && args[0] == "pr" && args[1] == "create":
+		pullCreate(scenario, args)
 	case len(args) >= 3 && args[0] == "pr" && args[1] == "view":
 		pullView(scenario, args[2])
 	default:
@@ -224,11 +235,18 @@ func pullView(scenario, number string) {
 // listing can never answer, and a **fork**, whose head lives in another
 // repository entirely.
 func pullCorpus() []map[string]any {
+	// A pull request `pr create` made in an earlier invocation comes first,
+	// so the create → read-back sequence internal/github performs answers
+	// without a network (task 069).
+	var out []map[string]any
+	if row, ok := createdPull(); ok {
+		out = append(out, row)
+	}
 	branch := os.Getenv("FAKEGH_PR_BRANCH")
 	if branch == "" {
 		branch = "vincent/1-add-a-thing"
 	}
-	return []map[string]any{
+	return append(out, []map[string]any{
 		{
 			"number":              412,
 			"title":               "Add a thing",
@@ -338,7 +356,7 @@ func pullCorpus() []map[string]any {
 			"updatedAt":           "2026-05-02T08:00:00Z",
 			"mergedAt":            nil,
 		},
-	}
+	}...)
 }
 
 func emit(v any) {
@@ -386,4 +404,99 @@ func corpus() []map[string]any {
 			"updatedAt": "2026-07-02T08:00:00Z",
 		},
 	}
+}
+
+// createdPullNumber is the number `pr create` always reports. It is outside
+// the fixed corpus so a test can tell a created pull request from a listed
+// one by its number alone.
+const createdPullNumber = 999
+
+// pullCreate answers `gh pr create` (task 069).
+//
+// The real CLI prints the new pull request's web URL on stdout and nothing
+// else — there is no `--json` on it — and internal/github parses the number
+// out of that URL and then reads the pull request back through `pr view`. So
+// this writes the created row to FAKEGH_CREATED_FILE and pullCorpus reads it
+// back in, which is what makes the two-call sequence work end to end without
+// a network.
+//
+// The body arrives on **stdin**, because the adapter passes `--body-file -`:
+// a pull request body is prose a human just typed and putting it in argv
+// would put it under Windows' 32 KiB command-line limit.
+func pullCreate(scenario string, args []string) {
+	switch scenario {
+	case "pr-exists":
+		fmt.Fprintln(os.Stderr,
+			"gh: a pull request for branch \"x\" into branch \"main\" already exists:")
+		os.Exit(1)
+	case "forbidden":
+		fmt.Fprintln(os.Stderr, "gh: HTTP 403: Resource not accessible by integration")
+		os.Exit(1)
+	}
+	if fail(scenario) {
+		return
+	}
+	body, _ := io.ReadAll(os.Stdin)
+	row := map[string]any{
+		"number":              createdPullNumber,
+		"title":               flagValue(args, "--title"),
+		"body":                string(body),
+		"url":                 "https://github.com/octo/repo/pull/999",
+		"state":               "OPEN",
+		"isDraft":             hasFlag(args, "--draft"),
+		"headRefName":         flagValue(args, "--head"),
+		"headRepository":      map[string]any{"name": "repo"},
+		"headRepositoryOwner": map[string]any{"login": "octo"},
+		"baseRefName":         flagValue(args, "--base"),
+		"author":              map[string]any{"login": "octocat"},
+		"createdAt":           "2026-08-31T10:00:00Z",
+		"updatedAt":           "2026-08-31T10:00:00Z",
+		"mergedAt":            nil,
+	}
+	recordCreated(row)
+	fmt.Println(row["url"])
+}
+
+func hasFlag(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// recordCreated persists the created row so a later `pr view` finds it.
+func recordCreated(row map[string]any) {
+	path := os.Getenv("FAKEGH_CREATED_FILE")
+	if path == "" {
+		return
+	}
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, encoded, 0o600)
+}
+
+// createdPull reads back what pullCreate wrote, so `pr view 999` answers.
+func createdPull() (map[string]any, bool) {
+	path := os.Getenv("FAKEGH_CREATED_FILE")
+	if path == "" {
+		return nil, false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var row map[string]any
+	if err := json.Unmarshal(raw, &row); err != nil {
+		return nil, false
+	}
+	// json.Unmarshal makes every number a float64; the lookups compare
+	// against an int, so the one field they compare is put back.
+	if n, ok := row["number"].(float64); ok {
+		row["number"] = int(n)
+	}
+	return row, true
 }

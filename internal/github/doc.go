@@ -1,13 +1,22 @@
-// Package github is the daemon's read-only door to GitHub (task 035, task
-// 052, spec §5.3, §13.2). It answers four questions and nothing else: is this
-// project's `origin` a github.com repository, can this daemon reach it, what
-// does one issue look like, and what does one pull request look like.
+// Package github is the daemon's door to GitHub (task 035, task 052, task
+// 069, spec §5.3, §13.2). It answers four questions — is this project's
+// `origin` a github.com repository, can this daemon reach it, what does one
+// issue look like, and what does one pull request look like — and it performs
+// exactly one action: it creates a pull request.
 //
-// It is **read-only**, and task 052 did not change that: no method here
-// writes, no `POST` is made and no mutating `gh` subcommand is run. The one
-// thing that points at GitHub's own write surface is CompareURL, which is
-// string construction over a parsed Repo — nothing is sent when it is built,
-// and a human presses GitHub's button (decision record row 11).
+// It was read-only until task 069, and that amendment is deliberate and
+// narrow. **CreatePull is the only write.** No other method here writes, no
+// other `POST` is made and no other mutating `gh` subcommand is run: nothing
+// updates, comments on, closes or merges anything, and decision record row
+// 11's prohibition on hardcoded merge behaviour is untouched. The write is
+// reached only from a human pressing a key in vincent — the route in front of
+// it is excluded from the MCP tool surface (§13.4) — and `github.enabled`
+// gates it exactly as it gates every read.
+//
+// CompareURL is unchanged, and is now the fallback rather than the only path:
+// it is string construction over a parsed Repo, nothing is sent when it is
+// built, and it is what a client opens when there is no write credential or
+// the create call fails.
 //
 // Two legs answer the last two. The `gh` CLI is preferred, because it carries
 // the user's own host, enterprise and SSO configuration and driving an

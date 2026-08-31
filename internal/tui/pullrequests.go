@@ -175,7 +175,13 @@ type pullRequestsView struct {
 	picker     *picker
 	pickerPull int
 	pickerRepo string
-	confirm    *unlinkPrompt
+	// pickerCreate distinguishes the two pickers this screen opens. `l`
+	// links the selected pull request to a task; `P` picks a task with no
+	// pull request and opens the workspace's form for it (task 069). One
+	// picker widget, two intents, because they differ only in which tasks
+	// they offer and what choosing one does.
+	pickerCreate bool
+	confirm      *unlinkPrompt
 	// state is the listing's `state=` parameter, cycled by `s` (task 064
 	// decision 9). It starts at `open` — 052's default and still the answer
 	// to the question this screen usually asks.
@@ -444,6 +450,9 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "l":
 		v.openLinkPicker()
 		return v, nil
+	case "P":
+		v.openCreatePicker()
+		return v, nil
 	case "u":
 		v.askUnlink()
 		return v, nil
@@ -543,9 +552,68 @@ func (v *pullRequestsView) openLinkPicker() {
 		return
 	}
 	v.note = ""
+	v.pickerCreate = false
 	v.pickerPull = row.pull.Number
 	v.pickerRepo = row.pull.Repo
 	v.picker = newPicker(0, "task in "+row.project.Name, v.taskOptions(row.project.ID), false, "")
+}
+
+// openCreatePicker is `P`: the tasks that could have a pull request and do
+// not (task 069).
+//
+// This screen has no task rows and is not given any: its question is "what is
+// open across everything I run", and a task with no pull request is not an
+// open pull request. So the offer arrives as a picker, and choosing a task
+// opens that task's workspace with the form up — the workspace is still where
+// the offer to create lives (052 decision 6), widened rather than reversed.
+//
+// Eligibility is branch-and-no-live-link and nothing more (decision 4). A
+// task whose push will be refused, or whose branch is somebody else's head,
+// is offered and told by the push or the create failing with a named reason,
+// rather than filtered out here on a guess.
+func (v *pullRequestsView) openCreatePicker() {
+	options := v.createOptions()
+	if len(options) == 0 {
+		v.setNote("no task here has a branch without a pull request", true)
+		return
+	}
+	v.note = ""
+	v.pickerCreate = true
+	v.picker = newPicker(0, "task to open a pull request for", options, false, "")
+}
+
+// createOptions is `P`'s rows: every task on this screen's GitHub projects
+// that has a branch and no live link. It is not scoped to one row's project,
+// because `P` is not about a row — there may be no row at all.
+func (v *pullRequestsView) createOptions() []pickerOption {
+	claimed := map[int64]bool{}
+	for _, g := range v.groups {
+		for _, row := range g.pulls {
+			if row.TaskID != nil {
+				claimed[*row.TaskID] = true
+			}
+		}
+	}
+	onGitHub := map[int64]bool{}
+	for _, p := range v.available {
+		onGitHub[p.project.ID] = true
+	}
+	rows := make([]apiclient.Task, 0, len(v.tasks))
+	for _, t := range v.tasks {
+		if t.BranchName != "" && !claimed[t.ID] && onGitHub[t.ProjectID] {
+			rows = append(rows, t)
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].ID > rows[j].ID })
+	out := make([]pickerOption, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, pickerOption{
+			value: strconv.FormatInt(t.ID, 10),
+			label: "#" + strconv.FormatInt(t.ID, 10) + "  " + t.Title,
+			note:  t.State + " · " + t.BranchName,
+		})
+	}
+	return out
 }
 
 // taskOptions is the picker's rows: this project's tasks, newest first, with
@@ -579,13 +647,29 @@ func (v *pullRequestsView) updatePickerKey(msg tea.KeyPressMsg) (panel, tea.Cmd)
 	var cmd tea.Cmd
 	if res.chosen {
 		if id, err := strconv.ParseInt(res.value, 10, 64); err == nil {
-			cmd = v.linkCmd(id, v.pickerPull)
+			if v.pickerCreate {
+				cmd = v.openTaskWithPRForm(id)
+			} else {
+				cmd = v.linkCmd(id, v.pickerPull)
+			}
 		}
 	}
 	if res.closed {
 		v.picker = nil
 	}
 	return v, tea.Batch(res.cmd, cmd)
+}
+
+// openTaskWithPRForm navigates to a task's workspace and asks it to open the
+// pull-request form. The form is not rebuilt here: it needs the daemon's
+// prefill for that task, which the workspace fetches on open anyway, and a
+// second copy of it on this screen would be a second thing to keep correct.
+func (v *pullRequestsView) openTaskWithPRForm(taskID int64) tea.Cmd {
+	state := ""
+	if t, found := v.taskByID(taskID); found {
+		state = t.State
+	}
+	return func() tea.Msg { return selectTaskMsg{id: taskID, state: state, openPR: true} }
 }
 
 func (v *pullRequestsView) linkCmd(taskID int64, number int) tea.Cmd {
