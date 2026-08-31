@@ -2501,6 +2501,10 @@ transcript is something people paste into issues.
 *Amended 2026-08-28 (task 041).* Verified builds: `0.142.5` (the invocation
 pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
 `version_verdict` against that list, advisory in exactly the way §9.2 records.
+*Amended 2026-08-31 (task 070):* `0.150.1` joins them — the `exec resume`
+capture above, which pins the resumed argv, `thread.started` and the refusal of
+an unknown thread id. Three entries, one per capture, because the list is what
+`tested_versions` publishes and a build vincent has fixtures for belongs in it.
 
 *Added 2026-08-29 (task 057).* codex has no `--mcp-config`, but `codex exec`
 takes `-c key=value` dotted TOML overrides and (verified against 0.150.1)

@@ -34,7 +34,7 @@ silently drops.
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
 | `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
 | Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
-| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
+| Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
 | Reports **remaining** quota without running | — | — | — |

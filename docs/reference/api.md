@@ -337,7 +337,7 @@ daemon running.
   "agents":   [ { "name": "codex", "available": true, "path": "…",
                   "version": "0.147.0", "logged_in": true,
                   "supports_input": false, "version_verdict": "tested",
-                  "tested_versions": "0.142.5, 0.147.0",
+                  "tested_versions": "0.142.5, 0.147.0, 0.150.1",
                   "restricted_verdict": "supported" } ],
   "storage":  { "worktrees_dir": "…", "disk_free_bytes": 127310651392,
                 "disk_total_bytes": 494384795648,
