@@ -87,6 +87,13 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/chats/{id}/answer"},
 		{http.MethodPost, "/v1/chats/{id}/cancel"},
 		{http.MethodPost, "/v1/chats/{id}/archive"},
+		// The two read routes are excluded by the same §13.4 reasoning, not
+		// by the Streaming carve-out: a chat's stream and its per-turn
+		// transcript are the surface a *human* drives a chat through, and an
+		// agent calling either already has a session of its own. Listing them
+		// here rather than in Streaming keeps one rule for the whole family.
+		{http.MethodGet, "/v1/chats/{id}/events"},
+		{http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.

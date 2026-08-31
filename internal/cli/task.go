@@ -1051,6 +1051,14 @@ func printPendingRequest(w io.Writer, t apiclient.TaskDetail) error {
 	if !ok {
 		return nil
 	}
+	return printInputRequest(w, req, fmt.Sprintf("vincent task answer %d", t.ID))
+}
+
+// printInputRequest renders a §7.4 request under a numbering both
+// `task answer` and `chat answer` read: question 1 is the first question the
+// daemon sent, in the order it sent them. answerCmd is the invocation the
+// hint names, which is the only thing that differs between the two.
+func printInputRequest(w io.Writer, req apiclient.InputRequest, answerCmd string) error {
 	if _, err := fmt.Fprintf(w, "\nawaiting input: %s\n", req.Kind); err != nil {
 		return err
 	}
@@ -1059,8 +1067,8 @@ func printPendingRequest(w io.Writer, t apiclient.TaskDetail) error {
 			return nil
 		}
 		_, err := fmt.Fprintf(w, "  tool     %s\n  summary  %s\n"+
-			"  answer with `vincent task answer %d --allow` or `--deny`\n",
-			req.Permission.Tool, req.Permission.Summary, t.ID)
+			"  answer with `%s --allow` or `--deny`\n",
+			req.Permission.Tool, req.Permission.Summary, answerCmd)
 		return err
 	}
 	for i, q := range req.Questions {
@@ -1085,6 +1093,6 @@ func printPendingRequest(w io.Writer, t apiclient.TaskDetail) error {
 	if len(req.Questions) == 0 {
 		return nil
 	}
-	_, err = fmt.Fprintf(w, "  answer with `vincent task answer %d --answer 1=<value>`\n", t.ID)
+	_, err := fmt.Fprintf(w, "  answer with `%s --answer 1=<value>`\n", answerCmd)
 	return err
 }

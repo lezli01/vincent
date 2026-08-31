@@ -136,9 +136,10 @@ Two guarantees make it safe to pipe into `jq`:
 vincent task ls --state blocked --json | jq -r '.[] | "\(.id)\t\(.title)"'
 ```
 
-The exception is [`vincent chat`](../reference/cli.md#vincent-chat), which has
-no `--json` on any of its subcommands — it prints for a person. Script chats
-against [`/v1/chats`](../reference/api.md#chats) directly.
+[`vincent chat`](../reference/cli.md#vincent-chat) carries `--json` on every
+subcommand too. `chat send --json` emits the finished turn, so a script reads
+the answer and the accounting off one object and still exits 1 when the turn
+failed.
 
 `vincent task show <id> --json` carries two fields worth knowing about:
 `available_actions`, which is what the daemon will accept right now — read it

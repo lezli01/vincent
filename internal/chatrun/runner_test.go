@@ -379,3 +379,132 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition never became true")
 }
+
+// The two clocks (task 067 decision 1). A chat turn gets §7.2's and §7.4's
+// numbers verbatim: `agent_timeout` bounds a running turn, `input_timeout`
+// bounds `awaiting_input`. Both expiries kill the process, fail the turn with
+// the shared snake_case reason and return the chat to idle — which is what
+// releases the `max_parallel_chats` slot §11 previously let a walked-away
+// human hold forever.
+
+// TestTurnPastAgentTimeoutFails covers §7.2's clock on a turn that will not
+// stop on its own.
+func TestTurnPastAgentTimeoutFails(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.Defaults.AgentTimeout = config.Duration(150 * time.Millisecond)
+	t.Setenv("FAKEAGENT_SCENARIO", "hang")
+	c := h.chat(t)
+
+	turn := h.sendAndWait(t, c.ID, "run forever")
+	if turn.State != chatstate.TurnFailed || turn.FailReason != ReasonTimeout {
+		t.Fatalf("turn = %s/%s, want failed/%s", turn.State, turn.FailReason, ReasonTimeout)
+	}
+	if got := h.waitIdle(t, c.ID); got.State != chatstate.Idle {
+		t.Fatalf("chat = %s after a timeout, want idle", got.State)
+	}
+	assertSlotFree(t, h)
+}
+
+// TestChatPastInputTimeoutFails is the hole §11 named in its own words: a
+// chat parked on a §7.4 request that nobody answers.
+func TestChatPastInputTimeoutFails(t *testing.T) {
+	h := newHarness(t)
+	// The work clock stays generous: what this test bounds is the *wait*,
+	// and a short agent_timeout would decide the outcome first.
+	h.cfg.Defaults.AgentTimeout = config.Duration(30 * time.Second)
+	h.cfg.Defaults.InputTimeout = config.Duration(150 * time.Millisecond)
+	t.Setenv("FAKEAGENT_SCENARIO", "ask-question")
+	c := h.chat(t)
+
+	turn := h.sendAndWait(t, c.ID, "ask me something")
+	if turn.State != chatstate.TurnFailed || turn.FailReason != ReasonInputTimeout {
+		t.Fatalf("turn = %s/%s, want failed/%s", turn.State, turn.FailReason, ReasonInputTimeout)
+	}
+	if got := h.waitIdle(t, c.ID); got.State != chatstate.Idle {
+		t.Fatalf("chat = %s after an input timeout, want idle", got.State)
+	}
+	assertSlotFree(t, h)
+}
+
+// TestAnsweringStopsTheInputClock proves the pair is a pair and not a sum: a
+// human who answers inside the window resumes the work clock rather than
+// carrying the input clock's remainder into the rest of the turn.
+func TestAnsweringStopsTheInputClock(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.Defaults.AgentTimeout = config.Duration(30 * time.Second)
+	h.cfg.Defaults.InputTimeout = config.Duration(5 * time.Second)
+	t.Setenv("FAKEAGENT_SCENARIO", "ask-question")
+	c := h.chat(t)
+
+	turn, err := h.runner.Send(t.Context(), c.ID, "ask me something")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	h.waitState(t, c.ID, chatstate.AwaitingInput)
+	if err := h.runner.Answer(t.Context(), c.ID, agent.InputResponse{
+		Answers: map[string][]string{"Which colour?": {"blue"}},
+	}); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	got := h.waitTurn(t, turn.ID)
+	if got.FailReason == ReasonInputTimeout {
+		t.Fatal("an answered request still expired on the input clock")
+	}
+}
+
+// TestTurnTranscriptStopsAtTheCap covers the other thing only the task engine
+// used to do: `transcript_max_bytes` applies to a chat turn's transcript too.
+func TestTurnTranscriptStopsAtTheCap(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.TranscriptMaxBytes = 256
+	t.Setenv("FAKEAGENT_SCENARIO", "flood")
+	c := h.chat(t)
+
+	turn := h.sendAndWait(t, c.ID, "say a lot")
+	if turn.FailReason != ReasonTranscriptLimit {
+		t.Fatalf("turn = %s/%s, want failed/%s", turn.State, turn.FailReason, ReasonTranscriptLimit)
+	}
+	path := filepath.Join(h.dataDir, "transcripts",
+		worktree.ChatOwner(c.ID).Dir(), fmt.Sprintf("%d.jsonl", turn.Seq))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
+	}
+	// The cap bounds what is written, not to the byte: the writer stops at
+	// the first line that would cross it and records that it did.
+	if info.Size() > 64<<10 {
+		t.Fatalf("transcript is %d bytes with a 256-byte cap", info.Size())
+	}
+}
+
+// waitState waits for the chat to reach one state, for the tests that act
+// while a turn is live.
+func (h *harness) waitState(t *testing.T, chatID int64, want chatstate.State) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := h.store.GetChat(t.Context(), chatID)
+		if err != nil {
+			t.Fatalf("GetChat: %v", err)
+		}
+		if got.State == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("chat %d never reached %s", chatID, want)
+}
+
+// assertSlotFree proves the §11 slot came back: the store no longer counts a
+// chat holding a process, which is what a send that was 409 before now
+// depends on.
+func assertSlotFree(t *testing.T, h *harness) {
+	t.Helper()
+	n, err := h.store.CountChatsHoldingProcess(t.Context())
+	if err != nil {
+		t.Fatalf("CountChatsHoldingProcess: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("%d chats still hold a process after the clock fired", n)
+	}
+}

@@ -428,3 +428,19 @@ func (b *board) foldedHome(rows []boardRow) int {
 		return r.header && r.collapsed && r.path.covers(p)
 	})
 }
+
+// chatFoldsKey is the chats board's field in tui.json, the JSON tag on
+// tuiState.ChatFolds.
+const chatFoldsKey = "chat_folds"
+
+// loadChatFolds and writeChatFolds are loadFolds/writeFolds for the chats
+// board, against its own key. Same file, same fail-open contract, same merge
+// — a different list, because the two boards fold the same project names.
+func loadChatFolds(dataDir string) foldSet { return foldSet(readTUIState(dataDir).ChatFolds) }
+
+func writeChatFolds(dataDir string, f foldSet) error {
+	if f == nil {
+		f = foldSet{}
+	}
+	return mergeTUIState(dataDir, chatFoldsKey, f)
+}

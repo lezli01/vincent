@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -20,6 +21,19 @@ const (
 	EventChatTurn     = "chat.turn_changed"
 	EventChatArchived = "chat.archived"
 )
+
+// ChatEventTypes is the chat.* family, in the order it is declared. It exists
+// so a per-chat SSE replay can narrow the events table to chat rows before
+// filtering on the payload's id: a chat event carries no task_id column, so
+// without this a replay would scan every task event behind the cursor.
+func ChatEventTypes() []string {
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived}
+}
+
+// IsChatEvent reports whether an event type belongs to the chat family.
+func IsChatEvent(t string) bool {
+	return slices.Contains(ChatEventTypes(), t)
+}
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, base_branch, base_sha, worktree_path, session_id, pending_input, created_at, updated_at`
@@ -518,4 +532,35 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// ArchivedChatIDsBefore returns the ids of chats archived before cutoff — the
+// chat half of transcript pruning (§17 retention), the mirror of
+// ArchivedTaskIDsBefore.
+//
+// It measures from `updated_at` rather than from an `archived_at` column
+// because chats have neither: `archived` is a terminal §5.5 state, so the
+// archive transition is the last write a chat row ever takes and its
+// `updated_at` *is* the moment it was archived. Adding a column to restate
+// that would be a migration for a value already on the row.
+func (s *Store) ArchivedChatIDsBefore(ctx context.Context, cutoff time.Time) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM chats WHERE state = ? AND updated_at < ? ORDER BY id`,
+		string(chatstate.Archived), formatTime(cutoff))
+	if err != nil {
+		return nil, fmt.Errorf("list archived chats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan archived chat id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list archived chats: %w", err)
+	}
+	return ids, nil
 }

@@ -1286,7 +1286,13 @@ POST   /v1/chats/{id}/send            start a turn
 POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
+GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
+GET    /v1/chats/{id}/turns/{seq}/transcript
+                                      one turn's transcript, with ?offset= / ?tail=
 ```
+
+None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
+excluded, the stream and the transcript included.
 
 ### Creating one
 
@@ -1335,10 +1341,34 @@ The chat is left exactly as it was: still `idle`, with no turn row behind it.
 Each turn carries the accounting a step run does — `input_tokens`,
 `output_tokens`, `cost_usd`, `exit_code`, `duration_ms` — plus `session_id`, the
 session it actually ran in, and its own transcript at
-`{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. That file is not served by
-any route: [`/v1/tasks/{id}/transcript`](#transcripts-and-diffs) is task-only,
-and a chat's is read from disk. A turn is `running`, then `done`, `failed` or
-`interrupted`, forever.
+`{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. A turn is `running`, then
+`done`, `failed` or `interrupted`, forever.
+
+```bash
+curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \
+  -H "Authorization: Bearer $TOKEN" -D -
+```
+
+The turn is named by its **`seq`**, not by a run id: a chat turn is its own run.
+`?offset=` and `?tail=` are mutually exclusive, the body always covers whole
+records, and `X-Next-Offset` names where the next fetch resumes — the same
+contract [a step's transcript](#transcripts-and-diffs) has. Add
+`?format=normalized` for vincent's own vocabulary instead of the agent's
+dialect.
+
+### Following one
+
+```bash
+curl -N http://127.0.0.1:PORT/v1/chats/3/events -H "Authorization: Bearer $TOKEN"
+```
+
+This chat's durable `chat.*` events interleaved with its live output — the
+[per-task stream](#events-sse)'s shape for a chat. Another chat's events do not
+arrive on it and neither do a task's. `Last-Event-ID` resumes the durable
+events; live output is ephemeral and is never replayed, so a reconnect catches
+up by re-fetching the running turn's transcript and discarding every chunk whose
+`offset` is at or before the `X-Next-Offset` it reported. Chunks carry
+`chat_id`, `turn_id`, `offset` and the agent's own `raw` line.
 
 Two failure reasons are worth knowing:
 
@@ -1350,6 +1380,12 @@ Two failure reasons are worth knowing:
 - **`interrupted`** — the daemon restarted under a live turn. It is **not**
   re-run, unlike a task's step: re-running would re-send your message into a
   session that died with the process. The chat returns to `idle`.
+- **`timeout` / `input_timeout`** — the turn ran past
+  [`defaults.agent_timeout`](configuration.md#defaults), or the chat sat in
+  `awaiting_input` past `defaults.input_timeout`. The process tree is killed,
+  the chat returns to `idle` and its `max_parallel_chats` slot is released. The
+  two clocks are the ones a workflow step gets, with no chat-specific key and
+  no per-turn override.
 
 ## Step status
 
@@ -1446,9 +1482,12 @@ are excluded — a documented limitation.
 ```
 GET /v1/events?types=&project_id=
 GET /v1/tasks/{id}/events
+GET /v1/chats/{id}/events
 ```
 
-Two kinds of stream, with deliberately different guarantees.
+Two kinds of stream, with deliberately different guarantees. The per-chat one is
+the per-task one's twin, over a [chat](#chats) instead of a task, and is
+documented there.
 
 ### State events — durable
 

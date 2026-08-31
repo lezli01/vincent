@@ -132,7 +132,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here |
 | 27 | GitHub pull requests | **Read-only, daemon-side**, like row 26 and through the same gate and credential. A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29). *Narrowed 2026-08-30 (task 064):* the read-only posture holds in full — no write method, no `POST`, no mutating `gh` subcommand — and a task may now be created **from** a pull request and run on its head branch. That adds a flag to the same envelope (`branch`, `fork`) rather than a snapshot: nothing renderable is stored, so "a pointer, never a snapshot" is unchanged, and there is still no `.Pull` template variable. The consequences live in §10 (a second worktree creation mode, and archive never touching a branch vincent did not cut) and in §5.3's branch-name chain, which gains `pull` above the per-task literal. The listing above is narrowed the same way: it still **defaults** to open, but `?state=` (§13.2) makes a closed or merged pull request reachable, because acting on a merged one and redoing a reverted one are exactly what creating a task from one is for |
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
-| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30) |
+| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15) |
 
 ## 4. Architecture
 
@@ -516,7 +516,7 @@ chats too — the same objection that kept a `kind` column off `tasks`.
 |---|---|
 | `idle` | no live turn; the state a chat is created in and the one every finished turn returns it to |
 | `running` | a live turn: an agent process is up, owned by the chat's runner goroutine |
-| `awaiting_input` | a turn holding its process while the agent waits on a §7.4 request. It **holds** its cap slot, for §6's reason: the process is alive on its stdin |
+| `awaiting_input` | a turn holding its process while the agent waits on a §7.4 request. It **holds** its cap slot, for §6's reason: the process is alive on its stdin. *Amended 2026-08-31 (task 067, issue #269): that hold is now **bounded** by `defaults.input_timeout` — the wait expires, the turn fails `input_timeout`, the process tree is killed and the chat returns to `idle`, releasing the slot* |
 | `archived` | the only terminal state. The worktree is gone; nothing further can run in it |
 
 Human actions: `send` (idle → running), `answer` (awaiting_input → running),
@@ -3284,6 +3284,18 @@ changed from step to turn. So a chat turn is counted; what differs is only that
 the response to a full cap is a refusal a human sees rather than a queue a
 human waits in.
 
+*Amended 2026-08-31 (task 067, issue #269).* A chat's slot is now **bounded in
+time as well as counted**. §7.2's `defaults.agent_timeout` bounds a running
+turn and §7.4's `defaults.input_timeout` bounds an `awaiting_input` one;
+either expiry kills the process tree, fails the turn with the matching
+snake_case reason and returns the chat to `idle`, which frees the slot. That
+closes the hole this section named in its own words: before it, a human who
+walked away from a question held one of `max_parallel_chats` slots forever, and
+a `send` refused with `409 chat_cap_reached` had nothing that would ever make it
+succeed. The two clocks are §7.2's and §7.4's numbers verbatim — no
+`defaults.chat_*` key, and no per-turn override, because §8.2's `timeout` and
+`input_timeout` are workflow step fields and a chat has no workflow.
+
 The two caps are independent by design: a running chat consumes no
 `max_parallel_tasks` or per-project slot, and does not delay an admissible task.
 The combined ceiling on live agent processes is therefore
@@ -3720,6 +3732,16 @@ tui:                           # view preference; the daemon validates and relay
   board:
     group_by: [project, workflow]  # task-table grouping, outermost first; [] = flat
 ```
+
+*Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
+(§5.5) as well as tasks, and none of them gains a chat-specific twin:
+`defaults.agent_timeout` bounds a running turn and `defaults.input_timeout` an
+`awaiting_input` one, either expiry failing the turn and releasing its
+`max_parallel_chats` slot (§11, §13.2); `transcript_max_bytes` caps a turn's
+transcript and fails it `transcript_limit`; and `transcript_retention_days`
+reclaims an **archived** chat's transcripts on the same pass as an archived
+task's (§17). `notify:` stays the one exception, silent on chats for the reason
+its own comment gives.
 
 **`container:` (task 061, added 2026-08-30).** `image` is the whole switch and
 `""` is the default: no image means every step runs on this host, no runtime is
@@ -4597,18 +4619,35 @@ POST   /v1/chats/{id}/send              { message } → 202 with the new turn. `
                                         — **refused, never queued** (§11)
 POST   /v1/chats/{id}/answer            the §7.4 answer flow verbatim: same normalized request,
                                         same `Respond()`. `409` outside `awaiting_input`.
-                                        *Corrected 2026-08-30 (task 063, same PR): the wait is
-                                        **not** bounded by `input_timeout`. `internal/chatrun`
-                                        applies no clock at all — neither `input_timeout` nor
-                                        `agent_timeout` — so a chat turn runs, and an
-                                        `awaiting_input` chat waits, until it is answered or
-                                        cancelled. It holds its `max_parallel_chats` slot for as
-                                        long as it does. Bounding it is open work, recorded in
-                                        `docs/tasks/063-free-chat.md`*
+                                        *Amended 2026-08-31 (task 067, issue #269), replacing the
+                                        2026-08-30 correction: the wait **is** bounded, by
+                                        `defaults.input_timeout` (24h), and a running turn by
+                                        `defaults.agent_timeout` (60m) — §7.2's and §7.4's
+                                        numbers verbatim, with no `defaults.chat_*` key and no
+                                        per-turn override, because §8.2's `timeout`/`input_timeout`
+                                        are workflow step fields and a chat has no workflow.
+                                        Expiry fails the turn `timeout` or `input_timeout`, kills
+                                        the process tree, returns the chat to `idle` and releases
+                                        its `max_parallel_chats` slot. `transcript_max_bytes`
+                                        applies to a turn's transcript the same way, failing it
+                                        `transcript_limit`*
 POST   /v1/chats/{id}/cancel            stops the live turn and kills its process tree
 POST   /v1/chats/{id}/archive           removes the worktree and deletes the branch when it
                                         received nothing (§10, task 008 semantics), `?force=`
                                         for the dirty-worktree refusal. Terminal
+GET    /v1/chats/{id}/events            *Added 2026-08-31 (task 067).* SSE: this chat's durable
+                                        `chat.*` events interleaved with its live output, the
+                                        per-task stream's shape for a chat. The filter is the
+                                        payload's `id` — a chat event carries no `task_id`, by
+                                        design — and the output rides the chat's own broker key,
+                                        so neither stream can be handed the other's bytes.
+                                        `Last-Event-ID` resumes the durable events only (§13.3)
+GET    /v1/chats/{id}/turns/{seq}       *Added 2026-08-31 (task 067).* One turn's transcript,
+       /transcript                      with the step route's range contract: `?offset=` and
+       ?offset=|?tail=&format=          `?tail=` mutually exclusive, whole records at both ends,
+                                        `X-Next-Offset` naming where the next fetch resumes.
+                                        There is no `run_id` analogue — a chat turn **is** its
+                                        run, named by its 1-based `seq`
 GET    /v1/workflows/definition         one workflow's whole recursive structure, selected with
        ?name=&project_id=               the same §5.2 shadowing the list applies (task 017,
                                         added 2026-08-18):
@@ -5091,6 +5130,18 @@ coalescing and the same drop-the-slow-subscriber rule, because the turn's
 transcript file is the durable copy. `Last-Event-ID` resumes the durable chat
 events and not the output, for the reason it does not resume a step's.
 
+*Amended 2026-08-31 (task 067, issue #269).* There is now a **per-chat stream**,
+`GET /v1/chats/{id}/events` (§13.2), the per-task stream's twin. It narrows the
+durable events on the payload's `id` rather than on a column — a chat event
+carries no `task_id`, deliberately, so a per-task stream can never deliver one —
+and subscribes to the chat's own broker key, the negative half of the int64 key
+space, so a task subscriber can never be handed a chat's bytes. Its **catch-up
+seam is now exact rather than approximate**: a chunk carries `turn_id` and
+`offset`, and `GET /v1/chats/{id}/turns/{seq}/transcript` reports
+`X-Next-Offset`; a client fetches, then keeps every chunk whose `offset` is past
+what the fetch reported, for that `turn_id`. That is the same pair a task uses,
+with `turn_id` where `run_id` stands — a chat turn is its own run.
+
 ### 13.4 Model Context Protocol (task 057)
 
 *Added 2026-08-29 (task 057, issue #243).*
@@ -5176,6 +5227,14 @@ config route: an agent must not reconfigure the daemon supervising it, and a
 workflow file is what that daemon runs. Nothing regresses — the
 `create-workflow` built-in writes its deliverable through the filesystem, not
 through this API. `GET /v1/workflows/schema` is an ordinary tool.
+
+*Amended 2026-08-31 (task 067, issue #269).* **Seventeen**, with
+`GET /v1/chats/{id}/events` and `GET /v1/chats/{id}/turns/{seq}/transcript` —
+the chat family stays whole. They are listed as *exclusions* rather than under
+the SSE carve-out below, even though one of them is a stream: the rule that
+keeps chats off the tool surface is "a human drives a chat", not "a stream is
+not a request/response", and one rule for the whole family is what stops a
+later chat route being classified by which sentence it happens to match.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -5525,14 +5584,6 @@ together or not at all; a concurrent duplicate loses on the primary key, rolls
 its task insert back, and replays the winner's.
 
 ## 15. TUI
-
-> **Chats in the TUI are not in the first cut (task 063, 2026-08-30).** The
-> entity, its API, its CLI (`vincent chat`) and its runner landed together;
-> the chats view did not, and this section is unchanged until it does. A chat
-> is driven from `vincent chat` and from curl in the meantime. The view, when
-> it lands, is a sibling of the existing six routed by `viewID` and gets its
-> screenshots from `scripts/screenshots.sh` like every other panel — never a
-> drawing.
 
 Built with Bubble Tea. The TUI is a pure API client — it holds no *task* state
 the daemon doesn't have, and killing it never affects work. What it does own is
@@ -5948,6 +5999,56 @@ stream for the live tail.
    every view, so a `task.github_pull_changed` tick re-renders it with no
    keypress.
 
+8. **Chats board.** *Added 2026-08-31 (task 067, issue #269, closing 063.2).* A
+   second board, not a filter on the first: every chat from `GET /v1/chats`,
+   grouped by project, one row per conversation carrying id, state, agent, last
+   activity and title. It shares none of view 1's columns because a chat has
+   none of them — no workflow, no step `k/n`, no §6 action set — and decision
+   row 29's "a chat never appears on the task board" is what makes the second
+   board the right answer rather than a `kind` column on the first.
+
+   Grouping is **by project and by nothing else**: `tui.board.group_by`'s
+   workflow levels are meaningless for a chat, so the `g` cycle is not offered
+   here. Folds persist in `{data_dir}/tui.json` under their own key, beside the
+   task board's rather than sharing them — the two boards group by the same
+   project names, and one list would make folding a project on one fold it on
+   the other.
+
+   **Attention is this board's own.** An `awaiting_input` chat is sorted to the
+   top and counted in *this* header's badge. `!` and view 1's needs-attention
+   count stay task-only, which is what keeps row 29 literal in the client. The
+   `notify:` hook (§12.3) is untouched in both directions: it is the daemon's
+   outward signal and this is a client's own ordering.
+
+   **Actions.** `enter` opens view 9. `n` starts a chat — the create form is a
+   layer over this board, taking project, title, agent, model, effort and base
+   branch, and rendering `400 agent_cannot_resume` as the typed refusal it is
+   rather than a generic failure. `a` archives, asking first and re-offering
+   with the force when the worktree is dirty. `/` filters on title, agent or
+   branch; `←`/`→` fold a project group; `r` re-lists. A `chat.*` event
+   re-renders the board with no keypress, and a `task.*` event does not — the
+   separation runs both ways.
+
+9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
+   One conversation: the finished turns above, the running turn's live tail
+   below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
+   live turn, `esc` returns to view 8.
+
+   The live tail consumes `GET /v1/chats/{id}/events` and seams onto
+   `GET /v1/chats/{id}/turns/{seq}/transcript` exactly the way the task
+   workspace's output tab seams onto a step's: fetch, then keep every chunk
+   whose `offset` is past the fetch's `X-Next-Offset`, for that `turn_id`. A
+   finished turn renders from its transcript and falls back to `ResultText`
+   when the file has gone to retention (§17).
+
+   The §7.4 popup is **the same popup** view 2 uses, not a fork of it:
+   structured options, multi-select and the permission allow/deny distinction
+   come along because the request is the same request, and only where the
+   answer is POSTed differs. It opens and closes on the chat's own state, so an
+   answer given from `vincent chat answer` or from curl closes it here too. A
+   `409 chat_cap_reached` on send renders as a refusal — never a queued turn,
+   never a spinner — because that is what the daemon did.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -5956,6 +6057,12 @@ screen. `enter` on its selected row opens view 2, the full-screen task workspace
 task 051, 2026-08-29, added the Workflow tab). Views 3–7 are
 full-screen takeovers reached from the command palette (view 7 added
 2026-08-29 by task 052.6).
+
+*Amended 2026-08-31 (task 067).* Views **8 and 9** join it as a second
+board-and-workspace pair, with the same relationship to each other that views 1
+and 2 have: view 8 is a keyless nav row in the palette, `enter` on a row opens
+view 9, `esc` returns. The chats board keeps `n` for itself — on it, `n` starts
+a chat; everywhere else it still opens the new-task form.
 
 *Amended 2026-08-30 (task 064).* View 7 gains two keys. **`c`** opens the
 new-task form seeded with the selected pull request: the daemon computes the
@@ -6436,6 +6543,19 @@ re-reads a registry or the daemon blocks. One key jumps to the next task needing
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
 
+*Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
+their own rows in the registry (`internal/tui/bindings.go`), which is what the
+`?` overlay, the footer and the palette are derived from. On the **chats
+board**: `enter` opens the workspace, `n` starts a chat, `a` archives, `/`
+filters, `←`/`→` fold a project group and `r` re-lists. In the **chat
+workspace**: `enter` sends, `ctrl+x` stops the live turn, `esc` returns to the
+board. In the **new-chat form**: `ctrl+s` creates, `tab`/`shift+tab` move
+between fields, `←`/`→` choose on the project and agent fields, `esc` discards.
+`n` is the one key whose meaning depends on where you are, deliberately: on the
+chats board it makes a chat, and everywhere else it still makes a task. `!` is
+**not** extended to chats — an `awaiting_input` chat is pinned and badged on
+its own board and nowhere else.
+
 **`esc` cancels one layer per press**, by a fixed stack: *(amended 2026-08-30,
 task 063)* a form popup's Task details tab → popup (palette, confirmation,
 answer form) → takeover screen → bulk selection → active filter →
@@ -6658,7 +6778,11 @@ global cursor config is untouched.
   small, and useless once the retry window it covers has passed, so there is no
   operator reason to keep one. The table is counted in
   `GET /v1/doctor`'s `database.table_rows` like every other, by enumeration
-  rather than by name.
+  rather than by name. *Amended 2026-08-31 (task 067, issue #269):* an
+  **archived chat**'s turn transcripts (§5.5) are pruned by the same pass under
+  the same key, measured from when the chat was archived. The pruner walked
+  archived tasks alone until then, so a chat's transcripts outlived every
+  retention window.
 - **Entry point** (*added 2026-08-15, task 005*): `vincent doctor` and
   `GET /v1/doctor`. Everything above answers "what happened to this task"; the
   question that had no surface at all was "why is nothing running?", which took

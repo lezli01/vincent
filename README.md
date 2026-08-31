@@ -81,7 +81,7 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 | **Verification and recovery** | Checks decide whether work succeeded, retries receive the real failure, timeouts are enforced, transcripts are durable, and interrupted steps recover after a daemon restart. |
 | **Human control where it matters** | Pause at approval gates, answer supported agents mid-run, inspect file-grouped diffs, edit and retry blocked steps, and decide when publishing happens. |
 | **A TUI built for active workloads** | Use a grouped task board, guided task creation, project and workflow workspaces, bulk actions, live output, cost and duration metrics, and a navigable workflow graph. |
-| **Automation-ready interfaces** | Every operation is available through the localhost REST + SSE API, and all but a chat's answer and cancel have a CLI subcommand too. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
+| **Automation-ready interfaces** | Every operation is available through CLI subcommands and a localhost REST + SSE API. `--json`, stable exit codes, and offline workflow validation make scripting and CI practical. |
 | **Drivable by an agent over MCP** | The daemon serves the Model Context Protocol on the same listener, so any MCP client gets the API as tools with discovery, schemas, typed errors, and one bounded call that waits for a task. Vincent's own agent steps are wired in by default. |
 | **Cross-platform delivery** | Run the same single binary on Windows, macOS, and Linux through Homebrew, WinGet, Scoop, mise, deb/rpm packages, or release archives. |
 
@@ -207,7 +207,7 @@ vincent workflow render .vincent/workflows/feature-pr.yaml
 vincent config get                         # or set max_parallel_tasks 6
 ```
 
-Every subcommand except `vincent chat` takes `--json` for scripting. Exit codes are `0` success,
+Every subcommand takes `--json` for scripting. Exit codes are `0` success,
 `1` the request was rejected — by the daemon, or by a daemon-free command such as
 `workflow validate` on an invalid file — and `2` no daemon answered
 — so a script can tell "start the daemon" from "fix your request" without

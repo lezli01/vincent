@@ -26,8 +26,7 @@ list with the user-facing context a commit subject cannot carry.
   gap the feature was asked for: a conversation held outside vincent leaves no
   record at all. Drive one with `vincent chat start|send|list|show|archive`, or
   over the API. Mid-run questions use the existing §7.4 flow verbatim; answering
-  one is `POST /v1/chats/{id}/answer`, which has no `vincent chat` subcommand
-  yet.
+  one is `vincent chat answer` or `POST /v1/chats/{id}/answer`.
 
   Two limits worth knowing before you reach for it. **codex and cursor cannot
   hold a chat**: creating one on either is refused with `400
@@ -38,9 +37,7 @@ list with the user-facing context a commit subject cannot carry.
   it. A stored session the CLI no longer knows fails that turn with
   `session_lost` and leaves the chat usable, for the same reason: a silently
   fresh session answers as if it had context it does not have, and you could
-  not tell that apart from a working conversation. And **there is no chats view
-  in the TUI yet** — chats are driven from `vincent chat` and the API in this
-  release.
+  not tell that apart from a working conversation.
 - **`max_parallel_chats` (default 3).** Chats are bounded by their own cap,
   counted independently of `max_parallel_tasks`: a running chat consumes no task
   slot and never delays an admissible task. A `send` over the cap is refused
@@ -50,6 +47,48 @@ list with the user-facing context a commit subject cannot carry.
 - **`--resume` for the claude adapter.** `RunSpec.ResumeSessionID` and
   `RunResult.SessionID`, plus the `agent.Resumer` capability. Only chat turns
   set it; every workflow step still gets a fresh session, unchanged.
+- **Chats in the TUI: a chats board and a chat workspace.** Reached from the
+  command palette. The board lists every conversation grouped by project, with
+  its state, agent, last activity and title; `enter` opens the workspace, `n`
+  starts a chat, `a` archives one, `/` filters and `←`/`→` fold a project group.
+  It is a *second* board rather than rows on the first, because a chat has no
+  workflow, no step `k/n` and none of the task actions — and a chat has never
+  appeared on the task board by design.
+
+  A chat waiting on you is pinned to the top of the chats board and counted in
+  *its* header. `!` and the task board's needs-attention count stay task-only,
+  so nothing about the task board moves.
+
+  The workspace is the conversation: finished turns above, the running turn's
+  live output below, a composer at the bottom. `enter` sends, `ctrl+x` stops the
+  live turn. When the agent asks something mid-turn you get **the same popup a
+  task's question opens** — same options, same multi-select, same allow/deny —
+  and answering it from `vincent chat answer` or the API closes it here too. A
+  send refused because the cap is full says so and creates nothing: it is a
+  refusal, not a queue.
+- **`GET /v1/chats/{id}/events` and `GET /v1/chats/{id}/turns/{seq}/transcript`.**
+  A per-chat SSE stream — that chat's events plus its live output, filtered so a
+  task's never leak onto it and vice versa — and the turn's durable record, with
+  the step transcript's `?offset=`/`?tail=` contract and `X-Next-Offset`. A turn
+  is named by its `seq` because a chat turn is its own run. Neither is an MCP
+  tool: the whole chat family stays off the tool surface.
+- **`vincent chat answer` and `vincent chat cancel`, and `--json` on every
+  `vincent chat` subcommand.** Interrupting `vincent chat send` stops the CLI,
+  not the turn — the turn belongs to the daemon — so `cancel` is what ends one,
+  and `answer` is what moves a parked chat on without curl. `chat show` now
+  prints a parked chat's questions, numbered, which are the numbers
+  `chat answer --answer N=VALUE` reads.
+- **Chat turns are bounded by `agent_timeout` and `input_timeout`.** The same
+  two clocks a workflow step gets, applied verbatim: a turn that runs past
+  `defaults.agent_timeout` fails `timeout`, and a chat left in `awaiting_input`
+  past `defaults.input_timeout` fails `input_timeout`. Either kills the process
+  tree, returns the chat to `idle` and **releases its `max_parallel_chats`
+  slot** — which is what a chat you walked away from used to hold forever, with
+  nothing that would ever make a `409 chat_cap_reached` succeed. There is no
+  chat-specific setting and no per-turn override; the numbers are the ones you
+  already tune. `transcript_max_bytes` applies to a turn's transcript the same
+  way, and `transcript_retention_days` now reclaims an **archived chat's**
+  transcripts, which it previously walked straight past.
 
 - **Run a task's steps inside a container.** A new `container:` block in
   `config.yaml` names an image, and a task's step processes run inside **one**
@@ -430,6 +469,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Writing a chat's session id crashed every open event stream.** The store
+  publishes an event after each write, and the three chat columns no client is
+  told about — session id, worktree path, pending input — handed it a `nil`
+  instead of skipping the publish. Every SSE subscriber dereferences the event
+  it is handed, so finishing the first turn of any chat panicked
+  `GET /v1/events`, and any per-task stream, for everyone connected; the
+  connection dropped with a `500` mid-stream and reconnected into the next
+  crash. A `nil` is now dropped where it is produced rather than guarded in each
+  handler, since "there is no event to announce" is the publisher's business.
 - **New task fell back to `adhoc` for a project whose `default_workflow` lives in
   its own `.vincent/workflows/`.** The form loads its workflow catalog before a
   project is selected, so that first, unscoped listing cannot contain a

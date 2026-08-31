@@ -20,6 +20,12 @@ import (
 type tuiState struct {
 	FullAutoNoticeAck bool       `json:"full_auto_notice_ack"`
 	BoardFolds        []foldPath `json:"board_folds,omitempty"`
+	// ChatFolds is the chats board's own set. It is a second field rather
+	// than a second use of BoardFolds because the two boards group by the
+	// same project names: sharing the list would make folding a project on
+	// one board fold it on the other, which is one fold set pretending to be
+	// two (task 067).
+	ChatFolds []foldPath `json:"chat_folds,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "tui.json") }

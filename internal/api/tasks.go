@@ -1166,39 +1166,10 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "get step run", err)
 		return
 	}
-	q := r.URL.Query()
-	rawOffset, rawTail := q.Get("offset"), q.Get("tail")
-	if rawOffset != "" && rawTail != "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"offset and tail are mutually exclusive")
+	rng, ok := transcriptRange(w, r)
+	if !ok {
 		return
 	}
-	var offset, tail int64
-	if rawOffset != "" {
-		offset, err = strconv.ParseInt(rawOffset, 10, 64)
-		if err != nil || offset < 0 {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed, "offset must be a non-negative integer")
-			return
-		}
-	}
-	if rawTail != "" {
-		tail, err = strconv.ParseInt(rawTail, 10, 64)
-		if err != nil || tail < 0 {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed, "tail must be a non-negative integer")
-			return
-		}
-	}
-	normalized := false
-	switch format := q.Get("format"); format {
-	case "", "raw":
-	case "normalized":
-		normalized = true
-	default:
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"format must be raw or normalized")
-		return
-	}
-
 	if run.TranscriptPath == "" {
 		writeError(w, http.StatusNotFound, CodeNotFound, "step run has no transcript")
 		return
@@ -1209,43 +1180,7 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		s.internalError(w, "stat transcript", err)
-		return
-	}
-	size := fi.Size()
-
-	// The body always covers whole records: it ends at the last newline, and
-	// a tail window starts at the beginning of the record its byte count
-	// lands in (§13.2).
-	end, err := lineBoundary(f, size)
-	if err != nil {
-		s.internalError(w, "scan transcript", err)
-		return
-	}
-	start := min(offset, size)
-	if rawTail != "" {
-		if start, err = lineBoundary(f, size-tail); err != nil {
-			s.internalError(w, "scan transcript", err)
-			return
-		}
-	}
-	start = min(start, end)
-
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("X-Next-Offset", strconv.FormatInt(end, 10))
-	w.WriteHeader(http.StatusOK)
-	section := io.NewSectionReader(f, start, end-start)
-	if !normalized {
-		_, _ = io.Copy(w, section)
-		return
-	}
-	if err := normalizeTranscript(w, section, s.transcriptParser(run.Agent)); err != nil {
-		// The status is already on the wire; the client sees a short body and
-		// resumes from the offset it was given, which is still line-aligned.
-		s.deps.Logger.Error("normalize transcript", "run_id", run.ID, "error", err)
-	}
+	s.serveTranscriptFile(w, f, rng, run.Agent, run.ID)
 }
 
 // handleTaskDiff implements GET /v1/tasks/{id}/diff: the worktree against

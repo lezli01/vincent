@@ -52,6 +52,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	case "ctrl+t":
 		msg = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
+	case "ctrl+x":
+		msg = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
 	default:
 		r := []rune(key)
 		if len(r) != 1 {
@@ -369,6 +371,158 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	// The chat surfaces (task 067). Every probe drives the real view with
+	// the key the registry publishes and asserts the effect the label
+	// promises.
+	ctxChats: {
+		"enter": func(t *testing.T) {
+			v := chatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not open the selected chat's workspace")
+			}
+			if _, ok := drain(cmd).(openChatMsg); !ok {
+				t.Fatalf("enter produced %T, want openChatMsg", drain(cmd))
+			}
+		},
+		"n": func(t *testing.T) {
+			v := chatsFixture()
+			if _, cmd := v.updateKey(registryKey(t, "n")); cmd != nil {
+				drain(cmd)
+			}
+			if v.create == nil {
+				t.Fatal("n did not open the new-chat form")
+			}
+		},
+		"a": func(t *testing.T) {
+			v := chatsFixture()
+			v.updateKey(registryKey(t, "a"))
+			if v.confirm == nil {
+				t.Fatal("a did not ask before archiving")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := chatsFixture()
+			v.updateKey(registryKey(t, "/"))
+			if !v.filtering {
+				t.Fatal("/ did not open the chats filter")
+			}
+		},
+		"left": func(t *testing.T) {
+			v := chatsFixture()
+			v.cursor = 0
+			if _, cmd := v.updateKey(registryKey(t, "left")); cmd != nil {
+				drain(cmd)
+			}
+			if !v.folds.has(foldPath{"repo"}) {
+				t.Fatal("left did not collapse the project group")
+			}
+		},
+		"right": func(t *testing.T) {
+			v := chatsFixture()
+			v.folds = foldSet{foldPath{"repo"}}
+			v.cursor = 0
+			if _, cmd := v.updateKey(registryKey(t, "right")); cmd != nil {
+				drain(cmd)
+			}
+			if v.folds.has(foldPath{"repo"}) {
+				t.Fatal("right did not expand the project group")
+			}
+		},
+		"r": func(t *testing.T) {
+			v := chatsFixture()
+			v.client = nil
+			// With no client the reload is a nil command; what the probe
+			// asserts is that the key reached the reload path rather than
+			// being swallowed by the filter or the confirmation.
+			if _, cmd := v.updateKey(registryKey(t, "r")); cmd != nil {
+				drain(cmd)
+			}
+			if v.filtering || v.confirm != nil {
+				t.Fatal("r was taken by another layer")
+			}
+		},
+	},
+	ctxChat: {
+		"enter": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.composer.SetValue("hello")
+			if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+				t.Fatal("enter did not send the message")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("the composer still holds %q after a send", v.composer.Value())
+			}
+		},
+		"ctrl+x": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.turns = []apiclient.ChatTurn{{ID: 1, Seq: 1, State: "running"}}
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+x")); cmd == nil {
+				t.Fatal("ctrl+x did not stop the running turn")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatViewFixture()
+			_, cmd := v.updateKey(registryKey(t, "esc"))
+			if cmd == nil {
+				t.Fatal("esc did not leave the chat workspace")
+			}
+			msg, ok := drain(cmd).(selectViewMsg)
+			if !ok || msg.id != viewChats {
+				t.Fatalf("esc went to %v, want the chats board", drain(cmd))
+			}
+		},
+	},
+	ctxNewChat: {
+		"ctrl+s": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 7)
+			v.create.title.SetValue("a chat")
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+s")); cmd != nil {
+				drain(cmd)
+			}
+			if v.create == nil || v.create.err != "not connected" {
+				t.Fatalf("ctrl+s did not attempt to create the chat (err = %q)",
+					func() string {
+						if v.create == nil {
+							return "<form closed>"
+						}
+						return v.create.err
+					}())
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 7)
+			before := v.create.focus
+			v.updateKey(registryKey(t, "tab"))
+			if v.create.focus == before {
+				t.Fatalf("tab did not move the focus (still %d)", before)
+			}
+		},
+		"left": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 0)
+			v.create.applyFields(newChatFieldsMsg{projects: []apiclient.Project{
+				{ID: 1, Name: "one"}, {ID: 2, Name: "two"},
+			}})
+			v.create.focus = 0
+			v.updateKey(registryKey(t, "left"))
+			if v.create.projectID != 2 {
+				t.Fatalf("left chose project %d, want the previous one", v.create.projectID)
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 7)
+			v.updateKey(registryKey(t, "esc"))
+			if v.create != nil {
+				t.Fatal("esc did not discard the new-chat draft")
+			}
+		},
+	},
 	ctxPullRequests: {
 		"enter": func(t *testing.T) {
 			v := pullRequestsFixture(testPull(11, "claimed", claimedBy(7, "auto")))

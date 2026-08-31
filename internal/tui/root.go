@@ -158,6 +158,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case openChatMsg:
+		// The chat workspace is not the active view yet, and an inactive
+		// view receives nothing — so the root points it at the chat first
+		// and switches second, the same order every takeover that carries an
+		// argument uses.
+		if v, ok := m.views[viewChat].(*chatView); ok {
+			return m, tea.Batch(v.open(msg.id), m.switchTo(viewChat))
+		}
+		return m, nil
 	case githubProbeMsg:
 		// The listing failing leaves the previous answer standing: a probe
 		// that could not be made is not an integration that stopped working,
@@ -372,6 +381,10 @@ func (m *root) activeContext() bindingContext {
 		return ctxDaemon
 	case viewPullRequests:
 		return ctxPullRequests
+	case viewChats:
+		return m.views[viewChats].(*chatsView).bindingContext()
+	case viewChat:
+		return m.views[viewChat].(*chatView).bindingContext()
 	default:
 		s := m.views[viewHome].(*shell)
 		return s.focusedContext()
@@ -398,6 +411,8 @@ func synthKey(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
 	case "ctrl+c":
 		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	case "ctrl+x":
+		return tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
 	default:
 		return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 	}

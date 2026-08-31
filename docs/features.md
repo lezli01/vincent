@@ -61,9 +61,13 @@ starts the moment you send it, bounded only by its own
 that it is refused immediately rather than queued behind batch work, which is
 the wait a chat exists to avoid.
 
-Drive one with [`vincent chat`](reference/cli.md#vincent-chat) or the
-[`/v1/chats` routes](reference/api.md#chats). There is no chats view in the TUI
-yet, and no chat route is exposed as an MCP tool.
+Drive one from the TUI's own **chats board and chat workspace**
+([guide](guides/tui.md#chats)), from
+[`vincent chat`](reference/cli.md#vincent-chat), or over the
+[`/v1/chats` routes](reference/api.md#chats). A chat turn is bounded by the same
+`agent_timeout` and `input_timeout` a workflow step is, so a conversation
+nobody comes back to gives its slot up rather than holding it forever. No chat
+route is exposed as an MCP tool.
 
 ## Express the workflow the work needs
 

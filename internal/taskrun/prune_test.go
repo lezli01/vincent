@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // pruneHarness is a store plus a data dir with transcript files on disk —
@@ -218,5 +220,81 @@ func TestPruneKeysDropsExpiredOnly(t *testing.T) {
 	// already-pruned rows must be a no-op rather than an error.
 	if n, err := h.pruner.PruneKeys(t.Context(), time.Now()); err != nil || n != 0 {
 		t.Fatalf("second pass: removed %d, err %v; want 0, nil", n, err)
+	}
+}
+
+// chat creates a chat with a transcript directory, archiving it when asked.
+// It cannot backdate the row — `updated_at` is written by the store — so the
+// tests below age the *cutoff* instead, which is what the now parameter is
+// for.
+func (h *pruneHarness) chat(t *testing.T, title string, archived bool) int64 {
+	t.Helper()
+	c := &store.Chat{
+		ProjectID: h.projectID, Title: title, State: chatstate.Idle,
+		Agent: "claude", BaseBranch: "main", Branch: "vincent/" + title,
+	}
+	if err := h.store.CreateChat(t.Context(), c); err != nil {
+		t.Fatalf("CreateChat: %v", err)
+	}
+	if archived {
+		if _, err := h.store.SetChatState(t.Context(), c.ID, chatstate.Archived); err != nil {
+			t.Fatalf("archive chat: %v", err)
+		}
+	}
+	dir := filepath.Join(h.dataDir, "transcripts", worktree.ChatOwner(c.ID).Dir())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir chat transcripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "1.jsonl"), []byte("{\"type\":\"x\"}\n"), 0o600); err != nil {
+		t.Fatalf("write chat transcript: %v", err)
+	}
+	return c.ID
+}
+
+func (h *pruneHarness) chatExists(chatID int64) bool {
+	_, err := os.Stat(filepath.Join(h.dataDir, "transcripts", worktree.ChatOwner(chatID).Dir()))
+	return err == nil
+}
+
+// TestPruneReclaimsArchivedChatTranscripts is the chat half of §17 retention
+// (task 067): a chat keeps its transcripts under the same root and the same
+// setting, so an archived one past the window goes the way an archived task's
+// does — and a live conversation's never does, however old.
+func TestPruneReclaimsArchivedChatTranscripts(t *testing.T) {
+	h := newPruneHarness(t, 7)
+	archived := h.chat(t, "done-talking", true)
+	live := h.chat(t, "still-talking", false)
+	task := h.task(t, "old-archived", 30*24*time.Hour)
+
+	// The cutoff is aged rather than the rows: now+30d puts the archived
+	// chat well behind a 7-day window.
+	removed, _, err := h.pruner.Prune(t.Context(), time.Now().Add(30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("Prune removed %d directories, want the archived task and the archived chat", removed)
+	}
+	if h.chatExists(archived) {
+		t.Error("the archived chat's transcript directory survived retention")
+	}
+	if !h.chatExists(live) {
+		t.Error("a chat that was never archived had its transcripts pruned")
+	}
+	if h.exists(task) {
+		t.Error("the archived task's transcript directory survived retention")
+	}
+}
+
+// TestPruneLeavesArchivedChatsInsideTheWindow is the other side: retention is
+// measured from when the chat was archived, so one archived just now stays.
+func TestPruneLeavesArchivedChatsInsideTheWindow(t *testing.T) {
+	h := newPruneHarness(t, 7)
+	id := h.chat(t, "just-archived", true)
+	if _, _, err := h.pruner.Prune(t.Context(), time.Now()); err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if !h.chatExists(id) {
+		t.Error("a chat archived inside the retention window was pruned")
 	}
 }

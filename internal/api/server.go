@@ -314,8 +314,10 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/answer", s.handleChatAnswer)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/cancel", s.handleChatCancel)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/archive", s.handleChatArchive)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, CodeNotFound, "no such endpoint")
 	})
