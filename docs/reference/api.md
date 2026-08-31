@@ -143,6 +143,7 @@ are long-lived by contract and no write deadline is set.
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": null,
+    "supports_resume": true,
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -187,6 +188,15 @@ answered even for a CLI that is missing.
 
 `version_verdict`, `tested_versions` and `restricted_verdict` also ride
 `GET /v1/info`'s and `GET /v1/doctor`'s `agents[]`, beside `supports_input`.
+
+`supports_resume` is whether the adapter can resume its own session, and so
+whether it may hold a [chat](cli.md#vincent-chat): `true` for claude, `false`
+for codex and cursor. It is the same answer `POST /v1/chats` gates on, so a
+picker built on it and the `agent_cannot_resume` refusal cannot disagree, and
+like `restricted_verdict` it is answered for a CLI that is missing. It is
+`null` — never `false` — when the daemon has no adapter registry to ask, and a
+daemon that predates the field omits it: both mean "no judgement", and nothing
+may be filtered out on either. It rides this route only.
 
 ### Backup
 

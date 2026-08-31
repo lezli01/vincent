@@ -72,6 +72,38 @@ multi-select and the permission allow/deny distinction come along because the
 request is the same request — `internal/chatrun` stores what the adapter
 emitted, unaltered.
 
+**8. An open new-chat draft captures input on every row.** *(Added 2026-08-31,
+issue #279.)* PR L's rule is that a form captures input "only while a text row
+is in edit mode", and `newTask.capturesInput` follows it verbatim. This form is
+the one recorded exception: `newChatForm.capturesInput` returns true for all six
+focus positions, so no keystroke escapes an open draft to the global handler.
+
+The exception is scoped to *this form* and the rule is not changed globally —
+doing that would make `?`, `:`, `!` and `M` unreachable from every form in the
+TUI, which is a product change this issue does not license. Declaring the
+colliding keys in `ctxNewChat` does not work either: `panelOwnsKey` guards `n`
+alone, while `root.updateKey` quits on `q` unconditionally. What justifies the
+exception here is the shape of the form — four of six rows are text fields, and
+a live draft sits behind the two that are not, so `q` on the project row quit
+the TUI with the draft. `esc` is still the way out, and it is already this
+form's layer of §15's esc stack.
+
+**9. The agent picker filters on a published `supports_resume`, and `n`
+refuses an empty registry.** *(Added 2026-08-31, issue #279.)* `applyFields`
+claimed to default to "the first adapter that can resume", but the wire type
+could not express it: `apiclient.Agent` carried `supports_input` and no resume
+field, while `agent.CanResume` is what `POST /v1/chats` has always gated on.
+`GET /v1/agents` now publishes it, following the `input_verdict` precedent
+exactly — an absent field from an older daemon means no judgement, and nothing
+is filtered out on the strength of a field that was never sent. The daemon's
+`agent_cannot_resume` refusal is untouched and still rendered by
+`applyFailure`; it simply stops being reachable from this form.
+
+For the same reason the form is not opened at all when there is no project to
+create in: `ctrl+s` could only answer `pick a project`, and no field on the form
+accepts one. Only a positive answer refuses — a board that has not listed the
+projects, or whose listing failed, opens the form as before.
+
 ## Sub-tasks
 
 | ID | What | Status |

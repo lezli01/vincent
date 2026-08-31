@@ -94,13 +94,18 @@ func (f *newChatForm) init() tea.Cmd {
 	}
 }
 
-func (f *newChatForm) capturesInput() bool {
-	switch f.focus {
-	case 1, 3, 4, 5:
-		return true
-	}
-	return false
-}
+// capturesInput is true for every row of an open draft, not only the four
+// text ones — a recorded exception to PR L's rule that a form captures input
+// "only while a text row is in edit mode" (task 067 decision 6, §15 amended
+// 2026-08-31).
+//
+// The rule is not changed anywhere else: `newTask.capturesInput` still
+// answers false while navigating, and widening it globally would make `?`,
+// `:`, `!` and `M` unreachable from every form in the TUI. The exception is
+// scoped to this form because four of its six rows are text fields and a live
+// draft sits behind the two that are not, so `q` on the project row quit the
+// TUI with the draft (issue #279). `esc` stays the way out.
+func (f *newChatForm) capturesInput() bool { return true }
 
 func (f *newChatForm) paste(text string) tea.Cmd {
 	var cmd tea.Cmd
@@ -125,10 +130,28 @@ func (f *newChatForm) applyFields(msg newChatFieldsMsg) {
 		f.err = errString(msg.err)
 		return
 	}
-	f.projects, f.agents = msg.projects, msg.agents
+	f.projects, f.agents = msg.projects, resumableAgents(msg.agents)
 	if f.projectID == 0 && len(f.projects) > 0 {
 		f.projectID = f.projects[0].ID
 	}
+}
+
+// resumableAgents is the agent picker's contents: only adapters that can hold
+// a conversation (decision row 29). The daemon's `agent_cannot_resume` refusal
+// stays the authority — applyFailure still renders it — this only keeps the
+// picker from offering a choice that is certain to be refused.
+//
+// It follows the `input_verdict` precedent: a daemon too old to send
+// `supports_resume` says nothing about any adapter, and nothing is dropped on
+// the strength of a field that was never sent.
+func resumableAgents(agents []apiclient.Agent) []apiclient.Agent {
+	var out []apiclient.Agent
+	for _, a := range agents {
+		if !a.CannotResume() {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // applyFailure puts the daemon's refusal on the form rather than closing it.
