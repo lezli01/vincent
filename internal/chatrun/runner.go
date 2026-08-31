@@ -431,6 +431,13 @@ func (r *Runner) consume(
 // the chat's live-output key. The offset it returns is what a client seams a
 // transcript fetch against (§13.3): chunks at or before the fetch's
 // X-Next-Offset are the ones it already has.
+//
+// The chunk carries §13.3's normalized fields, the same ones a step's chunks
+// carry and under the same type names (task 071 decision 1), with the verbatim
+// line kept alongside them as `raw`. Normalizing here rather than in the client
+// is what makes a live line and the same line refetched from
+// GET /v1/chats/{id}/turns/{seq}/transcript render identically: the client
+// would otherwise have to know which dialect this chat speaks.
 func (r *Runner) record(chat *store.Chat, turn *store.ChatTurn, tr *transcript.Writer, ev agent.Event) {
 	if len(ev.Raw) == 0 {
 		return
@@ -439,13 +446,40 @@ func (r *Runner) record(chat *store.Chat, turn *store.ChatTurn, tr *transcript.W
 	if r.deps.Events == nil {
 		return
 	}
-	r.deps.Events.PublishOutput(chatOutputKey(chat.ID), events.Chunk{
-		Type: "output",
-		Payload: map[string]any{
-			"chat_id": chat.ID, "turn_id": turn.ID,
-			"raw": string(ev.Raw), "offset": at,
-		},
-	})
+	chunks := agent.LiveChunks(ev)
+	switch {
+	case len(chunks) > 0:
+	case agent.UnmodeledLine(ev):
+		// A line vincent's parsers do not model still reaches the tail, as
+		// `agent.raw` — the type the transcript route gives the same line
+		// back under. A chat has no timeline of steps beside it, so a turn
+		// whose stream is all unmodeled lines would otherwise show nothing
+		// at all while it runs; the client collapses them behind a count
+		// below its verbose level rather than the daemon hiding them (§12.2).
+		chunks = []agent.Chunk{{
+			Type: "agent.raw", Payload: map[string]any{"line": string(ev.Raw)},
+		}}
+	default:
+		// A result or an error: the turn's own outcome carries it, and the
+		// finished turn's transcript is where it renders (task 071
+		// decision 6). Publishing a chunk here would put a line on screen
+		// that the refetch then disagrees with.
+		return
+	}
+	for _, c := range chunks {
+		c.Payload["chat_id"] = chat.ID
+		c.Payload["turn_id"] = turn.ID
+		// raw is kept beside the normalized fields: the chat's chunk has
+		// always carried it and dropping it would break a consumer for no
+		// gain. Both chunks of a split line carry the same one, which is the
+		// line they were both read from.
+		c.Payload["raw"] = string(ev.Raw)
+		c.Payload["offset"] = at
+		r.deps.Events.PublishOutput(chatOutputKey(chat.ID), events.Chunk{
+			Type:    c.Type,
+			Payload: c.Payload,
+		})
+	}
 }
 
 // park records a §7.4 request and moves the chat to awaiting_input. It reports

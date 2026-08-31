@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -56,6 +57,14 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
 	case "ctrl+x":
 		msg = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
+	case "ctrl+r":
+		msg = tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
+	case "ctrl+g":
+		msg = tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}
+	case "pgup":
+		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
+	case "pgdown":
+		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
 	default:
 		r := []rune(key)
 		if len(r) != 1 {
@@ -465,6 +474,39 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+x did not stop the running turn")
 			}
 		},
+		"ctrl+r": func(t *testing.T) {
+			v := chatViewFixture()
+			before := v.level.get()
+			v.updateKey(registryKey(t, "ctrl+r"))
+			if v.level.get() == before {
+				t.Fatal("ctrl+r did not cycle the level")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("ctrl+r reached the composer: %q", v.composer.Value())
+			}
+		},
+		"pgup": func(t *testing.T) {
+			v := chatViewFixture()
+			v.turns = []apiclient.ChatTurn{{ID: 1, Seq: 1, State: "done", Prompt: "hi"}}
+			for i := range 200 {
+				v.turnRecords[1] = append(v.turnRecords[1],
+					apiclient.TranscriptRecord{Type: "agent.output", Text: fmt.Sprintf("line %d", i)})
+			}
+			v.bodyDirty = true
+			v.render(60, 30)
+			v.updateKey(registryKey(t, "pgup"))
+			if v.following {
+				t.Fatal("pgup left the body following the live end")
+			}
+		},
+		"ctrl+g": func(t *testing.T) {
+			v := chatViewFixture()
+			v.following = false
+			v.updateKey(registryKey(t, "ctrl+g"))
+			if !v.following {
+				t.Fatal("ctrl+g did not re-arm follow")
+			}
+		},
 		"esc": func(t *testing.T) {
 			v := chatViewFixture()
 			_, cmd := v.updateKey(registryKey(t, "esc"))
@@ -664,9 +706,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.taskID = 4
 			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
 			d.focus = focusOutput
-			before := d.level
+			before := d.level.get()
 			d.updateKey(registryKey(t, "v"))
-			if d.level == before {
+			if d.level.get() == before {
 				t.Fatalf("v did not change the output level (still %v)", before)
 			}
 		},

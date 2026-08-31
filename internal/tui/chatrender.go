@@ -1,31 +1,40 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // The chat workspace's rendering: history, live tail, composer.
+//
+// The conversation body is the task workspace's output pane, verbatim
+// (task 071 decision 2): each turn's records go through outputlines.go's
+// renderer at the session's shared level, so a line delivered over
+// GET /v1/chats/{id}/events and the same line refetched from that turn's
+// transcript are the same line. The only rendering this file still owns is
+// what is *around* the records — the turn separators, the prompts, and the
+// fallback for a turn whose transcript is gone (§17).
+
+// chatExpandKey names the key that raises the level here. It is not `v`: a
+// letter would land in the composer, which owns every printable key
+// (decision 4).
+const chatExpandKey = "ctrl+r"
 
 func (v *chatView) render(width, height int) string {
 	if width < 4 || height < 4 {
 		return ""
 	}
+	if width > 0 {
+		v.width = width
+	}
 	head := []string{v.headerLine(width), ""}
 	foot := v.footerLines(width)
-	body := v.bodyLines(width)
 	room := max(height-len(head)-len(foot), 1)
-	// The conversation is anchored at the bottom: the newest turn is the one
-	// being read, and a chat that scrolled to the top on every render would
-	// be unusable while an agent is talking.
 	lines := make([]string, 0, len(head)+room+len(foot))
 	lines = append(lines, head...)
-	lines = append(lines, window(body, max(len(body)-1, 0), room)...)
+	lines = append(lines, strings.Split(v.bodyView(width, room), "\n")...)
 	lines = append(lines, foot...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -35,6 +44,25 @@ func (v *chatView) render(width, height int) string {
 		return out + "\n" + v.form.render(width, min(v.form.height(width), height/2))
 	}
 	return out
+}
+
+// bodyView lays the conversation into the viewport. The window is bottom-
+// anchored while following — the newest turn is the one being read, and a
+// chat that scrolled to the top on every render would be unusable while an
+// agent is talking — and stays where a manual scroll put it otherwise
+// (decision 5).
+func (v *chatView) bodyView(width, height int) string {
+	v.vp.SetWidth(max(width, 1))
+	v.vp.SetHeight(max(height, 1))
+	if v.bodyDirty || v.builtWidth != width {
+		v.vp.SetContent(strings.Join(v.bodyLines(width), "\n"))
+		v.bodyDirty = false
+		v.builtWidth = width
+		if v.following {
+			v.vp.GotoBottom()
+		}
+	}
+	return v.vp.View()
 }
 
 func (v *chatView) headerLine(width int) string {
@@ -50,32 +78,54 @@ func (v *chatView) headerLine(width int) string {
 	left := " " + styleTitle.Render(v.chat.Title) +
 		styleDim.Render("  ·  ") + applyStateStyle(v.chat.State, chatStateLabel(v.chat.State)) +
 		styleDim.Render(fmt.Sprintf("  ·  %s  ·  %s", v.chat.Agent, v.chat.Branch))
-	right := styleDim.Render(fmt.Sprintf("%s ", plural(len(v.turns), "turn", "turns")))
-	return padBetween(left, right, width)
+	right := plural(len(v.turns), "turn", "turns")
+	// The level rides in the header for the reason the output pane's title
+	// carries it: ctrl+r on a conversation with no reasoning and no
+	// unrecognized lines changes nothing on screen, and a reader needs to
+	// see that the key did something.
+	if l := v.level.get(); l != levelNormal {
+		right = l.String() + "  ·  " + right
+	}
+	if !v.following {
+		right = "⏸ " + right
+	}
+	return padBetween(left, styleDim.Render(right+" "), width)
 }
 
-// bodyLines is the whole conversation: every finished turn, then the running
-// turn's live tail.
+// bodyLines is the whole conversation: every turn's prompt followed by its
+// records, at the session's level.
+//
+// It also records where each turn starts, which is what lets a scroll say
+// which turns are on screen and fetch the transcripts they need (decision 6).
 func (v *chatView) bodyLines(width int) []string {
-	lines := make([]string, 0, len(v.turns)*4+len(v.scrollback))
+	lines := make([]string, 0, len(v.turns)*4)
+	v.turnAt = make(map[int]int, len(v.turns))
+	if v.truncated {
+		lines = append(lines, styleDim.Render(gutterNone+
+			"… earlier output truncated — the transcripts on disk are whole"))
+	}
+	level := v.level.get()
 	for i := range v.turns {
 		t := &v.turns[i]
+		v.turnAt[t.Seq] = len(lines)
 		lines = append(lines, styleDim.Render(fmt.Sprintf(" ── turn %d ──", t.Seq)))
 		lines = append(lines, wrapCellLines("› "+t.Prompt, width-2, 6)...)
-		switch {
+		switch recs := v.turnRecords[t.Seq]; {
+		case len(recs) > 0:
+			lines = append(lines, outputLines(recs, level, width,
+				lineOpts{expandKey: chatExpandKey})...)
 		case t.State == "running":
-			// The running turn renders from the tail below, not from here:
-			// its ResultText does not exist yet.
-		case t.FailReason != "":
-			lines = append(lines, " "+styleBad.Render(
-				strings.TrimSpace(t.FailReason+" "+t.ErrorMessage)))
+			// Nothing has arrived yet; the tail fills in as it does.
 		case t.ResultText != "":
+			// §17: a transcript that has gone to retention still leaves the
+			// turn's answer, and it is shown with no banner — a reader who
+			// did not ask for the record is not told it is missing.
 			lines = append(lines, wrapCellLines(t.ResultText, width-2, 40)...)
 		}
-	}
-	if len(v.scrollback) > 0 {
-		lines = append(lines, styleDim.Render(" ── live ──"))
-		lines = append(lines, v.scrollback...)
+		if t.FailReason != "" {
+			lines = append(lines, " "+styleBad.Render(
+				strings.TrimSpace(t.FailReason+" "+t.ErrorMessage)))
+		}
 	}
 	if len(lines) == 0 {
 		lines = append(lines, styleDim.Render("  Nothing said yet. Type below and press enter."))
@@ -93,64 +143,8 @@ func (v *chatView) footerLines(width int) []string {
 		out = append(out, " "+style.Render(v.note))
 	}
 	out = append(out, v.composer.View())
-	hint := " enter send · ctrl+x stop the turn · esc back to the chats board"
+	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
+		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
 	out = append(out, styleDim.Render(ansi.Truncate(hint, width, "…")))
 	return out
-}
-
-// transcriptLines renders fetched transcript records as tail lines. It is
-// deliberately plain: the live tail's job is to show that something is
-// happening and what, and the durable record is one route away.
-func transcriptLines(records []apiclient.TranscriptRecord) []string {
-	out := make([]string, 0, len(records))
-	for _, r := range records {
-		if line := transcriptLine(r); line != "" {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
-func transcriptLine(r apiclient.TranscriptRecord) string {
-	switch r.Type {
-	case "agent.output", "vincent.output", "command.output":
-		return "  " + strings.TrimRight(r.Text, "\n")
-	case "agent.thinking":
-		return "  " + styleDim.Render(strings.TrimRight(r.Text, "\n"))
-	case "agent.tool_use":
-		names := make([]string, 0, len(r.Tools))
-		for _, t := range r.Tools {
-			names = append(names, t.Name)
-		}
-		if len(names) == 0 {
-			return ""
-		}
-		return "  " + styleDim.Render("· "+strings.Join(names, ", "))
-	case "agent.error":
-		return "  " + styleBad.Render(r.Message)
-	default:
-		return ""
-	}
-}
-
-// outputNoteLine renders one live chunk. The chunk carries the agent's own
-// raw line, so it is decoded the same way the transcript route's normalized
-// records are — one shape for scrollback and tail, which is what §13.3's
-// normalization is for.
-func outputNoteLine(note apiclient.OutputNote) string {
-	var body struct {
-		Raw string `json:"raw"`
-	}
-	if err := json.Unmarshal(note.Payload, &body); err != nil || body.Raw == "" {
-		return ""
-	}
-	var rec apiclient.TranscriptRecord
-	if err := json.Unmarshal([]byte(body.Raw), &rec); err == nil && rec.Type != "" {
-		if line := transcriptLine(rec); line != "" {
-			return line
-		}
-	}
-	// A dialect line the client cannot name is still evidence the agent is
-	// working; it is shown dimmed rather than dropped.
-	return "  " + styleDim.Render(ansi.Truncate(strings.TrimSpace(body.Raw), 200, "…"))
 }

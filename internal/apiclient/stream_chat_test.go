@@ -99,11 +99,17 @@ func TestStreamChatDeliversOutput(t *testing.T) {
 	}
 	waitForChatSubscriber(t, h, c.ID)
 
+	// The chunk is what chatrun publishes since task 071: a §13.3 type with
+	// normalized fields, and the agent's verbatim line kept beside them. The
+	// raw here is a claude stream-json line, which is what a chat actually
+	// carries — the older fixture used a `raw` of `{"type":"agent.output"}`,
+	// a shape no adapter emits.
 	h.broker.PublishOutput(chatrun.ChatOutputKey(c.ID), events.Chunk{
-		Type: "output",
+		Type: "agent.output",
 		Payload: map[string]any{
 			"chat_id": c.ID, "turn_id": int64(4), "offset": int64(2048),
-			"raw": `{"type":"agent.output","text":"hi"}`,
+			"text": "hi",
+			"raw":  `{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}`,
 		},
 	})
 	out, ok := nextNote(t, notes).(apiclient.OutputNote)
@@ -113,6 +119,9 @@ func TestStreamChatDeliversOutput(t *testing.T) {
 	if out.TurnID != 4 || out.Offset != 2048 || out.ChatID != c.ID {
 		t.Fatalf("chunk identity = chat %d turn %d offset %d, want %d/4/2048",
 			out.ChatID, out.TurnID, out.Offset, c.ID)
+	}
+	if out.Type != "agent.output" || out.Text() != "hi" {
+		t.Fatalf("chunk = %s %q, want a normalized agent.output carrying \"hi\"", out.Type, out.Text())
 	}
 }
 

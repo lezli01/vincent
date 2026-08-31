@@ -74,10 +74,10 @@ type shell struct {
 	bannerLines int
 }
 
-func newShell(ctx context.Context) *shell {
+func newShell(ctx context.Context, level *levelHolder) *shell {
 	s := &shell{
 		board:     newBoard(),
-		detail:    newDetail(ctx),
+		detail:    newDetail(ctx, level),
 		bar:       &actionBar{},
 		connected: true,
 	}

@@ -173,8 +173,8 @@ func (d *detail) outputTitle() string {
 	// with no reasoning and no unrecognized lines changes nothing on screen,
 	// and a reader needs to see that the key did something.
 	level := ""
-	if d.level != levelNormal {
-		level = styleDim.Render(" · " + d.level.String())
+	if l := d.level.get(); l != levelNormal {
+		level = styleDim.Render(" · " + l.String())
 	}
 	return strip + level + d.followIndicator()
 }
@@ -973,150 +973,18 @@ func (d *detail) outputEmptyState() (string, bool) {
 	}
 }
 
-// outputLines renders the normalized records into wrapped pane lines.
-//
-// Two rules shape the result beyond the per-record rendering. Consecutive
-// unrecognized lines collapse into a count — a dialect vincent does not model
-// must not be able to drown the output a human is reading — and `v` expands
-// them rather than leaving the count a dead end. And an assistant message
-// that follows anything else gets a blank line before it, which is what
-// separates one turn from the next without spending a column on it.
+// outputLines renders the pane's records at the pane's level. The rendering
+// itself is outputlines.go's, shared with the chat workspace (task 071).
 func (d *detail) outputLines() []string {
-	width := max(d.width, 1)
-	lines := make([]string, 0, len(d.records)+1)
+	note := ""
 	if d.truncated {
 		// Naming the key here is the whole point of T4.11: this line is the
 		// one moment a reader is looking straight at the missing output, so
 		// it is where the way to the rest of it belongs.
-		lines = append(lines, styleDim.Render(gutterNone+"… earlier output truncated — press e for the whole transcript"))
+		note = "… earlier output truncated — press e for the whole transcript"
 	}
-	// sawOutput drives the T4.16 result de-duplication: every dialect's
-	// result text repeats assistant messages already on screen — cursor's is
-	// the whole turn concatenated — so the final record shows its outcome
-	// alone, unless nothing else ever rendered.
-	var sawOutput, lastWasOutput bool
-	rawRun := 0
-	flushRaw := func() {
-		if rawRun == 0 {
-			return
-		}
-		lines = append(lines, styleDim.Render(
-			fmt.Sprintf("%s… %d unrecognized line(s) (v)", gutterNone, rawRun)))
-		rawRun = 0
-	}
-	for _, rec := range d.records {
-		if rec.Type == "agent.raw" {
-			if d.level == levelVerbose {
-				flushRaw()
-				lines = append(lines, wrapLine(paneLine{
-					gutter:      gutterNone,
-					gutterStyle: styleDim,
-					segs:        []segment{{text: rec.Line, style: styleDim}},
-				}, width)...)
-				lastWasOutput = false
-				continue
-			}
-			rawRun++
-			continue
-		}
-		flushRaw()
-		if rec.Type == "agent.thinking" {
-			if block := thinkingBlock(rec.Text, d.level, width); len(block) > 0 {
-				lines = append(lines, block...)
-				lastWasOutput = false
-			}
-			continue
-		}
-		pl, ok := d.renderRecord(rec, sawOutput)
-		if !ok {
-			continue
-		}
-		if pl.isOutput {
-			if !lastWasOutput && len(lines) > 0 {
-				lines = append(lines, "")
-			}
-			sawOutput = true
-		}
-		lines = append(lines, wrapLine(pl, width)...)
-		lastWasOutput = pl.isOutput
-	}
-	flushRaw()
-	return lines
-}
-
-// renderRecord maps one normalized record to a pane line. A record with
-// nothing a reader wants mid-tail reports ok=false: agent.usage is the whole
-// point of that rule, since the timeline row already carries its numbers —
-// though levelVerbose does show it, adapter-native payload and all, because
-// that level means "show me the machine".
-func (d *detail) renderRecord(rec apiclient.TranscriptRecord, sawOutput bool) (paneLine, bool) {
-	switch rec.Type {
-	case "agent.output":
-		return plain(rec.Text, lipgloss.NewStyle(), true), rec.Text != ""
-	case "agent.tool_use":
-		if len(rec.Tools) == 0 {
-			return paneLine{}, false
-		}
-		return toolUsePane(rec.Tools), true
-	case "agent.tool_result":
-		if len(rec.Results) == 0 {
-			return paneLine{}, false
-		}
-		// One record can report several outcomes; the first owns the line
-		// and the rest are rare enough to share it rather than earn rows.
-		return toolResultLine(rec.Results[0]), true
-	case "agent.run_header":
-		// levelCompact is "what the agent said and did, nothing else"; the
-		// run header is neither, so it appears from normal up (task 066).
-		if d.level == levelCompact {
-			return paneLine{}, false
-		}
-		return runHeaderLine(rec), true
-	case "agent.plan":
-		// levelCompact is "what the agent said and did, nothing else". A
-		// plan is neither — it is what the agent intends — so it appears
-		// from normal up, where the run header does (task 070).
-		if d.level == levelCompact || len(rec.Items) == 0 {
-			return paneLine{}, false
-		}
-		return planLine(rec.Items), true
-	case "agent.command_output":
-		// Verbose only. This is the output body, and a step that runs
-		// `go test ./...` would otherwise flood the level most readers use
-		// (task 070 decision 2).
-		if d.level != levelVerbose || rec.Output == "" {
-			return paneLine{}, false
-		}
-		return commandOutputLine(rec), true
-	case "agent.usage":
-		if d.level != levelVerbose {
-			return paneLine{}, false
-		}
-		return plain(string(rec.Raw), styleDim, false), len(rec.Raw) > 0
-	case "agent.error":
-		return marked("✗ ", rec.Message, styleBad), true
-	case "agent.result":
-		return renderResult(rec, sawOutput, d.level), true
-	case "command.output", "vincent.output":
-		if rec.Stream == "stderr" {
-			return plain(rec.Text, styleStderr, false), true
-		}
-		return plain(rec.Text, lipgloss.NewStyle(), false), true
-	case "vincent.command_started":
-		return marked("$ ", fieldOf(rec.Raw, "command"), styleDim), true
-	case "vincent.input_request":
-		return marked("? ", firstNonEmpty(rec.Summary, rec.Kind, "input requested"), styleAsk), true
-	case "vincent.input_response":
-		return marked("✓ ", "answered", styleAsk), true
-	case "vincent.input_timeout", "vincent.input_protocol_error", "vincent.error":
-		return marked("✗ ",
-			firstNonEmpty(rec.Message, fieldOf(rec.Raw, "error"), rec.Type), styleBad), true
-	default:
-		if strings.HasPrefix(rec.Type, "vincent.") {
-			return marked("· ", strings.TrimPrefix(rec.Type, "vincent."), styleDim), true
-		}
-		return paneLine{}, false
-	}
+	return outputLines(d.records, d.level.get(), max(d.width, 1),
+		lineOpts{expandKey: "v", truncatedNote: note})
 }
 
 // plain is a record with the blank gutter: assistant prose and command

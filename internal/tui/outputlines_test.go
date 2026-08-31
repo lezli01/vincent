@@ -122,11 +122,11 @@ func TestWrapLineJoinsGutterToFirstWord(t *testing.T) {
 func TestThinkingLevels(t *testing.T) {
 	text := strings.Repeat("reasoning words ", 30)
 
-	if got := thinkingBlock(text, levelCompact, 40); got != nil {
+	if got := thinkingBlock(text, levelCompact, 40, "v"); got != nil {
 		t.Errorf("compact rendered %d lines, want none", len(got))
 	}
 
-	normal := plainLines(thinkingBlock(text, levelNormal, 40))
+	normal := plainLines(thinkingBlock(text, levelNormal, 40, "v"))
 	if len(normal) != thinkingLines+1 {
 		t.Fatalf("normal = %d lines, want %d plus the count", len(normal), thinkingLines)
 	}
@@ -136,7 +136,7 @@ func TestThinkingLevels(t *testing.T) {
 		t.Errorf("last line = %q, want a count naming the key that expands it", normal[len(normal)-1])
 	}
 
-	verbose := thinkingBlock(text, levelVerbose, 40)
+	verbose := thinkingBlock(text, levelVerbose, 40, "v")
 	if len(verbose) <= thinkingLines+1 {
 		t.Errorf("verbose = %d lines, want the whole block", len(verbose))
 	}
@@ -172,7 +172,7 @@ func TestRawLinesReachableAtVerbose(t *testing.T) {
 		{Type: "agent.raw", Line: `{"type":"stream_event"}`},
 	}
 
-	d.level = levelNormal
+	d.level.set(levelNormal)
 	collapsed := strings.Join(plainLines(d.outputLines()), "\n")
 	if !strings.Contains(collapsed, "… 2 unrecognized line(s) (v)") {
 		t.Errorf("normal = %q, want the collapsed count naming the key", collapsed)
@@ -181,7 +181,7 @@ func TestRawLinesReachableAtVerbose(t *testing.T) {
 		t.Errorf("normal leaked a raw line: %q", collapsed)
 	}
 
-	d.level = levelVerbose
+	d.level.set(levelVerbose)
 	expanded := strings.Join(plainLines(d.outputLines()), "\n")
 	for _, want := range []string{"compact_boundary", "stream_event"} {
 		if !strings.Contains(expanded, want) {
@@ -199,12 +199,12 @@ func TestUsageOnlyAtVerbose(t *testing.T) {
 		{Type: "agent.usage", Raw: json.RawMessage(`{"input_tokens":10}`)},
 	}
 	for _, level := range []outputLevel{levelCompact, levelNormal} {
-		d.level = level
+		d.level.set(level)
 		if got := d.outputLines(); len(got) != 0 {
 			t.Errorf("%s rendered usage: %q", level, got)
 		}
 	}
-	d.level = levelVerbose
+	d.level.set(levelVerbose)
 	if got := strings.Join(plainLines(d.outputLines()), "\n"); !strings.Contains(got, "input_tokens") {
 		t.Errorf("verbose = %q, want the adapter-native payload", got)
 	}
@@ -313,12 +313,12 @@ func TestVCyclesFromEitherFocus(t *testing.T) {
 	for _, focus := range []detailFocus{focusTimeline, focusOutput} {
 		d := newTestDetail(t)
 		d.focus = focus
-		if d.level != levelNormal {
-			t.Fatalf("fresh detail starts at %s, want normal", d.level)
+		if d.level.get() != levelNormal {
+			t.Fatalf("fresh detail starts at %s, want normal", d.level.get())
 		}
 		d.updateKey(tea.KeyPressMsg{Code: 'v', Text: "v"})
-		if d.level != levelVerbose {
-			t.Errorf("focus %v: level = %s after v, want verbose", focus, d.level)
+		if d.level.get() != levelVerbose {
+			t.Errorf("focus %v: level = %s after v, want verbose", focus, d.level.get())
 		}
 		if !d.outputDirty {
 			t.Errorf("focus %v: pane not marked stale, so the change would not repaint", focus)
@@ -332,10 +332,10 @@ func TestVCyclesFromEitherFocus(t *testing.T) {
 func TestLevelSurvivesTaskSwitch(t *testing.T) {
 	d := newTestDetail(t)
 	d.updateKey(tea.KeyPressMsg{Code: 'v', Text: "v"})
-	want := d.level
+	want := d.level.get()
 	d.open(d.taskID+1, "running")
-	if d.level != want {
-		t.Errorf("level = %s after switching task, want %s", d.level, want)
+	if d.level.get() != want {
+		t.Errorf("level = %s after switching task, want %s", d.level.get(), want)
 	}
 }
 
@@ -347,7 +347,7 @@ func TestOutputTitleNamesNonDefaultLevel(t *testing.T) {
 	if got := escapes.ReplaceAllString(d.outputTitle(), ""); strings.Contains(got, "normal") {
 		t.Errorf("title = %q, want the default level unnamed", got)
 	}
-	d.level = levelVerbose
+	d.level.set(levelVerbose)
 	if got := escapes.ReplaceAllString(d.outputTitle(), ""); !strings.Contains(got, "verbose") {
 		t.Errorf("title = %q, want it to name the level", got)
 	}
@@ -366,14 +366,14 @@ func TestRunHeaderLevels(t *testing.T) {
 		AvailableTools: []string{"Task", "Bash", "Write"},
 	}}
 
-	d.level = levelCompact
+	d.level.set(levelCompact)
 	if got := d.outputLines(); len(got) != 0 {
 		t.Errorf("compact rendered the run header: %q", got)
 	}
 
 	var atNormal string
 	for _, level := range []outputLevel{levelNormal, levelVerbose} {
-		d.level = level
+		d.level.set(level)
 		got := plainLines(d.outputLines())
 		if len(got) != 1 {
 			t.Fatalf("%s = %q, want one line", level, got)
@@ -402,7 +402,7 @@ func TestRunHeaderWrapsRatherThanClips(t *testing.T) {
 	}
 	d := newTestDetail(t)
 	d.width = 80
-	d.level = levelNormal
+	d.level.set(levelNormal)
 	d.records = []apiclient.TranscriptRecord{{
 		Type:           "agent.run_header",
 		WorkDir:        "/work/repo",
@@ -459,14 +459,14 @@ func TestResultMetadataByLevel(t *testing.T) {
 	// repeating its text (T4.16).
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "all done"}, rec}
 
-	d.level = levelCompact
+	d.level.set(levelCompact)
 	compact := plainLines(d.outputLines())
 	if compact[len(compact)-1] != "✓ done · $0.02" {
 		t.Errorf("compact = %q, want exactly what it rendered before task 066",
 			compact[len(compact)-1])
 	}
 
-	d.level = levelNormal
+	d.level.set(levelNormal)
 	normal := plainLines(d.outputLines())
 	if got := normal[len(normal)-1]; got != "✓ done · 7.3s · 2 turns · $0.02" {
 		t.Errorf("normal = %q", got)
@@ -480,7 +480,7 @@ func TestResultMetadataByLevel(t *testing.T) {
 		}
 	}
 
-	d.level = levelVerbose
+	d.level.set(levelVerbose)
 	verbose := strings.Join(plainLines(d.outputLines()), "\n")
 	for _, want := range []string{
 		"✓ done · 7.3s (5.7s api) · 2 turns · $0.02",
@@ -498,7 +498,7 @@ func TestResultMetadataByLevel(t *testing.T) {
 func TestResultNamesAnUnusualStop(t *testing.T) {
 	d := newTestDetail(t)
 	d.width = 100
-	d.level = levelNormal
+	d.level.set(levelNormal)
 	d.records = []apiclient.TranscriptRecord{
 		{Type: "agent.output", Text: "working"},
 		{
@@ -558,13 +558,13 @@ func TestPlanFromNormalUp(t *testing.T) {
 	}
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "working"}, plan}
 
-	d.level = levelCompact
+	d.level.set(levelCompact)
 	compact := plainLines(d.outputLines())
 	if len(compact) != 1 || strings.TrimSpace(compact[0]) != "working" {
 		t.Errorf("compact = %q, want only the agent's own words", compact)
 	}
 	for _, level := range []outputLevel{levelNormal, levelVerbose} {
-		d.level = level
+		d.level.set(level)
 		got := plainLines(d.outputLines())
 		if len(got) != 2 {
 			t.Fatalf("%s = %q, want the output and the plan", level, got)
@@ -582,7 +582,7 @@ func TestPlanFromNormalUp(t *testing.T) {
 func TestLongPlanWraps(t *testing.T) {
 	d := newTestDetail(t)
 	d.width = 40
-	d.level = levelNormal
+	d.level.set(levelNormal)
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.plan", Items: []apiclient.TranscriptPlanItem{
 		{Text: "read the whole specification carefully", Completed: true},
 		{Text: "then rewrite the parser and its tests"},
@@ -616,12 +616,12 @@ func TestCommandOutputOnlyAtVerbose(t *testing.T) {
 		{Type: "agent.command_output", CallID: "item_2", Output: "total 8\n", Truncated: true},
 	}
 	for _, level := range []outputLevel{levelCompact, levelNormal} {
-		d.level = level
+		d.level.set(level)
 		if got := d.outputLines(); len(got) != 0 {
 			t.Errorf("%s rendered a command's output body: %q", level, got)
 		}
 	}
-	d.level = levelVerbose
+	d.level.set(levelVerbose)
 	got := plainLines(d.outputLines())
 	if len(got) != 2 || !strings.Contains(got[0], "total 8") {
 		t.Fatalf("verbose = %q, want the body", got)

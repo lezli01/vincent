@@ -20,7 +20,7 @@ import (
 // exactly the openStream calls syncStream made.
 func newShellFixture(t *testing.T, tasks ...apiclient.Task) (*shell, *int) {
 	t.Helper()
-	s := newShell(testCtx(t))
+	s := newShell(testCtx(t), newLevelHolder())
 	s.board.now = func() time.Time { return testNow }
 	s.board.bell = func() {}
 	// Flat, for the same reason testBoard is: these tests count rendered rows

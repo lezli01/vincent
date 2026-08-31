@@ -137,10 +137,11 @@ type detail struct {
 	buffer []apiclient.OutputNote
 
 	// level is how much of each record the output pane shows (§15 `v`). It
-	// is set from the shell's session-wide value rather than owned here:
-	// switching attempts or tasks must not silently reset what a reader
-	// chose to look at.
-	level outputLevel
+	// is a pointer to the session's one holder rather than a value owned
+	// here: switching attempts or tasks must not silently reset what a reader
+	// chose to look at, and neither must walking into the chat workspace and
+	// back (task 071 decision 3).
+	level *levelHolder
 
 	following bool
 	newLines  int
@@ -170,12 +171,12 @@ type detail struct {
 	width, height int
 }
 
-func newDetail(ctx context.Context) *detail {
+func newDetail(ctx context.Context, level *levelHolder) *detail {
 	return &detail{
 		ctx:       ctx,
 		now:       time.Now,
 		vp:        viewport.New(),
-		level:     levelNormal,
+		level:     level,
 		following: true,
 		actions:   &actionBar{},
 		diff:      newDiffPane(),
@@ -735,14 +736,14 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// cycleLevel advances the output pane's verbosity and rebuilds the pane.
+// cycleLevel advances the session's verbosity and rebuilds the pane.
 //
-// The level needs no plumbing to outlive a task: the shell builds one detail
-// sub-model at startup and re-points it as the cursor moves, so this field is
-// already session state. Nothing resets it, which is the whole requirement —
-// a reader who asked for verbose keeps it when they open the next task.
+// The level needs no plumbing to outlive a task: the shell builds one holder
+// at startup and hands it to every pane that renders records, so nothing
+// resets it. That is the whole requirement — a reader who asked for verbose
+// keeps it when they open the next task, and when they open a chat.
 func (d *detail) cycleLevel() tea.Cmd {
-	d.level = d.level.next()
+	d.level.cycle()
 	d.outputDirty = true
 	return nil
 }

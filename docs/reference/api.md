@@ -1467,7 +1467,17 @@ arrive on it and neither do a task's. `Last-Event-ID` resumes the durable
 events; live output is ephemeral and is never replayed, so a reconnect catches
 up by re-fetching the running turn's transcript and discarding every chunk whose
 `offset` is at or before the `X-Next-Offset` it reported. Chunks carry
-`chat_id`, `turn_id`, `offset` and the agent's own `raw` line.
+`chat_id`, `turn_id`, `offset`, the same normalized fields a task's chunks carry
+under the same type names (`agent.output`, `agent.tool_use`, `agent.tool_result`,
+`agent.run_header`, `agent.thinking`, `agent.usage`), **and** the agent's own
+`raw` line beside them.
+
+A chat's stream carries one type a task's does not: **`agent.raw`**, for a line
+vincent's parsers do not model. A task leaves those to its transcript, but a
+chat has no timeline of steps beside its output, so a turn whose stream is all
+unmodeled lines would show nothing at all while it runs. `agent.result` and
+`agent.error` are not published live on either: they reach you as the turn's
+own state and in its transcript.
 
 Two failure reasons are worth knowing:
 
