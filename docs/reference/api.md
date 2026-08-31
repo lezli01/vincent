@@ -1514,9 +1514,8 @@ they need.
 
 `agent.output`, `agent.tool_use`, `agent.tool_result`, `agent.thinking`,
 `agent.run_header`, `agent.usage` and `command.output` chunks stream on the
-**per-task** stream only
-and are **not** written to the events table. Their durable copy is the transcript
-file.
+**per-task** stream only and are **not** written to the events table. Their
+durable copy is the transcript file.
 
 Each chunk is one SSE event, flushed on a ~100 ms coalescing timer, and carries:
 

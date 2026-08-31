@@ -227,7 +227,7 @@ API keys or login credentials.
 
 | Agent | What vincent integrates |
 |---|---|
-| Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, and mid-run questions |
+| Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, mid-run questions, and the fullest account of its own run — the working directory and tool set it was given, its duration, turns, cache split and refused tool calls |
 | Codex | Headless execution and restricted mode; no mid-run input or cost reported by the CLI |
 | Cursor | Headless execution and model discovery; reasoning effort is part of the model id, and restricted mode is unavailable on Windows |
 
