@@ -72,6 +72,12 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   Options are discovered by parsing `claude --help` and merged with a curated
   catalog, so a CLI upgrade that adds an effort level makes it selectable without
   a vincent release.
+- **Reports the most about its own run.** The output pane's `#` header line —
+  the working directory and the tool set a run was given — and the closing
+  line's duration, turn count, cache-token split, per-model breakdown, refused
+  tool calls and stop reason all come from claude's stream and from no other
+  adapter's. A tool call a permission rule refused is marked apart from one that
+  ran and failed. See [the output pane](tui.md#what-v-adds).
 - **Reports token usage and cost.** The board's cost column sums every attempt,
   retries included. The other two adapters report no cost at all — which also
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)

@@ -718,18 +718,34 @@ func exitCodeOf(err error) int {
 // live-output chunk types. Events that carry nothing a client renders
 // (results, errors — those surface as step outcomes) are skipped.
 func (r *Runner) publishAgentEvent(taskID, runID, offset int64, ev agent.Event) {
+	publish := func(kind string, payload map[string]any) {
+		// Carried on every chunk it is set on, matching the normalized
+		// record, which attaches it in one place for the same reason
+		// (task 066).
+		if ev.ParentCallID != "" {
+			payload["parent_call_id"] = ev.ParentCallID
+		}
+		r.publishOutput(taskID, runID, offset, kind, payload)
+	}
 	switch ev.Type {
 	case agent.EventOutput:
 		if ev.Text == "" {
 			return
 		}
-		r.publishOutput(taskID, runID, offset, "agent.output", map[string]any{"text": ev.Text})
+		publish("agent.output", map[string]any{"text": ev.Text})
+	case agent.EventRunHeader:
+		// The run header goes live like the rest (task 066): it is the first
+		// line of the stream, so a reader who opens the pane on a running
+		// step sees the run's frame before its first word, and does not have
+		// to wait for the step to finish to learn what the agent could reach.
+		if ev.Header == nil {
+			return
+		}
+		publish("agent.run_header", headerChunk(ev.Header))
 	case agent.EventToolUse:
-		r.publishOutput(taskID, runID, offset, "agent.tool_use",
-			map[string]any{"tools": toolChunks(ev.Tools)})
+		publish("agent.tool_use", map[string]any{"tools": toolChunks(ev.Tools)})
 	case agent.EventToolResult:
-		r.publishOutput(taskID, runID, offset, "agent.tool_result",
-			map[string]any{"results": resultChunks(ev.Results)})
+		publish("agent.tool_result", map[string]any{"results": resultChunks(ev.Results)})
 	case agent.EventThinking:
 		// Thinking goes live like everything else (T4.16). §9.7 held it back
 		// when it meant one chunk per token; coalescing removed that, and a
@@ -738,15 +754,29 @@ func (r *Runner) publishAgentEvent(taskID, runID, offset int64, ev agent.Event) 
 		if ev.Text == "" {
 			return
 		}
-		r.publishOutput(taskID, runID, offset, "agent.thinking", map[string]any{"text": ev.Text})
+		publish("agent.thinking", map[string]any{"text": ev.Text})
 	case agent.EventUsage:
 		// Usage payloads are adapter-native; the raw line is the honest shape.
-		r.publishOutput(taskID, runID, offset, "agent.usage", map[string]any{"raw": string(ev.Raw)})
+		publish("agent.usage", map[string]any{"raw": string(ev.Raw)})
 	case agent.EventInputRequest, agent.EventInputCanceled,
 		agent.EventResult, agent.EventError, agent.EventUnknown:
 		// Input requests surface via the state change (§13.3); results and
 		// errors surface as step outcomes.
 	}
+}
+
+// headerChunk maps a run header onto the §13.3 live-chunk shape, matching
+// what api.normalizeLine writes for the same event. The tool list cannot ride
+// on `tools`: that key is agent.tool_use's objects.
+func headerChunk(h *agent.RunHeader) map[string]any {
+	chunk := map[string]any{}
+	if h.WorkDir != "" {
+		chunk["work_dir"] = h.WorkDir
+	}
+	if len(h.Tools) > 0 {
+		chunk["available_tools"] = h.Tools
+	}
+	return chunk
 }
 
 // toolChunks maps tool uses onto the §13.3 live-chunk shape. It must match
@@ -775,11 +805,14 @@ func resultChunks(results []agent.ToolResult) []map[string]any {
 	for _, r := range results {
 		chunk := map[string]any{}
 		for k, v := range map[string]string{
-			"call_id": r.CallID, "name": r.Name, "summary": r.Summary,
+			"call_id": r.CallID, "name": r.Name, "summary": r.Summary, "verb": r.Verb,
 		} {
 			if v != "" {
 				chunk[k] = v
 			}
+		}
+		if r.Blocked {
+			chunk["blocked"] = true
 		}
 		if r.IsError {
 			chunk["is_error"] = true

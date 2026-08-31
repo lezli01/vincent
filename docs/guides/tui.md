@@ -316,10 +316,38 @@ output. It is the sentence that decides whether to open the transcript.
 | `enter` | From Steps & Attempts, open the selected attempt in Output |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
-| `v` | More or less detail: compact → normal → verbose (reasoning, then unrecognized lines) |
+| `v` | More or less detail: compact → normal → verbose (reasoning, the run's own metadata, then unrecognized lines) |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
 | `pgup`/`pgdn` | Scroll the selected Task Details section |
+
+### What `v` adds
+
+`compact` is what the agent **said and did**, and nothing else. Reasoning is
+hidden, and so is everything about the run itself.
+
+`normal` adds reasoning, truncated to its first lines — and, for an agent whose
+CLI reports them, two records that answer questions the pane could not answer at
+all before. A `#` line at the top of the run names the directory the agent said
+it was working in and the tools it was given, which is the only place *"what
+could this agent actually reach"* is written down. And the closing `✓` line
+carries the run's own account of itself: how long it took, how many turns it
+burned, how many tool calls a permission rule refused, and — when it is not the
+ordinary one — why it stopped. `stop: max_tokens` on that line is the difference
+between a model that finished and a model that ran out, which both read as a
+bare success before.
+
+`verbose` adds the API-time split, the cache read/write token split, a per-model
+breakdown for a run that used more than one, and the lines vincent's parsers do
+not model, expanded out from behind their count.
+
+A tool call that a permission rule **refused** is marked `⊘` rather than `✗`, at
+every level. The distinction is worth a glyph: `✗` is the agent's problem, and
+`⊘` is the step's [permission mode](agents.md).
+
+Only [Claude Code](agents.md#claude-code) reports the run header and the run
+metadata today. On codex and cursor those lines simply do not appear — vincent
+does not synthesise one from what it happens to know.
 
 ### Reading the whole transcript
 

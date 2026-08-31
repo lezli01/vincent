@@ -256,6 +256,15 @@ const (
 	// (spec §9.7, amended).
 	EventThinking EventType = "thinking"
 	EventUsage    EventType = "usage"
+	// EventRunHeader is what the CLI announced about the run *before* any
+	// work happened — its working directory and the tool set it was given
+	// (task 066). It is emitted at most once, from the first line of the
+	// stream, and it is the one event that describes the run rather than
+	// something that occurred inside it.
+	//
+	// Only claude reports one today (§9.2); codex and cursor emit no
+	// equivalent line and never produce this event (§9.3, §9.7).
+	EventRunHeader EventType = "run_header"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
 	// Request means the adapter received a control message it could not
 	// parse or that violates the serial-request contract — the engine fails
@@ -286,7 +295,16 @@ type Event struct {
 	Results []ToolResult  // EventToolResult: outcomes reported by this line
 	Request *InputRequest // EventInputRequest
 	Result  *RunResult    // EventResult
+	Header  *RunHeader    // EventRunHeader
 	Message string        // EventError: what went wrong
+	// ParentCallID attributes this event to the tool call that spawned the
+	// sub-run it came from — claude's `parent_tool_use_id`, which is stamped
+	// on every line a `Task` subagent produces (task 066). Empty is the main
+	// loop, and is also every adapter that does not report the field.
+	//
+	// It is carried but not yet rendered: §15's pane is a flat two-column
+	// gutter, and nesting is its own piece of work with its own capture.
+	ParentCallID string
 	// Raw is the verbatim stream line, which transcripts write. The one
 	// exception is a coalesced EventThinking: its Text was accumulated
 	// across earlier delta lines, so Raw is the line that closed the block
@@ -294,6 +312,21 @@ type Event struct {
 	// pairs Text with Raw, and offsets stay correct because the closing line
 	// is the one that had just been written.
 	Raw []byte
+}
+
+// RunHeader is what an agent CLI announced about the run before starting it
+// (task 066, §9.2): where it is running and what it was allowed to reach.
+// Both fields are empty for an adapter whose dialect has no such line — the
+// header simply never arrives, and nothing synthesizes one.
+type RunHeader struct {
+	// WorkDir is the directory the CLI reported working in. It is the
+	// adapter's own report, not vincent's RunSpec.WorkDir: the point of
+	// showing it is that the two could disagree.
+	WorkDir string
+	// Tools is the tool set the run was given, in the order the CLI listed
+	// it. "What could this agent actually reach" has no other answer in a
+	// transcript.
+	Tools []string
 }
 
 // ToolUse is one tool invocation surfaced by the agent.
@@ -321,9 +354,24 @@ type ToolResult struct {
 	// Name is the tool, when the dialect repeats it on the result. Empty is
 	// normal — claude names the tool only on the call.
 	Name string
-	// Summary is the outcome in a few words: "exit 0", "created (+1 −0)",
-	// the first line of the result text.
+	// Summary is the outcome in a few words: "exit 0", the first line of the
+	// result text. Never the tool's output body.
 	Summary string
+	// Verb is what the invocation *did*, taken from the dialect's own
+	// structured outcome rather than from its prose — claude's
+	// `tool_use_result.type` (task 066). Empty is the normal case: most
+	// tools report no structured outcome, and a type vincent has not seen in
+	// a capture is left unnamed rather than guessed at a past tense for.
+	Verb string
+	// Blocked reports an invocation that never ran because a permission rule
+	// refused it, as opposed to one that ran and failed. Claude says so with
+	// `tool_result_meta[].non_execution_kind: "permission-rule"` (task 066).
+	//
+	// It does not clear IsError — the dialect flags a blocked call as an
+	// error too, and that is true as far as the model is concerned. It is
+	// the finer verdict, and a client that renders it says "blocked" where
+	// it would otherwise say "failed".
+	Blocked bool
 	// IsError reports a failed invocation. A dialect that says nothing about
 	// success reports false — the flag means "known to have failed", never
 	// "assumed fine".
@@ -381,6 +429,36 @@ type RunResult struct {
 	InputTokens  int64 // 0 if unreported
 	OutputTokens int64
 	CostUSD      *float64 // nil if unreported (e.g. codex)
+	// The fields below are the run's own account of itself, as the terminal
+	// result line reported it (task 066, §9.2). Every one is zero or empty
+	// for an adapter that does not report it, which is codex and cursor for
+	// all of them — a missing capability is stated in §9.x and never
+	// emulated. None of them is persisted: `step_runs` keeps vincent's own
+	// timing and token columns, and these reach a reader through the
+	// transcript, which §13.2 re-normalizes on every read.
+	//
+	// Duration is claude's, not vincent's, and the two legitimately
+	// disagree: claude's excludes the time a §7.4 input wait adds to ours.
+	Duration    time.Duration // wall clock the CLI measured; 0 if unreported
+	APIDuration time.Duration // of which was spent in API calls
+	NumTurns    int           // model turns the run burned; 0 if unreported
+	// StopReason is why the model stopped ("end_turn", "max_tokens"), and
+	// TerminalReason why the *run* stopped ("completed"). They are what
+	// distinguishes "the model finished" from "it hit a limit", which
+	// otherwise both read as a bare success.
+	StopReason     string
+	TerminalReason string
+	// CacheReadTokens and CacheCreationTokens split the token spend the two
+	// plain counts above do not account for.
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	// ModelUsage is the per-model breakdown of a run that used more than one
+	// model, in the order the adapter reported it. nil is unreported.
+	ModelUsage []ModelUsage
+	// PermissionDenials lists the tool calls a permission rule refused over
+	// the whole run — the run-level counterpart of ToolResult.Blocked. nil
+	// is unreported *and* none, which are the same thing to a reader.
+	PermissionDenials []PermissionDenial
 	// Failure is the adapter's verdict about *why* the run stopped, when it
 	// recognized the reason in its own CLI's output (task 003, §9.1). nil —
 	// "nothing recognized" — is every run that behaves as it did before this
@@ -391,6 +469,31 @@ type RunResult struct {
 	// where the material already is: the terminal result and the stderr tail
 	// live inside the handle, and the engine never sees either.
 	Failure *Failure
+}
+
+// ModelUsage is one model's share of a run (task 066, §9.2). A run that used
+// a single model still reports one entry.
+//
+// It carries what the *run* spent, not what the model *is*: claude's payload
+// also names the model's context window, its max output tokens and its
+// provider, and those describe the model rather than this run — §9.6's option
+// catalog is where a fact about a model belongs.
+type ModelUsage struct {
+	Model               string
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	CostUSD             *float64 // nil if unreported
+}
+
+// PermissionDenial is one tool call a permission rule refused, as the
+// terminal result reported it (task 066).
+type PermissionDenial struct {
+	ToolName string
+	// CallID is the refused invocation's id, so a client can correlate the
+	// run-level list with the ToolResult that carried Blocked.
+	CallID string
 }
 
 // FailureKind names a condition an adapter recognized in its CLI's output

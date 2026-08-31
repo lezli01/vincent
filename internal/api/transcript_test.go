@@ -83,7 +83,7 @@ func TestNormalizeTranscript(t *testing.T) {
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","id":"toolu_01",` +
 			`"input":{"file_path":"internal/auth/token.go"}}]}}`,
 		`{"type":"vincent.output","phase":"run","stream":"stdout","text":"building"}`,
-		`{"type":"system","subtype":"init"}`,
+		`{"type":"system","subtype":"compact_boundary"}`,
 		`{"type":"result","subtype":"success","result":"done","total_cost_usd":0.5,` +
 			`"usage":{"input_tokens":10,"output_tokens":3}}`,
 	}, "\n") + "\n"
@@ -127,8 +127,10 @@ func TestNormalizeTranscript(t *testing.T) {
 	if !strings.Contains(lines[2], `"phase":"run"`) || !strings.Contains(lines[2], `"text":"building"`) {
 		t.Errorf("vincent annotation not passed through: %s", lines[2])
 	}
-	// The unrecognized line survives verbatim inside agent.raw.
-	if !strings.Contains(lines[3], `\"subtype\":\"init\"`) {
+	// The unrecognized line survives verbatim inside agent.raw. `init` is
+	// normalized since task 066, so the unmodelled subtype beside it is what
+	// stands in for "a line this dialect does not model".
+	if !strings.Contains(lines[3], `\"subtype\":\"compact_boundary\"`) {
 		t.Errorf("unknown line not preserved: %s", lines[3])
 	}
 	if !strings.Contains(lines[4], `"result_text":"done"`) ||
@@ -358,5 +360,109 @@ func TestNormalizeThinkingAndToolResults(t *testing.T) {
 	}
 	if !strings.Contains(out[3], `"is_error":true`) {
 		t.Errorf("failed tool result not flagged: %s", out[3])
+	}
+}
+
+// TestNormalizeRunHeaderAndResultMetadata covers the wire names task 066
+// added (§13.2): the new agent.run_header record, and the result line's own
+// account of the run. Both come off the shapes a captured claude run
+// actually sends.
+//
+// The key names here are the *contract* with internal/taskrun's live chunks:
+// a client renders the live tail and the fetched scrollback through one path,
+// so a name that differs by one character shows up as output that changes the
+// moment a step finishes. taskrun/chunks_test.go pins the other side.
+func TestNormalizeRunHeaderAndResultMetadata(t *testing.T) {
+	lines := []string{
+		`{"type":"system","subtype":"init","session_id":"s1","cwd":"C:\\work\\repo",` +
+			`"tools":["Task","Bash","Write"]}`,
+		`{"type":"user","parent_tool_use_id":"toolu_parent","message":{"content":[` +
+			`{"type":"tool_result","tool_use_id":"toolu_01","content":"File created"}]},` +
+			`"tool_use_result":{"type":"create","filePath":"hello.txt"}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_02",` +
+			`"content":"no user is available; permission denied","is_error":true}]},` +
+			`"tool_use_result":"Error: no user is available; permission denied",` +
+			`"tool_result_meta":[{"id":"toolu_02","non_execution_kind":"permission-rule"}]}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"done",` +
+			`"duration_ms":7324,"duration_api_ms":5706,"num_turns":2,` +
+			`"stop_reason":"end_turn","terminal_reason":"completed",` +
+			`"total_cost_usd":0.02206225,` +
+			`"usage":{"input_tokens":18,"output_tokens":536,` +
+			`"cache_read_input_tokens":60280,"cache_creation_input_tokens":6835},` +
+			`"modelUsage":{"claude-haiku-4-5-20251001":{"inputTokens":18,"outputTokens":536,` +
+			`"cacheReadInputTokens":60280,"cacheCreationInputTokens":6835,"costUSD":0.02206225}},` +
+			`"permission_denials":[{"tool_name":"Write","tool_use_id":"toolu_02"}]}`,
+	}
+	var buf bytes.Buffer
+	parser := claude.New(func() string { return "" }).NewLineParser()
+	if err := normalizeTranscript(&buf, strings.NewReader(strings.Join(lines, "\n")+"\n"), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	out := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	if len(out) != len(lines) {
+		t.Fatalf("got %d normalized lines, want %d:\n%s", len(out), len(lines), buf.String())
+	}
+
+	for _, want := range []string{
+		`"type":"agent.run_header"`,
+		`"work_dir":"C:\\work\\repo"`,
+		`"available_tools":["Task","Bash","Write"]`,
+	} {
+		if !strings.Contains(out[0], want) {
+			t.Errorf("run header missing %s: %s", want, out[0])
+		}
+	}
+
+	// The verb rides beside the summary, and the subagent attribution rides
+	// on the record rather than on one of its results.
+	if !strings.Contains(out[1], `"verb":"created"`) ||
+		!strings.Contains(out[1], `"parent_call_id":"toolu_parent"`) {
+		t.Errorf("structured outcome lost: %s", out[1])
+	}
+	// A blocked call is flagged apart from an ordinary failure, and keeps
+	// its error flag: it is both, and the finer verdict is the new one.
+	if !strings.Contains(out[2], `"blocked":true`) || !strings.Contains(out[2], `"is_error":true`) {
+		t.Errorf("blocked call not flagged: %s", out[2])
+	}
+
+	for _, want := range []string{
+		`"duration_ms":7324`,
+		`"api_duration_ms":5706`,
+		`"num_turns":2`,
+		`"cache_read_tokens":60280`,
+		`"cache_write_tokens":6835`,
+		`"model_usage":[{"model":"claude-haiku-4-5-20251001"`,
+		`"permission_denials":[{"tool_name":"Write","call_id":"toolu_02"}]`,
+	} {
+		if !strings.Contains(out[3], want) {
+			t.Errorf("result missing %s: %s", want, out[3])
+		}
+	}
+	// The ordinary reasons are on the wire even though the pane does not
+	// print them: a client other than the TUI may well want them.
+	if !strings.Contains(out[3], `"stop_reason":"end_turn"`) ||
+		!strings.Contains(out[3], `"terminal_reason":"completed"`) {
+		t.Errorf("stop reasons lost: %s", out[3])
+	}
+}
+
+// TestNormalizeOmitsUnreportedResultMetadata is the other half of the wire
+// contract: an adapter that reports none of task 066's fields sends none of
+// their keys, so a client can tell "unreported" from "zero".
+func TestNormalizeOmitsUnreportedResultMetadata(t *testing.T) {
+	var buf bytes.Buffer
+	parser := claude.New(func() string { return "" }).NewLineParser()
+	line := `{"type":"result","subtype":"success","result":"done"}` + "\n"
+	if err := normalizeTranscript(&buf, strings.NewReader(line), parser); err != nil {
+		t.Fatalf("normalizeTranscript: %v", err)
+	}
+	for _, absent := range []string{
+		"duration_ms", "api_duration_ms", "num_turns", "stop_reason",
+		"terminal_reason", "cache_read_tokens", "cache_write_tokens",
+		"model_usage", "permission_denials", "parent_call_id",
+	} {
+		if strings.Contains(buf.String(), absent) {
+			t.Errorf("unreported %s reached the wire: %s", absent, buf.String())
+		}
 	}
 }

@@ -2065,9 +2065,18 @@ type ToolUse struct {                // T4.14
 type ToolResult struct {             // T4.16
     CallID  string // the ToolUse this reports on
     Name    string // when the dialect repeats it; "" is normal
-    Summary string // the outcome in a few words: "exit 0", "+1 −0" — never the
-                   // tool's output body, which stays in the transcript
+    Summary string // the outcome in a few words: "exit 0" — never the tool's
+                   // output body, which stays in the transcript
+    Verb    string // task 066: the dialect's structured outcome ("created"); ""
+                   // when it reported none, or named a type no capture has shown
+    Blocked bool   // task 066: a permission rule refused the call, as distinct
+                   // from one that ran and failed
     IsError bool   // "known to have failed", never "assumed fine"
+}
+
+type RunHeader struct {              // task 066, added 2026-08-31
+    WorkDir string   // where the CLI said it was running
+    Tools   []string // the tool set the run was given, in the CLI's order
 }
 
 type RunResult struct {
@@ -2077,6 +2086,19 @@ type RunResult struct {
     OutputTokens int64
     CostUSD      *float64 // nil if unreported (e.g. codex)
     Failure      *Failure // task 003: the adapter's verdict, nil = nothing recognized
+    // task 066, added 2026-08-31: the run's own account of itself, as its
+    // terminal result reported it. Zero/nil throughout for an adapter that
+    // reports none of it, which is codex and cursor for every member. None of
+    // it is persisted — it reaches a reader through the transcript (§13.2).
+    Duration            time.Duration      // the CLI's own wall clock, not vincent's
+    APIDuration         time.Duration      // of which was spent in API calls
+    NumTurns            int
+    StopReason          string             // why the model stopped ("end_turn")
+    TerminalReason      string             // why the run stopped ("completed")
+    CacheReadTokens     int64
+    CacheCreationTokens int64
+    ModelUsage          []ModelUsage       // per-model share; nil = unreported
+    PermissionDenials   []PermissionDenial // refused calls; nil = unreported and none
 }
 
 type Failure struct {                // task 003, added 2026-08-14
@@ -2126,6 +2148,26 @@ recording and discarding:
   **whole blocks**; a dialect that streams token-level deltas coalesces them
   itself and emits when the block closes. See the §9.7 amendment for why that
   constraint is the part of the original decision worth keeping.
+
+**The run header, the run's account of itself, and subagent attribution (task
+066, added 2026-08-31).** A third event type joins the normalized stream —
+`EventRunHeader`, carrying a `RunHeader` — and it is the one event that
+describes the *run* rather than something that happened inside it: where the CLI
+said it was working, and what tools it was given. "What could this agent
+actually reach" had no answer in a transcript at any level.
+
+`Event` also gains `ParentCallID`: the tool call a subagent's lines belong to.
+It is read, carried on the wire and on the live chunk, and **not rendered** —
+§15's pane is a flat two-column gutter, and every captured run has the field
+`null`, so there is nothing to test a tree against. Nesting is its own work with
+its own capture; because §13.2 re-normalizes on read, transcripts recorded now
+will render under it when it lands.
+
+Both are stated positively where an adapter lacks them (§9.3, §9.7) and neither
+is ever emulated. Nothing is persisted: `step_runs` keeps vincent's own timing
+and token columns, and a claude-only duration there would be a second duration
+disagreeing with vincent's own, since claude's excludes what a §7.4 input wait
+adds to ours.
 
 **The adapter's failure verdict (task 003, added 2026-08-14).** `RunResult`
 carries an optional `Failure`: the adapter's reading of *why* its CLI stopped,
@@ -2275,6 +2317,44 @@ on a current CLI and **changes no behaviour whatsoever**. The separate
 capability and degrades the invocation visibly, which is a different question
 from whether vincent has ever seen this build.
 
+*Amended 2026-08-31 (task 066).* The parser reads more of the dialect it was
+already recording. Four groups, all of them present in the `2.1.226` fixtures
+since they were captured:
+
+- **The `system`/`init` line** normalizes to the §9.1 run header — `cwd` and
+  `tools` — instead of falling through to `EventUnknown`. Any other `system`
+  subtype still does fall through, which is the phase 1 tolerant-parsing rule
+  and is asserted rather than assumed.
+- **The `result` line's metadata:** `duration_ms`, `duration_api_ms`,
+  `num_turns`, `stop_reason`, `terminal_reason`, `permission_denials[]`,
+  `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens`, and the
+  `modelUsage` map flattened into a per-model slice with its keys **sorted** —
+  Go randomizes map iteration, and a pane whose per-model lines reorder between
+  two reads of one transcript is a bug a reader would blame on the run.
+  `modelUsage`'s `contextWindow`, `maxOutputTokens`, `canonicalModel` and
+  `provider` are deliberately **not** read: they describe the model rather than
+  the run, and §9.6's catalog is where a fact about a model belongs.
+- **The structured tool outcome.** `tool_use_result` and `tool_result_meta` ride
+  on a `user` line *beside* `message`, not inside it. `tool_use_result` decodes
+  as either an object or a bare string — the deny fixture's is
+  `"Error: no user is available; permission denied"` — so it is held as
+  `json.RawMessage` and probed, the way `resultSummary` already handles claude's
+  two content shapes. Its `type` becomes `ToolResult.Verb` through a table
+  holding exactly the values a capture has shown (`create` → `created`); an
+  unobserved type yields **no verb** rather than a guessed past tense, because a
+  wrong verb is indistinguishable from a tool that reported none (the T4.17
+  rule). A `tool_result_meta[].non_execution_kind` of `permission-rule` sets
+  `ToolResult.Blocked` — the call never ran, which a reader acts on differently
+  from one that ran and failed. `Blocked` does not clear `IsError`: the dialect
+  flags a refused call as an error too, and that is true as far as the model is
+  concerned.
+- **`parent_tool_use_id`** is read onto `Event.ParentCallID`. It is `null` on
+  every line of all three captures.
+
+The tool's output **body** still never enters the normalized stream (T4.16), and
+the transcript remains the durable copy. Nothing is persisted (task 066
+decision 4).
+
 *Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
 `--mcp-config <inline JSON>` with `--strict-mcp-config` beside it, so the
 user's own `.mcp.json` and global servers never leak into a vincent step.
@@ -2296,6 +2376,19 @@ transcript is something people paste into issues.
   worktree the real git dir lives under the main repo, so a `git commit` from
   a restricted codex step may be denied; vincent itself never needs commits
   (the diff reads the working tree).
+- **Reports no run header and no run metadata (stated positively, 2026-08-31,
+  task 066).** Codex's stream opens with `thread.started`, which carries a
+  thread id and nothing else — no working directory, no tool list — so there is
+  no run header to normalize and this adapter emits no `EventRunHeader`.
+  `item.completed` reports an outcome in prose with no structured type and no
+  non-execution kind, so `ToolResult.Verb` and `.Blocked` stay empty. The one
+  field codex's dialect *does* carry that claude's new ones parallel is
+  `turn.completed.usage.cached_input_tokens`; it is **not** read, and that is
+  scope rather than absence — this task widened one adapter, the dialects
+  diverge, and each deserves its own fixtures (task 066). Until then every one
+  of the fields stays zero here and **nothing emulates a value**, which is the
+  standing §9.x rule and is asserted over every codex fixture by
+  `TestNoRunHeaderOrResultMetadata`.
 - **Cannot resume (stated positively, 2026-08-30, task 063).** `agent.CanResume`
   is false for codex, so a chat on it is refused at creation (§13.2,
   `agent_cannot_resume`). codex does have `exec resume <thread_id>` and its
@@ -2648,6 +2741,17 @@ would invalidate every one of them.
   launcher and would open a GUI; the adapter resolves `cursor-agent` only. The
   adapter's `Name()` — and therefore the workflow `agent:` value and the
   `agents.cursor.path` config key — is `cursor`.
+- **Reports no run header and no run metadata *yet* (stated positively,
+  2026-08-31, task 066).** Cursor's `tool_call/completed` carries no outcome
+  type and no non-execution kind, so `ToolResult.Verb` and `.Blocked` stay
+  empty. The rest is scope, not absence, and saying so is the point of stating
+  it here: cursor's `system`/`init` line **does** carry `cwd` (though no tool
+  list), and its `result` line **does** carry `duration_ms`, `duration_api_ms`
+  and `usage.cacheReadTokens`/`cacheWriteTokens`. None of it is read. Task 066
+  widened claude's parser only — the dialects diverge and each deserves its own
+  fixtures — and the shared vocabulary was designed so cursor can fill these
+  later without another wire change. Until it does, all of them stay zero and
+  none of them is emulated, asserted over every cursor fixture.
 - **Cannot resume (stated positively, 2026-08-30, task 063).** As with codex,
   `agent.CanResume` is false and a chat on cursor is refused at creation.
   cursor-agent has a `--resume`, and its stream carries `session_id`, but the
@@ -4837,6 +4941,27 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         Because normalization is re-run on read, enriching a
                                         parser improves transcripts **already on disk** — the
                                         reasoning in a run recorded last week renders today.
+                                        **v0 wire change (task 066, 2026-08-31):** a third
+                                        record type, `agent.run_header`
+                                        (`work_dir`, `available_tools: []string` — the tool
+                                        list cannot ride on `tools`, which is
+                                        `agent.tool_use`'s objects); `agent.result` gains
+                                        `duration_ms`, `api_duration_ms`, `num_turns`,
+                                        `stop_reason`, `terminal_reason`,
+                                        `cache_read_tokens`, `cache_write_tokens`,
+                                        `model_usage: [{model, input_tokens, output_tokens,
+                                        cache_read_tokens, cache_write_tokens, cost_usd}]` and
+                                        `permission_denials: [{tool_name, call_id}]`;
+                                        `agent.tool_result`'s entries gain `verb` and
+                                        `blocked`; and **any** record may carry
+                                        `parent_call_id`. Every one is omitted when
+                                        unreported, so a client tells "unreported" from
+                                        "zero". Same reasoning as T4.14's and T4.16's: records
+                                        are recomputed from the raw file on every read and
+                                        never stored, and live chunks are ephemeral, so the
+                                        handler, the §13.3 live publisher and the in-tree
+                                        clients moved in one commit rather than carrying two
+                                        shapes.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
 
@@ -4939,7 +5064,10 @@ Two kinds of streams:
    history unasked; state catch-up is a REST snapshot, then the stream.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
-   `agent.tool_result`, `agent.thinking` (T4.16),
+   `agent.tool_result`, `agent.thinking` (T4.16), `agent.run_header` (task 066 —
+   it is the *first* line of the stream, so a reader who opens the pane on a
+   running step sees the run's frame before its first word rather than only once
+   the step has finished),
    `agent.usage`, `command.output` chunks are streamed on the **per-task** stream only
    and are *not* written to the events table (they are durable in transcript files;
    catch-up = fetch the transcript, then follow live). Chunks are one SSE event each,
@@ -6082,6 +6210,38 @@ dialect's result text repeats assistant messages already on screen, and
 cursor's is the entire turn concatenated. The text is kept when the attempt
 rendered no output at all — a codex turn with no `agent_message` — and always
 on an error, where it is the error and may be the only content there is.
+
+*Amended 2026-08-31 (task 066).* Two lines join the scheme, and one gutter mark:
+
+- **`# ` — the run header.** `agent.run_header` renders the working directory
+  the CLI reported and the tools it was given, dim throughout, gutter included:
+  it is context for everything below it rather than a thing that happened, and
+  it must not compete with the first assistant line for a reader's eye. Its tool
+  list wraps to the hanging indent like any other record. It appears at
+  **`normal` and `verbose`**, never at `compact` — that level's stated meaning
+  is "what the agent said and did, nothing else", and the run's frame is
+  neither.
+- **`⊘ ` — a blocked tool call.** A call a permission rule refused never ran,
+  and that sends a reader somewhere different from a call that ran and failed:
+  one is the agent's problem, the other is the step's permission mode. It is
+  marked apart from `✗ ` at every level, which is a correction to what the
+  record *means* rather than growth in what compact shows. A structured outcome
+  verb, where the dialect reports one, leads the tool's own prose about it:
+  `✓ created · File created successfully at: hello.txt`.
+- **The result line grows by level.** `compact` is byte for byte what it always
+  rendered (`done`, or `done · $0.02`). From `normal` up it adds the run's own
+  account of itself — elapsed, turns, an *unusual* stop or terminal reason, and
+  a count of permission denials. The ordinary reasons are never printed: every
+  successful claude run ends `end_turn`/`completed`, so naming them would spend
+  columns saying nothing, and the whole point of the field is to distinguish
+  "the model finished" from "it hit a limit". `verbose` adds the API-time split
+  and, on wrapped continuation lines of the same record, the cache read/write
+  split and the per-model breakdown.
+
+Still **no timestamps**, and `parent_call_id` — which every record may now carry
+— is deliberately **not rendered**: the gutter is two columns and flat, and
+nesting subagent work under its parent is its own design problem with its own
+capture (task 066 decision 2).
 
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail

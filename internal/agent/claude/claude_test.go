@@ -158,9 +158,12 @@ func TestRunSuccess(t *testing.T) {
 	for _, ev := range events {
 		counts[ev.Type]++
 	}
+	// The `system`/`init` line normalizes to a run header since task 066;
+	// fake_marker is the one line left over for EventUnknown.
 	if counts[agent.EventOutput] == 0 || counts[agent.EventToolUse] == 0 ||
-		counts[agent.EventResult] != 1 || counts[agent.EventUnknown] < 2 {
-		t.Errorf("event mix %v, want output+tool_use+1 result+2 unknown (init, fake_marker)", counts)
+		counts[agent.EventResult] != 1 || counts[agent.EventRunHeader] != 1 ||
+		counts[agent.EventUnknown] < 1 {
+		t.Errorf("event mix %v, want output+tool_use+1 result+1 run_header+1 unknown (fake_marker)", counts)
 	}
 }
 

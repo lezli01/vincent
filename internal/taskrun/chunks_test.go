@@ -44,6 +44,41 @@ func TestResultChunkShape(t *testing.T) {
 	}
 }
 
+// TestResultChunkCarriesVerbAndBlock extends the parity above onto the two
+// fields task 066 added: the dialect's structured verb, and a call a
+// permission rule refused — which is a different verdict from one that ran
+// and failed, and renders with its own mark.
+func TestResultChunkCarriesVerbAndBlock(t *testing.T) {
+	got := marshal(t, resultChunks([]agent.ToolResult{
+		{CallID: "toolu_01", Summary: "File created successfully", Verb: "created"},
+		{CallID: "toolu_02", Summary: "permission denied", Blocked: true, IsError: true},
+	}))
+	want := `[{"call_id":"toolu_01","summary":"File created successfully","verb":"created"},` +
+		`{"blocked":true,"call_id":"toolu_02","is_error":true,"summary":"permission denied"}]`
+	if got != want {
+		t.Errorf("result chunks =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestHeaderChunkShape pins the run header's live shape (task 066). The tool
+// list rides on `available_tools` rather than `tools`, which is
+// agent.tool_use's objects — one key cannot mean two shapes.
+func TestHeaderChunkShape(t *testing.T) {
+	got := marshal(t, headerChunk(&agent.RunHeader{
+		WorkDir: `C:\work\repo`,
+		Tools:   []string{"Task", "Bash"},
+	}))
+	want := `{"available_tools":["Task","Bash"],"work_dir":"C:\\work\\repo"}`
+	if got != want {
+		t.Errorf("header chunk =\n%s\nwant\n%s", got, want)
+	}
+	// A header with neither half still publishes: the record itself is the
+	// statement that the run began.
+	if got := marshal(t, headerChunk(&agent.RunHeader{})); got != "{}" {
+		t.Errorf("empty header chunk = %s, want {}", got)
+	}
+}
+
 func marshal(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
