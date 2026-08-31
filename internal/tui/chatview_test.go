@@ -9,7 +9,7 @@ import (
 
 // chatViewFixture is a chat workspace pointed at one loaded chat.
 func chatViewFixture() *chatView {
-	v := newChatView()
+	v := newChatView(newLevelHolder())
 	v.now = func() time.Time { return time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC) }
 	v.chatID = 1
 	v.chat = &apiclient.Chat{ID: 1, ProjectID: 7, Title: "a chat", State: "idle", Agent: "claude"}
@@ -33,28 +33,34 @@ func TestChatViewRefusesCapReached(t *testing.T) {
 // TestChatViewSeamsTranscriptToStream is the catch-up seam: a chunk at or
 // before the fetch's X-Next-Offset is one the fetch already returned, and
 // printing it again would duplicate the line.
+//
+// The chunks carry §13.3's normalized fields, which is what the daemon
+// publishes for a chat since task 071 — the payload is the same vocabulary a
+// step's chunks use, not the agent's verbatim line.
 func TestChatViewSeamsTranscriptToStream(t *testing.T) {
 	v := chatViewFixture()
 	v.turns = []apiclient.ChatTurn{{ID: 9, Seq: 1, State: "running"}}
 	v.applyTranscript(chatTranscriptMsg{chatID: 1, seq: 1, next: 120, records: []apiclient.TranscriptRecord{
 		{Type: "agent.output", Text: "one"},
 	}})
-	if len(v.scrollback) != 1 {
-		t.Fatalf("the fetch produced %d lines, want 1", len(v.scrollback))
+	if got := len(v.turnRecords[1]); got != 1 {
+		t.Fatalf("the fetch produced %d records, want 1", got)
 	}
 	// Already covered by the fetch: dropped.
 	v.applyChatNote(chatNoteMsg{chatID: 1, note: apiclient.OutputNote{
-		TurnID: 9, Offset: 120, Payload: []byte(`{"raw":"{\"type\":\"agent.output\",\"text\":\"one\"}"}`),
+		Type: "agent.output", TurnID: 9, Offset: 120,
+		Payload: []byte(`{"text":"one","raw":"{}"}`),
 	}})
-	if len(v.scrollback) != 1 {
-		t.Fatalf("a chunk at the seam was printed again: %v", v.scrollback)
+	if got := len(v.turnRecords[1]); got != 1 {
+		t.Fatalf("a chunk at the seam was recorded again: %v", v.turnRecords[1])
 	}
 	// Past the seam: new.
 	v.applyChatNote(chatNoteMsg{chatID: 1, note: apiclient.OutputNote{
-		TurnID: 9, Offset: 121, Payload: []byte(`{"raw":"{\"type\":\"agent.output\",\"text\":\"two\"}"}`),
+		Type: "agent.output", TurnID: 9, Offset: 121,
+		Payload: []byte(`{"text":"two","raw":"{}"}`),
 	}})
-	if len(v.scrollback) != 2 {
-		t.Fatalf("a chunk past the seam was dropped: %v", v.scrollback)
+	if got := len(v.turnRecords[1]); got != 2 {
+		t.Fatalf("a chunk past the seam was dropped: %v", v.turnRecords[1])
 	}
 }
 

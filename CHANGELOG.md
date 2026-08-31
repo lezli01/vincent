@@ -550,6 +550,30 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A chat's live output was raw agent JSON, and nothing turned it down.** The
+  chat workspace rendered every line of a running turn as the agent CLI's own
+  dimmed stream-json, clipped at 200 characters — because the daemon published a
+  chat's live output as one untyped chunk carrying only that raw line, while the
+  client's renderer assumed it was already normalized. Nothing lined up, so
+  every line fell to the fallback. Two more defects lived in the same renderer:
+  a line delivered over the stream and the same line refetched from the turn's
+  transcript disagreed, so a reconnect silently changed what was on screen, and
+  tool results, run headers and the result line were dropped outright at every
+  level.
+
+  A chat's live-output chunks now carry the same normalized types and fields a
+  task's do — mapped by shared code, with the verbatim line kept beside them as
+  `raw` — and the conversation body is the task workspace's output pane: same
+  records, same gutter marks, same three levels. **`ctrl+r`** cycles compact →
+  normal → verbose (not `v`: the composer owns every printable key), and it is
+  the *same* level the task pane is on, so setting it in either place sets it in
+  both. **`pgup`/`pgdown`** scroll the conversation and **`ctrl+g`** jumps back
+  to the live end. Finished turns are now drawn from their transcripts — the
+  five newest when the chat opens, the rest as you scroll to them — so raising
+  the level reveals what already happened and not only what happens next; a turn
+  whose transcript has aged out still shows its answer.
+  See [Using the TUI](docs/guides/tui.md#chat-workspace) (#282).
+
 - **The new-chat form's pickers never filled, and its picker rows leaked
   keys.** The form fetched the projects and the adapters and then dropped the
   answer on the floor: the message it comes back in had no case in the chats

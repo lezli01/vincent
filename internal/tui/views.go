@@ -105,7 +105,11 @@ type clientAware interface {
 // newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail sub-model's per-task subscription.
 func newViews(ctx context.Context) [viewCount]panel {
-	home := newShell(ctx)
+	// One verbosity level for the session, handed to both panes that render
+	// transcript records (task 071 decision 3). Built here because this is
+	// the one place that constructs both of them.
+	level := newLevelHolder()
+	home := newShell(ctx, level)
 	// Keep the board and detail sub-models independently testable while routing
 	// them as separate screens. The task view owns detail updates; the home shell
 	// retains the pointer only so both screens share the established action state.
@@ -124,6 +128,6 @@ func newViews(ctx context.Context) [viewCount]panel {
 		// has to know the answer before the probes land.
 		viewPullRequests: newPullRequestsView(),
 		viewChats:        newChatsView(),
-		viewChat:         newChatView(),
+		viewChat:         newChatView(level),
 	}
 }

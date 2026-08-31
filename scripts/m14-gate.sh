@@ -259,6 +259,28 @@ esac
 printf '%s\n' "$IDS" | grep -x "$CHAT_ID" >/dev/null \
   || fail "this chat's own events never arrived on its stream: $IDS"
 
+# Task 071 (issue #282): a chat's live-output chunks carry §13.3's typed names
+# and normalized fields, with the agent's verbatim line kept beside them. Both
+# halves are asserted here because both are the contract: a client renders the
+# normalized fields, and `raw` stayed so nothing that read it reads less.
+# Multi-line captures, so `tr -d '\r'` — jq writes CRLF on Windows.
+NAMES="$(sed -n 's/^event: //p' "$STREAM" | tr -d '\r')"
+CHUNK_TYPES="$(grep '^agent\.' <<<"$NAMES" | sort -u || true)"
+[ -n "$CHUNK_TYPES" ] \
+  || fail "the chat stream carried no §13.3 chunk types at all: $NAMES"
+grep -x 'agent.output' <<<"$CHUNK_TYPES" >/dev/null \
+  || fail "no agent.output chunk on the chat stream; got: $CHUNK_TYPES"
+if grep -x 'output' <<<"$NAMES" >/dev/null; then
+  fail "the pre-071 catch-all 'output' chunk type is still published"
+fi
+# One chunk carrying both a normalized field and the raw line is the whole
+# claim; the transcript route is what a client refetches it from.
+BOTH="$(sed -n 's/^data: //p' "$STREAM" \
+  | jq -r 'select(.turn_id != null and .text != null and .text != "" and .raw != null and .raw != "") | .turn_id' \
+  | sort -u | tr -d '\r')"
+[ -n "$BOTH" ] \
+  || fail "no chat chunk carried both a normalized field and its raw line"
+
 echo "== 5. an awaiting_input chat is answered over the API"
 "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
 export FAKEAGENT_SCENARIO=ask-question

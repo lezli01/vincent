@@ -1052,7 +1052,28 @@ them, and a composer at the bottom.
 |---|---|
 | `enter` | Send the message |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
+| `ctrl+r` | How much of the conversation to show: compact → normal → verbose |
+| `pgup` / `pgdown` | Scroll the conversation |
+| `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |
+
+The body is the task workspace's [output pane](#task-workspace), same records
+and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
+`#` the run header, `✓`/`✗` the result. `ctrl+r` cycles the same three levels
+`v` cycles there, and it is the **same level** — set it in either place and the
+other is on it too. `ctrl+r` rather than `v` because the composer owns every
+printable key: a letter would be typed into your draft.
+
+At `compact` you get what the agent said and did and nothing else. At `normal`
+reasoning is truncated to its first lines and the run header appears. At
+`verbose` you get everything, including the dialect lines vincent does not
+model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at the
+other two levels rather than filling the screen.
+
+Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
+Finished turns are drawn from their transcripts, so raising the level shows more
+of what already happened and not only of what happens next. A turn whose
+transcript has aged out of retention still shows its answer.
 
 When the agent asks something mid-turn, the chat enters `awaiting_input` and
 **the same popup a task's question opens** appears here — same options, same

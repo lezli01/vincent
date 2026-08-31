@@ -246,7 +246,12 @@ var bindings = []binding{
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
-	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 3},
+	// ctrl+r rather than `v` (task 071 decision 4): the composer owns every
+	// printable key, so a letter would be typed into the message.
+	{key: "ctrl+r", label: "how much of the conversation to show (compact → normal → verbose)", scope: scopePanel, context: ctxChat, hint: "ctrl+r detail", priority: 3},
+	{key: "pgup", label: "scroll the conversation back (pgdown goes forward)", scope: scopePanel, context: ctxChat, hint: "pgup/pgdown scroll", priority: 4},
+	{key: "ctrl+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChat, hint: "ctrl+g live", priority: 5},
+	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 6},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},

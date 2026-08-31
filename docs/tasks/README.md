@@ -84,6 +84,7 @@ the living engineering specification records implementation contracts.
 | [068](068-pull-request-tab.md) | Pull request tab on the task workspace, with checks and PR actions | 🔄 in progress (3/5) |
 | [069](069-open-a-pull-request-from-vincent.md) | Open a pull request from vincent itself | 🔄 in progress (7/8) |
 | [070](070-codex-stream-surface.md) | Extend codex output parsing to the full exec event schema, and support thread resume | ✅ done (5/5) |
+| [071](071-chat-workspace-verbosity.md) | The chat workspace renders through the output pane at a shared verbosity level | ✅ done (1/1) |
 
 ## How to add and update a task document
 
