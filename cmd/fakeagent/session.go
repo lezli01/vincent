@@ -52,7 +52,11 @@ func sessionPath(id string) string {
 // way, because the point is to be faithful to argv, not to parse it well.
 func resumeArg() (string, bool) {
 	for i, a := range os.Args[1:] {
-		if a != "--resume" {
+		// codex says it with a subcommand rather than a flag: `codex exec
+		// --json resume <id>` (task 070). The id is the argument after the
+		// word, exactly as it is after `--resume`, so both spellings share
+		// this walk rather than each getting their own.
+		if a != "--resume" && a != "resume" {
 			continue
 		}
 		if i+2 < len(os.Args) {
@@ -81,7 +85,7 @@ func openSession() []string {
 	id, resuming := resumeArg()
 	dir := sessionDir()
 	if resuming && id == "" {
-		fmt.Fprintln(os.Stderr, "--resume requires a session id")
+		fmt.Fprintln(os.Stderr, "resume requires a session id")
 		os.Exit(1)
 	}
 	if dir == "" {

@@ -41,8 +41,21 @@ func codexLoginStatus() {
 func codexMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
 
-	emit(map[string]any{"type": "thread.started", "thread_id": "fake-thread-1"})
+	// The conversation is resolved before a line is emitted, as in the
+	// claude dialect: `codex exec --json resume <id>` of an id the store
+	// does not hold ends here (task 070). codex reports the thread id on
+	// `thread.started`, and a resumed run reports the *same* id — which is
+	// what the real 0.150.1 capture shows (testdata/resume_0.150.1.jsonl).
+	prior := openSession()
+	rememberPrompt(prompt)
+
+	emit(map[string]any{"type": "thread.started", "thread_id": codexThreadID()})
 	emit(map[string]any{"type": "turn.started"})
+	if line := recallLine(prior); line != "" {
+		// What a resumed thread remembers. A fresh one says nothing here, so
+		// a vincent that dropped the resume argv fails by omission.
+		emitCodexMessage(line)
+	}
 	switch scenario {
 	case "error-event":
 		emitCodexMessage("something went wrong, giving up")
@@ -85,6 +98,17 @@ func codexMain(scenario string) {
 	default: // success
 		codexSuccess(prompt)
 	}
+}
+
+// codexThreadID is the id this run reports on thread.started: the session
+// store's id when there is one, so a resumed turn repeats the id it was
+// handed, and a fixed one otherwise so a run with no store still emits the
+// field the parser reads.
+func codexThreadID() string {
+	if sessionID != "" {
+		return sessionID
+	}
+	return "fake-thread-1"
 }
 
 // codexSuccess is the `success` body, shared with a usage-limit run whose

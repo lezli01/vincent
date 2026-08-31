@@ -152,6 +152,18 @@ func (a *Adapter) loggedIn(ctx context.Context, path string) *bool {
 // reads the instructions from stdin.
 func buildArgs(spec agent.RunSpec) []string {
 	args := []string{"exec", "--json"}
+	if spec.ResumeSessionID != "" {
+		// `codex exec resume [SESSION_ID] [PROMPT]`, verified against
+		// codex-cli 0.150.1 (task 070). The prompt is left off argv on
+		// purpose: `resume`'s help documents `-` for stdin, but a run with
+		// no PROMPT argument reads stdin anyway — the capture's stderr says
+		// "Reading prompt from stdin…" — which is what `exec` does and what
+		// RunSpec.Prompt's stdin-only contract needs (Windows argv limit).
+		//
+		// `resume` takes the same options as `exec`, so everything below
+		// still applies; only the subcommand and the id are inserted here.
+		args = append(args, "resume", spec.ResumeSessionID)
+	}
 	if spec.PermissionMode == agent.Restricted {
 		args = append(args, "--sandbox", "workspace-write")
 	} else {
@@ -352,6 +364,12 @@ func (r *run) Wait() (agent.RunResult, error) {
 			res.ResultText = terminal.ResultText
 			res.InputTokens = terminal.InputTokens
 			res.OutputTokens = terminal.OutputTokens
+			res.CacheReadTokens = terminal.CacheReadTokens
+			res.CacheCreationTokens = terminal.CacheCreationTokens
+			res.ReasoningOutputTokens = terminal.ReasoningOutputTokens
+			// The thread id the stream reported, which a chat stores and
+			// hands back as ResumeSessionID next turn (task 070).
+			res.SessionID = terminal.SessionID
 			// CostUSD stays nil: codex does not report cost (spec §9.3).
 		} else {
 			res.IsError = true
@@ -401,11 +419,12 @@ func (w *tailWriter) String() string {
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.cmd.Args }
 
-// SupportsResume implements agent.Resumer, in the negative (§9.3, task 063
-// decision 3). codex does have `exec resume <thread_id>`, and its stream does
-// carry a `thread_id` — but neither is read here yet, and no fixture captured
-// against a named codex build proves the argv. Saying false is the positive
-// statement the project's rule asks for: a capability an adapter lacks is
-// stated, never emulated. Replaying the conversation as prompt context would
-// be exactly that emulation, so chat creation refuses codex instead.
-func (a *Adapter) SupportsResume() bool { return false }
+// SupportsResume implements agent.Resumer. It became true with task 070,
+// which satisfied the precondition task 063 decision 3 set: the stream's
+// `thread_id` is read into RunResult.SessionID, and the `exec resume <id>`
+// argv is pinned by a capture against a named build (codex-cli 0.150.1,
+// testdata/resume_0.150.1.jsonl — the resumed turn reports the *same*
+// thread_id and answers a question about the previous turn). Nothing is
+// emulated: codex resumes its own session, and vincent never replays a
+// conversation as prompt context.
+func (a *Adapter) SupportsResume() bool { return true }

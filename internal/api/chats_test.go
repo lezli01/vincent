@@ -114,7 +114,11 @@ func (h *chatHarness) create(t *testing.T, agentName string) (int, map[string]an
 // gets a chat that cannot hold a conversation.
 func TestChatCreateRefusesAdaptersThatCannotResume(t *testing.T) {
 	h := newChatHarness(t)
-	for _, name := range []string{"codex", "cursor"} {
+	// cursor alone, since task 070. codex was refused here for want of a
+	// captured `exec resume` argv; that capture exists now, so a codex chat
+	// is created like a claude one and the refusal has one adapter left to
+	// state it over (§9.7).
+	for _, name := range []string{"cursor"} {
 		code, body := h.create(t, name)
 		if code != http.StatusBadRequest {
 			t.Fatalf("create on %s = %d, want 400 (%v)", name, code, body)
@@ -124,8 +128,10 @@ func TestChatCreateRefusesAdaptersThatCannotResume(t *testing.T) {
 			t.Fatalf("create on %s error code = %v, want %q", name, got, CodeAgentCannotResume)
 		}
 	}
-	if code, body := h.create(t, "claude"); code != http.StatusCreated {
-		t.Fatalf("create on claude = %d, want 201 (%v)", code, body)
+	for _, name := range []string{"claude", "codex"} {
+		if code, body := h.create(t, name); code != http.StatusCreated {
+			t.Fatalf("create on %s = %d, want 201 (%v)", name, code, body)
+		}
 	}
 }
 
