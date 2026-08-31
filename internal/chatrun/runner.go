@@ -349,6 +349,9 @@ func (r *Runner) runTurn(chat *store.Chat, turn *store.ChatTurn) {
 // It is a select loop rather than a `range` over the event channel because a
 // range cannot also watch a timer. The events channel closing is what ends
 // the loop, exactly as before.
+//
+// Every *other* way out goes through drain first, and none of them may
+// simply return — see drain.
 func (r *Runner) consume(
 	ctx context.Context, cancelCause context.CancelCauseFunc, live *liveTurn,
 	chat *store.Chat, turn *store.ChatTurn, handle agent.RunHandle, tr *transcript.Writer,
@@ -369,18 +372,21 @@ func (r *Runner) consume(
 			// The daemon is going away, or a human canceled. Either way the
 			// adapter's stream is about to close; runTurn classifies from the
 			// cause.
+			r.drain(events, chat, turn, tr)
 			return
 		case <-work.C:
 			tr.Note("timeout", map[string]any{"timeout": r.agentTimeout().String()})
 			r.deps.Logger.Warn("chat turn timed out",
 				"chat", chat.ID, "turn", turn.ID, "timeout", r.agentTimeout())
 			cancelCause(errTurnTimeout)
+			r.drain(events, chat, turn, tr)
 			return
 		case <-wait.C:
 			tr.Note("input_timeout", map[string]any{"timeout": r.inputTimeout().String()})
 			r.deps.Logger.Warn("chat input request timed out",
 				"chat", chat.ID, "turn", turn.ID, "timeout", r.inputTimeout())
 			cancelCause(errInputTimeout)
+			r.drain(events, chat, turn, tr)
 			return
 		case <-live.answered:
 			// A human answered through Answer, which already CAS'd
@@ -402,6 +408,7 @@ func (r *Runner) consume(
 					"chat", chat.ID, "turn", turn.ID,
 					"limit", r.cfg().TranscriptMaxBytes.Bytes())
 				cancelCause(errTranscriptLimit)
+				r.drain(events, chat, turn, tr)
 				return
 			}
 			switch ev.Type {
@@ -430,6 +437,33 @@ func (r *Runner) consume(
 				// outputlines.go decides what a verbosity level shows.
 			}
 		}
+	}
+}
+
+// drain empties the adapter's event channel until the stream closes, and is
+// what every early exit from consume owes the run it is abandoning.
+//
+// An adapter hands its events over on a channel written by goroutines that
+// block on the send — internal/agent/claude's readLoop feeds a mux which
+// feeds the events channel — and its Wait blocks until those goroutines are
+// finished. Cancelling the context kills the process tree, but it does not
+// unblock a goroutine already parked mid-handover: a consumer that stopped
+// reading leaves the reader waiting on a channel nobody empties and Wait
+// waiting on the reader, so runTurn never returns, the turn never reaches a
+// terminal state and its §11 slot is held until the daemon restarts. The
+// buffers are what hid it — 128 events fit between the CLI and the loop, so
+// the deadlock only lands when the agent got that far ahead before the kill,
+// which is why it showed up as a rare hang under load rather than as a red
+// test. internal/taskrun keeps its loop running for the same reason ("the
+// stream is left to drain so Wait still reports an exit", steps.go).
+//
+// Draining records rather than discards, exactly as the task engine does: the
+// lines were written, the cap suppresses them once it is reached, and a
+// transcript that stops mid-sentence for a reason nobody can see is the thing
+// §12.3 exists to avoid.
+func (r *Runner) drain(events <-chan agent.Event, chat *store.Chat, turn *store.ChatTurn, tr *transcript.Writer) {
+	for ev := range events {
+		r.record(chat, turn, tr, ev)
 	}
 }
 

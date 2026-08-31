@@ -131,3 +131,25 @@ Neither `codex exec` nor `cursor-agent -p` has a mid-run input channel
 answer route does nothing for it. Documented positively like every other
 missing capability; explicitly not worked around, and not a blocker on the chat
 being useful.
+
+## One thing found on the way (2026-08-31)
+
+Running three adapters through `internal/chatrun`'s tests instead of one made
+the package slow enough to lose a race that had been latent since task 063, and
+`TestTurnTranscriptStopsAtTheCap` hung the package at its 10-minute deadline.
+
+`chatrun.consume` returned on every early exit — cancel, `agent_timeout`,
+`input_timeout`, the transcript cap — leaving the adapter's stream unread. An
+adapter's reader goroutine blocks on the handover (claude's `readLoop` → `mux`
+→ `events`) and its `Wait` blocks until the reader is done, so nothing ever
+finished: the turn stayed non-terminal, the chat never returned to idle, its
+§11 slot was never released and `Runner.Stop` blocked with it. The 64+64-event
+buffers are what hid it — the deadlock lands only when the agent got that far
+ahead before the kill.
+
+`internal/taskrun` never had the bug and says why in `steps.go` ("the stream is
+left to drain so Wait still reports an exit"). `consume` now does the same
+through `Runner.drain`, and `TestTurnDrainsTheStreamItAbandons` holds it there
+against a stub adapter with no buffers at all, so the assertion does not depend
+on winning a race. Fixed here rather than deferred: it is the check for this
+task that went red, and it is a hang a user reaches with any talkative agent.

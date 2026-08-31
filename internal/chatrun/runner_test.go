@@ -36,6 +36,10 @@ type harness struct {
 	// agent remembering, not from anything vincent kept.
 	sessionDir string
 	cfg        config.Config
+	// flood is the stub adapter drain_test.go drives. It is registered here
+	// rather than there because the registry is built once, and an adapter
+	// nothing selects costs the other tests nothing.
+	flood *floodAdapter
 }
 
 func newHarness(t *testing.T) *harness {
@@ -54,7 +58,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{
 		store: st, repo: repo, project: project, dataDir: dataDir,
-		sessionDir: t.TempDir(), cfg: config.Default(),
+		sessionDir: t.TempDir(), cfg: config.Default(), flood: &floodAdapter{},
 	}
 	t.Setenv("FAKEAGENT_SESSION_DIR", h.sessionDir)
 	h.runner = New(Deps{
@@ -65,6 +69,7 @@ func newHarness(t *testing.T) *harness {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return fake }),
 			cursor.New(func() string { return fake }),
+			h.flood,
 		),
 		DataDir: dataDir,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),

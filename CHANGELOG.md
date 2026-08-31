@@ -580,6 +580,17 @@ list with the user-facing context a commit subject cannot carry.
   whose transcript has aged out still shows its answer.
   See [Using the TUI](docs/guides/tui.md#chat-workspace) (#282).
 
+- **A chat turn that hit its transcript cap, either clock or a cancel could
+  hang forever.** When a turn ended early the runner stopped reading the
+  adapter's event stream and waited for the run to finish — but an adapter's
+  reader goroutine blocks handing an event over, and its wait does not return
+  until that reader is done. With a talkative agent the two waited on each
+  other: the turn never reached a terminal state, the chat never came back to
+  idle, its `max_parallel_chats` slot was never released, and stopping the
+  daemon blocked with it. The runner now drains the stream it abandons, the
+  way the task engine already did. Only chats were affected; a workflow step
+  hitting the same cap always drained.
+
 - **The new-chat form's pickers never filled, and its picker rows leaked
   keys.** The form fetched the projects and the adapters and then dropped the
   answer on the floor: the message it comes back in had no case in the chats
