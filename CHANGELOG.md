@@ -464,12 +464,12 @@ list with the user-facing context a commit subject cannot carry.
   `(agent default)` row naming what that agent would use, and ending in a row
   for typing a value the catalog has never heard of. Changing the agent
   re-scopes both lists and clears anything chosen under the previous one. The
-  base-branch row now names the selected project's actual default branch
-  instead of the words "the project's default", and still submits empty so the
-  daemon resolves it. `←`/`→` still step the project and agent rows in place;
-  `enter` no longer creates from the title row, leaving `ctrl+s` the sole
-  create key, which is what the key table always said. `esc` with a list open
-  closes the list and keeps the draft.
+  base-branch row's placeholder now leads with the selected project's actual
+  default branch — `main (the project's default)` — rather than the phrase
+  alone, and still submits empty so the daemon resolves it. `←`/`→` still step
+  the project and agent rows in place; `enter` no longer creates from the title
+  row, leaving `ctrl+s` the sole create key, which is what the key table always
+  said. `esc` with a list open closes the list and keeps the draft.
 - **Archiving never deletes a branch vincent did not cut.**
   `delete_empty_branch_on_archive` and `delete_remote_branch_on_archive` both
   skip a task whose branch came from a pull request, and the archive reports

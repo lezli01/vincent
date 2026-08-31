@@ -6713,14 +6713,14 @@ chats board it makes a chat, and everywhere else it still makes a task. `!` is
 **not** extended to chats — an `awaiting_input` chat is pinned and badged on
 its own board and nowhere else.
 
-*Amended 2026-08-31 (issue #279).* The new-chat form's two pickers are fed by
-`GET /v1/projects` and `GET /v1/agents`, and the agent picker offers **only
-adapters that report `supports_resume`** (§9.6, decision row 29) — the
-daemon's `agent_cannot_resume` refusal stays the authority and is still
-rendered, it is simply unreachable from this form. `n` on a chats board with no
-registered project does not open the form at all: it says so on the board,
-because a form with no project to create in cannot be submitted and offers no
-field that would accept one.
+*Amended 2026-08-31 (issue #279).* The new-chat form's project and agent
+pickers are fed by `GET /v1/projects` and `GET /v1/agents`, and the agent
+picker offers **only adapters that report `supports_resume`** (§9.6, decision
+row 29) — the daemon's `agent_cannot_resume` refusal stays the authority and is
+still rendered, it is simply unreachable from this form. `n` on a chats board
+with no registered project does not open the form at all: it says so on the
+board, because a form with no project to create in cannot be submitted and
+offers no field that would accept one.
 
 *Amended 2026-08-31 (issue #281).* Four of the new-chat form's six rows —
 project, agent, model and effort — are the same `picker` the new-task,
