@@ -44,7 +44,7 @@ func (r *retryRecorder) client(t *testing.T) *apiclient.Client {
 // editor replaced by a function that writes what the "human" typed.
 func editorDetail(t *testing.T, client *apiclient.Client, typed string, runErr error) *detail {
 	t.Helper()
-	d := newDetail(testCtx(t), newLevelHolder())
+	d := newDetail(testCtx(t), newLevelHolder(), newRawHolder())
 	d.client = client
 	d.taskID = 1
 	d.loaded = true

@@ -109,7 +109,11 @@ func newViews(ctx context.Context) [viewCount]panel {
 	// transcript records (task 071 decision 3). Built here because this is
 	// the one place that constructs both of them.
 	level := newLevelHolder()
-	home := newShell(ctx, level)
+	// And one rendered/raw choice, held the same way and for the same reason
+	// (task 076 decision 2): toggling raw in a chat is visible in the task
+	// workspace, and neither one resets it.
+	raw := newRawHolder()
+	home := newShell(ctx, level, raw)
 	// Keep the board and detail sub-models independently testable while routing
 	// them as separate screens. The task view owns detail updates; the home shell
 	// retains the pointer only so both screens share the established action state.
@@ -128,6 +132,6 @@ func newViews(ctx context.Context) [viewCount]panel {
 		// has to know the answer before the probes land.
 		viewPullRequests: newPullRequestsView(),
 		viewChats:        newChatsView(),
-		viewChat:         newChatView(level),
+		viewChat:         newChatView(level, raw),
 	}
 }

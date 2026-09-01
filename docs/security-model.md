@@ -202,7 +202,16 @@ emitted.
 
 The same holds for the Markdown rendering of assistant prose: it is a fixed
 subset drawn with vincent's own glyphs, and raw HTML is rendered as the
-characters the agent sent — never parsed, fetched or executed.
+characters the agent sent — never parsed, fetched or executed. The
+[rendered/raw toggle](guides/tui.md#seeing-the-source-and-taking-it-away) is
+bound by it too: raw mode shows the agent's bytes as Markdown *source*, not as
+terminal input.
+
+It holds on the way out as well. What the copy actions put on the clipboard is
+stripped on the same terms as what is drawn, so "copy the original Markdown"
+means the stored Markdown minus escape sequences and C0/C1 controls. A
+clipboard is pasted into a terminal, which is precisely the boundary this rule
+exists to hold.
 
 Links and images in that prose are text and nothing more. A link's label is
 prose and its destination is printed literally, whatever its scheme, in a

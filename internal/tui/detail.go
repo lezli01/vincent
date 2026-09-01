@@ -142,6 +142,9 @@ type detail struct {
 	// chose to look at, and neither must walking into the chat workspace and
 	// back (task 071 decision 3).
 	level *levelHolder
+	// raw is the session's rendered/raw choice, shared with the chat
+	// workspace the same way the level is (task 076 decision 2).
+	raw *rawHolder
 
 	following bool
 	newLines  int
@@ -171,12 +174,13 @@ type detail struct {
 	width, height int
 }
 
-func newDetail(ctx context.Context, level *levelHolder) *detail {
+func newDetail(ctx context.Context, level *levelHolder, raw *rawHolder) *detail {
 	return &detail{
 		ctx:       ctx,
 		now:       time.Now,
 		vp:        viewport.New(),
 		level:     level,
+		raw:       raw,
 		following: true,
 		actions:   &actionBar{},
 		diff:      newDiffPane(),
@@ -208,6 +212,12 @@ func (d *detail) update(msg tea.Msg) tea.Cmd {
 		if len(msg.task.Warnings) > 0 {
 			d.actions.setStatus("created with warnings: "+strings.Join(msg.task.Warnings, "; "), false)
 		}
+		return nil
+	case clipboardResultMsg:
+		// The copy's outcome, said where every other action's is said: a
+		// key press a human made never fails silently (task 076).
+		text, bad := msg.notice()
+		d.actions.setStatus(text, bad)
 		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
@@ -695,6 +705,10 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// having to focus the pane first to change what it shows is a step
 		// nobody would guess at.
 		return d.cycleLevel()
+	case rawToggleKey:
+		return d.toggleRaw()
+	case copyPickKey:
+		return openCopyPicker(copyDocsFromRecords(d.records))
 	}
 
 	// Action keys work from any focus: they act on the task, not on a pane.
@@ -733,6 +747,16 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	d.syncFollowToViewport()
+	return nil
+}
+
+// toggleRaw flips the pane between the rendered Markdown and the stored
+// source, and rebuilds. Nothing else moves: the records, the offset, the
+// level and follow mode are untouched — raw is a way of drawing what is
+// already there (task 076 decision 2).
+func (d *detail) toggleRaw() tea.Cmd {
+	d.raw.toggle()
+	d.outputDirty = true
 	return nil
 }
 

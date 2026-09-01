@@ -341,6 +341,8 @@ output. It is the sentence that decides whether to open the transcript.
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, the run's own metadata, then unrecognized lines) |
+| `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
+| `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
 | `pgup`/`pgdn` | Scroll the selected Task Details section |
@@ -392,6 +394,38 @@ resizing the terminal re-renders from those rather than reflowing what was
 already drawn.
 
 The chat workspace's conversation body is this same pane, at the same level.
+
+### Seeing the source, and taking it away
+
+`ctrl+o` swaps the rendered view for the **stored Markdown**, exactly as the
+agent wrote it — `#` back on the headings, backticks back on the fences. It is
+the escape hatch for a render that surprised you, and it is a display state and
+nothing more: the records, the live tail, the level and the transcript on disk
+are untouched. Like `v`'s level, it is one choice for the whole session and
+shared with the chat workspace — set it in either place and both follow — and it
+is gone when you quit. The pane's title says `raw` while it is on.
+
+`ctrl+y` opens a **copy picker**: a searchable list of what can be taken out of
+the assistant prose on screen, newest message first.
+
+| Row | Puts on the clipboard |
+|---|---|
+| `markdown` | The message as the agent wrote it |
+| `plain text` | The same structure with the punctuation gone — headings as their own line, `•` list markers, quotes prefixed, fences dropped |
+| `code block` | One fenced block's contents, with no fence and no language label, whitespace and tabs kept |
+
+Payloads come from the source, not from what is drawn, so the pane's width never
+ends up baked into what you paste, and nothing that arrives after you open the
+picker moves the row you are pointing at. Escape sequences and control
+characters are stripped on the way out for the same reason they are stripped on
+the way in: a clipboard gets pasted into a terminal.
+
+vincent tries your system clipboard first and, if that refuses, hands the text
+to your terminal over OSC 52 — which is the one that works over SSH. The notice
+says which happened, and never claims a copy it could not verify.
+
+Copying a link's destination is not here yet: links still render as the
+characters the agent sent, so there is no destination for the picker to offer.
 
 ### What `v` adds
 
@@ -1103,6 +1137,8 @@ them, and a composer at the bottom.
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
+| `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
+| `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `pgup` / `pgdown` | Scroll the conversation |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |
@@ -1244,9 +1280,13 @@ reading.
 
 ## The command palette
 
-`:` opens it. Everything reachable in the TUI is in there by name — navigation
-to every screen, and every task action the daemon currently offers. Type to
-filter, `enter` to run, `esc` to close.
+`:` opens it — or `ctrl+p`, which works everywhere `:` does *and* while a text
+field has the keyboard. In a chat the composer takes every printable key, so
+there `:` types a colon into your draft and `ctrl+p` is the way in.
+
+Everything reachable in the TUI is in there by name — navigation to every
+screen, and every task action the daemon currently offers. Type to filter,
+`enter` to run, `esc` to close.
 
 The palette exists so the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
@@ -1262,6 +1302,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | Key | Does |
 |---|---|
 | `:` | Command palette |
+| `ctrl+p` | Command palette, also while a text field has the keyboard |
 | `?` | Toggle help |
 | `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
 | `!` | Jump to the next task needing a human |

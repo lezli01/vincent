@@ -61,6 +61,25 @@ list with the user-facing context a commit subject cannot carry.
   with a plain fallback for the rest; the tint is styling only, so stripping it
   gives back the agent's bytes exactly. Reference links, autolinks, bare URLs
   and titled links stay literal. Spec §15, §16.
+- **Rendered/raw toggle and copy actions for assistant Markdown.** `ctrl+o`
+  swaps the rendered view for the stored Markdown in both the task output pane
+  and the chat workspace — one session-wide choice, shared by the two, nothing
+  persisted — and `ctrl+y` opens a copy picker offering each assistant message
+  as its Markdown, as plain text with the punctuation gone, and each fenced code
+  block on its own without its fence or language label. Payloads are built from
+  the source rather than from what is drawn, so the pane's width is never baked
+  into what you paste, and they are stripped of escape sequences and control
+  characters on the way out. The system clipboard is tried first and the
+  terminal's own OSC 52 second, which is the one that works over SSH; the notice
+  says which ran and never claims an unverified copy. A plain-text copy keeps
+  each link's `[1]` marker and the `[1] https://…` block that resolves it, so a
+  destination survives the punctuation being stripped; copying one on its own is
+  still a follow-up.
+- **`ctrl+p` opens the command palette from a text field.** `:` is a printable
+  key, so in a chat it typed a colon into the draft and opened nothing — the
+  palette had been unreachable from the chat workspace since it landed. `ctrl+p`
+  is hoisted above the input-capture gate the way `ctrl+v` already is, and works
+  everywhere `:` does.
 - **Assistant prose renders as Markdown in the task output pane and in chats.**
   Headings, emphasis, strong text, ordered and unordered lists, nested lists,
   blockquotes, inline code, fenced code and horizontal rules become terminal
@@ -620,6 +639,11 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Palette entries for `ctrl+`-modified keys did nothing.** Running one
+  replays its direct key, and the replay had a hand-written case per ctrl key
+  that had fallen a registry behind — the chat's `ctrl+r` (detail level) and
+  `ctrl+g` (follow the live end) both replayed as a bare `c`. Any
+  `ctrl+<letter>` is now synthesized by rule.
 - **The output pane measures terminal cells rather than runes.** A line
   containing an emoji, a CJK glyph, a combining mark or a ZWJ sequence was
   measured by counting runes, so the pane over- or under-filled it and an

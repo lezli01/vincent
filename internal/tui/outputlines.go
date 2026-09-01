@@ -137,6 +137,26 @@ func (h *levelHolder) set(l outputLevel) { h.level = l }
 // cycle advances the level.
 func (h *levelHolder) cycle() { h.level = h.level.next() }
 
+// rawHolder is the one rendered/raw choice the whole session is on, held the
+// way the verbosity level beside it is (task 076 decision 2): both panes that
+// render assistant prose point at one holder, so toggling in the chat is
+// visible in the task workspace and walking between them resets nothing.
+//
+// Nothing persists it — no tui.json entry, no `tui:` config key — for the
+// reason §15 already gives for the level: it dies with the process.
+//
+// Raw is presentation only. It does not touch the records, the streaming
+// offset, the verbosity level, the transcript, follow mode, or any task or
+// chat state.
+type rawHolder struct{ raw bool }
+
+func newRawHolder() *rawHolder { return &rawHolder{} }
+
+func (h *rawHolder) get() bool { return h.raw }
+
+// toggle flips between the rendered view and the stored Markdown.
+func (h *rawHolder) toggle() { h.raw = !h.raw }
+
 // thinkingLines is how many wrapped lines of a reasoning block levelNormal
 // shows before collapsing the rest behind a count. It is counted in *display*
 // lines rather than source lines because the two dialects disagree about
@@ -150,6 +170,13 @@ const thinkingLines = 3
 type segment struct {
 	text  string
 	style lipgloss.Style
+	// code marks an inline code span, whose text still carries its backticks
+	// — they are what a monochrome terminal has left once the colour is
+	// gone. The pane ignores this; the plain-text clipboard payload is what
+	// reads it, because that is the one consumer that must strip the
+	// delimiters (task 076 decision 5). Marking the span here rather than
+	// re-scanning the line keeps one inline scanner.
+	code bool
 }
 
 // paneLine is one record laid out but not yet wrapped.
@@ -612,6 +639,11 @@ func formatAgentDuration(ms int64) string {
 type lineOpts struct {
 	expandKey     string
 	truncatedNote string
+	// raw shows assistant prose as its stored Markdown source instead of
+	// the rendered view (task 076). It reaches the renderer on the opts
+	// rather than as a fourth argument because it is a pane-specific
+	// display choice, which is exactly what this struct carries.
+	raw bool
 }
 
 // outputLines renders the normalized records into wrapped pane lines.
@@ -662,7 +694,7 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 			// (task 073 decision 5), and it is handled here rather than in
 			// renderRecord because one record now yields several pane lines
 			// — the same reason agent.thinking is handled above.
-			block := markdownLines(rec.Text, width)
+			block := assistantLines(rec.Text, width, opts.raw)
 			if len(block) == 0 {
 				continue
 			}
@@ -696,6 +728,18 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 	}
 	flushRaw()
 	return lines
+}
+
+// assistantLines renders one assistant document, rendered or raw. It is the
+// single branch task 076 adds to the pane: the two call sites that draw
+// assistant prose — this one and the chat's §17 retention fallback — go
+// through it, and nothing else changes, because nothing else was ever
+// interpreted as Markdown (task 073 decision 5).
+func assistantLines(text string, width int, raw bool) []string {
+	if raw {
+		return rawLines(text, width)
+	}
+	return markdownLines(text, width)
 }
 
 // renderRecord maps one normalized record to a pane line. A record with

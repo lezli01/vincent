@@ -6868,16 +6868,60 @@ every other record stays literal.
 - **Rendering is derived and never stored.** The JSONL transcript and every API
   payload keep the agent's exact bytes (§13.3), no render path mutates a
   record, and a resize re-renders from the Markdown rather than re-wrapping
-  previously rendered ANSI. A raw/rendered toggle and a copy-raw reader action
-  are follow-ups, and so is a link picker, which the reference numbering is
-  what a later action would address; the chat composer owns every letter key
-  (task 071 decision 4), so a toggle needs its own decision about which key it
-  is.
+  previously rendered ANSI. A link picker is still a follow-up: the reference
+  numbering is what a later action would name.
+
+*Amended 2026-09-01 (task 076).* The reader can see the source and take it
+away. Both actions are client-side and session-scoped; nothing about them is
+persisted, sent to the daemon or written to a transcript.
+
+- **`ctrl+o` toggles rendered/raw** for assistant prose, in the task
+  workspace's output pane and the chat workspace alike. Raw shows the stored
+  Markdown as source — one pane line per source line, preformatted, hard-wrapped
+  at the pane's edge, no parse — and it is what the §17 retention fallback shows
+  too. The choice is **one session value shared by both workspaces**, held the
+  way the verbosity level beside it is and persisted no more than that: moving
+  between the two panes, or between tasks, never resets it. Raw is presentation
+  only — it does not touch the records, the streaming offset, the level, the
+  transcript, follow mode, or any task or chat state — and it still goes through
+  §16's stripping (below).
+- **`ctrl+y` opens the copy picker**, a popup listing what can be copied out of
+  the assistant prose currently loaded, newest first: per document its
+  **Markdown** (the stored text) and its **plain text** (the pane's structure
+  with the punctuation gone — headings as their own line, the pane's own list
+  markers, blockquotes prefixed, fences dropped), plus one row per **fenced code
+  block** (its interior, no fence and no info string, whitespace kept). Every
+  payload is built from the source, never from rendered lines, so a copy made at
+  width 40 and one made at width 200 are byte-identical. Each row captures its
+  text **when the popup is built**, which is what keeps a target stable across a
+  resize, a transcript reload and incremental rendering: there is no index left
+  to drift.
+- **The clipboard has two transports, and the notice says which ran.** The
+  system clipboard is tried first because its answer can be trusted; when it
+  refuses, the text is handed to the terminal over OSC 52, which is the correct
+  destination over SSH but reports nothing back. So a copy reads "copied" only
+  when it was verified, and otherwise says it was sent to the terminal and names
+  the system clipboard's error. A payload that sanitizes away to nothing is an
+  error, not a silent no-op.
+- **Link actions are still not here.** The renderer grew links while this was
+  in flight (task 075), so what is missing is no longer the construct but a way
+  to say *which* reference a reader means — the same targeting problem the
+  picker answers for documents and fences, and the one the numbering above was
+  written to leave open. Copying a destination, inspecting one and opening one
+  are that follow-up's. What the payloads do owe the numbering is to carry it:
+  a plain-text copy keeps each `[n]` and ends with the same `[n] dest` block
+  the pane draws, because a destination stripped of both its punctuation and
+  its reference would be a destination deleted.
+- **Both keys are ctrl-modified in both contexts**, unlike the `v`/`ctrl+r`
+  split task 071 chose: one action should have one name in the help overlay and
+  the palette. A bare letter cannot work in a chat, where the composer owns
+  every printable key.
 
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are
-for what interrupts you — the palette, confirmations, and the three form popups.
+for what interrupts you — the palette, confirmations, the three form popups and
+the copy picker.
 *(Amended 2026-08-30, task 063: the dividing line is the interruption, not the
 size. A form popup with a tab strip takes the whole height budget and carries
 the task inspector inside it, and is no longer a small thing.)*
@@ -7017,6 +7061,13 @@ holding the same invariant the action bar always had: an action that cannot happ
 is not on screen. Navigation living here is what lets view-switching keys be
 retired without substituting a different set to memorise.
 
+*Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
+hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
+key, so on a surface that owns the keyboard — the chat composer, a filter — it
+types a colon into the draft and opens nothing; the palette is this section's
+"what can be done right now" surface, and it must be reachable from everywhere,
+not only from a resting list.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
@@ -7028,7 +7079,7 @@ narrow terminal dropping it would fail exactly when the human is most lost.
 
 ### Keys
 
-Global: `:` palette · `?` help · `n` new task · `q` quit (the daemon keeps running;
+Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help · `n` new task · `q` quit (the daemon keeps running;
 a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
 focus between panels · `M` toggle mouse.
 
@@ -7193,10 +7244,17 @@ currently true to show (§15 view 6).
 
 - **Trust boundary = the OS user.** API on loopback only + bearer token file (0600)
   so other local users can't drive the daemon. No TLS, no accounts in v1.
-- **Agent text cannot drive the terminal (task 073, added 2026-09-01).** Every
-  record's text is stripped of ANSI escape sequences and of C0/C1 control
-  characters before the output pane measures or draws it — newline and tab
-  excepted, which the pane renders itself. Only vincent's own styles are
+- **Agent text cannot drive the terminal (task 073, added 2026-09-01;
+  extended 2026-09-01 by task 076).** Every record's text is stripped of ANSI
+  escape sequences and of C0/C1 control characters before the output pane
+  measures or draws it — newline and tab excepted, which the pane renders
+  itself. **What is put on the clipboard is stripped on the same terms**: a
+  clipboard is pasted into a terminal, which is precisely the boundary this
+  rule exists to hold, so "copy the original Markdown" means the stored
+  Markdown minus escape sequences and C0/C1 controls. The rendered/raw toggle
+  is bound by it too — raw mode shows the agent's bytes as Markdown *source*,
+  not as terminal input, and is an escape hatch for a surprising render rather
+  than a hole in the one chokepoint. Only vincent's own styles are
   emitted. Without this an agent, or anything an agent chose to echo, could
   clear the screen, move the cursor, rewrite the window title or overwrite
   adjacent UI with a `\x1b[2J` or an OSC sequence in a tool result summary, a

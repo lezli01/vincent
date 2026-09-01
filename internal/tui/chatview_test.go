@@ -9,7 +9,7 @@ import (
 
 // chatViewFixture is a chat workspace pointed at one loaded chat.
 func chatViewFixture() *chatView {
-	v := newChatView(newLevelHolder())
+	v := newChatView(newLevelHolder(), newRawHolder())
 	v.now = func() time.Time { return time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC) }
 	v.chatID = 1
 	v.chat = &apiclient.Chat{ID: 1, ProjectID: 7, Title: "a chat", State: "idle", Agent: "claude"}

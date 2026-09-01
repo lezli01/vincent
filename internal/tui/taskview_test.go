@@ -226,7 +226,7 @@ func TestTaskDetailsSidebarSupportsMouseSelection(t *testing.T) {
 func taskDetailFixture(t *testing.T) *detail {
 	t.Helper()
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
-	d := newDetail(context.Background(), newLevelHolder())
+	d := newDetail(context.Background(), newLevelHolder(), newRawHolder())
 	d.taskID = 7
 	d.loaded = true
 	d.task = apiclient.TaskDetail{

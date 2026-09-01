@@ -132,6 +132,11 @@ type binding struct {
 var bindings = []binding{
 	// Global chrome.
 	{key: ":", label: "open the command palette", scope: scopeGlobal, noPalette: true},
+	// The same palette, reachable where `:` is not: a chat's composer owns
+	// every printable key, so the palette had been unreachable there since
+	// task 067 (task 076 decision 7). noPalette for the reason `:` is —
+	// a row teaching the way to open the thing you already opened.
+	{key: paletteAltKey, label: "open the command palette (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
 	{key: "?", label: "toggle this help", scope: scopeGlobal},
 	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
 	{key: "!", label: "jump to the next task needing a human", scope: scopeGlobal},
@@ -212,6 +217,8 @@ var bindings = []binding{
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxOutput, hint: "[/] views", priority: 2},
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: compact → normal → verbose (reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
+	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
+	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
 	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput},
@@ -255,6 +262,8 @@ var bindings = []binding{
 	// composer owns every printable key (task 074).
 	{key: "ctrl+t", label: "hand the worktree and branch to a new task (the chat ends)", scope: scopePanel, context: ctxChat, hint: "ctrl+t hand off", priority: 6},
 	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
+	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
+	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
@@ -445,3 +454,18 @@ func withoutGitHub(rows []binding, available bool) []binding {
 	}
 	return out
 }
+
+// The reader-action keys (task 076 decision 7). Both are ctrl-modified in
+// both contexts rather than a letter in the output pane and a ctrl twin in
+// the chat — the `v`/`ctrl+r` split task 071 chose is a cost, not a model,
+// and one action should have one name in the help overlay and the palette.
+// A bare letter cannot work in a chat at all: the composer owns every
+// printable key.
+const (
+	rawToggleKey = "ctrl+o"
+	copyPickKey  = "ctrl+y"
+	// paletteAltKey reaches the palette from a surface that is capturing
+	// text, where `:` types a colon into the draft. The root hoists it above
+	// the input-capture gate the way it already hoists ctrl+v.
+	paletteAltKey = "ctrl+p"
+)
