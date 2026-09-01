@@ -345,6 +345,37 @@ output. It is the sentence that decides whether to open the transcript.
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
 | `pgup`/`pgdn` | Scroll the selected Task Details section |
 
+### How the pane reads
+
+Every record is a two-column **gutter** plus its content. What the agent *said*
+is unmarked and sits flush left; what it *did* is glyphed — `·` reasoning, `▸` a
+tool call with its outcome indented under it, `#` the run header, `☰` the plan.
+A monochrome terminal or an SSH session loses nothing to that scheme, which
+colour alone would not survive. There are no timestamps: on an 80-column pane
+they would spend nine columns of every line answering a question the timeline
+already answers per attempt.
+
+**What the agent said is rendered as Markdown.** Headings, emphasis, strong
+text, ordered and unordered lists, nested lists, blockquotes, inline code,
+fenced code and horizontal rules become terminal structure instead of literal
+syntax. That structure lives *inside* the assistant column — the gutter is
+untouched — and every marker is a glyph, not a colour, so a heading's `▌`, a
+quote's `│`, a list's `•`/`◦`/`▪`, a code block's `▏` and an inline span's
+backticks all survive with the styling stripped. A code block keeps its
+indentation and its hard line breaks; a line too long for the pane continues on
+the next one at the block's rail rather than being cut off. Constructs outside
+that list — tables, links, HTML, footnotes — render as the characters the agent
+sent, and raw HTML is never parsed, fetched or executed.
+
+Only the agent's prose is interpreted. Reasoning, tool calls, tool results,
+command output, errors and unmodeled lines stay literal behind their own gutter
+marks: a `#` in a grep hit is a `#`, not a heading. The rendering is derived
+too — the transcript on disk and the API keep the agent's exact bytes, and
+resizing the terminal re-renders from those rather than reflowing what was
+already drawn.
+
+The chat workspace's conversation body is this same pane, at the same level.
+
 ### What `v` adds
 
 `compact` is what the agent **said and did**, and nothing else. Reasoning is
