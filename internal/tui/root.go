@@ -178,6 +178,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case newTaskFromPullMsg:
 		return m.updateNewTaskFromPull(msg)
+	case newTaskFromChatMsg:
+		return m.updateNewTaskFromChat(msg)
 	case taskCreatedMsg:
 		return m.updateTaskCreated(msg)
 	case connectedMsg:
@@ -475,6 +477,15 @@ func (m *root) openNewTask() tea.Cmd {
 // form has to be told to open before it is shown, because opening is what
 // resets the draft and fetches the catalogs.
 func (m *root) updateNewTaskFromPull(msg newTaskFromPullMsg) (tea.Model, tea.Cmd) {
+	cmd := m.deliver(viewNewTask, msg)
+	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// updateNewTaskFromChat opens the form as a chat's handoff form (task 074),
+// through the root for the reason the two above go through it: the form must
+// be told to open before it is shown, because opening is what resets the draft
+// and fetches the catalogs.
+func (m *root) updateNewTaskFromChat(msg newTaskFromChatMsg) (tea.Model, tea.Cmd) {
 	cmd := m.deliver(viewNewTask, msg)
 	return m, tea.Batch(cmd, m.switchTo(viewNewTask))
 }

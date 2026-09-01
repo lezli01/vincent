@@ -140,6 +140,10 @@ type taskResponse struct {
 	// It reflects earlier edit+retry rewrites, because the snapshot is this
 	// task's execution truth (§5.3).
 	WorkflowSteps []snapshotStepResponse `json:"workflow_steps,omitempty"`
+	// SourceChatID names the chat this task was handed off from (§5.5, task
+	// 074). It is the reverse of the one stored edge, `chats.handoff_task_id`,
+	// read as a single indexed query per list rather than per rendered task.
+	SourceChatID *int64 `json:"source_chat_id,omitempty"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -393,8 +397,9 @@ type taskCreateRequest struct {
 }
 
 // boundTaskCreate applies §13.1's size bounds to a task-create body. It is
-// factored out for the reason prepareTaskCreate is: two copies would drift
-// into a body one create path accepts and another rejects.
+// shared with the handoff route (task 074) for the reason prepareTaskCreate
+// is: two copies would drift into a body one route accepts and the other
+// rejects.
 func boundTaskCreate(req *taskCreateRequest) string {
 	for _, b := range []string{
 		boundTaskFields(req.Title, ptrValue(req.Description), req.Fields),
@@ -412,9 +417,9 @@ func boundTaskCreate(req *taskCreateRequest) string {
 // applies before a branch name is decided: the project, the resolved and
 // expanded workflow, and the task row built from both.
 //
-// It stops short of the branch because that is where a second create path
-// differs: POST /v1/tasks resolves a name through §5.3's chain, while a path
-// that inherits an existing worktree has no chain to walk.
+// It stops short of the branch because that is exactly where the two callers
+// differ. POST /v1/tasks resolves a name through §5.3's chain; a handoff
+// (task 074) inherits the chat's verbatim and has no chain to walk.
 type preparedTask struct {
 	project  *store.Project
 	task     store.Task
@@ -429,16 +434,15 @@ type preparedTask struct {
 // the agent/model/effort override, MCP provenance and the four capability
 // gates.
 //
-// It is factored out rather than copied because a second route that creates a
-// task must accept exactly the task this one accepts: a second copy would
-// drift, and the drift would surface as a body one route takes and the other
-// refuses. It writes its own 400s, the way applyIssuePrefill beside it does,
-// and reports false once it has.
+// It is factored out rather than copied because `POST /v1/chats/{id}/handoff`
+// must accept exactly the task POST /v1/tasks accepts (task 074 decision 1):
+// a second copy would drift, and the drift would surface as a task the handoff
+// route takes and the create route refuses. It writes its own 400s, the way
+// applyIssuePrefill beside it does, and reports false once it has.
 //
 // inheritedBase, when non-empty, replaces the request's `base_branch` and is
-// taken verbatim: a base branch inherited from an existing worktree is a fact
-// about that worktree, not a name to validate against the repository as it is
-// now.
+// taken verbatim: a handoff's base branch is a fact about a worktree that
+// already exists, not a name to validate against the repository as it is now.
 func (s *Server) prepareTaskCreate(
 	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, inheritedBase string,
 ) (*preparedTask, bool) {
@@ -519,8 +523,8 @@ func (s *Server) prepareTaskCreate(
 	// An inherited base branch skips the repository check on purpose: it
 	// names the commit an existing worktree was cut from, and a task that
 	// adopts that worktree is not about to cut another. Refusing it because
-	// the branch has since been deleted locally would reject the create for a
-	// fact that no longer has any bearing on it.
+	// the branch has since been deleted locally would reject a handoff for a
+	// fact that no longer has any bearing on it (task 074).
 	baseBranch := inheritedBase
 	if baseBranch == "" {
 		baseBranch = project.DefaultBranch
@@ -1124,6 +1128,12 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	for i := range projects {
 		names[projects[i].ID] = projects[i].Name
 	}
+	// One indexed query over the handed-off chats, turned into a map, rather
+	// than a `source_chat_id` column on every task row (task 074 decision 2).
+	sources, err := s.deps.Store.SourceChatIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1138,6 +1148,9 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		row.Loop = s.loopRollup(ctx, t, summary)
 		row.ProjectName = names[t.ProjectID]
 		row.StatusMessage = nilIfEmpty(statuses[t.ID])
+		if chatID, ok := sources[t.ID]; ok {
+			row.SourceChatID = &chatID
+		}
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
 			row.CostUSD = &cost
@@ -1167,6 +1180,12 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	// than making each client join it back (T4.4 walkthrough finding).
 	if p, err := s.deps.Store.GetProject(r.Context(), t.ProjectID); err == nil {
 		resp.ProjectName = p.Name
+	}
+	// The reverse of `chats.handoff_task_id` (task 074 decision 2): one
+	// indexed lookup, so the detail view can link back to the conversation
+	// this task's workspace came out of.
+	if chatID, err := s.deps.Store.SourceChatID(r.Context(), t.ID); err == nil && chatID != 0 {
+		resp.SourceChatID = &chatID
 	}
 	// The children rollup (§13.2, task 014 decisions 13, 27). Present
 	// whenever the task has lanes, in any state — a parent mid-join, or one

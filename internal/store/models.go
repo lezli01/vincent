@@ -504,8 +504,13 @@ type Chat struct {
 	// PendingInput is the §7.4 request this chat is waiting on, verbatim as
 	// the API renders it. Non-nil exactly in `awaiting_input`.
 	PendingInput json.RawMessage
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// HandoffTaskID names the task this chat was handed off to (task 074).
+	// It is the one authoritative edge between the two records; a task's
+	// `source_chat_id` is this column read backwards. Non-nil exactly in
+	// `handed_off`, unless that task has since been deleted.
+	HandoffTaskID *int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // ChatTurn is one exchange: a human message and the agent run it produced

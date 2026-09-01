@@ -1383,13 +1383,33 @@ POST   /v1/chats/{id}/send            start a turn
 POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
+POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
 ```
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream and the transcript included.
+excluded, the stream and the transcript included. `handoff` is on that list for
+a reason worth stating: it creates a task, and `task_create`'s bounds
+(`mcp.max_depth`, `mcp.max_tasks`) are walked over `created_by_task_id`, which
+a chat is not in.
+
+`POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is validated by
+the same code, so it accepts exactly the task the create route accepts.
+`project_id`, `base_branch` and `branch_name` are the chat's and are ignored.
+It answers `201 { "task": {...}, "chat": {...} }`: the task carries
+`source_chat_id`, and the chat comes back `handed_off` with `handoff_task_id`
+set and its `worktree_path` cleared — the claim moved, in one transaction with
+the task row, the link, both durable events (`task.created` and
+`chat.handed_off`) and the transition.
+
+Everything is validated before anything is written, so a refusal leaves the
+chat exactly as it was: `400` when the task does not validate, `409` when the
+chat is not idle, has no worktree to give, or its worktree is partway through a
+git operation (code `repo_operation_in_progress`, with `details.operation`
+naming it). Ordinary uncommitted work is preserved, never refused and never
+committed.
 
 ### Creating one
 

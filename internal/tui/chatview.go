@@ -596,6 +596,8 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.sendCmd()
 	case "ctrl+x":
 		return v, v.cancelCmd()
+	case chatHandoffKey:
+		return v, v.handoffCmd()
 	case chatExpandKey:
 		// The level, not the composer: ctrl+r is the one key here that can
 		// raise or lower how much of the conversation is drawn (decision 4).
@@ -617,6 +619,27 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(msg)
 	return v, cmd
+}
+
+// chatHandoffKey opens the handoff form (task 074). It is a ctrl combination
+// for the reason ctrl+r is: the composer owns every printable key, so a plain
+// letter would be typed into the message.
+const chatHandoffKey = "ctrl+t"
+
+// handoffCmd opens the new-task form as this chat's handoff form. Nothing is
+// written here: the form collects the task and the daemon does the whole
+// transfer in one transaction.
+func (v *chatView) handoffCmd() tea.Cmd {
+	chat := v.chat
+	if chat == nil {
+		return nil
+	}
+	if chat.State != "idle" {
+		v.note, v.noteBad = "only an idle chat can be handed off to a task", true
+		return nil
+	}
+	seed := *chat
+	return func() tea.Msg { return newTaskFromChatMsg{chat: seed} }
 }
 
 func (v *chatView) sendCmd() tea.Cmd {

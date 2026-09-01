@@ -124,6 +124,8 @@ func chatStateLabel(state string) string {
 		return "idle"
 	case "archived":
 		return "archived"
+	case "handed_off":
+		return "handed off"
 	default:
 		return state
 	}

@@ -474,6 +474,24 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+x did not stop the running turn")
 			}
 		},
+		"ctrl+t": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			_, cmd := v.updateKey(registryKey(t, "ctrl+t"))
+			if cmd == nil {
+				t.Fatal("ctrl+t did not open the handoff form")
+			}
+			msg, ok := cmd().(newTaskFromChatMsg)
+			if !ok {
+				t.Fatalf("ctrl+t produced %T, want newTaskFromChatMsg", cmd())
+			}
+			if msg.chat.ID != v.chat.ID {
+				t.Fatalf("handoff seeded chat %d, want %d", msg.chat.ID, v.chat.ID)
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("ctrl+t reached the composer: %q", v.composer.Value())
+			}
+		},
 		"ctrl+r": func(t *testing.T) {
 			v := chatViewFixture()
 			before := v.level.get()

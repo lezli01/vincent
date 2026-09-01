@@ -348,6 +348,9 @@ type TaskDetail struct {
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.
 	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`
+	// SourceChatID is the chat this task was handed off from (task 074), or
+	// nil when it was created any other way.
+	SourceChatID *int64 `json:"source_chat_id,omitempty"`
 }
 
 // WorkflowOrigin is a task's recorded workflow provenance (§5.3, task 043):
