@@ -73,8 +73,9 @@ list with the user-facing context a commit subject cannot carry.
   than a colour: a monochrome terminal or an SSH session keeps every
   distinction. Constructs outside the supported list — reference links,
   autolinks, bare URLs, titled links, HTML, footnotes — render as safe literal
-  text, and raw HTML is never parsed, fetched or executed. The transcript on disk and every API payload keep the
-  agent's exact bytes; a resize re-renders from the Markdown. Spec §15.
+  text, and raw HTML is never parsed, fetched or executed. The transcript on
+  disk and every API payload keep the agent's exact bytes; a resize re-renders
+  from the Markdown. Spec §15.
 
 - **A codex step's output pane now shows what codex actually reported.** The
   adapter read the subset of `codex exec --json` real captures existed for, and
