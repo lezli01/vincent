@@ -37,6 +37,10 @@ func setStepField(step *Step, name string) bool {
 			f.Set(reflect.ValueOf([]Step{{ID: "s", Type: StepCommand, Run: "x"}}))
 		case []Lane:
 			f.Set(reflect.ValueOf([]Lane{{ID: "l", Workflow: "w"}}))
+		case *Lane:
+			f.Set(reflect.ValueOf(&Lane{ID: "l", Workflow: "w"}))
+		case LaneNeeds:
+			f.Set(reflect.ValueOf(LaneNeeds{"a"}))
 		case *Merge:
 			f.Set(reflect.ValueOf(&Merge{OnConflict: ConflictBlock}))
 		case ForEach:

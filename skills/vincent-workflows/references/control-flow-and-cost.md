@@ -275,6 +275,13 @@ candidates are modules with non-overlapping ownership or a large task whose
 parallel speedup outweighs merge cost. Prefer `parallel` for commands sharing
 one worktree and sequential steps when outputs depend on each other.
 
+Order lanes with `needs` rather than by splitting a fan-out into several steps:
+the engine derives the waves from the graph, and a dependent lane's worktree is
+cut after its dependencies merged. Derive lanes with `for_each` + `lane` only
+when the count genuinely comes from a run — a planning step that emits one JSON
+object per work unit. Always set `max_lanes` on a derived step; the
+creation-time bound cannot count a list nobody has produced yet.
+
 Default `merge.on_conflict: block`. An agent conflict resolver adds another
 session at the most safety-sensitive point; use one only when conflicts are
 expected, mechanically reviewable, and protected by a strong check.

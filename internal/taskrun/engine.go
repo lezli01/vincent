@@ -225,6 +225,18 @@ type stepEnv struct {
 	// from — a shared template can therefore tell whether it is in a loop
 	// without the engine keeping a second flag (decision 9).
 	loop *loopEnv
+	// round is which round of a `fan_out`'s lane DAG this admission is
+	// merging (§7.6, task 080 decision 3). Zero everywhere else, which is
+	// where a flat lane list's single merge row and every non-fan-out step's
+	// `iteration: 0` come from.
+	//
+	// It shares `step_runs.iteration` with the loop above rather than getting
+	// a column of its own: a second near-identical discriminator would have
+	// to be considered by every row-keyed mechanism in the engine — attempt
+	// counts, failure lookups, transcript names — for no new distinction.
+	// The two never coexist: `fan_out` is not valid inside a loop body
+	// (§7.8), which is what makes one column honest for both.
+	round int
 	// followUp is where this step sits inside a follow-up run, and nil for
 	// every step of an ordinary admission (§6, task 027 decision 4). It is
 	// what makes a round's rows legible to each other and blind to the rows
@@ -233,12 +245,19 @@ type stepEnv struct {
 	log      *slog.Logger
 }
 
-// iteration is the 1-based pass of the enclosing loop, 0 outside one.
+// iteration is the 1-based pass of the enclosing loop, or a `fan_out`'s
+// 0-based round (task 080 decision 3), and 0 for every other step.
+//
+// Two meanings on one column, and they cannot collide: validation rejects a
+// `fan_out` inside a loop body (§7.8), so no step is ever both. What they
+// share is the thing every caller wants — "which repeat of this step's rows is
+// this" — which is why `ref`, the retry budget and the §12.2 transcript name
+// need no case for either.
 func (e *stepEnv) iteration() int {
-	if e.loop == nil {
-		return 0
+	if e.loop != nil {
+		return e.loop.iteration
 	}
-	return e.loop.iteration
+	return e.round
 }
 
 // ref is the position this step's rows belong to: index, id and iteration

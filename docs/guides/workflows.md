@@ -633,11 +633,53 @@ is wrong, not something you discover as two hundred worktrees. Guarded lanes
 count toward those limits, because a guard is evaluated at run time and the
 limits are enforced before that.
 
+**Ordering lanes.** A lane may name the sibling lanes it `needs:`. It spawns
+only once every lane it names is done *and merged*, so its worktree is cut from
+a branch that already carries their commits — the dependency is delivered as
+code, not just as ordering.
+
+```yaml
+    lanes:
+      - { id: api,  workflow: implement-module }
+      - { id: db,   workflow: implement-module }
+      - { id: wire, workflow: implement-module, needs: [api, db] }
+```
+
+The step works the graph out for itself, in rounds; you never name a wave.
+There is one branch, so `needs` means *happens-after*, not isolation: `wire`
+also sees anything else that merged in the same round.
+
+**Lanes you cannot list in advance.** Give the step `for_each:` and a single
+`lane:` template instead of `lanes:`, and a planning step decides both how many
+lanes there are and which of them must land first:
+
+```yaml
+  - id: plan
+    type: agent
+    prompt: "Inspect the repo. Emit one JSON object per work unit, with id and needs."
+  - id: build
+    type: fan_out
+    max_lanes: 24
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id:       '{{ .Item.id }}'
+      needs:    '{{ .Item.needs }}'
+      workflow: implement-module
+      fields:   { module: '{{ .Item.id }}' }
+```
+
+Each line of `for_each` must be a JSON object, and `.Item` is that object. The
+lane's `workflow:` has to be a literal — it is resolved once, when the task is
+created — but everything else may vary per item. Set `max_lanes:`: a list
+nobody has produced yet cannot be counted at creation, so that ceiling and
+`fan_out.max_tasks` are checked at spawn, before a single worktree exists.
+
 **How the step runs.** Spawning parks the parent in `awaiting_children` and
 releases its slot; the scheduler brings it back once every descendant has
-settled, and that second admission runs the join. Lanes are merged `--no-ff`,
-one at a time, in **declared** order, stopping at the first conflict. You still
-get one branch to review.
+settled, and that admission merges what finished and spawns whatever those
+merges made ready. Lanes are merged `--no-ff`, one at a time, in **declared**
+order, stopping at the first conflict. A lane list with no `needs:` is one such
+round — spawn, park, merge, done. You still get one branch to review.
 
 Watch the children with `vincent task ls --include-children`, or press `L` on
 the parent in the TUI. They are hidden from the board by default; the parent's

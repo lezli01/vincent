@@ -1168,6 +1168,72 @@ does not finish until every lane is merged.
   resolved through the usual builtin < global < project shadowing at **task
   creation** and written into the task's snapshot — never read from the
   registry again (§5.3). A lane's workflow may itself fan out, to any depth.
+- **A lane may carry a `needs:`.** *Added 2026-09-01 (task 080).* It names
+  sibling lanes of the same step, and the lane is eligible to spawn only once
+  every lane it names is `done` **and merged into this task's branch**. Absent
+  or empty means eligible immediately, which is every lane's behaviour before
+  this field existed. Unknown ids and cycles among the lanes are rejected at
+  **load** for a declared list and block at **spawn** for a derived one; this
+  is a different check from the workflow-name cycle detection at task creation,
+  which is about nesting across levels rather than edges within one step.
+
+  `needs:` is *happens-after*, not isolation. There is one branch, so a lane
+  declaring `needs: [api, db]` also sees `docs` when `docs` merged in the same
+  round: dependencies are satisfied **at least**, never exactly. Giving a lane
+  exactly its declared dependencies would mean per-lane integration branches, a
+  merge lattice resolved N times and a final join reconciling divergent
+  integrations — and would buy nothing, because the deliverable is one branch
+  and a lane that works against `{api, db}` and breaks against
+  `{api, db, docs}` is broken in the deliverable too.
+
+- **A lane list may be derived at run time.** *Added 2026-09-01 (task 080).*
+  A step may carry `for_each:` and a single `lane:` template in place of
+  `lanes:`, and renders one lane per item:
+
+  ```yaml
+  - id: plan
+    type: agent
+    prompt: "Inspect the repo. Emit the work units and their dependencies."
+  - id: build
+    type: fan_out
+    max_lanes: 24
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id:       '{{ .Item.id }}'
+      needs:    '{{ .Item.needs }}'
+      workflow: implement-module
+      fields:   { module: '{{ .Item.id }}' }
+  ```
+
+  `for_each` is rendered exactly as §7.8 renders a loop's: every entry
+  rendered, trimmed, split on newlines with empty lines dropped, and §8.4's
+  200-line `Result` tail applies to a list drawn from a producing step. Each
+  resulting line is then parsed as a **JSON object**, and `.Item` in the `lane:`
+  template is that object — the one widening of §8.4's "every template value is
+  a string" rule, made because a DAG node carries both an identity and its
+  edges and one string cannot say both. A line that is not a JSON object blocks
+  with `fan_out_invalid`, naming the line.
+
+  Only `id`, `needs`, `fields` and `if` may vary per item. **The lane's
+  `workflow:` stays static**, which is what keeps §5.3 true — the registry is
+  still read exactly once, at task creation — and keeps the creation-time cycle
+  detection and `fan_out.max_depth` meaningful over a fan-out whose *width*
+  nobody yet knows. Lane id uniqueness and the slug rule, load-time checks for a
+  declared list, block at spawn for a derived one: two items can render to one
+  id.
+
+  Derivation runs **once**, at spawn, in this task's render context, and the
+  derived lanes are written into the task's own snapshot. After that the step
+  is an ordinary static `fan_out`, so the graph, the preview, the editor and
+  `GET /v1/tasks/{id}/workflow` are all correct with no further case. An empty
+  derived list is the same no-op success an all-guarded-off lane list is.
+
+  `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
+  not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
+  derived list, so a per-step `max_lanes:` and a run-time tree-size check block
+  with `fan_out_limit` before anything is spawned — §7.8's `loop_limit` for the
+  other dynamic step, and §13.4's run-time `mcp.max_tasks` for the same reason.
+
 - **A lane may carry an `if:`.** *Added 2026-08-18 (task 015).* It is
   evaluated when the `fan_out` step runs, in the parent's context, so a lane
   can depend on what an earlier step found. A guarded-off lane is not spawned;
@@ -1230,8 +1296,30 @@ does not finish until every lane is merged.
   attempt first — a full agent step, gated by its own `check` — falling back
   to the block. Blocking by default is §7.2's posture: a human decides what a
   machine could not.
-- **A lane that settles without finishing** blocks the join with
-  `lane_failed`, and **nothing** is merged. *Clarified 2026-08-18 (task 015):*
+- **The step runs in rounds.** *Added 2026-09-01 (task 080).* On each
+  admission this task merges every lane that is `done` and not yet on its
+  branch, in declared lane order; spawns the lanes whose `needs:` those merges
+  have just satisfied; and parks. When nothing is left unspawned and everything
+  is merged, the step succeeds and the cursor advances. Wave structure is
+  **derived from the graph** — no workflow names a wave and none names a
+  maximum — and a lane list with no `needs:` is exactly one round, which is
+  spawn / park / merge / advance, unchanged.
+
+  Scheduling is **barrier rounds**: the scheduler wakes a parked parent when
+  every descendant has settled, so a lane needing only `wire` still waits for
+  its whole round. That is deliberate — it is what makes "what did this lane
+  start from" reproducible across re-runs — and eager scheduling is tracked
+  separately.
+
+  Each round's merge writes its own `step_runs` row, discriminated by
+  `iteration`. That column was a loop's alone; since task 080 it is "which
+  repeat of this step's rows is this", which is what keeps round 2's merge from
+  spending round 1's retry budget. The two meanings cannot collide, because a
+  `fan_out` is not valid inside a loop body (§7.8).
+
+- **A lane that settles without finishing** blocks the step with
+  `lane_failed`, and **nothing of that round** is merged. *Clarified
+  2026-08-18 (task 015):*
   "without finishing" means `blocked` or `aborted`. A lane whose own workflow
   stopped early at a `condition` step (§7.7) settles `done`, and `done` is
   `done` — it merges normally. Lanes doing different amounts of work is the
@@ -1240,6 +1328,20 @@ does not finish until every lane is merged.
   lanes; the remedy is to fix the child, which is an ordinary task. `skip`
   keeps its meaning — it skips the whole join — and is deliberately not a
   "proceed without that lane" button.
+
+  *Amended 2026-09-01 (task 080), reversing task 014 decision 21 where — and
+  only where — `needs:` is used:* rounds that already merged **stay merged**.
+  Round 1's commits are on the branch before round 2 is known to fail, and the
+  alternatives are worse. Resetting the branch would make vincent destroy
+  already-integrated commits, which this section's "the work is stopped, not
+  destroyed" refuses everywhere else; deferring every merge to the end would
+  leave `needs:` as ordering with no code behind it, because a dependent lane's
+  worktree would no longer contain its dependencies' commits. The task is
+  `blocked`, not `done`, so nothing downstream consumes the branch, and which
+  lanes are in it is legible from the child rows. In-flight lanes of other
+  rounds are left to finish; no further lane is spawned. A lane list with no
+  `needs:` is one round, so its failure semantics are bit-for-bit what they
+  were.
 - **Re-entry** into a half-merged join is disambiguated by the previous
   attempt's outcome, with no merge cursor persisted: which lanes are already
   merged is a fact git holds, and an already-merged lane re-merges as a no-op.
@@ -1384,6 +1486,13 @@ once, a loop is a **sequence** run more than once.
   `{step_index}-i{iteration}-{step_id}-{attempt}.jsonl` (§12.2).
 - **`.Loop`** (§8.4) is `Index`, `Item`, `IsFirst`, `IsLast`, with `Index: 0`
   outside any loop.
+- **`iteration` is not only a loop's.** *Added 2026-09-01 (task 080).* A
+  `fan_out` step's rounds ride on the same column, 0-based, so a flat lane list
+  still writes `iteration: 0`. The two meanings cannot collide because a
+  `fan_out` is not valid inside a loop body, and what they share is what every
+  reader of the column wants — "which repeat of this step's rows is this". A
+  loop's own derivation filters on `iteration > 0` under the *loop's*
+  `step_index`, which a `fan_out`'s rows never share.
 - **Ending.** The driver being exhausted, or a `break` whose guard is true,
   ends the loop **successfully** and the cursor advances. A `condition` whose
   guard is false inside a body ends **that iteration**; the loop continues. A
@@ -1889,6 +1998,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration |
 | `.Loop` | *Added 2026-08-18 (task 016).* `Index` (1-based iteration, and **0** outside any loop, so a shared template can tell), `Item` (the `for_each` item this iteration runs on — a string; empty for a `count:` loop), `IsFirst`, `IsLast`. See §7.8 |
+| `.Item` | *Added 2026-09-01 (task 080).* The item a **derived `fan_out`'s** `lane:` template is being rendered for (§7.6), and present in that template only. It is a **parsed JSON object**, not a string: this is the one deliberate widening of the rule that every value here is plain text, made because a DAG node carries both an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and one string cannot say both. `.Issue.Labels` is the precedent for structure in this context. `.Loop.Item` is **unchanged** and still a string; the widening does not reach it |
 | `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
 | `.Worktree` | `Path` |
@@ -4450,6 +4560,14 @@ git worktree — so a leftover shows up in `git status`, in the task diff and in
 dirty detection, on a task that is about to be re-queued. A removal failure is
 logged rather than fatal: its token died with the daemon that minted it, so a
 stale copy is a nuisance and not a correctness problem.
+
+*Amended 2026-09-01 (task 080).* A `fan_out` crashed mid-round is recovered by
+re-running **the round**, not the step. The round number is derived from the
+child rows — the deepest wave any spawned lane sits at — so recovery lands on
+the same round it left, the lanes already merged re-merge as "Already up to
+date", and no lane spawns twice: a lane that has a child row is never in the
+ready set. The re-run writes a new attempt at the same `iteration`, and because
+only *failed* attempts spend the budget, a crash costs no retry.
 
 ## 13. HTTP API
 
@@ -7679,6 +7797,8 @@ else.
 | A guard skips a step | *Added 2026-08-18 (task 015).* A `skipped` row with `skip_reason: condition`, visible in `.Steps`; the workflow carries on. The same guard on a fan-out lane or a group sub-step subsets the set instead — the others still run |
 | A `condition` step's guard is false | *Added 2026-08-18 (task 015).* The run ends there: one `stopped` row, the cursor moves to the end of the step list, the task is `done`. The steps after it record nothing, because they were never considered. *Amended 2026-08-18 (task 016):* inside a `loop` body the same step ends **that iteration** and the loop carries on — the sequence it ends is the body's (§7.8) |
 | A `loop` cannot run within `max_iterations` | *Added 2026-08-18 (task 016).* The task blocks with `loop_limit`: a `for_each` list longer than the ceiling blocks before iteration 1 naming the count, and a `count:` the ceiling moved under (config lowered while the task was queued) blocks too. It does not truncate and does not advance — running out of tries is not a decision, and advancing would hand every downstream guard a `.Steps` that says the work is finished (§7.8) |
+| A derived `fan_out` list is not a lane list | *Added 2026-09-01 (task 080).* The step blocks with `fan_out_invalid` having spawned nothing, naming the fault: an item that is not a JSON object (naming the line), an id that is not a slug, two items rendering to one id, or a `needs:` edge to a lane the step does not declare or a cycle among them. Every one of these is a **load-time** error for a declared `lanes:` list; a derived list has no ids until it is rendered, which is why the identical check blocks here |
+| A derived `fan_out` list is too long | *Added 2026-09-01 (task 080).* The step blocks with `fan_out_limit` having spawned nothing: a list past the step's `max_lanes:`, or a tree that would pass `fan_out.max_tasks`. `fan_out.max_depth` is unaffected — it counts nesting, and a dynamic width does not nest. It is §7.8's `loop_limit` for the other dynamic step, and it exists because a derived width cannot be counted at task creation (§7.6) |
 | A `break` step's guard is true | *Added 2026-08-18 (task 016).* The loop ends there and **succeeds**: one `stopped` row, the cursor advances past the loop step. A false guard records `succeeded` and the body carries on |
 | A step's retry is paced by `retry_backoff` | *Added 2026-08-25 (task 028).* The attempt is recorded `failed` with its own reason and consumes a retry, and the task returns to `queued` with `queued_reason: retry_backoff` and an `admit_not_before` of `now + retry_backoff` (§7.2, §11) — releasing its slot, so other work keeps running. Recovery is unattended: the scheduler re-admits and the same step re-runs with the budget the recount says is left. Distinct from `usage_limit`, whose attempt is `interrupted` and costs nothing, so a reader can tell a quota wall from a flaky step. It never becomes a `block_reason`: when the budget *is* spent the task blocks with the step's own failure reason, with no wait first |
 | A loop body step exhausts its retry budget | *Added 2026-08-18 (task 016).* The iteration fails and the task blocks with **that step's own** reason, not `loop_limit`. `allow_failure:` (§7.2) is how a probe's red result becomes data a `break` can read instead |

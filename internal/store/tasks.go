@@ -421,6 +421,23 @@ func (s *Store) SetTaskBranchName(ctx context.Context, id, projectID int64, bran
 	})
 }
 
+// SetTaskSnapshot replaces a task's workflow snapshot, leaving every other
+// column alone. It is the targeted setter behind the two mid-run snapshot
+// rewrites §5.3 allows: `edit + retry` (§6) and a `fan_out` materializing its
+// derived lanes at spawn (§7.6, task 080 decision 5). Both are the task's own
+// owner writing its own row.
+func (s *Store) SetTaskSnapshot(ctx context.Context, id int64, snapshot string) error {
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE tasks SET workflow_snapshot = ?, updated_at = ? WHERE id = ?`,
+			snapshot, formatTime(time.Now()), id)
+		if err != nil {
+			return fmt.Errorf("set task %d snapshot: %w", id, err)
+		}
+		return oneRowAffected(res, fmt.Sprintf("task %d", id))
+	})
+}
+
 // UpdateTask writes every mutable field of t (matched by ID) and bumps
 // UpdatedAt — including state, so it must never run against a task an actor
 // or the scheduler may be touching; live code paths go through

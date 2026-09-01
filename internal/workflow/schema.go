@@ -46,6 +46,10 @@ const (
 	// nested bodies a client descends into rather than typing into.
 	ControlSteps = "steps"
 	ControlLanes = "lanes"
+	// ControlLane is the *single* lane template a derived `fan_out` renders
+	// once per `for_each` item (§7.6, task 080). Its rows are the same Lane
+	// descriptor ControlLanes descends into; only the arity differs.
+	ControlLane  = "lane"
 	ControlMerge = "merge"
 	// ControlContainer is `defaults.container` (§8.6, task 061): the
 	// workflow level of the containerization precedence chain. Every key is
@@ -247,7 +251,10 @@ func SchemaDescriptor() Schema {
 				Contexts: []string{ContextBody},
 				Help:     "spawn a child task per lane and merge them back (§7.6)",
 				Fields: []SchemaField{
-					{Name: "lanes", Control: ControlLanes, Required: true},
+					{Name: "lanes", Control: ControlLanes, Help: "the lanes, or a lane: template with for_each:"},
+					{Name: "lane", Control: ControlLane, Help: "one lane template, rendered once per for_each item"},
+					{Name: "for_each", Control: ControlList, Help: "the item list a lane: template derives lanes from"},
+					{Name: "max_lanes", Control: ControlInt, Help: "ceiling on a derived lane list"},
 					{Name: "merge", Control: ControlMerge},
 				},
 			},
@@ -286,6 +293,7 @@ func SchemaDescriptor() Schema {
 		Lane: []SchemaField{
 			{Name: "id", Control: ControlString, Required: true},
 			{Name: "if", Control: ControlTemplate},
+			{Name: "needs", Control: ControlList, Help: "sibling lanes that must be done and merged first (§7.6)"},
 			{Name: "workflow", Control: ControlWorkflow, Help: "a registry workflow, or inline steps — not both"},
 			{Name: "steps", Control: ControlSteps},
 			{Name: "fields", Control: ControlMap, Help: "task fields handed to the child task"},

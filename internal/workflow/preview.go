@@ -29,7 +29,14 @@ const (
 	SentinelFailureReason = "<last_failure.reason>"
 	SentinelFailureOutput = "<last_failure.output>"
 	SentinelLoopItem      = "<loop.item>"
-	SentinelConflict      = "<conflicts[0]>"
+	// SentinelLane is the placeholder a *derived* fan-out's lanes stand at
+	// until the step runs (§7.6, task 080). A `lane:` template plus
+	// `for_each:` has no lane list to draw before spawn — the width is a fact
+	// the run discovers — so every surface that draws lanes draws one of these
+	// instead of guessing a count. After the step materializes its lanes into
+	// the snapshot (decision 5) there is nothing left to stand in for.
+	SentinelLane     = "<derived lane>"
+	SentinelConflict = "<conflicts[0]>"
 )
 
 // SentinelField is the placeholder a declared **required** task field binds

@@ -219,9 +219,21 @@ type Step struct {
 	Steps       []Step `yaml:"steps,omitempty"`
 	MaxParallel *int   `yaml:"max_parallel,omitempty"`
 
-	// fan_out steps (task 014)
+	// fan_out steps (task 014). Lanes is the statically declared list; Lane
+	// is the single template a *derived* fan-out renders once per ForEach
+	// item instead (§7.6, task 080). Exactly one of the two is set.
+	//
+	// A derived lane's `workflow:` stays static — only `id`, `needs`,
+	// `fields` and `if` may vary per item — which is what keeps §5.3 true:
+	// the registry is still read exactly once, at task creation, by
+	// ResolveTree.
 	Lanes []Lane `yaml:"lanes,omitempty"`
-	Merge *Merge `yaml:"merge,omitempty"`
+	Lane  *Lane  `yaml:"lane,omitempty"`
+	// MaxLanes bounds a derived lane list, defaulting to `fan_out.max_tasks`.
+	// A static list is counted at creation and needs none (task 080
+	// decision 6).
+	MaxLanes *int   `yaml:"max_lanes,omitempty"`
+	Merge    *Merge `yaml:"merge,omitempty"`
 
 	// loop steps (task 016). Steps above carries the body — a loop and a
 	// group are the two structure steps, and one field for "the steps inside
@@ -283,6 +295,31 @@ func (f *ForEach) UnmarshalYAML(b []byte) error {
 	return nil
 }
 
+// LaneNeeds is a lane's `needs:` list: a YAML sequence of lane ids, or a
+// single scalar. Both spellings decode to the same slice, for the reason
+// ForEach accepts both — the motivating derived case is
+// `needs: '{{ .Item.needs }}'`, one template producing the whole list, and
+// wrapping that in a one-element sequence would be ceremony.
+//
+// A derived list's entries are rendered and then split by SplitNeeds, which is
+// what makes a JSON array's Go rendering — `[api db]` — read as two ids.
+type LaneNeeds []string
+
+// UnmarshalYAML accepts either spelling, the same way ForEach does.
+func (n *LaneNeeds) UnmarshalYAML(b []byte) error {
+	var list []string
+	if err := yaml.Unmarshal(b, &list); err == nil {
+		*n = list
+		return nil
+	}
+	var scalar string
+	if err := yaml.Unmarshal(b, &scalar); err != nil {
+		return fmt.Errorf("needs must be a string or a list of strings: %w", err)
+	}
+	*n = LaneNeeds{scalar}
+	return nil
+}
+
 // Lane is one branch of a `fan_out` step: a named registry workflow or inline
 // steps, which become a real child task's own flat snapshot (§7.6,
 // decision 4).
@@ -304,6 +341,20 @@ type Lane struct {
 	Workflow string `yaml:"workflow,omitempty"`
 	// Steps is an inline workflow body, used when Workflow is empty.
 	Steps []Step `yaml:"steps,omitempty"`
+	// Needs names sibling lanes of the same `fan_out` step this lane depends
+	// on (§7.6, task 080). The lane is eligible to spawn only once every lane
+	// it names is `done` **and merged into the parent's branch**, which is
+	// what makes the dependency mean something: a round merges before it
+	// spawns, so a dependent lane's worktree is cut from a branch that
+	// already carries its dependencies' commits.
+	//
+	// Absent or empty means eligible immediately — every lane's behaviour
+	// before this field existed, and still a flat list's.
+	//
+	// It is *happens-after*, not isolation: there is one parent branch, so a
+	// lane naming `[a, b]` also sees `c` when `c` merged in the same round.
+	// Dependencies are satisfied at least, never exactly (§7.6).
+	Needs LaneNeeds `yaml:"needs,omitempty"`
 	// ResolvedFrom records the registry workflow a named lane was resolved
 	// from, and is written by ResolveTree at task creation — never by hand.
 	//
@@ -737,9 +788,7 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
 			"run", "shell", "env", "instructions", "lanes", "merge", "allow_failure")
 	case StepFanOut:
-		if len(step.Lanes) == 0 {
-			add(base+".lanes", "fan_out steps require at least one lane")
-		}
+		validateFanOutShape(step, base, add)
 		validateMerge(step, base, opts, add)
 		rejectFields(step, base, add, "prompt", "agent", "model", "effort",
 			"permission_mode", "on_input", "input_timeout", "check", "check_timeout",
@@ -802,8 +851,19 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 	// nothing else. Rejecting them here rather than in each arm keeps the
 	// eight arms above from each growing the same three strings. `workflow`
 	// is the same shape for `include`.
-	if step.Type != StepLoop {
+	switch step.Type {
+	case StepLoop:
+	case StepFanOut:
+		// `for_each` is shared with a derived fan-out (task 080): one
+		// spelling of "a list a step discovered", rendered the same way.
+		// `count` and `max_iterations` stay a loop's alone.
+		rejectFields(step, base, add, "count", "max_iterations")
+	default:
 		rejectFields(step, base, add, "count", "for_each", "max_iterations")
+	}
+	// `lane` and `max_lanes` are a derived fan-out's, and nothing else's.
+	if step.Type != StepFanOut {
+		rejectFields(step, base, add, "lane", "max_lanes")
 	}
 	if step.Type != StepInclude {
 		rejectFields(step, base, add, "workflow")
@@ -988,9 +1048,18 @@ func validateBodyStep(wf *Workflow, body Step, base string, opts Options, add fu
 // own namespace — each lane becomes a **separate child task** with its own
 // flat snapshot (decision 4) — so they are checked against a fresh set rather
 // than the parent workflow's.
+//
+// A derived step's single `lane:` template is checked here too, with the one
+// difference a template forces: its `id` is rendered per item, so it cannot be
+// held to the slug rule at load. Uniqueness and the slug rule move to spawn
+// time for it (task 080 decisions 5, 6).
 func validateLanes(wf *Workflow, step Step, base string, opts Options,
 	add func(string, string, ...any), addWarn func(string, string, ...any),
 ) {
+	if step.Lane != nil {
+		validateLane(wf, *step.Lane, base+".lane", true, opts, add, addWarn)
+		return
+	}
 	seen := make(map[string]string, len(step.Lanes))
 	for i, lane := range step.Lanes {
 		lanePath := fmt.Sprintf("%s.lanes[%d]", base, i)
@@ -1005,36 +1074,64 @@ func validateLanes(wf *Workflow, step Step, base string, opts Options,
 			}
 			seen[lane.ID] = lanePath
 		}
-		switch {
-		case lane.Workflow == "" && len(lane.Steps) == 0:
-			add(lanePath, "a lane needs either a workflow name or inline steps")
-		case lane.Workflow != "" && len(lane.Steps) > 0:
-			add(lanePath, "a lane has either a workflow name or inline steps, not both")
+		validateLane(wf, lane, lanePath, false, opts, add, addWarn)
+	}
+	// The `needs:` graph is checked as a whole, once the ids are known: an
+	// unknown id and a cycle are both statements about the *set*, and neither
+	// can be judged from one lane. For a derived step the same check runs at
+	// spawn, where the ids first exist (task 080 decision 6).
+	for _, problem := range LaneGraphProblems(step.Lanes) {
+		add(fmt.Sprintf("%s.lanes[%d].needs", base, problem.Index), "%s", problem.Message)
+	}
+}
+
+// validateLane checks one lane. templated marks the single `lane:` template of
+// a derived fan-out, whose id and needs are rendered per item and so cannot be
+// judged here.
+func validateLane(wf *Workflow, lane Lane, lanePath string, templated bool, opts Options,
+	add func(string, string, ...any), addWarn func(string, string, ...any),
+) {
+	if templated {
+		if lane.ID == "" {
+			add(lanePath+".id", "id is required")
+		} else if _, err := template.New("id").Parse(lane.ID); err != nil {
+			add(lanePath+".id", "template does not parse: %v", err)
 		}
-		if lane.ResolvedFrom != "" && lane.Workflow != "" {
-			// resolved_from is machine-written; a hand-written file carrying
-			// both is describing two different sources for one lane.
-			add(lanePath+".resolved_from", "resolved_from is set by task creation, not by hand")
-		}
-		if lane.Workflow != "" && strings.ContainsAny(lane.Workflow, " \t/\\") {
-			add(lanePath+".workflow",
-				"workflow %q must not contain whitespace or path separators", lane.Workflow)
-		}
-		if lane.Agent != "" && !knownAgent(lane.Agent, opts.KnownAgents) {
-			add(lanePath+".agent", "unknown agent %q (known: %s)",
-				lane.Agent, strings.Join(opts.KnownAgents, ", "))
-		}
-		if lane.If != "" {
-			if _, err := template.New("if").Parse(lane.If); err != nil {
-				add(lanePath+".if", "template does not parse: %v", err)
+		for i, need := range lane.Needs {
+			if _, err := template.New("needs").Parse(need); err != nil {
+				add(fmt.Sprintf("%s.needs[%d]", lanePath, i), "template does not parse: %v", err)
 			}
 		}
-		// Inline steps are a workflow body in their own right, so they are
-		// validated like one: their own id namespace, and their own right to
-		// contain a fan_out (decision 5). What they may not contain is a
-		// gate-free assumption anyone else's steps do not also carry.
-		validateLaneSteps(wf, lane, lanePath, opts, add, addWarn)
 	}
+	switch {
+	case lane.Workflow == "" && len(lane.Steps) == 0:
+		add(lanePath, "a lane needs either a workflow name or inline steps")
+	case lane.Workflow != "" && len(lane.Steps) > 0:
+		add(lanePath, "a lane has either a workflow name or inline steps, not both")
+	}
+	if lane.ResolvedFrom != "" && lane.Workflow != "" {
+		// resolved_from is machine-written; a hand-written file carrying
+		// both is describing two different sources for one lane.
+		add(lanePath+".resolved_from", "resolved_from is set by task creation, not by hand")
+	}
+	if lane.Workflow != "" && strings.ContainsAny(lane.Workflow, " \t/\\") {
+		add(lanePath+".workflow",
+			"workflow %q must not contain whitespace or path separators", lane.Workflow)
+	}
+	if lane.Agent != "" && !knownAgent(lane.Agent, opts.KnownAgents) {
+		add(lanePath+".agent", "unknown agent %q (known: %s)",
+			lane.Agent, strings.Join(opts.KnownAgents, ", "))
+	}
+	if lane.If != "" {
+		if _, err := template.New("if").Parse(lane.If); err != nil {
+			add(lanePath+".if", "template does not parse: %v", err)
+		}
+	}
+	// Inline steps are a workflow body in their own right, so they are
+	// validated like one: their own id namespace, and their own right to
+	// contain a fan_out (decision 5). What they may not contain is a
+	// gate-free assumption anyone else's steps do not also carry.
+	validateLaneSteps(wf, lane, lanePath, opts, add, addWarn)
 }
 
 // validateLaneSteps validates one lane's inline steps as the workflow body
@@ -1181,6 +1278,7 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"instructions": step.Instructions != "",
 		"steps":        len(step.Steps) > 0, "max_parallel": step.MaxParallel != nil,
 		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
+		"lane": step.Lane != nil, "max_lanes": step.MaxLanes != nil,
 		"if": step.If != "", "allow_failure": step.AllowFailure,
 		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
 		"retry_backoff": step.RetryBackoff != nil,
@@ -1323,6 +1421,9 @@ func walkSteps(steps []Step, base string, fn func(step Step, path string)) {
 		walkSteps(step.Steps, path+".steps", fn)
 		for j, lane := range step.Lanes {
 			walkSteps(lane.Steps, fmt.Sprintf("%s.lanes[%d].steps", path, j), fn)
+		}
+		if step.Lane != nil {
+			walkSteps(step.Lane.Steps, path+".lane.steps", fn)
 		}
 	}
 }

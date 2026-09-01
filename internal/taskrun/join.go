@@ -1,14 +1,21 @@
 package taskrun
 
-// The join half of a `fan_out` step (spec §7.6, task 014 decisions 3, 7, 8,
-// 9, 21, 22). The parent has woken from `awaiting_children` and now merges
-// every lane's branch into the branch it already owns, so that one branch is
-// still delivered at the end.
+// The merge half of a `fan_out` step (spec §7.6, task 014 decisions 3, 7, 8,
+// 9, 21, 22, and task 080). The parent has woken from `awaiting_children` and
+// now merges every lane's branch into the branch it already owns, so that one
+// branch is still delivered at the end.
+//
+// Since task 080 this runs **once per round**, not once per step: a lane list
+// with `needs:` spawns in waves, and each wave's merge is what makes the next
+// wave's worktrees carry its dependencies' commits. A flat lane list is one
+// round, so this is bit-for-bit the old join for every workflow written before
+// that.
 //
 // Merges are sequential, `--no-ff`, in **declared** lane order, stopping at
 // the first conflict. Declared rather than completion order is what makes a
 // re-run conflict identically, which the idempotent recovery below depends
-// on.
+// on. Lanes merged in an earlier round re-merge as "Already up to date", which
+// is what lets a crashed parent re-run a whole round.
 //
 // Nothing here persists a merge cursor. Which lanes are already merged is a
 // fact git holds authoritatively — an already-merged lane re-merges as
@@ -27,9 +34,26 @@ import (
 )
 
 // ReasonLaneFailed is a fan-out whose lane did not finish its work: it was
-// cancelled, or it failed and a human ended it (§18, task 014 decision 21).
-// Nothing is merged — a partial merge is indistinguishable, downstream, from
-// a complete one.
+// cancelled, or it failed and a human ended it (§18, task 014 decision 21, as
+// amended by task 080 decision 2).
+//
+// Nothing of the **failing round** is merged: a partial round is
+// indistinguishable, downstream, from a complete one, which is decision 21
+// unchanged and is the whole of it for a flat lane list.
+//
+// What task 080 reverses is narrower and only reachable with `needs:`: rounds
+// that already merged **stay merged**. They are in the branch before round 2
+// is known to fail, and the two alternatives are worse — resetting the parent
+// branch would make vincent destroy already-integrated commits, which §7.6's
+// "the work is stopped, not destroyed" refuses everywhere else, and deferring
+// every merge to the end would leave `needs:` as ordering with no code behind
+// it, because a dependent lane's worktree would no longer contain its
+// dependencies' commits. The task is `blocked`, not `done`, so nothing
+// downstream consumes the branch, and which lanes are in it is legible from
+// the child rows.
+//
+// In-flight lanes of other rounds are left to finish. They are real tasks, and
+// killing them destroys work — the posture §7.6 already takes on cancel.
 const ReasonLaneFailed = "lane_failed"
 
 // ReasonMergeConflict re-exports the worktree taxonomy's name so the engine's
@@ -50,7 +74,9 @@ func (r *Runner) runJoinStep(ctx context.Context, env *stepEnv, tr *transcript) 
 			lanes = append(lanes, c)
 		}
 	}
-	tr.Note("join_started", map[string]any{"lanes": len(lanes), "step_id": env.step.ID})
+	tr.Note("join_started", map[string]any{
+		"lanes": len(lanes), "step_id": env.step.ID, "round": env.round,
+	})
 	outcome := r.runJoin(ctx, env, lanes)
 	tr.Note("join_finished", map[string]any{
 		"state": string(outcome.state), "reason": outcome.reason,
@@ -60,9 +86,12 @@ func (r *Runner) runJoinStep(ctx context.Context, env *stepEnv, tr *transcript) 
 
 // runJoin merges every lane of one fan_out step into the parent's branch.
 func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) stepOutcome {
-	// Every lane must have *finished its work*, not merely settled: an
+	// Every spawned lane must have *finished its work*, not merely settled: an
 	// aborted lane settled too, and merging around it would deliver a branch
-	// missing that lane with nothing saying so (decision 21).
+	// missing that lane with nothing saying so (decision 21). Checked over
+	// every lane spawned so far rather than this round's alone, which costs
+	// nothing — an earlier round's lanes are `done` or the step blocked then —
+	// and keeps the single-round case exactly what it was.
 	for _, lane := range lanes {
 		if lane.State != store.TaskDone {
 			env.log.Warn("lane did not finish", "lane", lane.LaneID, "child", lane.ID, "state", lane.State)
@@ -101,7 +130,10 @@ func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) 
 		}
 		env.log.Info("lane merged", "lane", lane.LaneID, "child", lane.ID, "branch", lane.BranchName)
 	}
-	return stepOutcome{state: store.StepSucceeded, result: fmt.Sprintf("merged %d lanes", len(lanes))}
+	return stepOutcome{
+		state:  store.StepSucceeded,
+		result: fmt.Sprintf("merged %d lanes (round %d)", len(lanes), env.round),
+	}
 }
 
 // resumeMerge handles a join re-entered with a merge already in progress. It

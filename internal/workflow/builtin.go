@@ -363,7 +363,14 @@ steps:
          going until it passes" is a loop with a break, not a retry budget used
          as iteration. "Do these independently" is parallel, or fan_out when
          they need separate branches. A step sequence duplicated across two of
-         this project's workflows is an include.
+         this project's workflows is an include. Fan-out lanes that must land in
+         a fixed order carry needs:, naming the lanes they depend on — the
+         engine derives the waves, so a fan-out split into "phase 1" and
+         "phase 2" steps, or a lane whose prompt says "wait for the API lane",
+         collapses into one step with edges. A fan-out whose lane count is
+         genuinely decided by a run — a planning step emitting one JSON object
+         per work unit — becomes for_each: plus a single lane: template with a
+         max_lanes: ceiling, in place of a hand-guessed list of guarded lanes.
       3. Verification. A step that changes state a command can check carries a
          check:. An agent's claim that it worked is not verification.
       4. Typed inputs. A value the prompt tells a human to bury in the task

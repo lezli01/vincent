@@ -13,6 +13,33 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Fan-out lanes can depend on each other, and can be worked out at run time.**
+  A `fan_out` lane may now name the sibling lanes it `needs:`, and the step runs
+  the resulting graph in rounds — merging what is finished, then spawning the
+  lanes those merges made eligible, until nothing is left. Because a round
+  merges before it spawns, a dependent lane's worktree is cut from a branch that
+  already contains its dependencies' commits. A lane list with no `needs:`
+  behaves exactly as it did.
+
+  A step may also derive its lanes instead of declaring them: `for_each:` plus a
+  single `lane:` template renders one lane per item, so a planning step can
+  decide how many pieces of work there are and which of them must land first.
+  Each item is a JSON object, and `{{ .Item.id }}` / `{{ .Item.needs }}` read
+  it. The lane's `workflow:` stays static, so nothing is read from the workflow
+  registry mid-run, and the derived lanes are written into the task's own
+  snapshot at spawn — after which the graph, the preview and the editor all show
+  the real lanes. A derived list is bounded by a new `max_lanes:` on the step
+  and by `fan_out.max_tasks`, both checked before anything is spawned.
+
+  Two new block reasons come with it: `fan_out_invalid` for a derived list that
+  is not a lane list, and `fan_out_limit` for one that is too long.
+
+- **A lane that fails mid-graph no longer un-does the rounds that succeeded.**
+  The step still blocks with `lane_failed` and still merges nothing of the
+  failing round, but the rounds already merged stay on the branch — resetting
+  them would destroy integrated work, and the task is `blocked`, not `done`, so
+  nothing downstream consumes it. Lanes already in flight are left to finish.
+
 - **An assistant message split across records renders as one message.** When an
   agent delivers one answer as several output records, consecutive records are
   now read as a single Markdown document rather than one document each. A

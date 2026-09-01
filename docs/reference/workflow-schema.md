@@ -461,7 +461,10 @@ then merges those branches back into this task's own.
 
 | Key | Type | Required |
 |---|---|---|
-| `lanes` | list of lanes | ✅ |
+| `lanes` | list of lanes | one of `lanes` or `lane` |
+| `lane` | one lane template | one of `lanes` or `lane`, with `for_each` |
+| `for_each` | template or list of templates | required by `lane` |
+| `max_lanes` | int | — |
 | `merge` | map | — |
 
 ```yaml
@@ -483,6 +486,7 @@ A **lane** carries `id` and exactly one of `workflow` or `steps`, plus:
 | Key | Type | Notes |
 |---|---|---|
 | `if` | template | Guard. False means this lane is not spawned; siblings still run and the join still happens |
+| `needs` | list of lane ids (or one id) | Sibling lanes that must be `done` **and merged** before this lane spawns. Empty means "immediately", which is every lane without it |
 | `fields` | map | Merged over the parent task's fields; the lane wins |
 | `agent` / `model` / `effort` | string | Override the inherited selection for this lane's whole subtree |
 | `priority` | int | Same, for scheduler priority |
@@ -496,6 +500,66 @@ wrong, not something you discover as two hundred worktrees.
 the work lands where it belongs. Priority and the agent overrides propagate
 too — a fan-out inside an urgent task would otherwise queue behind unrelated
 work and make the urgent task *slower* than not fanning out.
+
+**A lane list with `needs` is a DAG, and the step runs it in rounds.** Each
+admission merges every lane that is done and not yet on this task's branch,
+spawns the lanes those merges have just made eligible, and parks again. Because
+a round merges *before* it spawns, a dependent lane's worktree is cut from a
+branch that already contains its dependencies' commits — that is what the
+dependency actually delivers. The wave structure is derived from the graph: no
+workflow names a wave and none names a maximum.
+
+```yaml
+    lanes:
+      - { id: api,  workflow: impl }
+      - { id: db,   workflow: impl }
+      - { id: wire, workflow: impl, needs: [api, db] }
+```
+
+`needs` is *happens-after*, not isolation. There is one branch, so a lane
+declaring `needs: [api, db]` also sees `docs` when `docs` merged in the same
+round; dependencies are satisfied at least, never exactly. An unknown lane id or
+a cycle is refused when the workflow loads.
+
+Scheduling is by **barrier round**: the parent wakes when every descendant has
+settled, so a lane that needs only `wire` still waits for its whole round. That
+is what makes "what did this lane start from" reproducible across re-runs.
+
+**The lane list can be derived from an earlier step.** Give the step `for_each:`
+and a single `lane:` template instead of `lanes:`:
+
+```yaml
+  - id: plan
+    type: agent
+    prompt: "Inspect the repo. Emit the work units and their dependencies."
+  - id: build
+    type: fan_out
+    max_lanes: 24
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id:       '{{ .Item.id }}'
+      needs:    '{{ .Item.needs }}'
+      workflow: implement-module
+      fields:   { module: '{{ .Item.id }}' }
+```
+
+`for_each` is rendered the way a `loop`'s is — every entry rendered, trimmed,
+split on newlines, empty lines dropped — and each line is then parsed as a
+**JSON object**. `.Item` in the `lane:` template is that object, which is the one
+place a template value is not plain text: a node of a graph carries an identity
+*and* its edges. A line that is not a JSON object blocks with
+`fan_out_invalid`, naming the line.
+
+Only `id`, `needs`, `fields` and `if` may vary per item — **the lane's
+`workflow:` stays static**, so the registry is still read exactly once, when the
+task is created. Derivation runs once, at spawn, and the derived lanes are
+written into the task's own snapshot; after that the step is an ordinary
+`fan_out` everywhere you look at it. An empty derived list is a no-op success.
+
+Because a derived width cannot be counted at task creation, `max_lanes:` and a
+run-time check against `fan_out.max_tasks` block with `fan_out_limit` before
+anything is spawned. `fan_out.max_depth` is unaffected: it counts nesting, and a
+dynamic width does not nest.
 
 **One branch is still delivered.** The step does not finish until every lane is
 merged, `--no-ff`, in the order the lanes are declared. Order is the lane's
@@ -511,7 +575,9 @@ are cancelled, so a retry starts from a clean slate rather than half a tree.
 must not park: a parent in `awaiting_children` with no children would be
 re-queued forever.
 
-**The join gets one attempt** unless the step declares `max_retries` itself. The
+**Each round's merge gets one attempt** unless the step declares `max_retries`
+itself, and each round's rows carry their own `iteration`, so one round's
+failure never spends another's budget. The
 two ways a join fails — a conflict, and a lane that did not finish — are both
 "a human decides", and an automatic second merge would abort the first, hit the
 same conflict and block anyway. The `on_conflict: agent` resolver below is

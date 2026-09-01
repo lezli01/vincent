@@ -156,9 +156,16 @@ type workflowStepDef struct {
 	Steps       []workflowStepDef `json:"steps,omitempty"`
 	MaxParallel *int              `json:"max_parallel,omitempty"`
 
-	// fan_out steps
-	Lanes []workflowLaneDef `json:"lanes,omitempty"`
-	Merge *workflowMergeDef `json:"merge,omitempty"`
+	// fan_out steps. Lanes is the declared list; Lane is the single template
+	// a *derived* fan-out renders once per ForEach item (§7.6, task 080), and
+	// exactly one of the two is set. A derived step's Lanes fills in — and its
+	// Lane and ForEach empty — once the step materializes its lanes into the
+	// task's snapshot at spawn, which is what lets one DTO describe a
+	// registry entry, an underived snapshot and a materialized one alike.
+	Lanes    []workflowLaneDef `json:"lanes,omitempty"`
+	Lane     *workflowLaneDef  `json:"lane,omitempty"`
+	MaxLanes *int              `json:"max_lanes,omitempty"`
+	Merge    *workflowMergeDef `json:"merge,omitempty"`
 
 	// loop steps. Exactly one of Count and ForEach is set: the driver. A
 	// ForEach list is templates, not values — what it iterates is discovered
@@ -185,8 +192,12 @@ type workflowStepDef struct {
 // snapshot, never into a registry entry, and is carried here so the same DTO
 // can describe both.
 type workflowLaneDef struct {
-	ID           string            `json:"id"`
-	If           string            `json:"if,omitempty"`
+	ID string `json:"id"`
+	If string `json:"if,omitempty"`
+	// Needs names sibling lanes that must be done and merged before this one
+	// spawns (§7.6, task 080). On a derived step's Lane template these are
+	// templates rather than ids, exactly as ID is.
+	Needs        []string          `json:"needs,omitempty"`
 	Workflow     string            `json:"workflow,omitempty"`
 	ResolvedFrom string            `json:"resolved_from,omitempty"`
 	Steps        []workflowStepDef `json:"steps,omitempty"`
@@ -312,6 +323,7 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 		MaxParallel:    st.MaxParallel,
 		Count:          st.Count,
 		MaxIterations:  st.MaxIterations,
+		MaxLanes:       st.MaxLanes,
 		Workflow:       st.Workflow,
 		ResolvedFrom:   st.ResolvedFrom,
 	}
@@ -323,6 +335,10 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 	}
 	for _, lane := range st.Lanes {
 		out.Lanes = append(out.Lanes, toWorkflowLaneDef(lane))
+	}
+	if st.Lane != nil {
+		lane := toWorkflowLaneDef(*st.Lane)
+		out.Lane = &lane
 	}
 	if st.Merge != nil {
 		merge := &workflowMergeDef{OnConflict: st.Merge.OnConflict}
@@ -339,6 +355,7 @@ func toWorkflowLaneDef(lane workflow.Lane) workflowLaneDef {
 	out := workflowLaneDef{
 		ID:           lane.ID,
 		If:           lane.If,
+		Needs:        []string(lane.Needs),
 		Workflow:     lane.Workflow,
 		ResolvedFrom: lane.ResolvedFrom,
 		Fields:       lane.Fields,
