@@ -171,6 +171,29 @@ func (s *Store) NonTerminalDescendants(ctx context.Context, taskID int64) ([]int
 // else.
 const EventTaskChildrenChanged = "task.children_changed"
 
+// FanOutTreeSize counts every descendant of rootID — the whole fan-out tree
+// below it, excluding the root itself, which is what `fan_out.max_tasks`
+// bounds (task 014 decision 28).
+//
+// It exists because a *derived* lane list cannot be counted at task creation:
+// how many lanes a `for_each` produces is a fact the run discovers (task 080
+// decision 6). §13.4's MCPChainSize is the precedent — the same shape, over
+// the other parentage column, for the same reason.
+func (s *Store) FanOutTreeSize(ctx context.Context, rootID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		WITH RECURSIVE tree(id) AS (
+			SELECT id FROM tasks WHERE id = ?
+			UNION
+			SELECT t.id FROM tasks t JOIN tree ON t.parent_task_id = tree.id
+		)
+		SELECT COUNT(*) - 1 FROM tree`, rootID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("fan-out tree size of task %d: %w", rootID, err)
+	}
+	return n, nil
+}
+
 // EmitChildrenChanged appends one children_changed event per fan-out ancestor
 // of childID.
 //

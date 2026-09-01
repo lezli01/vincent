@@ -1,13 +1,27 @@
 package taskrun
 
-// The fan-out half of a `fan_out` step (spec §7.6, task 014 — phase 2). The
-// join is in join.go; the two are one step (decision 3) but they run in
-// different admissions, separated by the parent parking.
+// The fan-out half of a `fan_out` step (spec §7.6, task 014 — phase 2, and
+// task 080). The merge half is in join.go; the two are one step (decision 3)
+// but they run in different admissions, separated by the parent parking.
 //
-// The shape is: spawn every lane as a real child task, park the parent in
-// `awaiting_children` releasing its slot, and end the actor goroutine. The
-// scheduler brings the parent back once every descendant has settled
-// (decision 25), and the second admission runs the join.
+// The shape is a set of **rounds**. On each admission the parent merges every
+// lane that is done and not yet on its branch, spawns the lanes whose `needs:`
+// those merges have just satisfied, parks in `awaiting_children` releasing its
+// slot, and ends the actor goroutine. The scheduler brings it back once every
+// descendant has settled (decision 25). When nothing is left unspawned and
+// everything is merged, the step succeeds and the cursor advances.
+//
+// Wave structure is **derived from the graph** (workflow.LaneWaves), never
+// declared: no workflow names a wave and none names a maximum. A lane list
+// with no `needs:` is exactly one round, which is what makes every workflow
+// written before task 080 behave bit-for-bit as it did — spawn, park, merge,
+// advance.
+//
+// The rounds ride on `step_runs.iteration` (task 080 decision 3). That column
+// was a loop's alone; it is now "which repeat of this step's row is this",
+// which is what keeps round 2's merge from spending round 1's retry budget —
+// stepEnv.ref() scopes every attempt count, failure lookup and transcript name
+// by it.
 //
 // A child is an ordinary task in every respect (decision 1): its own row,
 // worktree, branch, slot, gates, blocks, transcripts, recovery, gc and doctor
@@ -23,61 +37,61 @@ import (
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
-// runFanOut spawns a fan_out step's lanes and parks the parent, or — if the
-// lanes already exist, which is what a re-admission after ChildrenSettled
-// means — runs the join.
+// ReasonFanOutLimit is a derived lane list the run refused to spawn: longer
+// than the step's `max_lanes:`, or a tree that would pass `fan_out.max_tasks`
+// (§18, task 080 decision 6). It is §7.8's `loop_limit` for the other dynamic
+// step — a bound that cannot be checked at creation because the width is a
+// fact the run discovers.
+const ReasonFanOutLimit = "fan_out_limit"
+
+// ReasonFanOutInvalid is a derived lane list that is not a lane list: an item
+// that is not a JSON object, an id that is not a slug, two items rendering to
+// one id, or a `needs:` graph with a dangling edge or a cycle (§18, task 080).
+//
+// Every one of these is a load-time error for a *static* lanes: list. A
+// derived list has no ids until it is rendered, so the identical check runs at
+// spawn and blocks — decision 6's price for a width nobody can count at
+// creation.
+const ReasonFanOutInvalid = "fan_out_invalid"
+
+// runFanOut runs one round of a fan_out step: merge what the last round
+// finished, spawn what those merges made ready, and park — or, when nothing is
+// left, succeed.
 //
 // It reports whether the actor should stop. Spawning always stops it: the
 // parent holds no slot while its children work.
 func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutcome, stop bool) {
-	existing, err := r.deps.Store.ListChildren(ctx, env.task.ID)
+	mine, err := r.laneChildren(ctx, env)
 	if err != nil {
 		env.log.Error("list lanes", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}, false
 	}
-	// Lanes of *this* step. A workflow may fan out more than once, and the
-	// earlier step's children are none of this one's business.
-	mine := make([]store.Task, 0, len(existing))
-	for _, c := range existing {
-		if c.ParentStepIndex != nil && *c.ParentStepIndex == env.index {
-			mine = append(mine, c)
+	if unsettled := unsettledLanes(mine); unsettled > 0 {
+		// The lanes exist but have not all settled, so this admission is not
+		// a round boundary: the parent was admitted without having parked.
+		// The route is a park transition that did not commit — a lost CAS or
+		// a DB error after a successful spawn — after which recovery
+		// re-queues a `running` parent whose lanes are still `queued`.
+		// Merging here would read them as "not done" and block `lane_failed`
+		// on lanes that are about to run perfectly well, so the parent parks
+		// now and the scheduler brings it back when they have settled (§7.6).
+		env.log.Info("fan-out lanes are still running; parking",
+			"lanes", len(mine), "unsettled", unsettled)
+		if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
+			env.log.Info("awaiting children", "step", env.step.ID)
 		}
+		return stepOutcome{}, true
 	}
-	if len(mine) > 0 {
-		if unsettled := unsettledLanes(mine); unsettled > 0 {
-			// The lanes exist but have not all settled, so this admission is
-			// not the join: the parent was admitted without having parked.
-			// The route is a park transition that did not commit — a lost CAS
-			// or a DB error after a successful spawn — after which recovery
-			// re-queues a `running` parent whose lanes are still `queued`.
-			// Joining here would read them as "not done" and block
-			// `lane_failed` on lanes that are about to run perfectly well, so
-			// the parent parks now and the scheduler brings it back when they
-			// have settled (§7.6).
-			env.log.Info("fan-out lanes are still running; parking",
-				"lanes", len(mine), "unsettled", unsettled)
-			if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
-				env.log.Info("awaiting children", "step", env.step.ID)
-			}
-			return stepOutcome{}, true
+
+	// Derivation runs once, before anything is spawned, in the parent's
+	// render context, and writes its result into the task's snapshot
+	// (decision 5). After it the step is an ordinary static `fan_out` and
+	// every snapshot consumer — graph, preview, editor, workflowdef — reads
+	// it as one with no special case.
+	if env.step.Lane != nil && len(mine) == 0 {
+		if outcome, ok := r.deriveLanes(ctx, env); !ok {
+			return outcome, true
 		}
-		// Every lane has settled, so this admission is the join (decision 3).
-		// It runs through the ordinary attempt path, which gives it a
-		// step_runs row like any other step.
-		//
-		// The budget is one attempt unless the author asked for more: the two
-		// ways a join fails — a conflict and a lane that did not finish — are
-		// both "a human decides", and §7.2 reserves retries for failures a
-		// retry can fix. An automatic second merge would abort the first,
-		// hit the same conflict, and block anyway.
-		joinEnv := *env
-		// Asked before the attempt row exists: see resumedFromConflict.
-		joinEnv.resumedFromConflict = r.resumedFromConflict(ctx, env)
-		if joinEnv.step.MaxRetries == nil {
-			zero := 0
-			joinEnv.step.MaxRetries = &zero
-		}
-		return r.runStepWithRetries(ctx, &joinEnv), false
 	}
 
 	selected, err := r.selectLanes(ctx, env)
@@ -86,26 +100,87 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		r.fail(env.task, ReasonConditionError, env.log, "evaluate lane guard", err)
 		return stepOutcome{}, true
 	}
-	if len(selected) == 0 {
-		// Every lane was guarded off. The step is reached, chooses nothing and
-		// advances: a fan-out whose conditions all said "not this time"
-		// decided correctly (§7.6, task 015 decision 11).
+	if len(selected) == 0 && len(mine) == 0 {
+		// Every lane was guarded off, or the derived list was empty. The step
+		// is reached, chooses nothing and advances: a fan-out whose conditions
+		// all said "not this time" decided correctly (§7.6, task 015
+		// decision 11), and an empty `for_each` is §7.8's same case.
 		//
 		// It must not park. A parent in `awaiting_children` with no children
 		// would be re-queued by the scheduler the moment it looked, find no
 		// lanes, spawn none and park again — a loop with no exit.
 		env.log.Info("fan-out selected no lanes; nothing to spawn")
 		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
-			"no lane was selected: every lane's `if:` was false")
+			"no lane was selected: every lane's `if:` was false, or the derived list was empty")
 		return stepOutcome{state: store.StepSucceeded}, false
 	}
 
-	if err := r.spawnLanes(ctx, env, selected); err != nil {
+	if len(mine) == 0 {
+		// Round 0. Nothing has been spawned, so there is nothing to merge and
+		// no row to write: the first admission of a flat lane list is exactly
+		// what it always was.
+		return r.spawnRound(ctx, env, selected, nil, 0)
+	}
+
+	// A round boundary: merge, then spawn whatever those merges made ready.
+	// The merge runs through the ordinary attempt path, which gives it a
+	// step_runs row like any other step, at this round's `iteration`.
+	//
+	// The budget is one attempt unless the author asked for more: the two
+	// ways a merge fails — a conflict and a lane that did not finish — are
+	// both "a human decides", and §7.2 reserves retries for failures a retry
+	// can fix. An automatic second merge would abort the first, hit the same
+	// conflict, and block anyway.
+	round := r.roundOf(env.step.Lanes, selected, mine)
+	roundEnv := *env
+	roundEnv.round = round
+	// Asked before the attempt row exists: see resumedFromConflict.
+	roundEnv.resumedFromConflict = r.resumedFromConflict(ctx, &roundEnv)
+	if roundEnv.step.MaxRetries == nil {
+		zero := 0
+		roundEnv.step.MaxRetries = &zero
+	}
+	outcome = r.runStepWithRetries(ctx, &roundEnv)
+	if outcome.state != store.StepSucceeded {
+		return outcome, false
+	}
+	return r.spawnRound(ctx, env, selected, mine, round+1)
+}
+
+// spawnRound spawns the lanes whose `needs:` are satisfied and parks, or
+// reports the step done when there is nothing left to spawn.
+func (r *Runner) spawnRound(
+	ctx context.Context, env *stepEnv, selected []int, mine []store.Task, round int,
+) (stepOutcome, bool) {
+	ready, err := r.readyLanes(ctx, env, selected, mine)
+	if err != nil {
+		env.log.Error("compute the ready lane set", "error", err)
+		r.fail(env.task, ReasonInternalError, env.log, "compute the ready lane set", err)
+		return stepOutcome{}, true
+	}
+	if len(ready) == 0 {
+		if spawned := len(mine); spawned < len(selected) {
+			// Unreachable for a graph the load-time or spawn-time check
+			// accepted: something is unspawned and nothing is ready only if
+			// its dependencies never merge, which is a cycle. Said out loud
+			// rather than parked forever.
+			env.log.Error("fan-out has unspawned lanes but none are ready",
+				"selected", len(selected), "spawned", spawned)
+			r.fail(env.task, ReasonFanOutInvalid, env.log,
+				"no lane is ready and some are unspawned: the needs graph cannot be satisfied", nil)
+			return stepOutcome{}, true
+		}
+		return stepOutcome{
+			state:  store.StepSucceeded,
+			result: fmt.Sprintf("merged %d lanes in %d rounds", len(mine), round),
+		}, false
+	}
+	if err := r.spawnLanes(ctx, env, ready); err != nil {
 		// Nothing to clean up: the lanes are created in one transaction
 		// (store.CreateTasks), so a failure leaves *no* lane behind and a
 		// retry re-spawns from a clean slate. Cancelling half a tree used to
 		// stand here, and it was the bug: a cancelled lane stays attached to
-		// this step, so the retry took the join path and blocked
+		// this step, so the retry took the merge path and blocked
 		// `lane_failed` on lanes that had never run.
 		env.log.Error("spawn lanes", "error", err)
 		r.fail(env.task, ReasonInternalError, env.log, "spawn lanes", err)
@@ -114,9 +189,97 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 	// Park: the slot is released before the children need one, which is what
 	// makes this deadlock-free at any depth (decision 6).
 	if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
-		env.log.Info("fan-out spawned; awaiting children", "step", env.step.ID)
+		env.log.Info("fan-out round spawned; awaiting children",
+			"step", env.step.ID, "round", round, "lanes", len(ready))
 	}
 	return stepOutcome{}, true
+}
+
+// laneChildren is the children of *this* step. A workflow may fan out more
+// than once, and the earlier step's children are none of this one's business.
+func (r *Runner) laneChildren(ctx context.Context, env *stepEnv) ([]store.Task, error) {
+	all, err := r.deps.Store.ListChildren(ctx, env.task.ID)
+	if err != nil {
+		return nil, err
+	}
+	mine := make([]store.Task, 0, len(all))
+	for _, c := range all {
+		if c.ParentStepIndex != nil && *c.ParentStepIndex == env.index {
+			mine = append(mine, c)
+		}
+	}
+	return mine, nil
+}
+
+// readyLanes is the declared indices of the selected lanes with no child row
+// yet whose `needs:` are all merged into the parent's branch.
+//
+// "Merged" is asked of git, not of a stored cursor, for the reason join.go
+// gives about the merge cursor: a human who reset the branch by hand is
+// telling the truth and a persisted copy is not (decision 9). A `needs:` entry
+// naming a lane this run did not select — one guarded off — imposes no
+// ordering: a lane that will never spawn cannot be waited for, and waiting
+// would strand its dependents with nothing saying why.
+func (r *Runner) readyLanes(
+	ctx context.Context, env *stepEnv, selected []int, mine []store.Task,
+) ([]int, error) {
+	byLane := make(map[string]*store.Task, len(mine))
+	for i := range mine {
+		byLane[mine[i].LaneID] = &mine[i]
+	}
+	inPlay := make(map[string]bool, len(selected))
+	for _, order := range selected {
+		inPlay[env.step.Lanes[order].ID] = true
+	}
+	merged := make(map[string]bool, len(mine))
+	for _, child := range mine {
+		if child.State != store.TaskDone {
+			continue
+		}
+		ok, err := r.deps.Worktrees.Merged(ctx, env.task.WorktreePath, child.BranchName)
+		if err != nil {
+			return nil, err
+		}
+		merged[child.LaneID] = ok
+	}
+	ready := make([]int, 0, len(selected))
+	for _, order := range selected {
+		lane := env.step.Lanes[order]
+		if byLane[lane.ID] != nil {
+			continue // already spawned in an earlier round
+		}
+		blocked := false
+		for _, need := range lane.Needs {
+			if inPlay[need] && !merged[need] {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			ready = append(ready, order)
+		}
+	}
+	return ready, nil
+}
+
+// roundOf is which round this admission is: the deepest wave any spawned lane
+// belongs to. Admission k merges wave k and spawns wave k+1, so the wave the
+// spawned lanes sit at *is* the round number, and a flat lane list — every
+// lane at wave 0 — writes its one merge row at `iteration: 0`, exactly where a
+// pre-task-080 fan-out wrote it.
+func (r *Runner) roundOf(lanes []workflow.Lane, selected []int, mine []store.Task) int {
+	inPlay := make([]workflow.Lane, 0, len(selected))
+	for _, order := range selected {
+		inPlay = append(inPlay, lanes[order])
+	}
+	waves := workflow.LaneWaves(inPlay)
+	round := 0
+	for _, child := range mine {
+		if w, ok := waves[child.LaneID]; ok && w > round {
+			round = w
+		}
+	}
+	return round
 }
 
 // spawnLanes creates one child task per lane, in declared order.
@@ -125,7 +288,7 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 // child's base branch, its overrides and priority propagate, and a lane spec
 // may override any of them for its own subtree. Fields merge with the
 // parent's, the lane winning (decision 29).
-func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, selected []int) error {
+func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, ready []int) error {
 	project, err := r.deps.Store.GetProject(ctx, env.task.ProjectID)
 	if err != nil {
 		return fmt.Errorf("load project: %w", err)
@@ -134,8 +297,8 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, selected []int) e
 		ProjectTemplate: project.BranchTemplate,
 		ConfigTemplate:  r.deps.Config().BranchTemplate,
 	}
-	children := make([]*store.Task, 0, len(selected))
-	for _, order := range selected {
+	children := make([]*store.Task, 0, len(ready))
+	for _, order := range ready {
 		lane := env.step.Lanes[order]
 		// order is the lane's **declared** index, not its position among the
 		// selected: `lane_order` is what the join merges by (§7.6,

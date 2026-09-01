@@ -185,15 +185,64 @@ func (f Failure) Empty() bool { return f.Reason == "" && f.Output == "" }
 // map keys and unknown fields are errors (phase 2 decision), so a typo fails
 // the step instead of silently rendering a hole (§8.4).
 func Render(name, text string, rc RenderContext) (string, error) {
+	return renderAgainst(name, text, rc)
+}
+
+// renderAgainst is Render's body, over whatever context the caller has. The
+// only other context is LaneContext, which embeds RenderContext and adds
+// `.Item` (§7.6, task 080 decision 1).
+func renderAgainst(name, text string, data any) (string, error) {
 	tmpl, err := template.New(name).Option("missingkey=error").Parse(text)
 	if err != nil {
 		return "", fmt.Errorf("parse %s template: %w", name, err)
 	}
 	var sb strings.Builder
-	if err := tmpl.Execute(&sb, rc); err != nil {
+	if err := tmpl.Execute(&sb, data); err != nil {
 		return "", fmt.Errorf("render %s template: %w", name, err)
 	}
 	return sb.String(), nil
+}
+
+// LaneContext is the render context of a derived `fan_out`'s `lane:` template
+// (§8.4, §7.6, task 080 decision 1). It is the ordinary §8.4 context plus the
+// one item the lane is being rendered for.
+//
+// Item is a **parsed JSON object**, and it is the one place §8.4's "every
+// template value is a plain string" rule gives way. A DAG item must carry both
+// an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and
+// one string cannot say both. `.Issue.Labels` is the existing precedent for
+// structure in the render context.
+//
+// The widening is scoped here and goes no further: `.Loop.Item` is unchanged
+// and still a string (task 016 decision 9), because a loop iteration is driven
+// by a line, not by a node of a graph.
+type LaneContext struct {
+	RenderContext
+	Item map[string]any
+}
+
+// RenderLane renders one field of a derived fan-out's `lane:` template against
+// rc and the item this lane is being derived from.
+func RenderLane(name, text string, rc RenderContext, item map[string]any) (string, error) {
+	return renderAgainst(name, text, LaneContext{RenderContext: rc, Item: item})
+}
+
+// SplitNeeds turns a rendered `needs:` entry into lane ids. A hand-written
+// entry is already one id; a derived one is whatever `{{ .Item.needs }}`
+// rendered a JSON array to, which for Go's text/template is `[api db]`. Both
+// end up as the same list.
+func SplitNeeds(rendered string) []string {
+	fields := strings.FieldsFunc(rendered, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\t' || r == ' ' || r == '[' || r == ']' ||
+			r == '"' || r == '\''
+	})
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // EscapeTemplate neutralizes the one sequence that would make embedded prose

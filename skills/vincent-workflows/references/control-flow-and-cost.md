@@ -124,13 +124,16 @@ Calculate recursively:
 | Sequence | Sum of its members |
 | Parallel group | Sum of its members; concurrency changes time, not total sessions |
 | Loop | Maximum iterations × sum of body members |
-| Fan-out | Sum of all possible lanes, nested descendants, and a configured agent merge resolver |
+| Fan-out, declared lanes | Sum of all possible lanes, nested descendants, and a configured agent merge resolver |
+| Fan-out, derived lanes | `max_lanes` × the cost of the one `lane` template's workflow, plus a configured agent merge resolver |
 | Include | Cost of its expanded steps |
 | Command, manual, condition, break | 0 |
 
 Use the effective inherited retry value, not only fields written directly on a
 step. For a `for_each` loop, use `max_iterations` unless the rendered list has a
-smaller proven bound. Count guarded agents in the upper bound unless the guard
+smaller proven bound, and for a derived fan-out use `max_lanes` the same way —
+a derived lane list is bounded, not unknown, which is one reason to always set
+that ceiling. Count guarded agents in the upper bound unless the guard
 is statically impossible. Count a conflict resolver because conflict is
 possible, even though its expected cost may be zero.
 
@@ -274,6 +277,13 @@ their own branches, not merely because they can be named separately. Good
 candidates are modules with non-overlapping ownership or a large task whose
 parallel speedup outweighs merge cost. Prefer `parallel` for commands sharing
 one worktree and sequential steps when outputs depend on each other.
+
+Order lanes with `needs` rather than by splitting a fan-out into several steps:
+the engine derives the waves from the graph, and a dependent lane's worktree is
+cut after its dependencies merged. Derive lanes with `for_each` + `lane` only
+when the count genuinely comes from a run — a planning step that emits one JSON
+object per work unit. Always set `max_lanes` on a derived step; the
+creation-time bound cannot count a list nobody has produced yet.
 
 Default `merge.on_conflict: block`. An agent conflict resolver adds another
 session at the most safety-sensitive point; use one only when conflicts are

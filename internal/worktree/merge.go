@@ -9,10 +9,13 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/gitx"
 )
 
 // ReasonMergeConflict is a lane whose merge into the parent's branch
@@ -57,6 +60,29 @@ func (m *Manager) MergeLane(
 		Reason: ReasonGitError,
 		Err:    fmt.Errorf("merge lane %q: %w: %s", laneID, err, strings.TrimSpace(out)),
 	}
+}
+
+// Merged reports whether branch is already an ancestor of the commit checked
+// out in worktreePath — "has this lane's work landed on the parent's branch?".
+//
+// git is asked rather than a stored cursor, for the reason join.go gives about
+// the merge cursor: a human who ran `git reset --hard` themselves is telling
+// the truth and a persisted copy is not (task 014 decision 9). The round
+// scheduler asks it once per spawned lane per round (§7.6, task 080).
+func (m *Manager) Merged(ctx context.Context, worktreePath, branch string) (bool, error) {
+	if branch == "" {
+		return false, nil
+	}
+	if _, err := m.git.Run(ctx, worktreePath, "merge-base", "--is-ancestor", branch, "HEAD"); err != nil {
+		// `--is-ancestor` reports "no" as exit 1, which is not an error to
+		// report upward; anything else (an unknown ref, a broken repo) is.
+		var ge *gitx.Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("check whether %s is merged: %w", branch, err)
+	}
+	return true, nil
 }
 
 // InMerge reports whether a merge is in progress in the worktree — MERGE_HEAD

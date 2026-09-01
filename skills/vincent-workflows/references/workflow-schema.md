@@ -126,7 +126,7 @@ types deliberately reject timeout or retry fields; see the table below.
 | `manual` | `instructions` | none | Binary human approval or judgment |
 | `condition` | `if` | nothing else | False finishes the run successfully |
 | `parallel` | `steps` | `max_parallel`, group `timeout` | Same-worktree concurrent commands/agents |
-| `fan_out` | `lanes` | `merge` | Child tasks, branches, worktrees, then merge |
+| `fan_out` | `lanes`, or `lane` + `for_each` | `merge`, `max_lanes` | Child tasks, branches, worktrees, then merge |
 | `loop` | `steps` and one driver | `count` or `for_each`, `max_iterations`, group `timeout` | Bounded sequential repetition |
 | `break` | `if` | nothing else | End the enclosing loop successfully |
 | `include` | `workflow` | nothing else | Splice another registry workflow at task creation |
@@ -215,6 +215,46 @@ declared order.
 `merge.on_conflict` is `block` by default or `agent`. Agent resolution requires
 `merge.agent`, a complete agent step with its own `id`; it may use
 `.Conflicts`, must leave no markers, and cannot require mid-run input.
+
+A lane may name sibling lanes in `needs`. The lane spawns only after every lane
+it names is done and merged into the parent's branch, so its worktree starts
+from a branch that already carries their commits. The step runs the resulting
+graph in rounds and derives the waves itself; never encode waves as separate
+steps. `needs` is happens-after, not isolation — a lane also sees whatever else
+merged in the same round. Unknown ids and cycles are refused at load.
+
+```yaml
+- id: modules
+  type: fan_out
+  lanes:
+    - { id: api,  workflow: implement-module }
+    - { id: db,   workflow: implement-module }
+    - { id: wire, workflow: implement-module, needs: [api, db] }
+```
+
+A step may derive its lanes instead of declaring them: give it `for_each` and a
+single `lane` template in place of `lanes`, plus a `max_lanes` ceiling.
+
+```yaml
+- id: build
+  type: fan_out
+  max_lanes: 24
+  for_each: '{{ (index .Steps "plan").Result }}'
+  lane:
+    id:       '{{ .Item.id }}'
+    needs:    '{{ .Item.needs }}'
+    workflow: implement-module
+    fields:   { module: '{{ .Item.id }}' }
+```
+
+`for_each` splits into trimmed nonempty lines exactly as a loop's does, and each
+line must be a **JSON object**; `.Item` is that object and is the only
+structured value in the template context. Only `id`, `needs`, `fields` and `if`
+may vary per item — `workflow` must be a literal, because it is resolved once
+when the task is created. The producing step must therefore emit one JSON object
+per line and nothing else. An empty list is a no-op success; a bad list blocks
+with `fan_out_invalid`, and one past `max_lanes` or `fan_out.max_tasks` blocks
+with `fan_out_limit` before anything spawns.
 
 ### Loop and break
 

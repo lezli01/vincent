@@ -94,8 +94,9 @@ separately checkable, or must feed a later prompt.
 
 Calculate a conservative upper bound for automatic agent sessions before a
 human manually retries anything. Count `1 + max_retries` per agent, multiply
-loop bodies by their maximum iterations, add parallel members and fan-out lanes,
-expand includes, and include an agent merge resolver. If referenced workflows
+loop bodies by their maximum iterations, add parallel members and fan-out lanes
+— a derived lane list counts as its `max_lanes`, so it is bounded rather than
+unknown — expand includes, and include an agent merge resolver. If referenced workflows
 or dynamic structure cannot be inspected, report the envelope as unknown rather
 than guessing. See the cost reference for the full rules.
 
@@ -162,7 +163,8 @@ human-triggered retry.
    quote YAML scalars that contain `:`.
 3. Put a `check` on agent or command steps that change verifiable state. A
    prompt's claim of success is not verification.
-4. Make loops bounded, concurrent writes disjoint, fan-out lanes independent,
+4. Make loops bounded, concurrent writes disjoint, fan-out lanes independent —
+   or ordered with `needs` when one truly depends on another's merged work —
    and platform assumptions explicit.
 5. Run `vincent version`, then `vincent workflow validate <file>`, then
    `vincent workflow render <file>`. Use `--json` when structured output helps.

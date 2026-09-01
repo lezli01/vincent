@@ -117,6 +117,24 @@ func (r *treeResolver) steps(in []Step, path string, depth int, stack []string) 
 			lanes[j] = resolved
 		}
 		out[i].Lanes = lanes
+		if out[i].Lane != nil {
+			// A derived step's single `lane:` template is resolved exactly
+			// like a static lane, and for the whole point of keeping the
+			// lane's `workflow:` static (task 080): the registry is read here,
+			// once, at task creation, so §5.3 holds and both the cycle check
+			// above and `fan_out.max_depth` stay meaningful over a fan-out
+			// whose *width* nobody yet knows.
+			//
+			// It counts as one task against `fan_out.max_tasks`, which is an
+			// under-count by construction — how many lanes it will derive is
+			// not a fact creation has. `max_lanes` and the spawn-time tree
+			// bound are what actually hold a derived list (decision 6).
+			resolved, err := r.lane(*out[i].Lane, stepPath+".lane", depth+1, stack)
+			if err != nil {
+				return nil, err
+			}
+			out[i].Lane = &resolved
+		}
 	}
 	return out, nil
 }
