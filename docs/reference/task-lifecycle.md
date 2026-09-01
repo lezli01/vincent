@@ -286,7 +286,7 @@ same thing wherever it originated.
 | `platform_unsupported` | The workflow is restricted to platforms this host is not (`platforms:`). Only reachable for a task created on another OS |
 | `input_unsupported` | The step declares `on_input: require` and its agent cannot take mid-run input. Refused at task creation, so only reachable when the agent changed underneath the task |
 | `merge_conflict` | A fan-out lane's merge conflicted. The worktree is left conflicted on purpose: resolve it, stage the files, and retry — the join commits your resolution and merges the rest |
-| `lane_failed` | A fan-out lane was cancelled or ended without finishing. **Nothing is merged** — a partial merge looks exactly like a complete one downstream. Fix the lane (it is an ordinary task), then retry the parent |
+| `lane_failed` | A fan-out lane was cancelled or ended without finishing. **Nothing of that round is merged** — a partial round looks exactly like a complete one downstream. With [`needs:`](workflow-schema.md#type-fan_out) the step runs in rounds, and rounds that already merged stay on the branch: they were there before this one failed, and the task is `blocked`, not `done`, so nothing downstream consumes it. No further lane is spawned; lanes already in flight are left to finish. A lane list without `needs:` is one round, so for it this is still "nothing is merged". Fix the lane (it is an ordinary task), then retry the parent |
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 

@@ -693,6 +693,15 @@ lane lists live in the task's snapshot — which is what turns a depth-3
 explosion into an error in front of the person typing rather than two hundred
 worktrees discovered six hours later.
 
+**A step that derives its lanes moves `max_tasks` to spawn time.** A `fan_out`
+with `for_each:` and a `lane:` template has no lane list to count at creation,
+so it counts as one task there, and the real check runs when the step spawns:
+past `max_tasks` for the whole tree, or past the step's own `max_lanes:`, and
+the task **blocks** with `fan_out_limit` having spawned nothing — a block
+rather than a `400`, because by then nobody is standing in front of it.
+`max_depth` is unaffected either way: it counts nesting, and a dynamic width
+does not nest.
+
 Depth is unlimited by design and bounded by a default: a deeper tree is a
 config edit, not a code change. See
 [Workflow schema](workflow-schema.md#type-fan_out).

@@ -725,11 +725,15 @@ A merge resolver may not declare `on_input: require`: it runs mid-join, and the
 worktree state it is resolving is not something a human can inspect through a
 question.
 
-**If a lane is cancelled or ends without finishing**, the join blocks with
-`lane_failed` and merges **nothing**. Fix the lane — it is an ordinary task, so
-retry it — then retry the parent. There is deliberately no "merge the rest
-anyway": a partial merge looks exactly like a complete one to everything
-downstream.
+**If a lane is cancelled or ends without finishing**, the step blocks with
+`lane_failed` and merges **nothing of that round**. Fix the lane — it is an
+ordinary task, so retry it — then retry the parent. There is deliberately no
+"merge the rest anyway": a partial round looks exactly like a complete one to
+everything downstream. Rounds that already merged stay merged — they were on
+the branch before this round failed, and un-doing integrated work is not
+something vincent does — and no further lane spawns, while lanes already
+running are left to finish. With no `needs:` there is only ever one round, so
+this is exactly "nothing is merged".
 
 > **A fan-out fills your caps, it does not exceed them.** Every lane is a task
 > competing for `max_parallel_tasks`. What it buys is parallelism you would

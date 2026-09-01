@@ -343,6 +343,16 @@ past the snapshot's last index (§5.4), so `step_total`, "step k of n" and the
 task 017 graph go on describing the workflow somebody wrote rather than
 whatever an operator ran afterwards.
 
+*Amended 2026-09-01 (task 080).* There is a **second** in-place rewriter, and
+"the only thing" above should be read as "the only thing a human does": a
+`fan_out` whose lanes are derived (§7.6) writes the lanes it rendered back into
+this task's snapshot at spawn. It is the same kind of write for the same
+reason — the task's own owner replacing part of its own snapshot, so that every
+later reader sees one shape — and after it the step is an ordinary static
+`fan_out`, which is what keeps the graph, the preview, the editor and
+`edit + retry` free of a derived case. The registry is still not re-read: the
+lane's `workflow:` was resolved at creation like any other (§5.3 above).
+
 `current_step` is left where the finished run put it — one past the last step —
 for the whole of a follow-up, and a follow-up is walked by the cursor inside
 `pending_follow_up` instead. Two cursors rather than one is what lets a `manual`
@@ -1253,6 +1263,15 @@ does not finish until every lane is merged.
   so is a tree past `fan_out.max_depth` (3) or `fan_out.max_tasks` (64,
   counting descendants). A depth explosion is refused in front of the person
   typing rather than discovered as two hundred worktrees six hours later.
+
+  *Amended 2026-09-01 (task 080).* A **derived** lane list gives half of this
+  up, and only half. The cycle check and `fan_out.max_depth` are untouched —
+  the lane's `workflow:` is still resolved at creation, and a dynamic width
+  does not nest — but `fan_out.max_tasks` cannot be counted for a list nobody
+  has produced yet, so a derived step counts as **one** task here and the real
+  bound moves to spawn, where it blocks with `fan_out_limit` alongside the
+  step's own `max_lanes:` (above). Everything in this bullet still holds
+  verbatim for a declared `lanes:` list.
 - **Inheritance.** A child's base branch is the parent's branch; its
   `agent`/`model`/`effort` overrides and its priority propagate, and its
   fields merge with the parent's, the lane winning. A lane spec overrides any
@@ -7753,9 +7772,9 @@ else.
 | Workflow deleted before task creation | Creation fails: `workflow_not_found` |
 | Agent CLI missing at step start | Step fails (retry policy applies) with a `agent_unavailable` reason; typically → blocked |
 | A fan-out lane's merge conflicts | The join stops at that lane and the task blocks `merge_conflict`, with the worktree left conflicted so a human resolves in place (*added 2026-08-17, task 014*). `on_conflict: agent` tries a resolver first, gated by its `check`, and falls back to the same block. Archive gets no special case: a conflicted worktree is dirty by construction and §10 already refuses a dirty worktree without confirmation |
-| A fan-out lane ends without finishing | The join blocks `lane_failed` and merges **nothing** — a partial merge is indistinguishable downstream from a complete one. `retry` re-checks the lanes; the remedy is to fix the child, which is an ordinary task (*added 2026-08-17, task 014*) |
+| A fan-out lane ends without finishing | The join blocks `lane_failed` and merges **nothing** — a partial merge is indistinguishable downstream from a complete one. `retry` re-checks the lanes; the remedy is to fix the child, which is an ordinary task (*added 2026-08-17, task 014*). *Amended 2026-09-01 (task 080):* "nothing" is **nothing of that round**. Rounds an earlier wave already merged stay on the branch — they were there before this one was known to fail, and resetting them would destroy integrated work — and no further lane is spawned while in-flight ones are left to finish. Reachable only with `needs:`, since a lane list without it is a single round and is unchanged (§7.6) |
 | A workflow's includes are cyclic, unresolvable or too deep | Refused at task creation with a `400` naming the cycle path, the missing workflow, or `include.max_depth`. A callee bringing a step id the expansion already uses, and one whose `platforms:` excludes this host, are refused there too. Possible because expansion happens in the insert path (*added 2026-08-19, task 019*) |
-| A fan-out tree is cyclic or too large | Refused at task creation with a `400` naming the cycle path or the bound crossed (`fan_out.max_depth`, `fan_out.max_tasks`). Possible because the whole tree's shape is static once lane lists are in the snapshot (*added 2026-08-17, task 014*) |
+| A fan-out tree is cyclic or too large | Refused at task creation with a `400` naming the cycle path or the bound crossed (`fan_out.max_depth`, `fan_out.max_tasks`). Possible because the whole tree's shape is static once lane lists are in the snapshot (*added 2026-08-17, task 014*). *Amended 2026-09-01 (task 080):* a **derived** lane list is not static, so it is `fan_out.max_tasks` alone that moves — to spawn, as the `fan_out_limit` row below. The cycle path and `fan_out.max_depth` are still refused here with the same `400`, because the lane's `workflow:` is still resolved at creation (§7.6) |
 | Two sub-steps of a `parallel` group write the same file | Undefined: the group shares one worktree, and §10 isolates working trees between *tasks*, not processes within one. A workflow bug, documented as such rather than arbitrated (*added 2026-08-17, task 014*) |
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
