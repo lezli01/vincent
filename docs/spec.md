@@ -6782,6 +6782,37 @@ every other record stays literal.
   and Markdown must never make prose look like a tool event. Command output and
   tool summaries contain Markdown punctuation constantly, and none of it was
   meant as formatting.
+- **A run of consecutive `agent.output` records is one document** *(added
+  2026-09-01, issue #291)*. The unit of parsing is the run, not the record: an
+  adapter that delivers a message in several records must not turn a table, a
+  list or a fence spanning two of them into two broken documents. Any other
+  record — reasoning, tool use, tool result, command output, `agent.raw`, a
+  result line — closes the document, and prose after it opens the next; so does
+  a run or turn boundary, since each pane renders one attempt's or one turn's
+  records. The rule is independent of the verbosity level: a level that hides a
+  record must not change how the prose around it parses. The blank-line rule
+  between a document and a record that is not prose is unchanged. Two records
+  that each carry part of one paragraph therefore reflow into that paragraph
+  rather than staying two lines, which is the same change seen from the other
+  side.
+  - **The bound on reflow, and what is deliberately not built.** No part of
+    this classifies an unfinished Markdown tail. `agent.output` never carries a
+    partial document: claude runs message-level `stream-json` with no
+    `--include-partial-messages` (the T1.7 decision), codex emits
+    `agent_message` only on `item.completed`, and cursor delivers assistant
+    content blocks whole. A record is present whole or is not present. Joining
+    does mean a *record* boundary can fall inside a block — a table header in
+    one record and its delimiter row in the next renders as a paragraph and
+    then becomes a table — and the guarantee is the weaker, true one: a record
+    boundary is a message boundary, the parse is deterministic from the
+    accumulated source, and **nothing above the last block of the previous
+    document moves** when a record arrives. Token-level deltas would need the
+    classifier; reopening T1.7 is what would build it.
+  - **Rendering is memoized per document**, keyed on the source's digest, the
+    pane width, the verbosity level and the raw toggle. A live chunk re-renders
+    the document it extended rather than every record in the pane. There is no
+    client-side throttle and no second timer: §13.3's daemon-side coalescing is
+    the rate limit.
 - **The subset is a written-down list**, not CommonMark: headings, paragraphs,
   emphasis, strong, ordered and unordered lists, nested lists, blockquotes,
   inline code, fenced code, horizontal rules, and — *amended 2026-09-01 (task
@@ -6841,7 +6872,10 @@ every other record stays literal.
   *(added 2026-09-01, task 075)*. An inline link's label renders as ordinary
   prose carrying a dim `[n]`, and the message ends with a block of `[n] dest`
   lines — one per distinct destination, numbered per rendered message,
-  identical destinations sharing a number. Those lines are preformatted, so a
+  identical destinations sharing a number. *Amended 2026-09-01 (issue #291):*
+  the message is the **document** above, so a destination named in two records
+  of one run gets one number and one line, and the reference block closes the
+  document rather than each record. Those lines are preformatted, so a
   destination is never word-collapsed and a long one hard-wraps at the cell
   boundary. An image renders its **alt text** as the link-shaped item and its
   source as the reference; nothing is fetched, and there is no fetch in this
@@ -6892,10 +6926,22 @@ persisted, sent to the daemon or written to a transcript.
   markers, blockquotes prefixed, fences dropped), plus one row per **fenced code
   block** (its interior, no fence and no info string, whitespace kept). Every
   payload is built from the source, never from rendered lines, so a copy made at
-  width 40 and one made at width 200 are byte-identical. Each row captures its
-  text **when the popup is built**, which is what keeps a target stable across a
-  resize, a transcript reload and incremental rendering: there is no index left
-  to drift.
+  width 40 and one made at width 200 are byte-identical. *Amended 2026-09-01
+  (issue #291):* a row is one per **document**, and it is a **reference to that
+  document, resolved when it is picked**, carrying the text captured when the
+  popup was built as its fallback. A reference rather than an index, because an
+  index drifts the moment a chunk arrives or the record cap prunes the front of
+  the window. Two consequences, both intended: picking a document that has
+  grown since the popup opened copies it as it is now, because "copy this
+  message" means the whole message; and a reference whose records the prune
+  took copies the captured text, so a pick can never fail.
+- **A paused pane keeps its place across a rebuild** *(added 2026-09-01, issue
+  #291)*. Records carry no id on the wire and none is added; identity is
+  client-assigned on ingest and is not an index, so it survives the record cap.
+  A pane that is not following captures the identity of its topmost visible
+  block and restores it after any rebuild — a resize, a front-prune, a
+  verbosity change, a raw toggle. Following is untouched: its anchor is the
+  bottom.
 - **The clipboard has two transports, and the notice says which ran.** The
   system clipboard is tried first because its answer can be trusted; when it
   refuses, the text is handed to the terminal over OSC 52, which is the correct

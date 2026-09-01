@@ -950,11 +950,22 @@ func (d *detail) renderOutputPane(height int) string {
 	d.vp.SetWidth(max(d.width, 1))
 	d.vp.SetHeight(height)
 	if d.outputDirty || d.builtWidth != d.width {
-		d.vp.SetContent(strings.Join(d.outputLines(), "\n"))
+		// A paused reader keeps their place across the rebuild (#291): the
+		// topmost visible block is captured before the rebuild and restored
+		// after it, which is what a resize, a maxRecords prune and the level
+		// and raw toggles used to take away. Following is untouched — the
+		// bottom is its anchor.
+		keep := anchorAt(d.anchors, d.vp.YOffset())
+		lines, anchors := d.outputLinesAt()
+		d.vp.SetContent(strings.Join(lines, "\n"))
+		d.anchors = anchors
 		d.outputDirty = false
 		d.builtWidth = d.width
-		if d.following {
+		switch y, ok := anchorIndex(anchors, keep); {
+		case d.following:
 			d.vp.GotoBottom()
+		case ok:
+			d.vp.SetYOffset(y)
 		}
 	}
 	return d.vp.View()
@@ -982,6 +993,13 @@ func (d *detail) outputEmptyState() (string, bool) {
 // outputLines renders the pane's records at the pane's level. The rendering
 // itself is outputlines.go's, shared with the chat workspace (task 071).
 func (d *detail) outputLines() []string {
+	lines, _ := d.outputLinesAt()
+	return lines
+}
+
+// outputLinesAt is outputLines with the per-line provenance the paused anchor
+// needs, and is where the pane's render pass opens and closes.
+func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 	note := ""
 	if d.truncated {
 		// Naming the key here is the whole point of T4.11: this line is the
@@ -989,8 +1007,10 @@ func (d *detail) outputLines() []string {
 		// it is where the way to the rest of it belongs.
 		note = "… earlier output truncated — press e for the whole transcript"
 	}
-	return outputLines(d.records, d.level.get(), max(d.width, 1),
-		lineOpts{expandKey: "v", truncatedNote: note, raw: d.raw.get()})
+	d.mdcache.begin()
+	defer d.mdcache.sweep()
+	return outputLinesAt(d.records, d.recordSeqs(), d.level.get(), max(d.width, 1),
+		lineOpts{expandKey: "v", truncatedNote: note, raw: d.raw.get(), cache: &d.mdcache})
 }
 
 // plain is a record with the blank gutter: assistant prose and command

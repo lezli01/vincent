@@ -75,6 +75,9 @@ type root struct {
 	// owns the keyboard while it is up. The two are never open together —
 	// each closes on the key that would open the other.
 	reader *readerPicker
+	// readerResolve re-reads a picked row's document from the view that
+	// offered it, and is nil while no picker is up.
+	readerResolve func(seq int64) (string, bool)
 	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
 	// Mouse). Off restores native click-drag text selection.
 	mouseOn bool
@@ -211,6 +214,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.deliver(m.active, msg)
 	case openCopyPickerMsg:
 		m.reader = newReaderPicker(msg.items)
+		m.readerResolve = msg.resolve
 		return m, nil
 	case clipboardResultMsg:
 		return m, m.updateClipboardResult(msg)
@@ -387,18 +391,20 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateReaderKey routes keys into the open copy picker and puts whatever it
-// picks on the clipboard. The payload was captured when the popup was built,
-// so what is copied is what was on screen then — records that arrived since,
-// and a resize, change nothing.
+// picks on the clipboard. A row is a reference to a document, resolved here
+// against the view's records as they stand now (#291): a document that grew
+// while the popup was up copies whole, and one whose records were pruned
+// copies the text captured when the popup was built.
 func (m *root) updateReaderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	run, done, cmd := m.reader.update(msg)
+	resolve := m.readerResolve
 	if done {
-		m.reader = nil
+		m.reader, m.readerResolve = nil, nil
 	}
 	if run == nil {
 		return m, cmd
 	}
-	return m, writeClipboardCmd(run.label, run.text)
+	return m, writeClipboardCmd(run.label, pickText(*run, resolve))
 }
 
 // openPalette builds the palette for the active surface.

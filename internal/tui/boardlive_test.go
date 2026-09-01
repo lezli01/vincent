@@ -14,6 +14,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
@@ -76,6 +78,10 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Store:       st,
 		Broker:      broker,
+		// An agent registry so a step run that names one has its transcript
+		// normalized out of the agent's own dialect (§13.2), which is what
+		// puts assistant prose rather than agent.raw in front of the pane.
+		Agents: agent.NewRegistry(claude.New(func() string { return "" })),
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)

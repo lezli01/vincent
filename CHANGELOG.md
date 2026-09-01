@@ -13,6 +13,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **An assistant message split across records renders as one message.** When an
+  agent delivers one answer as several output records, consecutive records are
+  now read as a single Markdown document rather than one document each. A
+  table, a list or a fenced code block spread across two of them renders as the
+  one thing it was written as instead of two broken fragments, and a link
+  destination named twice in one message gets one number and one reference
+  line. Anything that is not assistant prose — reasoning, a tool call, command
+  output — ends the message, and prose after it starts the next.
+- **A pane you have scrolled away from keeps its place.** Resizing the
+  terminal, changing the verbosity level, toggling the raw view, and output old
+  enough to be dropped from the window used to move a paused reader somewhere
+  else. The output pane and the chat body now hold the block at the top of the
+  view across all four, in both workspaces. Following the tail is unchanged.
+- **The copy picker's rows name a message rather than a snapshot of it.**
+  Picking a message that is still being written copies the whole message as it
+  stands at that moment; a finished one is unaffected, and a row whose records
+  have since been dropped from the window still copies what it offered, so a
+  pick can never fail.
+
 - **A chat can now hand its worktree and branch to a task.** An idle chat gains
   one action — `hand off` — that creates a task adopting the chat's worktree
   path, branch, base branch and base SHA *exactly as they are*. Nothing is

@@ -101,6 +101,15 @@ type chatView struct {
 	vp        viewport.Model
 	following bool
 	bodyDirty bool
+	// turnSeqs is the client-assigned identity of each record in
+	// turnRecords, keyed the same way and pruned with it, and stamp is where
+	// they come from (#291). anchors is the last build's per-line
+	// provenance, which is what a paused conversation restores from, and
+	// mdcache memoizes the rendered documents.
+	stamp    seqStamp
+	turnSeqs map[int][]int64
+	anchors  []lineAnchor
+	mdcache  mdCache
 	// turnAt is each turn's first body line, rebuilt on every render. It is
 	// what makes "which turns are on screen" answerable, and so what drives
 	// the lazy transcript fetch.
@@ -133,6 +142,7 @@ func newChatView(level *levelHolder, raw *rawHolder) *chatView {
 		vp:          viewport.New(),
 		following:   true,
 		turnRecords: map[int][]apiclient.TranscriptRecord{},
+		turnSeqs:    map[int][]int64{},
 		fetched:     map[int]bool{},
 	}
 }
@@ -343,6 +353,8 @@ const eagerTurns = 5
 // and on send: the next load rebuilds it.
 func (v *chatView) resetRecords() {
 	v.turnRecords = map[int][]apiclient.TranscriptRecord{}
+	v.turnSeqs = map[int][]int64{}
+	v.anchors = nil
 	v.fetched = map[int]bool{}
 	v.truncated = false
 	v.liveFrom, v.liveTurn = 0, 0
@@ -459,6 +471,7 @@ func (v *chatView) applyTranscript(msg chatTranscriptMsg) {
 		v.liveTurn, v.liveFrom = turn.ID, msg.next
 	}
 	v.turnRecords[msg.seq] = msg.records
+	v.turnSeqs[msg.seq] = v.stamp.take(len(msg.records))
 	v.capRecords()
 	v.bodyDirty = true
 }
@@ -483,10 +496,14 @@ func (v *chatView) capRecords() {
 		if len(recs) <= over {
 			over -= len(recs)
 			delete(v.turnRecords, seq)
+			delete(v.turnSeqs, seq)
 			continue
 		}
 		// Keep the end of the turn: the newest lines are the ones being read.
 		v.turnRecords[seq] = recs[over:]
+		if seqs := v.turnSeqs[seq]; len(seqs) >= over {
+			v.turnSeqs[seq] = seqs[over:]
+		}
 		over = 0
 	}
 }
@@ -619,7 +636,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.bodyDirty = true
 		return v, nil
 	case copyPickKey:
-		return v, openCopyPicker(v.copyDocs())
+		return v, openCopyPicker(v.copyDocs(), v.resolveDoc)
 	case "pgup":
 		v.vp.PageUp()
 		v.syncFollowToViewport()
@@ -699,4 +716,26 @@ func (v *chatView) cancelCmd() tea.Cmd {
 		defer cancel()
 		return chatCanceledMsg{chatID: id, err: client.CancelChat(ctx, id)}
 	}
+}
+
+// recordSeqs is one turn's identity slice, stamped if some path installed its
+// records without going through applyTranscript.
+func (v *chatView) recordSeqs(seq int) []int64 {
+	seqs := v.stamp.fit(v.turnSeqs[seq], len(v.turnRecords[seq]))
+	if v.turnSeqs == nil {
+		v.turnSeqs = map[int][]int64{}
+	}
+	v.turnSeqs[seq] = seqs
+	return seqs
+}
+
+// resolveDoc answers a copy pick from the conversation as it stands now.
+func (v *chatView) resolveDoc(seq int64) (string, bool) {
+	for i := range v.turns {
+		t := v.turns[i].Seq
+		if text, ok := resolveDocs(v.turnRecords[t], v.recordSeqs(t), seq); ok {
+			return text, true
+		}
+	}
+	return "", false
 }

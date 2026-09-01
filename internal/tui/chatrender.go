@@ -29,16 +29,19 @@ const chatExpandKey = "ctrl+r"
 // A turn whose transcript has gone to retention contributes its ResultText
 // instead (§17), which is what the pane is drawing for it: the picker offers
 // what is on screen, not what is on disk.
-func (v *chatView) copyDocs() []string {
-	docs := make([]string, 0, len(v.turns))
+func (v *chatView) copyDocs() []copyDoc {
+	docs := make([]copyDoc, 0, len(v.turns))
 	for i := len(v.turns) - 1; i >= 0; i-- {
 		t := &v.turns[i]
 		if recs := v.turnRecords[t.Seq]; len(recs) > 0 {
-			docs = append(docs, copyDocsFromRecords(recs)...)
+			docs = append(docs, copyDocsFromRecords(recs, v.recordSeqs(t.Seq))...)
 			continue
 		}
 		if t.ResultText != "" {
-			docs = append(docs, t.ResultText)
+			// A retained-away answer has no record and so no identity: it
+			// is offered as the captured text, which is what the pane is
+			// drawing for it.
+			docs = append(docs, copyDoc{text: t.ResultText})
 		}
 	}
 	return docs
@@ -77,11 +80,21 @@ func (v *chatView) bodyView(width, height int) string {
 	v.vp.SetWidth(max(width, 1))
 	v.vp.SetHeight(max(height, 1))
 	if v.bodyDirty || v.builtWidth != width {
-		v.vp.SetContent(strings.Join(v.bodyLines(width), "\n"))
+		// The paused anchor, as in the task workspace (#291): a resize, the
+		// maxRecords cap and the level and raw toggles all rebuild the body,
+		// and a reader who scrolled away from the tail keeps their place
+		// across every one of them.
+		keep := anchorAt(v.anchors, v.vp.YOffset())
+		lines, anchors := v.bodyLinesAt(width)
+		v.vp.SetContent(strings.Join(lines, "\n"))
+		v.anchors = anchors
 		v.bodyDirty = false
 		v.builtWidth = width
-		if v.following {
+		switch y, ok := anchorIndex(anchors, keep); {
+		case v.following:
 			v.vp.GotoBottom()
+		case ok:
+			v.vp.SetYOffset(y)
 		}
 	}
 	return v.vp.View()
@@ -129,23 +142,45 @@ func (v *chatView) headerLine(width int) string {
 // It also records where each turn starts, which is what lets a scroll say
 // which turns are on screen and fetch the transcripts they need (decision 6).
 func (v *chatView) bodyLines(width int) []string {
+	lines, _ := v.bodyLinesAt(width)
+	return lines
+}
+
+// bodyLinesAt is bodyLines with the per-line provenance the paused anchor
+// needs, and is where the conversation's render pass opens and closes — one
+// pass over every turn, so the memo sweeps what left the screen and keeps
+// what did not.
+func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	lines := make([]string, 0, len(v.turns)*4)
+	anchors := make([]lineAnchor, 0, len(v.turns)*4)
+	pad := func(n int) {
+		for range n {
+			anchors = append(anchors, lineAnchor{})
+		}
+	}
 	v.turnAt = make(map[int]int, len(v.turns))
 	if v.truncated {
 		lines = append(lines, styleDim.Render(gutterNone+
 			"… earlier output truncated — the transcripts on disk are whole"))
+		pad(1)
 	}
 	level := v.level.get()
 	raw := v.raw.get()
+	v.mdcache.begin()
+	defer v.mdcache.sweep()
 	for i := range v.turns {
 		t := &v.turns[i]
 		v.turnAt[t.Seq] = len(lines)
 		lines = append(lines, styleDim.Render(fmt.Sprintf(" ── turn %d ──", t.Seq)))
-		lines = append(lines, wrapCellLines("› "+t.Prompt, width-2, 6)...)
+		prompt := wrapCellLines("› "+t.Prompt, width-2, 6)
+		lines = append(lines, prompt...)
+		pad(1 + len(prompt))
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
-			lines = append(lines, outputLines(recs, level, width,
-				lineOpts{expandKey: chatExpandKey, raw: raw})...)
+			body, at := outputLinesAt(recs, v.recordSeqs(t.Seq), level, width,
+				lineOpts{expandKey: chatExpandKey, raw: raw, cache: &v.mdcache})
+			lines = append(lines, body...)
+			anchors = append(anchors, at...)
 		case t.State == "running":
 			// Nothing has arrived yet; the tail fills in as it does.
 		case t.ResultText != "":
@@ -164,17 +199,21 @@ func (v *chatView) bodyLines(width int) []string {
 			// It follows the rendered/raw toggle too (task 076 decision 2):
 			// a retained-away answer is still assistant prose, and the
 			// mode is the session's, not the record's.
-			lines = append(lines, assistantLines(t.ResultText, width, raw)...)
+			body, _ := v.mdcache.lines(t.ResultText, width, level, raw)
+			lines = append(lines, body...)
+			pad(len(body))
 		}
 		if t.FailReason != "" {
 			lines = append(lines, " "+styleBad.Render(
 				strings.TrimSpace(t.FailReason+" "+t.ErrorMessage)))
+			pad(1)
 		}
 	}
 	if len(lines) == 0 {
 		lines = append(lines, styleDim.Render("  Nothing said yet. Type below and press enter."))
+		pad(1)
 	}
-	return lines
+	return lines, anchors
 }
 
 func (v *chatView) footerLines(width int) []string {

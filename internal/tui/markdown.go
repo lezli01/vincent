@@ -132,24 +132,50 @@ func (b mdBlock) joined() string { return strings.Join(b.text, " ") }
 // rendering is derived, and the transcript on disk stays the agent's bytes
 // (decision 4).
 func markdownLines(text string, width int) []string {
+	lines, _ := markdownBlockLines(text, width)
+	return lines
+}
+
+// markdownBlockLines is markdownLines plus, for every line it returns, the
+// ordinal of the Markdown block that produced it. Those ordinals are the
+// block half of a lineAnchor (#291), which is what lets a paused reader keep
+// their place across a resize, a prune or a level change.
+//
+// A blank separator line belongs to the block *above* it, so a block's first
+// ordinal is its first line of content: an anchor that restored onto the
+// separator would put the block one line lower than the reader left it.
+func markdownBlockLines(text string, width int) ([]string, []int) {
 	refs := &mdRefs{}
 	blocks := parseMarkdown(sanitizeText(text), refs)
 	out := make([]string, 0, len(blocks)*2)
+	at := make([]int, 0, len(blocks)*2)
 	prev := mdParagraph
-	for _, b := range blocks {
+	for i, b := range blocks {
 		if len(out) > 0 && mdNeedsBlank(prev, b.kind) {
 			out = append(out, "")
+			at = append(at, max(i-1, 0))
 		}
-		out = append(out, renderMDBlock(b, width)...)
+		body := renderMDBlock(b, width)
+		out = append(out, body...)
+		for range body {
+			at = append(at, i)
+		}
 		prev = b.kind
 	}
+	// The reference block closes the document rather than each record
+	// (task 075 decision 2, amended by #291): one destination named in two
+	// records of one run gets one number and one line here.
 	if lines := renderMDRefs(refs, width); len(lines) > 0 {
 		if len(out) > 0 {
 			out = append(out, "")
+			at = append(at, max(len(blocks)-1, 0))
 		}
 		out = append(out, lines...)
+		for range lines {
+			at = append(at, len(blocks))
+		}
 	}
-	return out
+	return out, at
 }
 
 // mdRefs numbers the destinations one rendered message links to (task 075
@@ -859,18 +885,29 @@ func runLen(s string, i int, ch byte) int {
 // as Markdown *source*, not the agent's bytes as terminal input: raw mode is
 // the escape hatch for a surprising render, not a hole in the one chokepoint
 // §16 was added to guarantee.
-func rawLines(text string, width int) []string {
+// It reports per-line block ordinals the way markdownBlockLines does. Raw
+// source has no blocks, so every line reports block 0 and its own source line
+// as the offset: an anchor captured in one mode and restored in the other
+// falls to anchorIndex's document tier, which is the right answer — a raw
+// toggle keeps the document at the top of the pane, not a block ordinal that
+// mode does not have.
+func rawBlockLines(text string, width int) ([]string, []int) {
 	src := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	out := make([]string, 0, len(src))
+	at := make([]int, 0, len(src))
 	for _, line := range src {
-		out = append(out, wrapLine(paneLine{
+		body := wrapLine(paneLine{
 			gutter:      gutterNone,
 			gutterStyle: styleDim,
 			pre:         true,
 			segs:        []segment{{text: line, style: styleRaw}},
-		}, width)...)
+		}, width)
+		out = append(out, body...)
+		for range body {
+			at = append(at, 0)
+		}
 	}
-	return out
+	return out, at
 }
 
 // styleRaw draws raw source. It is dimmer than prose on purpose: raw mode is
