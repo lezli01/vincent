@@ -57,6 +57,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl}
 	case "ctrl+x":
 		msg = tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
+	case "ctrl+y":
+		msg = tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl}
 	case "ctrl+r":
 		msg = tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
 	case "ctrl+g":
@@ -517,6 +519,35 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("pgup left the body following the live end")
 			}
 		},
+		"ctrl+o": func(t *testing.T) {
+			v := chatViewFixture()
+			before := v.raw.get()
+			v.updateKey(registryKey(t, "ctrl+o"))
+			if v.raw.get() == before {
+				t.Fatal("ctrl+o did not toggle raw mode")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("ctrl+o reached the composer: %q", v.composer.Value())
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			v := chatViewFixture()
+			v.turns = []apiclient.ChatTurn{{ID: 1, Seq: 1, State: "done", Prompt: "hi"}}
+			v.turnRecords[1] = []apiclient.TranscriptRecord{
+				{Type: "agent.output", Text: "# Findings\n\nall good"},
+			}
+			_, cmd := v.updateKey(registryKey(t, "ctrl+y"))
+			if cmd == nil {
+				t.Fatal("ctrl+y did not open the copy picker")
+			}
+			msg, ok := drain(cmd).(openCopyPickerMsg)
+			if !ok || len(msg.items) == 0 {
+				t.Fatalf("ctrl+y produced %#v, want a copy picker with rows", drain(cmd))
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("ctrl+y reached the composer: %q", v.composer.Value())
+			}
+		},
 		"ctrl+g": func(t *testing.T) {
 			v := chatViewFixture()
 			v.following = false
@@ -739,6 +770,37 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.updateKey(registryKey(t, "down"))
 			if !d.following {
 				t.Fatal("down did not reach the output pane's scroll path (follow was never re-synced)")
+			}
+		},
+		"ctrl+o": func(t *testing.T) {
+			d := newTestDetail(t)
+			d.taskID = 4
+			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+			d.focus = focusOutput
+			before := d.raw.get()
+			d.updateKey(registryKey(t, "ctrl+o"))
+			if d.raw.get() == before {
+				t.Fatal("ctrl+o did not toggle raw mode")
+			}
+			if !d.outputDirty {
+				t.Fatal("ctrl+o left the pane's rendered content standing")
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			d := newTestDetail(t)
+			d.taskID = 4
+			loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+			d.focus = focusOutput
+			d.records = []apiclient.TranscriptRecord{
+				{Type: "agent.output", Text: "# Findings\n\nall good"},
+			}
+			cmd := d.updateKey(registryKey(t, "ctrl+y"))
+			if cmd == nil {
+				t.Fatal("ctrl+y did not open the copy picker")
+			}
+			msg, ok := drain(cmd).(openCopyPickerMsg)
+			if !ok || len(msg.items) == 0 {
+				t.Fatalf("ctrl+y produced %#v, want a copy picker with rows", drain(cmd))
 			}
 		},
 		"e": func(t *testing.T) {

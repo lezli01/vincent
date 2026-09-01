@@ -70,6 +70,11 @@ type root struct {
 	// the root because it must overlay every screen, takeovers included —
 	// while disconnected it is how the daemon view stays reachable.
 	palette *palette
+	// reader is the task 076 copy picker, open when non-nil. It lives beside
+	// the palette and is routed exactly like it: a short-lived popup that
+	// owns the keyboard while it is up. The two are never open together —
+	// each closes on the key that would open the other.
+	reader *readerPicker
 	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
 	// Mouse). Off restores native click-drag text selection.
 	mouseOn bool
@@ -199,11 +204,16 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
-		if m.notice.active || m.palette != nil || m.help {
+		if m.notice.active || m.palette != nil || m.reader != nil || m.help {
 			return m, nil
 		}
 		msg.Y-- // the body starts under the header line
 		return m, m.deliver(m.active, msg)
+	case openCopyPickerMsg:
+		m.reader = newReaderPicker(msg.items)
+		return m, nil
+	case clipboardResultMsg:
+		return m, m.updateClipboardResult(msg)
 	case noteMsg:
 		return m.updateNote(msg.note)
 	case streamDoneMsg:
@@ -232,6 +242,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if text == "" || m.notice.active || m.help {
 		return nil
 	}
+	if m.reader != nil {
+		return m.reader.paste(text)
+	}
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
@@ -249,7 +262,7 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // everything else lands in the active screen's body. Popups stay keyboard;
 // right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.help {
+	if msg.Button != tea.MouseLeft || m.notice.active || m.palette != nil || m.reader != nil || m.help {
 		return m, nil
 	}
 	if m.height > 0 && msg.Y == m.height-1 {
@@ -274,13 +287,26 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
-	if msg.String() == "ctrl+v" && (m.palette != nil || m.activeCapturesInput()) {
+	if msg.String() == "ctrl+v" && (m.palette != nil || m.reader != nil || m.activeCapturesInput()) {
 		return m, readClipboardCmd()
 	}
-	// An open palette owns every key but ctrl+c — it is a popup, the top of
-	// the §15 esc stack.
+	// An open popup owns every key but ctrl+c — it is the top of the §15 esc
+	// stack.
+	if m.reader != nil && msg.String() != "ctrl+c" {
+		return m.updateReaderKey(msg)
+	}
 	if m.palette != nil && msg.String() != "ctrl+c" {
 		return m.updatePaletteKey(msg)
+	}
+	// ctrl+p is `:` for a surface that is capturing text. It is hoisted above
+	// the input-capture gate the way ctrl+v is, and for the same reason: a
+	// chat's composer takes every printable key, so `:` there types a colon
+	// into the draft and opens nothing (task 076 decision 7). The palette is
+	// §15's "what can be done right now" surface, and it had been unreachable
+	// from a chat since the workspace landed.
+	if msg.String() == paletteAltKey {
+		m.openPalette()
+		return m, nil
 	}
 	// A view that is capturing text (the board's filter) owns every key but
 	// ctrl+c: typing "q" into a filter must not quit the TUI.
@@ -358,6 +384,21 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.switchTo(run.navTarget)
 	}
 	return m.updateKey(synthKey(run.key))
+}
+
+// updateReaderKey routes keys into the open copy picker and puts whatever it
+// picks on the clipboard. The payload was captured when the popup was built,
+// so what is copied is what was on screen then — records that arrived since,
+// and a resize, change nothing.
+func (m *root) updateReaderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	run, done, cmd := m.reader.update(msg)
+	if done {
+		m.reader = nil
+	}
+	if run == nil {
+		return m, cmd
+	}
+	return m, writeClipboardCmd(run.label, run.text)
 }
 
 // openPalette builds the palette for the active surface.
@@ -656,13 +697,13 @@ func (m *root) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString(m.footerLine())
 	frame := b.String()
-	if m.palette != nil {
+	if popup, ok := m.popupRender(); ok {
 		pw := min(m.width-8, 64)
 		if pw < 24 {
 			pw = max(m.width-2, 10)
 		}
 		ph := min(18, max(m.height-4, 6))
-		frame = overlay(frame, m.palette.render(pw, ph), max((m.width-pw)/2, 0), 2)
+		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), 2)
 	}
 	v := tea.NewView(frame)
 	if m.mouseOn && !m.notice.active {
@@ -872,4 +913,30 @@ func errString(err error) string {
 		return "unknown error"
 	}
 	return err.Error()
+}
+
+// popupRender names the popup the root itself owns and is drawing, if any.
+// They are mutually exclusive and share one box, so the geometry is decided
+// once rather than copied per popup.
+func (m *root) popupRender() (func(w, h int) string, bool) {
+	switch {
+	case m.reader != nil:
+		return m.reader.render, true
+	case m.palette != nil:
+		return m.palette.render, true
+	default:
+		return nil, false
+	}
+}
+
+// updateClipboardResult turns a copy's outcome into the active surface's own
+// notice (§15). It goes to the active view rather than being broadcast: the
+// human pressed the key on one screen and is looking at it.
+func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
+	cmds := []tea.Cmd{m.deliver(m.active, msg)}
+	if msg.osc != "" {
+		// The system clipboard refused; ask the terminal itself (OSC 52).
+		cmds = append(cmds, tea.SetClipboard(msg.osc))
+	}
+	return tea.Batch(cmds...)
 }

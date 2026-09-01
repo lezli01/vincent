@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -91,15 +92,37 @@ const (
 // except mdRule, which is drawn to the pane's width at render time and so
 // carries no lines at all, and mdTable, whose layout is two-dimensional and
 // so cannot be a list of paneLines either.
+//
+// It also keeps its *source* — the nesting depth, the marker an ordered item
+// wrote for itself, and the text — because three emitters read these blocks
+// now (task 076 decision 5): the pane's own rendering, the plain-text
+// clipboard payload, and the copy picker's fenced-block scan. Only the first
+// can read laid-out lines; recovering "the text without its Markdown
+// punctuation" from a rendered line means unpicking lipgloss, which is the
+// wrong direction. Layout stays at parse time rather than moving to the
+// emitters because that is where a link's destination is numbered (task 075
+// decision 2), and numbering has to follow document order.
 type mdBlock struct {
-	kind  mdKind
-	lines []paneLine
+	kind   mdKind
+	lines  []paneLine
+	depth  int
+	marker string
+	// text is the block's source lines. Everything but mdCode joins them
+	// with a space when emitted: a soft line break inside a paragraph, a
+	// list item or a quote is the author's line length, not the reader's,
+	// and rejoining is what lets a surface reflow to its own width. A fenced
+	// block keeps every line, byte for byte. An mdTable carries none — its
+	// cells are parsed, not source, for the numbering reason above.
+	text []string
 	// info is a fenced block's info string, first word only. Empty for
 	// every other kind and for a fence that declared no language.
 	info string
 	// table is set on mdTable and nil everywhere else.
 	table *mdTableBlock
 }
+
+// joined is the block's prose as one line, ready to be wrapped or emitted.
+func (b mdBlock) joined() string { return strings.Join(b.text, " ") }
 
 // markdownLines renders assistant prose to wrapped pane lines.
 //
@@ -291,6 +314,8 @@ func parseMarkdown(text string, refs *mdRefs) []mdBlock {
 			blocks = append(blocks, mdBlock{
 				kind:  mdHeading,
 				lines: []paneLine{headingPaneLine(level, htext, refs)},
+				depth: level,
+				text:  []string{htext},
 			})
 			continue
 		}
@@ -342,29 +367,34 @@ func (p mdPending) isEmpty() bool { return len(p.text) == 0 }
 // block turns the accumulated lines into a block. Soft line breaks inside a
 // paragraph, a list item or a quote are joined: they are the author's line
 // length, not the reader's, and rejoining is what lets the pane reflow to its
-// own width. A fenced block is the exception and keeps every line.
+// own width. A fenced block is the exception and keeps every line. The source
+// rides along beside the laid-out lines for the other two emitters.
 func (p mdPending) block() (mdBlock, bool) {
 	switch p.kind {
 	case mdCode:
 		if !p.open && len(p.text) == 0 {
 			return mdBlock{}, false
 		}
-		lines := make([]paneLine, 0, len(p.text))
-		for _, l := range p.text {
+		text := p.text
+		if len(text) == 0 {
+			// An empty fence still says a code block was there.
+			text = []string{""}
+		}
+		lines := make([]paneLine, 0, len(text))
+		for _, l := range text {
 			lines = append(lines, codePaneLine(l, p.info))
 		}
-		if len(lines) == 0 {
-			// An empty fence still says a code block was there.
-			lines = append(lines, codePaneLine("", p.info))
-		}
-		return mdBlock{kind: mdCode, lines: lines, info: p.info}, true
+		return mdBlock{kind: mdCode, lines: lines, text: text, info: p.info}, true
 	case mdItem:
 		if p.isEmpty() {
 			return mdBlock{}, false
 		}
 		return mdBlock{
-			kind:  mdItem,
-			lines: []paneLine{itemPaneLine(p.depth, p.marker, strings.Join(p.text, " "), p.refs)},
+			kind:   mdItem,
+			lines:  []paneLine{itemPaneLine(p.depth, p.marker, strings.Join(p.text, " "), p.refs)},
+			depth:  p.depth,
+			marker: p.marker,
+			text:   p.text,
 		}, true
 	case mdQuote:
 		if p.isEmpty() {
@@ -373,6 +403,8 @@ func (p mdPending) block() (mdBlock, bool) {
 		return mdBlock{
 			kind:  mdQuote,
 			lines: []paneLine{quotePaneLine(p.depth, strings.Join(p.text, " "), p.refs)},
+			depth: p.depth,
+			text:  p.text,
 		}, true
 	default:
 		if p.isEmpty() {
@@ -381,6 +413,7 @@ func (p mdPending) block() (mdBlock, bool) {
 		return mdBlock{
 			kind:  mdParagraph,
 			lines: []paneLine{paragraphPaneLine(strings.Join(p.text, " "), p.refs)},
+			text:  p.text,
 		}, true
 	}
 }
@@ -660,7 +693,7 @@ func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) [
 			// colour is gone.
 			if body, next, ok := codeSpanAt(text, i); ok {
 				flush()
-				segs = append(segs, segment{text: body, style: mdCodeSpanStyle(base)})
+				segs = append(segs, segment{text: body, style: mdCodeSpanStyle(base), code: true})
 				i = next
 				continue
 			}
@@ -804,4 +837,193 @@ func runLen(s string, i int, ch byte) int {
 		n++
 	}
 	return n
+}
+
+// The other two emitters over the same blocks (task 076).
+//
+// markdownLines above draws the pane. rawLines shows the source instead of
+// the render, and markdownPlainText is the clipboard's "structure without
+// punctuation" payload. All three read one parse, so a construct the pane
+// understands is a construct the clipboard understands.
+
+// rawLines shows the stored Markdown as source: one pane line per source
+// line, preformatted, no parse at all.
+//
+// Preformatted rather than reflowed (decision 3): raw mode exists to answer
+// "what did the agent actually write", and a source line whose leading spaces
+// were collapsed is not that line. Long lines hard-wrap at the pane's edge,
+// which wrapPre already does for fenced code.
+//
+// It still goes through wrapLine's segment emission, which is where §16's
+// ANSI/C0/C1 stripping lives. "Exact stored Markdown" means the agent's bytes
+// as Markdown *source*, not the agent's bytes as terminal input: raw mode is
+// the escape hatch for a surprising render, not a hole in the one chokepoint
+// §16 was added to guarantee.
+func rawLines(text string, width int) []string {
+	src := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(src))
+	for _, line := range src {
+		out = append(out, wrapLine(paneLine{
+			gutter:      gutterNone,
+			gutterStyle: styleDim,
+			pre:         true,
+			segs:        []segment{{text: line, style: styleRaw}},
+		}, width)...)
+	}
+	return out
+}
+
+// styleRaw draws raw source. It is dimmer than prose on purpose: raw mode is
+// a mode, and the pane has to say so on every line rather than only in the
+// header, since a reader who scrolled away from the header is the one most
+// likely to wonder why the headings stopped rendering.
+var styleRaw = lipgloss.NewStyle().Faint(true)
+
+// markdownPlainText renders assistant prose as unstyled, unwrapped plain
+// text: the structure the pane draws, minus lipgloss and minus width
+// (decision 5).
+//
+// Unwrapped because the payload is built from the source and never from
+// rendered lines — a copy made at width 40 and one made at width 200 are
+// byte-identical, since the pane's hard wraps are a property of the pane
+// (decision 4). The markers are the pane's own, so what lands on the
+// clipboard is recognisably what was on screen — including a link's `[n]`
+// and the reference block that resolves it (task 075 decision 2), which is
+// the only place the destination survives once the punctuation is gone.
+func markdownPlainText(text string) string {
+	refs := &mdRefs{}
+	blocks := parseMarkdown(sanitizeText(text), refs)
+	out := make([]string, 0, len(blocks)*2)
+	prev := mdParagraph
+	for i, b := range blocks {
+		if i > 0 && mdNeedsBlank(prev, b.kind) {
+			out = append(out, "")
+		}
+		out = append(out, b.plainLines(refs)...)
+		prev = b.kind
+	}
+	if len(refs.order) > 0 {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		for i, dest := range refs.order {
+			out = append(out, "["+strconv.Itoa(i+1)+"] "+dest)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// mdPlainRule is a thematic break with no pane to be as wide as. Three cells,
+// not a run sized to some assumed terminal: the clipboard has no width.
+const mdPlainRule = "───"
+
+// plainLines emits one block as plain text.
+//
+// refs is the message's registry, already filled by the parse: an inline link
+// re-resolves to the number the pane gave it, because mdRefs.add is a lookup
+// on second sight.
+func (b mdBlock) plainLines(refs *mdRefs) []string {
+	switch b.kind {
+	case mdRule:
+		return []string{mdPlainRule}
+	case mdCode:
+		// Interior lines verbatim, fence and info string dropped: the fence
+		// is Markdown punctuation, and this payload carries none.
+		return slices.Clone(b.text)
+	case mdTable:
+		return tablePlainLines(b.table)
+	case mdItem:
+		marker := b.marker
+		if marker == "" {
+			marker = mdBulletsByDepth[min(b.depth, len(mdBulletsByDepth)-1)]
+		}
+		return []string{strings.Repeat("  ", b.depth) + marker + inlinePlain(b.joined(), refs)}
+	case mdQuote:
+		return []string{strings.Repeat(mdQuoteBar, b.depth) + inlinePlain(b.joined(), refs)}
+	default:
+		// Headings and paragraphs alike: a heading's text is its own line,
+		// with no `#` in front of it and no glyph standing in for one.
+		return []string{inlinePlain(b.joined(), refs)}
+	}
+}
+
+// tablePlainLines emits a table as the stacked records renderMDTableStacked
+// draws (task 075), because that is the form that does not depend on a width:
+// an aligned table is arithmetic over the pane's columns, and the clipboard
+// has none. The cells are already segments, so the punctuation is gone by
+// construction and a link in a cell keeps the number it was given.
+func tablePlainLines(t *mdTableBlock) []string {
+	if t == nil {
+		return nil
+	}
+	keys := make([]string, len(t.header))
+	for i, h := range t.header {
+		keys[i] = h.plain
+	}
+	out := make([]string, 0, len(t.rows)*len(keys))
+	for r, row := range t.rows {
+		if r > 0 {
+			out = append(out, "")
+		}
+		for c, cell := range row {
+			prefix := "  "
+			if c == 0 {
+				prefix = mdBulletsByDepth[len(mdBulletsByDepth)-1]
+			}
+			key := ""
+			if c < len(keys) {
+				key = keys[c]
+			}
+			out = append(out, prefix+key+": "+segsPlain(cell.segs))
+		}
+	}
+	if len(out) == 0 {
+		// A table with a header and no body rows still says what its columns
+		// were.
+		out = append(out, strings.Join(keys, ", "))
+	}
+	return out
+}
+
+// codeBlocks returns every fenced block's interior, in document order, for
+// the copy picker to offer. Whitespace and tabs are kept: a code block that
+// lost its indentation would not be the code the agent wrote.
+func codeBlocks(text string) []string {
+	var out []string
+	for _, b := range parseMarkdown(sanitizeText(text), &mdRefs{}) {
+		if b.kind == mdCode {
+			out = append(out, strings.Join(b.text, "\n"))
+		}
+	}
+	return out
+}
+
+// inlinePlain strips inline Markdown from one line of prose.
+//
+// It runs the *same* scanner the pane does and reads its output: emphasis
+// already arrives with its marks gone, because inlineSegments emits the body
+// rather than the delimiters, and a link arrives as its label plus the ` [n]`
+// the pane shows. So the only thing left to undo is the code span's
+// backticks — which is exactly what segment.code marks.
+func inlinePlain(text string, refs *mdRefs) string {
+	var b strings.Builder
+	for _, seg := range inlineSegments(text, lipgloss.NewStyle(), 0, refs) {
+		if seg.code {
+			b.WriteString(codeSpanBody(seg.text))
+			continue
+		}
+		b.WriteString(seg.text)
+	}
+	return b.String()
+}
+
+// codeSpanBody drops a code span's matching backtick runs. The run length is
+// whatever opened the span, so a double-backtick span keeps any single
+// backtick inside it.
+func codeSpanBody(span string) string {
+	n := runLen(span, 0, '`')
+	if n == 0 || len(span) < 2*n {
+		return span
+	}
+	return span[n : len(span)-n]
 }

@@ -22,6 +22,28 @@ import (
 // (decision 4).
 const chatExpandKey = "ctrl+r"
 
+// copyDocs is the chat's source for the copy picker: every assistant
+// document in the loaded conversation, newest first — the newest turn's
+// newest record is "message 1".
+//
+// A turn whose transcript has gone to retention contributes its ResultText
+// instead (§17), which is what the pane is drawing for it: the picker offers
+// what is on screen, not what is on disk.
+func (v *chatView) copyDocs() []string {
+	docs := make([]string, 0, len(v.turns))
+	for i := len(v.turns) - 1; i >= 0; i-- {
+		t := &v.turns[i]
+		if recs := v.turnRecords[t.Seq]; len(recs) > 0 {
+			docs = append(docs, copyDocsFromRecords(recs)...)
+			continue
+		}
+		if t.ResultText != "" {
+			docs = append(docs, t.ResultText)
+		}
+	}
+	return docs
+}
+
 func (v *chatView) render(width, height int) string {
 	if width < 4 || height < 4 {
 		return ""
@@ -92,6 +114,9 @@ func (v *chatView) headerLine(width int) string {
 	if l := v.level.get(); l != levelNormal {
 		right = l.String() + "  ·  " + right
 	}
+	if v.raw.get() {
+		right = "raw  ·  " + right
+	}
 	if !v.following {
 		right = "⏸ " + right
 	}
@@ -111,6 +136,7 @@ func (v *chatView) bodyLines(width int) []string {
 			"… earlier output truncated — the transcripts on disk are whole"))
 	}
 	level := v.level.get()
+	raw := v.raw.get()
 	for i := range v.turns {
 		t := &v.turns[i]
 		v.turnAt[t.Seq] = len(lines)
@@ -119,7 +145,7 @@ func (v *chatView) bodyLines(width int) []string {
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
 			lines = append(lines, outputLines(recs, level, width,
-				lineOpts{expandKey: chatExpandKey})...)
+				lineOpts{expandKey: chatExpandKey, raw: raw})...)
 		case t.State == "running":
 			// Nothing has arrived yet; the tail fills in as it does.
 		case t.ResultText != "":
@@ -135,7 +161,10 @@ func (v *chatView) bodyLines(width int) []string {
 			// narrowing this used to apply — a strict improvement, since a
 			// retained-away answer is all the turn has left and the cap hid
 			// its tail.
-			lines = append(lines, markdownLines(t.ResultText, width)...)
+			// It follows the rendered/raw toggle too (task 076 decision 2):
+			// a retained-away answer is still assistant prose, and the
+			// mode is the session's, not the record's.
+			lines = append(lines, assistantLines(t.ResultText, width, raw)...)
 		}
 		if t.FailReason != "" {
 			lines = append(lines, " "+styleBad.Render(
@@ -159,6 +188,7 @@ func (v *chatView) footerLines(width int) []string {
 	}
 	out = append(out, v.composer.View())
 	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
+		rawToggleKey + " raw · " + copyPickKey + " copy · " +
 		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
 	out = append(out, styleDim.Render(ansi.Truncate(hint, width, "…")))
 	return out

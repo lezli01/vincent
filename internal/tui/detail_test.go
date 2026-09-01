@@ -17,7 +17,7 @@ var fixedNow = time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 
 func newTestDetail(t *testing.T) *detail {
 	t.Helper()
-	d := newDetail(testCtx(t), newLevelHolder())
+	d := newDetail(testCtx(t), newLevelHolder(), newRawHolder())
 	d.now = func() time.Time { return fixedNow }
 	d.width, d.height = 120, 30
 	return d

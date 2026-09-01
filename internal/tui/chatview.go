@@ -92,6 +92,9 @@ type chatView struct {
 	// level is the session's one verbosity level, shared with the task
 	// workspace's output pane (decision 3).
 	level *levelHolder
+	// raw is the session's rendered/raw choice, shared with the task
+	// workspace's output pane (task 076 decision 2).
+	raw *rawHolder
 
 	// vp scrolls the conversation; following means it is showing the end,
 	// which a manual scroll drops and ctrl+g re-arms (decision 5).
@@ -118,7 +121,7 @@ type chatView struct {
 	width, height int
 }
 
-func newChatView(level *levelHolder) *chatView {
+func newChatView(level *levelHolder, raw *rawHolder) *chatView {
 	ta := textarea.New()
 	ta.Placeholder = "message… (enter sends, shift+enter for a newline)"
 	ta.SetHeight(3)
@@ -126,6 +129,7 @@ func newChatView(level *levelHolder) *chatView {
 		now:         time.Now,
 		composer:    ta,
 		level:       level,
+		raw:         raw,
 		vp:          viewport.New(),
 		following:   true,
 		turnRecords: map[int][]apiclient.TranscriptRecord{},
@@ -265,6 +269,9 @@ func (v *chatView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case chatLoadedMsg:
 		v.applyLoaded(msg)
 		return v, v.fetchTranscripts()
+	case clipboardResultMsg:
+		v.note, v.noteBad = msg.notice()
+		return v, nil
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
@@ -604,6 +611,15 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.level.cycle()
 		v.bodyDirty = true
 		return v, nil
+	case rawToggleKey:
+		// Ctrl-modified for the same reason ctrl+r is: the composer owns
+		// every letter, so a bare key would land in the draft (task 076
+		// decision 7).
+		v.raw.toggle()
+		v.bodyDirty = true
+		return v, nil
+	case copyPickKey:
+		return v, openCopyPicker(v.copyDocs())
 	case "pgup":
 		v.vp.PageUp()
 		v.syncFollowToViewport()

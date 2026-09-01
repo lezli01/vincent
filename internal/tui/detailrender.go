@@ -176,6 +176,12 @@ func (d *detail) outputTitle() string {
 	if l := d.level.get(); l != levelNormal {
 		level = styleDim.Render(" · " + l.String())
 	}
+	// Raw rides there too, and for a stronger version of the same reason: a
+	// conversation with no Markdown in it looks identical either way, so the
+	// title is the only thing that says which mode the pane is in.
+	if d.raw.get() {
+		level += styleDim.Render(" · raw")
+	}
 	return strip + level + d.followIndicator()
 }
 
@@ -984,7 +990,7 @@ func (d *detail) outputLines() []string {
 		note = "… earlier output truncated — press e for the whole transcript"
 	}
 	return outputLines(d.records, d.level.get(), max(d.width, 1),
-		lineOpts{expandKey: "v", truncatedNote: note})
+		lineOpts{expandKey: "v", truncatedNote: note, raw: d.raw.get()})
 }
 
 // plain is a record with the blank gutter: assistant prose and command
