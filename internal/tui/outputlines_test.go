@@ -252,6 +252,11 @@ func TestToolResultWithoutSummaryStillSaysWhether(t *testing.T) {
 
 // TestTurnSeparation pins the blank line: assistant prose that follows
 // anything else is a new turn, and consecutive prose is not.
+//
+// It also pins what #291 changed underneath that rule. Consecutive prose
+// records are one Markdown document, so two records that each hold part of a
+// paragraph reflow into the one paragraph they were written as, rather than
+// staying two documents on two lines.
 func TestTurnSeparation(t *testing.T) {
 	d := newTestDetail(t)
 	d.width = 80
@@ -262,7 +267,7 @@ func TestTurnSeparation(t *testing.T) {
 		{Type: "agent.output", Text: "second turn"},
 	}
 	got := plainLines(d.outputLines())
-	want := []string{"  first", "  still first", "▸ Bash", "", "  second turn"}
+	want := []string{"  first still first", "▸ Bash", "", "  second turn"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("lines = %q, want %q", got, want)
 	}

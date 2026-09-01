@@ -644,20 +644,53 @@ type lineOpts struct {
 	// rather than as a fourth argument because it is a pane-specific
 	// display choice, which is exactly what this struct carries.
 	raw bool
+	// cache memoizes rendered documents for the pane that owns it (#291).
+	// Nil renders every document every time, which is what a caller with no
+	// pane behind it wants.
+	cache *mdCache
 }
 
 // outputLines renders the normalized records into wrapped pane lines.
 //
-// Two rules shape the result beyond the per-record rendering. Consecutive
+// Three rules shape the result beyond the per-record rendering. Consecutive
 // unrecognized lines collapse into a count — a dialect vincent does not model
 // must not be able to drown the output a human is reading — and `v` expands
-// them rather than leaving the count a dead end. And an assistant message
-// that follows anything else gets a blank line before it, which is what
-// separates one turn from the next without spending a column on it.
+// them rather than leaving the count a dead end. An assistant message that
+// follows anything else gets a blank line before it, which is what separates
+// one turn from the next without spending a column on it. And a run of
+// consecutive assistant records is one Markdown document (#291): see
+// assistantdoc.go for what closes one and why.
 func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width int, opts lineOpts) []string {
+	lines, _ := outputLinesAt(records, nil, level, width, opts)
+	return lines
+}
+
+// outputLinesAt is outputLines plus, for every line, what it came from.
+//
+// seqs is the record window's client-assigned identity slice; the anchors it
+// returns are what a paused pane restores its position from after a rebuild.
+// A caller with no identities passes nil and gets positional ones, which is
+// enough to render but not to survive a prune.
+func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level outputLevel, width int, opts lineOpts) ([]string, []lineAnchor) {
 	lines := make([]string, 0, len(records)+1)
+	anchors := make([]lineAnchor, 0, len(records)+1)
+	// note appends lines that belong to no record: they carry the zero
+	// anchor and are never a restore target.
+	note := func(added []string) {
+		lines = append(lines, added...)
+		for range added {
+			anchors = append(anchors, lineAnchor{})
+		}
+	}
+	// fromRecord appends a record's lines, each anchored to it.
+	fromRecord := func(seq int64, added []string) {
+		for i, l := range added {
+			lines = append(lines, l)
+			anchors = append(anchors, lineAnchor{rec: seq, off: i})
+		}
+	}
 	if opts.truncatedNote != "" {
-		lines = append(lines, styleDim.Render(gutterNone+opts.truncatedNote))
+		note([]string{styleDim.Render(gutterNone + opts.truncatedNote)})
 	}
 	// sawOutput drives the T4.16 result de-duplication: every dialect's
 	// result text repeats assistant messages already on screen — cursor's is
@@ -669,19 +702,25 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 		if rawRun == 0 {
 			return
 		}
-		lines = append(lines, styleDim.Render(fmt.Sprintf(
-			"%s… %d unrecognized line(s) (%s)", gutterNone, rawRun, opts.expandKey)))
+		note([]string{styleDim.Render(fmt.Sprintf(
+			"%s… %d unrecognized line(s) (%s)", gutterNone, rawRun, opts.expandKey))})
 		rawRun = 0
 	}
-	for _, rec := range records {
+	docs := assistantDocs(records, seqs)
+	docAt := make(map[int]int, len(docs))
+	for i, doc := range docs {
+		docAt[doc.first] = i
+	}
+	for i := 0; i < len(records); i++ {
+		rec := records[i]
 		if rec.Type == "agent.raw" {
 			if level == levelVerbose {
 				flushRaw()
-				lines = append(lines, wrapLine(paneLine{
+				fromRecord(seqAt(seqs, i), wrapLine(paneLine{
 					gutter:      gutterNone,
 					gutterStyle: styleDim,
 					segs:        []segment{{text: rec.Line, style: styleDim}},
-				}, width)...)
+				}, width))
 				lastWasOutput = false
 				continue
 			}
@@ -689,26 +728,38 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 			continue
 		}
 		flushRaw()
-		if rec.Type == "agent.output" {
+		if k, ok := docAt[i]; ok {
 			// Assistant prose is the one record type that is Markdown
 			// (task 073 decision 5), and it is handled here rather than in
-			// renderRecord because one record now yields several pane lines
-			// — the same reason agent.thinking is handled above.
-			block := assistantLines(rec.Text, width, opts.raw)
+			// renderRecord because one document now yields several pane
+			// lines — the same reason agent.thinking is handled below — and
+			// because it spans a run of records rather than one of them.
+			doc := docs[k]
+			i = doc.last
+			block, blockAt := opts.cache.lines(doc.text, width, level, opts.raw)
 			if len(block) == 0 {
 				continue
 			}
 			if !lastWasOutput && len(lines) > 0 {
-				lines = append(lines, "")
+				note([]string{""})
 			}
 			sawOutput = true
-			lines = append(lines, block...)
+			off, prev := 0, -1
+			for n, l := range block {
+				b := blockOrdinal(blockAt, n)
+				if b != prev {
+					off, prev = 0, b
+				}
+				lines = append(lines, l)
+				anchors = append(anchors, lineAnchor{rec: doc.seq, block: b, off: off})
+				off++
+			}
 			lastWasOutput = true
 			continue
 		}
 		if rec.Type == "agent.thinking" {
 			if block := thinkingBlock(rec.Text, level, width, opts.expandKey); len(block) > 0 {
-				lines = append(lines, block...)
+				fromRecord(seqAt(seqs, i), block)
 				lastWasOutput = false
 			}
 			continue
@@ -719,27 +770,38 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 		}
 		if pl.isOutput {
 			if !lastWasOutput && len(lines) > 0 {
-				lines = append(lines, "")
+				note([]string{""})
 			}
 			sawOutput = true
 		}
-		lines = append(lines, wrapLine(pl, width)...)
+		fromRecord(seqAt(seqs, i), wrapLine(pl, width))
 		lastWasOutput = pl.isOutput
 	}
 	flushRaw()
-	return lines
+	return lines, anchors
 }
 
-// assistantLines renders one assistant document, rendered or raw. It is the
-// single branch task 076 adds to the pane: the two call sites that draw
-// assistant prose — this one and the chat's §17 retention fallback — go
-// through it, and nothing else changes, because nothing else was ever
-// interpreted as Markdown (task 073 decision 5).
-func assistantLines(text string, width int, raw bool) []string {
-	if raw {
-		return rawLines(text, width)
+// blockOrdinal is the block a rendered line belongs to, tolerating a renderer
+// that reported none.
+func blockOrdinal(at []int, i int) int {
+	if i < len(at) {
+		return at[i]
 	}
-	return markdownLines(text, width)
+	return 0
+}
+
+// assistantBlockLines renders one assistant document, rendered or raw, and
+// reports the Markdown block each line came from.
+//
+// It is the single branch task 076 adds to the pane: the call sites that draw
+// assistant prose — the pane and the chat's §17 retention fallback — reach it
+// through the memo (see markdowncache.go), and nothing else changes, because
+// nothing else was ever interpreted as Markdown (task 073 decision 5).
+func assistantBlockLines(text string, width int, raw bool) ([]string, []int) {
+	if raw {
+		return rawBlockLines(text, width)
+	}
+	return markdownBlockLines(text, width)
 }
 
 // renderRecord maps one normalized record to a pane line. A record with

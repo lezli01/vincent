@@ -357,6 +357,14 @@ colour alone would not survive. There are no timestamps: on an 80-column pane
 they would spend nine columns of every line answering a question the timeline
 already answers per attempt.
 
+**A message is a message, however it arrived.** An agent sometimes delivers one
+answer as several records. Consecutive assistant records are read as one
+Markdown document, so a table, a list or a fenced block spread across them is
+the one thing it was written as, and its link references are numbered once for
+the whole message. Anything that is not assistant prose — reasoning, a tool
+call, command output — ends the message, and what comes after it starts the
+next.
+
 **What the agent said is rendered as Markdown.** Headings, emphasis, strong
 text, ordered and unordered lists, nested lists, blockquotes, inline code,
 fenced code and horizontal rules become terminal structure instead of literal
@@ -395,6 +403,12 @@ already drawn.
 
 The chat workspace's conversation body is this same pane, at the same level.
 
+**Scrolling away from the tail keeps your place.** A pane that is not following
+holds onto the block at the top of it, so resizing the terminal, changing the
+level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
+dropped from the window all leave you looking at the same thing. Press `f`
+(`ctrl+g` in a chat) to go back to following the tail.
+
 ### Seeing the source, and taking it away
 
 `ctrl+o` swaps the rendered view for the **stored Markdown**, exactly as the
@@ -416,7 +430,9 @@ the assistant prose on screen, newest message first.
 
 Payloads come from the source, not from what is drawn, so the pane's width never
 ends up baked into what you paste, and nothing that arrives after you open the
-picker moves the row you are pointing at. Escape sequences and control
+picker moves the row you are pointing at. A row names a message rather than a
+position in it, so picking one that is still being written copies the whole
+message as it stands at that moment. Escape sequences and control
 characters are stripped on the way out for the same reason they are stripped on
 the way in: a clipboard gets pasted into a terminal.
 

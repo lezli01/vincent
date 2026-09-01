@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -171,7 +172,7 @@ func TestChatRetentionFallbackFollowsRaw(t *testing.T) {
 
 // TestCopyPayloads pins what each of the three payloads is (decision 5).
 func TestCopyPayloads(t *testing.T) {
-	items := copyDocs([]string{readerDoc})
+	items := copyDocs(literalDocs(readerDoc))
 
 	md := copyOne(t, items, copyLabelMarkdown)
 	if md != readerDoc {
@@ -210,7 +211,7 @@ func TestCopyPayloadsAreWidthIndependent(t *testing.T) {
 	for i, width := range []int{40, 200} {
 		outputLines(recs, levelNormal, width, lineOpts{expandKey: "v"})
 		var b strings.Builder
-		for _, it := range copyDocs(copyDocsFromRecords(recs)) {
+		for _, it := range copyDocs(copyDocsFromRecords(recs, nil)) {
 			b.WriteString(it.label + "\x00" + it.text + "\x00")
 		}
 		payloads[i] = b.String()
@@ -225,7 +226,7 @@ func TestCopyPayloadsAreWidthIndependent(t *testing.T) {
 func TestCopyPayloadsAreSanitized(t *testing.T) {
 	wrote := stubClipboard(t, nil)
 	evil := "# Title\x1b[2J\n\nbody\x07 and \x9bmore\n"
-	items := copyDocs([]string{evil})
+	items := copyDocs(literalDocs(evil))
 	if len(items) == 0 {
 		t.Fatal("no copy rows for a document that has text")
 	}
@@ -251,9 +252,12 @@ func TestCopyPickerLists(t *testing.T) {
 		{Type: "agent.output", Text: twin},
 		{Type: "agent.thinking", Text: "not prose"},
 		{Type: "agent.output", Text: readerDoc},
+		// A reasoning record closes a document, so the two prose records
+		// around it stay two of them (#291).
+		{Type: "agent.thinking", Text: "not prose"},
 		{Type: "agent.output", Text: twin},
 	}
-	items := copyDocs(copyDocsFromRecords(recs))
+	items := copyDocs(copyDocsFromRecords(recs, nil))
 
 	// Newest first, and two documents with identical opening text stay
 	// distinguishable by their ordinal.
@@ -279,9 +283,10 @@ func TestCopyPickerLists(t *testing.T) {
 	}
 }
 
-// TestCopyPickerCapturesAtPickTime is the "targets remain stable" criterion:
-// the rows hold text, not indices, so nothing that happens afterwards moves
-// the target (decision 6).
+// TestCopyPickerCapturesAtPickTime is the "targets remain stable" criterion,
+// under #291's amended rule: a row is a reference to a document, and a
+// reference whose records the prune took falls back to the text captured when
+// the popup was built, so a pick can never fail.
 func TestCopyPickerCapturesAtPickTime(t *testing.T) {
 	d := newTestDetail(t)
 	d.taskID = 4
@@ -295,9 +300,12 @@ func TestCopyPickerCapturesAtPickTime(t *testing.T) {
 	}
 	p := newReaderPicker(msg.items)
 
-	// The world moves on: more output arrives, the front of the slice is
-	// pruned, and the pane is resized.
-	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "something else entirely"}}
+	// The world moves on: the window is replaced by a later fetch, which is
+	// what a prune looks like from here, and the pane is resized.
+	d.applyTranscript(detailTranscriptMsg{
+		runID:   d.displayRun,
+		records: []apiclient.TranscriptRecord{{Type: "agent.output", Text: "something else entirely"}},
+	})
 	d.width = 40
 	d.outputLines()
 
@@ -305,15 +313,63 @@ func TestCopyPickerCapturesAtPickTime(t *testing.T) {
 	if !done || run == nil {
 		t.Fatal("enter did not pick a row")
 	}
-	if run.text != readerDoc {
-		t.Fatalf("the pick copied %q, want the document that was on screen", run.text)
+	if got := pickText(*run, msg.resolve); got != readerDoc {
+		t.Fatalf("the pick copied %q, want the document that was on screen", got)
 	}
+}
+
+// TestCopyPickerResolvesGrownDocument is the other half of that rule: a
+// document still on screen that has *grown* since the popup opened copies as
+// it is now, because "copy this message" should yield the whole message.
+func TestCopyPickerResolvesGrownDocument(t *testing.T) {
+	d := newTestDetail(t)
+	d.taskID = 4
+	loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
+	d.applyTranscript(detailTranscriptMsg{
+		runID:   d.displayRun,
+		records: []apiclient.TranscriptRecord{{Type: "agent.output", Text: "first half."}},
+	})
+	d.width = 200
+
+	msg, ok := drain(d.updateKey(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})).(openCopyPickerMsg)
+	if !ok {
+		t.Fatal("ctrl+y did not open the picker")
+	}
+	p := newReaderPicker(msg.items)
+
+	// The same document grows by another record while the popup is up.
+	d.appendChunk(apiclient.OutputNote{
+		Type:    "agent.output",
+		RunID:   d.displayRun,
+		Offset:  9,
+		Payload: json.RawMessage(`{"type":"agent.output","text":"second half."}`),
+	})
+
+	run, done, _ := p.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !done || run == nil {
+		t.Fatal("enter did not pick a row")
+	}
+	want := "first half.\nsecond half."
+	if got := pickText(*run, msg.resolve); got != want {
+		t.Fatalf("the pick copied %q, want the whole document %q", got, want)
+	}
+}
+
+// literalDocs offers bare text with no identity behind it, which is what the
+// payload tests want: they exercise what a row carries, not what a reference
+// resolves to.
+func literalDocs(texts ...string) []copyDoc {
+	out := make([]copyDoc, 0, len(texts))
+	for _, text := range texts {
+		out = append(out, copyDoc{text: text})
+	}
+	return out
 }
 
 // TestCopyPickerFilters: the search line narrows the rows, as the palette's
 // does.
 func TestCopyPickerFilters(t *testing.T) {
-	p := newReaderPicker(copyDocs([]string{readerDoc}))
+	p := newReaderPicker(copyDocs(literalDocs(readerDoc)))
 	for _, r := range "code" {
 		p.update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
@@ -565,7 +621,7 @@ func TestCopyPayloadsCarryTask075Blocks(t *testing.T) {
 		"| Step | State |\n" +
 		"|---|---|\n" +
 		"| build | ok |\n"
-	items := copyDocs([]string{doc})
+	items := copyDocs(literalDocs(doc))
 
 	plain := copyOne(t, items, copyLabelPlain)
 	for _, punct := range []string{"](", "|", "---"} {

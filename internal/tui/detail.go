@@ -152,6 +152,15 @@ type detail struct {
 	// next frame rather than on every appended chunk.
 	outputDirty bool
 	builtWidth  int
+	// seqs is the client-assigned identity of each record in d.records,
+	// stamped on ingest and pruned with it, and stamp is where they come
+	// from (#291). anchors is the last build's per-line provenance, which is
+	// what a paused pane restores its position from.
+	stamp   seqStamp
+	seqs    []int64
+	anchors []lineAnchor
+	// mdcache memoizes rendered assistant documents for this pane.
+	mdcache mdCache
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
@@ -359,6 +368,8 @@ func (d *detail) deselect() {
 // to another attempt.
 func (d *detail) resetOutput() {
 	d.records = nil
+	d.seqs = nil
+	d.anchors = nil
 	d.nextOffset = 0
 	d.fetching = false
 	d.fetchErr = nil
@@ -511,6 +522,7 @@ func (d *detail) applyTranscript(msg detailTranscriptMsg) {
 	}
 	d.fetchErr = nil
 	d.records = msg.records
+	d.seqs = d.stamp.take(len(msg.records))
 	d.nextOffset = msg.next
 	d.drainBuffer()
 	d.outputDirty = true
@@ -540,8 +552,10 @@ func (d *detail) drainBuffer() {
 func (d *detail) appendChunk(note apiclient.OutputNote) {
 	rec := recordFromChunk(note)
 	d.records = append(d.records, rec)
+	d.seqs = append(d.seqs, d.stamp.take(1)...)
 	if len(d.records) > maxRecords {
 		d.records = d.records[len(d.records)-maxRecords:]
+		d.seqs = d.seqs[len(d.seqs)-maxRecords:]
 		d.truncated = true
 	}
 	if note.Offset > d.nextOffset {
@@ -708,7 +722,10 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case rawToggleKey:
 		return d.toggleRaw()
 	case copyPickKey:
-		return openCopyPicker(copyDocsFromRecords(d.records))
+		return openCopyPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
+			func(seq int64) (string, bool) {
+				return resolveDocs(d.records, d.recordSeqs(), seq)
+			})
 	}
 
 	// Action keys work from any focus: they act on the task, not on a pane.
@@ -936,4 +953,11 @@ func (d *detail) toggleTab() tea.Cmd {
 	d.tab = tabDiff
 	d.diff.openTask(d.taskID)
 	return d.diff.fetch(d.client, true)
+}
+
+// recordSeqs is the pane's identity slice, stamped if some path installed
+// records without going through applyTranscript or appendChunk.
+func (d *detail) recordSeqs() []int64 {
+	d.seqs = d.stamp.fit(d.seqs, len(d.records))
+	return d.seqs
 }

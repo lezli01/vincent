@@ -24,16 +24,44 @@ import (
 // stays dormant until asked for, follows palette.go's shape, and owns the
 // keyboard while it is up, at the top of the §15 esc stack.
 //
-// Each row **captures its payload when the popup is built** rather than
-// holding an index into the records. That is what makes a target stable
-// across resize, transcript reload and incremental rendering: there is no
-// index left to drift when a chunk arrives, a re-render happens, or the
-// chat's maxRecords cap prunes the front of the slice. When #291 lands a
-// semantic document model the rows become references to it, and none of the
-// payloads below change.
+// Each row is a **reference to a document**, resolved when it is picked, with
+// the text captured at build time as its fallback (#291, which landed the
+// identity model task 076 decision 6 deliberately shipped without). A
+// reference rather than an index: an index would drift the moment a chunk
+// arrived or the chat's maxRecords cap pruned the front of the slice, and a
+// document's seq does neither.
+//
+// One behaviour change falls out of resolving late, and it is deliberate:
+// picking a document that has grown since the popup opened copies it as it is
+// now, because "copy this message" should yield the whole message. A finished
+// document — the common case — is unaffected. A reference that no longer
+// resolves, because the prune took its records, copies the text captured when
+// the popup was built, so a pick can never fail.
 
-// copyItem is one offer: what it is called, and the exact text a pick puts on
-// the clipboard.
+// copyKind is which payload of a document a row offers (decision 5). It is
+// kept beside the captured text so a pick can re-derive the payload from the
+// document as it stands now.
+type copyKind int
+
+const (
+	copyKindMarkdown copyKind = iota
+	copyKindPlain
+	copyKindCode
+)
+
+// copyDoc is one assistant document offered to the picker: its text as the
+// pane drew it, and the identity a pick resolves against. A document with no
+// identity — a chat turn whose transcript went to retention and contributes
+// its ResultText instead (§17) — has ref.ok false and is always copied from
+// the captured text.
+type copyDoc struct {
+	seq  int64
+	text string
+	ok   bool
+}
+
+// copyItem is one offer: what it is called, the exact text a pick puts on the
+// clipboard if the reference cannot be resolved, and the reference itself.
 type copyItem struct {
 	// group is the document the row belongs to — "message 1" is the newest.
 	// Ordinals rather than the opening words alone, because two documents
@@ -44,6 +72,11 @@ type copyItem struct {
 	// findable when a conversation has twenty of them.
 	snippet string
 	text    string
+	// ref names the document this row was built from, and kind/index say
+	// which of its payloads to re-derive at pick time.
+	ref   copyDoc
+	kind  copyKind
+	index int
 }
 
 // copyItemLabels are the three payloads (decision 5).
@@ -56,15 +89,21 @@ const (
 // copyItemsFrom lists what can be copied out of one assistant document, in
 // the order a reader would look for them: the whole thing as its source, the
 // whole thing without the punctuation, then each fenced block.
-func copyItemsFrom(group, text string) []copyItem {
-	clean := sanitizeText(text)
+func copyItemsFrom(group string, doc copyDoc) []copyItem {
+	clean := sanitizeText(doc.text)
 	if strings.TrimSpace(clean) == "" {
 		return nil
 	}
 	snippet := copySnippet(clean)
 	out := []copyItem{
-		{group: group, label: copyLabelMarkdown, snippet: snippet, text: clean},
-		{group: group, label: copyLabelPlain, snippet: snippet, text: markdownPlainText(clean)},
+		{
+			group: group, label: copyLabelMarkdown, snippet: snippet,
+			text: clean, ref: doc, kind: copyKindMarkdown,
+		},
+		{
+			group: group, label: copyLabelPlain, snippet: snippet,
+			text: markdownPlainText(clean), ref: doc, kind: copyKindPlain,
+		},
 	}
 	blocks := codeBlocks(clean)
 	for i, code := range blocks {
@@ -76,21 +115,48 @@ func copyItemsFrom(group, text string) []copyItem {
 		}
 		out = append(out, copyItem{
 			group: group, label: label, snippet: copySnippet(code), text: code,
+			ref: doc, kind: copyKindCode, index: i,
 		})
 	}
 	return out
+}
+
+// copyPayload re-derives one row's payload from a document's current source.
+// It is copyItemsFrom's body, minus the labelling, and the two must agree:
+// what a pick copies is what the row said it would, read from the document as
+// it stands now.
+func copyPayload(text string, kind copyKind, index int) (string, bool) {
+	clean := sanitizeText(text)
+	if strings.TrimSpace(clean) == "" {
+		return "", false
+	}
+	switch kind {
+	case copyKindMarkdown:
+		return clean, true
+	case copyKindPlain:
+		return markdownPlainText(clean), true
+	case copyKindCode:
+		blocks := codeBlocks(clean)
+		if index < 0 || index >= len(blocks) {
+			// The document changed shape under the popup and the block the
+			// row named is gone; the captured text is what it promised.
+			return "", false
+		}
+		return blocks[index], true
+	}
+	return "", false
 }
 
 // copyDocs collects the picker's rows from assistant documents already
 // handed to it newest-first. It is the one place the "message N" ordinals are
 // assigned, so the task pane's records and the chat's turns number the same
 // way.
-func copyDocs(docs []string) []copyItem {
+func copyDocs(docs []copyDoc) []copyItem {
 	out := make([]copyItem, 0, len(docs)*2)
 	n := 0
-	for _, text := range docs {
+	for _, doc := range docs {
 		group := fmt.Sprintf("message %d", n+1)
-		items := copyItemsFrom(group, text)
+		items := copyItemsFrom(group, doc)
 		if len(items) == 0 {
 			continue
 		}
@@ -100,18 +166,28 @@ func copyDocs(docs []string) []copyItem {
 	return out
 }
 
-// copyDocsFromRecords is the task workspace's source: the assistant prose in
-// the loaded records, newest first. Only agent.output is offered, because it
-// is the only record type that was ever read as Markdown (task 073
-// decision 5).
-func copyDocsFromRecords(records []apiclient.TranscriptRecord) []string {
-	docs := make([]string, 0, len(records))
-	for i := len(records) - 1; i >= 0; i-- {
-		if records[i].Type == "agent.output" {
-			docs = append(docs, records[i].Text)
+// copyDocsFromRecords is the task workspace's source: the assistant documents
+// in the loaded records, newest first. One row per *document* rather than per
+// record (#291), so "message 1" is the newest document and a message an
+// adapter split across records is offered once rather than in pieces.
+func copyDocsFromRecords(records []apiclient.TranscriptRecord, seqs []int64) []copyDoc {
+	found := assistantDocs(records, seqs)
+	out := make([]copyDoc, 0, len(found))
+	for i := len(found) - 1; i >= 0; i-- {
+		out = append(out, copyDoc{seq: found[i].seq, text: found[i].text, ok: true})
+	}
+	return out
+}
+
+// resolveDocs answers a pick from a record window: the current source of the
+// document a row references, if it is still there.
+func resolveDocs(records []apiclient.TranscriptRecord, seqs []int64, seq int64) (string, bool) {
+	for _, doc := range assistantDocs(records, seqs) {
+		if doc.seq == seq {
+			return doc.text, true
 		}
 	}
-	return docs
+	return "", false
 }
 
 // copySnippet is a row's preview: the first line with anything on it,
@@ -129,12 +205,35 @@ func copySnippet(text string) string {
 // than owning a popup of its own: the picker overlays the whole screen and
 // takes the keyboard, which is the root's job for the palette already — and
 // building the items in the view is what captures them at pick time.
-type openCopyPickerMsg struct{ items []copyItem }
+// resolve re-reads a document by its seq from the view that offered it, and
+// is what makes a row a reference rather than a snapshot. It closes over the
+// view, so it sees the records as they are at pick time.
+type openCopyPickerMsg struct {
+	items   []copyItem
+	resolve func(seq int64) (string, bool)
+}
 
 // openCopyPicker turns a view's collected documents into that message.
-func openCopyPicker(docs []string) tea.Cmd {
+func openCopyPicker(docs []copyDoc, resolve func(seq int64) (string, bool)) tea.Cmd {
 	items := copyDocs(docs)
-	return func() tea.Msg { return openCopyPickerMsg{items: items} }
+	return func() tea.Msg { return openCopyPickerMsg{items: items, resolve: resolve} }
+}
+
+// pickText is what a chosen row puts on the clipboard: the document as it
+// stands now, or the text captured when the popup was built.
+func pickText(it copyItem, resolve func(seq int64) (string, bool)) string {
+	if resolve == nil || !it.ref.ok {
+		return it.text
+	}
+	text, ok := resolve(it.ref.seq)
+	if !ok {
+		return it.text
+	}
+	payload, ok := copyPayload(text, it.kind, it.index)
+	if !ok {
+		return it.text
+	}
+	return payload
 }
 
 // readerPicker is the popup itself: a search line over the captured rows.
