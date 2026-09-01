@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/table"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -117,7 +116,7 @@ type board struct {
 	dataDir     string
 	foldsLoaded bool
 
-	filter    textinput.Model
+	filter    textField
 	filtering bool
 
 	// group is the grouping the table is rendering (boardgroup.go);
@@ -157,9 +156,9 @@ type board struct {
 }
 
 func newBoard() *board {
-	fi := textinput.New()
-	fi.Placeholder = "filter by id, title, project or state"
-	fi.Prompt = "/"
+	fi := newTextField()
+	fi.SetPlaceholder("filter by id, title, project or state")
+	fi.SetPrompt("/")
 	b := &board{
 		now:         time.Now,
 		filter:      fi,
@@ -913,7 +912,7 @@ func (b *board) render(width, height int) string {
 	var sb strings.Builder
 	sb.WriteString(b.headerLine())
 	sb.WriteString("\n")
-	if line := b.statusLine(); line != "" {
+	for _, line := range b.statusLines() {
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
@@ -963,10 +962,7 @@ func (b *board) actionLine() string {
 
 func (b *board) chromeLines() int {
 	n := 3 // header + the action line + a blank the shell leaves
-	if b.statusLine() != "" {
-		n++
-	}
-	return n
+	return n + len(b.statusLines())
 }
 
 // firstRowLine is the board-content line the table's first data row lands
@@ -978,10 +974,7 @@ func (b *board) chromeLines() int {
 // (M3 gate finding, macOS).
 func (b *board) firstRowLine() int {
 	n := 2 // the header line, then the table's column header
-	if b.statusLine() != "" {
-		n++
-	}
-	return n
+	return n + len(b.statusLines())
 }
 
 // boardCell is one cell of a task row before it is laid out: the plain text,
@@ -1216,18 +1209,22 @@ func (b *board) agentsSummary() string {
 // typed — a committed filter moves to the panel title (§15). A refresh that
 // failed says so and says how old the rows are, rather than the board
 // quietly showing yesterday's truth.
-func (b *board) statusLine() string {
+// It is lines rather than a line because the filter is a wrapping field
+// (issue #299): a long filter grows the row it is typed on, and the two line
+// budgets below have to count what it actually drew.
+func (b *board) statusLines() []string {
 	switch {
 	case b.filtering:
-		line := " " + b.filter.View()
+		b.filter.SetWidth(max(b.width-1, 10))
+		rows := fieldRows(" ", b.filter)
 		if b.loadErr != nil {
-			line += styleBad.Render("  ⚠ " + b.staleNote())
+			rows[len(rows)-1] += styleBad.Render("  ⚠ " + b.staleNote())
 		}
-		return line
+		return rows
 	case b.loadErr != nil:
-		return styleBad.Render(" ⚠ " + b.staleNote())
+		return []string{styleBad.Render(" ⚠ " + b.staleNote())}
 	default:
-		return ""
+		return nil
 	}
 }
 

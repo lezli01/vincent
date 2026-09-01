@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -16,7 +15,7 @@ import (
 // replacing them. Invalid task actions are omitted, not greyed: an action
 // that cannot happen is never on screen.
 type palette struct {
-	input   textinput.Model
+	input   textField
 	entries []paletteEntry
 	cursor  int
 }
@@ -32,9 +31,9 @@ type paletteEntry struct {
 }
 
 func newPalette(entries []paletteEntry) *palette {
-	in := textinput.New()
-	in.Placeholder = "type to search commands"
-	in.Prompt = ": "
+	in := newTextField()
+	in.SetPlaceholder("type to search commands")
+	in.SetPrompt(": ")
 	in.Focus()
 	return &palette{input: in, entries: entries}
 }
@@ -152,7 +151,8 @@ func (p *palette) paste(text string) tea.Cmd {
 func (p *palette) render(w, h int) string {
 	inner := max(w-2, 10)
 	lines := make([]string, 0, h)
-	lines = append(lines, " "+p.input.View())
+	p.input.SetWidth(max(inner-1, 1))
+	lines = append(lines, fieldRows(" ", p.input)...)
 
 	m := p.matches()
 	if len(m) == 0 {

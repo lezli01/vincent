@@ -3,8 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/x/ansi"
 )
 
 // The editor's rendering. It draws rows, never YAML: the whole argument for a
@@ -66,6 +64,8 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 			value = unsetMarker
 		}
 		if e.input != nil && i == e.editing {
+			// 21 is the mark and the padded label the value sits after.
+			e.input.SetWidth(max(width-21, 10))
 			value = e.input.View()
 		}
 		if row.descend != "" {
@@ -76,9 +76,9 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 			line += " " + styleBad.Render("required")
 		}
 		if width > 0 {
-			line = ansi.Truncate(line, width, "…")
+			line = strings.Join(truncateRows(strings.Split(line, "\n"), width), "\n")
 		}
-		rows = append(rows, line)
+		rows = append(rows, strings.Split(line, "\n")...)
 		if i == e.cursor && row.field.Help != "" {
 			rows = append(rows, "    "+styleDim.Render(row.field.Help))
 		}
@@ -87,7 +87,7 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 }
 
 // renderCreate draws the create/fork prompt: a scope row and a file-name row.
-func (w *workflowsView) renderCreate(_, height int) string {
+func (w *workflowsView) renderCreate(width, height int) string {
 	f := w.create
 	title := "New workflow"
 	if f.fork {
@@ -113,8 +113,11 @@ func (w *workflowsView) renderCreate(_, height int) string {
 		styleTitle.Render("  " + title),
 		"",
 		rowMark(wfCreateRowScope) + styleDim.Render(fmt.Sprintf("%-10s", "scope")) + " " + strings.Join(scope, " "),
-		rowMark(wfCreateRowName) + styleDim.Render(fmt.Sprintf("%-10s", "file name")) + " " + f.name.View(),
 	}
+	f.name.SetWidth(max(width-13, 10))
+	out = append(out, indentRows(
+		rowMark(wfCreateRowName)+styleDim.Render(fmt.Sprintf("%-10s", "file name"))+" ",
+		f.name.rows())...)
 	if f.fork {
 		out = append(out, "", styleDim.Render(
 			"  the copy keeps "+f.source+"'s own name:, which is what makes it shadow the original"))

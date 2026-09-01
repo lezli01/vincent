@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -25,7 +24,7 @@ type wfCreateForm struct {
 	// sourceProject scopes the lookup of source.
 	sourceProject int64
 
-	name textinput.Model
+	name textField
 	// scopes are the destinations, in registry order: global first, then
 	// each project. A fork of a global entry into the global scope would
 	// shadow nothing, so it is still offered — the daemon refuses the
@@ -55,8 +54,8 @@ const (
 // source; a plain create takes only the scope list. It issues no command:
 // everything it needs is already in the loaded blocks.
 func (w *workflowsView) openCreate(fork bool) {
-	f := &wfCreateForm{fork: fork, name: textinput.New()}
-	f.name.Placeholder = "file name (lowercase, no spaces)"
+	f := &wfCreateForm{fork: fork, name: newTextField()}
+	f.name.SetPlaceholder("file name (lowercase, no spaces)")
 	if fork {
 		line, ok := w.currentLine()
 		if !ok {

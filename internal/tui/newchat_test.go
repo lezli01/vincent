@@ -272,12 +272,12 @@ func TestNewChatFormArrowsStepInPlace(t *testing.T) {
 // project row, while the value stays empty so the daemon resolves it.
 func TestNewChatFormBaseRowNamesTheProjectDefault(t *testing.T) {
 	f := chatFormWithCatalogs()
-	if got := f.base.Placeholder; got != "main (the project's default)" {
+	if got := f.base.Placeholder(); got != "main (the project's default)" {
 		t.Fatalf("the base row reads %q, want the first project's default branch", got)
 	}
 	f.focus = ncProject
 	f.update(registryKey(t, "right"), nil)
-	if got := f.base.Placeholder; got != "trunk (the project's default)" {
+	if got := f.base.Placeholder(); got != "trunk (the project's default)" {
 		t.Fatalf("after changing project the base row reads %q, want the new project's default branch", got)
 	}
 

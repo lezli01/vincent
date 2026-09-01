@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -165,7 +164,7 @@ type pullRequestsView struct {
 
 	cursor int
 
-	filter    textinput.Model
+	filter    textField
 	filtering bool
 
 	// picker is the link picker, scoped to the row's own project: POST takes
@@ -194,9 +193,9 @@ type pullRequestsView struct {
 }
 
 func newPullRequestsView() *pullRequestsView {
-	fi := textinput.New()
-	fi.Placeholder = "filter by number, title, branch or project"
-	fi.Prompt = "/"
+	fi := newTextField()
+	fi.SetPlaceholder("filter by number, title, branch or project")
+	fi.SetPrompt("/")
 	return &pullRequestsView{now: time.Now, filter: fi, state: pullStates[0]}
 }
 

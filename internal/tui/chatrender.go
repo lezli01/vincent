@@ -56,19 +56,23 @@ func (v *chatView) render(width, height int) string {
 	}
 	head := []string{v.headerLine(width), ""}
 	foot := v.footerLines(width)
-	room := max(height-len(head)-len(foot), 1)
-	lines := make([]string, 0, len(head)+room+len(foot))
+	// The form is part of the budget, not something added after it (issue
+	// #299): appended past the join it pushed the same number of lines off the
+	// bottom of the terminal that the unsplit composer did.
+	var form []string
+	if v.form != nil {
+		form = strings.Split(v.form.render(width, min(v.form.height(width), height/2)), "\n")
+	}
+	room := max(height-len(head)-len(foot)-len(form), 1)
+	lines := make([]string, 0, len(head)+room+len(foot)+len(form))
 	lines = append(lines, head...)
 	lines = append(lines, strings.Split(v.bodyView(width, room), "\n")...)
 	lines = append(lines, foot...)
+	lines = append(lines, form...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
 	}
-	out := strings.Join(lines, "\n")
-	if v.form != nil {
-		return out + "\n" + v.form.render(width, min(v.form.height(width), height/2))
-	}
-	return out
+	return strings.Join(lines, "\n")
 }
 
 // bodyView lays the conversation into the viewport. The window is bottom-
@@ -225,13 +229,22 @@ func (v *chatView) footerLines(width int) []string {
 		}
 		out = append(out, " "+style.Render(v.note))
 	}
-	// One element per rendered line, not one per widget: the composer is
-	// SetHeight(3) and bubbles' viewport pads its View to that height, so a
-	// joined string would report a height of 1 and render 3. render's
-	// `room := height - len(head) - len(foot)` would then overrun the frame
-	// by two lines — the frame keeps the first h-2 — and the hint line below
-	// would never be drawn. It would also feed a multi-line string to
-	// render's per-line ansi.Truncate pass.
+	// One element per rendered line, not one per widget (issue #299): the
+	// composer is SetHeight(3) and bubbles' viewport pads its View to that
+	// height, so a joined string would report a height of 1 and render 3.
+	// render's `room := height - len(head) - len(foot)` would then overrun the
+	// frame by two lines — the frame keeps the first h-2 — and the hint line
+	// below would never be drawn. It would also feed a multi-line string to
+	// render's per-line ansi.Truncate pass, which measures the whole thing as
+	// the *sum* of its rows — ansi.StringWidth treats the `\n`s as zero-width
+	// and never resets — so once that sum passes the pane width the tail is cut
+	// and the composer collapses to its first row. newtaskrender.go does the
+	// same split for the description textarea.
+	//
+	// The width is the pane's, not the terminal's: render is what knows how
+	// many columns the composer actually has, and a composer sized from the
+	// whole terminal has its rows cut by the Truncate pass above.
+	v.composer.SetWidth(max(width-4, 10))
 	out = append(out, strings.Split(v.composer.View(), "\n")...)
 	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
 		rawToggleKey + " raw · " + copyPickKey + " copy · " +
