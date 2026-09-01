@@ -124,13 +124,16 @@ Calculate recursively:
 | Sequence | Sum of its members |
 | Parallel group | Sum of its members; concurrency changes time, not total sessions |
 | Loop | Maximum iterations × sum of body members |
-| Fan-out | Sum of all possible lanes, nested descendants, and a configured agent merge resolver |
+| Fan-out, declared lanes | Sum of all possible lanes, nested descendants, and a configured agent merge resolver |
+| Fan-out, derived lanes | `max_lanes` × the cost of the one `lane` template's workflow, plus a configured agent merge resolver |
 | Include | Cost of its expanded steps |
 | Command, manual, condition, break | 0 |
 
 Use the effective inherited retry value, not only fields written directly on a
 step. For a `for_each` loop, use `max_iterations` unless the rendered list has a
-smaller proven bound. Count guarded agents in the upper bound unless the guard
+smaller proven bound, and for a derived fan-out use `max_lanes` the same way —
+a derived lane list is bounded, not unknown, which is one reason to always set
+that ceiling. Count guarded agents in the upper bound unless the guard
 is statically impossible. Count a conflict resolver because conflict is
 possible, even though its expected cost may be zero.
 
