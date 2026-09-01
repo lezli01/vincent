@@ -14,6 +14,7 @@ vulnerability, use [private security advisories](https://github.com/lezli01/vinc
 - [Full-auto is the headline risk](#full-auto-is-the-headline-risk)
 - [What the worktree does and does not isolate](#what-the-worktree-does-and-does-not-isolate)
 - [Restricted mode](#restricted-mode)
+- [What an agent writes cannot drive your terminal](#what-an-agent-writes-cannot-drive-your-terminal)
 - [The API surface](#the-api-surface)
 - [Credentials](#credentials)
 - [What vincent writes outside its own directories](#what-vincent-writes-outside-its-own-directories)
@@ -188,6 +189,20 @@ step.
 Use `restricted` for steps that have no business running commands: a docs pass, a
 review, a summarization step. See
 [Writing workflows](guides/workflows.md#93-permission-modes).
+
+## What an agent writes cannot drive your terminal
+
+Every record the [output pane](guides/tui.md#how-the-pane-reads) draws — assistant
+prose, a tool result, a command's output, an error — is stripped of ANSI escape
+sequences and of C0/C1 control characters before it is measured or drawn,
+newline and tab excepted. An agent that emits `ESC[2J` or an OSC title sequence,
+or that echoes a file containing one, cannot clear your screen, move the cursor,
+rewrite the window title or overwrite adjacent UI. Only vincent's own styles are
+emitted.
+
+The same holds for the Markdown rendering of assistant prose: it is a fixed
+subset drawn with vincent's own glyphs, and raw HTML is rendered as the
+characters the agent sent — never parsed, fetched or executed.
 
 ## The API surface
 

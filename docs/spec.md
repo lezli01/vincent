@@ -6685,6 +6685,58 @@ Still **no timestamps**, and `parent_call_id` — which every record may now car
 nesting subagent work under its parent is its own design problem with its own
 capture (task 066 decision 2).
 
+*Amended 2026-09-01 (task 073).* Assistant prose is rendered as **Markdown**;
+every other record stays literal.
+
+- **What is interpreted, and only this.** `agent.output` records, in both
+  workspaces — they reach the same renderer — and the chat's §17 retention
+  fallback, which is the same prose arriving by the other door. Reasoning, tool
+  calls, tool results, command output, `agent.raw`, `agent.usage`, every
+  `agent.error` and every `vincent.*` record stay exactly as literal as they
+  were, and so does `agent.result`, including the case where it falls back to
+  its result text: that is a `✓ `/`✗ `-marked line, an event rather than prose,
+  and Markdown must never make prose look like a tool event. Command output and
+  tool summaries contain Markdown punctuation constantly, and none of it was
+  meant as formatting.
+- **The subset is a written-down list**, not CommonMark: headings, paragraphs,
+  emphasis, strong, ordered and unordered lists, nested lists, blockquotes,
+  inline code, fenced code, horizontal rules. Everything else — tables, links,
+  reference links, HTML blocks, footnotes — renders as safe literal text. Raw
+  HTML is never parsed, and nothing is ever fetched or executed. The parser is
+  vincent's own, over that list: the alternatives are a Markdown library plus an
+  AST walker, or glamour, which emits a pre-styled ANSI block with its own
+  wrapping and margins that cannot be folded into the gutter scheme below.
+- **The gutter scheme is unchanged.** Assistant prose still gets the blank
+  gutter and still sits flush left. Markdown structure lives *inside* the
+  content column: a heading's `▌ `, a list's `• `/`◦ `/`▪ ` or its number, a
+  blockquote's `│ ` and a fenced block's `▏ ` are composed after the gutter,
+  the way a tool result composes its `✓ ` into a four-column one. Every one of
+  them is a glyph rather than a colour, so a monochrome terminal keeps every
+  distinction — the same rule the gutters themselves are held to. Inline code
+  keeps its backticks for that reason.
+- **Measurement is terminal cells** (`ansi.StringWidth`), not runes: a CJK
+  glyph and an emoji are two columns, a combining mark is none, and a ZWJ
+  sequence is one grapheme of several runes. **The wrap-plain-then-style
+  invariant above stands** and is not superseded by this — text is still
+  wrapped while plain and each produced line styled afterwards, so no wrapping
+  is ANSI-aware and no escape sequence can be split by a break. What changed is
+  how wide a character is, not when a style is applied.
+- **A blockquote's bar is drawn on every line of the quote.** A wrapped line's
+  hanging indent is otherwise spaces of the gutter's width, which would put the
+  bar on the first line and drop it from the rest — a content gutter that is
+  not a gutter.
+- **Code-block overflow is a hard wrap at the cell boundary**, continued at the
+  block's own rail, with every space kept and every hard break honored. A tab
+  is the four columns lipgloss draws it as, so the measured width and the drawn
+  width agree. Not truncation, which would put the tail of a long line out of
+  reach of the TUI entirely, and not clipping, which is what wrapping replaced.
+- **Rendering is derived and never stored.** The JSONL transcript and every API
+  payload keep the agent's exact bytes (§13.3), no render path mutates a
+  record, and a resize re-renders from the Markdown rather than re-wrapping
+  previously rendered ANSI. A raw/rendered toggle and a copy-raw reader action
+  are follow-ups; the chat composer owns every letter key (task 071 decision
+  4), so a toggle needs its own decision about which key it is.
+
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
 serves neither. Takeovers are for surfaces you visit deliberately; popups are
@@ -6992,6 +7044,17 @@ currently true to show (§15 view 6).
 
 - **Trust boundary = the OS user.** API on loopback only + bearer token file (0600)
   so other local users can't drive the daemon. No TLS, no accounts in v1.
+- **Agent text cannot drive the terminal (task 073, added 2026-09-01).** Every
+  record's text is stripped of ANSI escape sequences and of C0/C1 control
+  characters before the output pane measures or draws it — newline and tab
+  excepted, which the pane renders itself. Only vincent's own styles are
+  emitted. Without this an agent, or anything an agent chose to echo, could
+  clear the screen, move the cursor, rewrite the window title or overwrite
+  adjacent UI with a `\x1b[2J` or an OSC sequence in a tool result summary, a
+  command's output body or an error message — none of which are Markdown, which
+  is why the stripping is at the pane's one wrapping chokepoint rather than in
+  the Markdown path. Raw HTML in assistant prose is never parsed, fetched or
+  executed; it renders as the characters the agent sent.
 - **Full-auto agents are the headline risk.** In full-auto, an agent can execute
   arbitrary commands *as the user*, not confined to the worktree. Mitigations:
   per-workflow/step `restricted` mode, everything transcripted, nothing merges or

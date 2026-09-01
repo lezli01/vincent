@@ -203,6 +203,13 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
   Output, Diff, and Workflow tabs, plus a Pull Request tab on a task that has
   one linked; each tab uses the whole view.
+- The Output tab and the chat workspace share one renderer, and one verbosity
+  level. Assistant prose is rendered as Markdown — headings, lists, blockquotes,
+  inline and fenced code, and rules become terminal structure instead of
+  literal syntax — while reasoning, tool calls, command output and errors stay
+  literal behind their own gutter marks. Every marker is a glyph rather than a
+  colour, so a monochrome terminal keeps every distinction, and the transcript
+  on disk keeps the agent's exact bytes.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual

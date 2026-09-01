@@ -120,7 +120,16 @@ func (v *chatView) bodyLines(width int) []string {
 			// §17: a transcript that has gone to retention still leaves the
 			// turn's answer, and it is shown with no banner — a reader who
 			// did not ask for the record is not told it is missing.
-			lines = append(lines, wrapCellLines(t.ResultText, width-2, 40)...)
+			//
+			// It goes through the same renderer the records do (task 073
+			// decision 5): the answer is assistant prose whichever door it
+			// came in, and the first acceptance criterion is that the same
+			// Markdown renders identically in both workspaces at the same
+			// width. That drops the 40-line cap and the two-column
+			// narrowing this used to apply — a strict improvement, since a
+			// retained-away answer is all the turn has left and the cap hid
+			// its tail.
+			lines = append(lines, markdownLines(t.ResultText, width)...)
 		}
 		if t.FailReason != "" {
 			lines = append(lines, " "+styleBad.Render(

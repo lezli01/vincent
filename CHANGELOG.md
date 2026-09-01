@@ -13,6 +13,21 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Assistant prose renders as Markdown in the task output pane and in chats.**
+  Headings, emphasis, strong text, ordered and unordered lists, nested lists,
+  blockquotes, inline code, fenced code and horizontal rules become terminal
+  structure instead of literal syntax, through the one renderer both workspaces
+  already share. Everything else stays literal — reasoning, tool calls, tool
+  results, command output, errors and unmodeled lines keep their own gutter
+  marks, because Markdown punctuation in a grep hit was never meant as
+  formatting. Structure lives inside the assistant content column, so the
+  two-column activity gutter is unchanged, and every marker is a glyph rather
+  than a colour: a monochrome terminal or an SSH session keeps every
+  distinction. Constructs outside the supported list — tables, links, HTML,
+  footnotes — render as safe literal text, and raw HTML is never parsed,
+  fetched or executed. The transcript on disk and every API payload keep the
+  agent's exact bytes; a resize re-renders from the Markdown. Spec §15.
+
 - **A codex step's output pane now shows what codex actually reported.** The
   adapter read the subset of `codex exec --json` real captures existed for, and
   the upstream schema had grown well past it — so a codex step's pane was
@@ -556,6 +571,23 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The output pane measures terminal cells rather than runes.** A line
+  containing an emoji, a CJK glyph, a combining mark or a ZWJ sequence was
+  measured by counting runes, so the pane over- or under-filled it and an
+  over-long word was hard-split at a rune index — which could cut a ZWJ emoji
+  into its parts. Every measurement on that path is now `ansi.StringWidth`.
+  This also corrects the answer form, which wraps through the same helper.
+- **Agent-supplied text can no longer drive the terminal.** Escape sequences
+  and C0/C1 control characters in any record — a tool result summary, a
+  command's output body, an error message — reached the pane unfiltered, so an
+  agent that emitted `ESC[2J` or an OSC title sequence could clear the screen
+  or rewrite the window title. They are now stripped before the pane measures
+  or draws anything, and only vincent's own styles are emitted. Spec §16.
+- **A chat turn whose transcript has gone to retention shows its whole
+  answer.** The fallback that renders `result_text` capped it at 40 lines with
+  an ellipsis and narrowed it by two columns; it now goes through the shared
+  renderer at the pane's full width. That answer is all the turn has left, and
+  the cap hid its tail.
 - **A chat's live output was raw agent JSON, and nothing turned it down.** The
   chat workspace rendered every line of a running turn as the agent CLI's own
   dimmed stream-json, clipped at 200 characters — because the daemon published a

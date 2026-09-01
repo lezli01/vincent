@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -628,5 +629,154 @@ func TestCommandOutputOnlyAtVerbose(t *testing.T) {
 	}
 	if !strings.Contains(got[1], "truncated") {
 		t.Errorf("truncation is silent: %q", got)
+	}
+}
+
+// TestOnlyAssistantProseIsMarkdown is decision 5's boundary, held per record
+// type. Markdown punctuation is ordinary text in a tool result, a command's
+// output, an error or a line vincent's parsers do not model — interpreting it
+// there would make prose out of a grep hit, and would let a tool's output
+// forge something that looks like an agent's own heading.
+func TestOnlyAssistantProseIsMarkdown(t *testing.T) {
+	const src = "# not a heading and *not emphasis*"
+	cases := []struct {
+		name   string
+		rec    apiclient.TranscriptRecord
+		gutter string
+	}{
+		{"thinking", apiclient.TranscriptRecord{Type: "agent.thinking", Text: src}, "· "},
+		{"tool result", apiclient.TranscriptRecord{
+			Type:    "agent.tool_result",
+			Results: []apiclient.TranscriptToolResult{{Summary: src}},
+		}, "    ✓ "},
+		{"command output", apiclient.TranscriptRecord{
+			Type: "agent.command_output", Output: src,
+		}, "  "},
+		{"error", apiclient.TranscriptRecord{Type: "agent.error", Message: src}, "✗ "},
+		{"raw", apiclient.TranscriptRecord{Type: "agent.raw", Line: src}, "  "},
+		{"result text", apiclient.TranscriptRecord{Type: "agent.result", ResultText: src}, "✓ "},
+		{"vincent output", apiclient.TranscriptRecord{Type: "vincent.output", Text: src}, "  "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// levelVerbose is where every one of these is visible at once;
+			// each record's own level rule is held elsewhere.
+			got := plainLines(outputLines([]apiclient.TranscriptRecord{tc.rec},
+				levelVerbose, 80, lineOpts{expandKey: "v"}))
+			joined := strings.Join(got, "\n")
+			if !strings.Contains(joined, src) {
+				t.Fatalf("the syntax was interpreted rather than left literal:\n%s", joined)
+			}
+			if !strings.HasPrefix(got[0], tc.gutter) {
+				t.Errorf("gutter = %q, want the %q it had before Markdown", got[0], tc.gutter)
+			}
+			if strings.Contains(joined, mdHeadingMark) {
+				t.Errorf("a non-prose record grew a heading marker:\n%s", joined)
+			}
+		})
+	}
+}
+
+// TestAssistantProseIsMarkdown is the other half: the one record type that
+// does get interpreted, through the same pane every other record uses.
+func TestAssistantProseIsMarkdown(t *testing.T) {
+	d := newTestDetail(t)
+	d.width = 60
+	d.records = []apiclient.TranscriptRecord{
+		{Type: "agent.output", Text: "# Findings\n\n- one\n- two"},
+	}
+	got := plainLines(d.outputLines())
+	want := []string{"  ▌ Findings", "  • one", "  • two"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("lines = %q, want %q", got, want)
+	}
+}
+
+// TestPaneMeasuresCells generalizes the width assertion this file already
+// made at 80 with a rune count (task 073 decision 2). No produced line may
+// exceed the pane, whatever the text is made of: a CJK glyph and an emoji are
+// two columns, a combining mark is none, and a ZWJ sequence is one grapheme
+// of several runes — a rune count is wrong about all four.
+func TestPaneMeasuresCells(t *testing.T) {
+	fixtures := map[string]string{
+		"ascii":     strings.Repeat("word ", 40),
+		"cjk":       strings.Repeat("日本語テキスト ", 12),
+		"emoji":     strings.Repeat("🎉🚀 ", 30),
+		"zwj":       strings.Repeat("👨‍👩‍👧 ", 30),
+		"combining": strings.Repeat("éẍ ", 30),
+		"unbroken":  strings.Repeat("日", 60),
+		"mixed":     strings.Repeat("ok 日本 🎉 é ", 20),
+	}
+	types := []func(string) apiclient.TranscriptRecord{
+		func(s string) apiclient.TranscriptRecord {
+			return apiclient.TranscriptRecord{Type: "agent.output", Text: s}
+		},
+		func(s string) apiclient.TranscriptRecord {
+			return apiclient.TranscriptRecord{Type: "agent.thinking", Text: s}
+		},
+		func(s string) apiclient.TranscriptRecord {
+			return apiclient.TranscriptRecord{Type: "agent.error", Message: s}
+		},
+		func(s string) apiclient.TranscriptRecord {
+			return apiclient.TranscriptRecord{
+				Type:    "agent.tool_result",
+				Results: []apiclient.TranscriptToolResult{{Summary: s}},
+			}
+		},
+	}
+	for name, text := range fixtures {
+		for _, width := range []int{20, 40, 80} {
+			for i, mk := range types {
+				lines := outputLines([]apiclient.TranscriptRecord{mk(text)},
+					levelVerbose, width, lineOpts{expandKey: "v"})
+				for j, l := range lines {
+					if w := ansi.StringWidth(l); w > width {
+						t.Errorf("%s type %d width %d: line %d is %d columns: %q",
+							name, i, width, j, w, l)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestControlSequencesCannotEscapeThePane is decision 7 at the chokepoint it
+// was put at. Every record type goes through wrapLine, so sanitizing there
+// covers the ones that have nothing to do with Markdown — a tool result
+// summary, a command's output body, an error message — which reached the
+// terminal unfiltered before this.
+func TestControlSequencesCannotEscapeThePane(t *testing.T) {
+	const evil = "clear\x1b[2J title\x1b]0;pwned\a move\x1b[10;10H " +
+		"return\r back\b bell\a <script>alert(1)</script>"
+	recs := []apiclient.TranscriptRecord{
+		{Type: "agent.output", Text: evil},
+		{Type: "agent.thinking", Text: evil},
+		{Type: "agent.error", Message: evil},
+		{Type: "agent.raw", Line: evil},
+		{Type: "agent.command_output", Output: evil},
+		{Type: "vincent.output", Text: evil},
+		{Type: "agent.tool_result", Results: []apiclient.TranscriptToolResult{{Summary: evil}}},
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: evil, CallID: "c"}}},
+	}
+	for _, width := range []int{20, 80} {
+		for i, l := range outputLines(recs, levelVerbose, width, lineOpts{expandKey: "v"}) {
+			text := ansi.Strip(l)
+			if strings.ContainsFunc(text, isTerminalControl) {
+				t.Errorf("width %d line %d carries a control character: %q", width, i, l)
+			}
+			if strings.Contains(text, "[2J") || strings.Contains(text, "10;10H") {
+				t.Errorf("width %d line %d rendered a sequence's parameters: %q", width, i, l)
+			}
+			// Raw HTML is never parsed, so it survives as the characters the
+			// agent sent — visible, inert, and never fetched or executed.
+			if w := ansi.StringWidth(l); w > width {
+				t.Errorf("width %d line %d is %d columns: %q", width, i, w, l)
+			}
+		}
+	}
+	joined := strings.Join(plainLines(outputLines(recs, levelVerbose, 80,
+		lineOpts{expandKey: "v"})), "\n")
+	if !strings.Contains(joined, "<script>alert(1)</script>") {
+		t.Errorf("raw HTML was interpreted rather than shown as text:\n%s", joined)
 	}
 }

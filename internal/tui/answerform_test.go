@@ -292,3 +292,26 @@ func TestSameRequestSurvivesARefresh(t *testing.T) {
 		t.Error("a different question was treated as the same one")
 	}
 }
+
+// TestAnswerFormWrapsInCells is the answer form's share of task 073
+// decision 2. It wraps through the output pane's splitWords and measures with
+// the same cols, so correcting the measurement corrected this too — and a
+// question in CJK or an option carrying an emoji is exactly the case a rune
+// count got wrong, by up to a factor of two.
+func TestAnswerFormWrapsInCells(t *testing.T) {
+	for _, text := range []string{
+		strings.Repeat("日本語のテキスト ", 10),
+		strings.Repeat("🎉 done ", 20),
+		strings.Repeat("👨‍👩‍👧 family ", 15),
+		strings.Repeat("éẍ ", 40),
+		strings.Repeat("日", 50),
+	} {
+		for _, width := range []int{20, 40, 60} {
+			for i, line := range wrapPlain(text, width) {
+				if w := ansi.StringWidth(line); w > width {
+					t.Errorf("width %d: line %d is %d columns: %q", width, i, w, line)
+				}
+			}
+		}
+	}
+}
