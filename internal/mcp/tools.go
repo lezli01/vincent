@@ -83,6 +83,13 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/answer"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
+	// Handoff joins the list under the same rule rather than as an exception
+	// to it (task 074 decision 1). It creates a task, which is exactly what
+	// makes it dangerous here: `task_create` is bounded by mcp.max_depth and
+	// mcp.max_tasks walking `created_by_task_id`, and a chat is not in that
+	// chain — so an agent that could hand a chat off would be creating tasks
+	// outside the bound.
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/handoff"},
 	// The chat read routes are excluded under the same rule, not merely
 	// because they are streams. `GET /v1/chats/{id}/events` follows a live
 	// conversation and the transcript route reads its durable record; both

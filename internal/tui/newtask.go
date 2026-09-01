@@ -65,6 +65,10 @@ type (
 	// newTaskMsg opens the form, seeded with the project the caller was
 	// looking at.
 	newTaskMsg struct{ projectID int64 }
+	// newTaskFromChatMsg opens the form as the handoff form for a chat
+	// (task 074): the project is fixed, and the branch and base branch are
+	// the chat's, shown but not editable.
+	newTaskFromChatMsg struct{ chat apiclient.Chat }
 
 	// newTaskFromPullMsg opens the form seeded with a pull request (task
 	// 064). It carries the row the takeover was looking at, not a prefill:
@@ -213,6 +217,13 @@ type newTask struct {
 	// pullPrefilled records that the daemon's prefill for pull has landed, so
 	// a second listing reply cannot overwrite rows the human has since edited.
 	pullPrefilled bool
+	// handoff is the chat this draft hands off (task 074), nil for every
+	// other draft. It turns the form into the handoff form: the project is
+	// the chat's, and the base branch and the branch are the chat's and are
+	// shown read-only — they name a worktree that already exists, so there is
+	// nothing here to decide. Submitting posts to the chat's handoff route
+	// rather than to POST /v1/tasks.
+	handoff *apiclient.Chat
 
 	cursor   ntRow
 	mode     ntMode
@@ -257,7 +268,22 @@ func newNewTask() *newTask {
 	}
 }
 
-func (n *newTask) title() string { return "New task" }
+func (n *newTask) title() string {
+	if n.handoff != nil {
+		return "Hand off to task"
+	}
+	return "New task"
+}
+
+// inherited reports whether row names something the chat decided and this
+// form may only display (task 074). The project, the base branch and the
+// branch all belong to a worktree that already exists.
+func (n *newTask) inherited(row ntRow) bool {
+	if n.handoff == nil {
+		return false
+	}
+	return row == ntProject || row == ntBranch || row == ntBranchName
+}
 
 // titleText is the trimmed title as it would be sent.
 func (n *newTask) titleText() string { return strings.TrimSpace(n.titleIn.Value()) }
@@ -491,6 +517,19 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		cmd := n.open(msg.projectID)
 		n.pull = msg.pull
 		return n, cmd
+	case newTaskFromChatMsg:
+		// open() resets first, so the inherited values are written after it,
+		// exactly as the pull-request seed is.
+		cmd := n.open(msg.chat.ProjectID)
+		chat := msg.chat
+		n.handoff = &chat
+		n.titleIn.SetValue(chat.Title)
+		n.branch.SetValue(chat.BaseBranch)
+		n.branchName.SetValue(chat.Branch)
+		// The title is the one seeded row worth landing on: it is the task's
+		// objective, and the chat's title was written for a conversation.
+		n.cursor = ntTitle
+		return n, cmd
 	case ntLoadedMsg:
 		return n, n.applyLoaded(msg)
 	case ntWorkflowsMsg:
@@ -550,6 +589,7 @@ func (n *newTask) reset() {
 	n.loaded, n.loadErr = false, nil
 	n.github, n.githubProject = apiclient.GitHubStatus{}, 0
 	n.issues, n.issuesFor, n.issuesErr, n.issue = nil, issuesKey{}, "", nil
+	n.handoff, n.pull, n.pullPrefilled = nil, nil, false
 }
 
 func (n *newTask) applyLoaded(msg ntLoadedMsg) tea.Cmd {
@@ -775,6 +815,11 @@ func abs(v int) int {
 // cannot be reached. In all three the row is simply absent — the form does not
 // offer a control that would fail (task 035).
 func (n *newTask) rowVisible(row ntRow) bool {
+	// A handoff has a source already — the chat — so the issue row would be a
+	// second one competing to prefill the same title and description.
+	if n.handoff != nil && row == ntIssue {
+		return false
+	}
 	if row != ntIssue {
 		return true
 	}
@@ -800,6 +845,9 @@ func (n *newTask) visibleRows() []ntRow {
 
 // activate opens whatever the focused row edits.
 func (n *newTask) activate() tea.Cmd {
+	if n.inherited(n.cursor) {
+		return nil
+	}
 	switch n.cursor {
 	case ntProject, ntWorkflow, ntIssue, ntAgent, ntModel, ntEffort:
 		n.openPicker(n.cursor)
@@ -940,7 +988,7 @@ func (n *newTask) applyDescription(msg ntDescriptionMsg) {
 func (n *newTask) submit() tea.Cmd {
 	n.rowErr = map[ntRow]string{}
 	n.err = ""
-	if n.projectID == 0 {
+	if n.projectID == 0 && n.handoff == nil {
 		n.rowErr[ntProject] = "pick a project"
 	}
 	if n.titleText() == "" {
@@ -985,6 +1033,21 @@ func (n *newTask) submit() tea.Cmd {
 	req := n.request()
 	client := n.client
 	n.submitting = true
+	if n.handoff != nil {
+		// The chat's route, not POST /v1/tasks (task 074 decision 1). The
+		// body is the same one; the daemon supplies the project, the base
+		// branch and the branch from the chat and ignores whatever is here.
+		chatID := n.handoff.ID
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+			defer cancel()
+			task, _, err := client.HandoffChat(ctx, chatID, req)
+			if err != nil {
+				return ntFailedMsg{err: err}
+			}
+			return taskCreatedMsg{task: task}
+		}
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()

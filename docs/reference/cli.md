@@ -1122,6 +1122,36 @@ Removes the chat's worktree and, under `delete_empty_branch_on_archive`, an
 empty branch with it — the same archive a task gets. A worktree with local
 changes is refused; `--force` is the way past it.
 
+### `vincent chat handoff`
+
+```sh
+vincent chat handoff CHAT_ID --title TITLE [--workflow NAME] [--description TEXT]
+                     [--field name=value ...] [--fields-file FILE] [--priority N]
+                     [--agent NAME] [--model NAME] [--effort LEVEL] [--json]
+```
+
+Creates a task that adopts the chat's worktree, branch, base branch and base
+SHA exactly as they are, and leaves the chat terminal (`handed_off`) and linked
+to the task. It prints the task and the workspace it inherited; `--json` emits
+`{"task": …, "chat": …}`, the created task and the chat as it now stands.
+Nothing is copied, renamed or committed: committed *and* uncommitted work are
+both there when the task's first step runs, because the directory is simply not
+touched.
+
+The flags are `vincent task add`'s, minus the ones a handoff has no say in: the
+project, the base branch and the branch name all come from the chat, and the two
+GitHub prefills (`--github-issue`, `--github-pull`) are not offered.
+`--description` is where the conversation's context goes: nothing about the
+chat reaches the workflow's prompts automatically.
+
+Only an idle chat can be handed off. A live turn must be finished or cancelled
+first (409), a worktree in the middle of a merge, rebase, cherry-pick, revert
+or bisect is refused by name (409, code `repo_operation_in_progress`), and a
+chat that has already been handed off or archived is refused for the same
+reason (409). Ordinary uncommitted changes are **not** a refusal. From then on
+the task owns the worktree and the branch: `vincent chat archive` is not legal
+on a handed-off chat, so chat cleanup can never remove task-owned state.
+
 ## `vincent workflow`
 
 Aliased as `vincent wf`.

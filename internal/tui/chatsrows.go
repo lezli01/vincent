@@ -30,7 +30,7 @@ func chatBand(state string) int {
 		return 1
 	case "idle":
 		return 2
-	default: // archived
+	default: // archived, handed_off — both terminal (task 074)
 		return 3
 	}
 }

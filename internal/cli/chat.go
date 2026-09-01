@@ -35,7 +35,8 @@ func newChatCmd() *cobra.Command {
 			"and a chat turn never waits for a scheduler slot.",
 	}
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
-		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatArchiveCmd())
+		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatArchiveCmd(),
+		newChatHandoffCmd())
 	return cmd
 }
 

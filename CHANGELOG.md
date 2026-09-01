@@ -13,6 +13,38 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A chat can now hand its worktree and branch to a task.** An idle chat gains
+  one action — `hand off` — that creates a task adopting the chat's worktree
+  path, branch, base branch and base SHA *exactly as they are*. Nothing is
+  copied, renamed, merged or committed, so committed **and uncommitted** work
+  are both there when the task's first step runs. The chat becomes terminal
+  (`handed_off`) and keeps a permanent link to the task; the task links back
+  with `source_chat_id`. From then on the task is the sole owner of that
+  worktree and branch, which is structural rather than a guard: archiving is
+  not legal on a handed-off chat, so chat cleanup can never remove task-owned
+  state.
+
+  It is one transaction — task row, branch claim, link, transition, claim
+  release and both durable events (`task.created` and the new
+  `chat.handed_off`) — with the scheduler notified only after the commit, so
+  the scheduler cannot admit a task before it owns a complete workspace and
+  `vincent gc` never sees the directory claimed twice or not at all. Everything
+  is validated first, so a refused handoff leaves the chat exactly as it was.
+
+  Reachable everywhere, not just in the TUI: `ctrl+t` in the chat workspace
+  opens the new-task form in handoff mode (the project, base branch and branch
+  shown read-only, because they name a worktree that already exists),
+  `vincent chat handoff CHAT_ID --title ...` carries `vincent task add`'s
+  flags, and `POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is
+  validated by the same code. Like the rest of the chat family, it is
+  deliberately **not** an MCP tool.
+
+  Two refusals, both `409` and both typed: a chat that is not idle or has no
+  worktree to give, and a worktree partway through a merge, rebase,
+  cherry-pick, revert or bisect — named in `details.operation`, rather than
+  inherited silently and surfacing later as an unexplained `git_error` inside a
+  step. Ordinary uncommitted changes are never refused.
+
 - **Assistant prose renders as Markdown in the task output pane and in chats.**
   Headings, emphasis, strong text, ordered and unordered lists, nested lists,
   blockquotes, inline code, fenced code and horizontal rules become terminal

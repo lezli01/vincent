@@ -351,4 +351,72 @@ echo "== 8. chats are not tasks"
 TASKS="$(api GET /tasks | jq 'if type == "array" then length else (.tasks | length) end')"
 [[ "$TASKS" == "0" ]] || fail "GET /v1/tasks lists $TASKS rows on a daemon with only chats"
 
+echo "== 9. handoff: a task adopts the chat's worktree and branch (task 074)"
+unset FAKEAGENT_SCENARIO
+HAND="$(api POST /chats \
+  -d "{\"project_id\": $PROJECT_ID, \"title\": \"an exploration\", \"agent\": \"claude\"}")" \
+  || fail "creating the handoff chat failed"
+HAND_ID="$(printf '%s' "$HAND" | jq -r .id)"
+HAND_WORKTREE="$(printf '%s' "$HAND" | jq -r .worktree_path)"
+HAND_BRANCH="$(printf '%s' "$HAND" | jq -r .branch)"
+HAND_BASE="$(printf '%s' "$HAND" | jq -r .base_branch)"
+[[ -d "$HAND_WORKTREE" ]] || fail "the handoff chat has no worktree at $HAND_WORKTREE"
+
+# Uncommitted work, written the way every gate writes a file: `git config -f`
+# is in the sh∩pwsh intersection, and this is the change the handoff must
+# preserve without committing it.
+git -C "$HAND_WORKTREE" config -f explored.ini gate.explored yes \
+  || fail "seeding the dirty file failed"
+git -C "$HAND_WORKTREE" commit --allow-empty -m "chat work" >/dev/null 2>&1 \
+  || fail "committing on the chat branch failed"
+HAND_HEAD="$(git -C "$HAND_WORKTREE" rev-parse HEAD)"
+
+HANDOFF="$(api POST "/chats/$HAND_ID/handoff" \
+  -d '{"title": "finish the exploration"}')" || fail "POST /v1/chats/{id}/handoff failed"
+TASK_ID="$(printf '%s' "$HANDOFF" | jq -r .task.id)"
+[[ "$TASK_ID" != "null" && -n "$TASK_ID" ]] || fail "the handoff returned no task: $HANDOFF"
+
+# The inheritance, field by field, off the task the daemon actually stored.
+TASK="$(api GET "/tasks/$TASK_ID")"
+for pair in "worktree_path:$HAND_WORKTREE" "branch_name:$HAND_BRANCH" "base_branch:$HAND_BASE"; do
+  FIELD="${pair%%:*}"
+  WANT="${pair#*:}"
+  GOT="$(printf '%s' "$TASK" | jq -r ".$FIELD")"
+  [[ "$GOT" == "$WANT" ]] || fail "the task's $FIELD is $GOT, want the chat's $WANT"
+done
+[[ "$(printf '%s' "$TASK" | jq -r .source_chat_id)" == "$HAND_ID" ]] \
+  || fail "the task does not link back to chat $HAND_ID"
+
+# The workspace is untouched: no new commit, and the uncommitted file is still
+# uncommitted and still there.
+[[ "$(git -C "$HAND_WORKTREE" rev-parse HEAD)" == "$HAND_HEAD" ]] \
+  || fail "the handoff moved HEAD in $HAND_WORKTREE"
+[[ "$(git -C "$HAND_WORKTREE" config -f explored.ini --get gate.explored)" == "yes" ]] \
+  || fail "the uncommitted file did not survive the handoff"
+STATUS="$(git -C "$HAND_WORKTREE" status --porcelain)"
+[[ -n "$STATUS" ]] || fail "the handoff committed the dirty worktree"
+
+# The chat is terminal, links the task, and has released its claim.
+wait_chat "$HAND_ID" handed_off
+HAND_AFTER="$(api GET "/chats/$HAND_ID" | jq .chat)"
+[[ "$(printf '%s' "$HAND_AFTER" | jq -r .handoff_task_id)" == "$TASK_ID" ]] \
+  || fail "the chat does not link task $TASK_ID"
+[[ "$(printf '%s' "$HAND_AFTER" | jq -r '.worktree_path // ""')" == "" ]] \
+  || fail "the handed-off chat still claims a worktree"
+
+# Terminal means terminal: every chat action is a 409, archive included, so
+# chat cleanup can never reach the task's worktree.
+for ROUTE in handoff send cancel archive; do
+  BODY='{}'
+  if [[ "$ROUTE" == "send" ]]; then BODY='{"message": "still there?"}'; fi
+  if [[ "$ROUTE" == "handoff" ]]; then BODY='{"title": "again"}'; fi
+  CODE="$(api_status POST "/chats/$HAND_ID/$ROUTE" -d "$BODY")"
+  [[ "$CODE" == "409" ]] || fail "$ROUTE on a handed-off chat is $CODE, want 409"
+done
+[[ -d "$HAND_WORKTREE" ]] || fail "a refused archive removed the task's worktree"
+
+# And the ownership claim gc sees: the inherited directory is not an orphan.
+ORPHANS="$(api GET /info | jq -r '.orphans // 0')"
+[[ "$ORPHANS" == "0" ]] || fail "the handoff left $ORPHANS orphan(s) behind"
+
 echo "GATE PASS: m14"

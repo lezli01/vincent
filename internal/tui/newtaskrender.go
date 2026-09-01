@@ -266,6 +266,9 @@ func (n *newTask) renderRow(row ntRow) string {
 	}
 	if row == ntCreate {
 		label := "create task"
+		if n.handoff != nil {
+			label = "hand off to task"
+		}
 		if n.submitting {
 			label = "creating…"
 		}
@@ -273,6 +276,12 @@ func (n *newTask) renderRow(row ntRow) string {
 			styleDim.Render("enter · ctrl+s from anywhere")
 	}
 	line := fmt.Sprintf("%s%-12s %s", cursor, ntLabels[row], n.rowValue(row))
+	// An inherited row is drawn like any other and marked as what it is: the
+	// worktree it names exists, so this is a fact being confirmed rather than
+	// a choice being offered (task 074).
+	if n.inherited(row) {
+		line += "  " + styleDim.Render("(from the chat)")
+	}
 	if msg, bad := n.rowErr[row]; bad {
 		line += "  " + styleBad.Render("⚠ "+msg)
 	}

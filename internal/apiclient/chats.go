@@ -25,8 +25,11 @@ type Chat struct {
 	WorktreePath string          `json:"worktree_path,omitempty"`
 	SessionID    string          `json:"session_id,omitempty"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	// HandoffTaskID is the task this chat's worktree and branch were handed
+	// to (task 074). Set exactly in `handed_off`.
+	HandoffTaskID *int64    `json:"handoff_task_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // ChatTurn is one exchange in a chat.
@@ -133,6 +136,25 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 		return nil, err
 	}
 	return &out, nil
+}
+
+// HandoffChat hands the chat's worktree and branch to a new task (task 074).
+// The request is a task-create body: `project_id`, `base_branch` and
+// `branch_name` are the chat's and are ignored.
+//
+// It returns the created task and the chat as it now stands — terminal, and
+// naming the task. A 409 means the chat was not idle, had nothing to hand
+// over, or its worktree is mid-merge or mid-rebase; a 400 means the task
+// itself did not validate, and in every case the chat is untouched.
+func (c *Client) HandoffChat(ctx context.Context, id int64, req CreateTaskRequest) (TaskDetail, Chat, error) {
+	var out struct {
+		Task TaskDetail `json:"task"`
+		Chat Chat       `json:"chat"`
+	}
+	if err := c.post(ctx, "/v1/chats/"+strconv.FormatInt(id, 10)+"/handoff", req, &out); err != nil {
+		return TaskDetail{}, Chat{}, err
+	}
+	return out.Task, out.Chat, nil
 }
 
 // StreamChat subscribes to GET /v1/chats/{id}/events: that chat's durable

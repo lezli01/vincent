@@ -140,6 +140,10 @@ type taskResponse struct {
 	// It reflects earlier edit+retry rewrites, because the snapshot is this
 	// task's execution truth (§5.3).
 	WorkflowSteps []snapshotStepResponse `json:"workflow_steps,omitempty"`
+	// SourceChatID names the chat this task was handed off from (§5.5, task
+	// 074). It is the reverse of the one stored edge, `chats.handoff_task_id`,
+	// read as a single indexed query per list rather than per rendered task.
+	SourceChatID *int64 `json:"source_chat_id,omitempty"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -392,58 +396,65 @@ type taskCreateRequest struct {
 	GitHubPull *int `json:"github_pull"`
 }
 
-// handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
-// resolved through the registry and snapshotted onto the task (§5.3). The
-// optional agent/model/effort override is validated per §8.2 with the
-// override applied to every agent step's resolved triple: the agent must
-// name a registered adapter, a known-invalid model/effort is a 400, and a
-// catalog-unknown value passes with a warning on the 201 body (T2.11).
-func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
-	var req taskCreateRequest
-	// The large bound: a task's description and fields are what the workflow
-	// templates into an agent's prompt, so this body legitimately carries prose
-	// (§13.1, amended 2026-08-25).
-	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
-		return
-	}
+// boundTaskCreate applies §13.1's size bounds to a task-create body. It is
+// shared with the handoff route (task 074) for the reason prepareTaskCreate
+// is: two copies would drift into a body one route accepts and the other
+// rejects.
+func boundTaskCreate(req *taskCreateRequest) string {
 	for _, b := range []string{
 		boundTaskFields(req.Title, ptrValue(req.Description), req.Fields),
 		boundString("base_branch", ptrValue(req.BaseBranch), maxNameBytes),
 		boundString("branch_name", ptrValue(req.BranchName), maxNameBytes),
 	} {
 		if b != "" {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
-			return
+			return b
 		}
 	}
-	// Replay protection (§13.1, task 040). The digest is taken here, over the
-	// request as it arrived and before applyIssuePrefill mutates it below, so
-	// an issue edited between two identical sends cannot manufacture a 409.
-	idemKey, ok := readIdempotencyKey(w, r)
-	if !ok {
-		return
-	}
-	var idemSHA string
-	if idemKey != "" {
-		var derr error
-		if idemSHA, derr = idempotencyDigest(&req); derr != nil {
-			s.internalError(w, "digest task create request", derr)
-			return
-		}
-		if s.replayTaskCreate(w, r, idemKey, idemSHA) {
-			return
-		}
-	}
-	ctx := r.Context()
+	return ""
+}
+
+// preparedTask is a task-create body that has passed every validation §13.2
+// applies before a branch name is decided: the project, the resolved and
+// expanded workflow, and the task row built from both.
+//
+// It stops short of the branch because that is exactly where the two callers
+// differ. POST /v1/tasks resolves a name through §5.3's chain; a handoff
+// (task 074) inherits the chat's verbatim and has no chain to walk.
+type preparedTask struct {
+	project  *store.Project
+	task     store.Task
+	workflow *workflow.Workflow
+	pull     *github.PullRequest
+	warnings []string
+}
+
+// prepareTaskCreate is the whole of POST /v1/tasks' validation up to the
+// branch: project, workflow resolution and snapshot, include expansion,
+// fan-out resolution, the GitHub prefills, declared fields, the base branch,
+// the agent/model/effort override, MCP provenance and the four capability
+// gates.
+//
+// It is factored out rather than copied because `POST /v1/chats/{id}/handoff`
+// must accept exactly the task POST /v1/tasks accepts (task 074 decision 1):
+// a second copy would drift, and the drift would surface as a task the handoff
+// route takes and the create route refuses. It writes its own 400s, the way
+// applyIssuePrefill beside it does, and reports false once it has.
+//
+// inheritedBase, when non-empty, replaces the request's `base_branch` and is
+// taken verbatim: a handoff's base branch is a fact about a worktree that
+// already exists, not a name to validate against the repository as it is now.
+func (s *Server) prepareTaskCreate(
+	ctx context.Context, w http.ResponseWriter, req *taskCreateRequest, inheritedBase string,
+) (*preparedTask, bool) {
 	project, err := s.deps.Store.GetProject(ctx, req.ProjectID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("project %d not found", req.ProjectID))
-		return
+		return nil, false
 	}
 	if err != nil {
 		s.internalError(w, "get project", err)
-		return
+		return nil, false
 	}
 	// Workflow resolution (§5.3): the named workflow, else the project's
 	// default, else the built-in adhoc. The entry's source becomes the
@@ -453,12 +464,12 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("workflow %q not found for project %d", workflowName, project.ID))
-		return
+		return nil, false
 	}
 	if !entry.Valid() {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("workflow %q is invalid: %s", workflowName, entry.Errors.Error()))
-		return
+		return nil, false
 	}
 	// Platform restriction (§8.1.1, task 010). Rejected at creation rather than
 	// at admission: a task that can never run should not reach the board, and
@@ -466,7 +477,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("workflow %q cannot run here: %s", workflowName, mismatch))
-		return
+		return nil, false
 	}
 	// The GitHub issue prefill (task 035), before field validation because it
 	// is one of the things being validated, and before the title check
@@ -474,24 +485,24 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if req.GitHubIssue != nil && req.GitHubPull != nil {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			"github_issue and github_pull cannot both be given: they would prefill the same fields from different sources")
-		return
+		return nil, false
 	}
-	issue, ok := s.applyIssuePrefill(r.Context(), w, project, entry.Workflow, &req)
+	issue, ok := s.applyIssuePrefill(ctx, w, project, entry.Workflow, req)
 	if !ok {
-		return
+		return nil, false
 	}
 	// The pull-request prefill (task 064), in the same place and for the same
 	// reasons: before field validation because it is one of the things being
 	// validated, and before the title check because filling the title in is
 	// half of what it is for.
-	pull, pullRepo, ok := s.applyPullPrefill(r.Context(), w, project, entry.Workflow, &req)
+	pull, pullRepo, ok := s.applyPullPrefill(ctx, w, project, entry.Workflow, req)
 	if !ok {
-		return
+		return nil, false
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
-		return
+		return nil, false
 	}
 	// Workflow-declared fields (§8.1.2, task 022) are a contract on the
 	// selected root workflow. The map remains open: ValidateTaskFields checks
@@ -507,20 +518,24 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	req.Fields = entry.Workflow.PrepareTaskFields(req.Fields)
 	if fieldErrs := entry.Workflow.ValidateTaskFields(req.Fields); len(fieldErrs) > 0 {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, fieldErrs.Error())
-		return
+		return nil, false
 	}
-	baseBranch := project.DefaultBranch
-	if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
-		baseBranch = strings.TrimSpace(*req.BaseBranch)
-	}
-	if !s.localBranchExists(ctx, project.Path, baseBranch) {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("base_branch %q does not resolve to a local branch in %s", baseBranch, project.Path))
-		return
-	}
-	var branchName string
-	if req.BranchName != nil {
-		branchName = strings.TrimSpace(*req.BranchName)
+	// An inherited base branch skips the repository check on purpose: it
+	// names the commit an existing worktree was cut from, and a task that
+	// adopts that worktree is not about to cut another. Refusing it because
+	// the branch has since been deleted locally would reject a handoff for a
+	// fact that no longer has any bearing on it (task 074).
+	baseBranch := inheritedBase
+	if baseBranch == "" {
+		baseBranch = project.DefaultBranch
+		if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
+			baseBranch = strings.TrimSpace(*req.BaseBranch)
+		}
+		if !s.localBranchExists(ctx, project.Path, baseBranch) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("base_branch %q does not resolve to a local branch in %s", baseBranch, project.Path))
+			return nil, false
+		}
 	}
 	var agentOverride string
 	if req.Agent != nil && strings.TrimSpace(*req.Agent) != "" {
@@ -530,7 +545,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, CodeValidationFailed,
 					fmt.Sprintf("unknown agent %q (available: %s)", agentOverride,
 						strings.Join(s.deps.Agents.Names(), ", ")))
-				return
+				return nil, false
 			}
 		}
 	}
@@ -560,7 +575,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		})
 		if xerr != nil {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed, xerr.Error())
-			return
+			return nil, false
 		}
 		// Re-validate the expansion, not just its shape. The nesting rules an
 		// include can break — no `loop` inside a `loop`, no `fan_out` inside a
@@ -570,14 +585,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		out, merr := workflow.Marshal(expanded)
 		if merr != nil {
 			s.internalError(w, "re-encode expanded snapshot", merr)
-			return
+			return nil, false
 		}
 		revalidated, _, verr := workflow.Parse(out, s.deps.Workflows.Options())
 		if verr != nil {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				fmt.Sprintf("workflow %q does not validate once its includes are expanded: %s",
 					workflowName, verr.Error()))
-			return
+			return nil, false
 		}
 		wf, snapshot = revalidated, string(out)
 	}
@@ -594,12 +609,12 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 			workflow.Limits{MaxDepth: cfg.FanOut.MaxDepth, MaxTasks: cfg.FanOut.MaxTasks})
 		if terr != nil {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed, terr.Error())
-			return
+			return nil, false
 		}
 		out, merr := workflow.Marshal(resolved)
 		if merr != nil {
 			s.internalError(w, "re-encode resolved fan-out snapshot", merr)
-			return
+			return nil, false
 		}
 		wf, snapshot = resolved, string(out)
 	}
@@ -638,7 +653,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if creator, viaMCP := mcp.CreatorTaskID(ctx); viaMCP {
 		if msg := s.checkMCPBounds(ctx, creator); msg != "" {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-			return
+			return nil, false
 		}
 		t.CreatedByTaskID = &creator
 	}
@@ -657,14 +672,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	warnings, cerr := s.checkTaskCatalog(wf, &t)
 	if cerr != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, cerr)
-		return
+		return nil, false
 	}
 	// The `on_input: require` gate (§7.4, task 013), after the catalog check
 	// so a task with two problems reports the model one first — that is the
 	// field the human just typed.
 	if mismatch := s.inputMismatch(ctx, wf, &t); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
-		return
+		return nil, false
 	}
 	// The `permission_mode: restricted` gate (§9.4, task 041), last of the
 	// three capability checks for the same reason the input one is second:
@@ -672,7 +687,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// platform fact is the least surprising thing to be told about.
 	if mismatch := s.restrictedMismatch(wf, &t); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
-		return
+		return nil, false
 	}
 	// The container gate (§16, task 061 decision 3), after the three
 	// capability checks: it is a fact about the host and the daemon's config,
@@ -680,8 +695,58 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	// thing to be told about last.
 	if mismatch := s.containerMismatch(ctx, wf); mismatch != "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, mismatch)
+		return nil, false
+	}
+	return &preparedTask{project: project, task: t, workflow: wf, pull: pull, warnings: warnings}, true
+}
+
+// handleTaskCreate implements POST /v1/tasks (spec §13.2). The workflow is
+// resolved through the registry and snapshotted onto the task (§5.3). The
+// optional agent/model/effort override is validated per §8.2 with the
+// override applied to every agent step's resolved triple: the agent must
+// name a registered adapter, a known-invalid model/effort is a 400, and a
+// catalog-unknown value passes with a warning on the 201 body (T2.11).
+func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
+	var req taskCreateRequest
+	// The large bound: a task's description and fields are what the workflow
+	// templates into an agent's prompt, so this body legitimately carries prose
+	// (§13.1, amended 2026-08-25).
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
 		return
 	}
+	if b := boundTaskCreate(&req); b != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, b)
+		return
+	}
+	// Replay protection (§13.1, task 040). The digest is taken here, over the
+	// request as it arrived and before applyIssuePrefill mutates it below, so
+	// an issue edited between two identical sends cannot manufacture a 409.
+	idemKey, ok := readIdempotencyKey(w, r)
+	if !ok {
+		return
+	}
+	var idemSHA string
+	if idemKey != "" {
+		var derr error
+		if idemSHA, derr = idempotencyDigest(&req); derr != nil {
+			s.internalError(w, "digest task create request", derr)
+			return
+		}
+		if s.replayTaskCreate(w, r, idemKey, idemSHA) {
+			return
+		}
+	}
+	ctx := r.Context()
+	prep, ok := s.prepareTaskCreate(ctx, w, &req, "")
+	if !ok {
+		return
+	}
+	project, t, pull, warnings := prep.project, prep.task, prep.pull, prep.warnings
+	var branchName string
+	if req.BranchName != nil {
+		branchName = strings.TrimSpace(*req.BranchName)
+	}
+
 	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
 	// Resolve before the insert so a bad name is a 400 rather than a task that
 	// blocks later, and so the git-side checks run with no transaction open.
@@ -1063,6 +1128,12 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	for i := range projects {
 		names[projects[i].ID] = projects[i].Name
 	}
+	// One indexed query over the handed-off chats, turned into a map, rather
+	// than a `source_chat_id` column on every task row (task 074 decision 2).
+	sources, err := s.deps.Store.SourceChatIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1077,6 +1148,9 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		row.Loop = s.loopRollup(ctx, t, summary)
 		row.ProjectName = names[t.ProjectID]
 		row.StatusMessage = nilIfEmpty(statuses[t.ID])
+		if chatID, ok := sources[t.ID]; ok {
+			row.SourceChatID = &chatID
+		}
 		if ru := rollups[t.ID]; ru.HasCost {
 			cost := ru.CostUSD
 			row.CostUSD = &cost
@@ -1106,6 +1180,12 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	// than making each client join it back (T4.4 walkthrough finding).
 	if p, err := s.deps.Store.GetProject(r.Context(), t.ProjectID); err == nil {
 		resp.ProjectName = p.Name
+	}
+	// The reverse of `chats.handoff_task_id` (task 074 decision 2): one
+	// indexed lookup, so the detail view can link back to the conversation
+	// this task's workspace came out of.
+	if chatID, err := s.deps.Store.SourceChatID(r.Context(), t.ID); err == nil && chatID != 0 {
+		resp.SourceChatID = &chatID
 	}
 	// The children rollup (§13.2, task 014 decisions 13, 27). Present
 	// whenever the task has lanes, in any state — a parent mid-join, or one

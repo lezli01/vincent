@@ -31,13 +31,24 @@ const (
 	// a §7.4 mid-run request. As in §6 it holds its slot, because the
 	// process is alive and idle on its stdin (task 063 decision 8).
 	AwaitingInput State = "awaiting_input"
-	// Archived is the only terminal state. Its worktree is gone and its
-	// branch may have been deleted, so nothing further can run in it.
+	// Archived is a terminal state. Its worktree is gone and its branch may
+	// have been deleted, so nothing further can run in it.
 	Archived State = "archived"
+	// HandedOff is the other terminal state (task 074, §5.5 amended
+	// 2026-09-01): the chat's worktree and branch now belong to the task it
+	// created, and the chat is kept only as the linked history of how that
+	// task's workspace came to exist.
+	//
+	// It is not `archived` because archiving *removes* the worktree and may
+	// delete the branch, which is exactly the state a handoff transfers. A
+	// second terminal state makes "archiving a handed-off chat must never
+	// remove task-owned workspace state" true by construction rather than by
+	// a guard: `archive` is simply not legal from here.
+	HandedOff State = "handed_off"
 )
 
 // All lists every state, in the order §5.5 documents them.
-var All = []State{Idle, Running, AwaitingInput, Archived}
+var All = []State{Idle, Running, AwaitingInput, Archived, HandedOff}
 
 // Valid reports whether s is a known state.
 func Valid(s State) bool {
@@ -57,8 +68,10 @@ func Valid(s State) bool {
 // stdin, and a cap that did not count it would be a cap on nothing.
 func HoldsProcess(s State) bool { return s == Running || s == AwaitingInput }
 
-// Terminal reports whether no further transition is possible.
-func Terminal(s State) bool { return s == Archived }
+// Terminal reports whether no further transition is possible. There are two
+// such states, not one: a chat ends either by being archived or by being
+// handed off to a task (task 074).
+func Terminal(s State) bool { return s == Archived || s == HandedOff }
 
 // Action is something that moves a chat between states: a human action or a
 // runner event.
@@ -82,6 +95,11 @@ const (
 	// Archive removes the worktree and may delete the empty branch, the way
 	// task 008 archives a task (§10).
 	Archive Action = "archive"
+	// HandOff creates a task that adopts this chat's worktree, branch, base
+	// branch and base SHA verbatim, and leaves the chat terminal (task 074).
+	// Nothing is copied, renamed or committed: the transfer *is* the task row
+	// naming the same directory the chat named.
+	HandOff Action = "hand_off"
 )
 
 // Runner events. They are transitions the daemon performs while running a
@@ -109,6 +127,7 @@ var transitions = map[State]map[Action]State{
 	Idle: {
 		Send:    Running,
 		Archive: Archived,
+		HandOff: HandedOff,
 	},
 	Running: {
 		InputRequested:  AwaitingInput,
@@ -124,7 +143,8 @@ var transitions = map[State]map[Action]State{
 		TurnInterrupted: Idle,
 		Cancel:          Idle,
 	},
-	Archived: {},
+	Archived:  {},
+	HandedOff: {},
 }
 
 // Next returns the state a reaches from s, and whether the pair is legal.

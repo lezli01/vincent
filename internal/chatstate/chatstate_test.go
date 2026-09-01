@@ -11,7 +11,7 @@ import (
 // that quietly does something §5.5 does not describe.
 func TestTransitionTable(t *testing.T) {
 	allActions := []Action{
-		Send, Answer, Cancel, Archive,
+		Send, Answer, Cancel, Archive, HandOff,
 		TurnStarted, InputRequested, InputClosed, TurnFinished, TurnInterrupted,
 	}
 	// want[state][action] is the state the pair reaches; a missing entry
@@ -20,6 +20,7 @@ func TestTransitionTable(t *testing.T) {
 		Idle: {
 			Send:    Running,
 			Archive: Archived,
+			HandOff: HandedOff,
 		},
 		Running: {
 			TurnStarted:     Running,
@@ -35,7 +36,8 @@ func TestTransitionTable(t *testing.T) {
 			TurnInterrupted: Idle,
 			Cancel:          Idle,
 		},
-		Archived: {},
+		Archived:  {},
+		HandedOff: {},
 	}
 	for _, s := range All {
 		for _, a := range allActions {
@@ -55,16 +57,30 @@ func TestTransitionTable(t *testing.T) {
 	}
 }
 
-// TestArchivedIsTheOnlyTerminal pins the shape of the lifecycle: a chat is
-// never parked. A failed turn leaves the chat idle and usable, which is the
-// difference from §6 that made a separate FSM worth having.
-func TestArchivedIsTheOnlyTerminal(t *testing.T) {
+// TestTheTwoTerminalStates pins the shape of the lifecycle: a chat is never
+// parked — a failed turn leaves it idle and usable, which is the difference
+// from §6 that made a separate FSM worth having — and it ends in exactly one
+// of two ways.
+//
+// This replaces TestArchivedIsTheOnlyTerminal, which was 063's lifecycle shape
+// written down and is amended rather than patched: §5.5's "archived is the
+// only terminal state" was amended 2026-09-01 by task 074, because handing a
+// chat off transfers the worktree that archiving would remove.
+func TestTheTwoTerminalStates(t *testing.T) {
+	terminal := map[State]bool{Archived: true, HandedOff: true}
 	for _, s := range All {
-		if got, want := Terminal(s), s == Archived; got != want {
+		if got, want := Terminal(s), terminal[s]; got != want {
 			t.Errorf("Terminal(%s) = %v, want %v", s, got, want)
 		}
-		if len(Actions(s)) == 0 && s != Archived {
-			t.Errorf("state %s is a dead end but is not archived", s)
+		if len(Actions(s)) == 0 && !terminal[s] {
+			t.Errorf("state %s is a dead end but is not terminal", s)
+		}
+	}
+	// A handed-off chat accepts nothing at all: not another message, not an
+	// answer, not a cancel, not an archive, and not a second handoff.
+	for _, a := range []Action{Send, Answer, Cancel, Archive, HandOff} {
+		if Allowed(HandedOff, a) {
+			t.Errorf("Allowed(handed_off, %s) = true", a)
 		}
 	}
 }
@@ -81,6 +97,7 @@ func TestHoldsProcess(t *testing.T) {
 		{Running, true},
 		{AwaitingInput, true},
 		{Archived, false},
+		{HandedOff, false},
 	} {
 		if got := HoldsProcess(tc.state); got != tc.want {
 			t.Errorf("HoldsProcess(%s) = %v, want %v", tc.state, got, tc.want)
@@ -104,11 +121,14 @@ func TestValid(t *testing.T) {
 // TestActionsSorted keeps the affordance list stable, since a client renders
 // it directly.
 func TestActionsSorted(t *testing.T) {
-	if got, want := Actions(Idle), []Action{Archive, Send}; !reflect.DeepEqual(got, want) {
+	if got, want := Actions(Idle), []Action{Archive, HandOff, Send}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Actions(idle) = %v, want %v", got, want)
 	}
 	if got := Actions(Archived); len(got) != 0 {
 		t.Errorf("Actions(archived) = %v, want none", got)
+	}
+	if got := Actions(HandedOff); len(got) != 0 {
+		t.Errorf("Actions(handed_off) = %v, want none", got)
 	}
 }
 

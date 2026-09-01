@@ -78,6 +78,12 @@ func (v *chatView) headerLine(width int) string {
 	left := " " + styleTitle.Render(v.chat.Title) +
 		styleDim.Render("  ·  ") + applyStateStyle(v.chat.State, chatStateLabel(v.chat.State)) +
 		styleDim.Render(fmt.Sprintf("  ·  %s  ·  %s", v.chat.Agent, v.chat.Branch))
+	// The link is permanent and lives in the header rather than in the note
+	// line, which is transient: a handed-off chat is history, and the one
+	// thing a reader of it wants is where the work went (task 074).
+	if v.chat.HandoffTaskID != nil {
+		left += styleDim.Render(fmt.Sprintf("  ·  handed off to task %d", *v.chat.HandoffTaskID))
+	}
 	right := plural(len(v.turns), "turn", "turns")
 	// The level rides in the header for the reason the output pane's title
 	// carries it: ctrl+r on a conversation with no reasoning and no

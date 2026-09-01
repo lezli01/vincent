@@ -1085,9 +1085,22 @@ them, and a composer at the bottom.
 | `enter` | Send the message |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: compact → normal → verbose |
+| `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
 | `pgup` / `pgdown` | Scroll the conversation |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |
+
+`ctrl+t` opens the new-task form in **handoff mode**: the project, the base
+branch and the branch are the chat's, shown but marked `(from the chat)` and
+not editable, because they name a worktree that already exists. Fill in the
+title, the workflow and whatever else the task needs — the description is where
+the conversation's context goes, since nothing about the chat reaches the
+workflow's prompts by itself — and the form lands you on the created task. The
+task adopts the worktree exactly as it stands, uncommitted changes included.
+The chat is then terminal: its header carries a permanent link to the task, it
+sorts into the board's done band, and it cannot be sent to, archived or handed
+off again. Only an idle chat can be handed off, and a worktree in the middle of
+a merge or rebase is refused with the operation named.
 
 The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,

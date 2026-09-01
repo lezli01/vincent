@@ -1383,13 +1383,33 @@ POST   /v1/chats/{id}/send            start a turn
 POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
+POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
 ```
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream and the transcript included.
+excluded, the stream and the transcript included. `handoff` is on that list for
+a reason worth stating: it creates a task, and `task_create`'s bounds
+(`mcp.max_depth`, `mcp.max_tasks`) are walked over `created_by_task_id`, which
+a chat is not in.
+
+`POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is validated by
+the same code, so it accepts exactly the task the create route accepts.
+`project_id`, `base_branch` and `branch_name` are the chat's and are ignored.
+It answers `201 { "task": {...}, "chat": {...} }`: the task carries
+`source_chat_id`, and the chat comes back `handed_off` with `handoff_task_id`
+set and its `worktree_path` cleared — the claim moved, in one transaction with
+the task row, the link, both durable events (`task.created` and
+`chat.handed_off`) and the transition.
+
+Everything is validated before anything is written, so a refusal leaves the
+chat exactly as it was: `400` when the task does not validate, `409` when the
+chat is not idle, has no worktree to give, or its worktree is partway through a
+git operation (code `repo_operation_in_progress`, with `details.operation`
+naming it). Ordinary uncommitted work is preserved, never refused and never
+committed.
 
 ### Creating one
 
@@ -1415,9 +1435,11 @@ list.
 ### States
 
 `idle` → `running` → `idle`, with `awaiting_input` in the middle when the agent
-asks something, and `archived` as the only terminal state. Anything outside that
-table is a `409` — sending to an archived chat, answering one that asked
-nothing. There is no pause: a paused chat is an idle one nobody has sent to.
+asks something, and two terminal states: `archived`, and `handed_off` for a chat
+whose worktree and branch now belong to a task. Anything outside that table is a
+`409` — sending to an archived chat, answering one that asked nothing, handing
+off one that has already been handed off. There is no pause: a paused chat is an
+idle one nobody has sent to.
 
 ### Sending a turn
 
@@ -1623,7 +1645,7 @@ task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
 chat.created            chat.state_changed      chat.turn_changed
-chat.archived
+chat.archived           chat.handed_off
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1660,7 +1682,9 @@ they need.
 - The `chat.*` events belong to the [chat](#chats) family and carry the chat's
   `project_id`, so `?project_id=` filters them the way it filters a task's.
   Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
-  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`.
+  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
+  `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
+  its task without a fetch.
   Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
   stream and no live-output route**: a chat's normalized output is written to
   the turn's transcript file, and over HTTP a finished turn's `result_text` is

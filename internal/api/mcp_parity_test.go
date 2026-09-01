@@ -106,6 +106,12 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// human is the one pressing it. An agent's path to the same outcome —
 		// `git push` and `gh pr create` in its own worktree — is untouched.
 		{http.MethodPost, "/v1/tasks/{id}/github/pull/create"},
+		// Task 074 decision 1: handoff creates a task, and that is exactly
+		// why it belongs here. `task_create` is bounded by mcp.max_depth and
+		// mcp.max_tasks walking `created_by_task_id`; a chat is not in that
+		// chain, so an agent that could hand one off would be creating tasks
+		// outside the bound. 063 decision 2 is extended, not excepted.
+		{http.MethodPost, "/v1/chats/{id}/handoff"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

@@ -26,6 +26,15 @@ const CodeAgentCannotResume = "agent_cannot_resume"
 // already running (§11, decision 1). It is a 409 and never a queue.
 const CodeChatCapReached = "chat_cap_reached"
 
+// CodeRepoOperationInProgress is a handoff refused because the chat's worktree
+// is partway through a git operation — a conflicted merge, a stopped rebase, a
+// cherry-pick awaiting a commit (task 074 decision 4). It is its own code
+// because the remedy is specific and the details name the operation: finish or
+// abort it, then hand off.
+//
+// Ordinary uncommitted work is *not* refused. Preserving it is the feature.
+const CodeRepoOperationInProgress = worktree.ReasonRepoOperationInProgress
+
 // chatBody is a chat as the API renders it (§5.5, §13.2).
 type chatBody struct {
 	ID           int64           `json:"id"`
@@ -41,8 +50,12 @@ type chatBody struct {
 	WorktreePath string          `json:"worktree_path,omitempty"`
 	SessionID    string          `json:"session_id,omitempty"`
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	// HandoffTaskID is the task this chat's worktree and branch were handed
+	// to (§5.5, task 074). It is the one authoritative edge; a task's
+	// `source_chat_id` is this read backwards.
+	HandoffTaskID *int64    `json:"handoff_task_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // chatTurnBody is one turn as the API renders it.
@@ -70,7 +83,7 @@ func renderChat(c *store.Chat) chatBody {
 		ID: c.ID, ProjectID: c.ProjectID, Title: c.Title, State: string(c.State),
 		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
 		BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, WorktreePath: c.WorktreePath,
-		SessionID: c.SessionID, PendingInput: c.PendingInput,
+		SessionID: c.SessionID, PendingInput: c.PendingInput, HandoffTaskID: c.HandoffTaskID,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }

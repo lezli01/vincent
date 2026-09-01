@@ -117,11 +117,15 @@ func (p *TranscriptPruner) Prune(ctx context.Context, now time.Time) (removed in
 		return 0, 0, err
 	}
 	// Chats keep transcripts under the same root and under the same
-	// retention setting (§17, task 067): a conversation nobody archived is
-	// live, and one archived past the window is as stale as a task's. They
+	// retention setting (§12.3, task 067): a conversation nobody ended is
+	// live, and one that ended past the window is as stale as a task's. They
 	// are walked here rather than in a second pruner because the directory,
 	// the config key and the pass are all one.
-	chatIDs, err := p.deps.Store.ArchivedChatIDsBefore(ctx, cutoff)
+	//
+	// Both endings count (task 074). A handed-off chat's transcripts live
+	// under `chat-{id}`, which the task that inherited its worktree never
+	// claims, so pruning them cannot touch task-owned state.
+	chatIDs, err := p.deps.Store.TerminalChatIDsBefore(ctx, cutoff)
 	if err != nil {
 		return 0, 0, err
 	}

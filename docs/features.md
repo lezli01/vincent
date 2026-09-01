@@ -56,6 +56,15 @@ its own transcript — the accounting a conversation held in a terminal never
 leaves behind. Archiving a chat cleans up its worktree, and an empty branch
 with it, the way archiving a task does.
 
+And when an exploration turns out to be the start of real work, **hand the chat
+off to a task**. The task adopts the chat's worktree, branch, base branch and
+base SHA exactly as they are — no copy, no rename, no hidden commit, so
+committed *and* uncommitted changes are simply already there when the task's
+first step runs. The chat ends, linked to the task; the task owns the worktree
+and branch from then on. `ctrl+t` in the chat workspace,
+[`vincent chat handoff`](reference/cli.md#vincent-chat-handoff), or
+`POST /v1/chats/{id}/handoff`.
+
 Chats never appear on the task board and never enter the scheduler. A turn
 starts the moment you send it, bounded only by its own
 [`max_parallel_chats`](reference/configuration.md#max_parallel_chats) cap — over
