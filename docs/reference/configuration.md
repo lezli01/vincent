@@ -559,11 +559,14 @@ reboots rather than only on the restarts it no longer has.
 
 Task and step rows are **never** deleted — only the transcript files.
 
-This covers [chats](cli.md#vincent-chat) too: an archived chat's turn
+This covers [chats](cli.md#vincent-chat) too: an **ended** chat's turn
 transcripts under `{data_dir}/transcripts/chat-{chat_id}/` are pruned on the
-same pass, under the same setting, measured from when the chat was archived. A
-chat that was never archived keeps its transcripts however old it is, exactly as
-a task does. Chat and turn rows are never deleted either.
+same pass, under the same setting, measured from when the chat ended. Both
+endings count — `archived` and [`handed_off`](cli.md#vincent-chat-handoff) — and
+a handed-off chat's transcripts are its own rather than the worktree's, so
+pruning them never reaches the task that inherited it. A chat that has not ended
+keeps its transcripts however old it is, exactly as a task does. Chat and turn
+rows are never deleted either.
 
 That same pass also drops
 [idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This

@@ -7,9 +7,9 @@ and every task representation carries `available_actions`, so no client ever
 restates it.
 
 This page is about **tasks**. A [chat](cli.md#vincent-chat) has its own, much
-smaller vocabulary — `idle`, `running`, `awaiting_input`, `archived` — kept
-deliberately separate so no task query or board legend has to decide whether it
-means chats too. It is documented with the [chat routes](api.md#chats).
+smaller vocabulary — `idle`, `running`, `awaiting_input`, `archived`,
+`handed_off` — kept deliberately separate so no task query or board legend has
+to decide whether it means chats too. It is documented with the [chat routes](api.md#chats).
 
 - [The diagram](#the-diagram)
 - [States](#states)

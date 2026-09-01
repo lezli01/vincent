@@ -3912,7 +3912,10 @@ tui:                           # view preference; the daemon validates and relay
 `max_parallel_chats` slot (§11, §13.2); `transcript_max_bytes` caps a turn's
 transcript and fails it `transcript_limit`; and `transcript_retention_days`
 reclaims an **archived** chat's transcripts on the same pass as an archived
-task's (§17). `notify:` stays the one exception, silent on chats for the reason
+task's (§17) — *amended 2026-09-01 (task 074, issue #288): an **ended** chat's,
+either terminal state, measured from the same `updated_at`; a handed-off chat's
+transcripts stay under `chat-{id}`, which the task that inherited its worktree
+never claims*. `notify:` stays the one exception, silent on chats for the reason
 its own comment gives.
 
 **`container:` (task 061, added 2026-08-30).** `image` is the whole switch and
@@ -7460,6 +7463,7 @@ else.
 | Agent process dies while `awaiting_input` | Attempt fails with its exit code (retry policy applies); `pending_input` cleared |
 | `input_timeout` expires | Process killed; attempt fails with reason `input_timeout`; normal retry/blocked policy (§7.2) |
 | Unparseable/unknown control request from an agent | Transcripted verbatim; attempt fails with `input_protocol_error` (retry policy applies) — vincent never waits on a request it can't render |
+| A chat's worktree is mid-merge or mid-rebase when it is handed off | *Added 2026-09-01 (task 074, issue #288).* `409 repo_operation_in_progress`, with `details.operation` naming which of merge, rebase (either backend), cherry-pick, revert or bisect — probed from the repository's own state files through the linked worktree's real git dir. Nothing is written: the chat stays `idle` and keeps its §10 claim. Ordinary dirty state is **not** refused — preserving it is the point of a handoff — and a chat with no `worktree_path` is a *different* `409`: it has nothing to hand over, and a task created with an empty path would have admission quietly cut a new worktree instead (§5.5) |
 | Clock skew / DST | All timestamps stored UTC RFC3339 |
 
 ## 19. Milestones

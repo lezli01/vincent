@@ -121,6 +121,12 @@ The name is informational: `vincent gc` decides what is a stray from the
 database claims, which cover both tables, so a chat's worktree is never
 mistaken for an orphan.
 
+That is also why a task [handed a chat's worktree](cli.md#vincent-chat-handoff)
+keeps living in `worktrees/chat-{chat_id}/` for the rest of its life. The
+handoff transfers the claim, not the name, and nothing derives a task's
+directory from its id — so the one directory it is safe to be surprised by is
+this one.
+
 Two rules worth internalizing:
 
 - **The worktree is disposable.** Archiving a task removes it. If it has
@@ -171,10 +177,12 @@ Transcripts are bounded by `transcript_max_bytes` per attempt and pruned for
 [Configuration](configuration.md).
 
 Both of those cover a [chat](cli.md#vincent-chat) too: a turn's transcript is
-capped by `transcript_max_bytes`, and an **archived** chat's directory under
+capped by `transcript_max_bytes`, and an **ended** chat's directory under
 `transcripts/chat-{chat_id}/` is reclaimed by the same retention pass, measured
-from when the chat was archived. A chat nobody archived keeps its transcripts
-however old they are, exactly as a task does.
+from when it ended — archived or [handed off](cli.md#vincent-chat-handoff), both
+count, and a handed-off chat's transcripts stay under `chat-{chat_id}/`, which
+the task that took its worktree never claims. A chat that has not ended keeps its transcripts however old they
+are, exactly as a task does.
 
 **What reclaims a transcript.** Retention, for as long as the task row exists.
 Deleting a project deletes its task rows, and retention walks rows — so those

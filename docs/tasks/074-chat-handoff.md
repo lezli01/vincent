@@ -93,9 +93,10 @@ them:
 8. **§7.3's fresh-session rule is untouched** and the chat's `session_id` is
    not transferred. §5.5's chat-only amendment stays chat-only.
 
-**§17 needed no amendment**: its aggregates are over `step_runs`, whose
+**§17's aggregates needed no amendment**: they are over `step_runs`, whose
 `task_id` stays `NOT NULL`, and a handed-off task's step runs are ordinary
-ones. **§11 needed none either**: `handed_off` holds no process, so the
+ones. Its retention bullet did — both terminal chat states are pruned, and
+§12.3 says so beside it. **§11 needed none either**: `handed_off` holds no process, so the
 `max_parallel_chats` tally is unchanged.
 
 ## Risks named before the pull request

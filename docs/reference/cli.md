@@ -1132,12 +1132,15 @@ vincent chat handoff CHAT_ID --title TITLE [--workflow NAME] [--description TEXT
 
 Creates a task that adopts the chat's worktree, branch, base branch and base
 SHA exactly as they are, and leaves the chat terminal (`handed_off`) and linked
-to the task. Nothing is copied, renamed or committed: committed *and*
-uncommitted work are both there when the task's first step runs, because the
-directory is simply not touched.
+to the task. It prints the task and the workspace it inherited; `--json` emits
+`{"task": …, "chat": …}`, the created task and the chat as it now stands.
+Nothing is copied, renamed or committed: committed *and* uncommitted work are
+both there when the task's first step runs, because the directory is simply not
+touched.
 
-The flags are `vincent task add`'s, minus the three a handoff has no say in —
-the project, the base branch and the branch name all come from the chat.
+The flags are `vincent task add`'s, minus the ones a handoff has no say in: the
+project, the base branch and the branch name all come from the chat, and the two
+GitHub prefills (`--github-issue`, `--github-pull`) are not offered.
 `--description` is where the conversation's context goes: nothing about the
 chat reaches the workflow's prompts automatically.
 

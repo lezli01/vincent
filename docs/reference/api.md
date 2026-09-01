@@ -1435,9 +1435,11 @@ list.
 ### States
 
 `idle` → `running` → `idle`, with `awaiting_input` in the middle when the agent
-asks something, and `archived` as the only terminal state. Anything outside that
-table is a `409` — sending to an archived chat, answering one that asked
-nothing. There is no pause: a paused chat is an idle one nobody has sent to.
+asks something, and two terminal states: `archived`, and `handed_off` for a chat
+whose worktree and branch now belong to a task. Anything outside that table is a
+`409` — sending to an archived chat, answering one that asked nothing, handing
+off one that has already been handed off. There is no pause: a paused chat is an
+idle one nobody has sent to.
 
 ### Sending a turn
 
@@ -1643,7 +1645,7 @@ task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
 chat.created            chat.state_changed      chat.turn_changed
-chat.archived
+chat.archived           chat.handed_off
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1680,7 +1682,9 @@ they need.
 - The `chat.*` events belong to the [chat](#chats) family and carry the chat's
   `project_id`, so `?project_id=` filters them the way it filters a task's.
   Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
-  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`.
+  `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
+  `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
+  its task without a fetch.
   Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
   stream and no live-output route**: a chat's normalized output is written to
   the turn's transcript file, and over HTTP a finished turn's `result_text` is
