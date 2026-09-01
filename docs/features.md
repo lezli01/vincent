@@ -222,7 +222,11 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   never opened or turned into a terminal hyperlink; a fenced block shows its
   language and is tinted with styling only. Every marker is a glyph rather than
   a colour, so a monochrome terminal keeps every distinction, and the
-  transcript on disk keeps the agent's exact bytes.
+  transcript on disk keeps the agent's exact bytes. One key swaps the rendered
+  view for the stored Markdown when a render surprises you, and another opens a
+  picker that puts a message, its plain text, or a single fenced code block on
+  the clipboard — built from the source, so the pane's width is never baked
+  into what you paste.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
