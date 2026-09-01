@@ -144,6 +144,20 @@ memo). Changed: `outputlines.go`, `markdown.go`, `detail.go`,
 `detailrender.go`, `chatview.go`, `chatrender.go`, `readerpicker.go`,
 `root.go`.
 
+## Tasks
+
+- [x] **077.1** The document model, the client-assigned identities, the paused
+  anchor, the picker's references and the render memo ✓ 2026-09-01
+
+**Done when:** a table, list or fence an adapter split across consecutive
+`agent.output` records renders as the one thing it was written as in both
+workspaces; any other record closes the document; a link destination named
+twice in one document gets one number and one reference line; a paused pane
+holds its topmost block across a resize, a prune, a level cycle and a raw
+toggle while follow mode still lands on the bottom; a picked row copies the
+document as it stands, falling back to the captured text; and §15,
+`docs/guides/tui.md` and `docs/features.md` say so.
+
 ## Tests
 
 `internal/tui` is covered by no gate script, so the hermetic tests are the

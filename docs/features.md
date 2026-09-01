@@ -227,7 +227,7 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   picker that puts a message, its plain text, or a single fenced code block on
   the clipboard — built from the source, so the pane's width is never baked
   into what you paste. Consecutive assistant records are read as one message,
-  so structure an agent split across records renders whole, and a pane you have
+  so structure that an agent split across records renders whole, and a pane you have
   scrolled away from keeps its place across a resize, a level change, the raw
   toggle and output dropping off the front of the window.
 - Guided task creation exposes project, workflow, declared fields, git and
