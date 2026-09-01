@@ -248,7 +248,11 @@ var bindings = []binding{
 	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxChats, hint: "/ filter", priority: 4},
 	{key: "left", label: "collapse the project group", scope: scopePanel, context: ctxChats, hint: "← fold", priority: 5},
 	{key: "right", label: "expand the project group", scope: scopePanel, context: ctxChats, hint: "→ unfold", priority: 6},
-	{key: "r", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "r reload", priority: 7},
+	// `s` is the pull-request board's key for the same idea (task 064
+	// decision 9): terminal chats are hidden by default (issue #298), and
+	// this is the way back to them.
+	{key: "s", label: "cycle the listing between live, archived and handed-off, and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 7},
+	{key: "r", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "r reload", priority: 8},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},

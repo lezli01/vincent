@@ -113,3 +113,31 @@ func TestChatsArchiveOffersForceOnDirtyWorktree(t *testing.T) {
 		t.Fatalf("a dirty worktree did not re-offer the archive with the force: %+v", v.confirm)
 	}
 }
+
+// TestChatActivityStopsForTerminalChats is issue #298's second defect.
+// chatActivity is `now - UpdatedAt` with no upper bound, so an archived or
+// handed-off chat's last column ticks up second by second and reads exactly
+// like a live one — the task board's equivalent clamps at FinishedAt
+// (apiclient.Task.Elapsed). No stored timestamp is missing: a terminal
+// transition is the last write a chat row takes, so `updated_at` already *is*
+// the moment it ended (internal/store/chats.go:557, task 074 decision 6).
+// Only the rendering has to stop, which it does by showing terminal rows when
+// they ended rather than how long ago that was.
+func TestChatActivityStopsForTerminalChats(t *testing.T) {
+	ended := time.Date(2026, 9, 1, 14, 2, 0, 0, time.UTC)
+	for _, state := range []string{"archived", "handed_off"} {
+		c := apiclient.Chat{ID: 1, State: state, UpdatedAt: ended}
+		soon := chatActivity(c, ended.Add(time.Minute))
+		later := chatActivity(c, ended.Add(9*time.Hour))
+		if soon != later {
+			t.Errorf("chatActivity(%s) = %q one minute on and %q nine hours on — a terminal chat's clock keeps running",
+				state, soon, later)
+		}
+	}
+	// An idle chat is still "how long ago", which is what the column means
+	// for a conversation that can be resumed.
+	idle := apiclient.Chat{ID: 2, State: "idle", UpdatedAt: ended}
+	if a, b := chatActivity(idle, ended.Add(time.Minute)), chatActivity(idle, ended.Add(9*time.Hour)); a == b {
+		t.Errorf("chatActivity(idle) = %q at both one minute and nine hours — the live reading must not be frozen too", a)
+	}
+}

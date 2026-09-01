@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -76,10 +77,23 @@ func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, 
 
 // ListChats fetches chats, optionally narrowed to one project. Tasks never
 // appear here, and chats never appear in ListTasks.
-func (c *Client) ListChats(ctx context.Context, projectID int64) ([]Chat, error) {
-	path := "/v1/chats"
+//
+// archived selects how terminal chats are treated, and reuses ListTasks'
+// ArchivedScope because the wire parameter is the same one (§13.2, amended
+// 2026-09-01). The zero value — ArchivedExclude — leaves the parameter off and
+// takes the server's default, which is to hide both `archived` and
+// `handed_off`.
+func (c *Client) ListChats(ctx context.Context, projectID int64, archived ArchivedScope) ([]Chat, error) {
+	q := url.Values{}
 	if projectID > 0 {
-		path += fmt.Sprintf("?project_id=%d", projectID)
+		q.Set("project_id", strconv.FormatInt(projectID, 10))
+	}
+	if archived != ArchivedExclude {
+		q.Set("archived", string(archived))
+	}
+	path := "/v1/chats"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
 	}
 	var out struct {
 		Chats []Chat `json:"chats"`

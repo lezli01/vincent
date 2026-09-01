@@ -1096,10 +1096,14 @@ interrupted.
 ### `vincent chat list`
 
 ```sh
-vincent chat list [--project ID] [--json]
+vincent chat list [--project ID] [--archived] [--json]
 ```
 
 One line per chat: id, state, agent, title. `--json` emits the chat objects.
+
+Archived and handed-off chats are hidden unless you pass `--archived`, the way
+`vincent task list --archived` works. Both terminal states come back under the
+one flag: a handed-off chat is as done with as an archived one.
 
 ### `vincent chat show`
 

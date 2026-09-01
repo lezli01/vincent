@@ -155,13 +155,21 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 
 func newChatListCmd() *cobra.Command {
 	var projectID int64
+	var archived bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List chats",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				chats, err := c.ListChats(ctx, projectID)
+				// Terminal chats are hidden by default, the way archived
+				// tasks are (§13.2): `archived` and `handed_off` alike, since
+				// both are done with (§5.5, task 074 decision 5).
+				scope := apiclient.ArchivedExclude
+				if archived {
+					scope = apiclient.ArchivedAll
+				}
+				chats, err := c.ListChats(ctx, projectID, scope)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
@@ -188,6 +196,8 @@ func newChatListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int64Var(&projectID, "project", 0, "only this project's chats")
+	cmd.Flags().BoolVar(&archived, "archived", false,
+		"Include archived and handed-off chats")
 	jsonFlag(cmd)
 	return cmd
 }

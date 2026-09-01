@@ -1098,7 +1098,16 @@ task-only.
 | `a` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty |
 | `/` | Filter by title, agent or branch |
 | `←` / `→` | Collapse or expand a project group |
+| `s` | Cycle the listing between live, archived and handed-off, and all |
 | `r` | Reload the board |
+
+Archived and handed-off chats are **off this board by default**, the way
+archived tasks are off the task board. `s` cycles the listing — live, then the
+terminal ones, then both — and the header names the listing whenever it is not
+the default, so an empty board is never mistaken for no chats. A terminal chat's
+last-activity cell shows *when* the chat ended rather than a duration that keeps
+counting; and `a` on such a row declines with a note instead of asking to remove
+a worktree that is already gone, or that a handoff gave to a task.
 
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes

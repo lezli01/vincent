@@ -368,3 +368,138 @@ func waitUntil(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition never became true")
 }
+
+// TestChatArchiveRefusalNamesTheRealState is issue #298's third defect.
+// `handleChatArchive` consults `chatstate.Allowed(state, Archive)` — legal
+// from `idle` alone — and then writes one hardcoded sentence, "a chat with a
+// live turn cannot be archived", for every state that is not `idle`. Both
+// terminal states are among them (§5.5, task 074 decision 5), and for both the
+// sentence asserts something false: an `archived` or `handed_off` chat holds
+// no process at all (§11), so there is no live turn to name. The `state` in
+// the error details carries the truth the message contradicts.
+//
+// Statuses are already pinned by TestChatActionsIn409WhenTheFSMSaysNo and
+// TestHandoffIsTerminal, which is how a wrong message survived both: this
+// reads the sentence a human is shown.
+func TestChatArchiveRefusalNamesTheRealState(t *testing.T) {
+	h := newChatHarness(t)
+
+	archived, _ := handoffFixture(t, h)
+	if resp, body := h.doJSON(t, http.MethodPost,
+		fmt.Sprintf("/v1/chats/%d/archive", archived), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive = %d %s", resp.StatusCode, body)
+	}
+
+	handed, _ := handoffFixture(t, h)
+	if code, body := h.handoff(t, handed, map[string]any{"title": "finish it"}); code != http.StatusCreated {
+		t.Fatalf("handoff = %d (%v)", code, body)
+	}
+
+	for _, tc := range []struct {
+		id    int64
+		state string
+		// names is vocabulary the refusal must use to be about this state
+		// rather than about a running turn; the exact sentence is the fix's
+		// to choose.
+		names string
+	}{
+		{archived, "archived", "archiv"},
+		{handed, "handed_off", "hand"},
+	} {
+		resp, raw := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/archive", tc.id), nil)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("archive on a %s chat = %d %s, want 409", tc.state, resp.StatusCode, raw)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decode %s refusal: %v", tc.state, err)
+		}
+		errObj, _ := out["error"].(map[string]any)
+		msg, _ := errObj["message"].(string)
+		details, _ := errObj["details"].(map[string]any)
+		if got := details["state"]; got != tc.state {
+			t.Fatalf("details.state = %v, want %q", got, tc.state)
+		}
+		low := strings.ToLower(msg)
+		if strings.Contains(low, "live turn") {
+			t.Errorf("archive on a %s chat says %q — it claims a live turn it never checked for, and none can be running in a terminal state", tc.state, msg)
+		}
+		if !strings.Contains(low, tc.names) {
+			t.Errorf("archive on a %s chat says %q — the message never names the state that actually blocked it, which details.state = %q reports", tc.state, msg, tc.state)
+		}
+	}
+}
+
+// TestChatListArchivedParam is issue #298's first defect. `store.ChatFilter`
+// carries only ProjectID and States and `handleChatList` reads only
+// `project_id` and repeated `state`, so nothing anywhere can ask for a chat
+// listing without its terminal rows — which is why they accumulate on the
+// chats board forever (§15). Tasks have had `?archived=false|true|all`,
+// defaulting to exclusion, since §13.2; chats get the same parameter and the
+// same default, and it covers **both** terminal states, `archived` and
+// `handed_off` alike (§5.5, task 074 decision 5). An explicit `state=` still
+// wins, exactly as it does for tasks.
+func TestChatListArchivedParam(t *testing.T) {
+	h := newChatHarness(t)
+
+	live, _ := handoffFixture(t, h)
+	gone, _ := handoffFixture(t, h)
+	if resp, body := h.doJSON(t, http.MethodPost,
+		fmt.Sprintf("/v1/chats/%d/archive", gone), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive = %d %s", resp.StatusCode, body)
+	}
+	handed, _ := handoffFixture(t, h)
+	if code, body := h.handoff(t, handed, map[string]any{"title": "finish it"}); code != http.StatusCreated {
+		t.Fatalf("handoff = %d (%v)", code, body)
+	}
+
+	ids := func(query string) []int64 {
+		t.Helper()
+		resp, raw := h.doJSON(t, http.MethodGet, "/v1/chats"+query, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /v1/chats%s = %d %s", query, resp.StatusCode, raw)
+		}
+		var out struct {
+			Chats []struct {
+				ID int64 `json:"id"`
+			} `json:"chats"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decode listing: %v", err)
+		}
+		got := make([]int64, 0, len(out.Chats))
+		for _, c := range out.Chats {
+			got = append(got, c.ID)
+		}
+		return got
+	}
+	has := func(got []int64, want int64) bool {
+		for _, id := range got {
+			if id == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, q := range []string{"", "?archived=false"} {
+		got := ids(q)
+		if len(got) != 1 || got[0] != live {
+			t.Errorf("GET /v1/chats%q = %v, want only the idle chat %d — archived %d and handed-off %d must be excluded by default",
+				q, got, live, gone, handed)
+		}
+	}
+	if got := ids("?archived=true"); len(got) != 2 || !has(got, gone) || !has(got, handed) {
+		t.Errorf("archived=true = %v, want both terminal chats %d and %d", got, gone, handed)
+	}
+	if got := ids("?archived=all"); len(got) != 3 {
+		t.Errorf("archived=all = %v, want all three", got)
+	}
+	if got := ids("?state=archived"); len(got) != 1 || got[0] != gone {
+		t.Errorf("state=archived = %v, want %d — an explicit state must win", got, gone)
+	}
+	resp, raw := h.doJSON(t, http.MethodGet, "/v1/chats?archived=yes", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("archived=yes = %d %s, want 400", resp.StatusCode, raw)
+	}
+}

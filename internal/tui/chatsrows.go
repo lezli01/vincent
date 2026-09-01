@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // Row shaping for the chats board (§15, task 067). It is boardrows.go's job
@@ -167,9 +168,24 @@ func pruneChatFolds(f foldSet, chats []apiclient.Chat, names map[int64]string) f
 
 // chatActivity is the "last activity" column: how long ago the chat's row was
 // last written, which for a chat is the last turn boundary or state change.
+//
+// For a terminal chat it is when instead of how long ago (issue #298). A
+// duration that keeps growing reads as a running conversation, which is
+// exactly what an `archived` or `handed_off` chat is not; the task board's
+// equivalent stops for the same reason, by clamping at FinishedAt
+// (apiclient.Task.Elapsed). No stored timestamp is missing here: a terminal
+// transition is the last write a chat row takes, so UpdatedAt already *is* the
+// moment it ended (internal/store/chats.go, task 074 decision 6) — only the
+// rendering had to stop.
 func chatActivity(c apiclient.Chat, now time.Time) string {
 	if c.UpdatedAt.IsZero() {
 		return "—"
+	}
+	if chatstate.Terminal(chatstate.State(c.State)) {
+		// Date and time, never "today"/"yesterday": the cell must not depend
+		// on now at all, or it would tick over a day boundary — a slower
+		// clock, but still a clock.
+		return c.UpdatedAt.Local().Format("01-02 15:04")
 	}
 	d := now.Sub(c.UpdatedAt)
 	if d < 0 {

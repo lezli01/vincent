@@ -1376,7 +1376,8 @@ separate family from tasks: they never appear in `GET /v1/tasks` or on the
 board, and tasks never appear here.
 
 ```
-GET    /v1/chats?project_id=&state=   newest first; state may repeat
+GET    /v1/chats?project_id=&state=&archived=
+                                      newest first; state may repeat
 POST   /v1/chats                      create, with a worktree and a branch
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
 POST   /v1/chats/{id}/send            start a turn
@@ -1394,6 +1395,16 @@ excluded, the stream and the transcript included. `handoff` is on that list for
 a reason worth stating: it creates a task, and `task_create`'s bounds
 (`mcp.max_depth`, `mcp.max_tasks`) are walked over `created_by_task_id`, which
 a chat is not in.
+
+`archived=false|true|all` is `GET /v1/tasks`' parameter, spelled and defaulted
+the same way: terminal chats are hidden unless you ask for them. It covers
+**both** terminal states — `archived` and `handed_off` alike — which its name
+does not say; an explicit `state=` wins over it, and anything but
+`false|true|all` is a `400 validation_failed`.
+
+`POST /v1/chats/{id}/archive` is legal from `idle` alone, so its `409` names
+the state that blocked it: an already-archived chat is told so, and a
+handed-off one that the task owns its worktree now.
 
 `POST /v1/chats/{id}/handoff` takes `POST /v1/tasks`' body and is validated by
 the same code, so it accepts exactly the task the create route accepts.
