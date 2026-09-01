@@ -241,6 +241,10 @@ holds them, plus four registry probes in `bindings_test.go`:
   and it survives opening a fresh view.
 - Injection fixtures produce no ESC and no C0/C1 in raw mode, and no line wider
   than the pane.
+- Task 075's blocks reach the clipboard as the pane's structure: a table as the
+  stacked `column: value` records, a link as its label plus the `[n]` the pane
+  gave it, with the reference block closing the payload and one number for one
+  destination.
 - Markdown copy is the record's stored text; plain-text copy carries no `#`, `*`
   or backtick and no ANSI; code-block copy has neither fence nor info string and
   keeps interior whitespace and tabs; every payload is sanitized.

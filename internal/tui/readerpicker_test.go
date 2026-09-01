@@ -36,9 +36,12 @@ func stubClipboard(t *testing.T, err error) *[]string {
 	return &wrote
 }
 
-// copyOne runs the payload named by label out of the picker rows.
-func copyOne(t *testing.T, items []copyItem, group, label string) string {
+// copyOne runs the payload named by label out of the first message's picker
+// rows. Every caller builds its own one-document picker, so the group is the
+// first one rather than a parameter.
+func copyOne(t *testing.T, items []copyItem, label string) string {
 	t.Helper()
+	const group = "message 1"
 	for _, it := range items {
 		if it.group == group && it.label == label {
 			return it.text
@@ -170,12 +173,12 @@ func TestChatRetentionFallbackFollowsRaw(t *testing.T) {
 func TestCopyPayloads(t *testing.T) {
 	items := copyDocs([]string{readerDoc})
 
-	md := copyOne(t, items, "message 1", copyLabelMarkdown)
+	md := copyOne(t, items, copyLabelMarkdown)
 	if md != readerDoc {
 		t.Fatalf("the markdown payload is not the stored text:\n%q", md)
 	}
 
-	plain := copyOne(t, items, "message 1", copyLabelPlain)
+	plain := copyOne(t, items, copyLabelPlain)
 	for _, punct := range []string{"#", "*", "`"} {
 		if strings.Contains(plain, punct) {
 			t.Fatalf("the plain-text payload kept %q:\n%s", punct, plain)
@@ -190,7 +193,7 @@ func TestCopyPayloads(t *testing.T) {
 		}
 	}
 
-	code := copyOne(t, items, "message 1", copyLabelCode)
+	code := copyOne(t, items, copyLabelCode)
 	if want := "func main() {\n\tprintln(\"hi\")\n}"; code != want {
 		t.Fatalf("the code payload is %q, want %q", code, want)
 	}
@@ -547,5 +550,48 @@ func TestPaletteRunsTheReaderActions(t *testing.T) {
 	}
 	if v.composer.Value() != "" {
 		t.Fatalf("the palette's replay typed into the composer: %q", v.composer.Value())
+	}
+}
+
+// TestCopyPayloadsCarryTask075Blocks: the two blocks task 075 added reach the
+// clipboard as the structure the pane draws (decision 5). A table becomes the
+// stacked `column: value` records — the pane's own width-free form — and a
+// link keeps the number the pane gave it, with the reference block that
+// resolves it closing the payload, because a destination stripped of both its
+// punctuation and its reference would be a destination deleted.
+func TestCopyPayloadsCarryTask075Blocks(t *testing.T) {
+	doc := "See [the spec](https://example.test/spec) and [it again](https://example.test/spec).\n" +
+		"\n" +
+		"| Step | State |\n" +
+		"|---|---|\n" +
+		"| build | ok |\n"
+	items := copyDocs([]string{doc})
+
+	plain := copyOne(t, items, copyLabelPlain)
+	for _, punct := range []string{"](", "|", "---"} {
+		if strings.Contains(plain, punct) {
+			t.Fatalf("the plain-text payload kept %q:\n%s", punct, plain)
+		}
+	}
+	for _, want := range []string{
+		"See the spec [1] and it again [1].", // one number for one destination
+		"▪ Step: build",
+		"  State: ok",
+		"[1] https://example.test/spec",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("the plain-text payload dropped %q:\n%s", want, plain)
+		}
+	}
+
+	// The Markdown payload is still the stored text, table pipes and all.
+	if md := copyOne(t, items, copyLabelMarkdown); md != doc {
+		t.Fatalf("the markdown payload is not the stored text:\n%q", md)
+	}
+	// A document with no fence contributes no code row.
+	for _, it := range items {
+		if it.label == copyLabelCode {
+			t.Fatalf("a document with no fenced block offered %q", it.label)
+		}
 	}
 }
