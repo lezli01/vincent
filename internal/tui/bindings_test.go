@@ -442,6 +442,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("right did not expand the project group")
 			}
 		},
+		"s": func(t *testing.T) {
+			v := chatsFixture()
+			v.client = nil
+			if _, cmd := v.updateKey(registryKey(t, "s")); cmd != nil {
+				drain(cmd)
+			}
+			if v.scope != apiclient.ArchivedOnly {
+				t.Fatalf("s left the listing at %q, want the archived one", v.scope)
+			}
+		},
 		"r": func(t *testing.T) {
 			v := chatsFixture()
 			v.client = nil

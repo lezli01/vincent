@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // The chats board's rendering, split from the view for the reason every other
@@ -51,6 +53,12 @@ func (v *chatsView) headerLine(width int) string {
 		left += styleDim.Render("  ·  loading…")
 	default:
 		left += styleDim.Render("  ·  " + plural(len(v.chats), "chat", "chats"))
+		// Which listing is on, named only when it is not the default: a
+		// board hiding terminal chats must say so once `s` has been pressed,
+		// or an empty board reads as no chats at all (issue #298).
+		if v.scope != apiclient.ArchivedExclude {
+			left += styleDim.Render(" · " + chatScopeLabel(v.scope))
+		}
 		if n := countChatsAwaiting(v.chats); n > 0 {
 			left += styleDim.Render(" · ") +
 				styleWarn.Render(fmt.Sprintf("%d waiting on you", n))
@@ -100,7 +108,9 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	// Columns: id, state, agent, turns, last activity, then the title with
 	// whatever width is left. The title is last because it is the only cell
 	// that can usefully be truncated.
-	fixed := fmt.Sprintf("%-5s %-15s %-8s %5s %8s  ",
+	// The activity cell is wide enough for the absolute stamp a terminal chat
+	// shows instead of a duration (issue #298).
+	fixed := fmt.Sprintf("%-5s %-15s %-8s %5s %11s  ",
 		"#"+strconv.FormatInt(c.ID, 10),
 		applyStateStyle(c.State, chatStateLabel(c.State)),
 		c.Agent,

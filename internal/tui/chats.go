@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // The chats board (§15, task 067, closing task 063.2).
@@ -85,6 +86,10 @@ type chatsView struct {
 
 	folds   foldSet
 	confirm *archivePrompt
+
+	// scope is which listing the board asks for (issue #298). Its zero value
+	// is the server's default — terminal chats hidden — and `s` cycles it.
+	scope apiclient.ArchivedScope
 
 	// create is the new-chat form, a layer over this board rather than a
 	// seventh view: it is opened from here, it returns here, and it has no
@@ -214,11 +219,12 @@ func (v *chatsView) loadCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
+	scope := v.scope
 	v.loading = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		chats, err := client.ListChats(ctx, 0)
+		chats, err := client.ListChats(ctx, 0, scope)
 		if err != nil {
 			return chatsLoadedMsg{err: err}
 		}
@@ -431,15 +437,73 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.create.init()
 	case "a":
 		if c, ok := v.current(); ok {
+			// A terminal chat has nothing left to archive and no worktree to
+			// remove, so the prompt would ask a human to confirm removing
+			// something that is already gone — or, for a handed-off chat, one
+			// the task owns now (§5.5). The daemon refuses it too (409); this
+			// is what stops the question being asked at all (issue #298).
+			if chatstate.Terminal(chatstate.State(c.State)) {
+				v.note, v.noteBad = chatArchiveDecline(c.State), true
+				return v, nil
+			}
 			v.confirm = &archivePrompt{
 				id: c.ID, title: c.Title,
 				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)", c.Title),
 			}
 		}
+	case "s":
+		v.cycleScope()
+		return v, v.loadCmd()
 	case "r":
 		return v, v.loadCmd()
 	}
 	return v, nil
+}
+
+// chatScopes is the cycle `s` walks (issue #298): the default listing, then
+// the terminal chats it hides, then both. It is the pull-request board's `s`
+// for a different entity (task 064 decision 9), and it is the way back that
+// makes hiding terminal chats safe at all — an archived chat's transcript is
+// still worth reading.
+var chatScopes = []apiclient.ArchivedScope{
+	apiclient.ArchivedExclude, apiclient.ArchivedOnly, apiclient.ArchivedAll,
+}
+
+// chatScopeLabel names a listing as the header and the note read it. The wire
+// parameter is spelled `archived` for parity with tasks, but it covers
+// `handed_off` too (§5.5, task 074 decision 5), so the human-readable form
+// says both rather than repeating the parameter's name.
+func chatScopeLabel(s apiclient.ArchivedScope) string {
+	switch s {
+	case apiclient.ArchivedOnly:
+		return "archived and handed-off chats"
+	case apiclient.ArchivedAll:
+		return "every chat, terminal ones included"
+	default:
+		return "live chats"
+	}
+}
+
+func (v *chatsView) cycleScope() {
+	for i, sc := range chatScopes {
+		if sc == v.scope {
+			v.scope = chatScopes[(i+1)%len(chatScopes)]
+			v.note, v.noteBad = "listing "+chatScopeLabel(v.scope)+"…", false
+			return
+		}
+	}
+	v.scope = chatScopes[0]
+}
+
+// chatArchiveDecline is the board's half of the refusal the daemon would send
+// back. It names the state, for the reason the API's does: a chat that is
+// already archived and one that was handed off are refused for two different
+// reasons, and neither of them is a live turn.
+func chatArchiveDecline(state string) string {
+	if state == string(chatstate.HandedOff) {
+		return "this chat was handed off to a task, which owns its worktree now"
+	}
+	return "this chat is already archived"
 }
 
 func (v *chatsView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {

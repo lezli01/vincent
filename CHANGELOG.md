@@ -694,6 +694,26 @@ list with the user-facing context a commit subject cannot carry.
   rest of the form down. Text fields now wrap onto further rows of their pane
   and the form reflows around them, which is what the boards and rendered
   Markdown have always done.
+- **Archived chats now leave the chats board.** Archiving a chat took it off
+  nothing: the row stayed, and then behaved as though the conversation were
+  still alive. Three things are fixed together. `GET /v1/chats`,
+  `vincent chat list` and the chats board had no way to exclude a terminal
+  chat — nothing between the store and the TUI could express the idea — so
+  every chat that had ever existed piled up forever. There is now an
+  `archived=false|true|all` filter, spelled and defaulted exactly as
+  `GET /v1/tasks`' is, covering **both** terminal states (`archived` and
+  `handed_off` alike, since both are equally done with); `vincent chat list
+  --archived` brings them back, and `s` on the chats board cycles the listing
+  the way `s` cycles a pull-request listing. A terminal chat's last-activity
+  cell no longer counts up second by second like a live conversation: it shows
+  *when* the chat ended. And archiving a chat that is already archived, or one
+  that was handed off, is no longer refused with "a chat with a live turn
+  cannot be archived" — a sentence about a process neither state can hold, and
+  which contradicted the state the error's own details reported. The refusal
+  now names the real reason on both sides: the API says which state blocked it,
+  and `a` on a terminal row declines with a note instead of asking you to
+  confirm removing a worktree that is already gone, or that a handoff gave to a
+  task.
 - **Palette entries for `ctrl+`-modified keys did nothing.** Running one
   replays its direct key, and the replay had a hand-written case per ctrl key
   that had fallen a registry behind — the chat's `ctrl+r` (detail level) and

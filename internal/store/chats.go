@@ -131,12 +131,25 @@ func (s *Store) GetChat(ctx context.Context, id int64) (*Chat, error) {
 	return c, nil
 }
 
-// ChatFilter narrows ListChats. The zero value lists every chat, archived
-// ones included — the caller decides, since a chat list that silently hid
-// archived rows would make `vincent chat list --all` a lie.
+// ChatFilter narrows ListChats. Zero values mean "no filter", except
+// Archived, whose zero value excludes both terminal states.
+//
+// That default reverses task 074's: the original comment here reasoned that a
+// listing which hid archived rows would make `vincent chat list --all` a lie,
+// but the lie it produced instead was the chats board, where every chat that
+// ever existed piles up forever and a `handed_off` row sits beside a live
+// conversation (issue #298). The caller still decides — it just says so with
+// ArchivedOnly or ArchivedAll rather than by being the only party that could
+// filter, which no caller ever was.
 type ChatFilter struct {
 	ProjectID *int64
 	States    []chatstate.State
+	// Archived selects how terminal chats are treated, the way TaskFilter's
+	// field of the same name and type does (§13.2). It covers *both*
+	// terminal states — `archived` and `handed_off` alike (§5.5, task 074
+	// decision 5) — because both are equally done with, whatever the
+	// parameter's name says. An explicit States always wins.
+	Archived ArchivedFilter
 }
 
 // ListChats returns chats newest first, which is the order a conversation
@@ -153,6 +166,20 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 		q += ` AND state IN ` + placeholders(len(f.States))
 		for _, st := range f.States {
 			args = append(args, string(st))
+		}
+	} else {
+		// An explicit States always wins, for the reason an explicit State
+		// wins over TaskFilter.Archived: asking for state=archived and
+		// getting nothing back because the default excludes archives would
+		// be absurd.
+		switch f.Archived {
+		case ArchivedExclude:
+			q += ` AND state NOT IN (?, ?)`
+			args = append(args, string(chatstate.Archived), string(chatstate.HandedOff))
+		case ArchivedOnly:
+			q += ` AND state IN (?, ?)`
+			args = append(args, string(chatstate.Archived), string(chatstate.HandedOff))
+		case ArchivedAll:
 		}
 	}
 	q += ` ORDER BY id DESC`

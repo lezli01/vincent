@@ -15,6 +15,9 @@
 #      never queued — and leaves no turn row behind
 #   7. cancel stops a live turn; archive removes the worktree
 #   8. chats never appear in GET /v1/tasks
+#   9. handoff: a task adopts the chat's worktree and branch (task 074)
+#  10. the listing excludes both terminal states by default and ?archived=
+#      brings them back, an explicit ?state= still winning (task 079)
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -418,5 +421,37 @@ done
 # And the ownership claim gc sees: the inherited directory is not an orphan.
 ORPHANS="$(api GET /info | jq -r '.orphans // 0')"
 [[ "$ORPHANS" == "0" ]] || fail "the handoff left $ORPHANS orphan(s) behind"
+
+echo "== 10. the listing hides terminal chats, and ?archived= brings them back (issue #298)"
+# Two terminal chats exist by now and neither may be in the default listing:
+# $CAP_ID was archived in leg 7 and $HAND_ID was handed off in leg 9. Each
+# capture is a single line of jq output, so no `tr -d '\r'` is needed here.
+listed() { # listed QUERY ID -> true|false
+  api GET "/chats$1" | jq -r --argjson id "$2" 'any(.chats[]; .id == $id)'
+}
+for ID in "$CAP_ID" "$HAND_ID"; do
+  for QUERY in "" "?archived=false"; do
+    [[ "$(listed "$QUERY" "$ID")" == "false" ]] \
+      || fail "GET /v1/chats$QUERY still lists terminal chat $ID"
+  done
+  [[ "$(listed "?archived=true" "$ID")" == "true" ]] \
+    || fail "archived=true does not list terminal chat $ID"
+  [[ "$(listed "?archived=all" "$ID")" == "true" ]] \
+    || fail "archived=all does not list terminal chat $ID"
+done
+# A live chat is the other half: the default listing keeps it, and asking for
+# the terminal ones alone does not.
+LIVE="$(api POST /chats \
+  -d "{\"project_id\": $PROJECT_ID, \"title\": \"still talking\", \"agent\": \"claude\"}")" \
+  || fail "creating the live chat failed"
+LIVE_ID="$(printf '%s' "$LIVE" | jq -r .id)"
+[[ "$(listed "" "$LIVE_ID")" == "true" ]] || fail "the default listing dropped idle chat $LIVE_ID"
+[[ "$(listed "?archived=true" "$LIVE_ID")" == "false" ]] \
+  || fail "archived=true lists idle chat $LIVE_ID"
+# An explicit state wins over the default, exactly as it does for tasks.
+[[ "$(listed "?state=archived" "$CAP_ID")" == "true" ]] \
+  || fail "state=archived does not list archived chat $CAP_ID"
+CODE="$(api_status GET "/chats?archived=yes")"
+[[ "$CODE" == "400" ]] || fail "GET /v1/chats?archived=yes is $CODE, want 400"
 
 echo "GATE PASS: m14"

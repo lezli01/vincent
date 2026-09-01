@@ -210,6 +210,23 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 		}
 		f.States = append(f.States, chatstate.State(st))
 	}
+	// `archived` is GET /v1/tasks' parameter, spelled the same and defaulting
+	// the same way (§13.2, amended 2026-09-01): terminal chats are excluded
+	// unless asked for. It hides `handed_off` as well as `archived` — both are
+	// terminal (§5.5, task 074 decision 5) — which the name alone does not
+	// say. An explicit `state=` wins over it.
+	switch v := r.URL.Query().Get("archived"); v {
+	case "", "false":
+		f.Archived = store.ArchivedExclude
+	case "true":
+		f.Archived = store.ArchivedOnly
+	case "all":
+		f.Archived = store.ArchivedAll
+	default:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"archived must be one of: false, true, all")
+		return
+	}
 	chats, err := s.deps.Store.ListChats(r.Context(), f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
@@ -330,6 +347,23 @@ func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// archiveRefusal says which state actually blocked an archive. Archiving is
+// legal from `idle` alone (§5.5), so every other state reaches this — and the
+// one sentence that used to serve all of them, "a chat with a live turn cannot
+// be archived", was true of `running` and `awaiting_input` and false of both
+// terminal states, which hold no process at all (§11, issue #298). The
+// message now agrees with the `state` the details already carried.
+func archiveRefusal(st chatstate.State) string {
+	switch st {
+	case chatstate.Archived:
+		return "this chat is already archived"
+	case chatstate.HandedOff:
+		return "this chat was handed off to a task, which owns its worktree now"
+	default:
+		return "a chat with a live turn cannot be archived"
+	}
+}
+
 // handleChatArchive archives a chat: the worktree goes and the branch may go
 // with it, exactly as task 008 archives a task (§10). A dirty worktree is
 // refused unless `force` is set — the same refusal, and the same way out.
@@ -339,7 +373,7 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !chatstate.Allowed(chat.State, chatstate.Archive) {
-		writeConflict(w, "a chat with a live turn cannot be archived", map[string]string{"state": string(chat.State), "action": "archive"})
+		writeConflict(w, archiveRefusal(chat.State), map[string]string{"state": string(chat.State), "action": "archive"})
 		return
 	}
 	force := r.URL.Query().Get("force") == "true"

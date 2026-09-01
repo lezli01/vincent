@@ -519,7 +519,7 @@ chats too — the same objection that kept a `kind` column off `tasks`.
 | `running` | a live turn: an agent process is up, owned by the chat's runner goroutine |
 | `awaiting_input` | a turn holding its process while the agent waits on a §7.4 request. It **holds** its cap slot, for §6's reason: the process is alive on its stdin. *Amended 2026-08-31 (task 067, issue #269): that hold is now **bounded** by `defaults.input_timeout` — the wait expires, the turn fails `input_timeout`, the process tree is killed and the chat returns to `idle`, releasing the slot* |
 | `archived` | terminal. The worktree is gone; nothing further can run in it. *Amended 2026-09-01 (task 074, issue #288): this was "the only terminal state"; there are now two* |
-| `handed_off` | *Added 2026-09-01 (task 074, issue #288):* terminal. The worktree and branch belong to the task named by `handoff_task_id`, which is the **sole owner** of their cleanup and lifecycle from then on (§10). `worktree_path` is cleared in the handoff transaction — that is what transferring the §10 claim means concretely — while `branch`, `base_branch` and `base_sha` stay on the row as history. Reusing `archived` was rejected on mechanism, not taste: archiving *removes* the worktree and may delete the branch, which is exactly the state a handoff transfers, so "archiving a handed-off chat must never remove task-owned workspace state" is true by construction — `archive` is simply not legal from here |
+| `handed_off` | *Added 2026-09-01 (task 074, issue #288):* terminal. The worktree and branch belong to the task named by `handoff_task_id`, which is the **sole owner** of their cleanup and lifecycle from then on (§10). `worktree_path` is cleared in the handoff transaction — that is what transferring the §10 claim means concretely — while `branch`, `base_branch` and `base_sha` stay on the row as history. Reusing `archived` was rejected on mechanism, not taste: archiving *removes* the worktree and may delete the branch, which is exactly the state a handoff transfers, so "archiving a handed-off chat must never remove task-owned workspace state" is true by construction — `archive` is simply not legal from here. *Amended 2026-09-01 (issue #298): that refusal now **says so**. `POST /v1/chats/{id}/archive` on a `handed_off` chat answers `409` naming the handoff — the task owns the worktree now — and on an `archived` one that it is already archived, rather than the single sentence "a chat with a live turn cannot be archived" that both terminal states used to get and neither could be true of (§11, §13.2)* |
 
 Human actions: `send` (idle → running), `answer` (awaiting_input → running),
 `cancel` (running/awaiting_input → idle), `archive` (idle → archived) and
@@ -4821,7 +4821,16 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         resolved view and becomes a 400 at task creation
 GET    /v1/chats                        *Added 2026-08-30 (task 063).* Chats, newest first.
        ?project_id=&state=              `state` may repeat. Chats appear here and nowhere else:
-                                        never in GET /v1/tasks and never on the board
+       &archived=                       never in GET /v1/tasks and never on the board.
+                                        *Amended 2026-09-01 (issue #298):*
+                                        `archived=false|true|all`, default `false` — spelled and
+                                        defaulted exactly as GET /v1/tasks' parameter is, so one
+                                        vocabulary covers both entities (`terminal=` was the
+                                        rejected alternative). It hides **both** terminal states,
+                                        `archived` and `handed_off` alike (§5.5, task 074
+                                        decision 5), which its name does not say and this
+                                        sentence does. An explicit `state=` wins over it, as it
+                                        does for tasks. Anything else is `400 validation_failed`
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
                                           base_branch? } → 201 with the chat, its
                                         `vincent/{id}-{slug}` branch and its worktree (§10).
@@ -4854,7 +4863,13 @@ POST   /v1/chats/{id}/answer            the §7.4 answer flow verbatim: same nor
 POST   /v1/chats/{id}/cancel            stops the live turn and kills its process tree
 POST   /v1/chats/{id}/archive           removes the worktree and deletes the branch when it
                                         received nothing (§10, task 008 semantics), `?force=`
-                                        for the dirty-worktree refusal. Terminal
+                                        for the dirty-worktree refusal. Terminal.
+                                        *Amended 2026-09-01 (issue #298):* archiving is legal from
+                                        `idle` alone, so the `409` **names the state that actually
+                                        blocked it** rather than asserting a live turn: an
+                                        `archived` chat is told it is already archived and a
+                                        `handed_off` one that the task owns its worktree now
+                                        (§5.5). The message and `details.state` had disagreed
 POST   /v1/chats/{id}/handoff           *Added 2026-09-01 (task 074, issue #288).* Takes
                                         `POST /v1/tasks`' body, **validated by the same code** so
                                         the two routes accept exactly the same task; `project_id`,
@@ -6381,6 +6396,29 @@ stream for the live tail.
    re-renders the board with no keypress, and a `task.*` event does not — the
    separation runs both ways.
 
+   *Amended 2026-09-01 (issue #298).* **Terminal chats are off this board by
+   default**, and there is a key back to them. The board lists
+   `GET /v1/chats?archived=false` (§13.2) rather than everything, so an
+   `archived` or `handed_off` chat leaves it the way an archived task leaves
+   view 1; `s` cycles the listing — live, then archived and handed-off, then
+   both — the way view 7's `s` cycles a pull-request listing (task 064
+   decision 9), and the header names the listing whenever it is not the
+   default, so an empty board is never mistaken for "no chats". Hiding them
+   with no route back was rejected: an archived chat's transcript is still
+   worth reading. The terminal band survives, because it still orders the rows
+   the toggle brings back.
+
+   Two consequences of a chat being done with, on the same board. The
+   **last-activity cell stops**: for a terminal chat it renders *when* the chat
+   ended — an absolute stamp from `updated_at`, which is the moment of the last
+   write a chat row can take — instead of a duration that ticks up second by
+   second and reads exactly like a live conversation. No column is added to
+   `chats` for it and task 074 decision 6 is not reopened. And **`a` declines
+   on a terminal row** with a note naming the state, instead of opening the
+   "archive %q and remove its worktree? (y/n)" prompt: there is no worktree
+   left to remove, or — after a handoff — the task owns it, and the daemon's
+   own refusal (§13.2) says the same thing from the other side.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -7214,7 +7252,10 @@ nothing here to decide. The issue row is hidden — the chat is the source
 already. Submitting posts to the chat's own route, not to `POST /v1/tasks`
 (§13.4), and lands on the created task. A handed-off chat's header carries a
 **permanent** link to that task; the state renders as "handed off" and the chat
-sorts into the board's terminal band beside archived ones. It is a ctrl
+sorts into the board's terminal band beside archived ones — *amended 2026-09-01
+(issue #298): and, like an archived one, is off the board's default listing
+altogether, reachable by cycling it with `s`. The band is what orders the two
+terminal states once the toggle brings them back.* It is a ctrl
 combination for the reason `ctrl+r` is: the composer owns every printable key.
 
 *Amended 2026-08-31 (issue #279).* The new-chat form's project and agent
