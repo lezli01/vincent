@@ -538,7 +538,9 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
-leaves it open. The mouse wheel scrolls whichever tab is on screen.
+leaves it open. The mouse wheel scrolls whichever tab is on screen, unless a
+popup is open — a popup takes the mouse as well as the keyboard, so a tick
+behind it moves nothing.
 
 The counts beside each path are the added and removed lines inside that file's
 hunks, and the line above the list totals them. A **binary** file says so
@@ -1155,7 +1157,7 @@ them, and a composer at the bottom.
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
-| `pgup` / `pgdown` | Scroll the conversation |
+| `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `esc` | Back to the chats board |
 
@@ -1185,9 +1187,12 @@ model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at the
 other two levels rather than filling the screen.
 
 Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
-Finished turns are drawn from their transcripts, so raising the level shows more
-of what already happened and not only of what happens next. A turn whose
-transcript has aged out of retention still shows its answer.
+The **mouse wheel** does this too — a line per tick, from anywhere in the view,
+because the conversation is the only thing here that scrolls. Finished turns are
+drawn from their transcripts, so raising the level shows more of what already
+happened and not only of what happens next, and turns you wheel back to are
+fetched as you reach them. A turn whose transcript has aged out of retention
+still shows its answer.
 
 When the agent asks something mid-turn, the chat enters `awaiting_input` and
 **the same popup a task's question opens** appears here — same options, same

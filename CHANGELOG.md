@@ -32,6 +32,17 @@ list with the user-facing context a commit subject cannot carry.
   have since been dropped from the window still copies what it offered, so a
   pick can never fail.
 
+- **The mouse wheel scrolls a chat's conversation.** The chat workspace was the
+  one scrollable pane the wheel did not reach — `pgup`/`pgdown` and `ctrl+g`
+  were the only way to move it, which matters most here because the composer
+  holds the keyboard almost always. A tick now moves the conversation one line,
+  wheeling back pauses following the live end and `ctrl+g` re-arms it, and turns
+  whose transcripts had not been fetched yet are fetched as you wheel to them
+  rather than leaving blank space. It scrolls from anywhere in the view: the
+  conversation is the only thing on that screen that scrolls, which is what the
+  TUI's rule — the wheel moves the focused panel, not the hovered one — already
+  says to do. The chats board stays keyboard-only.
+
 - **A chat can now hand its worktree and branch to a task.** An idle chat gains
   one action — `hand off` — that creates a task adopting the chat's worktree
   path, branch, base branch and base SHA *exactly as they are*. Nothing is
@@ -658,6 +669,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The chat workspace's footer hint was drawn off the bottom of the screen.**
+  The composer counted as one line while it rendered three, so the chat's body
+  overran its frame by two rows: the hint line naming `enter send`,
+  `pgup/pgdown scroll` and `ctrl+g live` was cut off entirely and the composer
+  showed two of its three rows. Both are on screen now.
+- **The mouse wheel reached the tab behind an open task popup.** Clicks were
+  already ignored while a question, repair or follow-up popup owns the screen;
+  the wheel was not, so a tick scrolled the tab underneath it — and on the Steps
+  and Pull Request tabs, where the wheel moves a cursor rather than a viewport,
+  it changed which step or pull request was selected. A popup now takes the
+  wheel as well.
 - **Palette entries for `ctrl+`-modified keys did nothing.** Running one
   replays its direct key, and the replay had a hand-written case per ctrl key
   that had fallen a registry behind — the chat's `ctrl+r` (detail level) and
