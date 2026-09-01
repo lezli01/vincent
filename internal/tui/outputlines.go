@@ -4,17 +4,70 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// cols is a string's printable width. Every measurement in this file goes
-// through it: the gutters are glyphs, so `·` is one column and three bytes,
-// and byte-wise column math would indent every wrapped reasoning line wrong.
-func cols(s string) int { return utf8.RuneCountInString(s) }
+// cols is a string's printable width in terminal cells. Every measurement in
+// this file goes through it: the gutters are glyphs, so `·` is one column and
+// three bytes, and byte-wise column math would indent every wrapped reasoning
+// line wrong.
+//
+// Cells rather than runes (task 073 decision 2). A rune count is right for
+// ASCII and wrong for everything an agent actually prints: a CJK glyph or an
+// emoji occupies two columns, a combining mark occupies none, and a ZWJ
+// sequence is one grapheme of several runes. ansi.StringWidth is what
+// wrapCellLines and the rest of the TUI already measure with, so there is now
+// one answer to "how wide is this" in the package.
+//
+// This does not make the wrapping ANSI-aware, and it is not meant to: §15's
+// invariant stands — text is wrapped while plain and each produced line is
+// styled afterwards, so no break can land inside an escape sequence.
+func cols(s string) int { return ansi.StringWidth(s) }
+
+// sanitizeText removes everything in agent-supplied text that would drive the
+// terminal rather than fill it (task 073 decision 7).
+//
+// Every record goes through it, not just the Markdown path: agent text
+// reached the pane unfiltered before, so a tool result summary or a command's
+// output body carrying `\x1b[2J` could already clear the screen, and an OSC
+// sequence could already rewrite the window title. Doing it here — at
+// wrapLine's segment emission — covers every record type at one site and
+// cannot be bypassed by a record type added later. It also runs before any
+// measurement, so an escape sequence can never influence the width
+// arithmetic either.
+//
+// Newlines and tabs survive: the first is the pane's own paragraph break and
+// the second is indentation a fenced code block must keep.
+func sanitizeText(s string) string {
+	if strings.IndexFunc(s, isTerminalControl) < 0 {
+		return s
+	}
+	// ansi.Strip removes whole escape sequences, parameters included, which
+	// dropping the ESC alone would not: it would leave `[2J` as text.
+	s = ansi.Strip(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if isTerminalControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// isTerminalControl reports the C0 and C1 controls and DEL, minus the two
+// whitespace characters the pane renders itself.
+func isTerminalControl(r rune) bool {
+	if r == '\n' || r == '\t' {
+		return false
+	}
+	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)
+}
 
 // The output pane's line model (T4.16).
 //
@@ -109,6 +162,17 @@ type paneLine struct {
 	gutter      string
 	gutterStyle lipgloss.Style
 	segs        []segment
+	// contPrefix replaces the spaces a continuation is otherwise indented
+	// with. A blockquote's bar has to appear on every line of the quote: a
+	// marker drawn once and then dropped is a content gutter that is not a
+	// gutter (task 073 decision 6). Empty means the spaces, which is every
+	// caller that predates Markdown.
+	contPrefix string
+	// pre marks preformatted content — a fenced code block's line — which
+	// hard-wraps at the cell boundary and keeps every space and tab instead
+	// of going through splitWords, whose strings.Fields would collapse the
+	// indentation the block exists to show.
+	pre bool
 	// isOutput marks assistant prose, which drives the blank line that
 	// separates one turn from the next.
 	isOutput bool
@@ -143,6 +207,9 @@ const (
 // allowed to overflow — a base64 blob or a path with no spaces would
 // otherwise reintroduce the clipping this replaces.
 func wrapLine(pl paneLine, width int) []string {
+	if pl.pre {
+		return wrapPre(pl, width)
+	}
 	gutterWidth := cols(pl.gutter)
 	avail := width - gutterWidth
 	if avail < 8 {
@@ -150,7 +217,7 @@ func wrapLine(pl paneLine, width int) []string {
 		// width is all that is left.
 		avail = 8
 	}
-	indent := strings.Repeat(" ", gutterWidth)
+	indent := continuationIndent(pl, gutterWidth)
 
 	var out []string
 	var cur strings.Builder
@@ -202,7 +269,7 @@ func wrapLine(pl paneLine, width int) []string {
 	for _, seg := range pl.segs {
 		// Hard breaks in the source are honored: a multi-paragraph assistant
 		// message keeps its paragraphs.
-		for i, para := range strings.Split(seg.text, "\n") {
+		for i, para := range strings.Split(sanitizeText(seg.text), "\n") {
 			if i > 0 {
 				flushLine()
 			}
@@ -253,13 +320,99 @@ func sameStyle(a, b lipgloss.Style) bool {
 	return a.Render(probe) == b.Render(probe)
 }
 
+// continuationIndent is what a wrapped line starts with. It is the gutter's
+// width in spaces unless the caller asked for a prefix, which is padded or
+// cut to exactly that width so the column arithmetic above still holds.
+func continuationIndent(pl paneLine, gutterWidth int) string {
+	if pl.contPrefix == "" {
+		return strings.Repeat(" ", gutterWidth)
+	}
+	return pl.gutterStyle.Render(padCells(pl.contPrefix, gutterWidth))
+}
+
+// padCells makes a string exactly width cells wide.
+func padCells(s string, width int) string {
+	switch n := cols(s); {
+	case n == width:
+		return s
+	case n > width:
+		return ansi.Cut(s, 0, width)
+	default:
+		return s + strings.Repeat(" ", width-n)
+	}
+}
+
+// wrapPre lays a preformatted line out: no word breaking, no collapsing of
+// whitespace, no ellipsis. A code line longer than the pane continues on the
+// next line at the block's own rail (task 073 decision 3), which is what the
+// pane already does for a long path — truncating would put the tail of a
+// long line out of reach of the TUI entirely, and clipping is what T4.16
+// removed.
+func wrapPre(pl paneLine, width int) []string {
+	gutterWidth := cols(pl.gutter)
+	avail := width - gutterWidth
+	if avail < 8 {
+		avail = 8
+	}
+	head := pl.gutterStyle.Render(pl.gutter)
+	cont := head
+	if pl.contPrefix != "" {
+		cont = continuationIndent(pl, gutterWidth)
+	}
+	text, style := "", lipgloss.NewStyle()
+	if len(pl.segs) > 0 {
+		// Tabs are expanded to the four columns lipgloss renders them as.
+		// Measuring the tab and rendering the spaces would disagree —
+		// ansi.StringWidth calls a tab zero columns wide — and a
+		// tab-indented code block would then overflow the pane by exactly
+		// its indentation.
+		text = strings.ReplaceAll(sanitizeText(pl.segs[0].text), "\t", "    ")
+		style = pl.segs[0].style
+	}
+	var out []string
+	for _, src := range strings.Split(text, "\n") {
+		for {
+			chunk := src
+			if cols(src) > avail {
+				chunk = ansi.Cut(src, 0, avail)
+			}
+			if chunk == "" && src != "" {
+				// A single grapheme wider than the pane: emit it whole
+				// rather than spin, since cutting it produces nothing.
+				chunk = src
+			}
+			prefix := cont
+			if len(out) == 0 {
+				prefix = head
+			}
+			line := prefix
+			if chunk != "" {
+				line += style.Render(chunk)
+			}
+			out = append(out, line)
+			rest := ansi.TruncateLeft(src, cols(chunk), "")
+			if rest == "" || rest == src {
+				break
+			}
+			src = rest
+		}
+	}
+	return out
+}
+
 // splitWords breaks a paragraph into words and single-space separators,
 // preserving a leading space so a segment that begins with one — a tool
 // call's " subject" following its name — is not silently joined to the
-// segment before it. Over-long words are hard-split rather than allowed to
-// overflow: a path or a base64 blob with no spaces would otherwise
-// reintroduce the clipping this wrapping replaces. Widths count runes; a
-// byte-wise split would cut a multi-byte rune and emit mojibake.
+// segment before it, and a trailing one so a segment that ends in a space —
+// the prose before an inline `code` span — is not joined to the segment
+// after it. A held separator is dropped at a line break, so preserving it
+// cannot leave trailing whitespace on a rendered line.
+//
+// Over-long words are hard-split rather than allowed to overflow: a path or a
+// base64 blob with no spaces would otherwise reintroduce the clipping this
+// wrapping replaces. The split is by cell, not by rune (task 073 decision 2):
+// slicing a rune index cuts a ZWJ emoji into its parts and mis-measures every
+// wide glyph, for the same reason a rune count did.
 func splitWords(para string, avail int) []string {
 	fields := strings.Fields(para)
 	out := make([]string, 0, len(fields)*2)
@@ -270,12 +423,19 @@ func splitWords(para string, avail int) []string {
 		if i > 0 {
 			out = append(out, " ")
 		}
-		runes := []rune(field)
-		for len(runes) > avail {
-			out = append(out, string(runes[:avail]), " ")
-			runes = runes[avail:]
+		for cols(field) > avail {
+			head := ansi.Cut(field, 0, avail)
+			rest := ansi.TruncateLeft(field, cols(head), "")
+			if head == "" || rest == "" || rest == field {
+				break
+			}
+			out = append(out, head, " ")
+			field = rest
 		}
-		out = append(out, string(runes))
+		out = append(out, field)
+	}
+	if len(fields) > 0 && strings.HasSuffix(para, " ") {
+		out = append(out, " ")
 	}
 	return out
 }
@@ -472,6 +632,23 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 			continue
 		}
 		flushRaw()
+		if rec.Type == "agent.output" {
+			// Assistant prose is the one record type that is Markdown
+			// (task 073 decision 5), and it is handled here rather than in
+			// renderRecord because one record now yields several pane lines
+			// — the same reason agent.thinking is handled above.
+			block := markdownLines(rec.Text, width)
+			if len(block) == 0 {
+				continue
+			}
+			if !lastWasOutput && len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			sawOutput = true
+			lines = append(lines, block...)
+			lastWasOutput = true
+			continue
+		}
 		if rec.Type == "agent.thinking" {
 			if block := thinkingBlock(rec.Text, level, width, opts.expandKey); len(block) > 0 {
 				lines = append(lines, block...)
@@ -503,8 +680,6 @@ func outputLines(records []apiclient.TranscriptRecord, level outputLevel, width 
 // that level means "show me the machine".
 func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) (paneLine, bool) {
 	switch rec.Type {
-	case "agent.output":
-		return plain(rec.Text, lipgloss.NewStyle(), true), rec.Text != ""
 	case "agent.tool_use":
 		if len(rec.Tools) == 0 {
 			return paneLine{}, false

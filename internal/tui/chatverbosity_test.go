@@ -238,3 +238,68 @@ func TestChatLiveAndRefetchedAgree(t *testing.T) {
 		}
 	}
 }
+
+// mdFixture is assistant prose covering the whole supported subset, used to
+// hold the two workspaces to the same rendering.
+const mdFixture = "# Findings\n\nThe **fix** is in `internal/tui`, and it is *small*.\n\n" +
+	"- one, long enough to wrap at eighty columns without any help at all\n" +
+	"  - nested\n1. first\n\n> a quotation\n\n```go\nfunc main() {}\n```\n\n---\n\nDone."
+
+// TestChatAndTaskPaneRenderMarkdownIdentically is the first acceptance
+// criterion of task 073, and it extends the equivalence pattern above: the
+// same assistant Markdown, at the same width and the same level, is the same
+// lines in a task workspace and in a chat. There is one renderer, and this is
+// what says so.
+func TestChatAndTaskPaneRenderMarkdownIdentically(t *testing.T) {
+	recs := []apiclient.TranscriptRecord{
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Edit", CallID: "c1"}}},
+		{Type: "agent.output", Text: mdFixture},
+	}
+	for _, level := range []outputLevel{levelCompact, levelNormal, levelVerbose} {
+		for _, width := range []int{40, 80} {
+			d := newTestDetail(t)
+			d.width = width
+			d.level.set(level)
+			d.records = recs
+			pane := strings.Join(plainLines(d.outputLines()), "\n")
+
+			v := chatViewFixture()
+			v.level.set(level)
+			v.turns = []apiclient.ChatTurn{{ID: 9, Seq: 1, State: "done", Prompt: "ask"}}
+			v.turnRecords[1] = recs
+			body := strings.Join(plainLines(v.bodyLines(width)), "\n")
+
+			if !strings.Contains(body, pane) {
+				t.Errorf("%s at width %d: the chat and the task pane disagree\n"+
+					"pane:\n%s\nchat:\n%s", level, width, pane, body)
+			}
+			if !strings.Contains(pane, "▌ Findings") {
+				t.Errorf("%s at width %d: the fixture did not render as Markdown:\n%s",
+					level, width, pane)
+			}
+		}
+	}
+}
+
+// TestChatRetentionFallbackIsRenderedProse holds decision 5's second site.
+// §17 leaves a turn nothing but its answer, and that answer is assistant
+// prose: it goes through the same renderer the records do, at the pane's full
+// width and with no line cap — the cap this used to apply hid the tail of the
+// only content the turn had left.
+func TestChatRetentionFallbackIsRenderedProse(t *testing.T) {
+	v := finishedChat(t, 1)
+	v.turns[0].ResultText = mdFixture + "\n\n" + strings.Repeat("tail line\n\n", 30)
+	v.applyTranscript(chatTranscriptMsg{chatID: 1, seq: 1, records: nil})
+	body := plainLines(v.bodyLines(80))
+	joined := strings.Join(body, "\n")
+	if !strings.Contains(joined, "▌ Findings") || !strings.Contains(joined, "• one") {
+		t.Errorf("the retained-away answer was not rendered as Markdown:\n%s", joined)
+	}
+	if strings.Count(joined, "tail line") != 30 {
+		t.Errorf("the answer lost its tail to a cap: %d of 30 lines survived:\n%s",
+			strings.Count(joined, "tail line"), joined)
+	}
+	if strings.Contains(joined, "…") {
+		t.Errorf("the fallback still truncates with an ellipsis:\n%s", joined)
+	}
+}
