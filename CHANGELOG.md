@@ -80,6 +80,14 @@ list with the user-facing context a commit subject cannot carry.
   palette had been unreachable from the chat workspace since it landed. `ctrl+p`
   is hoisted above the input-capture gate the way `ctrl+v` already is, and works
   everywhere `:` does.
+
+### Fixed
+
+- **Palette entries for `ctrl+`-modified keys did nothing.** Running one
+  replays its direct key, and the replay had a hand-written case per ctrl key
+  that had fallen a registry behind — the chat's `ctrl+r` (detail level) and
+  `ctrl+g` (follow the live end) both replayed as a bare `c`. Any
+  `ctrl+<letter>` is now synthesized by rule.
 - **Assistant prose renders as Markdown in the task output pane and in chats.**
   Headings, emphasis, strong text, ordered and unordered lists, nested lists,
   blockquotes, inline code, fenced code and horizontal rules become terminal

@@ -518,3 +518,34 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestPaletteRunsTheReaderActions closes the loop the palette promises: a
+// listed entry replays its direct key, so an entry whose key the replay could
+// not synthesize would be a row that does nothing.
+func TestPaletteRunsTheReaderActions(t *testing.T) {
+	for _, key := range []string{rawToggleKey, copyPickKey, chatExpandKey, "ctrl+g"} {
+		if got := synthKey(key); got.String() != key {
+			t.Fatalf("synthKey(%q) produces %q", key, got.String())
+		}
+	}
+
+	m := connectedChatRoot(t)
+	v := m.views[viewChat].(*chatView)
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	if m.palette == nil {
+		t.Fatal("ctrl+p did not open the palette")
+	}
+	for _, r := range "original Markdown" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if got := len(m.palette.matches()); got != 1 {
+		t.Fatalf("the query matched %d entries, want the raw toggle alone", got)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !v.raw.get() {
+		t.Fatal("running the palette entry did not toggle raw mode")
+	}
+	if v.composer.Value() != "" {
+		t.Fatalf("the palette's replay typed into the composer: %q", v.composer.Value())
+	}
+}

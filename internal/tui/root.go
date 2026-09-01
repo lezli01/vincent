@@ -474,15 +474,16 @@ func synthKey(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "space":
 		return tea.KeyPressMsg{Code: ' ', Text: " "}
-	case "ctrl+s":
-		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
-	case "ctrl+c":
-		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
-	case "ctrl+x":
-		return tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
-	default:
-		return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 	}
+	// Any ctrl+<letter>, rather than a case per key. The named list above had
+	// grown three of them and was already one behind the registry: ctrl+r and
+	// ctrl+g are ctxChat rows the palette lists, and replaying either through
+	// the default arm below synthesized `c` with the whole label as its text
+	// (task 074). A rule the registry cannot outrun is the fix.
+	if mod, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(mod)) == 1 {
+		return tea.KeyPressMsg{Code: []rune(mod)[0], Mod: tea.ModCtrl}
+	}
+	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 }
 
 // updateNoticeKey is the §16 overlay's key handling: it swallows everything

@@ -260,7 +260,13 @@ holds them, plus four registry probes in `bindings_test.go`:
   chat's hand-written footer line.
 
 The existing `TestPaletteReachesEveryRegistryEntry` covers the new rows'
-palette reachability in both contexts without a new test.
+palette reachability in both contexts without a new test — but only that they
+are *listed*. Running one exposed a standing defect: `synthKey`, which replays a
+palette entry's direct key, had a hand-written case per ctrl key and was already
+a registry behind, so `ctrl+r` and `ctrl+g` — both `ctxChat` rows the palette
+lists — replayed as a bare `c`. It is now a rule over any `ctrl+<letter>` rather
+than a list, and `TestPaletteRunsTheReaderActions` holds both the synthesis and
+the whole palette → replay → effect path.
 
 ## Left open
 
