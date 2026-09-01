@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -61,10 +60,10 @@ type projectForm struct {
 	// resent — a resend would stomp a concurrent edit.
 	original *apiclient.Project
 
-	path     textinput.Model
-	name     textinput.Model
-	branch   textinput.Model
-	cap      textinput.Model
+	path     textField
+	name     textField
+	branch   textField
+	cap      textField
 	workflow string
 	// workflowSet records that the workflow row was touched, so clearing it
 	// on an edit sends null rather than being mistaken for "unchanged".
@@ -85,16 +84,16 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 	f := &projectForm{
 		client:   client,
 		original: p,
-		path:     textinput.New(),
-		name:     textinput.New(),
-		branch:   textinput.New(),
-		cap:      textinput.New(),
+		path:     newTextField(),
+		name:     newTextField(),
+		branch:   newTextField(),
+		cap:      newTextField(),
 		rowErr:   map[pfRow]string{},
 	}
-	f.path.Placeholder = "path to a git repository"
-	f.name.Placeholder = "(the directory name)"
-	f.branch.Placeholder = "(detected from the repository)"
-	f.cap.Placeholder = "(no project cap)"
+	f.path.SetPlaceholder("path to a git repository")
+	f.name.SetPlaceholder("(the directory name)")
+	f.branch.SetPlaceholder("(detected from the repository)")
+	f.cap.SetPlaceholder("(no project cap)")
 	if p != nil {
 		f.path.SetValue(p.Path)
 		f.name.SetValue(p.Name)

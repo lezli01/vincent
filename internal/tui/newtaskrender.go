@@ -125,7 +125,7 @@ func (n *newTask) renderCompact(height int) string {
 		if row == n.cursor {
 			cursorLine = len(lines)
 		}
-		lines = append(lines, n.renderRow(row))
+		lines = append(lines, strings.Split(n.renderRow(row), "\n")...)
 		lines = append(lines, n.renderExpansion(row)...)
 	}
 	lines = append(lines, "")
@@ -219,7 +219,7 @@ func (n *newTask) renderStage(stage ntStage) ([]string, int) {
 		if row == n.cursor {
 			cursorLine = len(lines)
 		}
-		lines = append(lines, n.renderRow(row))
+		lines = append(lines, strings.Split(n.renderRow(row), "\n")...)
 		lines = append(lines, n.renderExpansion(row)...)
 	}
 	lines = append(lines, "", styleDim.Render("  ↑/↓ or tab moves · enter changes the focused field"))
@@ -250,7 +250,7 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		}, styleDim.Render(" · "))),
 	)
 	cursorLine := len(lines)
-	lines = append(lines, n.renderRow(ntCreate))
+	lines = append(lines, strings.Split(n.renderRow(ntCreate), "\n")...)
 	lines = append(lines, n.statusLines()...)
 	return lines, cursorLine
 }
@@ -259,7 +259,21 @@ func (n *newTask) reviewLine(label, value string) string {
 	return "  " + styleDim.Render(fmt.Sprintf("%-13s", label)) + " " + value
 }
 
+// ntRowIndent is the cursor plus the padded label every row carries, and so
+// what a text row has left of the pane (issue #299).
+const ntRowIndent = 2 + 12 + 1
+
+// sizeFields hands the four text rows the width they wrap at.
+func (n *newTask) sizeFields() {
+	w := max(n.width-ntRowIndent, 10)
+	n.titleIn.SetWidth(w)
+	n.branch.SetWidth(w)
+	n.branchName.SetWidth(w)
+	n.priority.SetWidth(w)
+}
+
 func (n *newTask) renderRow(row ntRow) string {
+	n.sizeFields()
 	cursor := "  "
 	if row == n.cursor && n.mode != ntConfirming {
 		cursor = styleFocus.Render("› ")
@@ -275,7 +289,11 @@ func (n *newTask) renderRow(row ntRow) string {
 		return cursor + styleKey.Render("[ "+label+" ]") + "  " +
 			styleDim.Render("enter · ctrl+s from anywhere")
 	}
-	line := fmt.Sprintf("%s%-12s %s", cursor, ntLabels[row], n.rowValue(row))
+	// indentRows, not a plain concatenation: an edited text row wraps, and its
+	// further rows line up under the first rather than under the label.
+	line := strings.Join(indentRows(
+		fmt.Sprintf("%s%-12s ", cursor, ntLabels[row]),
+		strings.Split(n.rowValue(row), "\n")), "\n")
 	// An inherited row is drawn like any other and marked as what it is: the
 	// worktree it names exists, so this is a fact being confirmed rather than
 	// a choice being offered (task 074).
@@ -524,6 +542,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 	}
 	switch {
 	case n.mode == ntPicking && n.pick != nil && ntRow(n.pick.row) == row:
+		n.pick.setWidth(n.width)
 		return n.renderPicker()
 	case (n.mode == ntFieldsOpen || n.mode == ntFieldPicking) && row == ntFields:
 		return n.renderFields()
@@ -604,6 +623,10 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 
 func (n *newTask) renderFields() []string {
 	f := n.fieldsEd
+	// 6 is the row's own indent and marker; the label in front of the value is
+	// the definition's, and the pane truncates a row whose label runs long the
+	// way it always has.
+	f.input.SetWidth(max(n.width-6, 10))
 	out := []string{styleDim.Render("    task fields — available to templates as .Task.Fields:")}
 	for i, r := range f.rows {
 		marker := "  "
@@ -645,7 +668,10 @@ func (n *newTask) renderFields() []string {
 				}
 			}
 		}
-		out = append(out, "    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder))
+		// Split: the key/value field wraps, and a row carrying newlines would
+		// otherwise be one element of a slice the caller counts in lines.
+		out = append(out, strings.Split(
+			"    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder), "\n")...)
 		if i == f.cursor && r.declared {
 			if r.definition.Description != "" {
 				out = append(out, styleDim.Render("        "+r.definition.Description))
@@ -662,6 +688,7 @@ func (n *newTask) renderFields() []string {
 			}
 		}
 		if i == f.cursor && n.mode == ntFieldPicking && n.pick != nil {
+			n.pick.setWidth(n.width)
 			out = append(out, n.pick.renderBody()...)
 			hint := "    enter select · esc cancel"
 			if r.definition.Multiple {

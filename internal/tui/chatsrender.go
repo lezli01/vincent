@@ -19,7 +19,8 @@ func (v *chatsView) render(width, height int) string {
 	lines := make([]string, 0, height)
 	lines = append(lines, v.headerLine(width))
 	if v.filtering || v.filter.Value() != "" {
-		lines = append(lines, " "+v.filter.View())
+		v.filter.SetWidth(max(width-1, 10))
+		lines = append(lines, fieldRows(" ", v.filter)...)
 	}
 	lines = append(lines, "")
 

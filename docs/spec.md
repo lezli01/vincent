@@ -6485,6 +6485,18 @@ design, so `git push -u origin` on one either fails or lands a copy of a
 contributor's branch in the user's own repository. It is never a force-push and
 destroys nothing.
 
+**Text fields wrap (added 2026-09-01, issue #299).** A field being typed into
+is bound by the same rule the boards and the rendered Markdown already carry: a
+value too long for the pane it is in **wraps onto further rows of that pane**.
+It is never drawn past the right edge, and it is never cut with an ellipsis —
+truncating a field puts the tail of the value *and the cursor* out of reach,
+which is worse than it is on any read-only surface. The field's height is
+therefore a property of its value, and the form hosting it recomputes its line
+budget from the rows the field actually drew rather than assuming one. That
+holds for the multi-line chat composer of view 9 as much as for the single-value
+rows: a view is given a width and a height and draws inside both of them, so a
+composer that grew is a body that shrank, not a frame that overflowed.
+
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
 unixes, the shell's protocol handler on Windows — and to nothing else. Only

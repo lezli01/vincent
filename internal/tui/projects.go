@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/table"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -77,7 +76,7 @@ type projectsView struct {
 	tbl        table.Model
 	selectedID int64
 
-	filter    textinput.Model
+	filter    textField
 	filtering bool
 
 	form    *projectForm
@@ -91,9 +90,9 @@ type projectsView struct {
 }
 
 func newProjectsView() *projectsView {
-	fi := textinput.New()
-	fi.Placeholder = "filter by name or path"
-	fi.Prompt = "/"
+	fi := newTextField()
+	fi.SetPlaceholder("filter by name or path")
+	fi.SetPrompt("/")
 	p := &projectsView{
 		now:    time.Now,
 		filter: fi,

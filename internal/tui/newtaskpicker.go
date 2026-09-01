@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -55,12 +54,12 @@ type picker struct {
 	cursor    int // index into matches, not into options
 	top       int // first visible match; the window scrolls to follow cursor
 	allowFree bool
-	input     textinput.Model
+	input     textField
 	editing   bool
 	// filter narrows the list incrementally. matches holds the indices of
 	// options passing it, so the full catalog is never mutated and clearing
 	// the filter is free.
-	filter    textinput.Model
+	filter    textField
 	filtering bool
 	matches   []int
 	err       string
@@ -69,13 +68,20 @@ type picker struct {
 	// picking three reviewers is one visit rather than three (§8.1.2, task
 	// 058).
 	multi bool
+	// width is the pane the owning form is drawing into, so the picker's own
+	// two fields wrap at it rather than running off it (issue #299). Forms set
+	// it before renderBody.
+	width int
 }
 
+// setWidth hands the picker the pane width its rows share.
+func (p *picker) setWidth(w int) { p.width = w }
+
 func newPicker(row int, heading string, options []pickerOption, allowFree bool, current string) *picker {
-	in := textinput.New()
-	in.Placeholder = "type a value"
-	fl := textinput.New()
-	fl.Placeholder = "filter"
+	in := newTextField()
+	in.SetPlaceholder("type a value")
+	fl := newTextField()
+	fl.SetPlaceholder("filter")
 	p := &picker{row: row, heading: heading, options: options, allowFree: allowFree, input: in, filter: fl}
 	p.applyFilter()
 	for i, idx := range p.matches {
@@ -248,7 +254,8 @@ func (p *picker) renderBody() []string {
 	}
 	out := []string{styleDim.Render(heading)}
 	if p.filtering {
-		out = append(out, "      "+p.filter.View())
+		p.filter.SetWidth(max(p.width-6, 10))
+		out = append(out, fieldRows("      ", p.filter)...)
 	}
 	end := min(p.top+pickerWindow, len(p.matches))
 	if p.top > 0 {
@@ -296,7 +303,8 @@ func (p *picker) renderBody() []string {
 		out = append(out, "    "+marker+styleDim.Render("type a value not listed…"))
 	}
 	if p.editing {
-		out = append(out, "      "+p.input.View())
+		p.input.SetWidth(max(p.width-6, 10))
+		out = append(out, fieldRows("      ", p.input)...)
 	}
 	if p.err != "" {
 		out = append(out, styleBad.Render("    ⚠ "+p.err))
@@ -623,12 +631,12 @@ type fieldsEditor struct {
 	cursor int
 	// editing is 0 for none, 1 for the key, 2 for the value.
 	editing int
-	input   textinput.Model
+	input   textField
 	err     string
 }
 
 func newFieldsEditor(rows []kv) *fieldsEditor {
-	in := textinput.New()
+	in := newTextField()
 	return &fieldsEditor{rows: append([]kv(nil), rows...), input: in}
 }
 

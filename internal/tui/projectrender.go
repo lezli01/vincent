@@ -22,7 +22,7 @@ func (p *projectsView) render(width, height int) string {
 		if guidedTakeover(p.width, p.height) {
 			return p.renderGuided(rows)
 		}
-		return p.form.render()
+		return p.form.render(p.width)
 	}
 	p.syncTable(rows)
 	if guidedTakeover(p.width, p.height) {
@@ -72,7 +72,7 @@ func (p *projectsView) renderGuided(rows []apiclient.Project) string {
 	var main string
 	if p.form != nil {
 		mainTitle = p.form.heading()
-		main = p.form.renderFocused(p.height - 2)
+		main = p.form.renderFocused(p.width/2, p.height-2)
 	} else if pr, ok := p.current(); ok {
 		mainTitle = "Overview · " + pr.Name
 		main = p.renderProjectOverview(pr, p.height-2)
@@ -321,7 +321,8 @@ func (p *projectsView) rowsFor(projects []apiclient.Project, set projectColSet) 
 func (p *projectsView) statusLines() []string {
 	var out []string
 	if p.filtering || p.filter.Value() != "" {
-		out = append(out, " "+p.filter.View())
+		p.filter.SetWidth(max(p.width-1, 10))
+		out = append(out, fieldRows(" ", p.filter)...)
 	}
 	if p.loadErr != nil {
 		note := " ⚠ refresh failed: " + errString(p.loadErr)
@@ -362,17 +363,25 @@ func (f *projectForm) heading() string {
 	return "Edit project"
 }
 
-func (f *projectForm) render() string {
-	lines, _ := f.renderLines(true)
+func (f *projectForm) render(width int) string {
+	lines, _ := f.renderLines(width, true)
 	return strings.Join(lines, "\n")
 }
 
-func (f *projectForm) renderFocused(height int) string {
-	lines, cursorLine := f.renderLines(false)
+func (f *projectForm) renderFocused(width, height int) string {
+	lines, cursorLine := f.renderLines(width, false)
 	return strings.Join(window(lines, cursorLine, height), "\n")
 }
 
-func (f *projectForm) renderLines(includeHeading bool) ([]string, int) {
+func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int) {
+	// pfRowIndent is the two-space gutter, the marker and the padded label
+	// every row carries, and so what a text row has left of the pane (#299).
+	const pfRowIndent = 2 + 2 + 20
+	w := max(width-pfRowIndent, 10)
+	f.path.SetWidth(w)
+	f.name.SetWidth(w)
+	f.branch.SetWidth(w)
+	f.cap.SetWidth(w)
 	var lines []string
 	if includeHeading {
 		lines = append(lines, " "+styleTitle.Render(strings.ToLower(f.heading())), "")
@@ -382,11 +391,12 @@ func (f *projectForm) renderLines(includeHeading bool) ([]string, int) {
 		if row == f.cursor {
 			cursorLine = len(lines)
 		}
-		lines = append(lines, f.renderRow(row))
+		lines = append(lines, strings.Split(f.renderRow(row), "\n")...)
 		if msg, ok := f.rowErr[row]; ok {
 			lines = append(lines, styleBad.Render("      ⚠ "+msg))
 		}
 		if row == pfWorkflow && f.pick != nil {
+			f.pick.setWidth(width)
 			lines = append(lines, f.pick.renderBody()...)
 			lines = append(lines, styleDim.Render("    enter select · esc cancel"))
 		}
@@ -418,7 +428,7 @@ func (f *projectForm) renderRow(row pfRow) string {
 	if row == pfSave {
 		return "  " + marker + styleTitle.Render("save")
 	}
-	return "  " + marker + label + f.rowValue(row)
+	return strings.Join(indentRows("  "+marker+label, strings.Split(f.rowValue(row), "\n")), "\n")
 }
 
 func (f *projectForm) rowValue(row pfRow) string {

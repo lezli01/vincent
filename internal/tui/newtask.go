@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -180,15 +179,15 @@ type newTask struct {
 	// re-derived when the project-scoped catalog lands; a deliberate pick
 	// must survive it.
 	workflowPicked bool
-	titleIn        textinput.Model
+	titleIn        textField
 	desc           textarea.Model
 	fields         []kv
-	branch         textinput.Model
+	branch         textField
 	// branchName is the task's own branch, distinct from branch above, which is
 	// the *base* it forks from. Two adjacent rows about branches need labels that
 	// cannot be misread as one having been renamed (task 001).
-	branchName textinput.Model
-	priority   textinput.Model
+	branchName textField
+	priority   textField
 	agent      string
 	model      string
 	effort     string
@@ -248,23 +247,27 @@ type newTask struct {
 }
 
 func newNewTask() *newTask {
-	title := textinput.New()
-	title.Placeholder = "what should the agent do?"
-	branch := textinput.New()
-	branch.Placeholder = "base branch"
-	priority := textinput.New()
-	priority.Placeholder = "0"
+	title := newTextField()
+	title.SetPlaceholder("what should the agent do?")
+	branch := newTextField()
+	branch.SetPlaceholder("base branch")
+	priority := newTextField()
+	priority.SetPlaceholder("0")
 	priority.SetValue("0")
 	desc := textarea.New()
 	desc.Placeholder = "describe the task (markdown); e opens $EDITOR"
 	desc.SetHeight(5)
 	return &newTask{
-		exec:     tea.ExecProcess,
-		titleIn:  title,
-		branch:   branch,
-		priority: priority,
-		desc:     desc,
-		rowErr:   map[ntRow]string{},
+		exec:    tea.ExecProcess,
+		titleIn: title,
+		branch:  branch,
+		// Constructed here rather than left as a zero value: a text field owns
+		// a viewport, so it has to be built before anything sizes or types
+		// into it (issue #299).
+		branchName: newTextField(),
+		priority:   priority,
+		desc:       desc,
+		rowErr:     map[ntRow]string{},
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -38,7 +37,7 @@ type configForm struct {
 	// choice indexes key.choices for kindBool and kindEnum; input holds the
 	// text for every other kind.
 	choice int
-	input  textinput.Model
+	input  textField
 	// confirming is the second step a dangerous key needs. It is entered on
 	// save and left by y (apply) or esc (back to the field).
 	confirming bool
@@ -56,10 +55,9 @@ func newConfigForm(k configKey, cur apiclient.Config) *configForm {
 	case kindBool, kindEnum:
 		f.choice = indexOf(k.choices, value)
 	default:
-		in := textinput.New()
-		in.Prompt = ""
+		in := newTextField()
+		in.SetPrompt("")
 		in.SetValue(value)
-		in.SetWidth(48)
 		in.Focus()
 		// The cursor lands at the end, on the value someone is about to edit,
 		// rather than at column zero in front of it.
@@ -158,7 +156,7 @@ func (f *configForm) save(client *apiclient.Client) tea.Cmd {
 // default beside it, and the line that says what happens when it applies. The
 // width is the caller's business: every line here is short by construction, so
 // nothing wraps and nothing has to be elided.
-func (f *configForm) render(_ int) []string {
+func (f *configForm) render(width int) []string {
 	out := []string{
 		" " + styleTitle.Render("edit "+f.key.path),
 		"",
@@ -172,7 +170,8 @@ func (f *configForm) render(_ int) []string {
 	case kindBool, kindEnum:
 		out = append(out, "   "+f.renderChoices())
 	default:
-		out = append(out, "   "+f.input.View())
+		f.input.SetWidth(max(width-3, 10))
+		out = append(out, fieldRows("   ", f.input)...)
 		if len(f.key.choices) > 0 {
 			out = append(out, "   "+styleDim.Render("accepted: "+strings.Join(f.key.choices, " ")))
 		}

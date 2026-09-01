@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -238,15 +237,15 @@ func pickText(it copyItem, resolve func(seq int64) (string, bool)) string {
 
 // readerPicker is the popup itself: a search line over the captured rows.
 type readerPicker struct {
-	input  textinput.Model
+	input  textField
 	items  []copyItem
 	cursor int
 }
 
 func newReaderPicker(items []copyItem) *readerPicker {
-	in := textinput.New()
-	in.Placeholder = "type to search what can be copied"
-	in.Prompt = ": "
+	in := newTextField()
+	in.SetPlaceholder("type to search what can be copied")
+	in.SetPrompt(": ")
 	in.Focus()
 	return &readerPicker{input: in, items: items}
 }
@@ -312,7 +311,8 @@ func (p *readerPicker) paste(text string) tea.Cmd {
 func (p *readerPicker) render(w, h int) string {
 	inner := max(w-2, 10)
 	lines := make([]string, 0, h)
-	lines = append(lines, " "+p.input.View())
+	p.input.SetWidth(max(inner-1, 1))
+	lines = append(lines, fieldRows(" ", p.input)...)
 
 	m := p.matches()
 	if len(m) == 0 {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -99,7 +98,7 @@ func (w *workflowsView) editorActivate() tea.Cmd {
 		}
 		return w.commitRow(row, next)
 	}
-	in := textinput.New()
+	in := newTextField()
 	in.SetValue(row.value)
 	in.Focus()
 	e.input = &in

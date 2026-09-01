@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -81,7 +80,7 @@ type chatsView struct {
 	cursor     int
 	selectedID int64
 
-	filter    textinput.Model
+	filter    textField
 	filtering bool
 
 	folds   foldSet
@@ -100,9 +99,9 @@ type chatsView struct {
 }
 
 func newChatsView() *chatsView {
-	fi := textinput.New()
-	fi.Placeholder = "filter by title, agent or branch"
-	fi.Prompt = "/"
+	fi := newTextField()
+	fi.SetPlaceholder("filter by title, agent or branch")
+	fi.SetPrompt("/")
 	return &chatsView{now: time.Now, filter: fi, names: map[int64]string{}}
 }
 

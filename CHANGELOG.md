@@ -680,6 +680,20 @@ list with the user-facing context a commit subject cannot carry.
   and Pull Request tabs, where the wheel moves a cursor rather than a viewport,
   it changed which step or pull request was selected. A popup now takes the
   wheel as well.
+- **The chat composer hid what you typed whenever its pane was narrower than
+  the terminal.** The composer was sized from the whole terminal rather than
+  from the pane it is drawn in, so each of its wrapped rows was cut off with an
+  ellipsis at the pane's right edge and everything past that was typed blind.
+  It is sized from the pane now. The answer form a chat can put up is counted
+  in the same height budget as the rest of the frame too, instead of being
+  appended past it where it pushed the chat's bottom rows off the screen.
+- **Every other text field ran off the right edge of the pane.** A title, a
+  branch, a filter, a palette query or a config value longer than its pane was
+  drawn on one row past the edge, taking the cursor with it, and the host either
+  cut the tail off with an ellipsis or let the terminal reflow it and push the
+  rest of the form down. Text fields now wrap onto further rows of their pane
+  and the form reflows around them, which is what the boards and rendered
+  Markdown have always done.
 - **Palette entries for `ctrl+`-modified keys did nothing.** Running one
   replays its direct key, and the replay had a hand-written case per ctrl key
   that had fallen a registry behind — the chat's `ctrl+r` (detail level) and

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -67,8 +66,8 @@ type newChatForm struct {
 	model  string
 	effort string
 
-	title textinput.Model
-	base  textinput.Model
+	title textField
+	base  textField
 
 	// pick is the list the focused row expands into, nil while navigating.
 	pick *picker
@@ -82,10 +81,10 @@ type newChatForm struct {
 
 func newNewChatForm(client *apiclient.Client, hintProject int64) *newChatForm {
 	f := &newChatForm{client: client, projectID: hintProject}
-	f.title = textinput.New()
-	f.title.Placeholder = "what is this conversation about"
-	f.base = textinput.New()
-	f.base.Placeholder = f.baseHint()
+	f.title = newTextField()
+	f.title.SetPlaceholder("what is this conversation about")
+	f.base = newTextField()
+	f.base.SetPlaceholder(f.baseHint())
 	f.focus = ncTitle
 	f.title.Focus()
 	return f
@@ -152,7 +151,7 @@ func (f *newChatForm) applyFields(msg newChatFieldsMsg) {
 	if f.projectID == 0 && len(f.projects) > 0 {
 		f.projectID = f.projects[0].ID
 	}
-	f.base.Placeholder = f.baseHint()
+	f.base.SetPlaceholder(f.baseHint())
 }
 
 // resumableAgents is the agent picker's contents: only adapters that can hold
@@ -287,7 +286,7 @@ func (f *newChatForm) setRow(row ncRow, value string) {
 // row's hint: it names that project's real default branch.
 func (f *newChatForm) setProject(id int64) {
 	f.projectID = id
-	f.base.Placeholder = f.baseHint()
+	f.base.SetPlaceholder(f.baseHint())
 }
 
 // setAgent selects an adapter by name and drops the model and effort chosen
@@ -517,16 +516,22 @@ func (f *newChatForm) projectName() string {
 }
 
 func (f *newChatForm) render(width, height int) string {
+	// ncIndent is the marker plus the padded label every row carries, and so
+	// what the two text fields have left of the pane (issue #299).
+	const ncIndent = 2 + 9
+	f.title.SetWidth(max(width-ncIndent, 10))
+	f.base.SetWidth(max(width-ncIndent, 10))
 	rows := []struct {
-		row          ncRow
-		label, value string
+		row   ncRow
+		label string
+		value []string
 	}{
-		{ncProject, "project", f.projectName() + stepHint()},
-		{ncTitle, "title", f.title.View()},
-		{ncAgent, "agent", f.agentLabel()},
-		{ncModel, "model", f.overrideValue(f.model, f.defaultModel())},
-		{ncEffort, "effort", f.overrideValue(f.effort, f.defaultEffort())},
-		{ncBase, "base", f.base.View()},
+		{ncProject, "project", []string{f.projectName() + stepHint()}},
+		{ncTitle, "title", f.title.rows()},
+		{ncAgent, "agent", []string{f.agentLabel()}},
+		{ncModel, "model", []string{f.overrideValue(f.model, f.defaultModel())}},
+		{ncEffort, "effort", []string{f.overrideValue(f.effort, f.defaultEffort())}},
+		{ncBase, "base", f.base.rows()},
 	}
 	lines := []string{" " + styleTitle.Render("new chat"), ""}
 	for _, r := range rows {
@@ -534,9 +539,10 @@ func (f *newChatForm) render(width, height int) string {
 		if r.row == f.focus && f.pick == nil {
 			marker = "▸ "
 		}
-		lines = append(lines, marker+padRight(r.label, 9)+r.value)
+		lines = append(lines, indentRows(marker+padRight(r.label, 9), r.value)...)
 	}
 	if f.pick != nil {
+		f.pick.setWidth(width)
 		lines = append(lines, f.pick.renderBody()...)
 	}
 	lines = append(lines, "")
@@ -551,8 +557,11 @@ func (f *newChatForm) render(width, height int) string {
 	default:
 		lines = append(lines, " "+styleDim.Render("enter choose · ctrl+s create · esc cancel"))
 	}
-	_ = width
-	_ = height
+	// A form that grew past its pane keeps its cursor row on screen rather
+	// than drawing off the bottom.
+	if height > 0 && len(lines) > height {
+		lines = window(lines, int(f.focus)+2, height)
+	}
 	return strings.Join(lines, "\n")
 }
 

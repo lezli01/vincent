@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -82,7 +81,7 @@ type wfEditorLayer struct {
 	cursor int
 
 	// input is the focused text row, nil when the list has the keyboard.
-	input   *textinput.Model
+	input   *textField
 	editing int
 
 	loading bool
