@@ -91,6 +91,7 @@ the living engineering specification records implementation contracts.
 | [075](075-rich-markdown-blocks.md) | Tables, links and code blocks in the output pane | ✅ done (1/1) |
 | [076](076-reader-actions-on-assistant-markdown.md) | Rendered/raw toggle and copy actions for assistant Markdown | ✅ done (1/1) |
 | [077](077-stable-assistant-markdown-while-streaming.md) | Consecutive assistant records as one Markdown document, with identities, a paused anchor and a render memo | ✅ done (1/1) |
+| [078](078-chat-workspace-mouse-wheel.md) | The mouse wheel scrolls the chat conversation, with the footer clip and the task popup's wheel gate fixed alongside | ✅ done (1/1) |
 
 ## How to add and update a task document
 

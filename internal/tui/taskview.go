@@ -540,6 +540,12 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 }
 
 func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	// A popup owns the surface: PR S gave the palette and the answer popup
+	// clicks, and updateClick honours it. The wheel is the same rule — a tick
+	// behind an open popup must not scroll the pane under it.
+	if t.popup {
+		return nil
+	}
 	delta := 1
 	if msg.Button == tea.MouseWheelUp {
 		delta = -1

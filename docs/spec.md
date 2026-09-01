@@ -6424,6 +6424,15 @@ stream for the live tail.
    `409 chat_cap_reached` on send renders as a refusal — never a queued turn,
    never a spinner — because that is what the daemon did.
 
+   *Amended 2026-09-01 (issue #300).* The conversation body takes the **mouse
+   wheel** as well as `pgup`/`pgdown`: one line per tick, a scroll back pausing
+   follow and `ctrl+g` re-arming it, and the lazy transcript fetch running on a
+   wheel scroll exactly as it does on a paging key. It is not scoped to the
+   pointer's position — the workspace has one scrollable pane, so this section's
+   Mouse rule ("the focused panel", not the hovered one) already names it — and
+   the §7.4 popup takes the wheel out of the conversation behind it, the way it
+   already takes clicks.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home

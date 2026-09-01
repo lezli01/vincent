@@ -295,8 +295,40 @@ func (v *chatView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyCanceled(msg)
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
+	case tea.MouseWheelMsg:
+		return v, v.updateWheel(msg)
 	}
 	return v, nil
+}
+
+// updateWheel scrolls the conversation, one line per tick — the step and the
+// follow semantics the output pane's arm of taskView.updateWheel uses, because
+// §15 view 9 makes this body that pane.
+//
+// It is not gated on where the pointer is. §15's Mouse section says the wheel
+// scrolls "the focused panel", and PR S recorded that as the focused panel and
+// not the hovered one (docs/history/v0-tasks.md) — hover tracking being
+// drag-adjacent machinery for a behaviour §15 does not ask for. This workspace
+// has exactly one scrollable pane, so that pane is the focused panel and the
+// rule needs no exception; the cost, knowingly taken, is that a tick with the
+// pointer in a long draft scrolls the conversation rather than the draft.
+//
+// The §7.4 popup takes the wheel out of the conversation behind it, the way
+// updateKey and taskView.updateClick already take the keyboard and clicks.
+func (v *chatView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	if v.form != nil {
+		return nil
+	}
+	if msg.Button == tea.MouseWheelUp {
+		v.vp.ScrollUp(1)
+	} else {
+		v.vp.ScrollDown(1)
+	}
+	v.syncFollowToViewport()
+	// The lazy half of task 071 decision 6 runs on a wheel scroll exactly as
+	// it does on pgup/pgdown: without it, wheeling back into turns whose
+	// transcripts were never fetched scrolls into blank space.
+	return v.fetchVisibleTranscripts()
 }
 
 func (v *chatView) applyLoaded(msg chatLoadedMsg) {

@@ -225,7 +225,14 @@ func (v *chatView) footerLines(width int) []string {
 		}
 		out = append(out, " "+style.Render(v.note))
 	}
-	out = append(out, v.composer.View())
+	// One element per rendered line, not one per widget: the composer is
+	// SetHeight(3) and bubbles' viewport pads its View to that height, so a
+	// joined string would report a height of 1 and render 3. render's
+	// `room := height - len(head) - len(foot)` would then overrun the frame
+	// by two lines — the frame keeps the first h-2 — and the hint line below
+	// would never be drawn. It would also feed a multi-line string to
+	// render's per-line ansi.Truncate pass.
+	out = append(out, strings.Split(v.composer.View(), "\n")...)
 	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
 		rawToggleKey + " raw · " + copyPickKey + " copy · " +
 		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
