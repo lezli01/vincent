@@ -6784,12 +6784,17 @@ every other record stays literal.
   meant as formatting.
 - **The subset is a written-down list**, not CommonMark: headings, paragraphs,
   emphasis, strong, ordered and unordered lists, nested lists, blockquotes,
-  inline code, fenced code, horizontal rules. Everything else — tables, links,
-  reference links, HTML blocks, footnotes — renders as safe literal text. Raw
-  HTML is never parsed, and nothing is ever fetched or executed. The parser is
-  vincent's own, over that list: the alternatives are a Markdown library plus an
-  AST walker, or glamour, which emits a pre-styled ANSI block with its own
-  wrapping and margins that cannot be folded into the gutter scheme below.
+  inline code, fenced code, horizontal rules, and — *amended 2026-09-01 (task
+  075, issue #290)* — tables, inline links and inline images. Everything else
+  renders as safe literal text: reference links (`[label][ref]`), autolinks
+  (`<https://…>`), bare URLs, titled links (`[label](url "title")`), HTML
+  blocks, footnotes and setext headings. Raw HTML is never parsed, and nothing
+  is ever fetched or executed. The parser is vincent's own, over that list: the
+  alternatives are a Markdown library plus an AST walker, or glamour, which
+  emits a pre-styled ANSI block with its own wrapping and margins that cannot
+  be folded into the gutter scheme below. A bare URL displays as exactly
+  itself, which is the strongest reading of "without silently changing it"; it
+  gains no reference number and no styling.
 - **The gutter scheme is unchanged.** Assistant prose still gets the blank
   gutter and still sits flush left. Markdown structure lives *inside* the
   content column: a heading's `▌ `, a list's `• `/`◦ `/`▪ ` or its number, a
@@ -6814,12 +6819,60 @@ every other record stays literal.
   is the four columns lipgloss draws it as, so the measured width and the drawn
   width agree. Not truncation, which would put the tail of a long line out of
   reach of the TUI entirely, and not clipping, which is what wrapping replaced.
+- **A table is laid out by arithmetic, and degrades to records** *(added
+  2026-09-01, task 075)*. It is recognized only with its delimiter row, so
+  prose containing a `|` stays a paragraph. Each column has a **natural** width
+  (its widest cell) and a **minimum** width (its widest unbreakable token; a
+  cell that is a single inline-code span is unbreakable whole). Against the
+  content column, with two spaces between columns and no borders: Σ natural ≤
+  available draws natural widths; Σ minimum ≤ available < Σ natural gives every
+  column its minimum and shares the surplus **in proportion to each column's
+  remaining demand** (natural − minimum); Σ minimum > available switches to a
+  **stacked record** per row — `column: value` pairs, one per line, opened by
+  the `▪ ` already in the bullet vocabulary and separated by a blank line, so
+  the row boundary is a glyph and survives monochrome and an empty cell. A
+  wrapped cell's continuation stays inside its own column, and the header is
+  separated by a per-column run of `─` — a rule, not a grid. The two rejected
+  alternatives are named because the rule exists to avoid them: a **clipped
+  pipe table**, which loses the cells the reader came for, and a **second
+  scrolling axis** inside the viewport, which makes keyboard and mouse
+  behaviour ambiguous in a pane that has only ever scrolled one way.
+- **A link's destination is a numbered reference, never a hyperlink escape**
+  *(added 2026-09-01, task 075)*. An inline link's label renders as ordinary
+  prose carrying a dim `[n]`, and the message ends with a block of `[n] dest`
+  lines — one per distinct destination, numbered per rendered message,
+  identical destinations sharing a number. Those lines are preformatted, so a
+  destination is never word-collapsed and a long one hard-wraps at the cell
+  boundary. An image renders its **alt text** as the link-shaped item and its
+  source as the reference; nothing is fetched, and there is no fetch in this
+  path to disable. Destinations are shown literally whatever their scheme.
+  **vincent emits no OSC 8 hyperlink**, here or by default: there is no
+  reliable capability probe, the payload would carry an agent-supplied URL
+  inside an escape sequence, and a link spanning a wrap boundary would have to
+  be closed and reopened per line under an invariant that keeps escape
+  sequences out of wrapping entirely. The numbering is what a later reader
+  action would name.
+- **A fenced block shows its language and is highlighted with styles only**
+  *(added 2026-09-01, task 075)*. The info string's first word is drawn as a
+  dim header at the block's rail when present. Body lines are tinted by a
+  vincent-owned coarse token scanner (comment, string, number, keyword,
+  punctuation, plain) over a written-down language list, with a plain fallback
+  for everything not on it, from a vincent-owned palette a monochrome or ASCII
+  profile flattens to nothing. The scanner is not a parser, and a pathological
+  string or a nested-comment dialect will be mis-tinted; nothing depends on it
+  being right. **Highlighting emits styles and never characters**: with the
+  escapes stripped a rendered block is byte-for-byte the fence's content — tab
+  expansion and the hard wrap above aside — which is what makes "highlighting
+  cannot change what is copied or transcripted" checkable rather than
+  asserted.
 - **Rendering is derived and never stored.** The JSONL transcript and every API
   payload keep the agent's exact bytes (§13.3), no render path mutates a
   record, and a resize re-renders from the Markdown rather than re-wrapping
   previously rendered ANSI. A raw/rendered toggle and a copy-raw reader action
-  are follow-ups; the chat composer owns every letter key (task 071 decision
-  4), so a toggle needs its own decision about which key it is.
+  are follow-ups, and so is a link picker, which the reference numbering is
+  what a later action would address; the chat composer owns every letter key
+  (task 071 decision 4), so a toggle needs its own decision about which key it
+  is.
 
 Views 3–7 stay full-screen because they are forms and lists, not observations: the
 new-task flow is eight fields with pickers, and squeezing it beside a live tail
@@ -7150,7 +7203,13 @@ currently true to show (§15 view 6).
   command's output body or an error message — none of which are Markdown, which
   is why the stripping is at the pane's one wrapping chokepoint rather than in
   the Markdown path. Raw HTML in assistant prose is never parsed, fetched or
-  executed; it renders as the characters the agent sent.
+  executed; it renders as the characters the agent sent. *Added 2026-09-01
+  (task 075):* vincent emits **no OSC 8 hyperlink** and the pane opens nothing,
+  so a link in agent prose is text a human may read and copy, never a thing the
+  terminal can be made to act on — and an image is its alt text plus a printed
+  source, never a fetch. The one opener in the TUI (`openURLCmd`, reached from
+  the pull-request surfaces) still refuses every scheme but http and https, and
+  the renderer never reaches it.
 - **Full-auto agents are the headline risk.** In full-auto, an agent can execute
   arbitrary commands *as the user*, not confined to the worktree. Mitigations:
   per-workflow/step `restricted` mode, everything transcripted, nothing merges or

@@ -88,6 +88,7 @@ the living engineering specification records implementation contracts.
 | [072](072-codex-and-cursor-in-chat.md) | Chats on codex and cursor | ✅ done (1/1) |
 | [073](073-assistant-markdown-in-output.md) | Assistant Markdown in the output pane | ✅ done (1/1) |
 | [074](074-chat-handoff.md) | Hand off a chat's worktree and branch to a task | ✅ done (1/1) |
+| [075](075-rich-markdown-blocks.md) | Tables, links and code blocks in the output pane | ✅ done (1/1) |
 
 ## How to add and update a task document
 

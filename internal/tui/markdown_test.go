@@ -103,7 +103,7 @@ func TestMarkdownConstructs(t *testing.T) {
 		{
 			name: "fenced code keeps its indentation", width: 40,
 			src:  "```go\nif x {\n    y()\n}\n```",
-			want: []string{"  ▏ if x {", "  ▏     y()", "  ▏ }"},
+			want: []string{"  ▏ go", "  ▏ if x {", "  ▏     y()", "  ▏ }"},
 		},
 		{
 			name: "horizontal rule fills the content column", width: 20,
@@ -182,14 +182,13 @@ func TestMarkdownEveryConstructAtEveryWidth(t *testing.T) {
 // fetched, executed or half-interpreted.
 func TestMarkdownOutsideTheSubsetStaysLiteral(t *testing.T) {
 	cases := map[string]string{
-		"table":           "| a | b |",
-		"table rule":      "|---|---|",
-		"inline link":     "see [the docs](https://example.com/x)",
 		"reference link":  "see [the docs][1]",
+		"autolink":        "see <https://example.com/x>",
+		"bare url":        "see https://example.com/x for more",
+		"titled link":     `see [the docs](https://example.com/x "Docs")`,
 		"html block":      "<script>alert(1)</script>",
 		"inline html":     "a <b>bold</b> word",
 		"footnote":        "a claim[^1]",
-		"image":           "![alt](https://example.com/x.png)",
 		"setext underlin": "Title\n===",
 	}
 	for name, src := range cases {
@@ -378,5 +377,82 @@ func TestPreformattedContinuationKeepsItsPrefix(t *testing.T) {
 	}
 	if !strings.HasPrefix(ansi.Strip(got[1]), "  ") {
 		t.Errorf("continuation = %q, want the hanging indent in spaces", got[1])
+	}
+}
+
+// TestMarkdownLinksNumberTheirDestinations is task 075 decision 2: the label
+// is prose, the destination is on screen as a numbered reference, and nothing
+// depends on OSC 8 or on a keybinding that does not exist yet.
+func TestMarkdownLinksNumberTheirDestinations(t *testing.T) {
+	got := stripped("see [the docs](https://example.com/x) now", 80)
+	want := []string{"  see the docs [1] now", "", "  [1] https://example.com/x"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
+// TestMarkdownRepeatedDestinationSharesANumber keeps the reference block as
+// short as the set of destinations, not as long as the count of links.
+func TestMarkdownRepeatedDestinationSharesANumber(t *testing.T) {
+	got := strings.Join(stripped(
+		"[a](https://example.com/x) and [b](https://example.com/x) and [c](https://example.com/y)", 80), "\n")
+	for _, want := range []string{"a [1]", "b [1]", "c [2]", "[1] https://example.com/x", "[2] https://example.com/y"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q missing from:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "https://example.com/x"); n != 1 {
+		t.Errorf("a repeated destination was listed %d times, want 1:\n%s", n, got)
+	}
+}
+
+// TestMarkdownImageRendersAltTextAndItsSource is the image half: alt text is
+// the link-shaped item, the source is a reference, and nothing is fetched —
+// there is no I/O in this path to disable.
+func TestMarkdownImageRendersAltTextAndItsSource(t *testing.T) {
+	got := stripped("![a diagram](https://example.com/x.png)", 80)
+	want := []string{"  a diagram [1]", "", "  [1] https://example.com/x.png"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
+// TestMarkdownUnsafeSchemesAreTextAndNothingElse is the security criterion.
+// Destinations are shown literally whatever their scheme, and the pane ships
+// no action that could open one — openURLCmd, which is the only opener in the
+// package, is not reachable from the renderer and still refuses everything but
+// http and https.
+func TestMarkdownUnsafeSchemesAreTextAndNothingElse(t *testing.T) {
+	for _, dest := range []string{"javascript:alert(1)", "file:///etc/passwd", "data:text/html,x"} {
+		got := strings.Join(stripped("[click]("+dest+")", 80), "\n")
+		if !strings.Contains(got, "[1] "+dest) {
+			t.Errorf("%q was not shown literally:\n%s", dest, got)
+		}
+		if strings.Contains(got, "\x1b]8;") {
+			t.Errorf("an OSC 8 hyperlink was emitted for %q", dest)
+		}
+	}
+	// The one opener in the package still refuses a non-http scheme, which is
+	// the guard for the day a reader action arrives (decision 3).
+	if msg, ok := drain(openURLCmd("javascript:alert(1)")).(openedURLMsg); !ok || msg.err == nil {
+		t.Errorf("openURLCmd accepted a javascript: URL: %+v", msg)
+	}
+}
+
+// TestMarkdownLinksInBothWorkspacesAgree is the two-door criterion extended to
+// the new constructs: `agent.output` in the task workspace and the chat's §17
+// retention fallback reach the same renderer, so the same source at the same
+// width renders identically.
+func TestMarkdownRichBlocksRenderTheSameThroughBothDoors(t *testing.T) {
+	const src = "| a | b |\n|---|---|\n| 1 | 2 |\n\nsee [docs](https://example.com/x)\n\n```go\nvar x = 1\n```"
+	for _, width := range []int{40, 80} {
+		direct := strings.Join(markdownLines(src, width), "\n")
+		pane := strings.Join(outputLines(
+			[]apiclient.TranscriptRecord{{Type: "agent.output", Text: src}},
+			levelNormal, width, lineOpts{expandKey: "v"}), "\n")
+		if !strings.Contains(pane, direct) {
+			t.Errorf("width %d: the output pane did not render the shared renderer's lines:\n%s\n---\n%s",
+				width, pane, direct)
+		}
 	}
 }

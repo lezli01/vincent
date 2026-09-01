@@ -348,6 +348,11 @@ func padCells(s string, width int) string {
 // pane already does for a long path — truncating would put the tail of a
 // long line out of reach of the TUI entirely, and clipping is what T4.16
 // removed.
+// A preformatted line may carry several segments (task 075): a highlighted
+// code line is one run per token and a reference line is its number plus its
+// destination. They are laid out as one continuous stream of cells — the run
+// boundaries are styling, not layout — so a wrap lands wherever the cell
+// boundary falls, exactly as it did when the line was a single run.
 func wrapPre(pl paneLine, width int) []string {
 	gutterWidth := cols(pl.gutter)
 	avail := width - gutterWidth
@@ -359,44 +364,64 @@ func wrapPre(pl paneLine, width int) []string {
 	if pl.contPrefix != "" {
 		cont = continuationIndent(pl, gutterWidth)
 	}
-	text, style := "", lipgloss.NewStyle()
-	if len(pl.segs) > 0 {
+
+	var (
+		out []string
+		cur strings.Builder
+	)
+	col := 0
+	flush := func() {
+		prefix := cont
+		if len(out) == 0 {
+			prefix = head
+		}
+		out = append(out, prefix+cur.String())
+		cur.Reset()
+		col = 0
+	}
+	for _, seg := range pl.segs {
 		// Tabs are expanded to the four columns lipgloss renders them as.
 		// Measuring the tab and rendering the spaces would disagree —
 		// ansi.StringWidth calls a tab zero columns wide — and a
 		// tab-indented code block would then overflow the pane by exactly
 		// its indentation.
-		text = strings.ReplaceAll(sanitizeText(pl.segs[0].text), "\t", "    ")
-		style = pl.segs[0].style
-	}
-	var out []string
-	for _, src := range strings.Split(text, "\n") {
-		for {
-			chunk := src
-			if cols(src) > avail {
-				chunk = ansi.Cut(src, 0, avail)
+		text := strings.ReplaceAll(sanitizeText(seg.text), "\t", "    ")
+		for i, src := range strings.Split(text, "\n") {
+			if i > 0 {
+				flush()
 			}
-			if chunk == "" && src != "" {
-				// A single grapheme wider than the pane: emit it whole
-				// rather than spin, since cutting it produces nothing.
-				chunk = src
+			for src != "" {
+				room := avail - col
+				if room <= 0 {
+					flush()
+					room = avail
+				}
+				chunk := src
+				if cols(src) > room {
+					chunk = ansi.Cut(src, 0, room)
+				}
+				if chunk == "" {
+					// A single grapheme wider than the room left. Take the
+					// next line if there is one to take, and otherwise emit
+					// it whole rather than spin, since cutting it produces
+					// nothing.
+					if col > 0 {
+						flush()
+						continue
+					}
+					chunk = src
+				}
+				cur.WriteString(seg.style.Render(chunk))
+				col += cols(chunk)
+				rest := ansi.TruncateLeft(src, cols(chunk), "")
+				if rest == src {
+					break
+				}
+				src = rest
 			}
-			prefix := cont
-			if len(out) == 0 {
-				prefix = head
-			}
-			line := prefix
-			if chunk != "" {
-				line += style.Render(chunk)
-			}
-			out = append(out, line)
-			rest := ansi.TruncateLeft(src, cols(chunk), "")
-			if rest == "" || rest == src {
-				break
-			}
-			src = rest
 		}
 	}
+	flush()
 	return out
 }
 

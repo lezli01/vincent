@@ -45,6 +45,22 @@ list with the user-facing context a commit subject cannot carry.
   inherited silently and surfacing later as an unexplained `git_error` inside a
   step. Ordinary uncommitted changes are never refused.
 
+- **Tables, links and highlighted code blocks in assistant prose.** A Markdown
+  table is laid out to the pane rather than left as pipes: aligned with a rule
+  under its header when it fits, and — when the pane is narrower than its
+  columns' widest unbreakable words — stacked as one `column: value` record per
+  row, never clipped and never behind a sideways scroll. Surplus width is
+  shared between columns in proportion to what each still wants, so the same
+  source at the same width always draws the same table. A link renders its
+  label as prose with a dim `[1]`, and the message ends with the `[1] https://…`
+  lines that resolve them, one per distinct destination; an image is its alt
+  text plus its source. Nothing is fetched, nothing is opened, and vincent
+  emits no OSC 8 hyperlink, so a destination — whatever its scheme — is text
+  you can read and copy. A fenced block now shows the language it declared and
+  tints its body from vincent's own palette over a written-down language list,
+  with a plain fallback for the rest; the tint is styling only, so stripping it
+  gives back the agent's bytes exactly. Reference links, autolinks, bare URLs
+  and titled links stay literal. Spec §15, §16.
 - **Assistant prose renders as Markdown in the task output pane and in chats.**
   Headings, emphasis, strong text, ordered and unordered lists, nested lists,
   blockquotes, inline code, fenced code and horizontal rules become terminal
@@ -55,9 +71,9 @@ list with the user-facing context a commit subject cannot carry.
   formatting. Structure lives inside the assistant content column, so the
   two-column activity gutter is unchanged, and every marker is a glyph rather
   than a colour: a monochrome terminal or an SSH session keeps every
-  distinction. Constructs outside the supported list — tables, links, HTML,
-  footnotes — render as safe literal text, and raw HTML is never parsed,
-  fetched or executed. The transcript on disk and every API payload keep the
+  distinction. Constructs outside the supported list — reference links,
+  autolinks, bare URLs, titled links, HTML, footnotes — render as safe literal
+  text, and raw HTML is never parsed, fetched or executed. The transcript on disk and every API payload keep the
   agent's exact bytes; a resize re-renders from the Markdown. Spec §15.
 
 - **A codex step's output pane now shows what codex actually reported.** The

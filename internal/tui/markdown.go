@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -22,12 +23,14 @@ import (
 // wrap-plain-then-style invariant §15 rests on. The subset is exactly:
 //
 //	headings, paragraphs, emphasis, strong, ordered and unordered lists,
-//	nested lists, blockquotes, inline code, fenced code, horizontal rules.
+//	nested lists, blockquotes, inline code, fenced code, horizontal rules,
+//	tables, inline links, inline images (task 075).
 //
-// Everything outside it — tables, links, reference links, HTML blocks,
-// footnotes, setext headings, backslash escapes — renders as literal text.
-// That is the boundary, and it is a list rather than "whatever CommonMark
-// says", so a construct either appears above or it is safe text.
+// Everything outside it — reference links, autolinks, bare URLs, titled
+// links, HTML blocks, footnotes, setext headings, backslash escapes —
+// renders as literal text. That is the boundary, and it is a list rather than
+// "whatever CommonMark says", so a construct either appears above or it is
+// safe text.
 //
 // Markdown structure lives *inside* the assistant content column (decision 6).
 // The activity gutter is untouched: prose still gets gutterNone, and a list
@@ -47,6 +50,12 @@ var (
 	styleMDQuote  = lipgloss.NewStyle().Faint(true).Italic(true)
 	styleMDRule   = lipgloss.NewStyle().Faint(true)
 	styleMDCode   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	// styleMDRef paints a link's `[n]` marker and the reference block that
+	// resolves it (task 075 decision 2). Both are dim: the destination is
+	// what a reader goes looking for, not what they read past.
+	styleMDRef = lipgloss.NewStyle().Faint(true)
+	// styleMDLang is the fenced block's info string, drawn at the rail.
+	styleMDLang = lipgloss.NewStyle().Faint(true).Italic(true)
 )
 
 // Content-column prefixes. Every one is a single cell wide plus its trailing
@@ -75,14 +84,21 @@ const (
 	mdQuote
 	mdCode
 	mdRule
+	mdTable
 )
 
 // mdBlock is one parsed block. Its lines are laid out but not yet wrapped,
 // except mdRule, which is drawn to the pane's width at render time and so
-// carries no lines at all.
+// carries no lines at all, and mdTable, whose layout is two-dimensional and
+// so cannot be a list of paneLines either.
 type mdBlock struct {
 	kind  mdKind
 	lines []paneLine
+	// info is a fenced block's info string, first word only. Empty for
+	// every other kind and for a fence that declared no language.
+	info string
+	// table is set on mdTable and nil everywhere else.
+	table *mdTableBlock
 }
 
 // markdownLines renders assistant prose to wrapped pane lines.
@@ -93,7 +109,8 @@ type mdBlock struct {
 // rendering is derived, and the transcript on disk stays the agent's bytes
 // (decision 4).
 func markdownLines(text string, width int) []string {
-	blocks := parseMarkdown(sanitizeText(text))
+	refs := &mdRefs{}
+	blocks := parseMarkdown(sanitizeText(text), refs)
 	out := make([]string, 0, len(blocks)*2)
 	prev := mdParagraph
 	for _, b := range blocks {
@@ -102,6 +119,60 @@ func markdownLines(text string, width int) []string {
 		}
 		out = append(out, renderMDBlock(b, width)...)
 		prev = b.kind
+	}
+	if lines := renderMDRefs(refs, width); len(lines) > 0 {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, lines...)
+	}
+	return out
+}
+
+// mdRefs numbers the destinations one rendered message links to (task 075
+// decision 2). Numbering is per message and by first appearance, and two
+// identical destinations share a number: what the reference block is for is
+// putting the exact destination on screen without an OSC 8 hyperlink and
+// without a keybinding, and repeating a URL under two numbers would only make
+// that list longer.
+type mdRefs struct {
+	order []string
+	index map[string]int
+}
+
+// add returns the 1-based number for a destination, assigning one on first
+// sight.
+func (r *mdRefs) add(dest string) int {
+	if n, ok := r.index[dest]; ok {
+		return n
+	}
+	if r.index == nil {
+		r.index = make(map[string]int, 4)
+	}
+	r.order = append(r.order, dest)
+	r.index[dest] = len(r.order)
+	return len(r.order)
+}
+
+// renderMDRefs draws the reference block. Its lines are preformatted, so a
+// destination is never folded at a space it happens to contain and a long one
+// hard-wraps at the cell boundary exactly as a long code line does.
+func renderMDRefs(r *mdRefs, width int) []string {
+	if r == nil || len(r.order) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(r.order))
+	for i, dest := range r.order {
+		pl := paneLine{
+			gutter:      gutterNone,
+			gutterStyle: styleMDRef,
+			pre:         true,
+			segs: []segment{
+				{text: "[" + strconv.Itoa(i+1) + "] ", style: styleMDRef},
+				{text: dest, style: styleMDRef},
+			},
+		}
+		out = append(out, wrapLine(pl, width)...)
 	}
 	return out
 }
@@ -119,14 +190,29 @@ func mdNeedsBlank(prev, next mdKind) bool {
 
 // renderMDBlock wraps one block to the pane.
 func renderMDBlock(b mdBlock, width int) []string {
-	if b.kind == mdRule {
+	switch b.kind {
+	case mdRule:
 		// Width-bounded rather than a fixed run of dashes: a rule is the
 		// separator the pane is wide, and one that stopped short would read
 		// as a line of text.
 		n := max(width-cols(gutterNone), 1)
 		return []string{gutterNone + styleMDRule.Render(strings.Repeat("─", n))}
+	case mdTable:
+		return renderMDTable(b.table, width)
 	}
-	out := make([]string, 0, len(b.lines))
+	out := make([]string, 0, len(b.lines)+1)
+	if b.kind == mdCode && b.info != "" {
+		// The declared language, at the block's own rail. Dim and one word,
+		// because it labels the block rather than being part of it — and it
+		// is text, so a monochrome terminal reads it too.
+		out = append(out, wrapLine(paneLine{
+			gutter:      gutterNone + mdCodeRail,
+			gutterStyle: styleMDMarker,
+			contPrefix:  gutterNone + mdCodeRail,
+			pre:         true,
+			segs:        []segment{{text: b.info, style: styleMDLang}},
+		}, width)...)
+	}
 	for _, pl := range b.lines {
 		out = append(out, wrapLine(pl, width)...)
 	}
@@ -144,13 +230,15 @@ type mdPending struct {
 	depth   int
 	fence   byte
 	fenceLn int
+	info    string
+	refs    *mdRefs
 }
 
 // parseMarkdown scans the text a line at a time. It is a scanner rather than
 // a grammar because the subset is a list of line shapes: a line either opens
 // a fence, is a fence's content, is a rule, a heading, a quote or a list
 // item, or it is prose that continues whatever came before it.
-func parseMarkdown(text string) []mdBlock {
+func parseMarkdown(text string, refs *mdRefs) []mdBlock {
 	src := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	var (
 		blocks []mdBlock
@@ -170,7 +258,8 @@ func parseMarkdown(text string) []mdBlock {
 	// paragraph at the margin all end one.
 	endList := func() { stack = stack[:0] }
 
-	for _, line := range src {
+	for i := 0; i < len(src); i++ {
+		line := src[i]
 		if pend.open {
 			if isFenceClose(line, pend.fence, pend.fenceLn) {
 				flush()
@@ -184,10 +273,10 @@ func parseMarkdown(text string) []mdBlock {
 			flush()
 			continue
 		}
-		if ch, n, ok := fenceOpen(line); ok {
+		if ch, n, info, ok := fenceOpen(line); ok {
 			flush()
 			endList()
-			pend = mdPending{kind: mdCode, open: true, fence: ch, fenceLn: n}
+			pend = mdPending{kind: mdCode, open: true, fence: ch, fenceLn: n, info: info}
 			continue
 		}
 		if isRule(trimmed) {
@@ -201,8 +290,18 @@ func parseMarkdown(text string) []mdBlock {
 			endList()
 			blocks = append(blocks, mdBlock{
 				kind:  mdHeading,
-				lines: []paneLine{headingPaneLine(level, htext)},
+				lines: []paneLine{headingPaneLine(level, htext, refs)},
 			})
+			continue
+		}
+		// A table is recognized only with its delimiter row. Without it the
+		// pipes stay a paragraph, which is what keeps prose containing `|`
+		// from becoming a grid (task 075).
+		if tbl, next, ok := tableAt(src, i, refs); ok {
+			flush()
+			endList()
+			blocks = append(blocks, mdBlock{kind: mdTable, table: tbl})
+			i = next - 1
 			continue
 		}
 		if depth, body, ok := quoteOf(line); ok {
@@ -212,13 +311,13 @@ func parseMarkdown(text string) []mdBlock {
 			}
 			flush()
 			endList()
-			pend = mdPending{kind: mdQuote, depth: depth, text: []string{body}}
+			pend = mdPending{kind: mdQuote, depth: depth, text: []string{body}, refs: refs}
 			continue
 		}
 		if indent, marker, body, ok := listItemOf(line); ok {
 			flush()
 			depth := listDepth(&stack, indent)
-			pend = mdPending{kind: mdItem, depth: depth, marker: marker, text: []string{body}}
+			pend = mdPending{kind: mdItem, depth: depth, marker: marker, text: []string{body}, refs: refs}
 			continue
 		}
 		// Plain prose. It continues a paragraph or an item — a wrapped list
@@ -232,7 +331,7 @@ func parseMarkdown(text string) []mdBlock {
 		}
 		flush()
 		endList()
-		pend = mdPending{kind: mdParagraph, text: []string{strings.TrimSpace(line)}}
+		pend = mdPending{kind: mdParagraph, text: []string{strings.TrimSpace(line)}, refs: refs}
 	}
 	flush()
 	return blocks
@@ -252,20 +351,20 @@ func (p mdPending) block() (mdBlock, bool) {
 		}
 		lines := make([]paneLine, 0, len(p.text))
 		for _, l := range p.text {
-			lines = append(lines, codePaneLine(l))
+			lines = append(lines, codePaneLine(l, p.info))
 		}
 		if len(lines) == 0 {
 			// An empty fence still says a code block was there.
-			lines = append(lines, codePaneLine(""))
+			lines = append(lines, codePaneLine("", p.info))
 		}
-		return mdBlock{kind: mdCode, lines: lines}, true
+		return mdBlock{kind: mdCode, lines: lines, info: p.info}, true
 	case mdItem:
 		if p.isEmpty() {
 			return mdBlock{}, false
 		}
 		return mdBlock{
 			kind:  mdItem,
-			lines: []paneLine{itemPaneLine(p.depth, p.marker, strings.Join(p.text, " "))},
+			lines: []paneLine{itemPaneLine(p.depth, p.marker, strings.Join(p.text, " "), p.refs)},
 		}, true
 	case mdQuote:
 		if p.isEmpty() {
@@ -273,7 +372,7 @@ func (p mdPending) block() (mdBlock, bool) {
 		}
 		return mdBlock{
 			kind:  mdQuote,
-			lines: []paneLine{quotePaneLine(p.depth, strings.Join(p.text, " "))},
+			lines: []paneLine{quotePaneLine(p.depth, strings.Join(p.text, " "), p.refs)},
 		}, true
 	default:
 		if p.isEmpty() {
@@ -281,7 +380,7 @@ func (p mdPending) block() (mdBlock, bool) {
 		}
 		return mdBlock{
 			kind:  mdParagraph,
-			lines: []paneLine{paragraphPaneLine(strings.Join(p.text, " "))},
+			lines: []paneLine{paragraphPaneLine(strings.Join(p.text, " "), p.refs)},
 		}, true
 	}
 }
@@ -304,36 +403,36 @@ func listDepth(stack *[]int, indent int) int {
 
 // paragraphPaneLine is prose: no marker, flush against the gutter, exactly
 // where an unformatted assistant message already sat.
-func paragraphPaneLine(text string) paneLine {
+func paragraphPaneLine(text string, refs *mdRefs) paneLine {
 	base := lipgloss.NewStyle()
 	return paneLine{
 		gutter:      gutterNone,
 		gutterStyle: base,
-		segs:        inlineSegments(text, base, 0),
+		segs:        inlineSegments(text, base, 0, refs),
 	}
 }
 
 // headingPaneLine marks a section. The glyph is what carries the heading in
 // monochrome; the level is the indent in front of it, so a subsection sits
 // under its section without spending a second glyph on it.
-func headingPaneLine(level int, text string) paneLine {
+func headingPaneLine(level int, text string, refs *mdRefs) paneLine {
 	return paneLine{
 		gutter:      gutterNone + strings.Repeat(" ", level-1) + mdHeadingMark,
 		gutterStyle: styleMDHeading,
-		segs:        inlineSegments(text, styleMDHeading, 0),
+		segs:        inlineSegments(text, styleMDHeading, 0, refs),
 	}
 }
 
 // itemPaneLine is one list item. The marker goes in the content column's own
 // gutter, which is what gives a wrapped item its hanging indent for free.
-func itemPaneLine(depth int, marker, text string) paneLine {
+func itemPaneLine(depth int, marker, text string, refs *mdRefs) paneLine {
 	if marker == "" {
 		marker = mdBulletsByDepth[min(depth, len(mdBulletsByDepth)-1)]
 	}
 	return paneLine{
 		gutter:      gutterNone + strings.Repeat("  ", depth) + marker,
 		gutterStyle: styleMDMarker,
-		segs:        inlineSegments(text, lipgloss.NewStyle(), 0),
+		segs:        inlineSegments(text, lipgloss.NewStyle(), 0, refs),
 	}
 }
 
@@ -341,13 +440,13 @@ func itemPaneLine(depth int, marker, text string) paneLine {
 // wrapLine indents continuations with spaces of the gutter's width by
 // default, which would put the bar on the first line of a wrapped quote and
 // drop it from the rest — a content gutter that is not a gutter (decision 6).
-func quotePaneLine(depth int, text string) paneLine {
+func quotePaneLine(depth int, text string, refs *mdRefs) paneLine {
 	bar := gutterNone + strings.Repeat(mdQuoteBar, depth)
 	return paneLine{
 		gutter:      bar,
 		gutterStyle: styleMDQuote,
 		contPrefix:  bar,
-		segs:        inlineSegments(text, styleMDQuote, 0),
+		segs:        inlineSegments(text, styleMDQuote, 0, refs),
 	}
 }
 
@@ -355,38 +454,49 @@ func quotePaneLine(depth int, text string) paneLine {
 // preformatted, so it hard-wraps at the cell boundary rather than going
 // through splitWords, which collapses runs of whitespace: a code block that
 // lost its indentation would not be the code the agent wrote (decision 3).
-func codePaneLine(text string) paneLine {
+//
+// The line is split into highlight runs (task 075), which is a styling of the
+// same bytes and never a rewriting of them: concatenating the segments
+// reproduces the argument exactly, so stripping the escape sequences from a
+// rendered block gives back the fence's content.
+func codePaneLine(text, lang string) paneLine {
 	rail := gutterNone + mdCodeRail
 	return paneLine{
 		gutter:      rail,
 		gutterStyle: styleMDMarker,
 		contPrefix:  rail,
 		pre:         true,
-		segs:        []segment{{text: text, style: styleMDCode}},
+		segs:        highlightSegments(lang, text),
 	}
 }
 
-// fenceOpen reports an opening fence and its run, which the closing fence
-// must match or exceed.
-func fenceOpen(line string) (byte, int, bool) {
+// fenceOpen reports an opening fence, its run — which the closing fence must
+// match or exceed — and the first word of its info string, which is the
+// declared language (task 075). The rest of the info string is dropped: it is
+// attribute syntax nobody agreed on, and what the header names is a language.
+func fenceOpen(line string) (byte, int, string, bool) {
 	t := strings.TrimLeft(line, " ")
 	if t == "" {
-		return 0, 0, false
+		return 0, 0, "", false
 	}
 	ch := t[0]
 	if ch != '`' && ch != '~' {
-		return 0, 0, false
+		return 0, 0, "", false
 	}
 	n := runLen(t, 0, ch)
 	if n < 3 {
-		return 0, 0, false
+		return 0, 0, "", false
 	}
 	// An info string may not contain a backtick, which is what keeps
 	// ``a`` in prose from opening a block.
 	if ch == '`' && strings.ContainsRune(t[n:], '`') {
-		return 0, 0, false
+		return 0, 0, "", false
 	}
-	return ch, n, true
+	info := ""
+	if fields := strings.Fields(t[n:]); len(fields) > 0 {
+		info = fields[0]
+	}
+	return ch, n, info, true
 }
 
 func isFenceClose(line string, ch byte, n int) bool {
@@ -509,7 +619,12 @@ func indentCols(prefix string) int {
 //
 // depth guards the recursion `**bold with `code`**` needs; nesting past it
 // renders literally rather than growing a stack.
-func inlineSegments(text string, base lipgloss.Style, depth int) []segment {
+//
+// refs collects link and image destinations for the message's reference block
+// (task 075 decision 2). It is never nil on the paths that reach here from
+// markdownLines; a nil registry renders a link as its literal source, which is
+// what a caller that cannot show a reference block should get.
+func inlineSegments(text string, base lipgloss.Style, depth int, refs *mdRefs) []segment {
 	segs := make([]segment, 0, 4)
 	var lit strings.Builder
 	flush := func() {
@@ -520,6 +635,25 @@ func inlineSegments(text string, base lipgloss.Style, depth int) []segment {
 	}
 	for i := 0; i < len(text); {
 		switch text[i] {
+		case '[', '!':
+			// An inline link or image. The label is prose and the
+			// destination becomes a numbered reference; nothing here opens,
+			// fetches or hyperlinks anything (decisions 2 and 3).
+			if label, dest, next, ok := linkAt(text, i); ok && depth < 3 && refs != nil {
+				flush()
+				if label == "" {
+					// An image with no alt text, or `[](x)`: the marker is
+					// all that is left to hang the reference on.
+					label = dest
+				}
+				segs = append(segs, inlineSegments(label, base, depth+1, refs)...)
+				segs = append(segs, segment{
+					text:  " [" + strconv.Itoa(refs.add(dest)) + "]",
+					style: base.Faint(true),
+				})
+				i = next
+				continue
+			}
 		case '`':
 			// Inline code wins over emphasis, and keeps its delimiters: the
 			// backticks are what a monochrome terminal has left once the
@@ -537,7 +671,7 @@ func inlineSegments(text string, base lipgloss.Style, depth int) []segment {
 				if marks >= 2 {
 					style = base.Bold(true)
 				}
-				segs = append(segs, inlineSegments(body, style, depth+1)...)
+				segs = append(segs, inlineSegments(body, style, depth+1, refs)...)
 				i = next
 				continue
 			}
@@ -569,6 +703,56 @@ func codeSpanAt(text string, i int) (string, int, bool) {
 		return "", 0, false
 	}
 	return text[i : i+n+end+n], i + n + end + n, true
+}
+
+// linkAt matches an inline link `[label](dest)` and an inline image
+// `![alt](src)`, and nothing else (task 075 decision 4).
+//
+// The destination may not contain whitespace, which is what makes the titled
+// form `[label](url "title")` fall out of the subset without a rule of its
+// own, and reference links, autolinks and bare URLs never reach here at all.
+// A construct that does not match is left to the caller as literal text.
+func linkAt(text string, i int) (string, string, int, bool) {
+	open := i
+	if text[open] == '!' {
+		open++
+	}
+	if open >= len(text) || text[open] != '[' {
+		return "", "", 0, false
+	}
+	label := strings.IndexByte(text[open+1:], ']')
+	if label < 0 {
+		return "", "", 0, false
+	}
+	rest := text[open+1+label+1:]
+	if !strings.HasPrefix(rest, "(") {
+		return "", "", 0, false
+	}
+	// The closing paren is the balanced one, so a destination that contains
+	// a pair of its own — `javascript:alert(1)` as much as a wikipedia URL —
+	// is captured whole rather than cut at the first `)`.
+	paren, depth := 0, 0
+	for j := range len(rest) {
+		switch rest[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		if depth == 0 {
+			paren = j
+			break
+		}
+	}
+	// paren < 2 is either no balanced closing paren or an empty destination.
+	if paren < 2 {
+		return "", "", 0, false
+	}
+	dest := rest[1:paren]
+	if strings.ContainsAny(dest, " \t[]") {
+		return "", "", 0, false
+	}
+	return text[open+1 : open+1+label], dest, open + label + paren + 3, true
 }
 
 // emphasisAt matches `*x*`, `**x**` and their underscore spellings.
