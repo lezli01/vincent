@@ -538,7 +538,9 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
-leaves it open. The mouse wheel scrolls whichever tab is on screen.
+leaves it open. The mouse wheel scrolls whichever tab is on screen, unless a
+popup is open — a popup takes the mouse as well as the keyboard, so a tick
+behind it moves nothing.
 
 The counts beside each path are the added and removed lines inside that file's
 hunks, and the line above the list totals them. A **binary** file says so

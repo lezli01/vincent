@@ -674,10 +674,12 @@ list with the user-facing context a commit subject cannot carry.
   overran its frame by two rows: the hint line naming `enter send`,
   `pgup/pgdown scroll` and `ctrl+g live` was cut off entirely and the composer
   showed two of its three rows. Both are on screen now.
-- **The mouse wheel scrolled the pane behind an open task popup.** Clicks were
+- **The mouse wheel reached the tab behind an open task popup.** Clicks were
   already ignored while a question, repair or follow-up popup owns the screen;
-  the wheel was not, so a tick moved the Steps, Output, Diff or Workflow tab
-  underneath it. A popup now takes the wheel as well.
+  the wheel was not, so a tick scrolled the tab underneath it — and on the Steps
+  and Pull Request tabs, where the wheel moves a cursor rather than a viewport,
+  it changed which step or pull request was selected. A popup now takes the
+  wheel as well.
 - **Palette entries for `ctrl+`-modified keys did nothing.** Running one
   replays its direct key, and the replay had a hand-written case per ctrl key
   that had fallen a registry behind — the chat's `ctrl+r` (detail level) and

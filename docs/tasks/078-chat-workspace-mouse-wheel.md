@@ -8,8 +8,8 @@ The chat workspace was the one scrollable pane in the TUI the wheel did not
 reach: `chatView.update` handled `tea.WindowSizeMsg` and `tea.KeyPressMsg` and
 no mouse message, so a conversation could only be moved with `pgup`/`pgdown`.
 It is the view where that is missed most — the composer holds the keyboard
-almost always, which is why the scroll keys had to be `ctrl`-modified in the
-first place.
+almost always, which is why the scroll keys had to be `pgup`/`pgdown` and
+`ctrl+g` rather than the arrows in the first place.
 
 The body now takes `tea.MouseWheelMsg`: one line per tick, `syncFollowToViewport()`
 so a scroll back pauses follow and `ctrl+g` re-arms it, and
@@ -79,7 +79,9 @@ as a region the wheel must respect, and it was not on screen at all.
 ### 3. `taskView.updateWheel` gains the popup gate it was missing
 
 `taskView.updateClick` returns early on `t.popup`; `updateWheel` did not, so
-wheeling behind an open task popup scrolled the pane underneath it. PR S records
+wheeling behind an open task popup reached the tab underneath it — scrolling it,
+or on the Steps and Pull Request tabs, where the wheel moves a cursor rather
+than a viewport, changing what was selected there. PR S records
 *"the palette and the answer popup ignore clicks"*, and the issue asks the chat
 to honour the same rule for the wheel. Both have it now:
 `chatView.updateWheel` returns `nil` while `v.form != nil`,
@@ -144,7 +146,8 @@ coordinates and expected no scroll would encode the design decision 1 rejects.
 
 - **The chats board's wheel** (§15 view 8). Out of scope by the issue's own
   wording.
-- **No new screenshot.** The wheel is not visible in a still, and the footer fix
-  restores a line the captures under `docs/assets/` were taken without — worth a
-  re-run of `scripts/screenshots.sh` next time it is walked, not a reason to
-  block this.
+- **No new screenshot.** The wheel is not visible in a still, and nothing under
+  `docs/assets/` goes stale: the chat workspace is photographed by no capture —
+  `scripts/screenshots.sh` has no chat tape and there is no `tui-chat*.png` — so
+  the restored hint line appears in no existing image. A chat capture is worth
+  adding next time the script is walked, not a reason to block this.
