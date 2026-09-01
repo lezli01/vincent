@@ -204,6 +204,16 @@ The same holds for the Markdown rendering of assistant prose: it is a fixed
 subset drawn with vincent's own glyphs, and raw HTML is rendered as the
 characters the agent sent — never parsed, fetched or executed.
 
+Links and images in that prose are text and nothing more. A link's label is
+prose and its destination is printed literally, whatever its scheme, in a
+numbered reference list at the end of the message; an image is its alt text
+plus its printed source. **vincent emits no OSC 8 hyperlink and the pane opens
+nothing**, so a `javascript:` or `file:` destination an agent wrote is
+something you can read and copy but not something the terminal can be made to
+act on. No remote image is ever fetched — there is no fetch in that path to
+disable. Syntax highlighting in fenced code adds colour and never characters:
+strip the styling and the block is byte-for-byte what the agent sent.
+
 ## The API surface
 
 - **Loopback only.** `listen:` is validated to a loopback host; anything else is

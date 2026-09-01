@@ -363,9 +363,26 @@ untouched — and every marker is a glyph, not a colour, so a heading's `▌`, a
 quote's `│`, a list's `•`/`◦`/`▪`, a code block's `▏` and an inline span's
 backticks all survive with the styling stripped. A code block keeps its
 indentation and its hard line breaks; a line too long for the pane continues on
-the next one at the block's rail rather than being cut off. Constructs outside
-that list — tables, links, HTML, footnotes — render as the characters the agent
-sent, and raw HTML is never parsed, fetched or executed.
+the next one at the block's rail rather than being cut off. It also shows the
+language the fence declared, as a dim word at the rail, and tints its body — the
+tint is styling and nothing else, so stripping the escape sequences gives back
+exactly the code the agent wrote, and a language vincent does not know renders
+plain.
+
+**Tables and links, too.** A table needs its delimiter row to be a table, so
+prose containing a `|` stays prose. When it fits, it is drawn aligned with a
+rule under the header and no borders; when the pane is too narrow for its
+columns' widest unbreakable words, each row becomes a stacked
+`column: value` record opened by `▪` — never a clipped grid, and never a
+sideways scroll. A link renders its label as ordinary text with a dim `[1]`,
+and the message ends with the `[1] https://…` lines that resolve them, one per
+distinct destination. An image is its alt text plus its source in that same
+list. Nothing here is fetched, opened, or turned into a terminal hyperlink:
+vincent emits no OSC 8, so a destination is text you can read and copy.
+
+Constructs outside that list — reference links, autolinks, bare URLs, titled
+links, HTML, footnotes — render as the characters the agent sent, and raw HTML
+is never parsed, fetched or executed.
 
 Only the agent's prose is interpreted. Reasoning, tool calls, tool results,
 command output, errors and unmodeled lines stay literal behind their own gutter

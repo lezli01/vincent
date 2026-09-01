@@ -214,11 +214,15 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   one linked; each tab uses the whole view.
 - The Output tab and the chat workspace share one renderer, and one verbosity
   level. Assistant prose is rendered as Markdown — headings, lists, blockquotes,
-  inline and fenced code, and rules become terminal structure instead of
-  literal syntax — while reasoning, tool calls, command output and errors stay
-  literal behind their own gutter marks. Every marker is a glyph rather than a
-  colour, so a monochrome terminal keeps every distinction, and the transcript
-  on disk keeps the agent's exact bytes.
+  inline and fenced code, rules, tables, links and images become terminal
+  structure instead of literal syntax — while reasoning, tool calls, command
+  output and errors stay literal behind their own gutter marks. A table is laid
+  out to the pane and degrades to stacked `column: value` records rather than
+  being clipped; a link's destination is printed in a numbered reference list,
+  never opened or turned into a terminal hyperlink; a fenced block shows its
+  language and is tinted with styling only. Every marker is a glyph rather than
+  a colour, so a monochrome terminal keeps every distinction, and the
+  transcript on disk keeps the agent's exact bytes.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
