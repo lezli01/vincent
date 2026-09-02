@@ -602,8 +602,14 @@ EOF
 #
 # The whole path over curl: an agent that reports a spent quota must not burn
 # its retry budget, must give its slot back, and must recover with nobody
-# pressing anything. The recheck interval is squeezed to two seconds so the
-# unattended half is observable in a gate rather than in five hours.
+# pressing anything. The recheck interval is squeezed to ten seconds so the
+# unattended half is observable in a gate rather than in five hours — ten and
+# not the two it was, because the *held* half has to be observable too. The
+# poll below detects the hold on a one-second granularity and then asserts
+# several facts about it over curl, and on Windows a single codex app-server
+# probe answers in over a second; two seconds of hold was less than the
+# assertions cost, so the scenario was reading a task the scheduler had
+# already taken back.
 #
 # The global cap is 1 and the second task sleeps, so "the slot was released" is
 # a fact the scenario forces rather than infers: the sleeper can only be
@@ -674,7 +680,7 @@ scenario5() {
   # parse of a protocol rather than an account's real numbers.
   cat > "$CONFIG_DIR/config.yaml" <<EOF
 max_parallel_tasks: 1
-usage_limit_recheck_interval: 2s
+usage_limit_recheck_interval: 10s
 agents:
   claude:
     path: "$(hostpath "$FAKEAGENT")"
@@ -731,13 +737,22 @@ EOF
   [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
     || fail "a quota-held task must not carry a block_reason: $task"
 
-  # Captured here rather than after the step assertions: the recheck interval
-  # is two seconds, so the successful re-run that clears the observation is
-  # already on its way. Task 026's claim is that the fact *outlives the hold*,
-  # and the hold is what was just detected.
-  echo "== the daemon reports the spent window per adapter (task 026)"
-  local quota
+  # Both facts that belong to the hold are captured in the two requests that
+  # follow detecting it, and asserted from these snapshots further down. Each
+  # is a claim about a *held* task — task 026's that the observation outlives
+  # the hold, §11's that the quota stop burned no retry — and neither is a
+  # claim about what is still true several requests later. Reading the step
+  # rows in place, below the codex assertions, is what made this scenario fail
+  # on Windows: the app-server probe there answers in over a second.
+  #
+  # The step rows go first of the two, because the attempt count is retired
+  # the moment the task is re-admitted while the observation survives until
+  # that re-run *succeeds*, a little later still.
+  local quota steps
+  steps="$(api GET "/tasks/$walled/steps")"
   quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+
+  echo "== the daemon reports the spent window per adapter (task 026)"
   [[ "$quota" != "null" && -n "$quota" ]] \
     || fail "GET /v1/agents carries no quota block while a task is held on one"
   [[ "$(jq -r .source <<<"$quota")" == "observed" ]] \
@@ -767,8 +782,6 @@ EOF
   assert_codex_quota "$(api GET /info | jq -c '.agents[] | select(.name == "codex") | .quota')" /v1/info
 
   echo "== assert the attempt is recorded interrupted and spent no retry"
-  local steps
-  steps="$(api GET "/tasks/$walled/steps")"
   [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
   [[ "$(jq -r '.[0].state' <<<"$steps")" == "interrupted" ]] || fail "attempt not interrupted: $steps"
   [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "usage_limit" ]] \
