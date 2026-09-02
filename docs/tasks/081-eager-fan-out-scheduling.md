@@ -2,7 +2,8 @@
 
 **Status:** ✅ done (1/1)
 **Issue:** #302
-**Amends:** §7.6, §11, §12.4 (§18 unchanged — no new block reason)
+**Amends:** §7.6, §11, §12.4, §18 (no new block reason — §18's `lane_failed`
+row gains eager's wording)
 **Extends:** [080](080-fan-out-dag.md) decision 9, which accepted barrier
 scheduling as the shipped posture *and* named #302 as where eager scheduling
 would be decided; **narrows** its decision 2, whose reversal of

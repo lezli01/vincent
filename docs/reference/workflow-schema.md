@@ -598,8 +598,8 @@ merged, `--no-ff`, in the order the lanes are declared. Order is the lane's
 guarded-off lane does not renumber the merge.
 
 **Spawning parks the parent** in `awaiting_children` and releases its slot; the
-scheduler re-admits it once every descendant has settled, and that second
-admission runs the join. If the spawn is only partial, the lanes already created
+scheduler re-admits it once every descendant has settled — or, under
+`schedule: eager`, once a further lane has — and that admission runs the join. If the spawn is only partial, the lanes already created
 are cancelled, so a retry starts from a clean slate rather than half a tree.
 
 **When every lane is guarded off**, the step chooses nothing and advances. It
