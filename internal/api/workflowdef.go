@@ -165,6 +165,10 @@ type workflowStepDef struct {
 	Lanes    []workflowLaneDef `json:"lanes,omitempty"`
 	Lane     *workflowLaneDef  `json:"lane,omitempty"`
 	MaxLanes *int              `json:"max_lanes,omitempty"`
+	// Schedule is the lane scheduling mode: `barrier` or `eager` (§7.6, task
+	// 081). Absent means barrier, which is what a workflow written before the
+	// field says.
+	Schedule string            `json:"schedule,omitempty"`
 	Merge    *workflowMergeDef `json:"merge,omitempty"`
 
 	// loop steps. Exactly one of Count and ForEach is set: the driver. A
@@ -324,6 +328,7 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 		Count:          st.Count,
 		MaxIterations:  st.MaxIterations,
 		MaxLanes:       st.MaxLanes,
+		Schedule:       st.Schedule,
 		Workflow:       st.Workflow,
 		ResolvedFrom:   st.ResolvedFrom,
 	}

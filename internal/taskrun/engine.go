@@ -237,6 +237,18 @@ type stepEnv struct {
 	// The two never coexist: `fan_out` is not valid inside a loop body
 	// (§7.8), which is what makes one column honest for both.
 	round int
+	// eager is whether this `fan_out` admission schedules its lanes eagerly
+	// (§7.6, task 081): merge and spawn what this lane's own `needs:` allow,
+	// rather than waiting for every sibling to settle. False for every other
+	// step, and false for a `schedule: eager` step whose *selected* lanes
+	// declare no `needs:` at all — a flat list is one round under either
+	// mode, so eager would change only when it merges, which is the one thing
+	// task 080 decision 2 kept bit-for-bit (decision 4).
+	eager bool
+	// laneWatermark is how many direct children had settled when this
+	// admission started. An eager park writes it as the parent's wake
+	// position; nothing else reads it (decision 1).
+	laneWatermark int
 	// followUp is where this step sits inside a follow-up run, and nil for
 	// every step of an ordinary admission (§6, task 027 decision 4). It is
 	// what makes a round's rows legible to each other and blind to the rows

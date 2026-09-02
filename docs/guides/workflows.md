@@ -649,6 +649,34 @@ The step works the graph out for itself, in rounds; you never name a wave.
 There is one branch, so `needs` means *happens-after*, not isolation: `wire`
 also sees anything else that merged in the same round.
 
+**Trading reproducibility for throughput.** By default a round is a barrier:
+`wire` waits not only for `api` and `db` but for every other lane of their
+round, however unrelated. `schedule: eager` drops that wait — a lane is merged
+and its dependents spawned as soon as *its own* `needs` are done and merged:
+
+```yaml
+  - id: build
+    type: fan_out
+    schedule: eager             # barrier (default) | eager
+    lanes:
+      - { id: api,  workflow: implement-module }
+      - { id: slow, workflow: implement-module }
+      - { id: wire, workflow: implement-module, needs: [api] }
+```
+
+The cost is real and worth understanding before you reach for it: **`eager`
+makes a lane's starting tree timing-dependent.** Under a barrier `wire` always
+starts from the same tree, so re-running the task gives the same result. Under
+`eager` it starts when `api` merges, and whether `slow` happened to merge by
+then depends on the clock — so a re-run can hand `wire` a different tree. The
+parent branch's commit topology varies between runs too, even when the
+delivered tree does not. `barrier` is the reproducible default; use `eager` for
+a DAG of genuinely independent modules, not for one whose lanes touch shared
+files.
+
+Everything else behaves identically under both modes, and a lane list with no
+`needs` runs as a barrier whatever you write — one round either way.
+
 **Lanes you cannot list in advance.** Give the step `for_each:` and a single
 `lane:` template instead of `lanes:`, and a planning step decides both how many
 lanes there are and which of them must land first:
@@ -676,8 +704,8 @@ nobody has produced yet cannot be counted at creation, so that ceiling and
 
 **How the step runs.** Spawning parks the parent in `awaiting_children` and
 releases its slot; the scheduler brings it back once every descendant has
-settled, and that admission merges what finished and spawns whatever those
-merges made ready. Lanes are merged `--no-ff`, one at a time, in **declared**
+settled — or, under `schedule: eager`, once any lane has — and that admission
+merges what finished and spawns whatever those merges made ready. Lanes are merged `--no-ff`, one at a time, in **declared**
 order, stopping at the first conflict. A lane list with no `needs:` is one such
 round — spawn, park, merge, done. You still get one branch to review.
 

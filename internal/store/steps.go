@@ -248,6 +248,32 @@ func (s *Store) LatestStepRun(ctx context.Context, taskID int64, stepIndex int, 
 	return r, nil
 }
 
+// SucceededIterations counts the distinct iterations of one step that have a
+// succeeded row — how many times this step has completed a repeat of itself.
+//
+// It exists for `schedule: eager` (§7.6, task 081 decision 2), where a
+// fan_out's `iteration` can no longer be derived from the lane's wave in the
+// graph: two eager admissions can merge two lanes of the same wave and would
+// compute the same number, colliding on the retry budget and the §12.2
+// transcript name that `stepEnv.ref()` scopes by it. Under eager the merge
+// counter is this instead — how many merge rows the step already has.
+//
+// Succeeded rows only, deliberately: a merge that blocked on a conflict must
+// re-enter at the *same* iteration when a human retries it, or the retry
+// would start a fresh budget and write its transcript somewhere else.
+func (s *Store) SucceededIterations(
+	ctx context.Context, taskID int64, stepIndex int, stepID string,
+) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT iteration) FROM step_runs
+		WHERE task_id = ? AND step_index = ? AND step_id = ? AND state = ?`,
+		taskID, stepIndex, stepID, string(StepSucceeded)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("succeeded iterations of step %q: %w", stepID, err)
+	}
+	return n, nil
+}
+
 // ListStepRunsAt returns every row at one step index, in position order:
 // iteration, then attempt. It is a `loop` step's whole history in one read.
 //

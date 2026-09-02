@@ -241,3 +241,95 @@ func TestEmitChildrenChangedReachesEveryAncestor(t *testing.T) {
 		t.Errorf("a root emitted %d children_changed events, want none", len(after)-before)
 	}
 }
+
+// TestSettledChildrenCountsDirectLanesOnly: the eager wake watermark is
+// compared against this number, so a depth-2 descendant settling must not move
+// it (task 081 decision 1). That is what bounds an eager step's wake churn by
+// its own lane count rather than by the size of the tree below it.
+func TestSettledChildrenCountsDirectLanesOnly(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskRunning)
+	if err := s.CreateTask(t.Context(), root, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	a := lane(t, s, p.ID, root.ID, "a", 0, TaskDone)
+	b := lane(t, s, p.ID, root.ID, "b", 1, TaskRunning)
+	// A grandchild, settled: counted by ChildrenOf, not by SettledChildren.
+	lane(t, s, p.ID, a.ID, "a1", 0, TaskAborted)
+
+	got, err := s.SettledChildren(t.Context(), root.ID)
+	if err != nil {
+		t.Fatalf("SettledChildren: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("SettledChildren = %d, want 1 (the one settled direct lane)", got)
+	}
+	rollup, err := s.ChildrenOf(t.Context(), root.ID)
+	if err != nil {
+		t.Fatalf("ChildrenOf: %v", err)
+	}
+	if rollup.Settled != 2 {
+		t.Errorf("rollup counts %d settled over the subtree, want 2", rollup.Settled)
+	}
+
+	// A task with no children at all: zero, not an error — a fan_out that
+	// spawned nothing has nothing to wait for.
+	leaf, err := s.SettledChildren(t.Context(), b.ID)
+	if err != nil || leaf != 0 {
+		t.Errorf("SettledChildren of a childless task = %d, %v; want 0, nil", leaf, err)
+	}
+}
+
+// TestWatermarkClearsLeavingAwaitingChildren: the watermark describes *this*
+// parked period, so leaving `awaiting_children` always drops it — the same
+// construction admit_not_before uses. Without it a barrier park could inherit
+// an earlier eager step's number and be woken by nothing.
+func TestWatermarkClearsLeavingAwaitingChildren(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	root := newTask(p.ID, "root", TaskRunning)
+	if err := s.CreateTask(t.Context(), root, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	// Zero is a real position — an eager parent parked before any lane
+	// settled — so it must survive the write rather than read as "unset".
+	zero := 0
+	parked, _, err := s.TransitionTask(t.Context(), root.ID, TaskRunning, TaskAwaitingChildren,
+		TaskChange{SettledChildrenWatermark: &zero})
+	if err != nil {
+		t.Fatalf("park: %v", err)
+	}
+	if parked.SettledChildrenWatermark == nil || *parked.SettledChildrenWatermark != 0 {
+		t.Fatalf("watermark = %v, want 0", parked.SettledChildrenWatermark)
+	}
+	reloaded, err := s.GetTask(t.Context(), root.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if reloaded.SettledChildrenWatermark == nil || *reloaded.SettledChildrenWatermark != 0 {
+		t.Fatalf("watermark did not round-trip: %v", reloaded.SettledChildrenWatermark)
+	}
+
+	resumed, _, err := s.TransitionTask(t.Context(), root.ID, TaskAwaitingChildren, TaskQueued,
+		TaskChange{})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if resumed.SettledChildrenWatermark != nil {
+		t.Errorf("watermark survived the resume: %d", *resumed.SettledChildrenWatermark)
+	}
+	// A barrier park after it writes nothing, and reads back as NULL.
+	barrier, _, err := s.TransitionTask(t.Context(), root.ID, TaskQueued, TaskRunning, TaskChange{})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	barrier, _, err = s.TransitionTask(t.Context(), barrier.ID, TaskRunning, TaskAwaitingChildren,
+		TaskChange{})
+	if err != nil {
+		t.Fatalf("barrier park: %v", err)
+	}
+	if barrier.SettledChildrenWatermark != nil {
+		t.Errorf("a barrier park carries a watermark: %d", *barrier.SettledChildrenWatermark)
+	}
+}

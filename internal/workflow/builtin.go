@@ -367,7 +367,11 @@ steps:
          a fixed order carry needs:, naming the lanes they depend on — the
          engine derives the waves, so a fan-out split into "phase 1" and
          "phase 2" steps, or a lane whose prompt says "wait for the API lane",
-         collapses into one step with edges. A fan-out whose lane count is
+         collapses into one step with edges. Such a step gets schedule: eager
+         only where its lanes touch disjoint files and the round barrier is
+         costing real wall-clock time: eager makes a lane's starting tree
+         timing-dependent, so barrier stays the default and a flat lane list
+         is a barrier whatever the field says. A fan-out whose lane count is
          genuinely decided by a run — a planning step emitting one JSON object
          per work unit — becomes for_each: plus a single lane: template with a
          max_lanes: ceiling, in place of a hand-guessed list of guarded lanes.

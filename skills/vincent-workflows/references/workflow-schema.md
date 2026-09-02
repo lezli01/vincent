@@ -126,7 +126,7 @@ types deliberately reject timeout or retry fields; see the table below.
 | `manual` | `instructions` | none | Binary human approval or judgment |
 | `condition` | `if` | nothing else | False finishes the run successfully |
 | `parallel` | `steps` | `max_parallel`, group `timeout` | Same-worktree concurrent commands/agents |
-| `fan_out` | `lanes`, or `lane` + `for_each` | `merge`, `max_lanes` | Child tasks, branches, worktrees, then merge |
+| `fan_out` | `lanes`, or `lane` + `for_each` | `merge`, `max_lanes`, `schedule` | Child tasks, branches, worktrees, then merge |
 | `loop` | `steps` and one driver | `count` or `for_each`, `max_iterations`, group `timeout` | Bounded sequential repetition |
 | `break` | `if` | nothing else | End the enclosing loop successfully |
 | `include` | `workflow` | nothing else | Splice another registry workflow at task creation |
@@ -231,6 +231,13 @@ merged in the same round. Unknown ids and cycles are refused at load.
     - { id: db,   workflow: implement-module }
     - { id: wire, workflow: implement-module, needs: [api, db] }
 ```
+
+A round is a **barrier** by default: nothing moves until every lane of it has
+settled, which is what makes a lane's starting tree reproducible.
+`schedule: eager` takes the other trade — a lane merges and its dependents spawn
+as soon as its own `needs` are done and merged, so what else is on the branch by
+then is a stopwatch question. Use it only when the lanes are independent of each
+other's files; a lane list with no `needs` is a barrier either way.
 
 A step may derive its lanes instead of declaring them: give it `for_each` and a
 single `lane` template in place of `lanes`, plus a `max_lanes` ceiling.

@@ -95,6 +95,21 @@ const (
 	ConflictAgent = "agent"
 )
 
+// Lane scheduling modes for a fan_out step (§7.6, task 081).
+const (
+	// ScheduleBarrier merges and spawns in rounds: nothing moves until every
+	// lane spawned so far has settled. The default, deliberately — a lane's
+	// starting tree is then the same on every re-run, which is the
+	// reproducibility posture §8.4 already takes when it keeps `.Now` out of
+	// the template context.
+	ScheduleBarrier = "barrier"
+	// ScheduleEager merges a lane and spawns its dependents as soon as that
+	// lane's own `needs:` are done and merged, without waiting for unrelated
+	// siblings. It trades reproducibility for throughput and the workflow
+	// has to say so in the file (task 081 decision 5).
+	ScheduleEager = "eager"
+)
+
 // Permission modes (spec §9.4).
 const (
 	PermissionFullAuto   = "full-auto"
@@ -232,7 +247,12 @@ type Step struct {
 	// MaxLanes bounds a derived lane list, defaulting to `fan_out.max_tasks`.
 	// A static list is counted at creation and needs none (task 080
 	// decision 6).
-	MaxLanes *int   `yaml:"max_lanes,omitempty"`
+	MaxLanes *int `yaml:"max_lanes,omitempty"`
+	// Schedule is how the lanes are scheduled: `barrier` (the default, and
+	// what an absent field means) or `eager` (task 081). It is omitempty so a
+	// workflow that never names it marshals byte-for-byte as it did before
+	// the field existed — the snapshot a task carries is compared as text.
+	Schedule string `yaml:"schedule,omitempty"`
 	Merge    *Merge `yaml:"merge,omitempty"`
 
 	// loop steps (task 016). Steps above carries the body — a loop and a
@@ -399,6 +419,15 @@ func (s Step) ConflictPolicy() string {
 		return ConflictBlock
 	}
 	return s.Merge.OnConflict
+}
+
+// ScheduleMode resolves a fan_out step's lane scheduling mode, defaulting to
+// `barrier` for a step that names none (task 081 decision 5).
+func (s Step) ScheduleMode() string {
+	if s.Schedule == "" {
+		return ScheduleBarrier
+	}
+	return s.Schedule
 }
 
 // placedStep is a step together with the YAML path it was found at, so a
@@ -861,9 +890,9 @@ func validateStep(step Step, base string, opts Options, add func(string, string,
 	default:
 		rejectFields(step, base, add, "count", "for_each", "max_iterations")
 	}
-	// `lane` and `max_lanes` are a derived fan-out's, and nothing else's.
+	// `lane`, `max_lanes` and `schedule` are a fan-out's, and nothing else's.
 	if step.Type != StepFanOut {
-		rejectFields(step, base, add, "lane", "max_lanes")
+		rejectFields(step, base, add, "lane", "max_lanes", "schedule")
 	}
 	if step.Type != StepInclude {
 		rejectFields(step, base, add, "workflow")
@@ -1279,7 +1308,8 @@ func rejectFields(step Step, base string, add func(string, string, ...any), fiel
 		"steps":        len(step.Steps) > 0, "max_parallel": step.MaxParallel != nil,
 		"lanes": len(step.Lanes) > 0, "merge": step.Merge != nil,
 		"lane": step.Lane != nil, "max_lanes": step.MaxLanes != nil,
-		"if": step.If != "", "allow_failure": step.AllowFailure,
+		"schedule": step.Schedule != "",
+		"if":       step.If != "", "allow_failure": step.AllowFailure,
 		"max_retries": step.MaxRetries != nil, "timeout": step.Timeout != nil,
 		"retry_backoff": step.RetryBackoff != nil,
 		"count":         step.Count != nil, "for_each": len(step.ForEach) > 0,

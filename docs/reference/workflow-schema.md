@@ -465,6 +465,7 @@ then merges those branches back into this task's own.
 | `lane` | one lane template | one of `lanes` or `lane`, with `for_each` |
 | `for_each` | template or list of templates | required by `lane` |
 | `max_lanes` | int | — |
+| `schedule` | `barrier` (default) or `eager` | — |
 | `merge` | map | — |
 
 ```yaml
@@ -521,9 +522,39 @@ declaring `needs: [api, db]` also sees `docs` when `docs` merged in the same
 round; dependencies are satisfied at least, never exactly. An unknown lane id or
 a cycle is refused when the workflow loads.
 
-Scheduling is by **barrier round**: the parent wakes when every descendant has
-settled, so a lane that needs only `wire` still waits for its whole round. That
-is what makes "what did this lane start from" reproducible across re-runs.
+Scheduling is by **barrier round** unless you say otherwise: the parent wakes
+when every descendant has settled, so a lane that needs only `wire` still waits
+for its whole round. That is what makes "what did this lane start from"
+reproducible across re-runs.
+
+`schedule: eager` takes the other trade. A lane is merged and its dependents
+spawned as soon as *its own* `needs` are done and merged, without waiting for
+unrelated siblings:
+
+```yaml
+  - id: build
+    type: fan_out
+    schedule: eager             # barrier (default) | eager
+    lanes:
+      - { id: api,  workflow: impl }
+      - { id: slow, workflow: impl }
+      - { id: wire, workflow: impl, needs: [api] }
+```
+
+`wire` starts as soon as `api` merges, even with `slow` still running. The price
+is that **a lane's starting tree becomes timing-dependent**: whether `slow` had
+merged by the time `wire` was cut is a stopwatch question, so re-running the
+task can give `wire` a different tree and a different result. The parent
+branch's commit topology is not reproducible either — the set of lanes a given
+merge commit joins varies between runs — even when the delivered tree is.
+`barrier` is the reproducible default for that reason; a workflow trading
+reproducibility for throughput says so in the file.
+
+Everything else is identical under both modes: `lane_failed`, `merge_conflict`,
+the cancel cascade and the archive refusal. A step whose selected lanes declare
+no `needs` among themselves runs as a barrier whatever `schedule` says — such a
+list is one round either way, so `schedule: eager` on it is redundant rather
+than wrong.
 
 **The lane list can be derived from an earlier step.** Give the step `for_each:`
 and a single `lane:` template instead of `lanes:`:
@@ -567,8 +598,8 @@ merged, `--no-ff`, in the order the lanes are declared. Order is the lane's
 guarded-off lane does not renumber the merge.
 
 **Spawning parks the parent** in `awaiting_children` and releases its slot; the
-scheduler re-admits it once every descendant has settled, and that second
-admission runs the join. If the spawn is only partial, the lanes already created
+scheduler re-admits it once every descendant has settled — or, under
+`schedule: eager`, once a further lane has — and that admission runs the join. If the spawn is only partial, the lanes already created
 are cancelled, so a retry starts from a clean slate rather than half a tree.
 
 **When every lane is guarded off**, the step chooses nothing and advances. It

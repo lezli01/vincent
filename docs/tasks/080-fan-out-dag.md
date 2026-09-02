@@ -5,7 +5,8 @@
 **Amends:** §5.3 (unchanged, and says why), §7.6, §7.8, §8.4, §12.4, §18
 **Extends:** [014](014-workflow-fan-out.md) decisions 5 and 28 under their own
 terms; **reverses** its decision 21 where, and only where, `needs:` is used
-**Follow-up:** eager per-lane scheduling is #302, deliberately not here
+**Follow-up:** eager per-lane scheduling is #302, deliberately not here —
+shipped as [081](081-eager-fan-out-scheduling.md)
 
 A `fan_out` step's lanes were a fixed *set*, decided at task creation. A plan is
 a *graph* whose width is discovered at run time. This gives the step both

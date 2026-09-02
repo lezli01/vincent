@@ -66,7 +66,26 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		env.log.Error("list lanes", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}, false
 	}
-	if unsettled := unsettledLanes(mine); unsettled > 0 {
+	declaredEager := env.step.ScheduleMode() == workflow.ScheduleEager
+	if declaredEager {
+		// Read at the *start* of the admission, not at the park: a child
+		// settling while this admission runs then moves the live count past
+		// the recorded position and wakes the parent again, rather than
+		// falling into the gap between the two reads (decision 1).
+		//
+		// Direct children, which is every lane of every fan_out step this
+		// task has run — the same set the scheduler counts. Counting this
+		// step's lanes alone would undercount by the lanes an earlier
+		// fan_out left settled, and the watermark would be exceeded the
+		// moment it was written.
+		settled, wErr := r.deps.Store.SettledChildren(ctx, env.task.ID)
+		if wErr != nil {
+			env.log.Error("count settled lanes", "error", wErr)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}, false
+		}
+		env.laneWatermark = settled
+	}
+	if unsettled := unsettledLanes(mine); unsettled > 0 && !declaredEager {
 		// The lanes exist but have not all settled, so this admission is not
 		// a round boundary: the parent was admitted without having parked.
 		// The route is a park transition that did not commit — a lost CAS or
@@ -75,12 +94,12 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		// Merging here would read them as "not done" and block `lane_failed`
 		// on lanes that are about to run perfectly well, so the parent parks
 		// now and the scheduler brings it back when they have settled (§7.6).
-		env.log.Info("fan-out lanes are still running; parking",
-			"lanes", len(mine), "unsettled", unsettled)
-		if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
-			env.log.Info("awaiting children", "step", env.step.ID)
-		}
-		return stepOutcome{}, true
+		//
+		// Under `schedule: eager` an unsettled sibling is the ordinary case
+		// rather than a fault, so the guard is skipped here and re-applied
+		// below for a declared-eager step whose selected lanes turn out flat
+		// (decision 4) — the only way to know that is to have selected them.
+		return r.parkForUnsettled(env, mine, unsettled)
 	}
 
 	// Derivation runs once, before anything is spawned, in the parent's
@@ -115,11 +134,43 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		return stepOutcome{state: store.StepSucceeded}, false
 	}
 
+	// Decision 4: `schedule: eager` on a lane list whose *selected* lanes
+	// declare no `needs:` among themselves is redundant, not wrong. Such a
+	// list spawns in one round under either mode, so eager could only change
+	// when the lanes merge — and merging them as they finish is exactly the
+	// widening of task 080 decision 2 that #301 kept out of flat lists. So it
+	// runs as a barrier, whatever the field says, and the flat-list guarantee
+	// is unconditional.
+	env.eager = declaredEager && lanesNeedOrdering(env.step.Lanes, selected)
+	if !env.eager {
+		if unsettled := unsettledLanes(mine); unsettled > 0 {
+			return r.parkForUnsettled(env, mine, unsettled)
+		}
+	}
+
 	if len(mine) == 0 {
 		// Round 0. Nothing has been spawned, so there is nothing to merge and
 		// no row to write: the first admission of a flat lane list is exactly
 		// what it always was.
 		return r.spawnRound(ctx, env, selected, nil, 0)
+	}
+
+	if env.eager {
+		// A wake that finds nothing to merge and nothing that has failed must
+		// not write a step_runs row: an eager parent is woken once per lane
+		// settling, and a row per wake would spend the merge's retry budget
+		// on admissions that did no work. It falls through to spawnRound,
+		// which spawns what is ready or parks again holding no slot.
+		due, dErr := r.eagerJoinDue(ctx, env, mine)
+		if dErr != nil {
+			env.log.Error("check for mergeable lanes", "error", dErr)
+			r.fail(env.task, ReasonInternalError, env.log, "check for mergeable lanes", dErr)
+			return stepOutcome{}, true
+		}
+		if !due {
+			env.log.Info("eager wake found nothing to merge", "step", env.step.ID)
+			return r.spawnRound(ctx, env, selected, mine, r.mergeCount(ctx, env))
+		}
 	}
 
 	// A round boundary: merge, then spawn whatever those merges made ready.
@@ -132,6 +183,17 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 	// can fix. An automatic second merge would abort the first, hit the same
 	// conflict, and block anyway.
 	round := r.roundOf(env.step.Lanes, selected, mine)
+	if env.eager {
+		// Under eager the wave a lane sits at is no longer the round number:
+		// two admissions can merge two lanes of the same wave and would
+		// compute the same `iteration`, colliding on the retry budget and the
+		// §12.2 transcript name (decision 2). The counter is instead how many
+		// merges this step has already completed. Barrier keeps the
+		// wave-derived number, and the two agree there — a barrier step's Nth
+		// merge admission merges wave N — which is what lets the default path
+		// stay bit-for-bit what it was.
+		round = r.mergeCount(ctx, env)
+	}
 	roundEnv := *env
 	roundEnv.round = round
 	// Asked before the attempt row exists: see resumedFromConflict.
@@ -159,6 +221,14 @@ func (r *Runner) spawnRound(
 		return stepOutcome{}, true
 	}
 	if len(ready) == 0 {
+		if unsettled := unsettledLanes(mine); env.eager && unsettled > 0 {
+			// Eager only: a barrier admission cannot reach here with an
+			// unsettled lane, because the guard at the top of runFanOut sent
+			// it back. Both of the branches below would be wrong for it —
+			// nothing is unspawned *and* unreachable, and the step is not
+			// finished either, it is waiting.
+			return r.parkForUnsettled(env, mine, unsettled)
+		}
 		if spawned := len(mine); spawned < len(selected) {
 			// Unreachable for a graph the load-time or spawn-time check
 			// accepted: something is unspawned and nothing is ready only if
@@ -170,9 +240,13 @@ func (r *Runner) spawnRound(
 				"no lane is ready and some are unspawned: the needs graph cannot be satisfied", nil)
 			return stepOutcome{}, true
 		}
+		unit := "rounds"
+		if env.eager {
+			unit = "eager merges"
+		}
 		return stepOutcome{
 			state:  store.StepSucceeded,
-			result: fmt.Sprintf("merged %d lanes in %d rounds", len(mine), round),
+			result: fmt.Sprintf("merged %d lanes in %d %s", len(mine), round, unit),
 		}, false
 	}
 	if err := r.spawnLanes(ctx, env, ready); err != nil {
@@ -188,11 +262,102 @@ func (r *Runner) spawnRound(
 	}
 	// Park: the slot is released before the children need one, which is what
 	// makes this deadlock-free at any depth (decision 6).
-	if r.transition(env.task, taskstate.FanOut, store.TaskChange{}, env.log) {
+	if r.parkFanOut(env) {
 		env.log.Info("fan-out round spawned; awaiting children",
-			"step", env.step.ID, "round", round, "lanes", len(ready))
+			"step", env.step.ID, "round", round, "lanes", len(ready), "eager", env.eager)
 	}
 	return stepOutcome{}, true
+}
+
+// parkForUnsettled parks the parent because lanes it has spawned have not
+// settled. It reports the fan-out's stop-the-actor outcome, so a caller can
+// return it directly.
+func (r *Runner) parkForUnsettled(env *stepEnv, mine []store.Task, unsettled int) (stepOutcome, bool) {
+	env.log.Info("fan-out lanes are still running; parking",
+		"lanes", len(mine), "unsettled", unsettled, "eager", env.eager)
+	if r.parkFanOut(env) {
+		env.log.Info("awaiting children", "step", env.step.ID)
+	}
+	return stepOutcome{}, true
+}
+
+// parkFanOut moves the parent to `awaiting_children`, recording an eager
+// step's wake position in the same statement as the state change (decision 1).
+//
+// A barrier park writes nothing: nil leaves the column NULL, which is what the
+// scheduler reads as "wake me when the whole subtree has settled". It cannot
+// carry an earlier eager step's number either — TransitionTask clears the
+// column on the way *out* of `awaiting_children`.
+func (r *Runner) parkFanOut(env *stepEnv) bool {
+	ch := store.TaskChange{}
+	if env.eager {
+		watermark := env.laneWatermark
+		ch.SettledChildrenWatermark = &watermark
+	}
+	return r.transition(env.task, taskstate.FanOut, ch, env.log)
+}
+
+// eagerJoinDue reports whether an eager admission has anything for the join to
+// do: a lane that settled without finishing — which blocks `lane_failed` —
+// or a finished lane whose branch is not yet on the parent's.
+//
+// It is the guard behind "a wake that finds nothing mergeable records no
+// step_runs row". "Merged" is asked of git rather than of a cursor, for the
+// reason readyLanes gives.
+func (r *Runner) eagerJoinDue(ctx context.Context, env *stepEnv, mine []store.Task) (bool, error) {
+	for i := range mine {
+		lane := &mine[i]
+		if lane.State != store.TaskDone {
+			if taskstate.Settled(lane.State) {
+				return true, nil
+			}
+			continue
+		}
+		merged, err := r.deps.Worktrees.Merged(ctx, env.task.WorktreePath, lane.BranchName)
+		if err != nil {
+			return false, err
+		}
+		if !merged {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// mergeCount is how many merges this fan_out step has already completed — the
+// `iteration` an eager admission writes its own merge row at (decision 2).
+//
+// A read failure degrades to 0 rather than failing the step: the cost is a
+// merge row colliding with an earlier one's retry budget, and the cost of the
+// alternative is a whole fan-out tree abandoned because one COUNT did not
+// answer.
+func (r *Runner) mergeCount(ctx context.Context, env *stepEnv) int {
+	n, err := r.deps.Store.SucceededIterations(ctx, env.task.ID, env.index, env.step.ID)
+	if err != nil {
+		env.log.Error("count merge rows", "error", err)
+		return 0
+	}
+	return n
+}
+
+// lanesNeedOrdering reports whether the selected lanes declare any `needs:`
+// among themselves — whether this list is a DAG at all rather than a set.
+//
+// A `needs:` naming a lane that is not in play imposes no ordering, matching
+// readyLanes exactly: a lane that will never spawn cannot be waited for.
+func lanesNeedOrdering(lanes []workflow.Lane, selected []int) bool {
+	inPlay := make(map[string]bool, len(selected))
+	for _, order := range selected {
+		inPlay[lanes[order].ID] = true
+	}
+	for _, order := range selected {
+		for _, need := range lanes[order].Needs {
+			if inPlay[need] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // laneChildren is the children of *this* step. A workflow may fan out more

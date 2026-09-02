@@ -178,3 +178,79 @@ func TestRenderLaneItem(t *testing.T) {
 		t.Error("`.Item` rendered outside a lane template; the widening must stay scoped")
 	}
 }
+
+// TestFanOutScheduleAtLoad covers the field's whole load-time contract (task
+// 081): both values, the absent default, an unknown value rejected with a
+// message naming the two, and `schedule:` on a step that is not a fan_out.
+func TestFanOutScheduleAtLoad(t *testing.T) {
+	lanes := "    lanes:\n      - { id: api, workflow: impl }\n"
+	accepted := map[string]string{
+		"barrier": "    schedule: barrier\n",
+		"eager":   "    schedule: eager\n",
+		"absent":  "",
+	}
+	want := map[string]string{"barrier": ScheduleBarrier, "eager": ScheduleEager, "absent": ScheduleBarrier}
+	for name, line := range accepted {
+		t.Run(name, func(t *testing.T) {
+			src := "name: root\nsteps:\n  - id: build\n    type: fan_out\n" + line + lanes
+			wf, _, err := Parse([]byte(src), Options{})
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := wf.Steps[0].ScheduleMode(); got != want[name] {
+				t.Errorf("ScheduleMode() = %q, want %q", got, want[name])
+			}
+		})
+	}
+
+	t.Run("unknown value", func(t *testing.T) {
+		src := "name: root\nsteps:\n  - id: build\n    type: fan_out\n    schedule: asap\n" + lanes
+		_, _, err := Parse([]byte(src), Options{})
+		if err == nil {
+			t.Fatal("schedule: asap was accepted")
+		}
+		for _, want := range []string{ScheduleBarrier, ScheduleEager, "asap"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %v, want it to mention %q", err, want)
+			}
+		}
+	})
+
+	t.Run("not a fan_out", func(t *testing.T) {
+		src := "name: root\nsteps:\n  - id: build\n    type: command\n    run: echo hi\n    schedule: eager\n"
+		_, _, err := Parse([]byte(src), Options{})
+		if err == nil {
+			t.Fatal("schedule: on a command step was accepted")
+		}
+		if !strings.Contains(err.Error(), "schedule is not valid on a command step") {
+			t.Errorf("error = %v, want it to reject schedule on a command step", err)
+		}
+	})
+}
+
+// TestFanOutScheduleSurvivesAMarshalRoundTrip: a step that names no schedule
+// marshals without the key, so a snapshot written before the field existed is
+// byte-for-byte what it was.
+func TestFanOutScheduleSurvivesAMarshalRoundTrip(t *testing.T) {
+	src := "name: root\nsteps:\n  - id: build\n    type: fan_out\n" +
+		"    lanes:\n      - { id: api, workflow: impl }\n"
+	wf, _, err := Parse([]byte(src), Options{})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(out), "schedule") {
+		t.Errorf("a step naming no schedule marshalled one:\n%s", out)
+	}
+	wf.Steps[0].Schedule = ScheduleEager
+	out, err = Marshal(wf)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(out), "schedule: eager") {
+		t.Errorf("an eager step did not marshal its schedule:\n%s", out)
+	}
+}

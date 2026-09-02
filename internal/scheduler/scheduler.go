@@ -294,8 +294,34 @@ func (s *Scheduler) resumeSettledParents(ctx context.Context) {
 			s.deps.Logger.Error("admission: roll up children", "task", parent.ID, "error", err)
 			continue
 		}
+		eager := false
 		if !rollup.Done() {
-			continue
+			// The eager wake (task 081 decision 1). A parent parked under a
+			// `schedule: eager` step recorded, as it parked, how many of its
+			// **direct** children had settled; it is due back once the live
+			// count exceeds that. nil is barrier, which is every parent that
+			// ever parked before the field existed.
+			//
+			// The watermark rather than "a direct child has settled", which
+			// is level-triggered: it stays true after the parent parks again,
+			// so the parent would be re-queued by its own park event and spin.
+			// Exceeding a number the parent itself wrote clears itself.
+			//
+			// Still pure SQL here — the lane graph lives in the parent's
+			// snapshot and this package has no business parsing it.
+			if parent.SettledChildrenWatermark == nil {
+				continue
+			}
+			settled, err := s.deps.Store.SettledChildren(ctx, parent.ID)
+			if err != nil {
+				s.deps.Logger.Error("admission: count settled lanes",
+					"task", parent.ID, "error", err)
+				continue
+			}
+			if settled <= *parent.SettledChildrenWatermark {
+				continue
+			}
+			eager = true
 		}
 		if _, _, err := s.deps.Store.TransitionTask(ctx, parent.ID,
 			store.TaskAwaitingChildren, store.TaskQueued, store.TaskChange{}); err != nil {
@@ -304,6 +330,11 @@ func (s *Scheduler) resumeSettledParents(ctx context.Context) {
 				continue
 			}
 			s.deps.Logger.Error("admission: resume parent", "task", parent.ID, "error", err)
+			continue
+		}
+		if eager {
+			s.deps.Logger.Info("fan-out lane settled; eager parent re-queued",
+				"task", parent.ID, "children", rollup.Total, "settled", rollup.Settled)
 			continue
 		}
 		s.deps.Logger.Info("fan-out children settled; parent re-queued",

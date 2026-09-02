@@ -99,8 +99,10 @@ reuse of `awaiting_gate` because approve, reject and skip would all be
 meaningless while children are still running: the states differ in what a
 human can do about them, which is the only thing the lifecycle is for.
 
-The parent resumes on its own once every lane has settled — finished or ended.
-A lane that is `blocked`, at a gate, or paused holds the join open until you
+The parent resumes on its own once every lane has settled — finished or ended
+— or, under a fan-out's [`schedule: eager`](workflow-schema.md#type-fan_out), as
+soon as a further lane settles, so such a parent parks and resumes more than
+once. A lane that is `blocked`, at a gate, or paused holds the join open until you
 deal with it; the `children` rollup on `GET /v1/tasks/{id}` (and the TUI's
 `awaiting_children (2 blocked)` row) is where you see that.
 
@@ -286,7 +288,7 @@ same thing wherever it originated.
 | `platform_unsupported` | The workflow is restricted to platforms this host is not (`platforms:`). Only reachable for a task created on another OS |
 | `input_unsupported` | The step declares `on_input: require` and its agent cannot take mid-run input. Refused at task creation, so only reachable when the agent changed underneath the task |
 | `merge_conflict` | A fan-out lane's merge conflicted. The worktree is left conflicted on purpose: resolve it, stage the files, and retry — the join commits your resolution and merges the rest |
-| `lane_failed` | A fan-out lane was cancelled or ended without finishing. **Nothing of that round is merged** — a partial round looks exactly like a complete one downstream. With [`needs:`](workflow-schema.md#type-fan_out) the step runs in rounds, and rounds that already merged stay on the branch: they were there before this one failed, and the task is `blocked`, not `done`, so nothing downstream consumes it. No further lane is spawned; lanes already in flight are left to finish. A lane list without `needs:` is one round, so for it this is still "nothing is merged". Fix the lane (it is an ordinary task), then retry the parent |
+| `lane_failed` | A fan-out lane was cancelled or ended without finishing. **Nothing of that round is merged** — a partial round looks exactly like a complete one downstream. With [`needs:`](workflow-schema.md#type-fan_out) the step runs in rounds, and rounds that already merged stay on the branch: they were there before this one failed, and the task is `blocked`, not `done`, so nothing downstream consumes it. No further lane is spawned; lanes already in flight are left to finish. A lane list without `needs:` is one round, so for it this is still "nothing is merged". Under `schedule: eager` there are no rounds: nothing new is merged by the admission that noticed the failure, and lanes merged by earlier ones stay. Fix the lane (it is an ordinary task), then retry the parent |
 | `interrupted` | The daemon stopped mid-step — not a failure |
 | `internal_error` | A bug. Please [report it](https://github.com/lezli01/vincent/issues/new/choose) |
 

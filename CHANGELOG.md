@@ -13,6 +13,26 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `fan_out` step can schedule its lanes eagerly.** `schedule: eager` on a
+  `fan_out` step merges a lane and spawns its dependents as soon as *that
+  lane's own* `needs:` are done and merged, instead of waiting for every
+  unrelated sibling in its round to settle. On a DAG whose lanes finish at very
+  different speeds — the shape a planning step produces — a dependent lane no
+  longer idles behind work it does not depend on.
+
+  The default is `barrier`, and a workflow that does not name the field behaves
+  exactly as it did. That is deliberate: `eager` makes a lane's **starting tree
+  timing-dependent**, so re-running a task can hand a lane a different tree and
+  a different result, and the parent branch's commit topology varies between
+  runs even when the delivered tree does not. A workflow trading
+  reproducibility for throughput has to say so in the file. A lane list with no
+  `needs:` runs as a barrier whatever `schedule:` says — one round either way.
+
+  `lane_failed`, `merge_conflict`, the cancel cascade, the archive refusal and
+  crash recovery behave identically under both modes.
+  `GET /v1/workflows/schema`, the authoring skill and the `update-workflows`
+  built-in all cover the field.
+
 - **Fan-out lanes can depend on each other, and can be worked out at run time.**
   A `fan_out` lane may now name the sibling lanes it `needs:`, and the step runs
   the resulting graph in rounds — merging what is finished, then spawning the

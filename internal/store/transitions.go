@@ -122,6 +122,13 @@ type TaskChange struct {
 	// caller remembering to.
 	AdmitNotBefore *time.Time
 	QueuedReason   *string
+	// SettledChildrenWatermark records an eager fan-out parent's wake
+	// position with the transition into `awaiting_children` (§7.6, task 081).
+	// Clearing is not the caller's job: TransitionTask NULLs the column on
+	// any transition out of awaiting_children, by the construction
+	// AdmitNotBefore uses — so a barrier park can never inherit an earlier
+	// eager step's watermark, and no caller has to remember to drop it.
+	SettledChildrenWatermark *int
 	// EventPayload carries extra fields into the state-change event, merged
 	// with from/to. Reserved keys (from, to) are overwritten.
 	EventPayload map[string]any
@@ -244,6 +251,15 @@ func transitionTaskTx(
 		// task for the next follow-up to inherit.
 		t.PendingFollowUp = nil
 	}
+	if from == TaskAwaitingChildren {
+		// The task 081 decision 1 invariant, same construction as the two
+		// above: a watermark is a wake position for *this* parked period, so
+		// leaving `awaiting_children` always drops it. Re-parking recomputes
+		// it from the rows, which is what keeps `retry` and `edit + retry` —
+		// both of which rewrite the snapshot the lane graph lives in — from
+		// staling it.
+		t.SettledChildrenWatermark = nil
+	}
 	if from == TaskQueued {
 		// The §11 admission-hold invariant, same construction: a hold
 		// describes *this* queued period, so leaving queued always drops
@@ -290,7 +306,7 @@ func transitionTaskTx(
 			workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
-			admit_not_before = ?, queued_reason = ?,
+			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
 			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?
 		WHERE id = ? AND state = ?`,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.WorktreePath),
@@ -298,6 +314,7 @@ func transitionTaskTx(
 		pendingRepair, pendingFollowUp,
 		nullString(t.PendingInputJSON),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
+		nullInt(t.SettledChildrenWatermark),
 		formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
 		id, string(from))
@@ -510,6 +527,9 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.QueuedReason != nil {
 		t.QueuedReason = *ch.QueuedReason
+	}
+	if ch.SettledChildrenWatermark != nil {
+		t.SettledChildrenWatermark = ch.SettledChildrenWatermark
 	}
 }
 
