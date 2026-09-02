@@ -13,6 +13,38 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **vincent shows the real usage quota, where the agent CLI reports one.** The
+  `quota` block on `GET /v1/agents` and `GET /v1/info` was an observation of a
+  wall vincent had already watched a task hit; now it carries a measurement of
+  the window that is still open. `codex` answers over `codex app-server
+  --stdio` with nothing to install, and `claude` reports through Claude Code's
+  status line once you let vincent draw it. `cursor` has no usage surface and
+  is unchanged.
+
+  The block grows a `windows[]` array carrying every window the source named
+  (`5h` and `7d` for both reporters), `used_percent` and `window` stop being
+  permanent nulls and carry the tightest of those windows, and `source` says
+  which kind of fact you are holding: `observed`, `codex_app_server` or
+  `claude_status_line`. A client written against the old shape keeps working
+  and gets the number that matters. The daemon view spells the whole reading
+  out, window by window, with the time it was taken.
+
+  A reported reading is held in memory, not the database: it is exactly as
+  durable as the daemon and a restart drops it until the next probe or push.
+  Nothing here can fail a probe — a missing CLI, a logged-out account, a
+  timeout or a garbage answer all fall back to the old observed behaviour.
+
+- **`vincent statusline`, and `i` in the daemon view to install it.** Claude
+  Code has no usage endpoint to poll, but it hands its status line the numbers,
+  so vincent offers to *be* your status line: `i` shows the exact JSON it would
+  write to `~/.claude/settings.json`, runs whatever status line you already had
+  and prints its output unchanged, and the same key puts the file back the way
+  it was — including removing the key when there was nothing there. Declining
+  is remembered. This is the second place vincent writes outside its own data
+  directory, and it never does it without asking. The push route
+  (`POST /v1/agents/{name}/quota`) is deliberately not an MCP tool: an agent
+  must not be able to forge a fact about the host it runs on.
+
 - **A `fan_out` step can schedule its lanes eagerly.** `schedule: eager` on a
   `fan_out` step merges a lane and spawns its dependents as soon as *that
   lane's own* `needs:` are done and merged, instead of waiting for every

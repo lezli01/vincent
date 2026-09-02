@@ -95,6 +95,7 @@ the living engineering specification records implementation contracts.
 | [079](079-terminal-chats-leave-the-board.md) | Terminal chats leave the chats board: an `archived` filter, a stopped clock and a truthful archive refusal | ✅ done (1/1) |
 | [080](080-fan-out-dag.md) | `needs:` between fan-out lanes, a round scheduler derived from the graph, and lanes derived from an earlier step's output | ✅ done (2/2) |
 | [081](081-eager-fan-out-scheduling.md) | `schedule: eager` on a `fan_out` step: a lane starts when its own `needs:` merge, woken by a settled-child watermark | ✅ done (1/1) |
+| [082](082-reported-agent-quota.md) | The real usage quota codex's app-server and Claude Code's status line now report, merged over the observed window on `GET /v1/agents` | ✅ done (1/1) |
 
 ## How to add and update a task document
 

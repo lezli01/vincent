@@ -1251,6 +1251,7 @@ the editor says so before you apply it.
 | `enter` / `e` | Open the editor on the selected key |
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
+| `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
 
 And inside the editor:
 
@@ -1264,14 +1265,28 @@ And inside the editor:
 Everything here is also
 [`vincent config get|set`](../reference/cli.md#vincent-config).
 
-Each adapter row carries what vincent knows about its usage window: `usage
-limit → 14:20` when the CLI stated that reset, `usage limit ≈ 14:20` when
-vincent estimated it from
-[`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval),
-and a trailing `quota unknown` for an adapter nothing has been observed for —
-which is the normal state, since no CLI can report remaining quota without
-actually running. This is the one view that says "unknown" out loud; its job is
-to list every fact about an adapter, including the ones nobody has.
+Each adapter row carries what vincent knows about its usage window. Where the
+adapter reports one, the reading is spelled out window by window —
+`quota codex app-server · 5h 28% → 13:00 · 7d 53% → Sat 11:00 · read 09:14` —
+with the time it was taken, because a percentage with no timestamp invites
+reading a stale figure as a live one. Where vincent has only watched a wall go
+up, it says `usage limit → 14:20` when the CLI stated that reset and
+`usage limit ≈ 14:20` when vincent estimated it from
+[`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval).
+An adapter with neither trails `quota unknown`. This is the one view that says
+"unknown" out loud; its job is to list every fact about an adapter, including
+the ones nobody has.
+
+Two adapters can report: **codex** answers on request, with nothing to install,
+and **claude** reports through its status line, which is what `i` offers to set
+up. **cursor** has no usage surface at all, so it is observation-only and
+nothing about it changes. `i` writes `statusLine.command` in
+`~/.claude/settings.json` — the one file outside its own data dir vincent
+touches besides cursor's model setting — and it never does so without showing
+you the exact JSON first. Whatever status line you had is run by vincent and
+printed unchanged, pressing `i` again puts the file back the way it was, and
+declining is remembered so the offer does not come back. See
+[`vincent statusline`](../reference/cli.md#vincent-statusline).
 
 The row also trails with what vincent knows about the build itself: `untested`
 and the builds the adapter was judged against, `incompatible version` for a
