@@ -246,3 +246,22 @@ func TestHelpIsContextual(t *testing.T) {
 		}
 	}
 }
+
+// Task 082's key is reachable the way every other panel key is. It is worth
+// its own assertion because it is the one binding in vincent that leads to a
+// write outside its own data dir: somebody who wants to undo it needs to be
+// able to find it, and the palette is where a key nobody remembers is found.
+func TestPaletteOffersTheStatusLineKey(t *testing.T) {
+	var found bool
+	for _, e := range paletteEntries(ctxDaemon, everyAction, true, true, true) {
+		if strings.Contains(e.label, "status line") {
+			found = true
+			if !strings.Contains(e.label, "remove") {
+				t.Errorf("the palette offers the install without the removal: %q", e.label)
+			}
+		}
+	}
+	if !found {
+		t.Error("the daemon palette does not offer the claude status line")
+	}
+}

@@ -155,6 +155,30 @@ type CatalogEntry struct {
 	// curated catalog", and widening it to cover a freshness check would
 	// change what every existing client thinks it is being told.
 	AuthError string
+	// Quota is the adapter's last *reported* usage reading (task 082), or nil
+	// when nothing has ever reported one. It arrives two ways and this is the
+	// only place either lands: a QuotaReporter answering a probe, or a source
+	// pushing through SetQuota.
+	//
+	// It lives here and nowhere else — no table, no migration (task 082
+	// decision 4). §14's reason for having no `used_percent` column stands: a
+	// column with no writer is dead schema in an append-only migration set.
+	// The consequence is deliberate rather than a gap to work around — a
+	// pushed reading is exactly as durable as the daemon, and a restart drops
+	// it until the next render refills it. A percentage nothing has confirmed
+	// since the daemon started is one vincent should not be showing.
+	Quota *ReportedQuota
+	// QuotaCheckedAt is when a reporter was last *asked*, or a push last
+	// arrived — not when the reading it produced was taken (that is
+	// ReportedQuota.ReportedAt). It is what quotaTTL is measured from, and it
+	// is stamped on failure too, which is what bounds a failing reporter to
+	// one subprocess per TTL.
+	QuotaCheckedAt time.Time
+	// QuotaError records a reporter that did not answer. Like AuthError it is
+	// not served on the wire, and for the same reason: `probe_error` keeps
+	// meaning only "the option probe failed and you are reading the curated
+	// catalog". The entry keeps its previous reading — see refreshQuota.
+	QuotaError string
 }
 
 // InputVerdict is this entry's answer to "can this adapter be asked a
@@ -270,6 +294,21 @@ const failureTTL = time.Minute
 // the option catalog genuinely is a pure function of the binary.
 const authTTL = 5 * time.Minute
 
+// quotaTTL is how long a reported usage reading is trusted before its adapter
+// is asked again (task 082).
+//
+// It is authTTL's number for authTTL's reason, not by coincidence: a board, a
+// detail view and a new-task form asking in the same second must cost one
+// probe, and a user who watches a long run eat their window must not be shown
+// a five-minute-old percentage for the rest of the daemon's life. Binary
+// identity says nothing at all here — quota moves while the binary does
+// not — so a TTL is the only thing that can expire this field.
+//
+// Nothing else spawns: only an adapter whose Adapter satisfies QuotaReporter
+// and whose binary was found is ever asked, so cursor (§9.7) and an
+// uninstalled CLI cost zero subprocesses no matter how often they are read.
+const quotaTTL = 5 * time.Minute
+
 // CatalogCache caches Detect+Options per adapter, keyed by binary identity.
 // Only Entry probes (and only when the identity changed, the last probe failed
 // more than failureTTL ago, or refresh is set); validation paths read Catalogs,
@@ -311,22 +350,78 @@ func (c *CatalogCache) Entry(ctx context.Context, name string, refresh bool) (Ca
 	entry := slot.entry
 	slot.dataMu.RUnlock()
 	if hit {
-		if !staleAuth(entry, now) {
-			return entry, true
-		}
 		// The catalog is still exact — the binary has not changed — so only
-		// the half binary identity cannot vouch for is asked again (task 026).
-		entry = redetect(ctx, a, entry, now)
-		slot.dataMu.Lock()
-		slot.entry = entry
-		slot.dataMu.Unlock()
+		// the halves binary identity cannot vouch for are asked again: auth
+		// (task 026) and quota (task 082). Both hang off this one seam so a
+		// cache hit stays a single pass with at most one write behind it.
+		updated := false
+		if staleAuth(entry, now) {
+			entry = redetect(ctx, a, entry, now)
+			updated = true
+		}
+		if next, asked := refreshQuota(ctx, a, entry, now, false); asked {
+			entry, updated = next, true
+		}
+		if updated {
+			slot.dataMu.Lock()
+			slot.entry = entry
+			slot.dataMu.Unlock()
+		}
 		return entry, true
 	}
+	prev := entry
 	entry = probe(ctx, a, now)
+	// A re-probe replaces the *catalog*, not the reading. The two have
+	// nothing to do with each other — a pushed reading (SetQuota) has no
+	// probe behind it to re-run — so dropping it here would blank the board
+	// every time a binary was upgraded or `?refresh=true` arrived.
+	entry.Quota, entry.QuotaCheckedAt, entry.QuotaError = prev.Quota, prev.QuotaCheckedAt, prev.QuotaError
+	// refresh forces the ask unconditionally, which is what makes
+	// `GET /v1/doctor` refresh the reading: doctor already calls Entry with
+	// probe=true (the task 029 amendment) and needs no second knob.
+	entry, _ = refreshQuota(ctx, a, entry, now, refresh)
 	slot.dataMu.Lock()
 	slot.valid, slot.key, slot.entry = true, key, entry
 	slot.dataMu.Unlock()
 	return entry, true
+}
+
+// SetQuota records a reading a source *pushed* — claude's status line, which
+// has no probe behind it because there is no request to make (§9.6,
+// task 082). It is the seam `POST /v1/agents/{name}/quota` calls.
+//
+// The bool is whether anything a client renders actually changed, so the route
+// can emit `agent.quota_changed` on a change and stay silent otherwise. An
+// unknown adapter answers false and writes nothing: an adapter vincent does
+// not have is not one anybody can report about.
+//
+// It takes only the data mutex, never probeMu: a push is not a probe and must
+// not queue behind one. Blocking a status line — which the CLI runs
+// synchronously to draw itself — behind a `codex --help` would show up as the
+// user's prompt hanging.
+func (c *CatalogCache) SetQuota(name string, q *ReportedQuota) bool {
+	if c == nil {
+		return false
+	}
+	slot, ok := c.slots[name]
+	if !ok {
+		return false
+	}
+	now := c.now()
+	slot.dataMu.Lock()
+	defer slot.dataMu.Unlock()
+	changed := !slot.entry.Quota.sameReading(q)
+	slot.entry.Quota = q
+	// Stamped either way, exactly as a probe stamps it: a re-push of an
+	// identical reading is still confirmation the reading is current, and
+	// quotaTTL is measured from when we last heard, not from when the news
+	// last differed.
+	slot.entry.QuotaCheckedAt = now
+	slot.entry.QuotaError = ""
+	// slot.valid is deliberately untouched. A push says nothing about the
+	// binary's catalog, so an unprimed slot stays unprimed and Entry still
+	// probes it — carrying this reading across (see above).
+	return changed
 }
 
 // Catalogs returns adapter → catalog for §8.2 validation: the cached options
@@ -369,6 +464,60 @@ func staleAuth(e CatalogEntry, now time.Time) bool {
 		return false
 	}
 	return now.Sub(e.AuthCheckedAt) >= authTTL
+}
+
+// staleQuota reports whether a reported reading is old enough to be worth
+// asking for again (task 082). It mirrors staleAuth, including the guard that
+// nothing uninstalled is ever asked: a binary that is not there has no quota
+// surface to answer with, and spawning something to be told so is pure cost.
+//
+// Unlike staleAuth there is no "has an answer already" condition. A reporter
+// that has never reported is exactly the one worth asking — a zero
+// QuotaCheckedAt is stale by construction — and the caller's type assertion,
+// not this clock, is what keeps a non-reporter from being asked at all.
+func staleQuota(e CatalogEntry, now time.Time) bool {
+	if !e.Availability.Found {
+		return false
+	}
+	return now.Sub(e.QuotaCheckedAt) >= quotaTTL
+}
+
+// refreshQuota asks an adapter for a usage reading, when there is an adapter
+// worth asking and a reason to ask. The bool reports whether it asked, so the
+// caller knows whether the entry it got back is worth writing.
+//
+// Nobody is asked twice for the same answer and nobody is asked who cannot
+// answer: an Adapter that does not satisfy QuotaReporter (cursor, §9.7) and
+// one whose binary was not found are both returned untouched, having spawned
+// nothing.
+//
+// Failure follows redetect's rules exactly, because it is the same mistake to
+// avoid: a reading that did not arrive is not a reading of zero. The previous
+// reading stands, the error is recorded off the wire, and the clock is stamped
+// either way — so a reporter that is persistently broken costs one subprocess
+// per quotaTTL rather than one per request. (nil, nil) is the reporter
+// declining to say, which keeps the previous reading for the same reason
+// redetect keeps a previous `logged_in`.
+func refreshQuota(ctx context.Context, a Adapter, prev CatalogEntry, now time.Time, force bool) (CatalogEntry, bool) {
+	r, ok := a.(QuotaReporter)
+	if !ok || !prev.Availability.Found {
+		return prev, false
+	}
+	if !force && !staleQuota(prev, now) {
+		return prev, false
+	}
+	e := prev
+	e.QuotaCheckedAt = now
+	q, err := r.Quota(ctx)
+	if err != nil {
+		e.QuotaError = err.Error()
+		return e, true
+	}
+	e.QuotaError = ""
+	if q != nil {
+		e.Quota = q
+	}
+	return e, true
 }
 
 // redetect re-runs Detect alone against an entry whose catalog is still exact.

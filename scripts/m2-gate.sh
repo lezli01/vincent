@@ -602,14 +602,65 @@ EOF
 #
 # The whole path over curl: an agent that reports a spent quota must not burn
 # its retry budget, must give its slot back, and must recover with nobody
-# pressing anything. The recheck interval is squeezed to two seconds so the
-# unattended half is observable in a gate rather than in five hours.
+# pressing anything. The recheck interval is squeezed to ten seconds so the
+# unattended half is observable in a gate rather than in five hours — ten and
+# not the two it was, because the *held* half has to be observable too. The
+# poll below detects the hold on a one-second granularity and then asserts
+# several facts about it over curl, and on Windows a single codex app-server
+# probe answers in over a second; two seconds of hold was less than the
+# assertions cost, so the scenario was reading a task the scheduler had
+# already taken back.
 #
 # The global cap is 1 and the second task sleeps, so "the slot was released" is
 # a fact the scenario forces rather than infers: the sleeper can only be
 # running because the walled task stopped holding one, and the walled task can
 # only finish afterwards because the scheduler came back to it on its own.
 # ---------------------------------------------------------------------------
+# assert_codex_quota QUOTA_JSON ENDPOINT — the reported reading task 082 adds.
+#
+# The fake app-server answers with the captured 0.150.1 numbers (28 % of a
+# 300-minute window, 53 % of a 10080-minute one) but dates the resets from its
+# own clock, so the windows are open whenever this runs.
+assert_codex_quota() {
+  local quota="$1" where="$2" names labels
+  [[ "$quota" != "null" && -n "$quota" ]] \
+    || fail "$where carries no quota block for codex"
+  [[ "$(jq -r .source <<<"$quota")" == "codex_app_server" ]] \
+    || fail "$where quota.source = $(jq -r .source <<<"$quota"), want codex_app_server: $quota"
+  [[ "$(jq '.windows | length' <<<"$quota")" == "2" ]] \
+    || fail "$where quota.windows is not the two codex reports: $quota"
+  # Multi-line jq captures need the CRs stripped: jq writes CRLF on Windows,
+  # $(...) drops only the trailing one, and the interior ones would fail an
+  # exact comparison against a $'a\nb' literal.
+  names="$(jq -r '.windows[].name' <<<"$quota" | tr -d '\r')"
+  [[ "$names" == $'primary\nsecondary' ]] \
+    || fail "$where window names = $names, want primary then secondary: $quota"
+  labels="$(jq -r '.windows[].window' <<<"$quota" | tr -d '\r')"
+  [[ "$labels" == $'5h\n7d' ]] \
+    || fail "$where window labels = $labels, want 5h then 7d: $quota"
+  [[ "$(jq -r '.windows[0].used_percent' <<<"$quota")" == "28" ]] \
+    || fail "$where primary used_percent is not the reported 28: $quota"
+  [[ "$(jq -r '.windows[1].used_percent' <<<"$quota")" == "53" ]] \
+    || fail "$where secondary used_percent is not the reported 53: $quota"
+  # Every window named a reset, so both must say so — the epoch seconds the
+  # protocol carries reached the wire as a real RFC3339 time, not as the zero
+  # value a missing one renders as.
+  [[ "$(jq -r '[.windows[].resets_at_reported] | all' <<<"$quota")" == "true" ]] \
+    || fail "$where lost a reported reset time: $quota"
+  # The block's scalars carry the *tightest* window: highest used_percent,
+  # which is the seven-day one at 53 %.
+  [[ "$(jq -r .used_percent <<<"$quota")" == "53" ]] \
+    || fail "$where quota.used_percent = $(jq -r .used_percent <<<"$quota"), want the tightest window's 53: $quota"
+  [[ "$(jq -r .window <<<"$quota")" == "7d" ]] \
+    || fail "$where quota.window = $(jq -r .window <<<"$quota"), want 7d: $quota"
+  # Reported, and under 100 %: `spent` is a percentage at its ceiling, never
+  # "the window has not reopened yet", which would light the badge forever.
+  [[ "$(jq -r .spent <<<"$quota")" == "false" ]] \
+    || fail "$where calls a 53 percent window spent: $quota"
+  [[ "$(jq -r .resets_at_reported <<<"$quota")" == "true" ]] \
+    || fail "$where quota.resets_at_reported is false for a reset codex named: $quota"
+}
+
 scenario5() {
   echo "=== scenario 5: usage limit — no retry burned, slot released, unattended recovery"
   scenario_dirs s5
@@ -619,12 +670,21 @@ scenario5() {
   # the recovery is the daemon's doing and not the script's.
   export FAKEAGENT_USAGE_LIMIT_MARKER
   FAKEAGENT_USAGE_LIMIT_MARKER="$(hostpath "$TMP/s5-window-spent")"
+  # codex's app-server answers a reading (task 082). Its own variable, not a
+  # FAKEAGENT_SCENARIO value, precisely so it can be set while the run
+  # scenario above is pinned to usage-limit for claude.
+  export FAKEAGENT_CODEX_APP_SERVER=healthy
 
+  # Both adapters point at the fake agent: claude to be walled, codex to be
+  # asked. Neither reaches a real CLI, so the reading below is the daemon's
+  # parse of a protocol rather than an account's real numbers.
   cat > "$CONFIG_DIR/config.yaml" <<EOF
 max_parallel_tasks: 1
-usage_limit_recheck_interval: 2s
+usage_limit_recheck_interval: 10s
 agents:
   claude:
+    path: "$(hostpath "$FAKEAGENT")"
+  codex:
     path: "$(hostpath "$FAKEAGENT")"
 EOF
 
@@ -677,13 +737,22 @@ EOF
   [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
     || fail "a quota-held task must not carry a block_reason: $task"
 
-  # Captured here rather than after the step assertions: the recheck interval
-  # is two seconds, so the successful re-run that clears the observation is
-  # already on its way. Task 026's claim is that the fact *outlives the hold*,
-  # and the hold is what was just detected.
-  echo "== the daemon reports the spent window per adapter (task 026)"
-  local quota
+  # Both facts that belong to the hold are captured in the two requests that
+  # follow detecting it, and asserted from these snapshots further down. Each
+  # is a claim about a *held* task — task 026's that the observation outlives
+  # the hold, §11's that the quota stop burned no retry — and neither is a
+  # claim about what is still true several requests later. Reading the step
+  # rows in place, below the codex assertions, is what made this scenario fail
+  # on Windows: the app-server probe there answers in over a second.
+  #
+  # The step rows go first of the two, because the attempt count is retired
+  # the moment the task is re-admitted while the observation survives until
+  # that re-run *succeeds*, a little later still.
+  local quota steps
+  steps="$(api GET "/tasks/$walled/steps")"
   quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+
+  echo "== the daemon reports the spent window per adapter (task 026)"
   [[ "$quota" != "null" && -n "$quota" ]] \
     || fail "GET /v1/agents carries no quota block while a task is held on one"
   [[ "$(jq -r .source <<<"$quota")" == "observed" ]] \
@@ -692,16 +761,27 @@ EOF
   # recheck interval's estimate and must not claim the CLI stated it.
   [[ "$(jq -r .resets_at_reported <<<"$quota")" == "false" ]] \
     || fail "quota.resets_at_reported is true for a reset the CLI never named: $quota"
-  # Declared, permanently unfillable: no CLI has a non-interactive quota
-  # surface, and a zero here would read as "empty" (§9.2/§9.3/§9.7).
+  # Null because nothing has reported a reading for claude here: an
+  # observation knows only that a wall was hit, not how much of a window is
+  # left, and a zero would read as "empty" (§9.2). Claude's own surface is its
+  # status line, which pushes rather than answers a probe, and nothing inside
+  # this gate runs one — codex's app-server reading below is the same block
+  # filled in by an adapter that can be asked (task 082).
   [[ "$(jq -r .used_percent <<<"$quota")" == "null" ]] \
     || fail "quota.used_percent is not null: $quota"
   [[ "$(jq -r .window <<<"$quota")" == "null" ]] \
     || fail "quota.window is not null: $quota"
+  [[ "$(jq -c .windows <<<"$quota")" == "[]" ]] \
+    || fail "an observation names no windows: $quota"
+
+  echo "== codex reports a real reading over app-server --stdio (task 082)"
+  assert_codex_quota "$(api GET /agents | jq -c '.agents[] | select(.name == "codex") | .quota')" /v1/agents
+  # The board header reads /v1/info, so the same block has to be there too —
+  # a badge that needed a second fetch to render is the reason it is served
+  # twice at all.
+  assert_codex_quota "$(api GET /info | jq -c '.agents[] | select(.name == "codex") | .quota')" /v1/info
 
   echo "== assert the attempt is recorded interrupted and spent no retry"
-  local steps
-  steps="$(api GET "/tasks/$walled/steps")"
   [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
   [[ "$(jq -r '.[0].state' <<<"$steps")" == "interrupted" ]] || fail "attempt not interrupted: $steps"
   [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "usage_limit" ]] \
@@ -725,7 +805,7 @@ EOF
     || fail "the observed window outlived the successful re-run"
 
   "$VINCENT" daemon stop
-  unset FAKEAGENT_SCENARIO FAKEAGENT_USAGE_LIMIT_MARKER
+  unset FAKEAGENT_SCENARIO FAKEAGENT_USAGE_LIMIT_MARKER FAKEAGENT_CODEX_APP_SERVER
   echo "=== scenario 5 PASS (task $walled recovered unattended)"
 }
 

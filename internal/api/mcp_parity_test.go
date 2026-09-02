@@ -112,6 +112,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// chain, so an agent that could hand one off would be creating tasks
 		// outside the bound. 063 decision 2 is extended, not excepted.
 		{http.MethodPost, "/v1/chats/{id}/handoff"},
+		// Task 082: the reported-quota push. An agent must not be able to
+		// forge a daemon-level fact about the host it runs on — a step
+		// reporting its own adapter at 99% would paint every board and status
+		// line in the installation with a wall that does not exist.
+		{http.MethodPost, "/v1/agents/{name}/quota"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

@@ -128,7 +128,8 @@ are long-lived by contract and no write deadline is set.
 | `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, the database's byte footprint, and the container runtime |
 | `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
 | `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
-| `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe |
+| `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe — including the reported [usage quota](#usage-quota) |
+| `POST` | `/v1/agents/{name}/quota` | Pushes a usage reading for one adapter → `204`. What [`vincent statusline`](cli.md#vincent-statusline) posts from Claude Code's status line. Not an MCP tool |
 | `GET` | `/v1/doctor` | The whole diagnostic report. Read-only. `?probe=false` skips the forced adapter re-probe — see [Doctor](#doctor) |
 | `POST` | `/v1/doctor/fix` | Removes orphaned worktrees and compacts the database |
 | `GET` | `/v1/update` | The daemon's **cached** release check — see [Update check](#update-check). Never polls |
@@ -231,45 +232,86 @@ answers with what it wrote:
 
 ### Usage quota
 
-`quota` is what the daemon has **watched happen** to that adapter's usage
-window. It is an observation, not a measurement: none of `claude`, `codex` or
-`cursor` can report remaining quota from a non-interactive invocation, so
-vincent reports the `usage_limit` stops it has seen for itself rather than a
-number nothing can produce.
+`quota` is one adapter's usage window, and it is one of two different facts.
+A **reported reading** is a measurement of a window still open, taken from the
+adapter's own surface. An **observation** is what the daemon watched happen —
+the `usage_limit` stops it has seen for itself. `source` says which you are
+holding, a reading wins where there is one, and `null` — never a zeroed block —
+means neither exists, which is the normal state.
 
 ```json
 "quota": {
-  "spent": true,
-  "used_percent": null,
-  "window": null,
-  "observed_at": "2026-08-24T14:05:00Z",
-  "resets_at": "2026-08-24T14:20:00Z",
+  "spent": false,
+  "used_percent": 53,
+  "window": "7d",
+  "observed_at": "2026-09-02T09:14:00Z",
+  "resets_at": "2026-09-06T11:00:00Z",
   "resets_at_reported": true,
-  "source": "observed"
+  "source": "codex_app_server",
+  "windows": [
+    { "name": "primary",   "used_percent": 28, "window": "5h",
+      "resets_at": "2026-09-02T13:00:00Z", "resets_at_reported": true },
+    { "name": "secondary", "used_percent": 53, "window": "7d",
+      "resets_at": "2026-09-06T11:00:00Z", "resets_at_reported": true }
+  ]
 }
 ```
 
-- `null` — never a zeroed block — means nothing has ever been observed for that
-  adapter, which is the normal state. A zero would read as "empty quota".
-- `spent` is derived per request (`now < resets_at`). A window that has reset
-  does **not** delete the observation: `spent: false` with `observed_at` and
-  `resets_at` intact is how "this adapter ran out at 14:05 and has since
-  recovered" is said.
-- `resets_at_reported` separates a fact from an estimate. `true` means the CLI
-  named the reset; `false` means
-  [`usage_limit_recheck_interval`](configuration.md) supplied it, and a client
-  must not render a computed guess as something the CLI stated.
-- `used_percent` and `window` are permanently `null`. They are declared so a
-  client written against this shape keeps working the day a vendor ships a
-  quota surface, at which point they fill in and `source` changes.
-- `source` is `observed` for everything written today.
+- `source` is `observed`, `codex_app_server` (codex answers
+  `account/rateLimits/read` over `codex app-server --stdio`) or
+  `claude_status_line` (Claude Code pushes through
+  [`vincent statusline`](cli.md#vincent-statusline)). **cursor** has no quota
+  surface at all and reports nothing, which is unchanged.
+- `windows[]` is every window the source named — always an array, never `null`,
+  and empty for an observation. Names are the source's own vocabulary
+  (`primary`/`secondary`, `five_hour`/`seven_day`) and are not normalized
+  across vendors, because two vendors' windows are not the same thing.
+- `used_percent`, `window`, `resets_at` and `resets_at_reported` carry the
+  **tightest** window of a reading: the highest percentage, ties broken by the
+  earliest reset. They stay `null`/empty for an observation, which measures
+  nothing. A client written before `windows[]` existed keeps working and gets
+  the number that matters.
+- `spent` is derived per request, and how depends on the source. An observation
+  is spent while `now < resets_at`; a window that has reset does **not** delete
+  it, so `spent: false` with the timestamps intact is how "this adapter ran out
+  at 14:05 and has since recovered" is said. A reading is spent at
+  `used_percent >= 100` — its reset is always in the future, so the
+  observation's rule would light a badge permanently.
+- `resets_at_reported` separates a fact from an estimate. `true` means the
+  source named the reset; `false` means
+  [`usage_limit_recheck_interval`](configuration.md) supplied it, or that a
+  reported window named no reset at all — in which case `resets_at` is the zero
+  time and must not be rendered as a time.
+- A reading is held **in memory**, not in the database: it is exactly as
+  durable as the daemon, and a restart drops it until the next probe or push.
+  A reading is refreshed at most every five minutes on an ordinary request, and
+  unconditionally by [`GET /v1/doctor`](#doctor).
 - An observation is **retired by evidence**: the next successful agent step on
-  that adapter deletes it. Nothing sweeps it on a timer.
+  that adapter deletes it. That rule is about observations only — a step
+  completing says nothing about a percentage a vendor reported. Nothing sweeps
+  either on a timer.
+- Nothing here can fail a probe. A missing CLI, an unauthenticated account, a
+  handshake that times out or a malformed answer all degrade to the observation
+  behaviour, and `probe_error` keeps meaning only "the option probe failed".
 
 The same block rides `GET /v1/info` per adapter, so a client rendering a badge
 from `/v1/info` needs no second fetch. Both are served from one read, so the two
 endpoints can never disagree. Changes are announced by the
 [`agent.quota_changed`](#events-sse) event.
+
+`POST /v1/agents/{name}/quota` is how a reading that cannot be fetched arrives
+instead:
+
+```json
+{ "source": "claude_status_line",
+  "windows": [ { "name": "five_hour", "used_percent": 28, "window": "5h",
+                 "resets_at": "2026-09-02T13:00:00Z" } ] }
+```
+
+It answers `204`, `404` for an adapter this daemon does not have, and `400` for
+a body naming no window. `resets_at` is optional — omit it rather than sending a
+zero time. It is **not** an MCP tool: an agent must not be able to forge a
+daemon-level fact about the host it runs on.
 
 ## Update check
 
@@ -1693,9 +1735,13 @@ they need.
   actually changed, so a step re-asserting the same line does not wake you.
 - `agent.quota_changed` carries `{ agent, spent, resets_at, source }` and no
   `task_id`: the fact is about an adapter, not about any one task. It is
-  emitted when a `usage_limit` stop is observed and when a successful run
-  retires an observation — never on a re-observation identical to what is
-  already stored, and never merely because a window lapsed. Re-fetch
+  emitted when a `usage_limit` stop is observed, when a successful run retires
+  an observation, and when a **reported** reading changes — a probe or a push
+  saying something new. Never on a re-observation or a re-reading identical to
+  what is already held, and never merely because a window lapsed: a status line
+  re-renders on every prompt and pushes the same numbers many times a minute,
+  and wakes nobody. On a reading, `spent` and `resets_at` come from the tightest
+  window, and `resets_at` is `null` when that window named none. Re-fetch
   [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
 - The `chat.*` events belong to the [chat](#chats) family and carry the chat's
   `project_id`, so `?project_id=` filters them the way it filters a task's.

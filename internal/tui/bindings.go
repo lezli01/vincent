@@ -377,6 +377,11 @@ var bindings = []binding{
 	// things now and one pair of arrows.
 	{key: "tab", label: "move between the config list and the log pane", scope: scopePanel, context: ctxDaemon, hint: "tab config", priority: 4},
 	{key: "enter", label: "edit the selected configuration key (e also opens it)", scope: scopePanel, context: ctxDaemon, hint: "enter edit", priority: 5},
+	// Task 082. The only key in vincent that leads to a write outside its own
+	// data dir, which is why the label says whose file it is: what it opens
+	// shows the exact JSON before anything happens, and the same key takes it
+	// back out again.
+	{key: "i", label: "make vincent claude's status line, or remove it — the exact JSON is shown first", scope: scopePanel, context: ctxDaemon, hint: "i status line", priority: 6},
 
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.

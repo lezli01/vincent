@@ -34,6 +34,12 @@ func (d *daemonView) render(width, height int) string {
 		// would suggest the keys they document still work.
 		return strings.Join(d.form.render(d.width), "\n")
 	}
+	if d.statusLine != nil {
+		// A takeover too, and for one reason more than the editor has: §16
+		// asks that the exact JSON be on screen before it is written, and a
+		// preview competing with four other blocks is not on screen.
+		return strings.Join(d.statusLine.render(d.width), "\n")
+	}
 	var out []string
 	out = append(out, d.identityLines()...)
 	out = append(out, "")
@@ -385,7 +391,11 @@ func (d *daemonView) adapterLines() []string {
 				row += "  " + styleBad.Render("not logged in")
 			}
 			if a.QuotaSpent(now) {
-				row += "  " + styleWarn.Render("usage limit "+quotaReset(a.Quota))
+				// TrimSpace for the reported window that named no reset:
+				// quotaReset answers empty there rather than inventing a
+				// clock, and "usage limit " must not trail a space.
+				row += "  " + styleWarn.Render(
+					strings.TrimSpace("usage limit "+quotaReset(a.Quota)))
 			}
 			if a.Version != "" {
 				row += "  " + styleDim.Render(a.Version)
@@ -401,7 +411,52 @@ func (d *daemonView) adapterLines() []string {
 		}
 		out = append(out, row)
 	}
+	if line, ok := d.statusLineLine(); ok {
+		out = append(out, line)
+	}
 	return out
+}
+
+// statusLineLine is the daemon view's half of the §16 status-line offer
+// (task 082). Three facts have to hold before vincent offers to write to
+// another tool's configuration file, and all three are read from disk rather
+// than assumed: claude is on this machine, its settings file does not already
+// run vincent, and the offer has not been turned down. A declined offer stays
+// declined — this view is opened often, and a question that comes back every
+// time is one somebody answers by not reading it.
+//
+// Once vincent is the status line the line stays, saying so. That is the only
+// place the removal is discoverable, and an install with no visible uninstall
+// is not the reversible thing §16 was promised.
+func (d *daemonView) statusLineLine() (string, bool) {
+	if !d.statusLineOK {
+		return "", false
+	}
+	if d.statusLinePlan.installed {
+		return "   " + styleDim.Render("vincent draws claude's status line  ") +
+			styleKey.Render("i") + styleDim.Render(" to remove it"), true
+	}
+	if d.statusLineDeclined || !d.agentAvailable("claude") {
+		return "", false
+	}
+	return "   " + styleDim.Render("claude can draw your tasks in its status line  ") +
+		styleKey.Render("i") + styleDim.Render(" to see exactly what that writes"), true
+}
+
+// agentAvailable reports an adapter the daemon found on this machine. Being
+// authenticated is a different question and not this one's: a claude that is
+// installed and logged out is still a claude whose status line is worth
+// wiring up.
+func (d *daemonView) agentAvailable(name string) bool {
+	if !d.infoOK {
+		return false
+	}
+	for _, a := range d.info.Agents {
+		if a.Name == name && a.Available {
+			return true
+		}
+	}
+	return false
 }
 
 // adapterVerdicts renders the task-041 health facets that trail an adapter
@@ -438,10 +493,12 @@ func adapterVerdicts(a apiclient.AgentStatus) string {
 // quotaNote is this view's trailing statement of what vincent knows about an
 // adapter's usage window (task 026). It is the one surface that says
 // "unknown" out loud: the daemon view exists to list every fact about an
-// adapter, and "nothing has been observed" is the honest answer for all three
-// CLIs, none of which can report remaining quota without a real run (§9.2,
-// §9.3, §9.7). The board header, which has no room to explain, says nothing
-// instead.
+// adapter, and "nothing has been observed" stays the honest answer for an
+// adapter with no reading — which, for cursor, is every adapter state there
+// is: it has no usage surface to ask and is observation-only (§9.7). codex
+// and claude do have one (§9.2, §9.3, task 082), and when a reading has
+// arrived this is where the windows behind it are spelled out. The board
+// header, which has no room to explain, says nothing instead.
 //
 // It trails the row deliberately — it is context, not a blocking condition, so
 // it is the right thing to lose first on a narrow terminal. A window that is
@@ -450,11 +507,39 @@ func quotaNote(q *apiclient.AgentQuota, now time.Time) string {
 	switch {
 	case q == nil:
 		return "quota unknown"
+	case len(q.Windows) > 0:
+		// A reading names its own windows, so the block's tightest-window
+		// scalars have nothing to add here: they are the board badge's
+		// summary of exactly these rows.
+		return quotaWindowNote(q)
 	case q.SpentAt(now):
 		return "quota " + q.Source
 	default:
 		return "quota ok · last spent " + q.ObservedAt.Local().Format("15:04")
 	}
+}
+
+// quotaWindowNote renders a reported reading: where it came from, every
+// window it named, and when it was taken.
+//
+// The reading time is not decoration. A reported window is a snapshot — codex
+// answers on a five-minute cache, claude pushes on a render that may not have
+// happened for an hour — and "28% of a 5h window" with no timestamp invites
+// reading a stale figure as a live one.
+func quotaWindowNote(q *apiclient.AgentQuota) string {
+	parts := make([]string, 0, len(q.Windows)+2)
+	parts = append(parts, "quota "+quotaSourceLabel(q.Source))
+	for _, w := range q.Windows {
+		part := quotaWindowLabel(w) + " " + quotaPercent(w.UsedPercent)
+		if reset := quotaWindowReset(w); reset != "" {
+			part += " " + reset
+		}
+		parts = append(parts, part)
+	}
+	if !q.ObservedAt.IsZero() {
+		parts = append(parts, "read "+q.ObservedAt.Local().Format("15:04"))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // onOff renders a boolean setting. "on"/"off" rather than "true"/"false":

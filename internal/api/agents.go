@@ -60,11 +60,10 @@ type agentResponse struct {
 	DefaultEffort     string         `json:"default_effort"`
 	ProbedAt          string         `json:"probed_at"`
 	ProbeError        *string        `json:"probe_error"`
-	// Quota is what the daemon has watched happen to this adapter's usage
-	// window (task 026); null when nothing has ever been observed for it.
-	// There is no probe behind it — no CLI vincent ships can report remaining
-	// quota without a real run (§9.2, §9.3, §9.7) — so this is the durable
-	// form of the `usage_limit` stops the engine already recognizes.
+	// Quota is this adapter's usage window: a reading a source reported, or
+	// failing that a window the daemon watched close (task 026, task 082).
+	// null when neither exists, which is the normal state and must render as
+	// "unknown", never as "fine".
 	Quota *quotaResponse `json:"quota"`
 }
 
@@ -79,13 +78,14 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	refresh := r.URL.Query().Has("refresh") &&
 		r.URL.Query().Get("refresh") != "false" && r.URL.Query().Get("refresh") != "0"
-	quotas := s.agentQuotas(r.Context())
-	out := make([]agentResponse, 0, len(s.deps.Catalog.Names()))
-	for _, name := range s.deps.Catalog.Names() {
-		e, ok := s.deps.Catalog.Entry(r.Context(), name, refresh)
-		if !ok {
-			continue
-		}
+	// One read of the catalog, shared with agentQuotas: /v1/agents and
+	// /v1/info must not be able to disagree about an adapter, and under
+	// `?refresh=true` a second Entry call would probe every adapter twice.
+	entries := s.catalogEntries(r.Context(), refresh)
+	quotas := s.agentQuotas(r.Context(), entries)
+	out := make([]agentResponse, 0, len(entries))
+	for _, ce := range entries {
+		name, e := ce.name, ce.entry
 		resp := agentResponse{
 			Name:              name,
 			Available:         e.Availability.Found,

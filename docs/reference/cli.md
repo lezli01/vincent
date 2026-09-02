@@ -15,6 +15,7 @@ localhost API.
 - [`vincent task`](#vincent-task)
 - [`vincent config`](#vincent-config)
 - [`vincent status`](#vincent-status)
+- [`vincent statusline`](#vincent-statusline)
 - [`vincent update`](#vincent-update)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
@@ -946,6 +947,39 @@ Details worth knowing:
 The status is never a `failure_reason`: nothing renders it as the cause of a
 failure, because a step killed on a timeout can be carrying a line it wrote
 half an hour earlier.
+
+## `vincent statusline`
+
+```sh
+vincent statusline [--wrap-b64 <payload>]
+```
+
+Reports claude's usage windows to the daemon, from inside Claude Code's status
+line. **You do not run this by hand.** Claude Code runs it, once per render, as
+the `statusLine.command` in `~/.claude/settings.json`; the
+[daemon view](../guides/tui.md)'s `i` key is what puts it there, after showing
+the exact JSON it will write.
+
+Claude Code has no usage subcommand to poll, but it hands its status line a JSON
+object on stdin carrying `rate_limits.five_hour.used_percentage`,
+`rate_limits.seven_day.used_percentage` and each window's `resets_at`. This
+command reads that object, pushes the windows to the daemon, and prints the
+status line you had before — so the number reaches vincent's board and detail
+views without a second process polling anything.
+
+Details worth knowing:
+
+- **It never breaks your status line.** A daemon that is down, an auth failure,
+  a push that times out, a stdin body that is not JSON: every one of them still
+  runs the wrapped command, still prints its output and still exits 0.
+- **`--wrap-b64` carries what vincent displaced**, base64url of the
+  `statusLine` object that was in the settings file. Its `command` is run with
+  the same stdin, and its stdout is what you see. Uninstalling puts that object
+  back verbatim, including removing the key when there was nothing there.
+- **The reading is as durable as the daemon.** It is held in memory, not the
+  database, so a daemon restart drops it until Claude Code renders again.
+- It reports for the `claude` adapter only; codex answers the same question on
+  request, through its own app-server, with nothing to install.
 
 ## `vincent update`
 

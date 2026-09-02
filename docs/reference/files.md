@@ -94,7 +94,7 @@ Project-scoped workflows live in the repository instead, at
 | `token` | The API bearer token, created `0600` at first start. On Windows it relies on the per-user ACL of `%LOCALAPPDATA%`. Anyone who can read it can drive your daemon |
 | `daemon.json` | How clients find the daemon: port, pid, start time. Written atomically, removed on graceful shutdown |
 | `daemon.lock` | Single-instance enforcement; releases automatically when the process dies |
-| `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, and the board's collapsed groups. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice and opens every group |
+| `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, the board's collapsed groups, and whether the offer to make vincent [claude's status line](cli.md#vincent-statusline) was declined. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice, opens every group and lets the status-line offer come back |
 | `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
 
 ## Worktrees and branches

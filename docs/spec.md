@@ -2549,6 +2549,27 @@ where the gap is reported ahead of a run.
   already classifies, recorded per adapter and served as `quota` on §9.6
   (task 026).
 
+  *Amended 2026-09-02 (task 082, issue #310): the pull is still absent; a push
+  arrived.* claude has gained no `usage` and no `limits` subcommand — every
+  sentence above stands — but Claude Code hands its **status line** the
+  numbers. `statusLine.command` is invoked once per render with a JSON object
+  on stdin carrying `.rate_limits.five_hour.used_percentage`,
+  `.rate_limits.seven_day.used_percentage` and each window's `resets_at`, so
+  vincent is a bystander to delivery rather than a caller: `vincent statusline`
+  (§12.1) reads that object, pushes the windows to
+  `POST /v1/agents/claude/quota` (§13.2) and prints whatever status line it
+  displaced. This adapter therefore implements **no** quota capability — it is
+  not a §9.6 `QuotaReporter`, because there is nothing here to ask.
+  A fourth route exists and is **rejected**: `GET
+  https://api.anthropic.com/api/oauth/usage`, with the OAuth token from
+  `~/.claude/.credentials.json`, answers `five_hour.utilization` and
+  `seven_day.utilization` directly and would need no settings write at all.
+  Reading that token is **state-file parsing**, which the v0 **T1.7 decision**
+  forbids and which §9.5 records as still standing; T1.7 is not reopened here.
+  Both consequences are accepted rather than worked around: the claude reading
+  exists only while a human is running Claude Code, and vincent writes another
+  tool's configuration file to get it (§16).
+
 *Amended 2026-08-28 (task 041).* The builds this adapter's parsers were
 captured against are now a machine-readable list, not prose alone:
 `2.1.224` (the `--help` fixture the option probe is parsed from) and `2.1.226`
@@ -2734,6 +2755,27 @@ transcript is something people paste into issues.
   (§18) — it surfaces as `agent_error` or `nonzero_exit` — so this adapter
   contributes no observations either, and its `quota` is `null` on §9.6 until
   that changes.
+
+  *Amended 2026-09-02 (task 082, issue #310): superseded for codex.* Both
+  halves of that sentence are still true — 0.150.1 has no `usage` and no
+  `limits` subcommand either — and both missed a third route. `codex
+  app-server --stdio` speaks JSON-RPC over stdio and, after `initialize` and
+  the `initialized` notification, answers `account/rateLimits/read` with
+  `result.rateLimitsByLimitId.codex` (0.150.1 also duplicates it at
+  `result.rateLimits`, which the parser accepts as a fallback), carrying
+  `primary` and `secondary`, each with `usedPercent`, `windowDurationMins` and
+  a `resetsAt` in **unix epoch seconds**. This adapter therefore implements
+  §9.6's `QuotaReporter` and its `quota` is a *reported* reading sourced
+  `codex_app_server`, captured verbatim as
+  `internal/agent/codex/testdata/app_server_ratelimits_0.150.1.json` against
+  the build already in the verified list below. The whole exchange measured
+  **0.80 s**, which is why it runs on the ordinary catalog seam (§9.6's
+  `quotaTTL`) rather than needing a poller. The observation half is unchanged:
+  codex still does not classify a quota stop (§18), so it writes no `observed`
+  rows. The response's `credits`, `planType`, `spendControlReached`,
+  `individualLimit` and `rateLimitReachedType` are read by nothing — this
+  reports a usage window, and a plan tier is exactly what §9.7 declined to call
+  a quota.
 
 *Amended 2026-08-28 (task 041).* Verified builds: `0.142.5` (the invocation
 pinned above) and `0.147.0` (the reasoning capture, T4.17). `Detect` reports
@@ -3057,6 +3099,82 @@ defaults:
     caps and the walk's pause→hold→caps sequence are as they were; a
     near-exhausted agent is shown, never withheld.
 
+*Amended 2026-09-02 (task 082, issue #310): the clause's own expiry condition
+is taken.* "`used_percent` and `window` … fill in the day a vendor ships a
+surface, at which point `source` changes from `observed`" — two of the three
+adapters now have one, so they fill. The block becomes the union of two kinds
+of fact, and `source` is what says which:
+
+```json
+"quota": { "spent": false, "used_percent": 53, "window": "7d",
+           "observed_at": "2026-09-02T09:14:00Z",
+           "resets_at": "2026-09-06T11:00:00Z",
+           "resets_at_reported": true, "source": "codex_app_server",
+           "windows": [
+             { "name": "primary", "used_percent": 28, "window": "5h",
+               "resets_at": "2026-09-02T13:00:00Z",
+               "resets_at_reported": true },
+             { "name": "secondary", "used_percent": 53, "window": "7d",
+               "resets_at": "2026-09-06T11:00:00Z",
+               "resets_at_reported": true } ] }
+```
+
+- **A reported reading or an observation, never both.** A reading measures a
+  window still open; an observation records a wall already hit, and only the
+  first can say how much is left before anything stops. The reading wins where
+  there is one; the observation is the fallback, including when every dated
+  window of a reading has since reopened, because a stale percentage is worse
+  than an honest older fact. `null` still means neither exists.
+- **`windows[]` is added and the scalars are filled, not repurposed.** Every
+  window the source named rides `windows[]` — always an array, never null,
+  empty for an observation — and the block's `used_percent`, `window`,
+  `resets_at` and `resets_at_reported` carry the **tightest** of them: highest
+  `used_percent`, ties broken by the earliest reset. A client written against
+  task 026's shape keeps working unchanged and gets the number that matters.
+  Window names are the source's own vocabulary (`primary`/`secondary`,
+  `five_hour`/`seven_day`) and are deliberately **not** normalized across
+  vendors: two vendors' windows are not the same thing, and a shared vocabulary
+  would claim they are.
+- **`spent` splits on `source`.** An observation is spent while
+  `now < resets_at`, as before. A reading is spent at `used_percent >= 100` —
+  a reading's reset is always in the *future*, which is what an open window
+  means, so the observation's derivation would light the badge permanently for
+  everyone whose adapter reports.
+- **A window may name no reset.** `resets_at_reported: false` with a zero
+  `resets_at` is that statement, and it is a third case beside "the CLI said
+  so" and "vincent estimated it". §15 renders no time for it at all: `≈ 00:00`
+  is a time nobody is waiting for.
+- **The capability is an optional interface, not a method on `AgentAdapter`.**
+  `agent.QuotaReporter` — `Quota(ctx) (*ReportedQuota, error)` — is satisfied
+  by codex alone (§9.3). claude has no pull and pushes instead (§9.2, §13.2);
+  cursor has no surface and grows **no** "cannot report" stub, which is exactly
+  the interface change task 026 decision 1 refused. A capability an adapter
+  lacks is stated in §9.x and never emulated (§9.7).
+- **`quotaTTL` = 5 minutes, on `authTTL`'s seam and for `authTTL`'s reason.**
+  Binary identity vouches for a percentage no better than it vouches for
+  `logged_in`, so a cache hit older than the TTL asks again. Only an adapter
+  that is both installed and a `QuotaReporter` is ever asked, so cursor and an
+  uninstalled CLI cost no subprocess however often they are read. Failure
+  follows the auth rule exactly: the previous reading stands, the error is
+  recorded off the wire, and the clock is stamped either way — a persistently
+  broken reporter costs one subprocess per TTL, not one per request.
+  `GET /v1/doctor` refreshes the reading by already forcing the probe (task
+  029's amendment), and needs no second knob.
+- **A reported reading lives in the catalog cache and nowhere else.** There is
+  **no migration and no schema change** (§14): a reading is exactly as durable
+  as the daemon, and a restart drops it until the next probe or push. That is
+  deliberate rather than a gap — a percentage nothing has confirmed since the
+  daemon started is one vincent should not be showing, and if the source is
+  live it refills within a render.
+- **Probe-failure degradation is still untouched.** No quota path can fail a
+  probe: a missing binary, an unauthenticated account, a handshake that times
+  out, a malformed answer and a spawn failure all degrade to the
+  observation-only behaviour task 026 shipped, and `probe_error` keeps meaning
+  only "the option probe failed and you are reading the curated catalog".
+- **§11 is still unchanged.** Admission, both concurrency caps and the
+  `usage_limit` classification behave exactly as they do today. This is
+  display.
+
 ### 9.7 Cursor adapter (M5)
 
 Placed after §9.6 rather than between §9.3 and §9.4 deliberately: section
@@ -3223,6 +3341,14 @@ would invalidate every one of them.
   window, no reset. It cannot answer "how much is left", so per §9.2's rule it
   is stated and not emulated. Like codex, cursor does not classify a quota stop
   (§18), so it contributes no observations to §9.6's `quota` either.
+
+  *Restated 2026-09-02 (task 082, issue #310): unchanged, and now the only
+  one.* codex reports through its app-server (§9.3) and claude pushes through
+  its status line (§9.2); cursor has neither. It implements no §9.6
+  `QuotaReporter`, is never asked for a reading, spawns nothing, and grows no
+  stub saying it cannot — which is this bullet's own rule applied to the day
+  the other two changed. Its `quota` value and its rendering are what task 026
+  shipped, byte for byte.
 - **Version verdict compares whole strings** (*added 2026-08-28, task 041*).
   The verified builds are `2026.08.04-aaa8809` and `2026.08.11-e8db854`, and the
   comparison is exact string equality — calver plus a commit sha has no ordering
@@ -4828,6 +4954,27 @@ GET    /v1/agents                       per-adapter availability + model/effort 
                                         a client reads one adapter the same way on all three
                                         *Added 2026-08-31 (issue #279):* `supports_resume`, the
                                         §5.5 chat gate's own answer, on this route only
+                                        *Amended 2026-09-02 (task 082):* the §9.6 `quota`
+                                        block gains `windows[]` and fills its scalars —
+                                        here and on /v1/info's `agents[]` alike, from the
+                                        one read
+POST   /v1/agents/{name}/quota          *Added 2026-09-02 (task 082).* a usage reading a
+                                        source **pushes**, because the daemon has no way
+                                        to go and fetch it:
+                                        { source, windows[{ name, used_percent, window,
+                                        resets_at? }] } → 204. claude is why it exists
+                                        (§9.2) — its windows arrive through Claude Code's
+                                        status line, which runs `vincent statusline`
+                                        (§12.1) once per render. An unknown adapter is
+                                        404 and a body naming no window is 400. The
+                                        reading lands in the catalog cache, never in the
+                                        database (§14), and `agent.quota_changed` is
+                                        appended only when it actually changed (§13.3).
+                                        It rides the same recover → log → auth chain and
+                                        the same bearer token as everything else, which is
+                                        why the status line is the vincent binary and not
+                                        a shell script: the token stays out of a file.
+                                        Not an MCP tool (§13.4)
 GET    /v1/doctor                       the whole §17 diagnostic in one body: paths, daemon,
                                         log (stat + tail), database (size, schema version,
                                         integrity_check), agents, storage (disk free, worktree
@@ -5566,7 +5713,17 @@ Two kinds of streams:
    lapsed. Reusing `task.state_changed` was beaten because it makes every
    client re-derive "a task hold implies an agent-level fact", which is the
    kind of inference the daemon publishes rather than delegates.
-   `scheduler.WakeOn` is **false** for it: nothing about admission changes.)
+   `scheduler.WakeOn` is **false** for it: nothing about admission changes.
+   *Amended 2026-09-02 (task 082, issue #310):* a **reported** reading appends
+   the same event with the same four fields — `spent` from the tightest
+   window's percentage, `resets_at` from that window and null when the source
+   named none, `source` naming the reporter — so a subscriber cannot tell
+   whether the news came from a `usage_limit` stop or from a status line, only
+   what it now says. It is still emitted on change alone, which matters more
+   here than it did: a status line re-renders on every prompt and pushes an
+   identical reading many times a minute, and wakes nobody.
+   `scheduler.WakeOn` stays **false** — a status line drawing itself must not
+   spin the scheduler.)
    (`task.children_changed` — *added 2026-08-17, task 014* — carries
    `{task_id, child_id, to_state}` and is emitted on **every** fan-out ancestor
    when a descendant is created or transitions, so a client re-fetches the
@@ -5735,6 +5892,16 @@ is excluded too, on the same kind of line:
     POST   /v1/chats/{id}/handoff
 
 *(The last line added 2026-09-01, task 074, issue #288.)*
+
+*Amended 2026-09-02 (task 082, issue #310).* `POST /v1/agents/{name}/quota`
+(§13.2) joins the list, under the same line rather than as a new one: an agent
+must not be able to forge a daemon-level fact about the host it runs on. A step
+that could report its own adapter at 99% would paint every board and status
+line in the installation with a wall that does not exist, and nothing
+downstream could tell that from the real thing — the reading carries a source,
+not a caller. Nothing is lost by the exclusion: the two things that push are a
+status line and an app-server probe, neither of which is an agent reaching for
+a tool.
 
 Two reasons, either sufficient. A chat turn starts an agent CLI **without going
 through admission** (§11), so a tool that could send one would let an agent
@@ -6126,6 +6293,17 @@ backwards. The row is written by `internal/taskrun` alongside the §11 hold and
 deleted by the next successful agent step on that adapter; the daemon remains
 the single writer and the row is agent-scoped rather than task-scoped, so no
 taskrun or scheduler ownership invariant moves.
+
+*Amended 2026-09-02 (task 082, issue #310).* Still no `used_percent` and no
+`window` column, and now for a stronger reason than "nothing can fill them": a
+**reported** reading has a writer and deliberately does not use this table. It
+lives in the catalog cache (§9.6), so the paragraph above stands rather than
+being reversed and this feature adds **no migration**. What narrows is the
+retirement rule. "Deleted by the next successful agent step on that adapter"
+applies to `source = observed` rows only — which is every row this table holds
+— because a step completing proves the wall vincent watched has come down and
+proves nothing whatever about a percentage a vendor reported. A reported
+reading is retired by a fresher reading or by its own reset instead.
 
 *Added 2026-08-28 (task 040, issue #146).* `idempotency_keys` stores a
 **reference**, not a response: a replay re-reads `task_id` and renders the task
@@ -6852,6 +7030,34 @@ change (§13.3), which gives three surfaces something the task rows cannot say:
 
 The task detail header needs nothing: task 003's amendment above already gives
 it `queued · usage limit → 14:20`.
+
+*Amended 2026-09-02 (task 082, issue #310).* Where a reading is **reported**
+(§9.6) the same surfaces show it, with the provenance rule unchanged — `→` for
+a reset the source stated, `≈` for one vincent computed, and **no time at all**
+for a window that named none, since `≈ 00:00` is a time nobody is waiting for.
+The daemon view's agents panel is where the whole reading is legible, because
+it is the panel whose job is to list every fact: the source in prose rather
+than as the wire identifier, then one part per window
+(`quota codex app-server · 5h 28% → 13:00 · 7d 53% → 11:00 · read 09:14`),
+then the time the reading was taken — a percentage with no timestamp invites
+reading a stale figure as a live one. `quota unknown` is unchanged for an
+adapter with neither a reading nor an observation, which is every state cursor
+has (§9.7). The board header's badge is unchanged in form and answers the same
+question — is this adapter's window shut *now* — computed per §9.6's `source`
+split.
+
+**`i` in the daemon view (task 082).** The one key in vincent that leads to a
+write outside its own data dir: it offers to make `vincent statusline` Claude
+Code's `statusLine.command`, and the same key takes it back out. The exact JSON
+that will be written is shown first, as a takeover rather than a line competing
+with four other blocks — §16 asks that it be on screen, and a preview nobody
+can read is not. The displaced `statusLine` object is carried in the installed
+command, so removal restores it verbatim, including restoring its absence. The
+offer appears only when claude is installed here and its settings do not
+already run vincent, and a decline is remembered in `tui.json`
+(`status_line_declined`) so it does not come back — a question asked every time
+this view opens is one somebody answers by not reading it. Once installed, the
+line says so, which is the only place the removal is discoverable.
 
 **Grouping (task 009, added 2026-08-16).** The task table nests its rows under
 group headers, `[project, workflow]` by default: a board with more than one
@@ -7728,6 +7934,23 @@ currently true to show (§15 view 6).
   which cursor persists to `~/.cursor/cli-config.json` (§9.7). It is not a
   secret and not an escalation, but it is the one place vincent mutates state
   outside its own data dir, so it is recorded here rather than discovered.
+
+  *Amended 2026-09-02 (task 082, issue #310): there are two places now.* The
+  daemon view's `i` writes `statusLine.command` in `~/.claude/settings.json`,
+  which is the only way claude's usage windows reach vincent at all (§9.2,
+  §9.6) — the alternative, reading the OAuth token out of
+  `~/.claude/.credentials.json`, is refused by the v0 T1.7 decision. Every
+  property that made the cursor case tolerable is held here deliberately: the
+  write is **user-initiated** from the TUI and happens never on daemon start,
+  never silently, and never as a side effect of running a task; the exact JSON
+  is shown before it is written (§15); and it is **reversible** — the displaced
+  `statusLine` object is carried base64-encoded in the command vincent
+  installs, so uninstall puts back what was there, or removes the key when
+  there was nothing. The command installed is the vincent binary rather than a
+  shell script precisely so the daemon's bearer token is discovered the way
+  every other subcommand discovers it instead of being written into a file
+  (§13.2). Starting a daemon leaves that file untouched, and a test asserts it
+  rather than assuming it.
 
 *Added 2026-08-29 (task 057).* **An agent can now create and cancel vincent
 tasks.** §13.4 serves MCP from the daemon and, by default

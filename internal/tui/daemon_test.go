@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,13 @@ func newTestDaemonView(lines []string, tailErr error) *daemonView {
 	d.dataDir = "/data"
 	d.connected = true
 	d.tail = func(string, int) ([]string, error) { return lines, tailErr }
+	// Never the developer's real ~/.claude (task 082): a test that read it
+	// would be asserting against whatever happens to be on this machine, and
+	// this path is one nothing in the suite creates.
+	d.settingsPath = func() (string, error) {
+		return filepath.Join(os.TempDir(), "vincent-tui-no-such-home", ".claude", "settings.json"), nil
+	}
+	d.exePath = func() (string, error) { return testExe, nil }
 	return d
 }
 
@@ -250,11 +259,25 @@ func TestDaemonViewRefreshKeyRereadsTheLog(t *testing.T) {
 	if reads != 1 {
 		t.Fatalf("tail read %d times, want 1", reads)
 	}
-	if len(msgs) != 1 {
-		t.Fatalf("R produced %d messages, want the log read alone", len(msgs))
+	// The two readings that need no daemon: the log, and Claude Code's
+	// settings file behind the task 082 offer. Everything else on this view
+	// comes from the API and produces nothing without a client.
+	if len(msgs) != 2 {
+		t.Fatalf("R produced %d messages, want the two local reads", len(msgs))
 	}
-	if _, ok := msgs[0].(daemonLogMsg); !ok {
-		t.Fatalf("R produced %T, want a daemonLogMsg", msgs[0])
+	var log, statusLine bool
+	for _, msg := range msgs {
+		switch msg.(type) {
+		case daemonLogMsg:
+			log = true
+		case statusLineStateMsg:
+			statusLine = true
+		default:
+			t.Fatalf("R produced %T with no daemon to ask", msg)
+		}
+	}
+	if !log || !statusLine {
+		t.Fatalf("R read the log = %v, the settings file = %v; want both", log, statusLine)
 	}
 }
 

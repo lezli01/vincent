@@ -1312,6 +1312,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("enter did not open the config editor")
 			}
 		},
+		"i": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.updateKey(registryKey(t, "i"))
+			if d.statusLine == nil {
+				t.Fatal("i did not open the status-line flow")
+			}
+			if !d.capturesInput() {
+				t.Fatal("the status-line flow does not own the keyboard")
+			}
+		},
 	},
 
 	ctxConfigEdit: {

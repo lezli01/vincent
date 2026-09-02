@@ -60,6 +60,17 @@ var Excluded = []Route{
 	// worktree and can run `git push` and `gh pr create` there, which is
 	// decision record row 11's original path and stays open.
 	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/create"},
+	// The reported-quota push route (task 082), under row 28's rule rather
+	// than as a new design line: an agent must not be able to forge a
+	// daemon-level fact about the host it runs on. A step that could report
+	// its own adapter at 99% could paint every board and status line in the
+	// installation with a wall that does not exist, and nothing downstream
+	// could tell that from the real thing — the reading carries a source, not
+	// a caller.
+	//
+	// Nothing is lost. The two sources that push are a status line and an
+	// app-server probe, neither of which is an agent step reaching for a tool.
+	{Method: http.MethodPost, Path: "/v1/agents/{name}/quota"},
 	{Method: http.MethodPost, Path: "/v1/daemon/backup"},
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},

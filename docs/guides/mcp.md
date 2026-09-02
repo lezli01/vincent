@@ -38,9 +38,10 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, and the read-only `health`, `info`, `config_get`,
 `agent_list`, `doctor`, `orphan_list`.
 
-Nine routes are deliberately **not** tools:
+Ten routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
+- `POST /v1/agents/{name}/quota`
 - `POST /v1/daemon/backup`
 - `DELETE /v1/projects/{id}`
 - `POST /v1/maintenance/gc`
@@ -61,6 +62,14 @@ agent must not edit one. Nothing regresses — the built-in `create-workflow`
 workflow writes its deliverable through the filesystem, not through this API —
 and the read side is untouched: `workflow_list`, `workflow_definition`,
 `workflow_validate` and `workflow_schema` are all ordinary tools.
+
+The quota push is the same line drawn around a *fact* rather than an action: a
+step that could report its own adapter at 99% would paint every board and status
+line in the installation with a wall that does not exist, and nothing
+downstream could tell that from the real thing — the
+[reading carries a source, not a caller](../reference/api.md#usage-quota).
+Nothing is lost, because the two things that push are a status line and an
+app-server probe, neither of which is an agent step reaching for a tool.
 
 The last one is the [one route that writes to GitHub](../features.md#open-a-pull-request):
 it pushes a task's branch and opens its pull request, and the only thing gating

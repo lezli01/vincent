@@ -23,7 +23,9 @@
 // rather than an oversight (decision 4, spec §13.4): an agent must not be able
 // to stop, garbage-collect or reconfigure the daemon supervising it, and — since
 // task 069 gave vincent one write path to GitHub — must not be the one opening
-// a pull request in a human's name. They are
+// a pull request in a human's name. Task 082 added the reported-quota push
+// route under the same line: an agent must not be able to forge a
+// daemon-level fact about the host it runs on. They are
 // listed in Excluded and asserted absent by name.
 //
 // # Dependency direction

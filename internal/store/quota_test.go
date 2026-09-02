@@ -220,3 +220,43 @@ func TestAgentQuotaEventsOnlyOnChange(t *testing.T) {
 		t.Errorf("clear payload = %+v, want spent:false with null resets_at and source", payload)
 	}
 }
+
+// TestAgentQuotaClearSpareReportedRows pins the narrowing task 082 decision 5
+// asked for: the DELETE matches `source = observed` and nothing else.
+//
+// §14's retirement rule is "an observation is retired by evidence — the next
+// successful agent step on that adapter deletes it", and the evidence is
+// exactly as wide as the claim. A step completing disproves a wall this daemon
+// watched; it says nothing about a percentage a vendor reported for a window
+// still open.
+//
+// A reported reading does not live in this table at all (decision 4) — it is
+// held in the catalog cache — so the row here stands in for one. What is under
+// test is the predicate, and the only way to test a predicate is to give it a
+// row it must not match.
+func TestAgentQuotaClearSpareReportedRows(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	observed := time.Now().UTC()
+	reported := observation("claude", observed, observed.Add(time.Hour), true)
+	reported.Source = "claude_status_line"
+	if _, err := s.UpsertAgentQuota(ctx, reported); err != nil {
+		t.Fatalf("UpsertAgentQuota: %v", err)
+	}
+
+	cleared, err := s.ClearAgentQuota(ctx, "claude", observed.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ClearAgentQuota: %v", err)
+	}
+	if cleared {
+		t.Error("cleared = true for a reported reading; a successful step does not disprove one")
+	}
+	got, err := s.GetAgentQuota(ctx, "claude")
+	if err != nil {
+		t.Fatalf("the reported reading was deleted: %v", err)
+	}
+	if got.Source != "claude_status_line" {
+		t.Errorf("source = %q, want the reading intact", got.Source)
+	}
+}
