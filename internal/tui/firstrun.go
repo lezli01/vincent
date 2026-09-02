@@ -26,6 +26,13 @@ type tuiState struct {
 	// one board fold it on the other, which is one fold set pretending to be
 	// two (task 067).
 	ChatFolds []foldPath `json:"chat_folds,omitempty"`
+	// StatusLineDeclined remembers that the offer to make vincent Claude
+	// Code's status line was turned down (task 082). It is a preference and
+	// not a marker file precisely because this struct was shaped for one to
+	// join without a format change. Nothing re-asks while it is set: an
+	// offer that comes back every time the daemon view opens is a nag, and
+	// `i` is still there for somebody who changes their mind.
+	StatusLineDeclined bool `json:"status_line_declined,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "tui.json") }

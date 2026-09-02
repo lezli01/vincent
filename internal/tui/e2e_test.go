@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -176,5 +177,83 @@ func TestAutoStartRealDaemon(t *testing.T) {
 	stop.Env = env
 	if out, err := stop.CombinedOutput(); err != nil || !strings.Contains(string(out), "daemon stopped") {
 		t.Fatalf("daemon stop: %v\n%s", err, out)
+	}
+}
+
+// §16's account of the status-line write rests on a fact nobody would notice
+// breaking: the daemon never touches Claude Code's settings file. Only the
+// TUI's `i` does, and only after showing what it would write. Booting a real
+// daemon and looking is the only way to know that, so this asserts it rather
+// than assuming it.
+//
+// HOME and USERPROFILE point at a temp dir — os.UserHomeDir reads the first on
+// POSIX and the second on Windows — so the test never reads or writes the
+// developer's real ~/.claude either.
+func TestDaemonNeverTouchesClaudeSettings(t *testing.T) {
+	dataDir, cfgDir, home := t.TempDir(), t.TempDir(), t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	settings := filepath.Join(claudeDir, "settings.json")
+	const body = `{"model":"opus","statusLine":{"type":"command","command":"~/bin/mine.sh"}}`
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settings, []byte(body), 0o600); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+
+	env := append(os.Environ(),
+		config.EnvDataDir+"="+dataDir,
+		config.EnvConfigDir+"="+cfgDir,
+		"HOME="+home,
+		"USERPROFILE="+home,
+	)
+	start := exec.Command(vincentBin, "daemon")
+	start.Env = env
+	if err := start.Start(); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	go func() { _ = start.Wait() }()
+	t.Cleanup(func() {
+		stop := exec.Command(vincentBin, "daemon", "stop", "--force")
+		stop.Env = env
+		_, _ = stop.CombinedOutput()
+	})
+
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatal("the daemon never became healthy")
+		}
+		ri, err := daemon.ReadRuntimeInfo(dataDir)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			_, err = daemon.CheckHealth(ctx, ri.Port)
+			cancel()
+			if err == nil {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	stop := exec.Command(vincentBin, "daemon", "stop")
+	stop.Env = env
+	if out, err := stop.CombinedOutput(); err != nil {
+		t.Fatalf("daemon stop: %v\n%s", err, out)
+	}
+
+	got, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatalf("read settings back: %v", err)
+	}
+	if string(got) != body {
+		t.Errorf("a daemon run rewrote claude's settings:\n got %s\nwant %s", got, body)
+	}
+	entries, err := os.ReadDir(claudeDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", claudeDir, err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("a daemon run left %d files in ~/.claude, want only the settings", len(entries))
 	}
 }

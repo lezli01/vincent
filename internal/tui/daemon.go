@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"charm.land/bubbles/v2/viewport"
@@ -48,6 +49,15 @@ type (
 	}
 	// daemonTickMsg re-reads the log and re-renders the uptime.
 	daemonTickMsg struct{}
+	// statusLineStateMsg carries one reading of Claude Code's settings file
+	// and of the TUI's own decline flag (task 082). Both are local files, and
+	// both are read here rather than at render time: the offer is a fact
+	// about a file, not something a renderer can work out.
+	statusLineStateMsg struct {
+		plan     statusLinePlan
+		declined bool
+		err      error
+	}
 )
 
 // daemonView is §15's view 6. It is the only view that renders while the
@@ -94,6 +104,24 @@ type daemonView struct {
 	// say what moved rather than silently re-rendering.
 	saved string
 
+	// statusLine is the open §16 status-line flow, nil when it is not open.
+	// It is a takeover for the same reason the config editor is.
+	statusLine *statusLineFlow
+	// statusLinePlan is what a write to Claude Code's settings file would do,
+	// re-read on every refresh so that the offer, the flow and the file agree.
+	// Reading it is all that happens without a keypress: nothing here writes
+	// anything until somebody presses a key on the flow.
+	statusLinePlan     statusLinePlan
+	statusLineErr      error
+	statusLineOK       bool
+	statusLineDeclined bool
+	// settingsPath resolves ~/.claude/settings.json and exePath this binary.
+	// They are fields so a test can point them at a temp file and a fixed
+	// path rather than at the developer's real settings and at the test
+	// binary that happens to be running.
+	settingsPath func() (string, error)
+	exePath      func() (string, error)
+
 	vp        viewport.Model
 	following bool
 	// visible gates the ticker: a view that is off-screen re-reads nothing,
@@ -108,11 +136,13 @@ type daemonView struct {
 
 func newDaemonView() *daemonView {
 	return &daemonView{
-		now:       time.Now,
-		tail:      daemon.TailFile,
-		keys:      configKeys(),
-		vp:        viewport.New(),
-		following: true,
+		now:          time.Now,
+		tail:         daemon.TailFile,
+		settingsPath: claudeSettingsPath,
+		exePath:      os.Executable,
+		keys:         configKeys(),
+		vp:           viewport.New(),
+		following:    true,
 	}
 }
 
@@ -201,6 +231,32 @@ func (d *daemonView) logCmd() tea.Cmd {
 	}
 }
 
+// statusLineCmd re-reads Claude Code's settings file and the decline flag.
+// It is a read and only a read — §16's terms for this file say the write is
+// user-initiated, so a refresh must never be able to change anything.
+func (d *daemonView) statusLineCmd() tea.Cmd {
+	dataDir := d.dataDir
+	resolve, executable := d.settingsPath, d.exePath
+	if resolve == nil || executable == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := statusLineStateMsg{declined: readStatusLineDecline(dataDir)}
+		exe, err := executable()
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		path, err := resolve()
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		msg.plan, msg.err = readStatusLinePlan(path, exe)
+		return msg
+	}
+}
+
 func (d *daemonView) tickCmd() tea.Cmd {
 	return tea.Tick(logPollInterval, func(time.Time) tea.Msg { return daemonTickMsg{} })
 }
@@ -208,7 +264,7 @@ func (d *daemonView) tickCmd() tea.Cmd {
 // refreshCmd re-reads every source. It is what R does, and what activation
 // does.
 func (d *daemonView) refreshCmd() tea.Cmd {
-	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd(), d.logCmd())
+	return tea.Batch(d.infoCmd(), d.configCmd(), d.doctorCmd(), d.logCmd(), d.statusLineCmd())
 }
 
 func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
@@ -247,6 +303,9 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return d, nil
 	case daemonLogMsg:
 		d.applyLog(msg)
+		return d, nil
+	case statusLineStateMsg:
+		d.applyStatusLine(msg)
 		return d, nil
 	case tea.KeyPressMsg:
 		return d.updateKey(msg)
@@ -328,6 +387,17 @@ func (d *daemonView) applySaved(msg configSavedMsg) {
 	d.configAt = d.now()
 }
 
+// applyStatusLine lands one reading. Unlike the other blocks it does not keep
+// the last-good one behind an error: this reading is of a local file that was
+// either read or not, and an offer to rewrite a file from a stale idea of what
+// is in it is the one thing this must not do.
+func (d *daemonView) applyStatusLine(msg statusLineStateMsg) {
+	d.statusLineDeclined = msg.declined
+	d.statusLineErr = msg.err
+	d.statusLineOK = msg.err == nil
+	d.statusLinePlan = msg.plan
+}
+
 func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if d.form != nil {
 		cmd, done := d.form.update(msg, d.client)
@@ -335,6 +405,15 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			d.form = nil
 		}
 		return d, cmd
+	}
+	if d.statusLine != nil {
+		if done := d.statusLine.update(msg, d.dataDir); done {
+			d.statusLine = nil
+			// The file may be a different file now, and every screen this
+			// view draws about it comes from a reading.
+			return d, d.statusLineCmd()
+		}
+		return d, nil
 	}
 	switch msg.String() {
 	case "esc":
@@ -351,6 +430,12 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			d.focusConfig = true
 			d.form = newConfigForm(k, d.config)
 		}
+		return d, nil
+	case "i":
+		// The offer only advertises itself when it applies, but the key works
+		// whatever the file says: a documented key that silently does nothing
+		// is worse than one that opens a screen explaining why.
+		d.statusLine = newStatusLineFlow(d.statusLinePlan, d.statusLineErr)
 		return d, nil
 	case "f", "G", "end":
 		d.setFollowing(true)
@@ -412,4 +497,4 @@ func (d *daemonView) syncFollowToViewport() {
 // permanently false before this view could edit anything; leaving it that way
 // would send every single-key global — R, f, g, q — into the text field on the
 // first keystroke.
-func (d *daemonView) capturesInput() bool { return d.form != nil }
+func (d *daemonView) capturesInput() bool { return d.form != nil || d.statusLine != nil }
