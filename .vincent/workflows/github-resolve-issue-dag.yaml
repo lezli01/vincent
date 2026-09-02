@@ -1020,8 +1020,10 @@ steps:
     # what `for_each` requires. `plan-dag`'s check already validated the
     # content, so there is nothing left here to judge.
     #
-    # Everything this step prints on stdout becomes a lane. The count goes to
-    # the status and to stderr for that reason, never to stdout.
+    # Everything this step prints on stdout becomes a lane, so the count is
+    # said on the step's status line and nowhere else. It used to be echoed to
+    # stderr as well, back when the engine merged both streams into `.Result`
+    # (issue #311) and the header arrived as a lane that was not a lane.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -1029,7 +1031,6 @@ steps:
       n=$(jq -s 'length' .vincent-issue/units.jsonl)
       roots=$(jq -s '[.[] | select((.needs | length) == 0)] | length' .vincent-issue/units.jsonl)
       say "$n unit(s), $roots can start at once"
-      echo "graph: $n unit(s), $roots with no dependency" >&2
       jq -c '.' .vincent-issue/units.jsonl
 
   - id: plan-gate

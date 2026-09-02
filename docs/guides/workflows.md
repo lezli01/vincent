@@ -1003,7 +1003,7 @@ Two are worth calling out because they are easy to reach for wrongly:
 | Field | Value |
 |---|---|
 | `Status` | `succeeded`, `approved`, `skipped`, or `failed` |
-| `Result` | the agent's final result text (agent steps), or the last **200** lines of stdout (command steps) |
+| `Result` | the agent's final result text (agent steps), or the last **200** lines of stdout (command steps) — **stdout only**, never stderr |
 | `ExitCode` | the process exit code, where there was one |
 
 ```yaml
@@ -1047,6 +1047,15 @@ has to satisfy.
 summary and useless as a data channel. A step meant to feed
 [`for_each:`](#64-loops-in-depth) should filter at the source rather than lean
 on the tail.
+
+**`Result` is stdout, and only stdout.** That is what makes it usable as a data
+channel at all: `git` writes `Switched to branch …` and its fetch progress to
+stderr on success, `curl` writes its progress meter there, and tools announce
+deprecations there. None of it reaches `.Result`, so a step whose stdout is a
+list can also be noisy. It is also the place to put anything meant for a human
+reading the run rather than for the template consuming it — a header, a count,
+a note — since stderr still reaches the transcript, the step's summary and the
+`<previous-attempt-failure>` block a retry sees.
 
 ### 5.4 Task fields
 

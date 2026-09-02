@@ -716,6 +716,24 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A command step's `.Result` carried its stderr as well as its stdout.** The
+  documented contract has always been that `.Steps.<id>.Result` for a command
+  step is the last 200 lines of its **stdout**, but the engine captured both
+  streams into one buffer and handed that to templates — interleaved in
+  whichever order the two readers happened to observe them. Rendered into a
+  prompt that was cosmetic; fed to a `for_each:`, it was not. A `fan_out`'s
+  derived lane list or a `loop`'s item list gained an item for every incidental
+  stderr line, and `git` (`Switched to branch …`, clone and fetch progress),
+  `curl`'s progress meter and any tool's deprecation notice all write there. A
+  command step's stdout is now captured separately and is what `.Result`
+  renders from.
+
+  What a *human* reads is unchanged: the transcript, the live output stream,
+  the step's summary on the board and in the detail view, `.LastFailure` and
+  the `<previous-attempt-failure>` block a retried agent step receives all
+  still carry both streams — a step that failed with a stderr-only diagnostic
+  would otherwise summarize as blank. Steps that ran before upgrading keep
+  rendering as they did, so a task already in flight is not disturbed.
 - **The chat workspace's footer hint was drawn off the bottom of the screen.**
   The composer counted as one line while it rendered three, so the chat's body
   overran its frame by two rows: the hint line naming `enter send`,
