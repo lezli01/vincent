@@ -618,7 +618,11 @@ path and version, and the new-task form warns before you queue more work against
 the same window. `→` means the CLI stated that time; `≈` means vincent estimated
 it from the recheck interval. It clears itself the next time a step on that
 adapter succeeds — so if the badge is still up, nothing has proved otherwise yet.
-See [Agents › Nobody can tell you how much quota is left](agents.md#nobody-can-tell-you-how-much-quota-is-left).
+That is the *observation* path, and it is what an adapter with no reported
+reading is rendered from. Where the adapter reports one — codex on request,
+claude through its status line — the reading wins and the daemon view spells it
+out window by window instead. See
+[Agents › How much quota is left](agents.md#how-much-quota-is-left-and-who-will-say).
 
 Only the claude adapter recognizes usage-limit wording today. On codex and
 cursor a quota stop still surfaces as `agent_error` or `nonzero_exit`, because

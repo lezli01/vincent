@@ -1735,9 +1735,13 @@ they need.
   actually changed, so a step re-asserting the same line does not wake you.
 - `agent.quota_changed` carries `{ agent, spent, resets_at, source }` and no
   `task_id`: the fact is about an adapter, not about any one task. It is
-  emitted when a `usage_limit` stop is observed and when a successful run
-  retires an observation — never on a re-observation identical to what is
-  already stored, and never merely because a window lapsed. Re-fetch
+  emitted when a `usage_limit` stop is observed, when a successful run retires
+  an observation, and when a **reported** reading changes — a probe or a push
+  saying something new. Never on a re-observation or a re-reading identical to
+  what is already held, and never merely because a window lapsed: a status line
+  re-renders on every prompt and pushes the same numbers many times a minute,
+  and wakes nobody. On a reading, `spent` and `resets_at` come from the tightest
+  window, and `resets_at` is `null` when that window named none. Re-fetch
   [`quota`](#usage-quota) from `/v1/agents` or `/v1/info` when you see one.
 - The `chat.*` events belong to the [chat](#chats) family and carry the chat's
   `project_id`, so `?project_id=` filters them the way it filters a task's.

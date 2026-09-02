@@ -299,7 +299,7 @@ to pass.
 
 ## What vincent writes outside its own directories
 
-Two things, and they are recorded here rather than discovered:
+Three things, and they are recorded here rather than discovered:
 
 **A cursor step passes `--model`, and cursor persists that selection to
 `~/.cursor/cli-config.json`.** Vincent always passes one (defaulting to `auto`)
@@ -309,6 +309,30 @@ orchestrator than preserving an interactive preference.
 
 It is not a secret and not an escalation, but it does mean a cursor step
 overwrites the model you last picked in an interactive `cursor-agent` session.
+
+**The daemon view's `i` writes `statusLine.command` in
+`~/.claude/settings.json`**, which is the only way Claude Code's usage windows
+reach vincent at all — it has no endpoint to poll, and reading the OAuth token
+out of `~/.claude/.credentials.json` is refused as state-file parsing. Every
+property that makes the cursor case above tolerable is held here deliberately:
+
+- **User-initiated.** It happens when you press that key, never on daemon start,
+  never silently, and never as a side effect of running a task. Starting a
+  daemon leaves the file untouched, and a test asserts that rather than assuming
+  it.
+- **Shown first.** The exact JSON is displayed before anything is written.
+- **Reversible.** The `statusLine` object vincent displaces is carried, base64
+  encoded, in the command it installs, so pressing the same key puts back what
+  was there — including removing the key when there was nothing.
+- **No token on disk.** What is installed is the vincent binary
+  ([`vincent statusline`](reference/cli.md#vincent-statusline)) rather than a
+  shell script, precisely so the daemon's bearer token is discovered the way
+  every other subcommand discovers it instead of being written into a file
+  another tool runs.
+
+The route it posts to, `POST /v1/agents/{name}/quota`, is
+[not an MCP tool](guides/mcp.md): an agent must not be able to forge a
+daemon-level fact about the host it runs on.
 
 **[`vincent update`](reference/cli.md#vincent-update) replaces the vincent
 binary**, which is by definition outside vincent's own directories. It happens

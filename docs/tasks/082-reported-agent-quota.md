@@ -3,7 +3,7 @@
 **Status:** ✅ done (1/1)
 **Issue:** #310
 **Amends:** §9.2, §9.3, §9.6, §9.7, §13.2, §13.3, §13.4, §14, §15, §16
-**Supersedes in part:** [026](026-agent-quota-observability.md) decision 1
+**Supersedes in part:** [026](026-agent-quota-visibility.md) decision 1
 ("observed signal only; no adapter interface change") and §9.6's "no supported
 CLI can report remaining quota from a non-interactive invocation" — by the
 escape hatch those two wrote for themselves, not against them

@@ -78,8 +78,12 @@ Three behaviors matter:
 - **The header badges the agent, not just the task.** An adapter vincent has
   watched run out reads `claude ⏳14:20` in place of `claude ✓`, and stays that
   way until a step on that adapter succeeds — so a board full of `queued` rows
-  says which window they are all waiting on. The badge is a statement, not a
-  brake: admission is unchanged and nothing is withheld.
+  says which window they are all waiting on. An adapter that
+  [reports its own quota](agents.md#how-much-quota-is-left-and-who-will-say) is
+  badged the same way once that reading hits 100%, and reads a bare `⏳` when
+  the source named no reset, since `⏳00:00` would be a time vincent invented.
+  The badge is a statement, not a brake: admission is unchanged and nothing is
+  withheld.
 
 `/` filters by id, title, project or state; `tab` commits the filter, `esc`
 clears it, and `enter` opens the selected task.
@@ -791,7 +795,7 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 | `ctrl+s` | Create the task |
 
 The agent row warns when the adapter the task would run on is out of quota —
-`· usage limit until 14:20`, from the same observation the board header badges.
+`· usage limit until 14:20`, from the same quota the board header badges.
 It **warns and nothing else**: the form submits, and the task waits its turn on
 the ordinary [`usage_limit` hold](troubleshooting.md#usage_limit--do-nothing) if
 the window is still shut when it is admitted.
@@ -1267,7 +1271,7 @@ Everything here is also
 
 Each adapter row carries what vincent knows about its usage window. Where the
 adapter reports one, the reading is spelled out window by window —
-`quota codex app-server · 5h 28% → 13:00 · 7d 53% → Sat 11:00 · read 09:14` —
+`quota codex app-server · 5h 28% → 13:00 · 7d 53% → 11:00 · read 09:14` —
 with the time it was taken, because a percentage with no timestamp invites
 reading a stale figure as a live one. Where vincent has only watched a wall go
 up, it says `usage limit → 14:20` when the CLI stated that reset and

@@ -37,7 +37,7 @@ silently drops.
 | Tested-build list | `2.1.224`, `2.1.226` | `0.142.5`, `0.147.0`, `0.150.1` | `2026.08.04-aaa8809`, `2026.08.11-e8db854` |
 | Reports whether you are logged in | — | — | ✅ |
 | Recognizes a usage limit / auth failure in a run | ✅ | — | — |
-| Reports **remaining** quota without running | — | — | — |
+| Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
 
 `vincent daemon status`, the TUI's daemon view, and `GET /v1/agents` all report
 what vincent actually resolved on your machine — path, version, the model and
@@ -92,6 +92,13 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   wrong guess parks a genuinely failed task in a wait it never leaves. On those
   two, both conditions still read as `agent_error` or `nonzero_exit`. See
   [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
+- **Reports its remaining quota, but only by pushing.** There is no usage
+  subcommand to poll; what Claude Code has is a status line, which it hands both
+  usage windows on every render.
+  [`vincent statusline`](../reference/cli.md#vincent-statusline) is what catches
+  them, and the daemon view's `i` is what installs it — after showing the exact
+  JSON it would write to `~/.claude/settings.json`. Until then claude reports
+  nothing. See [How much quota is left](#how-much-quota-is-left-and-who-will-say).
 
 ### Mid-run questions
 
@@ -167,6 +174,12 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   the run's accounting, so `verbose` shows a codex turn's cache read/write split
   and its reasoning spend rather than leaving them blank. Cost is still absent,
   because the CLI does not report one — see the bullet above.
+- **Reports its remaining quota on request**, and is the only adapter that
+  needs no setup to do it: `codex app-server --stdio` answers
+  `account/rateLimits/read` with its `primary` and `secondary` windows, which
+  vincent asks for on the ordinary catalog refresh. A missing binary, a
+  logged-out account, a timeout or a malformed answer degrade silently and fail
+  no probe. See [How much quota is left](#how-much-quota-is-left-and-who-will-say).
 - **Reasoning is surfaced.** Codex emits whole reasoning blocks, which the TUI
   shows at the `normal` and `verbose` output levels (`v` cycles them) and the
   transcript records as `agent.thinking`. Whether any are emitted depends on
@@ -384,34 +397,63 @@ The step failure still exists as a backstop, for a task whose daemon changed
 underneath it: a data directory carried to Windows, or a workflow edited after
 the task was queued.
 
-### Nobody can tell you how much quota is left
+### How much quota is left, and who will say
 
-No CLI vincent supports answers "how much quota do I have?" from a
-non-interactive invocation. `claude` has no `usage` or `limits` command,
-`codex` has neither, and `cursor-agent about --format json` reports a plan tier
-and no numbers. Vincent does not emulate what an adapter cannot do, so there is
-no probe and no percentage.
+Two of the three adapters can now answer "how much quota do I have?" without
+running a step, and they answer in opposite directions.
 
-What it does instead is remember. When an agent stops on a spent window, the
-daemon records that per adapter — when it was seen, when it resets, and whether
-the CLI named that reset or vincent estimated it from
+- **codex answers on request.** `codex app-server --stdio` speaks JSON-RPC over
+  stdio and replies to `account/rateLimits/read` with the same `primary` and
+  `secondary` windows the CLI prints when it walls a run. Vincent asks on the
+  ordinary catalog refresh — at most once every five minutes, and
+  unconditionally on `vincent doctor` or `GET /v1/agents?refresh=true`. There is
+  nothing to install and nothing to configure.
+- **claude pushes.** Claude Code has no `usage` or `limits` command to poll, but
+  it hands its status line a JSON object carrying both windows on every render.
+  [`vincent statusline`](../reference/cli.md#vincent-statusline) reads that
+  object, posts it to the daemon and prints the status line you already had; the
+  daemon view's `i` is what installs it, after showing the exact JSON it would
+  write to `~/.claude/settings.json`. Nothing is reported while it is not
+  installed.
+- **cursor cannot.** `cursor-agent about --format json` reports a plan tier and
+  no numbers, so cursor implements no quota capability at all, spawns nothing,
+  and is observation-only exactly as before. Vincent does not emulate what an
+  adapter cannot do — there is no "cannot report" stub and no fabricated
+  percentage.
+
+A reported reading is held **in memory**, not the database: it is as durable as
+the daemon, and a restart drops it until the next probe or push. Nothing here
+can fail a probe — a missing CLI, a logged-out account, a handshake that times
+out or a malformed answer all fall back to the behaviour below, and
+`probe_error` keeps meaning only "the option probe failed".
+
+Underneath both, vincent still **remembers**. When an agent stops on a spent
+window, the daemon records that per adapter — when it was seen, when it resets,
+and whether the CLI named that reset or vincent estimated it from
 [`usage_limit_recheck_interval`](../reference/configuration.md#usage_limit_recheck_interval).
-That observation outlives the task's own wait, so:
+That observation outlives the task's own wait, and is what an adapter with no
+reported reading is rendered from. A reading wins where there is one, so:
 
 - the board header badges the adapter — `claude ⏳14:20` instead of `claude ✓`;
-- the daemon view spells it out beside path, version and login state, with `→`
-  for a reset the CLI stated and `≈` for one vincent estimated, and says
-  `quota unknown` for an adapter nothing has been observed for;
+- the daemon view spells it out beside path, version and login state. A reading
+  is written window by window with the time it was taken —
+  `quota codex app-server · 5h 28% → 13:00 · 7d 53% → 11:00 · read 09:14` — and
+  an observation as `usage limit → 14:20` with `→` for a reset the CLI stated
+  and `≈` for one vincent estimated. An adapter with neither says
+  `quota unknown`;
 - the new-task form warns under the agent row — `· usage limit until 14:20`.
 
 The warning is advisory. The form still submits, admission is unchanged, and a
 task queued against a spent window simply parks on the ordinary
 [`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing). The next
-successful step on that adapter retires the observation, so an estimate is never
-left standing over a CLI that is visibly working.
+successful step on that adapter retires the **observation** — and only the
+observation, since a step completing proves the wall vincent watched has come
+down and proves nothing about a percentage a vendor reported — so an estimate is
+never left standing over a CLI that is visibly working.
 
-`GET /v1/agents` and `GET /v1/info` carry it as
-[`quota`](../reference/api.md#usage-quota).
+`GET /v1/agents` and `GET /v1/info` carry all of it as
+[`quota`](../reference/api.md#usage-quota), whose `source` says which kind of
+fact you are holding.
 
 ## Choosing models and effort
 

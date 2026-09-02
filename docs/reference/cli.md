@@ -15,6 +15,7 @@ localhost API.
 - [`vincent task`](#vincent-task)
 - [`vincent config`](#vincent-config)
 - [`vincent status`](#vincent-status)
+- [`vincent statusline`](#vincent-statusline)
 - [`vincent update`](#vincent-update)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
