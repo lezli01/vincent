@@ -274,13 +274,30 @@
 # refuse those adapters outright, and degrading is what these files have always
 # documented as intended. Change it here if you would rather refuse than guess.
 #
-# POSIX-only. Every command step pins `shell: sh`; agent steps cannot pin a
-# shell at all (§8.2 rejects `shell` on an agent step), so their `check` runs
-# under the platform default and is written in `sh` regardless. On Windows the
-# whole workflow needs Git Bash's `sh` on PATH. `platforms:` is deliberately
-# *not* declared — that would refuse the Git Bash host outright, and both
-# ancestors of this file chose to allow it. Portability is the author's problem
-# (§8.3) and this workflow declines it deliberately.
+# POSIX-only, and `platforms: [posix]` now says so (§8.1.1). Portability is the
+# author's problem (§8.3) and this workflow declines it deliberately — §8.3's
+# task 010 amendment is precisely that an author who declines says so with
+# `platforms:`, which is enforced rather than translated.
+#
+# **This reverses a decision recorded in `fa18796`**, where `platforms:` was
+# left off so that a Windows host carrying Git Bash's `sh` on PATH would still
+# be offered the workflow. That reasoning holds for the command steps: they pin
+# `shell: sh`, and on Windows `sh` does resolve to Git Bash's. It does not reach
+# the agent steps' `check`. §8.2 rejects `shell` on an agent step, and
+# `runCheck` hands the step's own — empty — pin to the shell resolver
+# (`internal/taskrun/steps.go`), so every check in this file runs under the
+# **platform default**: pwsh, or Windows PowerShell 5.1 where pwsh is absent,
+# and never under the `sh` the command steps found. `diagnose`'s check is the
+# unarguable case — `{ offenders=$( … ); test -z "$offenders" || { … } }` is not
+# something pwsh can parse on any PATH — and `docs-sync`'s builds
+# `.vincent-issue/vincent` and then executes it, which on Windows would want
+# `.exe`.
+#
+# So the Git Bash host the decision was protecting cannot finish this workflow
+# either way: it spends a 45-minute `diagnose` session and blocks on
+# `check_failed`. Declaring the platform turns that into a refusal at task
+# creation, before anything is spent. To take the late failure back, delete the
+# `platforms:` line; nothing else in the file depends on it.
 #
 # Requires `gh` (authenticated), `jq`, `git`, `go`, and the worktree's `origin`
 # pointing at the repo that owns the issue.
@@ -335,6 +352,8 @@
 # built-in (task 001, internal/worktree/branch.go).
 name: github-resolve-issue
 description: Read a GitHub bug or enhancement issue, clarify it with the author, deliver the fix or feature, open the PR, then rebase and merge it once you approve.
+
+platforms: [posix]
 
 fields:
   - name: issue

@@ -16,10 +16,22 @@
 # always documented as intended. Add it per file if you would rather the
 # workflow refuse than guess.
 #
-# POSIX-only. Every command step pins `shell: sh` and the draft check uses
-# `test`; on Windows this needs Git Bash's `sh` on PATH, and fails loudly
-# rather than being reinterpreted by pwsh (§8.3 — portability is the author's
-# problem, and this workflow declines it deliberately).
+# POSIX-only, and `platforms: [posix]` is how it says so (§8.1.1). Portability
+# is the author's problem (§8.3) and this workflow declines it deliberately —
+# but declining it is declared rather than left to fail late.
+#
+# It used to be left undeclared, on the reasoning that `shell: sh` makes a
+# Windows host with Git Bash's `sh` on PATH work. That reasoning does not reach
+# the `draft` step's `check`. §8.2 rejects `shell` on an agent step, and
+# `runCheck` hands the step's own (empty) pin to the shell resolver
+# (`internal/taskrun/steps.go`), so a check runs under the **platform default**
+# — pwsh on Windows, or Windows PowerShell 5.1 when pwsh is absent — and never
+# under the `sh` the command steps resolved. That check's `test -s` chain and
+# its `case … esac` are `sh`, and they are handed to pwsh whatever is on PATH;
+# 5.1 has no `&&` either. So a Windows run does not fail loudly at a missing
+# shell: it spends a full agent session on `draft` and then blocks on
+# `check_failed`. Declaring the platform turns that into a refusal at task
+# creation.
 #
 # Requires `gh`, authenticated, with the worktree's `origin` pointing at the
 # repo the issue should land in.
@@ -50,6 +62,8 @@
 # one. Archive the task when you're done to clean it up.
 name: github-create-issue
 description: Clarify a draft issue with the author, then file it on GitHub and report it back.
+
+platforms: [posix]
 
 defaults:
   agent: claude
@@ -135,10 +149,24 @@ steps:
 
       Finish by printing the exact title, labels and body you wrote, so the
       approver sees them without opening the files.
-    # Proves the artifacts exist before a human is asked to look at them; an
+    # Proves the artifacts exist before a human is asked to look at them, and
+    # that the one a later step *reads* carries a value that step can use. An
     # agent that answered in prose without writing the files fails here and
     # retries with the failure block appended (§8.4).
-    check: test -s .vincent-issue/title.txt && test -s .vincent-issue/body.md && test -s .vincent-issue/labels.txt
+    #
+    # The label is graded rather than trusted, because `create` is the one-way
+    # door and never retries: `gh issue create --label` resolves the name
+    # against the repository's labels, so a third value fails *after* a human
+    # has approved the text at the gate — spending the approval on nothing and
+    # blocking the task one step from the end. Catching it here costs a retry
+    # of a step that files nothing. The offending value is named on stderr
+    # because §8.4 hands the retry the check's *output*, and an agent told only
+    # "check failed" would have to guess which of the three files was wrong.
+    check: >
+      test -s .vincent-issue/title.txt &&
+      test -s .vincent-issue/body.md &&
+      test -s .vincent-issue/labels.txt &&
+      { label=$(cat .vincent-issue/labels.txt); case "$label" in bug|enhancement) ;; *) echo "labels.txt must hold exactly 'bug' or 'enhancement'; it holds: $label" >&2; false ;; esac; }
     check_timeout: 1m
 
   - id: approve
