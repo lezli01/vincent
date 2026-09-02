@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"net/url"
 	"time"
 )
 
@@ -70,52 +71,103 @@ type Agent struct {
 	// to the curated catalog. The entry is still usable; the options are just
 	// not first-hand.
 	ProbeError *string `json:"probe_error"`
-	// Quota is the adapter's usage window as the daemon last observed it
-	// (task 026), or nil when nothing has ever been observed for it — which
-	// is the normal state and must render as "unknown", never as "empty".
+	// Quota is the adapter's usage window: a reading a source reported, or
+	// failing that one the daemon observed (task 026, task 082). nil when
+	// neither exists — the normal state, which must render as "unknown",
+	// never as "empty".
 	Quota *AgentQuota `json:"quota"`
 }
 
 // AgentQuota is what the daemon knows about one adapter's usage window
-// (task 026, §9.6). It is an *observation*, not a measurement: no CLI vincent
-// ships can report remaining quota without a real run, so this is the durable
-// record of the `usage_limit` stops the daemon has watched happen.
+// (task 026, §9.6, task 082). It is one of two different things and Source
+// says which: an *observation* — the durable record of a `usage_limit` stop
+// the daemon watched happen — or a *reading* an adapter's own surface
+// reported, which is a measurement of a window still open.
 type AgentQuota struct {
-	// Spent is the daemon's answer as of the response: the observed window
-	// has not reset yet. False with the rest of the block populated means
-	// "this adapter last ran out at ObservedAt and has since recovered".
+	// Spent is the daemon's answer as of the response. For an observation:
+	// the window has not reset yet, and false with the rest of the block
+	// populated means "this adapter last ran out at ObservedAt and has since
+	// recovered". For a reading: UsedPercent has reached 100.
 	Spent bool `json:"spent"`
-	// UsedPercent and Window are permanently null today — nothing can fill
-	// them (§9.2, §9.3, §9.7). They are declared so a client written now
-	// against this shape keeps working the day a CLI ships a quota surface.
-	UsedPercent *float64  `json:"used_percent"`
-	Window      *string   `json:"window"`
-	ObservedAt  time.Time `json:"observed_at"`
-	ResetsAt    time.Time `json:"resets_at"`
+	// UsedPercent and Window carry the tightest window of a reported reading
+	// — the highest percentage, ties broken by the earliest reset. They are
+	// null for an observation, which measures nothing.
+	UsedPercent *float64 `json:"used_percent"`
+	Window      *string  `json:"window"`
+	// ObservedAt is when the daemon learned this: the `usage_limit` stop, or
+	// the moment of the reading.
+	ObservedAt time.Time `json:"observed_at"`
+	ResetsAt   time.Time `json:"resets_at"`
 	// ResetsAtReported separates a fact from an estimate: true when the CLI
 	// named the reset time, false when the daemon's
-	// `usage_limit_recheck_interval` supplied it. A renderer must not show a
-	// computed 15-minute guess as something the CLI stated.
+	// `usage_limit_recheck_interval` supplied it, and false with a zero
+	// ResetsAt when a reported window named none at all. A renderer must not
+	// show a computed 15-minute guess as something the CLI stated, and must
+	// not show the zero time as a time.
 	ResetsAtReported bool `json:"resets_at_reported"`
-	// Source is "observed" for everything written today.
+	// Source is "observed", or the reporting source of a reading. It is what
+	// tells a renderer which of the two blocks above it is holding — and
+	// which SpentAt derivation applies.
 	Source string `json:"source"`
+	// Windows is every window a reported reading named; empty for an
+	// observation. The daemon always sends an array, never null, so it can be
+	// ranged over without a nil check.
+	Windows []AgentQuotaWindow `json:"windows"`
 }
 
-// QuotaSourceObserved is a window the daemon watched close, as opposed to one
-// a probe reported. It is the only source anything sends today.
-const QuotaSourceObserved = "observed"
+// AgentQuotaWindow is one usage window of a reported reading (task 082).
+// Name is the source's own vocabulary — "primary"/"secondary" for codex,
+// "five_hour"/"seven_day" for claude — and is not normalized across vendors,
+// because two vendors' windows are not the same thing.
+type AgentQuotaWindow struct {
+	Name        string  `json:"name"`
+	UsedPercent float64 `json:"used_percent"`
+	// Window is the human label ("5h", "7d"), empty when the source named
+	// none.
+	Window string `json:"window"`
+	// ResetsAt is the zero time when the source named no reset, which
+	// ResetsAtReported reports as false.
+	ResetsAt         time.Time `json:"resets_at"`
+	ResetsAtReported bool      `json:"resets_at_reported"`
+}
 
-// SpentAt reports whether the observed window is still shut as of now.
+// Quota sources as GET /v1/agents reports them (§9.6, task 026, task 082).
+const (
+	// QuotaSourceObserved is a window the daemon watched close: an agent step
+	// its CLI stopped with `usage_limit`.
+	QuotaSourceObserved = "observed"
+	// QuotaSourceCodexAppServer is a reading codex's app-server answered.
+	QuotaSourceCodexAppServer = "codex_app_server"
+	// QuotaSourceClaudeStatusLine is a reading claude's status line pushed.
+	QuotaSourceClaudeStatusLine = "claude_status_line"
+)
+
+// SpentAt reports whether the window is shut as of now.
 //
-// It re-derives the answer from ResetsAt rather than trusting the wire's
-// Spent, which is the daemon's answer *at fetch time*. Nothing is emitted when
-// a window merely lapses — there is no sweeper and no timer on the daemon side
-// (task 026) — so a client that trusted Spent would keep a badge on screen
-// long after the window reopened. Spent stays on the wire because a
-// non-subscribing client (curl, a script) wants the daemon's reading, not a
-// clock comparison it has to write itself.
+// It re-derives the answer rather than trusting the wire's Spent, which is the
+// daemon's answer *at fetch time*. Nothing is emitted when a window merely
+// lapses — there is no sweeper and no timer on the daemon side (task 026) — so
+// a client that trusted Spent would keep a badge on screen long after the
+// window reopened. Spent stays on the wire because a non-subscribing client
+// (curl, a script) wants the daemon's reading, not a clock comparison it has
+// to write itself.
+//
+// The derivation splits on Source, and getting that wrong is the one way this
+// feature breaks the board (task 082). An observation is spent while its reset
+// is in the future. A *reading* is spent at 100%, and its reset is always in
+// the future — that is what a window still open means — so applying the
+// observation's clock comparison to one would light the badge permanently for
+// every user whose adapter reports. A reading with no percentage at all is not
+// spent: absent evidence is not a wall.
 func (q *AgentQuota) SpentAt(now time.Time) bool {
-	return q != nil && now.Before(q.ResetsAt)
+	switch {
+	case q == nil:
+		return false
+	case q.Source != "" && q.Source != QuotaSourceObserved:
+		return q.UsedPercent != nil && *q.UsedPercent >= 100
+	default:
+		return now.Before(q.ResetsAt)
+	}
 }
 
 // QuotaSpent reports an adapter whose usage window is still shut as of now. An
@@ -221,4 +273,39 @@ func (c *Client) ListAgents(ctx context.Context, refresh bool) (Agents, error) {
 		return nil, err
 	}
 	return body.Agents, nil
+}
+
+// AgentQuotaReport is the body of `POST /v1/agents/{name}/quota` (§9.6,
+// task 082): a usage reading a source pushes, because the daemon has no way to
+// go and fetch it.
+//
+// claude is why it exists. Its usage windows arrive through the status line —
+// the CLI runs `vincent statusline` to draw itself and hands that process the
+// numbers — so the reading turns up at a moment the daemon did not choose.
+type AgentQuotaReport struct {
+	Source  string                   `json:"source"`
+	Windows []AgentQuotaReportWindow `json:"windows"`
+}
+
+// AgentQuotaReportWindow is one window of a pushed reading.
+type AgentQuotaReportWindow struct {
+	Name        string  `json:"name"`
+	UsedPercent float64 `json:"used_percent"`
+	Window      string  `json:"window"`
+	// ResetsAt is omitted when the source did not name a reset. It is a
+	// pointer rather than a bare time.Time because "no reset was named" and
+	// "the reset is the zero time" are different statements, and only the
+	// first is ever true.
+	ResetsAt *time.Time `json:"resets_at,omitempty"`
+}
+
+// ReportAgentQuota pushes a usage reading for one adapter (204 No Content).
+//
+// The daemon holds it in memory only — a reading is exactly as durable as the
+// daemon (task 082 decision 4) — so a caller that renders repeatedly should
+// keep pushing rather than assume one report sticks across a restart. Nothing
+// is emitted when the reading has not changed, so pushing an identical one
+// costs a request and wakes nobody.
+func (c *Client) ReportAgentQuota(ctx context.Context, name string, r AgentQuotaReport) error {
+	return c.post(ctx, "/v1/agents/"+url.PathEscape(name)+"/quota", r, nil)
 }

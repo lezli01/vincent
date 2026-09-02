@@ -260,6 +260,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodPatch, "/v1/config", s.handleConfigPatch)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
+	rt.handle(http.MethodPost, "/v1/agents/{name}/quota", s.handleAgentQuotaReport)
 	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
 	rt.handle(http.MethodGet, "/v1/update", s.handleUpdate)
 	rt.handle(http.MethodPost, "/v1/doctor/fix", s.handleDoctorFix)
@@ -436,27 +437,23 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	// (T2.11): a CLI installed or upgraded after daemon start is visible on
 	// the next request, and the two endpoints can never disagree.
 	agents := []AgentStatus{}
-	if s.deps.Catalog != nil {
-		quotas := s.agentQuotas(r.Context())
-		for _, name := range s.deps.Catalog.Names() {
-			e, ok := s.deps.Catalog.Entry(r.Context(), name, false)
-			if !ok {
-				continue
-			}
-			agents = append(agents, AgentStatus{
-				Name:              name,
-				Available:         e.Availability.Found,
-				Path:              e.Availability.Path,
-				Version:           e.Availability.Version,
-				SupportsInput:     e.Availability.SupportsInput,
-				VersionVerdict:    string(e.Availability.VersionVerdict),
-				TestedVersions:    e.Availability.TestedVersions,
-				RestrictedVerdict: string(e.RestrictedVerdict()),
-				LoggedIn:          e.Availability.LoggedIn,
-				Error:             e.Availability.Error,
-				Quota:             quotas[name],
-			})
-		}
+	entries := s.catalogEntries(r.Context(), false)
+	quotas := s.agentQuotas(r.Context(), entries)
+	for _, ce := range entries {
+		e := ce.entry
+		agents = append(agents, AgentStatus{
+			Name:              ce.name,
+			Available:         e.Availability.Found,
+			Path:              e.Availability.Path,
+			Version:           e.Availability.Version,
+			SupportsInput:     e.Availability.SupportsInput,
+			VersionVerdict:    string(e.Availability.VersionVerdict),
+			TestedVersions:    e.Availability.TestedVersions,
+			RestrictedVerdict: string(e.RestrictedVerdict()),
+			LoggedIn:          e.Availability.LoggedIn,
+			Error:             e.Availability.Error,
+			Quota:             quotas[ce.name],
+		})
 	}
 	// A failed count degrades to zero with a log line: /v1/info is what every
 	// client polls for daemon identity, and a readdir problem must not take

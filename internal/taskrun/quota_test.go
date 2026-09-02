@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -172,5 +173,43 @@ func TestSuccessOnAnotherAdapterKeepsTheWindow(t *testing.T) {
 	}
 	if _, err := h.store.GetAgentQuota(t.Context(), "codex"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("GetAgentQuota(codex) = %v, want ErrNotFound — it never ran out", err)
+	}
+}
+
+// TestSuccessfulAgentStepKeepsAReportedReading is the narrow half of the same
+// rule (task 082 decision 5). §14 retires an observation by evidence — the
+// next successful step on that adapter — and that argument is about
+// observations alone. A step completing proves the wall vincent watched has
+// come down; it proves nothing whatever about a percentage a vendor reported,
+// which is a measurement of a window still open.
+//
+// The row seeded here stands in for a reading with a non-observed source. A
+// real one never reaches SQLite at all (decision 4) — it lives in the catalog
+// cache — but what is asserted is the DELETE's predicate, and the only way to
+// assert a predicate is to give it a row it must not match.
+func TestSuccessfulAgentStepKeepsAReportedReading(t *testing.T) {
+	h := newEngineHarnessWith(t, func(c *config.Config) {
+		c.UsageLimitRecheckInterval = config.Duration(time.Millisecond)
+	})
+	reported := &store.AgentQuota{
+		Agent:      "claude",
+		ObservedAt: time.Now().Add(-time.Hour).UTC(),
+		ResetsAt:   time.Now().Add(time.Hour).UTC(),
+		Source:     agent.QuotaSourceClaudeStatusLine,
+	}
+	if _, err := h.store.UpsertAgentQuota(t.Context(), reported); err != nil {
+		t.Fatalf("seed reported reading: %v", err)
+	}
+
+	task := h.createTask(t, claudeStepSnapshot)
+	h.start(t)
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
+	}
+
+	after := claudeQuota(t, h)
+	if after.Source != agent.QuotaSourceClaudeStatusLine || !after.ResetsAt.Equal(reported.ResetsAt) {
+		t.Errorf("reading after a successful run = %+v, want it untouched", after)
 	}
 }

@@ -12,10 +12,10 @@ import (
 // Quota sources as `GET /v1/agents` reports them (spec §9.6, task 026).
 const (
 	// QuotaSourceObserved is a window vincent watched close: an agent step
-	// the CLI stopped with `usage_limit`. It is the only source anything
-	// writes today. The field exists so a probe-sourced value can join later
-	// without a second shape — no CLI vincent ships has a non-interactive
-	// quota surface (§9.2, §9.3, §9.7).
+	// the CLI stopped with `usage_limit`. It is the only source this table
+	// stores — a *reported* reading lives in the catalog cache and never
+	// reaches SQLite (task 082 decision 4), so the column's job is to mark
+	// which rows the §14 retirement rule applies to, and it applies to these.
 	QuotaSourceObserved = "observed"
 )
 
@@ -105,9 +105,17 @@ func (s *Store) UpsertAgentQuota(ctx context.Context, q *AgentQuota) (bool, erro
 	return changed, nil
 }
 
-// ClearAgentQuota deletes the adapter's observation when it predates before,
+// ClearAgentQuota deletes the adapter's *observation* when it predates before,
 // writing `agent.quota_changed` in the same transaction. The bool reports
 // whether a row went away.
+//
+// Only `source = observed` rows are touched (task 082 decision 5). §14's rule
+// is that an observation is retired by evidence — the next successful agent
+// step on that adapter deletes it — and that argument is about observations
+// alone: a step completing proves the wall vincent watched has come down, and
+// proves nothing whatever about a percentage a vendor reported. A reported
+// reading is retired by a fresher reading or by its own reset, never by work
+// succeeding.
 //
 // before is the moment a run on that adapter *succeeded*. A hold with no
 // CLI-reported reset is an estimate — `now + usage_limit_recheck_interval` —
@@ -122,8 +130,8 @@ func (s *Store) ClearAgentQuota(ctx context.Context, agent string, before time.T
 	cleared := false
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx,
-			`DELETE FROM agent_quota WHERE agent = ? AND observed_at < ?`,
-			agent, formatTime(before))
+			`DELETE FROM agent_quota WHERE agent = ? AND observed_at < ? AND source = ?`,
+			agent, formatTime(before), QuotaSourceObserved)
 		if err != nil {
 			return fmt.Errorf("clear agent quota: %w", err)
 		}

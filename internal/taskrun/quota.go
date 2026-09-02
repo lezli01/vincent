@@ -10,11 +10,15 @@ import (
 // This file is the engine's half of task 026: making the quota stop it already
 // recognizes (task 003) outlive the hold it causes.
 //
-// It writes nothing the engine did not already learn first-hand — there is no
-// probe, and `agent.Adapter` gains no method, because no CLI vincent ships has
-// a non-interactive quota surface (§9.2, §9.3, §9.7). Nothing here touches
-// admission: `internal/scheduler` keeps both caps and its walk unchanged, and
-// a near-spent agent is displayed, never withheld.
+// It writes nothing the engine did not already learn first-hand: everything
+// here is an *observation*, a window this daemon watched close. Reported
+// readings — the ones an adapter's own surface can now answer with (§9.6,
+// task 082) — do not pass through the engine at all; they live in the catalog
+// cache, and `agent.Adapter` still gains no method for them, because an
+// adapter that has no quota surface must not grow a stub saying so.
+//
+// Nothing here touches admission: `internal/scheduler` keeps both caps and its
+// walk unchanged, and a near-spent agent is displayed, never withheld.
 
 // recordUsageLimit stores the reset a quota stop just taught us, so the fact
 // outlives the hold it causes. Before task 026 the reset lived only in the
@@ -57,6 +61,10 @@ func (r *Runner) recordUsageLimit(agentName string, resetsAt time.Time, reported
 // completes five minutes in is first-hand evidence the window reopened. The
 // store only deletes an observation *older* than ranAt, so a run that started
 // before a fresh wall cannot erase the wall it never saw.
+//
+// The evidence is narrow and so is the retirement (task 082 decision 5): a
+// completed step disproves a wall vincent watched, and says nothing about a
+// percentage a vendor reported. The store deletes `observed` rows only.
 func (r *Runner) clearUsageLimit(agentName string, ranAt time.Time, log *slog.Logger) {
 	if agentName == "" {
 		return
