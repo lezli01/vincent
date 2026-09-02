@@ -716,6 +716,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A `for_each:` list longer than 4 KiB was cut mid-item.** `.Steps.<id>.Result`
+  for a command step is documented as the last 200 lines of its stdout, and the
+  capture already bounds that at 200 lines or 256 KiB — but the engine then
+  stored the value at the 4096-byte cap meant for the summary a *human* reads,
+  as a raw byte slice off the head. A `fan_out`'s derived lane list or a
+  `loop`'s item list longer than that lost its last items and kept a half-written
+  one, blocking the task with `fan_out_invalid` on an object the producer had
+  printed whole — and when a single item was itself over 4 KiB, the cut never
+  reached a newline and *every* item was lost. The tail is now stored at the
+  bound it arrives with, which drops whole leading lines, so an over-long list
+  arrives shorter rather than broken. `result_summary` keeps its own cap; it is
+  a row a person reads, and nothing on the board, in the detail view or in a
+  repair prompt changes.
+
+  The byte half of the bound had never been written down: `.Steps` in the spec,
+  the [workflow schema reference](docs/reference/workflow-schema.md) and the
+  authoring skill now all state 200 lines **or** 256 KiB, whichever binds first,
+  so an author can size a list against it.
+
 - **A command step's `.Result` carried its stderr as well as its stdout.** The
   documented contract has always been that `.Steps.<id>.Result` for a command
   step is the last 200 lines of its **stdout**, but the engine captured both

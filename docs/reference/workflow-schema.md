@@ -1110,6 +1110,13 @@ rather than lean on that tail:
       Fix exactly those items.
 ```
 
+That tail is bounded by **200 lines or 256 KiB**, whichever binds first, and it
+cuts by dropping whole **leading** lines: a list over either bound arrives
+shorter, never with a half-written item at its edge. Only a single line longer
+than 256 KiB on its own is cut mid-line. A `for_each:` list has to fit both
+bounds — a hundred JSON objects of 3 KiB each is 300 KiB, under the line count
+and over the byte one, and the earliest of them are what goes.
+
 `.Task.Fields` remains an open string map per task. A declared **optional**
 field, or an undeclared field that may be absent, must be read defensively or
 rendering fails:
