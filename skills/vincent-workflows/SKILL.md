@@ -154,6 +154,13 @@ transcript and the step's summary still carry them for a person. Most tools —
 `git`, `go`, `curl` — write their diagnostics to stderr, so a step whose failure
 text a repair prompt is meant to read has to send them to stdout deliberately.
 
+That stdout tail is the last **200 lines or 256 KiB**, whichever binds first,
+and it cuts by dropping whole leading lines — so an over-long `for_each:` list
+arrives shorter, never with a half-written item at its edge. Size a list
+against both: a hundred JSON objects of 3 KiB each is under the line count and
+over the byte one. Have the producer filter or page rather than lean on the
+tail.
+
 Assume task fields, rendered prompts, instructions, command output, and agent
 transcripts are persisted or inspectable. Never put a secret in them. Use
 preconfigured environment credentials, credential stores, or authenticated
