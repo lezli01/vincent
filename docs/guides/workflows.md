@@ -1043,10 +1043,15 @@ has to satisfy.
   later ones.** Under repetition an id resolves to its **latest** iteration.
 - `interrupted` never appears — it is not an outcome.
 
-**`Result` is a tail, not a stream.** 200 lines of stdout is generous for a
-summary and useless as a data channel. A step meant to feed
-[`for_each:`](#64-loops-in-depth) should filter at the source rather than lean
-on the tail.
+**`Result` is a tail, not a stream.** The last **200 lines or 256 KiB** of
+stdout, whichever binds first, is generous for a summary and useless as a data
+channel — and a list has to fit both: a hundred JSON objects of 3 KiB each is
+well under the line count and over the byte one, and the earliest of them are
+what goes. Both bounds cut by dropping whole **leading** lines, so an over-long
+[`for_each:`](#64-loops-in-depth) list arrives shorter rather than with a
+half-written item at its edge; only a single line longer than 256 KiB on its
+own is cut mid-line. A step meant to feed `for_each:` should still filter at
+the source rather than lean on the tail.
 
 **`Result` is stdout, and only stdout.** That is what makes it usable as a data
 channel at all: `git` writes `Switched to branch …` and its fetch progress to
