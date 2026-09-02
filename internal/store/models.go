@@ -299,6 +299,19 @@ type StepRun struct {
 	// for a false guard, empty for the human `skip` action (§6, §7.7).
 	SkipReason    string
 	ResultSummary string
+	// StdoutTail is the stdout-only tail of a command step's attempt, and is
+	// what §8.4 means by `.Steps.<id>.Result` for a command step (issue #311,
+	// migration 0025). ResultSummary keeps *both* streams and stays the
+	// human-facing summary; this is the machine-facing one, so a `for_each:`
+	// (§7.6, §7.8) splitting `.Result` into items cannot pick up a progress
+	// meter or a `Switched to branch …` as an item.
+	//
+	// nil means none was recorded — a pre-0025 row, and every step type that
+	// runs no command — and readers fall back to ResultSummary, so a task
+	// already in flight over an upgrade renders as it did. A non-nil empty
+	// string is a command that wrote nothing to stdout, which is a different
+	// fact and reads as an empty `.Result`.
+	StdoutTail *string
 	// StatusMessage is what the step said about *itself* (§5.4, task 036):
 	// short free text its own process wrote through
 	// `POST /v1/tasks/{id}/steps/{step_id}/status`. Empty is the ordinary

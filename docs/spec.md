@@ -431,7 +431,16 @@ row shadows it.
 first, **`result_summary`**, is not new — it has been recorded, served on the
 §13.2 DTO and read by `.Steps.<id>.Result` and the repair prompt since the first
 release — and was simply never listed here. It holds the agent's final result
-text, or the last 200 lines of a command step's stdout.
+text, or the last 200 lines of a command step's stdout. *Corrected 2026-09-02
+(issue #311): the second half of that sentence was never true of the column —
+it holds the last 200 lines of a command step's stdout **and stderr**, which is
+what a human reading a failed step wants and what the repair prompt appends.
+The stdout-only value that sentence promised is a separate column,
+`stdout_tail` (§14, migration 0025), added because `.Steps.<id>.Result` is a
+value a template consumes rather than prose a person reads. A command step's
+`.Result` reads that column, and falls back to `result_summary` only for a row
+that recorded none — every row written before 0025, and every step type that
+runs no command.*
 
 The second is new: the **status message**, a short piece of free text a
 *running* step writes about itself through
@@ -2075,7 +2084,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Project` | `Name`, `Path` (original repo root), `DefaultBranch` |
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
-| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration |
+| `.Steps` | map of *completed* step id → `{Status, Result, ExitCode}`; `Result` is the agent's final result text (agent steps) or the last **200** lines of stdout (command steps). *Corrected 2026-08-18 (task 016): this said 100; the daemon has always used 200, and a `for_each:` reading `.Steps[…].Result` (§7.8) makes the exact bound load-bearing rather than incidental.* *Amended 2026-08-18 (task 015):* a step skipped by its guard appears with `Status: "skipped"`, and a **failed** step appears once the engine has advanced past it — which happens only under `allow_failure` (§7.2), and is what a downstream guard reads. A step's own failed attempt stays out of `.Steps` mid-retry, because `.LastFailure` is already that channel; `interrupted` never appears, since §7.2 says it is not an outcome. *Amended 2026-08-18 (task 016):* "advanced past it" is compared on `(step_index, iteration, body position)`, which is what lets a loop body's later steps read its earlier ones while a `parallel` group's members stay blind to each other (§7.8). Under repetition a step id resolves to its **latest** iteration. *Amended 2026-09-02 (issue #311):* "stdout" was always the statement here, and until now the engine put a command's **stdout and stderr** into `Result`, interleaved in whichever order the two reader goroutines observed them. It now captures stdout separately (`step_runs.stdout_tail`, migration 0025), so a `for_each:` (§7.6, §7.8) cannot pick up a progress meter, a `Switched to branch …` or a deprecation notice as an item. `result_summary` still carries both streams and is unchanged: it is what a human reads on the board, in the detail view and in the repair prompt, where a step that failed with a stderr-only diagnostic must not summarize as blank. A row written before the migration records no stdout tail and renders `Result` from `result_summary` as it did, so a task in flight over an upgrade is unaffected. `.LastFailure` and the `<previous-attempt-failure>` block below are **both** streams, deliberately: what a human reads on a failure is not the value a template consumes |
 | `.Loop` | *Added 2026-08-18 (task 016).* `Index` (1-based iteration, and **0** outside any loop, so a shared template can tell), `Item` (the `for_each` item this iteration runs on — a string; empty for a `count:` loop), `IsFirst`, `IsLast`. See §7.8 |
 | `.Item` | *Added 2026-09-01 (task 080).* The item a **derived `fan_out`'s** `lane:` template is being rendered for (§7.6), and present in that template only. It is a **parsed JSON object**, not a string: this is the one deliberate widening of the rule that every value here is plain text, made because a DAG node carries both an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and one string cannot say both. `.Issue.Labels` is the precedent for structure in this context. `.Loop.Item` is **unchanged** and still a string; the widening does not reach it |
 | `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders |
@@ -5951,7 +5960,22 @@ CREATE TABLE step_runs (
   check_exit_code     INTEGER,
   failure_reason      TEXT,
   skip_reason         TEXT,                   -- 'condition' for a false `if:` (§7.7); NULL for the human skip (§6)
-  result_summary      TEXT,                   -- agent result text / command stdout tail
+  result_summary      TEXT,                   -- agent result text / tail of a command's stdout *and* stderr
+  -- The stdout-only tail of a command attempt (§8.4, issue #311, migration
+  -- 0025). `result_summary` above carries both streams and is what a human
+  -- reads on the board, in the detail view and in the repair prompt, where a
+  -- step that failed with a stderr-only diagnostic must not summarize as
+  -- blank; this is what `.Steps.<id>.Result` renders from, because a
+  -- `for_each:` (§7.6, §7.8) splitting that into items turns one incidental
+  -- `Switched to branch …` into an item that is not an item.
+  --
+  -- NULL means none was recorded: every row written before migration 0025, and
+  -- every step type that runs no command — an agent step's `.Result` is its
+  -- final result text, not its output. Readers fall back to `result_summary`
+  -- there, so a task already in flight over an upgrade renders as it did.
+  -- Empty string is a distinct fact: a command that printed nothing on stdout
+  -- has an empty `.Result`.
+  stdout_tail         TEXT,                   -- NULL = none recorded; falls back to result_summary
   -- What the step said about *itself* (§5.4, task 036, migration 0015): short
   -- free text its own process set through
   -- POST /v1/tasks/{id}/steps/{step_id}/status while it was running. NULL is

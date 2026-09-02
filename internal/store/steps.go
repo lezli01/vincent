@@ -13,6 +13,7 @@ const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, it
 	state, agent, model, effort, pid,
 	proc_started_at, proc_identity, container_id, exit_code, check_exit_code, failure_reason, skip_reason,
 	result_summary,
+	stdout_tail,
 	status_message,
 	prompt_override, run_override, transcript_path,
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
@@ -99,14 +100,15 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 			state, agent, model, effort, pid,
 			proc_started_at, proc_identity, container_id, exit_code, check_exit_code, failure_reason,
 			skip_reason,
-			result_summary, status_message, prompt_override, run_override, transcript_path,
+			result_summary, stdout_tail, status_message, prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
 		string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ContainerID, r.ExitCode, r.CheckExitCode,
 		nullString(r.FailureReason), nullString(r.SkipReason), nullString(r.ResultSummary),
+		r.StdoutTail,
 		nullString(r.StatusMessage),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
@@ -136,13 +138,14 @@ func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
 			proc_identity = ?, container_id = ?,
 			exit_code = ?, check_exit_code = ?, failure_reason = ?, skip_reason = ?, result_summary = ?,
+			stdout_tail = ?,
 			prompt_override = ?, run_override = ?, transcript_path = ?,
 			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?
 		WHERE id = ?`,
 		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ContainerID,
 		r.ExitCode, r.CheckExitCode, nullString(r.FailureReason), nullString(r.SkipReason),
-		nullString(r.ResultSummary),
+		nullString(r.ResultSummary), r.StdoutTail,
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS, formatTimePtr(r.FinishedAt),
 		r.ID)
@@ -364,6 +367,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		r                                       StepRun
 		agent, model, effort                    sql.NullString
 		failure, skip, summary, transcript      sql.NullString
+		stdoutTail                              sql.NullString
 		status                                  sql.NullString
 		loopItem                                sql.NullString
 		promptOv, runOv                         sql.NullString
@@ -377,7 +381,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		&r.Iteration, &loopItem,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &procIdentity, &containerID,
 		&exitCode, &checkExit,
-		&failure, &skip, &summary, &status, &promptOv, &runOv, &transcript,
+		&failure, &skip, &summary, &stdoutTail, &status, &promptOv, &runOv, &transcript,
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
 		return nil, err
 	}
@@ -388,6 +392,10 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	r.FailureReason = failure.String
 	r.SkipReason = skip.String
 	r.ResultSummary = summary.String
+	if stdoutTail.Valid {
+		v := stdoutTail.String
+		r.StdoutTail = &v
+	}
 	r.StatusMessage = status.String
 	r.PromptOverride = promptOv.String
 	r.RunOverride = runOv.String

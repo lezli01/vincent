@@ -1,0 +1,21 @@
+-- 0025_stdout_tail: the stdout-only tail of a command step's attempt, which is
+-- what §8.4 says `.Steps.<id>.Result` is for a command step (issue #311).
+--
+-- `result_summary` keeps both streams and is unchanged. The two are not the
+-- same value and never were: `result_summary` is what a human reads on the
+-- board, in the detail view and in the repair prompt, where a step that failed
+-- with a stderr-only diagnostic must not summarize as blank; `.Steps[…].Result`
+-- is a value a template *consumes*, and a `for_each:` (§7.6, §7.8) splitting it
+-- into items turns one incidental `Switched to branch …` into an item that is
+-- not an item. The engine had one capture serving both, so stderr leaked into
+-- the lane list.
+--
+-- NULL means "no stdout tail was recorded", which is every row written before
+-- this migration and every row of a step type that runs no command — an agent
+-- step's `.Result` is its final result text, not output. Readers fall back to
+-- `result_summary` on NULL, so a task already in flight renders exactly as it
+-- did before the upgrade. Empty string is distinct and meaningful: a command
+-- that wrote nothing to stdout has an empty `.Result`.
+--
+-- No index: it is read only through the row the engine already has by id.
+ALTER TABLE step_runs ADD COLUMN stdout_tail TEXT; -- NULL = none recorded; falls back to result_summary

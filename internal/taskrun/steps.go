@@ -596,7 +596,16 @@ func (r *Runner) runShellCommand(
 	}()
 	defer close(killed)
 
+	// Two tails, because §8.4 asks two different questions of one process.
+	// `tail` is both streams: the transcript's excerpt, the retry failure
+	// block and `.LastFailure` all want everything the command said. `outTail`
+	// is stdout alone, and is what `.Steps.<id>.Result` renders from — a
+	// `for_each:` (§7.6, §7.8) splits that into items, so a progress meter, a
+	// `Switched to branch …` or a deprecation notice must not reach it
+	// (issue #311). Filtering afterwards is not open to us: by then no line
+	// carries which pipe it came from, so the split has to happen here.
 	tail := newOutputTail(outputTailLines)
+	outTail := newOutputTail(outputTailLines)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	// limitOnce keeps the cap's annotation and kill to one, though both
@@ -620,6 +629,9 @@ func (r *Runner) runShellCommand(
 			r.publishOutput(env.task.ID, run.ID, offset, "command.output", fields)
 			mu.Lock()
 			tail.add(text)
+			if name == "stdout" {
+				outTail.add(text)
+			}
 			mu.Unlock()
 			// A command that floods stdout is capped like a runaway agent
 			// (§12.3, §18). Cancelling here rather than after the reader
@@ -670,7 +682,15 @@ func (r *Runner) runShellCommand(
 	waitErr := cmd.Wait()
 
 	exitCode := exitCodeOf(waitErr)
-	outcome := stepOutcome{exitCode: &exitCode, output: tail.String(), result: tail.String()}
+	stdoutOnly := outTail.String()
+	outcome := stepOutcome{
+		exitCode: &exitCode,
+		output:   tail.String(),
+		result:   tail.String(),
+		// Non-nil even when empty: a command that wrote nothing to stdout has
+		// an empty `.Result`, which is a fact, not a missing tail.
+		stdoutTail: &stdoutOnly,
+	}
 	switch {
 	case ctx.Err() != nil:
 		outcome.state, outcome.reason = store.StepInterrupted, ReasonInterrupted

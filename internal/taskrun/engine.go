@@ -378,10 +378,15 @@ func (e *stepEnv) blindTo(run *store.StepRun) bool {
 
 // stepOutcome is the result of one attempt.
 type stepOutcome struct {
-	state         store.StepRunState
-	reason        string
-	result        string
-	output        string // tail of the attempt's output, for the retry block
+	state  store.StepRunState
+	reason string
+	result string
+	output string // tail of the attempt's output, for the retry block
+	// stdoutTail is the stdout-only tail of a command attempt (§8.4, issue
+	// #311) — what `.Steps.<id>.Result` renders from, as against `result`,
+	// which stays both streams and is what a human reads. nil for every
+	// outcome that ran no command, and those fall back to `result`.
+	stdoutTail    *string
 	exitCode      *int
 	checkExitCode *int
 	// retryAfter carries a reason=usage_limit outcome's reset time, when the
@@ -1121,7 +1126,18 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		default:
 			continue
 		}
-		res := workflow.StepResult{Status: string(run.State), Result: run.ResultSummary}
+		// A command step's `.Result` is its **stdout** tail (§8.4, issue #311):
+		// result_summary carries stderr too, and a `for_each:` reading
+		// `.Result` (§7.6, §7.8) would split an incidental stderr line into an
+		// item that is not an item. nil is every row that recorded no stdout
+		// tail — an agent step, whose `.Result` is its final result text, and
+		// any row written before migration 0025 — and falls back, so a task in
+		// flight over an upgrade renders exactly as it did.
+		result := run.ResultSummary
+		if run.StdoutTail != nil {
+			result = *run.StdoutTail
+		}
+		res := workflow.StepResult{Status: string(run.State), Result: result}
 		if run.ExitCode != nil {
 			res.ExitCode = *run.ExitCode
 		}
@@ -1316,6 +1332,13 @@ func (r *Runner) finishStepRun(run *store.StepRun, outcome stepOutcome, log *slo
 	run.State = outcome.state
 	run.FailureReason = outcome.reason
 	run.ResultSummary = truncate(outcome.result, resultSummaryLimit)
+	if outcome.stdoutTail != nil {
+		// Bounded like result_summary, and separately: the two carry different
+		// text, so one cap cannot serve both. Left nil otherwise, which is the
+		// signal to render `.Result` from result_summary (§8.4).
+		tail := truncate(*outcome.stdoutTail, resultSummaryLimit)
+		run.StdoutTail = &tail
+	}
 	run.ExitCode = outcome.exitCode
 	run.CheckExitCode = outcome.checkExitCode
 	run.PID = nil

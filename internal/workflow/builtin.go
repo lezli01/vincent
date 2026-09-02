@@ -416,6 +416,18 @@ steps:
           and never bare. A required field may be read directly.
       11. Secrets. Nothing in a prompt, a field, an instruction or a run: body
           that you would not want sitting in a transcript.
+      12. Streams, in a command step whose output something reads. A command
+          step's .Steps.<id>.Result is its stdout alone, never its stderr. Two
+          things follow, and both need checking rather than assuming. A
+          producer feeding a for_each: needs no workaround for a header or a
+          count — those belong on stderr, which the transcript and the step's
+          summary still carry — so delete any that survives from before. And a
+          step whose .Result a later prompt quotes must print what that prompt
+          needs on stdout: git, go and most tools write their diagnostics to
+          stderr, so a repair prompt reading a failed probe's output is one
+          that renders empty unless the body sends them to stdout, which
+          "exec 2>&1" on its first line does for a body that is all
+          diagnostics.
 
       ## What you may not change
 

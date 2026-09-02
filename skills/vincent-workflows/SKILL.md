@@ -146,6 +146,14 @@ not to every step. The message is flattened to one line and truncated to 256
 bytes, two messages within a second coalesce, and it is never a failure reason
 and never readable by an `if:` guard or `.Steps` — it is for humans watching.
 
+A `command` step's **stdout** is the half of it later steps read:
+`.Steps.<id>.Result` is that step's stdout alone, never its stderr. Print on
+stdout whatever a `for_each:` must split into items or a later prompt must
+quote, and leave headers, counts and progress notes on stderr, where the
+transcript and the step's summary still carry them for a person. Most tools —
+`git`, `go`, `curl` — write their diagnostics to stderr, so a step whose failure
+text a repair prompt is meant to read has to send them to stdout deliberately.
+
 Assume task fields, rendered prompts, instructions, command output, and agent
 transcripts are persisted or inspectable. Never put a secret in them. Use
 preconfigured environment credentials, credential stores, or authenticated
