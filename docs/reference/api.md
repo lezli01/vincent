@@ -844,14 +844,21 @@ GET /v1/workflows/definition?name=feature-pr&project_id=3
     "defaults": { "agent": "claude", "model": "sonnet" },
     "steps": [
       { "id": "plan", "type": "agent", "prompt": "…", "check": "go build ./..." },
-      { "id": "spread", "type": "fan_out",
+      { "id": "spread", "type": "fan_out", "schedule": "eager",
         "lanes": [ { "id": "api", "steps": [ … ] },
-                   { "id": "web", "workflow": "web-feature", "if": "…" } ],
+                   { "id": "web", "workflow": "web-feature", "needs": ["api"], "if": "…" } ],
         "merge": { "on_conflict": "agent", "agent": { "id": "fixup", … } } }
     ]
   }
 }
 ```
+
+`schedule` is a `fan_out` step's lane scheduling mode — `barrier` or `eager` —
+and is absent for a step that names none, which reads as `barrier`. Under
+`eager` a lane is merged and its dependents spawned as soon as its own `needs`
+are done and merged, which makes that lane's starting tree timing-dependent;
+`barrier` is the reproducible default. `GET /v1/workflows/schema` publishes the
+two values as an enum, from the same constants the parser checks against.
 
 Three things about this contract are deliberate.
 
@@ -998,7 +1005,7 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart. A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears; the two cannot be confused because a `fan_out` is not valid inside a loop body |
+| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart. A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 

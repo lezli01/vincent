@@ -165,7 +165,13 @@ human-triggered retry.
    prompt's claim of success is not verification.
 4. Make loops bounded, concurrent writes disjoint, fan-out lanes independent —
    or ordered with `needs` when one truly depends on another's merged work —
-   and platform assumptions explicit.
+   and platform assumptions explicit. A `needs` DAG runs in barrier rounds by
+   default. Add `schedule: eager` only when the lanes are genuinely independent
+   of each other's files and the wall-clock saving is worth the price: under
+   `eager` a lane starts when its own dependencies merge, so what else happened
+   to be on the branch by then is a stopwatch question and a re-run can produce
+   a different result. `barrier` is the reproducible default; a flat lane list
+   is a barrier either way.
 5. Run `vincent version`, then `vincent workflow validate <file>`, then
    `vincent workflow render <file>`. Use `--json` when structured output helps.
    Resolve warnings as design findings, not just syntax noise.

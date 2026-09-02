@@ -1,0 +1,28 @@
+-- 0024_eager_fanout: the wake position of a parent parked under a fan_out
+-- step running `schedule: eager` (task 081, spec §7.6/§11).
+--
+-- A barrier parent is re-queued when `ChildrenRollup.Done()` — every
+-- descendant settled. An eager one must wake earlier than that, whenever a
+-- lane it can act on has settled, and the scheduler answers a pure SQL
+-- question: it has no business parsing the parent's lane graph.
+--
+-- The bridge is a watermark. The parent records, as it parks, how many of its
+-- **direct** children had settled when that admission started; the scheduler
+-- re-queues it once the live count exceeds that number. The predicate is
+-- self-clearing, so a parent that parks having found nothing to do is not
+-- immediately re-queued by its own park (task 081 decision 1) — the spin the
+-- naive "a child has settled" predicate produces, because that one stays true.
+--
+-- NULL means barrier, and is every parent that has ever parked before this
+-- migration: the column is a wake *position*, not a second copy of the lane
+-- graph, and it is recomputed from the rows at every park, so `retry` and
+-- `edit + retry` rewriting the task's snapshot cannot stale it.
+--
+-- Cleared by TransitionTask on any transition out of `awaiting_children`, by
+-- the same construction `admit_not_before` and `pending_input_json` use: the
+-- watermark describes *this* parked period, so no caller has to remember to
+-- drop it and a barrier step can never inherit an earlier eager step's.
+--
+-- No index: it is read by id, one parked parent at a time, from a list the
+-- scheduler already filtered by state.
+ALTER TABLE tasks ADD COLUMN settled_children_watermark INTEGER; -- NULL = barrier

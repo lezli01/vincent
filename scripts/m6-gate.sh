@@ -15,6 +15,7 @@
 #   7. a depth-2 tree runs to completion
 #   8. a cancelled lane blocks the join with `lane_failed`, merging nothing
 #   9. both creation-time 400s: a workflow cycle and fan_out.max_tasks
+#  10. `schedule: eager` starts a lane while an unrelated sibling still runs
 #
 # Every scenario uses command steps only, so no agent CLI is involved at all
 # and the gate is as fast on CI as it is locally.
@@ -546,6 +547,70 @@ YAML
   grep -q max_tasks <<<"$BODY" || fail "the 400 does not name the bound: $BODY"
   daemon_down
   echo "=== scenario 9 PASS"
+fi
+
+# --------------------------------------------------------------------------
+# Scenario 10: `schedule: eager` spawns a dependent lane before an unrelated
+# sibling has settled (task 081). The first m6 scenario to drive `needs:` at
+# all — task 080 left the DAG scenario out.
+#
+# Asserted from the API rather than from inside a step body: the gate polls
+# the lane list until the dependent lane exists, and reads the unrelated
+# lane's state *from the same response*, so "it spawned early" is a fact about
+# one snapshot rather than a wall-clock comparison. Under a barrier the
+# dependent lane cannot appear until `slow` has settled, so this fails
+# deterministically rather than flakily.
+# --------------------------------------------------------------------------
+if run_scenario 10; then
+  echo "=== scenario 10: eager scheduling starts a lane before its siblings settle"
+  scenario_dirs s10
+  REPO="$TMP/s10/repo"; make_repo "$REPO"
+  write_workflow fan-eager "$(cat <<'YAML'
+name: fan-eager
+steps:
+  - id: build
+    type: fan_out
+    schedule: eager
+    lanes:
+      - id: quick
+        steps:
+          - {id: w, type: command, max_retries: 0, run: 'git config -f quick.txt gate.lane quick && git add -A && git commit -qm quick'}
+      - id: slow
+        steps:
+          - {id: w, type: command, max_retries: 0, run: 'sleep 25'}
+      - id: dep
+        needs: [quick]
+        steps:
+          - {id: w, type: command, max_retries: 0, run: 'git config -f dep.txt gate.lane dep && git add -A && git commit -qm dep'}
+YAML
+)"
+  daemon_up
+  PID="$(register_project "$REPO")"
+  TID="$(create_task "$PID" fan-eager "an eager DAG")"
+
+  DEP="" SLOW_STATE=""
+  for _ in $(seq 1 60); do
+    LANES="$(api GET "/tasks?parent_id=$TID")"
+    DEP="$(jq -r '.[] | select(.lane_id == "dep") | .id' <<<"$LANES" | tr -d '\r')"
+    if [[ -n "$DEP" ]]; then
+      SLOW_STATE="$(jq -r '.[] | select(.lane_id == "slow") | .state' <<<"$LANES" | tr -d '\r')"
+      break
+    fi
+    sleep 1
+  done
+  [[ -n "$DEP" ]] || fail "the dependent lane never spawned"
+  case "$SLOW_STATE" in
+    queued|running) ;;
+    *) fail "the dependent lane spawned with the unrelated lane already $SLOW_STATE; that is barrier timing" ;;
+  esac
+
+  wait_for_state "$TID" done 180
+  BRANCH="$(api GET "/tasks/$TID" | jq -r .branch_name)"
+  for f in quick.txt dep.txt; do
+    branch_has "$REPO" "$BRANCH" "$f" || fail "$f is missing from the parent's branch"
+  done
+  daemon_down
+  echo "=== scenario 10 PASS"
 fi
 
 echo "M6 GATE PASS"

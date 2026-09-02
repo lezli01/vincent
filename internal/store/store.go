@@ -175,6 +175,16 @@ func nullString(s string) any {
 	return s
 }
 
+// nullInt maps a nil *int to SQL NULL. Unlike nullString it distinguishes
+// "unset" from zero: a watermark of 0 is a real wake position — an eager
+// parent parked before any lane settled.
+func nullInt(n *int) any {
+	if n == nil {
+		return nil
+	}
+	return *n
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error

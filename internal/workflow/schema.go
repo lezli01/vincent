@@ -255,6 +255,12 @@ func SchemaDescriptor() Schema {
 					{Name: "lane", Control: ControlLane, Help: "one lane template, rendered once per for_each item"},
 					{Name: "for_each", Control: ControlList, Help: "the item list a lane: template derives lanes from"},
 					{Name: "max_lanes", Control: ControlInt, Help: "ceiling on a derived lane list"},
+					{
+						Name: "schedule", Control: ControlEnum,
+						Values: []string{ScheduleBarrier, ScheduleEager},
+						Help: "barrier (default, reproducible) or eager " +
+							"(a lane starts as soon as its own needs: merge)",
+					},
 					{Name: "merge", Control: ControlMerge},
 				},
 			},

@@ -17,7 +17,8 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	base_branch, branch_name, worktree_path, base_sha, priority, agent_override, model_override, effort_override,
 	state, current_step, block_reason, pause_requested, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
-	parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json, github_pull_json,
+	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
+	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id,
 	created_at, updated_at, started_at, finished_at, archived_at`
 
@@ -910,6 +911,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		parentID, parentStep           sql.NullInt64
 		laneID                         sql.NullString
 		laneOrder                      sql.NullInt64
+		watermark                      sql.NullInt64
 		githubIssue, githubPull        sql.NullString
 		workflowOrigin                 sql.NullString
 		createdBy                      sql.NullInt64
@@ -922,7 +924,8 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason,
 		&t.PauseRequested, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
-		&parentID, &parentStep, &laneID, &laneOrder, &githubIssue, &githubPull, &workflowOrigin,
+		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
+		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy,
 		&created, &updated, &started, &finished, &archived); err != nil {
 		return nil, err
@@ -941,6 +944,10 @@ func scanTask(r rowScanner) (*Task, error) {
 	}
 	t.LaneID = laneID.String
 	t.LaneOrder = int(laneOrder.Int64)
+	if watermark.Valid {
+		n := int(watermark.Int64)
+		t.SettledChildrenWatermark = &n
+	}
 	t.WorktreePath = worktree.String
 	t.BaseSHA = baseSHA.String
 	t.BlockReason = blockReason.String

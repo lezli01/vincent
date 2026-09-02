@@ -208,6 +208,12 @@ func validateFanOutShape(step Step, base string, add func(string, string, ...any
 	if step.MaxLanes != nil && *step.MaxLanes < 1 {
 		add(base+".max_lanes", "max_lanes must be at least 1, got %d", *step.MaxLanes)
 	}
+	switch step.Schedule {
+	case "", ScheduleBarrier, ScheduleEager:
+	default:
+		add(base+".schedule", "schedule must be %s or %s, got %q",
+			ScheduleBarrier, ScheduleEager, step.Schedule)
+	}
 	for i, item := range step.ForEach {
 		if _, err := template.New("for_each").Parse(item); err != nil {
 			add(fmt.Sprintf("%s.for_each[%d]", base, i), "template does not parse: %v", err)

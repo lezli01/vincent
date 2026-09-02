@@ -29,6 +29,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -76,6 +77,7 @@ func (r *Runner) runJoinStep(ctx context.Context, env *stepEnv, tr *transcript) 
 	}
 	tr.Note("join_started", map[string]any{
 		"lanes": len(lanes), "step_id": env.step.ID, "round": env.round,
+		"schedule": env.step.ScheduleMode(),
 	})
 	outcome := r.runJoin(ctx, env, lanes)
 	tr.Note("join_finished", map[string]any{
@@ -86,21 +88,9 @@ func (r *Runner) runJoinStep(ctx context.Context, env *stepEnv, tr *transcript) 
 
 // runJoin merges every lane of one fan_out step into the parent's branch.
 func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) stepOutcome {
-	// Every spawned lane must have *finished its work*, not merely settled: an
-	// aborted lane settled too, and merging around it would deliver a branch
-	// missing that lane with nothing saying so (decision 21). Checked over
-	// every lane spawned so far rather than this round's alone, which costs
-	// nothing — an earlier round's lanes are `done` or the step blocked then —
-	// and keeps the single-round case exactly what it was.
-	for _, lane := range lanes {
-		if lane.State != store.TaskDone {
-			env.log.Warn("lane did not finish", "lane", lane.LaneID, "child", lane.ID, "state", lane.State)
-			return stepOutcome{
-				state:  store.StepFailed,
-				reason: ReasonLaneFailed,
-				output: fmt.Sprintf("lane %q (task %d) is %s, not done", lane.LaneID, lane.ID, lane.State),
-			}
-		}
+	mergeable, outcome, ok := mergeSet(env, lanes)
+	if !ok {
+		return outcome
 	}
 
 	// Re-entry (decision 9). A merge already in progress means one of two
@@ -109,7 +99,7 @@ func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) 
 		return outcome
 	}
 
-	for _, lane := range lanes {
+	for _, lane := range mergeable {
 		result, err := r.deps.Worktrees.MergeLane(ctx, env.task.WorktreePath,
 			lane.BranchName, lane.LaneID, lane.ID)
 		if err != nil {
@@ -132,8 +122,59 @@ func (r *Runner) runJoin(ctx context.Context, env *stepEnv, lanes []store.Task) 
 	}
 	return stepOutcome{
 		state:  store.StepSucceeded,
-		result: fmt.Sprintf("merged %d lanes (round %d)", len(lanes), env.round),
+		result: fmt.Sprintf("merged %d lanes (round %d)", len(mergeable), env.round),
 	}
+}
+
+// mergeSet is the lanes this admission merges, or the outcome that stops it.
+//
+// Under a barrier every spawned lane must have *finished its work*, not merely
+// settled: an aborted lane settled too, and merging around it would deliver a
+// branch missing that lane with nothing saying so (decision 21). Checked over
+// every lane spawned so far rather than this round's alone, which costs
+// nothing — an earlier round's lanes are `done` or the step blocked then — and
+// keeps the single-round case exactly what it was.
+//
+// Under `schedule: eager` that same test would read a merely *running* lane as
+// a failure, which is every wake. So the three cases separate (task 081):
+// `done` lanes merge, unsettled ones are "not yet", and a lane that settled
+// without finishing blocks `lane_failed` **merging nothing new** in this
+// admission. Merging what is mergeable first and blocking afterwards was the
+// alternative, and it makes the branch content at block time depend on which
+// wake happened to notice the failure — a stopwatch question about delivered
+// commits, which is strictly worse than the timing dependence eager already
+// asks an author to accept (decision 3). Lanes merged by earlier admissions
+// stay merged either way (task 080 decision 2), and in-flight lanes are left
+// to finish.
+func mergeSet(env *stepEnv, lanes []store.Task) (mergeable []store.Task, outcome stepOutcome, ok bool) {
+	failed := func(lane store.Task) (stepOutcome, bool) {
+		env.log.Warn("lane did not finish", "lane", lane.LaneID, "child", lane.ID, "state", lane.State)
+		return stepOutcome{
+			state:  store.StepFailed,
+			reason: ReasonLaneFailed,
+			output: fmt.Sprintf("lane %q (task %d) is %s, not done", lane.LaneID, lane.ID, lane.State),
+		}, false
+	}
+	if !env.eager {
+		for _, lane := range lanes {
+			if lane.State != store.TaskDone {
+				outcome, ok = failed(lane)
+				return nil, outcome, ok
+			}
+		}
+		return lanes, stepOutcome{}, true
+	}
+	mergeable = make([]store.Task, 0, len(lanes))
+	for _, lane := range lanes {
+		switch {
+		case lane.State == store.TaskDone:
+			mergeable = append(mergeable, lane)
+		case taskstate.Settled(lane.State):
+			outcome, ok = failed(lane)
+			return nil, outcome, ok
+		}
+	}
+	return mergeable, stepOutcome{}, true
 }
 
 // resumeMerge handles a join re-entered with a merge already in progress. It

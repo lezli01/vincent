@@ -123,6 +123,41 @@ func (s *Store) FanOutAncestors(ctx context.Context, taskID int64) ([]int64, err
 	return out, nil
 }
 
+// SettledChildren counts the **direct** children of one task that have
+// reached a state the join can proceed from (§6 `Settled`).
+//
+// Direct, not the whole subtree, and that is the point (task 081 decision 1):
+// it is the count an eager fan-out parent's wake watermark is compared
+// against, so a depth-2 descendant settling must not move it. That is what
+// bounds an eager step's wake churn by its own lane count rather than by the
+// size of the tree below it.
+//
+// It counts from the rows like everything else here — the header's rule
+// stands. What is persisted on the parent is only its own wake *position*,
+// never a copy of this number.
+func (s *Store) SettledChildren(ctx context.Context, parentID int64) (int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT state FROM tasks WHERE parent_task_id = ?`, parentID)
+	if err != nil {
+		return 0, fmt.Errorf("settled children of task %d: %w", parentID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	n := 0
+	for rows.Next() {
+		var state string
+		if err := rows.Scan(&state); err != nil {
+			return 0, fmt.Errorf("scan child state: %w", err)
+		}
+		if taskstate.Settled(TaskState(state)) {
+			n++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("settled children of task %d: %w", parentID, err)
+	}
+	return n, nil
+}
+
 // ListChildren returns one task's direct lanes in merge order. The join reads
 // them this way, and so does a client drilling into a parent.
 func (s *Store) ListChildren(ctx context.Context, parentID int64) ([]Task, error) {

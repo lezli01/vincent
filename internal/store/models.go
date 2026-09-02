@@ -154,6 +154,18 @@ type Task struct {
 	ParentStepIndex *int
 	LaneID          string
 	LaneOrder       int
+	// SettledChildrenWatermark is how many **direct** children had settled
+	// when the admission that parked this task started (§7.6, task 081
+	// decision 1). It is the wake position of a parent parked under a
+	// `schedule: eager` fan_out step: the scheduler re-queues it once the
+	// live count exceeds this one, which is a predicate that clears itself
+	// and so cannot spin the way "a child has settled" does.
+	//
+	// nil is barrier — every parent parked by a `schedule: barrier` step,
+	// and every task that is not parked at all. TransitionTask clears it on
+	// any transition out of `awaiting_children`, so it can never describe a
+	// parked period other than the one that wrote it.
+	SettledChildrenWatermark *int
 	// CreatedByTaskID names the task whose agent created this one over MCP
 	// (§13.4, task 057 decision 7). NULL — nil — is every task a human, the
 	// CLI, the TUI or a `fan_out` step created; provenance is a fact about

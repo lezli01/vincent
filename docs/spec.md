@@ -1305,6 +1305,22 @@ does not finish until every lane is merged.
   `retry` cannot clear because the lanes are still not done. A `blocked`, `awaiting_gate`
   or `paused` lane holds the join open until a human resolves it; the §13.2
   `children` rollup is what makes that visible.
+
+  *Amended 2026-09-02 (task 081).* Under `schedule: eager` an unsettled lane is
+  the ordinary case, not a lost transition, so that guard is barrier-only and a
+  merely running lane reads as "not yet" rather than as a failure. Such a
+  parent is instead resumed on a **watermark**: it records, as it parks, how
+  many of its **direct** children had settled when that admission started, and
+  the scheduler re-queues it once the live count exceeds that number (§11). The
+  predicate stays pure SQL — the scheduler never parses the lane graph — and it
+  clears itself, which "a direct child has settled" does not: that one stays
+  true after the parent parks again, so the parent would be re-queued by its
+  own park. The watermark is a wake *position*, recomputed from the rows at
+  every park, so `retry` and `edit + retry` rewriting the snapshot cannot stale
+  it, and a wake lost to a race degrades to barrier timing rather than
+  stranding the parent. The settled-descendant rule above keeps running for an
+  eager parent too. A wake that finds nothing to merge and nothing ready parks
+  again without recording a `step_runs` row and without holding a slot.
 - **The join** merges each lane branch with `git merge --no-ff` in **declared**
   lane order, message `Merge lane '{lane_id}' of task {child_id}`, stopping at
   the first conflict. Declared rather than completion order is what makes a
@@ -1327,8 +1343,42 @@ does not finish until every lane is merged.
   Scheduling is **barrier rounds**: the scheduler wakes a parked parent when
   every descendant has settled, so a lane needing only `wire` still waits for
   its whole round. That is deliberate — it is what makes "what did this lane
-  start from" reproducible across re-runs — and eager scheduling is tracked
-  separately.
+  start from" reproducible across re-runs.
+
+  *Amended 2026-09-02 (task 081).* A step may ask for the other trade with
+  **`schedule:`**, one of `barrier` (the default, and what an absent field
+  means) and `eager`. Under `eager` a lane is merged and its dependents spawned
+  as soon as **its own** `needs:` are done and merged, without waiting for
+  unrelated siblings; the parked parent is woken by a lane settling rather than
+  by the whole subtree settling (§11). Three consequences, stated rather than
+  left to be discovered:
+
+  - A lane's **starting tree is timing-dependent**. Under a barrier, a lane
+    always starts from "everything in the rounds before it", the same tree on
+    every re-run. Under `eager` it starts when its dependencies merge, and
+    whether an unrelated sibling happened to merge by then is a stopwatch
+    question. That is why `barrier` is the default: §8.4 keeps `.Now` out of
+    the template context on exactly this argument, so a workflow trading
+    reproducibility for throughput says so in the file.
+  - The parent branch's **commit topology is not reproducible** even when the
+    delivered tree is: the set of lanes a given merge commit joins varies
+    between runs. Blocking behaviour on `lane_failed` and `merge_conflict` is
+    otherwise identical, and so are the cancel cascade and the archive refusal.
+  - An eager step **writes up to one merge row per lane**, and `iteration` on
+    those rows is a monotonic merge counter rather than the lane's wave: two
+    admissions can merge two lanes of one wave and would otherwise collide on
+    the retry budget and the §12.2 transcript name. `.Steps["build"].Result`
+    still resolves to the latest row.
+
+  A step whose **selected lanes declare no `needs:`** among themselves runs as
+  a barrier whatever `schedule:` says. Such a list spawns in one round under
+  either mode, so eager could only change *when* the lanes merge — and merging
+  them as they finish would widen the `lane_failed` amendment below to flat
+  lane lists, which task 080 deliberately kept bit-for-bit. The decision is
+  taken at **spawn**, over the selected lanes, so a derived list that turns out
+  flat is covered by the same rule; `schedule: eager` on a list that happens to
+  be flat is redundant, not a load-time error, and for a derived list nobody
+  can know at load.
 
   Each round's merge writes its own `step_runs` row, discriminated by
   `iteration`. That column was a loop's alone; since task 080 it is "which
@@ -1361,6 +1411,16 @@ does not finish until every lane is merged.
   rounds are left to finish; no further lane is spawned. A lane list with no
   `needs:` is one round, so its failure semantics are bit-for-bit what they
   were.
+
+  *Amended 2026-09-02 (task 081), for `schedule: eager` only:* an admission
+  that finds a lane settled without finishing blocks `lane_failed` **merging
+  nothing new**, while other lanes are still in flight. Lanes merged by earlier
+  admissions stay merged, in-flight lanes are left to finish, and no further
+  lane is spawned — the same posture, applied to an admission rather than a
+  round. Merging everything mergeable first and blocking afterwards would make
+  the branch content at block time depend on which wake noticed the failure,
+  which is a stopwatch question about *delivered commits* rather than about
+  scheduling.
 - **Re-entry** into a half-merged join is disambiguated by the previous
   attempt's outcome, with no merge cursor persisted: which lanes are already
   merged is a fact git holds, and an already-merged lane re-merges as a no-op.
@@ -3546,6 +3606,17 @@ Two consequences are handled rather than assumed away:
   the process, why it is logged once rather than every tick, and why
   `GET /v1/doctor` reports the same finding (§17).
 
+*Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
+(§7.6) is woken by a lane settling rather than by its whole subtree settling,
+so it takes a slot more often than a barrier one — once per direct lane
+settling, at worst. The churn is bounded by the step's **direct** lane count
+and not by the size of the tree below it: the watermark counts direct children,
+so a depth-2 descendant settling does not move a root's number. Each such wake
+either does work or parks again immediately, releasing the slot; a parent that
+finds nothing to do writes no `step_runs` row. The deadlock-freedom argument in
+§7.6 is untouched — the parent still releases its slot before its children need
+one — and `barrier` remains the default, so no existing workflow pays this.
+
 *Added 2026-08-29 (task 057).* §13.4's `task_wait` **does not change what a slot
 means.** A step blocked in a wait keeps its slot, because its agent process is
 live — exactly the `awaiting_input` rule above, and the mirror of
@@ -4587,6 +4658,14 @@ the same round it left, the lanes already merged re-merge as "Already up to
 date", and no lane spawns twice: a lane that has a child row is never in the
 ready set. The re-run writes a new attempt at the same `iteration`, and because
 only *failed* attempts spend the budget, a crash costs no retry.
+
+*Amended 2026-09-02 (task 081).* A `schedule: eager` fan-out (§7.6) is recovered
+by the same path with nothing added. Merges are idempotent and no merge cursor
+is persisted, so a crashed eager parent re-merges its already-merged lanes as
+"Already up to date" exactly as a barrier one does, and a lane that has a child
+row is never in the ready set, so none spawns twice. The wake watermark is
+cleared by the transition out of `awaiting_children` that recovery performs, and
+the next admission recomputes it from the rows.
 
 ## 13. HTTP API
 
