@@ -1,0 +1,353 @@
+# github-resolve-issue-unit — deliver one unit of a planned issue resolution.
+#
+# The lane body of `github-resolve-issue-dag`'s `build` step. That workflow's
+# planner cuts an agreed brief into work units and the edges between them; this
+# file is what one unit runs. It exists as a registry workflow rather than as
+# inline lane steps because a derived fan-out's lane `workflow:` is static by
+# construction (§7.6) — only `id`, `needs`, `fields` and `if` may vary per item,
+# so the shared body has to live somewhere with a name.
+#
+# It is listed in the registry and so it is creatable by hand. Doing that is
+# legitimate for debugging one unit, and pointless otherwise: the fields below
+# are written by a planner that has read the whole issue.
+#
+# ## What a lane can see
+#
+# A lane is a real child task with its own worktree, cut with `git worktree add`
+# from the **parent task's branch** (§7.6). So it sees what is committed there —
+# the base branch, the seeded regression test on the bug path, and any lane it
+# declared `needs:` on — and nothing else. In particular it does **not** see the
+# parent's `.vincent-issue/`, which is untracked scratch and never committed.
+#
+# Everything this file needs therefore arrives one of two ways:
+#
+# - as a **lane field**: `unit_brief`, `unit_files`, `unit_check` and the unit's
+#   identity, written by the planner and merged over the parent's fields (so
+#   `issue` is inherited);
+# - by **asking GitHub again**: `unit-context` re-runs `gh issue view`, which
+#   costs two seconds and is cheaper to arrange than any way of shipping a file
+#   that must not be committed.
+#
+# ## Why two values go through a file and not through the script
+#
+# `unit_files` and `unit_check` are the only lane fields that reach a shell, and
+# both were written by an agent. Rendering either into a command — `grep -E
+# '{{ ... }}'` — makes a single quote in an agent's regex a syntax error in the
+# script that was supposed to run it. So `unit-context` writes both to disk
+# through a **quoted heredoc** (`<<'X'`), which expands nothing, and the check
+# reads them with `grep -f` and `sh <file>`. Neither value is ever parsed as
+# shell. This is the same move `github-resolve-issue`'s `confirm-red` makes with
+# `green.sh`.
+#
+# An `env:` mapping would be the other way, and it is not available: `env:` is a
+# command-step field (§8.5), and the step that needs these is an agent.
+#
+# ## Why the check is not the test suite
+#
+# On the bug path the parent branch carries a **committed, failing** regression
+# test from the moment the fan-out starts until the unit that fixes it merges.
+# `go run mage.go test` is therefore red by construction inside a lane, and a
+# lane check that ran it would fail every lane for a reason that has nothing to
+# do with the lane. The bar here is `go build ./...` plus the unit's own scoped
+# `check` command; the suite is the parent's `integrate` step's bar, after the
+# join, and the cross-platform legs are `verify`'s after that.
+#
+# ## Why the diff is three-dot
+#
+# The parent workflow runs its fan-out with `schedule: eager`, so the parent
+# branch — this task's `BaseBranch` — **moves while this lane is running** as
+# unrelated siblings merge into it. `git diff A..HEAD` is a direct comparison of
+# two trees, so it would report those siblings' work as this lane's, and report
+# this lane as having deleted anything they added. `git diff A...HEAD` compares
+# against the merge base, which is the parent branch as it stood when this
+# worktree was cut — which is exactly "what this lane did".
+#
+# `git rev-list --count A..HEAD` is left two-dot deliberately: for rev-list that
+# is "commits in HEAD and not in A", which is still this lane's own commits
+# after A has moved.
+#
+# ## Defaults
+#
+# There is no `defaults:` block, and adding one would be a trap: a lane child's
+# snapshot is built with the **parent** workflow's defaults (§7.6), so anything
+# written here would be silently discarded whenever this file runs as a lane —
+# which is always, except when someone creates a task from it by hand. Every
+# step states `agent`, `timeout` and `max_retries` for itself instead.
+#
+# Requires `gh` (authenticated), `git` and `go`.
+#
+# POSIX-only, and `platforms: [posix]` says so, matching the workflow that calls
+# it (§8.1.1). `unit-context` pins `shell: sh`, but `unit-implement` is an agent
+# step and §8.2 rejects `shell` there, so its `check` — a `{ stray=$( … ); … }`
+# block — runs under the platform default and would not parse under pwsh.
+#
+# That declaration does **not** gate a lane, though, and it is not there to.
+# A lane child's snapshot is built from the lane's steps and the parent's
+# `defaults` (§7.6); it carries no `platforms:`, so nothing checks this list
+# when a lane is spawned. `github-resolve-issue-dag` declares the same list and
+# is checked when the parent task is created, which is the only creation that
+# can pick a host — a lane runs under the same daemon by construction. This
+# entry is for the other caller: a person creating one unit by hand, and
+# `vincent workflow ls`, which marks it `unsupported` on Windows.
+name: github-resolve-issue-unit
+description: Deliver one planned work unit of a GitHub issue resolution on its own branch. The lane body of github-resolve-issue-dag; not usually created by hand.
+
+platforms: [posix]
+
+# These are written by `github-resolve-issue-dag`'s planner into the lane's
+# `fields:` map. Declaring them documents the contract and makes the workflow
+# usable by hand — but note that a lane child's fields are **not** validated
+# against this block: `required`, `type` and `pattern` are checked when a task
+# is created through the API, and a lane is spawned by the engine. A lane that
+# arrives with a field missing fails at the step that reads it, not before.
+fields:
+  - name: issue
+    label: Issue number
+    description: >-
+      The GitHub issue this unit is part of, in this project's `origin`
+      repository. Inherited from the parent task when this runs as a lane.
+    type: integer
+    required: true
+  - name: unit_id
+    label: Unit id
+    description: The planner's slug for this unit. Names the child task and its branch.
+    type: string
+    required: true
+  - name: unit_title
+    label: Unit title
+    description: One short line describing this unit, for the board.
+    type: string
+    required: true
+  - name: unit_brief
+    label: Unit brief
+    description: >-
+      Everything the agent delivering this unit needs, as prose. Self-contained
+      by construction: a lane does not see the issue's overall brief, and it
+      does not see the other units.
+    type: string
+    required: true
+  - name: unit_files
+    label: Owned paths
+    description: >-
+      An extended regular expression (`grep -E`) matching every path this unit
+      may create or modify. Enforced: a commit touching anything else fails the
+      step.
+    type: string
+    required: true
+  - name: unit_check
+    label: Unit check
+    description: >-
+      One shell command, run from the repository root, that proves this unit
+      works. Scoped to what the unit changed — the full suite is not available
+      as a bar inside a lane.
+    type: string
+    required: true
+
+steps:
+  - id: unit-context
+    name: Assemble this unit's context
+    type: command
+    shell: sh
+    timeout: 3m
+    # `gh` is a network call and a 502 is not a verdict, so this one retries.
+    max_retries: 1
+    retry_backoff: 30s
+    # Three jobs, and each of them exists because a lane's worktree is a fresh
+    # checkout that inherited none of the parent's scratch.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      unit='{{ index .Task.Fields "unit_id" }}'
+      say "$unit: reading the issue"
+      mkdir -p .vincent-issue
+
+      id='{{ index .Task.Fields "issue" }}'
+      if [ -z "$id" ]; then
+        say "lane carries no issue number"
+        echo "the 'issue' field is empty; a lane inherits it from the parent task." >&2
+        exit 1
+      fi
+      # The same fields the parent fetched, including the thread: a unit that
+      # needs to know what the reporter said should not have to guess.
+      if ! gh issue view "$id" \
+        --json number,title,body,state,url,labels,comments,createdAt \
+        > .vincent-issue/issue.json; then
+        say "cannot read issue #$id"
+        echo "no such issue: $id" >&2
+        exit 1
+      fi
+
+      # A quoted heredoc expands nothing, so an agent-written regular
+      # expression containing a quote, a dollar or a backtick arrives verbatim
+      # instead of being parsed as shell. The check reads this file with
+      # `grep -f`, which never sees a shell at all.
+      cat > .vincent-issue/unit-files.re <<'VINCENT_UNIT_FILES'
+      {{ index .Task.Fields "unit_files" }}
+      VINCENT_UNIT_FILES
+      # An empty line in a `grep -f` pattern file matches every line, which
+      # would turn the ownership assertion below into a no-op that always
+      # passes. Strip them, then insist something is left.
+      grep -v '^[[:space:]]*$' .vincent-issue/unit-files.re \
+        > .vincent-issue/unit-files.tmp || true
+      mv .vincent-issue/unit-files.tmp .vincent-issue/unit-files.re
+      if [ ! -s .vincent-issue/unit-files.re ]; then
+        say "$unit: the plan gave this unit no owned paths"
+        echo "the 'unit_files' field is empty; a lane with no owned paths cannot be checked." >&2
+        exit 1
+      fi
+
+      cat > .vincent-issue/unit-check.sh <<'VINCENT_UNIT_CHECK'
+      {{ index .Task.Fields "unit_check" }}
+      VINCENT_UNIT_CHECK
+      if [ ! -s .vincent-issue/unit-check.sh ]; then
+        say "$unit: the plan gave this unit no check"
+        echo "the 'unit_check' field is empty; a unit with no check proves nothing." >&2
+        exit 1
+      fi
+
+      echo "unit: $unit — {{ index .Task.Fields "unit_title" }}"
+      echo "--- owned paths (ERE) ---"
+      cat .vincent-issue/unit-files.re
+      echo "--- check ---"
+      cat .vincent-issue/unit-check.sh
+      say "$unit: context ready"
+
+  - id: unit-implement
+    name: Deliver the unit
+    type: agent
+    agent: claude
+    timeout: 45m
+    # Two attempts. The check is self-healing in the way that matters: a lane
+    # that strayed outside its own paths, or whose scoped check is red, gets
+    # both facts back in the §8.4 failure block — the offending paths by name —
+    # and the second attempt fixes them.
+    max_retries: 1
+    retry_backoff: 60s
+    # A lane may not stop and ask. It is a child task nobody is watching, the
+    # questions were answered before the parent's brief was written, and the
+    # parent's `defaults` deny it anyway; this states it rather than relying on
+    # inheritance from a file this one does not name.
+    on_input: deny
+    prompt: |
+      Deliver one unit of a planned change to this repository:
+      **{{ index .Task.Fields "unit_title" }}**.
+
+      This unit is part of GitHub issue #{{ index .Task.Fields "issue" }},
+      which is in `.vincent-issue/issue.json` — number, title, body, labels,
+      creation date and every comment — for context. It is context, not scope.
+
+      ## Your scope, in full
+
+      {{ index .Task.Fields "unit_brief" }}
+
+      ## What you cannot see, and must not go looking for
+
+      Other units of this change are being delivered **at the same time, on
+      other branches**. You cannot see them and they cannot see you. Anything
+      the brief above did not tell you about an interface you share with one of
+      them was decided by the planner and written into both briefs — take it as
+      given and build to it. Do not invent a second version of it "for now",
+      and do not implement another unit's half because it is missing: it is
+      missing because it is not yours.
+
+      If your brief is genuinely self-contradictory or cannot be built as
+      written, say so and stop. A lane that fails with an explanation is worth
+      more than one that guesses; the parent task blocks and a human reads it.
+
+      ## The paths you own
+
+      You may create or modify only paths matching this extended regular
+      expression, and this is **enforced** — a commit touching anything else
+      fails this step:
+
+          {{ index .Task.Fields "unit_files" }}
+
+      That boundary is what keeps parallel units from destroying each other's
+      work at the merge. Two of these do not overlap by design.
+
+      Three things are owned by later steps and by no unit, including yours:
+      `CHANGELOG.md` and the pull request body, which a single integration step
+      writes once for the whole change; `docs/`, `skills/` and
+      `internal/workflow/builtin.go`, which a documentation audit handles after
+      every unit has landed; and `.vincent-issue/`, which is scratch.
+
+      ## The bar
+
+      `.vincent-issue/unit-check.sh` is the command the plan says proves this
+      unit. Run it. It has to pass, along with `go build ./...`.
+
+      **Do not run the whole test suite as your bar.** If this is a bug fix, a
+      failing regression test is committed on this branch on purpose and stays
+      red until the unit that repairs the defect lands — which may not be
+      yours. The suite is run once, after every unit has merged.
+
+      ## Working
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}} —
+      which is the parent task's branch, so it already carries every unit this
+      one declared a dependency on — in a dedicated worktree at
+      {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and it is one of several running at
+      once, so say what you are doing as you go:
+
+          vincent status "{{ index .Task.Fields "unit_id" }}: <one short line>"
+
+      Keep the unit id in it: the board is showing this row next to its
+      siblings and they are otherwise indistinguishable. Under ten words after
+      the prefix. When something is wrong, make the status say what is wrong —
+      "unit-check red in internal/store", not "still working". The last thing
+      you set stays on the finished step.
+
+      **Cross-platform is a hard requirement** (`CLAUDE.md`): Windows, macOS and
+      Linux all run the full suite. Platform-specific code goes in `_unix.go` /
+      `_windows.go` / `_darwin.go` / `_linux.go`. Never assume a POSIX shell,
+      `/`-separated paths, or signal semantics.
+
+      **Commit your work.** Nothing uncommitted survives: this branch is merged
+      into the parent's and the working tree is thrown away. Commits follow
+      Conventional Commits (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`,
+      `test`). Never add a co-author trailer.
+
+      Never stage or commit `.vincent-issue/`. Do not push, and do not run `gh`
+      for anything that writes — this branch is published, if at all, by the
+      parent task, long after you are finished.
+    # Cheapest first. `test -z "$(...)"` rather than a pipe into `grep -q`:
+    # `grep -q` exits at its first match and the producer dies of SIGPIPE
+    # writing what came next, so under `pipefail` the assertion can fail
+    # *because* it matched.
+    #
+    # The ownership clause is the one that earns this whole file. It names the
+    # offending paths on stderr rather than just exiting non-zero, because §8.4
+    # hands the retry the check's *output* — an agent told only "check failed"
+    # would have to guess which file it left behind.
+    #
+    # Three-dot on the diff and two-dot on the rev-list, deliberately: see the
+    # header. Under `schedule: eager` the base branch moves while this lane
+    # runs.
+    check: >
+      test -z "$(git ls-files .vincent-issue)" &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      { stray=$(git diff --name-only {{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
+      go build ./... &&
+      sh .vincent-issue/unit-check.sh
+    check_timeout: 15m
+
+  - id: unit-clean
+    name: Clear the scratch directory
+    type: command
+    shell: sh
+    timeout: 1m
+    max_retries: 0
+    # A lane leaves a worktree on disk until the tree is archived, and the
+    # parent's own `merged` step clears only its own scratch. Six lanes each
+    # holding an issue dump and two agent-written files is not much, but it is
+    # six directories of stale plan that outlive the run and mean nothing
+    # afterwards.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      rm -rf .vincent-issue
+      say "{{ index .Task.Fields "unit_id" }}: delivered"

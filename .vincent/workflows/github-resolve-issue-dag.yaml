@@ -1,0 +1,2833 @@
+# github-resolve-issue-dag — resolve a GitHub issue as a dependency graph.
+#
+# The DAG variant of `github-resolve-issue`. Everything before the
+# implementation and everything after it is the same file, deliberately: the
+# fetch, the two brief paths, the reproduce-first discipline, the documentation
+# audit, the cross-platform legs, both human gates and the whole merge tail are
+# copied across unchanged, so the two workflows fail the same way and a fix to
+# one is a legible diff against the other.
+#
+# What differs is the middle. `github-resolve-issue` implements the whole issue
+# in **one 45-minute agent session** on one branch. This file asks a planner to
+# cut the agreed brief into **work units and the edges between them**, then
+# hands that graph to a `fan_out` (§7.6) whose lanes are real child tasks with
+# their own worktrees and branches, merged back into this task's branch as they
+# finish. Units with no edge between them run at the same time; a unit that
+# genuinely cannot start until another's code exists declares `needs:` and is
+# cut from a branch that already contains it.
+#
+# **This is a wall-clock trade, not a cost saving.** Four lanes do not cost a
+# quarter of one session each; they cost four sessions, plus a planner, plus an
+# integrator, plus whatever the joins need. The session envelope at the bottom
+# of this header is roughly twice the sequential file's. Reach for this
+# workflow when an issue is genuinely several pieces of work and you want them
+# delivered in parallel — not for a two-line fix, where the planner is told to
+# emit a single unit and the fan-out degenerates into the sequential shape with
+# extra steps.
+#
+# Shape (the unchanged parts are named, not re-explained; read the sequential
+# file's header for those):
+#
+#   fetch → is-bug → diagnose | digest → triage → confirm-red      (unchanged)
+#   seed        commit what the lanes must inherit, and nothing else
+#   plan-dag    cut the brief into units and edges; write units.jsonl
+#   plan-emit   validate-and-print, so the graph is a step's stdout
+#   plan-gate   a human reads the graph before N child tasks are spawned
+#   build       the fan-out: one lane per unit, `needs:` is the DAG
+#   integrate   one session on the joined branch: make it cohere, write the PR
+#   docs-sync → verify → gate → publish → report                   (unchanged)
+#   gate-merge → checks-required → merge-attempt → merged          (unchanged)
+#
+# ## What a lane can see, and why three steps exist to arrange it
+#
+# A lane's worktree is `git worktree add` from **this task's branch** (§7.6), so
+# a lane sees what is *committed* there and nothing else. That single fact is
+# what shapes the middle of this file, because the sequential workflow's
+# brief steps deliberately commit nothing:
+#
+# - `diagnose` writes the failing regression test into the working tree and
+#   does **not** commit it — that is what lets `confirm-red` run it against
+#   unfixed code. Uncommitted, it would not reach a single lane.
+# - `.vincent-issue/` is scratch and must never be committed at all, so
+#   `brief.md`, `issue.json` and `green.sh` cannot travel that way either.
+#
+# So the three steps before the fan-out are each one channel:
+#
+# - **`seed` commits the regression test.** It is part of the deliverable
+#   anyway — the sequential file's `implement` is told "commit the regression
+#   test and the fix, test first if you split them", and this is that split
+#   made explicit. It refuses to commit anything that is not a test or
+#   `testdata/`, and refuses `.vincent-issue/` outright. On the enhancement
+#   path `digest` left a clean tree, so it is a no-op that says so.
+# - **`plan-dag`'s per-unit `brief` travels as a lane field.** `fields:` is the
+#   one part of a derived lane that may vary per item (§7.6), it is merged over
+#   the parent's fields, and it is not shell — it is rendered straight into the
+#   lane's prompt. That is the channel for prose.
+# - **The lane re-reads the issue itself.** `gh issue view` costs two seconds
+#   and gives every lane the same thread the parent read, which is cheaper to
+#   arrange than any way of shipping a file that must not be committed.
+#
+# ## Why the seeded red test is not a suite failure
+#
+# On the bug path this branch carries a **committed, failing** test from `seed`
+# until the unit that fixes it merges. So nothing inside the fan-out may use
+# the full suite as its bar: `go run mage.go test` is red by construction there,
+# and a lane check that ran it would fail every lane for the same reason.
+#
+# Inside the fan-out the bar is therefore `go build ./...` plus the **unit's
+# own** `check` command, which the planner writes and which is scoped to what
+# that unit changed. The suite is `integrate`'s bar, after the join, where it is
+# meant to be green — and `verify` is still the cross-platform one after that.
+# That is not a weaker workflow than the sequential file; it is the same two
+# assertions in the same order, with the units' own checks added in front.
+#
+# ## What keeps lanes from fighting over the same file
+#
+# `needs` is *happens-after*, not isolation (§7.6): there is one branch, and two
+# lanes with no edge between them can still edit the same file and collide at
+# the join. Nothing in vincent prevents that, so this file does, twice:
+#
+# - `plan-dag` must give every unit a `files` **extended regular expression**
+#   matching every path it may touch, and the units' expressions must not
+#   overlap. That is a design instruction, and the plan gate is where a human
+#   checks it.
+# - The lane workflow **enforces** it: `unit-context` writes the expression to
+#   `.vincent-issue/unit-files.re` and the lane's check greps the lane's own
+#   diff against it with `grep -vEf`, failing the lane — with the offending
+#   paths on stderr, so the retry can see them (§8.4) — if it committed
+#   anything the plan did not give it.
+#
+# The expression reaches the shell through a file rather than through the
+# script, and the unit's check command does too. Both are written by an agent
+# and a quote in either would otherwise break the script that was supposed to
+# run it; a quoted heredoc (`<<'X'`) expands nothing, so the value arrives
+# verbatim and `grep -f` / `sh <file>` never parse it as shell. This is the same
+# move `confirm-red` already makes with `green.sh`.
+#
+# Conflicts that survive all that are handled by `merge.on_conflict: agent`, and
+# its check is `go build ./...` and `go vet ./...` for the reason above — the
+# suite is not available as a bar mid-join on the bug path. A resolver that does
+# not resolve leaves the conflict blocked for a human, which is the default
+# behaviour and the right one.
+#
+# ## Why the plan is a step's stdout, and why a human reads it
+#
+# `for_each:` is a template, and a template cannot read a file. `plan-dag` is an
+# agent and an agent step's `.Result` is its final message — not something to
+# parse a graph out of. So the graph is produced by an agent into
+# `.vincent-issue/units.jsonl`, validated by that step's own check, and then
+# **printed by a command step**: `.Steps.plan-emit.Result` is the last 200 lines
+# of its stdout (§8.4), which is the derived lane list.
+#
+# `plan-emit` also normalises with `jq -c`, so a planner that pretty-printed its
+# JSON still produces one object per line, which is what `for_each` requires.
+#
+# The validation lives in `plan-dag`'s **check** rather than in `plan-emit` on
+# purpose: a check failure is appended to the next attempt's prompt (§8.4), so a
+# malformed graph is something the planner fixes, while the same failure in a
+# command step would simply block the task. It asserts the things a bad plan
+# gets wrong — every key present, ids unique and slug-shaped, `needs` naming
+# only real units, no self-edge, at most six units — and it asserts the graph is
+# **acyclic**, by peeling nodes whose dependencies are already peeled and
+# checking that all of them came off. vincent refuses a cycle too, at spawn,
+# with `fan_out_invalid`; catching it here is the difference between a retry and
+# a blocked task.
+#
+# `plan-gate` is the second human decision this file adds, and it is the
+# cheapest one in the workflow. Approving it spawns up to six child tasks, each
+# with a worktree and an agent session; rejecting it costs one planner run. The
+# gate renders the graph inline, so the thing being approved is on the screen.
+#
+# ## `schedule: eager`, and what it costs
+#
+# `build` declares `schedule: eager` (§7.6). A lane is merged and its dependents
+# spawned as soon as **its own** `needs` are done, rather than waiting for its
+# whole barrier round. Wall-clock is the entire point of this file, and a
+# barrier makes every round as slow as its slowest lane.
+#
+# The price is stated where the feature states it: **a lane's starting tree
+# becomes timing-dependent.** Whether an unrelated sibling had merged by the
+# time a lane was cut is a stopwatch question, so re-running this task can give
+# a lane a different tree and a different result, and the branch's merge
+# topology varies between runs even when the delivered tree does not. A workflow
+# trading reproducibility for throughput should say so in the file, and this is
+# that sentence.
+#
+# Note that a plan whose units declare no `needs` at all is one round either
+# way, and `schedule: eager` on it is redundant rather than wrong.
+#
+# ## Why `integrate` is an agent and not a check
+#
+# Six lanes that each pass their own check can still produce a branch that does
+# not cohere: two units that agreed on a helper's name in prose and not in code,
+# a `CHANGELOG.md` entry written three times, a suite that is red only in the
+# combination. Deciding what is wrong there and repairing it is code reasoning,
+# which is the test this file applies to every agent step it keeps.
+#
+# It is also the step that writes the two PR artifacts, and that is not a
+# clerical leftover: the pull request body has to describe **one** change, and
+# nobody before this step has seen the whole of it. Its check is the sequential
+# file's `implement` check, unchanged — scratch untracked, something committed,
+# both artifacts present, the frozen regression test green on the bug path, then
+# the suite and the linter.
+#
+# It is told, in as many words, not to redo a unit's work. An integrator that
+# starts rewriting lanes is a 45-minute session spent undoing the parallelism
+# this file exists for.
+#
+# ## The session envelope
+#
+# Upper bound on agent sessions vincent may start automatically, before any
+# human presses retry (`1 + max_retries` per agent, loops multiplied by their
+# iteration ceiling, every lane counted, guarded steps counted unless the guard
+# is statically impossible):
+#
+#     diagnose            2   guarded to the bug path
+#     digest              2   guarded to the enhancement path
+#     plan-dag            2
+#     build lanes        12   6 lanes x (1 + 1) in github-resolve-issue-unit
+#     build merge join    6   one resolver attempt per round; up to 6 rounds
+#     integrate           3
+#     docs-sync           2   guarded
+#     verify/repair       3   4 loop passes, `if: not .Loop.IsLast`
+#     merge-attempt       5   3 x resolve, plus 2 x repair-checks (same guard)
+#                        --
+#                        37
+#
+# `not .Loop.IsLast` is the one guard counted as statically impossible on its
+# last pass, which is why the two repair agents come in one under their loop's
+# iteration count. Every other guard here — the two brief steps, `docs-sync`,
+# the conflict resolver — is counted in full even though the first pair are
+# mutually exclusive in practice and the third is usually free.
+#
+# The sequential file's same bound is **17**. Twelve of the extra twenty are the
+# lanes, six are their joins, and two are the planner: that is what parallel
+# delivery costs, before counting six worktrees.
+#
+# `max_lanes: 6` is what makes the lane count knowable at all: a derived width
+# cannot be counted when the task is created, so the ceiling has to be declared
+# (§7.6) and it is checked before anything is spawned. Six is generous for one
+# issue. The daemon's own `fan_out.max_tasks` (64) is the backstop.
+#
+# **Six lanes leave six worktrees** on disk until the tree is archived. That is
+# what `vincent gc` and `vincent doctor` are for, and it is the first thing you
+# will meet after a run.
+#
+# ## Inherited constraints
+#
+# Everything the sequential file says about itself still applies here and is not
+# repeated: the issue arrives as the declared `issue` field; the bug path is
+# decided by an `allow_failure` probe whose red row is normal; `on_input: wait`
+# makes the brief steps claude-only by construction; `gh`, `jq`, `git` and `go`
+# must be present and `origin` must point at the repo that owns the issue; and
+# every step that runs a process reports through `vincent status` (§5.4) using
+# the same guarded `say` helper, because this workflow is mostly waiting.
+#
+# `platforms: [posix]` is inherited for the reason the sequential file records
+# in full: every command step pins `shell: sh`, but §8.2 rejects `shell` on an
+# agent step, so an agent's `check` runs under the platform default — pwsh on
+# Windows, never the Git Bash `sh` the command steps found. The checks in this
+# file are `sh`, `{ stray=$( … ); … }` included, so the Git Bash host an omitted
+# `platforms:` would have admitted could not finish the run either way. It would
+# spend a 45-minute session and block on `check_failed`; declaring the platform
+# refuses at task creation instead.
+#
+# `github-resolve-issue-unit` declares it too, but that declaration is not what
+# gates a lane: a lane child's snapshot carries the parent's `defaults` and its
+# own steps, and no `platforms:` at all. The gate is this file's, applied when
+# the parent task is created — which is the only creation a lane's host depends
+# on, since a lane runs under the same daemon.
+#
+# One inherited constraint changes meaning here and is worth stating: a lane
+# child's snapshot carries **this** workflow's `defaults:`, not the lane
+# workflow's (they are the parent's, by construction). So
+# `github-resolve-issue-unit` states `agent`, `timeout` and `max_retries` on
+# every step rather than relying on a `defaults:` block that would be discarded
+# when it runs as a lane.
+
+name: github-resolve-issue-dag
+description: Read a GitHub bug or enhancement issue, clarify it with the author, cut it into a dependency graph of work units delivered in parallel, open the PR, then rebase and merge it once you approve.
+
+platforms: [posix]
+
+fields:
+  - name: issue
+    label: Issue number
+    description: >-
+      The number of the GitHub issue to resolve, in this project's `origin`
+      repository. The new-task form's issue picker and
+      `vincent task add --github-issue N` both fill this in; typing it is the
+      third way. `fetch` reads it and nothing else — the task title is yours to
+      write.
+    type: integer
+    required: true
+
+defaults:
+  agent: claude
+  max_retries: 1
+  timeout: 30m
+  # Every step that actually retries here is an agent, and 028 decision 1 is why
+  # they get a pause: an agent CLI that hit an overloaded upstream and one that
+  # left a compile error both exit non-zero and both classify `nonzero_exit`, so
+  # there is nothing for vincent to tell apart — the workflow has to pick. This
+  # picks the pause, because the two cases are not symmetric. A backed-off retry
+  # returns the task to `queued` and gives up its concurrency slot (§12.3), so on
+  # the compile-error case the minute costs wall-clock and nothing else, and
+  # other tasks keep running through it. On the transient case an immediate
+  # retry lands inside the same outage and spends the whole budget on it.
+  #
+  # A minute against steps budgeted 30-45m is noise. Steps that want their
+  # second attempt now say so with `retry_backoff: 0`.
+  retry_backoff: 60s
+  # Only the brief steps override this. An implementing step that stops to ask
+  # has skipped the whole point of the brief/deliver split — and a *lane* that
+  # stopped to ask would park a child task nobody is watching.
+  on_input: deny
+  # Everything in this block reaches the lanes. A lane child's snapshot is built
+  # with the *parent* workflow's defaults (§7.6), not the lane workflow's, so
+  # `agent: claude`, `on_input: deny` and the retry policy below are what
+  # `github-resolve-issue-unit` actually runs under. That file states `agent`,
+  # `timeout` and `max_retries` on every step rather than relying on a
+  # `defaults:` block of its own, which would be discarded here.
+
+steps:
+  - id: fetch
+    name: Fetch and guard the issue
+    type: command
+    shell: sh
+    timeout: 2m
+    # A wrong id, a closed issue or a missing label is not a transient error —
+    # re-reading GitHub returns the same answer. Retrying only delays the
+    # failure.
+    max_retries: 0
+    # This step exists so that a bad id costs two seconds instead of a 45-minute
+    # agent run, and so that exactly these fields — not whatever the agent felt
+    # like fetching — are what enters the brief step's context.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # The declared `issue` field, rendered in. It is `required: true` and
+      # `type: integer`, so §8.1.2 validated it at creation and this is a bare
+      # decimal number — no "#", no URL, nothing to parse. The guard below is
+      # for the one case validation cannot cover: a task created against an
+      # older snapshot of this workflow, before the field existed.
+      id='{{ index .Task.Fields "issue" }}'
+      if [ -z "$id" ]; then
+        say "task carries no issue number"
+        echo "the 'issue' field is empty; this workflow resolves the issue it names (create the task from the issue picker, or with --github-issue N)" >&2
+        exit 1
+      fi
+
+      # Every guard below sets a status before it exits. These are the four
+      # ways a run of this workflow ends two seconds after it started, and the
+      # `failure_reason` for all four is the same word (`nonzero_exit`) — so
+      # the status is the only place the board can say which one happened.
+      say "reading issue #$id"
+
+      mkdir -p .vincent-issue
+      # `comments` matters more than it looks: a bug report's real reproduction
+      # steps, versions and "me too, but on Windows" almost always arrive in the
+      # thread rather than the body. `createdAt` is what lets the bug path ask
+      # whether the report is already stale at HEAD.
+      if ! gh issue view "$id" \
+        --json number,title,body,state,url,labels,comments,createdAt \
+        > .vincent-issue/issue.json; then
+        say "no such issue: #$id"
+        echo "no such issue: $id (the 'issue' field must name an issue in this project's origin repository)" >&2
+        exit 1
+      fi
+
+      state=$(jq -r .state .vincent-issue/issue.json)
+      if [ "$state" != "OPEN" ]; then
+        say "issue #$id is $state, not open"
+        echo "issue #$id is $state; this workflow only picks up open issues" >&2
+        exit 1
+      fi
+
+      # The label is the only thing that decides which path runs, so a missing
+      # one fails here rather than silently defaulting to a path. An issue
+      # carrying *both* is treated as a bug by `is-bug` — the stricter path,
+      # which demands a regression test.
+      if ! jq -e '[.labels[].name] | any(. == "bug" or . == "enhancement")' \
+        .vincent-issue/issue.json > /dev/null; then
+        say "issue #$id is labeled neither bug nor enhancement"
+        echo "issue #$id is labeled neither 'bug' nor 'enhancement'; refusing to guess at its type" >&2
+        jq -r '"labels: " + ([.labels[].name] | join(", "))' .vincent-issue/issue.json >&2
+        exit 1
+      fi
+
+      jq -r '"#\(.number) \(.title)\n\(.url)\nreported: \(.createdAt)"' .vincent-issue/issue.json
+      say "#$id open, $(jq -r '[.comments[]] | length' .vincent-issue/issue.json) comment(s) to read"
+
+  - id: is-bug
+    name: Classify — is this a bug?
+    type: command
+    shell: sh
+    timeout: 1m
+    # The branch point. Exit 0 means bug, nonzero means enhancement, and every
+    # guard below reads `.Steps.is-bug.ExitCode`. `allow_failure` is what turns
+    # a nonzero exit into data instead of a blocked task (§ Conditions).
+    #
+    # A `failed` row here is therefore the *normal* enhancement path, not a
+    # problem — the stdout line says which way it went.
+    allow_failure: true
+    # A probe never retries: the answer is a file this workflow already wrote.
+    max_retries: 0
+    # The status is the fix for this file's one documented wart: on the
+    # enhancement path this step exits 1 *on purpose*, and the board has shown
+    # a red `is-bug` row with nothing to say it was the intended answer. The
+    # message survives on the finished attempt, so the row now reads
+    # "failed — enhancement path: judged by the new behaviour", which is true
+    # and legible. It is not readable by the `if:` guards below — those read
+    # `.ExitCode`, and free text an agent or a script chose is not something a
+    # workflow branches on (§5.4) — so nothing downstream depends on it.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      if jq -e '[.labels[].name] | index("bug")' .vincent-issue/issue.json > /dev/null; then
+        echo "path: bug — a regression test must be observed failing before the fix."
+        say "bug path: a regression test must be seen failing first"
+        exit 0
+      fi
+      echo "path: enhancement — no reproduction to prove; judged by the new behaviour."
+      say "enhancement path: judged by the new behaviour (this exit 1 is normal)"
+      exit 1
+
+  - id: diagnose
+    name: Reproduce and diagnose
+    type: agent
+    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    # The whole reason this step is separate from `implement`: it stops and asks
+    # rather than inventing a reproduction it could not achieve.
+    on_input: wait
+    # Parking overnight while you sleep is fine. Parking forever is not.
+    input_timeout: 12h
+    timeout: 45m
+    prompt: |
+      You are diagnosing a GitHub bug report against this repository. You are
+      NOT fixing it yet: do not change a single line of non-test code.
+
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
+      labels, creation date and every comment. Read it first, comments
+      included; reproduction details usually arrive in the thread rather than
+      the body.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and can park in `awaiting_input` for
+      half a day, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below — "reading spec §12.4",
+      "reproducing against internal/taskrun" — and again the moment you stop to
+      ask the author: `vincent status "waiting on the reporter's OS and version"`
+      is the difference between a row that looks hung and one that explains
+      itself. Under ten words. When something is wrong, make the status say
+      what is wrong: "cannot reproduce at HEAD", not "still working". The last
+      thing you set stays on the finished step, so end on your verdict —
+      "verdict: proceed, repro is a test in internal/store".
+
+      Do this in order:
+
+      1. Establish what the *correct* behaviour is, not just the reported one.
+         This repository is spec-driven: `docs/spec.md` is the only spec and
+         its section numbers are cited from the code. Read the sections that
+         govern the reported area, read `CLAUDE.md`, and read any relevant
+         document under `docs/tasks/`. A report is a claim about a mismatch
+         between the code and the spec — find out which side is wrong before
+         you touch either.
+
+      2. Locate the defect. Read the code, follow the actual path, and name the
+         precise line or decision that produces the wrong behaviour. "Something
+         in the scheduler" is not a diagnosis.
+
+      3. Check whether it is still a bug at HEAD. The report carries a version
+         and a date; `git log` covers what has landed since. An issue that was
+         already fixed is a `reject`, not a fix — say which commit fixed it.
+
+      4. Reproduce it. Reproducing means: a command you can run in this
+         worktree that fails *because of this bug* and would pass if the bug
+         were absent. Then write that reproduction down as a **test in the
+         repository**, in the package that owns the defect, following this
+         repo's testing conventions (hermetic, no network, no real agent CLI,
+         `internal/testrepo` / `agenttest` / `cmd/fakeagent` where they apply —
+         see the testing section of `CLAUDE.md`). The test must fail right now,
+         for the reported reason and not for an unrelated one.
+
+         **You may create or modify test files only** — `*_test.go` and files
+         under a `testdata/` directory. Do not touch production code in this
+         step, and do not commit anything.
+
+      5. Use the AskUserQuestion tool when — and only when — you genuinely
+         cannot proceed without the author. The cases that warrant it:
+
+         - **You cannot reproduce it.** Ask for the missing piece: exact
+           version, OS, config, the full command, the daemon log around the
+           failure. Say what you already tried, so the answer is worth the
+           interruption.
+         - **The spec and the report disagree.** If the code does exactly what
+           `docs/spec.md` says and the reporter expected something else, the
+           bug may be in the spec. Which one changes is the author's call, not
+           yours — and if the answer is "the spec", note that the spec must be
+           amended in this same branch with a dated note.
+         - **The fix contradicts a recorded decision** — a "phase 2 decision",
+           a "T1.5/T1.6 decision", a "PR G decision", or something in
+           `docs/history/v0-tasks.md`. Those are outcomes of design sessions,
+           not incidental notes. Never relitigate one silently.
+
+         Batch related questions into as few calls as you can, with concrete
+         options where you can offer them. If the report is clear and you
+         reproduced it, ask nothing and move on.
+
+      6. Write `.vincent-issue/brief.md`. Its **first line** must be exactly one
+         of:
+
+             verdict: proceed
+             verdict: reject
+             verdict: needs-info
+
+         - `proceed` — reproduced, understood, and worth fixing here.
+         - `reject` — this should not be fixed: it is working as specified,
+           already fixed at HEAD, a duplicate, or out of scope. You must have
+           asked the author before rejecting a report that describes real
+           surprise.
+         - `needs-info` — you asked, and what came back still is not enough to
+           reproduce it. This is not the same as `reject`: the bug may well be
+           real, and the issue stays open for a later run with better
+           information. Use it rather than guessing at a fix.
+
+         Below that first line write: what the wrong behaviour is, the exact
+         location of the defect, why it happens, which spec sections govern it,
+         which platforms are affected, what the fix should be, and any decision
+         that came out of your questions — as settled decisions in prose, not
+         as a Q&A transcript. On `reject` or `needs-info`, write why instead,
+         and what would change the answer.
+
+      7. Write `.vincent-issue/red-test.txt` — **one line**, the shell command
+         that runs your failing test and nothing else, narrow enough to be
+         fast. For example:
+
+             go test ./internal/taskrun -run TestRecoverKillsVerifiedOrphan
+
+         The next step runs this command and **fails the task if it passes**,
+         because a regression test nobody ever saw fail proves nothing.
+
+         If this bug genuinely cannot be captured by an automated test — a TUI
+         rendering artifact, a wrong sentence in `docs/`, a defect on a
+         platform this machine is not — write instead a single line:
+
+             none: <one sentence saying why no test can capture this>
+
+         Do not reach for that to save effort. It costs the fix its proof and a
+         human is shown the reason before the PR goes out.
+
+         On `reject` or `needs-info`, write `none: <verdict>` here.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-issue/`, `*_test.go`, and
+      `testdata/`.
+    # Asserts the artifacts exist and are machine-readable before later steps
+    # branch on them, that nothing was committed, and that this step really did
+    # keep its hands off production code — the last of those is what makes
+    # `confirm-red`'s verdict meaningful, since a "failing" test proves nothing
+    # if the fix already landed alongside it. A failure here retries with the
+    # reason appended (§8.4).
+    #
+    # The last clause names the offending paths on stderr rather than just
+    # exiting non-zero: a bare `test -z` prints nothing, and §8.4 hands the
+    # retry the check's *output*, so an agent told only "check failed" would
+    # have to guess which file it left behind.
+    #
+    # Written in `sh`: an agent step cannot pin a shell (§8.2).
+    check: >
+      test -s .vincent-issue/brief.md &&
+      head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
+      test -s .vincent-issue/red-test.txt &&
+      git diff --cached --quiet &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -eq 0 &&
+      { offenders=$( { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.vincent-issue/' | grep -vE '(_test\.go$|(^|/)testdata/)' ); test -z "$offenders" || { echo 'diagnose changed files outside .vincent-issue/, *_test.go and testdata/:' >&2; echo "$offenders" >&2; false; }; }
+    check_timeout: 2m
+
+  - id: digest
+    name: Digest and clarify
+    type: agent
+    if: '{{ ne (index .Steps "is-bug").ExitCode 0 }}'
+    # Same role as `diagnose` on the other path: the step that is allowed to
+    # stop and ask, rather than guessing at an ambiguous requirement or an
+    # undecided design.
+    on_input: wait
+    input_timeout: 12h
+    prompt: |
+      You are evaluating a GitHub enhancement issue for this repository. You are
+      NOT implementing it yet, and you must not change a single line of code.
+
+      The issue is in `.vincent-issue/issue.json` — number, title, body, state,
+      labels and every comment. Read it first.
+
+      This step can park in `awaiting_input` for half a day, so say what you are
+      doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Run it before each numbered step below, and again the moment you stop to
+      ask the author — `vincent status "waiting on your call between two designs"`
+      is the difference between a row that looks hung and one that explains
+      itself. Under ten words. When something is wrong, make the status say what
+      is wrong: "issue contradicts the phase 2 decision", not "still working".
+      The last thing you set stays on the finished step, so end on your verdict.
+
+      Do this in order:
+
+      1. Understand what is being asked. Read enough of the codebase to know
+         which packages and which spec sections it touches. This repository is
+         spec-driven: read the relevant parts of `docs/spec.md` and any
+         relevant document under `docs/tasks/`, and read `CLAUDE.md`.
+
+      2. Check the issue against what is already true. It may already be
+         implemented, may have been decided against, or may contradict a
+         binding recorded decision — a "phase 2 decision", a "T1.5/T1.6
+         decision", a "PR G decision", or something written in
+         `docs/history/v0-tasks.md`. Those are outcomes of design sessions, not
+         incidental notes. Never relitigate one silently.
+
+      3. Use the AskUserQuestion tool to ask the author about anything you
+         cannot resolve. Ask about two kinds of thing:
+
+         - **Ambiguity** — undefined terms, unstated assumptions, missing
+           acceptance criteria, edge cases the issue leaves open, behaviour it
+           asserts without saying which component owns it.
+         - **Approach** — where several valid designs exist and the choice is
+           not obviously the author's stated one. A wrong architectural pick
+           costs the entire pull request, so surface it now.
+
+         If the issue conflicts with a recorded decision, that is a question,
+         not a judgement call you make alone.
+
+         Ask real questions with concrete options where you can offer them, and
+         batch related questions into as few calls as you can. Do not guess and
+         do not paper over a gap with a plausible-sounding sentence. If the
+         issue is genuinely unambiguous and the approach is obvious, ask
+         nothing and move on.
+
+      4. Write `.vincent-issue/brief.md`. Its **first line** must be exactly one
+         of:
+
+             verdict: proceed
+             verdict: reject
+             verdict: needs-info
+
+         - `proceed` — understood, agreed, and worth building here.
+         - `reject` — this should not be built: already implemented, out of
+           scope, or contradicting a decision the author has agreed to keep.
+           You must have asked the author before rejecting; a reject they have
+           not seen is not a verdict, it is a guess.
+         - `needs-info` — you asked, and what came back still does not settle
+           what should be built. The issue stays open for a later run.
+
+         Below that first line, write the plan: what the change is, which files
+         and packages it touches, which spec sections it amends if any, what
+         the tests should prove, and the decisions that came out of your
+         questions — written as settled decisions in prose, not as a Q&A
+         transcript. On `reject` or `needs-info`, write why instead, and what
+         would change the answer.
+
+      Do not commit. Do not push. Do not run `gh` for anything that writes. Do
+      not modify any file outside `.vincent-issue/`.
+    # Asserts the artifact exists and is machine-readable before a later step
+    # branches on it, and that this step really did keep its hands off the code.
+    # Stricter than `diagnose`'s: an enhancement brief writes no test, so *any*
+    # working-tree change is out of scope here.
+    check: >
+      test -s .vincent-issue/brief.md &&
+      head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
+      git diff --quiet &&
+      git diff --cached --quiet
+    check_timeout: 1m
+
+  - id: triage
+    name: Act on the verdict
+    type: command
+    shell: sh
+    timeout: 1m
+    # `reject` and `needs-info` are legitimate outcomes of a brief step, so
+    # `diagnose`/`digest` pass their checks either way. This step is what turns
+    # one into a failed task with a legible reason, instead of a pull request
+    # nobody wanted. The two are kept distinct on purpose: `reject` means never,
+    # `needs-info` means re-run this task once the thread has more in it.
+    #
+    # Path-independent: both briefs are written to the same path with the same
+    # verdict vocabulary, which is most of why merging the two workflows was
+    # worth doing.
+    max_retries: 0
+    # The status is what makes the two stopping verdicts tell themselves apart
+    # on the board. Both exit 1 and both classify `nonzero_exit`, and the whole
+    # point of keeping `reject` and `needs-info` distinct is lost if the row
+    # cannot say which one it was — `reject` means never, `needs-info` means
+    # re-run this task once the thread has more in it, and those are different
+    # instructions to the person reading the board.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      verdict=$(head -n 1 .vincent-issue/brief.md)
+      case "$verdict" in
+        'verdict: reject')
+          say "brief rejected the issue: nothing will be implemented"
+          echo "the brief rejected this issue; nothing will be implemented." >&2
+          echo "--- brief.md ---" >&2
+          cat .vincent-issue/brief.md >&2
+          exit 1
+          ;;
+        'verdict: needs-info')
+          say "needs info: re-run once the issue thread has more in it"
+          echo "the issue could not be settled with the information available." >&2
+          echo "it stays open; re-run this task once the thread has more in it." >&2
+          echo "--- brief.md ---" >&2
+          cat .vincent-issue/brief.md >&2
+          exit 1
+          ;;
+      esac
+      cat .vincent-issue/brief.md
+      say "brief says proceed"
+
+  - id: confirm-red
+    name: Confirm the test fails
+    type: command
+    if: '{{ eq (index .Steps "is-bug").ExitCode 0 }}'
+    shell: sh
+    timeout: 15m
+    # Deterministic by construction — a second identical run is the same run.
+    max_retries: 0
+    # The load-bearing step of the bug path, and the one thing the enhancement
+    # path has no equivalent of. It proves the regression test observes the bug,
+    # in the one window where that is observable: after the test exists and
+    # before the fix does.
+    #
+    # It also *freezes* the command into `green.sh`, which is what `implement`'s
+    # check re-runs. Reading it back from `red-test.txt` there would let the
+    # implement step move its own goalposts by rewriting the file; the copy
+    # taken here was taken while the bug was still present.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      cmd=$(head -n 1 .vincent-issue/red-test.txt)
+      if [ -z "$cmd" ]; then
+        say "red-test.txt is empty"
+        echo ".vincent-issue/red-test.txt is empty" >&2
+        exit 1
+      fi
+
+      case "$cmd" in
+        none:*)
+          echo "NO AUTOMATED REPRODUCTION -${cmd#none:}"
+          echo "this fix ships without a regression test; the gate step is the only"
+          echo "thing standing between it and the PR."
+          printf 'exit 0\n' > .vincent-issue/green.sh
+          # A green step whose status says the proof is missing. This is the
+          # escape hatch the file header calls "loud", and the board is one of
+          # the places it has to be loud in.
+          say "NO AUTOMATED REPRODUCTION: this fix ships without proof"
+          exit 0
+          ;;
+      esac
+
+      printf '%s\n' "$cmd" > .vincent-issue/green.sh
+      echo "--- red run: $cmd ---"
+      say "running the regression test against the unfixed code"
+      if sh .vincent-issue/green.sh; then
+        say "the regression test passes unfixed: it does not capture the bug"
+        echo "the reproduction command passed against the unfixed code:" >&2
+        echo "  $cmd" >&2
+        echo "it does not capture the reported bug. A regression test that was never" >&2
+        echo "observed failing proves nothing about the fix." >&2
+        exit 1
+      fi
+      echo "--- confirmed red: the test fails on the unfixed code ---"
+      say "confirmed red: the test fails on the unfixed code"
+
+  - id: seed
+    name: Commit what the lanes inherit
+    type: command
+    shell: sh
+    timeout: 5m
+    # Deterministic: it commits a tree that already exists, or finds nothing to
+    # commit. A second run is the same run.
+    max_retries: 0
+    # The boundary between "this task's working tree" and "what a lane can
+    # see". A lane's worktree is cut from this task's *branch* (§7.6), so
+    # anything the brief steps left uncommitted — which on the bug path is the
+    # failing regression test, deliberately, so `confirm-red` could run it
+    # against unfixed code — would not reach a single lane.
+    #
+    # Committing the test here is not a workaround. The sequential workflow's
+    # `implement` step is told "commit the regression test and the fix, test
+    # first if you split them"; this is that split, made explicit because the
+    # fan-out needs the first half on the branch before it spawns.
+    #
+    # Path-independent, and no `if:`. On the enhancement path `digest`'s check
+    # already asserted a clean tree, so this finds nothing and says so.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      # Untracked scratch does not make the tree dirty, so this really is
+      # asking "did a brief step leave work behind".
+      if git diff --quiet && git diff --cached --quiet && \
+         [ -z "$(git ls-files --others --exclude-standard -- . ':(exclude).vincent-issue')" ]; then
+        say "nothing to seed: lanes start from the base branch"
+        echo "no uncommitted work to seed; the lanes start from {{.Task.BaseBranch}}."
+        exit 0
+      fi
+
+      # `diagnose` is only allowed to touch `.vincent-issue/`, `*_test.go` and
+      # `testdata/`, and its check enforces that. This re-asserts it before
+      # committing, because a commit is the one thing that makes a mistake
+      # here travel to six worktrees at once.
+      offenders=$( { git diff --name-only; git ls-files --others --exclude-standard; } \
+        | grep -v '^\.vincent-issue/' \
+        | grep -vE '(_test\.go$|(^|/)testdata/)' || true )
+      if [ -n "$offenders" ]; then
+        say "brief left non-test files behind: refusing to seed"
+        echo "the brief step left changes outside *_test.go and testdata/:" >&2
+        echo "$offenders" >&2
+        echo "refusing to commit them; a lane would inherit unreviewed production code." >&2
+        exit 1
+      fi
+
+      # `:(exclude)` is git's own pathspec magic, so scratch cannot be staged
+      # by accident here the way `git add -A` would stage it.
+      git add -A -- . ':(exclude).vincent-issue'
+
+      tracked=$(git ls-files .vincent-issue)
+      if [ -n "$tracked" ]; then
+        say "scratch got staged: refusing to seed"
+        echo "the following scratch files were staged and must not be committed:" >&2
+        echo "$tracked" >&2
+        exit 1
+      fi
+
+      if git diff --cached --quiet; then
+        say "nothing to seed after excluding scratch"
+        echo "nothing outside .vincent-issue/ to commit."
+        exit 0
+      fi
+
+      say "committing the regression test so the lanes inherit it"
+      git commit -q -m 'test: add the failing regression test for #{{ index .Task.Fields "issue" }}'
+      git --no-pager show --stat --oneline HEAD
+      say "seeded: lanes are cut from a branch carrying the red test"
+
+  - id: plan-dag
+    name: Cut the brief into a dependency graph
+    type: agent
+    timeout: 30m
+    # The check is self-healing — a malformed graph comes back in the §8.4
+    # failure block naming the jq assertion that rejected it, and the second
+    # attempt fixes the JSON rather than the plan.
+    max_retries: 1
+    # This is the one step that has to exist for this file to differ from the
+    # sequential one, and it is agent work by the test this repository applies:
+    # deciding which parts of an agreed change can proceed independently, and
+    # which genuinely cannot start until another part's code exists, is a
+    # judgement about the codebase. No command can make it.
+    #
+    # It writes a graph and nothing else. It may not touch the tree: everything
+    # it decides reaches the lanes as data.
+    prompt: |
+      Cut the agreed change into work units that can be delivered in parallel,
+      and write the graph of what depends on what.
+
+      You are NOT implementing anything. Do not change a single line of code.
+
+      The agreed scope is `.vincent-issue/brief.md` — the author has already
+      answered the open questions and those answers are written into it as
+      settled decisions. The original report is in `.vincent-issue/issue.json`.
+      Read both, then read enough of the repository to know where the change
+      lands.
+      {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+
+      This is the bug path. The regression test is already written **and
+      already committed** on this branch, and it fails: it was run against the
+      unfixed code and observed to fail, which is what makes it worth anything.
+      `.vincent-issue/green.sh` is the exact command that was observed failing.
+      Read it. The unit that repairs the defect it catches should carry that
+      command as its own `check`.
+      {{- end }}
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      Say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Before each phase — reading the brief, mapping the packages, writing the
+      graph. Under ten words. End on the shape you chose: "4 units, 2 waves,
+      store before api" tells someone watching more than "done".
+
+      ## What a unit is
+
+      A unit is a piece of the change that one agent can deliver on its own
+      branch, in one session, and prove with one command. Each becomes a real
+      child task with its own worktree, and their branches are merged back into
+      this one as they finish.
+
+      **Split only where it buys wall-clock.** Two units that are each ten
+      minutes of work are worse than one unit of twenty: you pay two sessions,
+      two worktrees and a merge for nothing. If the change is one coherent
+      piece of work — most bug fixes are — emit exactly **one** unit covering
+      all of it. That is a correct answer and the right one more often than not.
+
+      At most **six** units. Fewer is usually better.
+
+      ## The two rules that keep lanes from destroying each other
+
+      1. **Disjoint files.** Every unit declares `files`, an extended regular
+         expression (ERE, the `grep -E` dialect) matching every path it may
+         create or modify. No two units' expressions may match the same path.
+         This is enforced: a lane that commits a path its own expression does
+         not match fails, and the join blocks on a conflict. Anchor them —
+         `^internal/store/` — and use `|` for alternatives. Include every path
+         the unit touches, tests and testdata included.
+      2. **`needs` is happens-after, and it costs wall-clock.** List a unit in
+         another's `needs` only when the second genuinely cannot be written
+         until the first's code exists — a caller that needs the function, a
+         migration that needs the column. It is not for ordering preferences
+         and it is not for avoiding conflicts; rule 1 is for that. A chain of
+         four is a sequential workflow with extra steps.
+
+      A unit that needs another is cut from a branch that already contains it,
+      so it can call what that unit wrote.
+
+      ## Things no unit may own
+
+      Leave these out of every unit's `files`. A later step owns each of them,
+      and two lanes writing the same file is the failure this planning exists
+      to prevent:
+
+      - `CHANGELOG.md` and the pull request body — a single integration step
+        writes those once, for the whole change.
+      - `docs/`, `skills/` and `internal/workflow/builtin.go` — a dedicated
+        documentation audit runs after the join, against the finished change.
+      - `.vincent-issue/` — scratch, and never committed by anything.
+
+      ## What to write
+
+      Write `.vincent-issue/units.jsonl`: **one JSON object per unit**, one per
+      line, no array wrapper, no trailing commentary. Every key is required on
+      every line:
+
+          {"id": "...", "title": "...", "needs": [], "files": "...", "check": "...", "brief": "..."}
+
+      - `id` — lowercase slug, `^[a-z][a-z0-9-]*$`, unique. It names the child
+        task and its branch, so make it read: `store-migration`, not `unit1`.
+      - `title` — one short line for the board.
+      - `needs` — an array of other units' `id`s. Write `[]` when there are
+        none. The key must be present either way. No self-reference, no cycle.
+      - `files` — the ERE from rule 1.
+      - `check` — one shell command that proves this unit works, run from the
+        repository root after its commits. Scope it:
+        `go test ./internal/store/...`, not the whole suite.
+        **The whole suite is not available as a check here**{{ if eq (index .Steps "is-bug").ExitCode 0 }} — this branch
+        carries a committed failing regression test until the unit that fixes
+        it lands, so `go run mage.go test` is red by construction{{ end }}. The suite is run
+        after the join, by a later step.
+      - `brief` — everything the agent delivering this unit needs, as prose.
+        It will not see `brief.md`, it will not see the other units, and it
+        will not see you. Restate the part of the agreed scope this unit
+        covers, name the packages and the approach, and state the interface
+        anything downstream depends on **exactly** — if another unit `needs`
+        this one, the name and signature it will call are decided here, by
+        you, and written into both briefs. This is a JSON string: escape the
+        newlines as `\n`.
+
+      Do not modify any file outside `.vincent-issue/`. Do not commit, do not
+      push, and do not run `gh` for anything that writes.
+    # Every assertion here is one a bad plan actually fails, and each is worth
+    # a retry rather than a blocked task: a check failure is appended to the
+    # next attempt's prompt (§8.4), so the planner is told which one it broke.
+    #
+    # The last clause is the acyclicity test, and it is why this is a literal
+    # block rather than the folded scalars used elsewhere in this file — a
+    # folded scalar would need every line of the jq program at one indent.
+    # `peel` repeatedly takes the units whose `needs` are all already taken;
+    # when nothing more can be taken, everything left is in a cycle, so the
+    # graph is acyclic exactly when the peel consumed all of it.
+    #
+    # It binds `. as $unit` and `. as $dep` rather than writing the obvious
+    # `$done | index(.id)`. A jq function argument is a closure evaluated
+    # against the *function's* input, so inside `index(...)` the `.` is `$done`
+    # — an array — and the obvious spelling fails with "cannot index array with
+    # string" on every well-formed plan. Binding first is what makes the
+    # subject the unit rather than the accumulator.
+    #
+    # vincent refuses a cycle too, at spawn, with `fan_out_invalid` (§7.6).
+    # Catching it here is the difference between a retry and a blocked task.
+    check: |
+      test -s .vincent-issue/units.jsonl &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      test -z "$(git ls-files .vincent-issue)" &&
+      jq -e -s '
+        . as $u
+        | ($u | length) as $n
+        | def peel($done):
+            [ $u[]
+              | . as $unit
+              | select(($done | index($unit.id)) == null)
+              | select([ $unit.needs[] | . as $dep
+                         | select(($done | index($dep)) == null) ] | length == 0)
+              | $unit.id ] as $ready
+            | if ($ready | length) == 0 then $done else peel($done + $ready) end;
+          ($n > 0 and $n <= 6)
+          and all($u[]; type == "object")
+          and all($u[]; has("id") and has("title") and has("needs")
+                        and has("files") and has("check") and has("brief"))
+          and all($u[]; (.id | type) == "string"
+                        and (.id | test("^[a-z][a-z0-9-]*$")))
+          and all($u[]; (.title | type) == "string" and (.title | length) > 0)
+          and all($u[]; (.files | type) == "string" and (.files | length) > 0)
+          and all($u[]; (.check | type) == "string" and (.check | length) > 0)
+          and all($u[]; (.brief | type) == "string" and (.brief | length) > 0)
+          and all($u[]; (.needs | type) == "array"
+                        and all(.needs[]; type == "string"))
+          and (([$u[].id] | unique | length) == $n)
+          and all($u[]; .id as $me | all(.needs[]; . != $me))
+          and all($u[]; all(.needs[]; . as $d | any($u[]; .id == $d)))
+          and ((peel([]) | length) == $n)
+      ' .vincent-issue/units.jsonl > /dev/null
+    check_timeout: 2m
+
+  - id: plan-emit
+    name: Publish the graph
+    type: command
+    shell: sh
+    timeout: 1m
+    max_retries: 0
+    # `for_each:` is a template and a template cannot read a file, so the graph
+    # has to be a *step's stdout*: `.Steps.plan-emit.Result` is the last 200
+    # lines of it (§8.4), and that is what `build` derives its lanes from.
+    #
+    # `plan-dag` is an agent, and an agent step's `.Result` is its final
+    # message — not something to parse a graph out of. Hence this step.
+    #
+    # `jq -c` is doing real work and not just copying: it re-emits one compact
+    # object per line whatever the planner's formatting was, which is exactly
+    # what `for_each` requires. `plan-dag`'s check already validated the
+    # content, so there is nothing left here to judge.
+    #
+    # Everything this step prints on stdout becomes a lane. The count goes to
+    # the status and to stderr for that reason, never to stdout.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      n=$(jq -s 'length' .vincent-issue/units.jsonl)
+      roots=$(jq -s '[.[] | select((.needs | length) == 0)] | length' .vincent-issue/units.jsonl)
+      say "$n unit(s), $roots can start at once"
+      echo "graph: $n unit(s), $roots with no dependency" >&2
+      jq -c '.' .vincent-issue/units.jsonl
+
+  - id: plan-gate
+    name: Approve the graph
+    type: manual
+    # The cheapest decision in this workflow, placed immediately before the
+    # thing it authorises. Approving spawns up to six child tasks, each with a
+    # worktree and an agent session; rejecting costs one planner run.
+    #
+    # The graph is rendered inline rather than referenced by path, because a
+    # gate whose subject is in another window is a gate people approve without
+    # reading. `.Result` is stdout only, so this is exactly the lane list.
+    instructions: |
+      Task #{{.Task.ID}} has cut the agreed change into work units. Approving
+      this spawns one **child task** per unit — each with its own worktree,
+      branch and agent session — and merges their branches back into
+      {{.Task.BranchName}} as they finish.
+
+      The graph:
+
+      {{ (index .Steps "plan-emit").Result }}
+
+      The plan is also in `.vincent-issue/units.jsonl` in
+      {{.Worktree.Path}}, and the brief it was cut from is in
+      `.vincent-issue/brief.md` next to it.
+
+      Four things are worth thirty seconds each:
+
+      - **Is it split at all, and should it be?** One unit is a correct answer
+        for a change that is one piece of work. Six units for a two-file fix is
+        the planner being enthusiastic, and it will cost six sessions and six
+        worktrees to find that out.
+      - **Do the `files` expressions overlap?** Two units matching the same
+        path will collide at the join. The lane checks catch a lane that
+        strays outside its own expression; nothing catches two expressions
+        that were written overlapping.
+      - **Is `needs` minimal?** Every edge is wall-clock. A chain through all
+        the units is the sequential workflow with extra steps and extra cost.
+      - **Does each `brief` stand alone?** A lane sees its own brief, the
+        issue, and the code. It does not see `brief.md` and it does not see the
+        other units. An interface two units share has to be spelled out in both.
+
+      Rejecting stops the task here, before any child task exists. Fix the plan
+      by rejecting, then editing and retrying `plan-dag`.
+
+  - id: build
+    name: Deliver the units in parallel
+    type: fan_out
+    # A derived width cannot be counted when the task is created, so the
+    # ceiling has to be declared here (§7.6) and it is checked, along with the
+    # daemon's `fan_out.max_tasks`, before anything is spawned. `plan-dag`'s
+    # check refuses a seventh unit for the same number, so this is the backstop
+    # for a plan that reached here some other way — an edited snapshot, a
+    # retried step.
+    max_lanes: 6
+    # Wall-clock is the entire point of this file. A lane is merged and its
+    # dependents spawned as soon as *its own* `needs` are done, rather than
+    # waiting for its whole barrier round to settle (§7.6).
+    #
+    # The price is stated plainly because a file that trades reproducibility
+    # for throughput should say so: **a lane's starting tree becomes
+    # timing-dependent**. Whether an unrelated sibling had merged by the time a
+    # lane was cut is a stopwatch question, so re-running this task can give a
+    # lane a different tree and a different result, and the branch's merge
+    # topology varies between runs even when the delivered tree does not.
+    # `barrier` is the reproducible default; this file is not using it.
+    #
+    # A plan whose units declare no `needs` at all is one round either way, and
+    # this is redundant rather than wrong on such a plan.
+    schedule: eager
+    # The lane list is `plan-emit`'s stdout, one JSON object per line. `.Item`
+    # in the template below is that object — the one place a template value is
+    # not plain text, because a node of a graph carries an identity *and* its
+    # edges (§7.6).
+    for_each: '{{ (index .Steps "plan-emit").Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      # Rendered, then split on the brackets and commas Go's text/template
+      # prints an array with. `[]` renders to `[]` and splits to nothing, which
+      # is why `plan-dag`'s check requires the key to be present even when the
+      # unit has no dependency: `missingkey=error` (§8.4) would fail the step
+      # before the fan-out started.
+      needs: '{{ .Item.needs }}'
+      # Static by construction — only `id`, `needs`, `fields` and `if` may vary
+      # per item, so the registry is still read exactly once, when the task is
+      # created (§7.6).
+      workflow: github-resolve-issue-unit
+      # `fields:` is the channel for everything else. It is merged over this
+      # task's fields, so a lane also inherits `issue` and re-reads the thread
+      # for itself. Nothing here is shell: the brief is rendered into the
+      # lane's prompt, and the two values that *do* reach a shell — the ERE and
+      # the check command — get there through a quoted heredoc in the lane's
+      # first step, never through the script.
+      fields:
+        unit_id: '{{ .Item.id }}'
+        unit_title: '{{ .Item.title }}'
+        unit_brief: '{{ .Item.brief }}'
+        unit_files: '{{ .Item.files }}'
+        unit_check: '{{ .Item.check }}'
+    merge:
+      # Two lanes whose `files` expressions were written overlapping are the
+      # conflict this expects, and it is mechanically reviewable: the resolver
+      # is choosing between two edits to one file, both of which are on the
+      # branch and both of which have a brief behind them. If it cannot, the
+      # join blocks with `merge_conflict` and the worktree is left conflicted
+      # for a human — which is the default behaviour and the floor here, not a
+      # regression.
+      on_conflict: agent
+      agent:
+        id: resolve-lanes
+        timeout: 30m
+        prompt: |
+          Two parallel work units edited the same file and their branches will
+          not merge. Resolve the conflict in:
+
+          {{ range .Conflicts }}
+          - {{ . }}
+          {{- end }}
+
+          Both sides are wanted. This is not a choice between two versions of
+          the change: each side is a unit that was planned, delivered and
+          checked on its own branch, and the merged file has to do what both
+          briefs said. Read `.vincent-issue/units.jsonl` for what those units
+          were, and `git log --oneline {{.Task.BaseBranch}}..HEAD` for what has
+          already landed.
+
+          Say what you are doing:
+
+              vincent status "<one short line>"
+
+          Name the file you are resolving, not the activity. Under ten words.
+
+          Rules:
+
+          - **Keep both intentions.** Dropping one side because it is harder to
+            merge silently discards a unit somebody paid for.
+          - Resolve, stage the files, and leave the merge for the join to
+            commit. Do not commit the merge yourself.
+          - No conflict markers may survive. Anything left is caught and the
+            join blocks anyway.
+          - Do not "fix" anything that is not conflicted. The suite is not your
+            bar here and a drive-by change would not be checked.
+        # `go run mage.go test` is deliberately absent: on the bug path this
+        # branch carries a committed failing regression test until the unit
+        # that fixes it merges, so the suite is red by construction mid-join
+        # and would fail every resolution. The suite's bar is `integrate`,
+        # after the join. Build and vet are what can honestly be asserted here.
+        check: >
+          go build ./... &&
+          go vet ./...
+        check_timeout: 10m
+
+  - id: integrate
+    name: Make the merged branch one change
+    type: agent
+    timeout: 45m
+    # Two attempts, like the sequential file's `implement`, and for the same
+    # reason: this check is self-healing. A red suite, a lint finding or a
+    # missing PR artifact comes back in the §8.4 failure block and the second
+    # attempt fixes it. The expensive cross-platform legs stay in `verify`.
+    max_retries: 2
+    # Six lanes that each passed their own check can still leave a branch that
+    # does not cohere — two units that agreed on a helper's name in prose and
+    # not in code, a suite that is red only in the combination. Working out
+    # what is wrong there and repairing it is code reasoning, which is the test
+    # this file applies to every agent step it keeps.
+    #
+    # It is also the first step that has seen the whole change, which is why it
+    # writes the PR body rather than any lane: a pull request describes one
+    # change, and until the join there was no such thing.
+    prompt: |
+      The work units planned for this issue have been delivered on their own
+      branches and merged into this one. Your job is to make the result **one
+      coherent change** and to write it up. You are not re-doing any unit's
+      work.
+
+      {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+      This is a bug fix. The regression test was committed before the units
+      started and was observed failing against the unfixed code, which is what
+      makes it worth anything. `.vincent-issue/green.sh` runs exactly that
+      test, and it must pass now. If it does not, the fix is incomplete —
+      complete it. **Do not weaken the test to make it pass**; if it turns out
+      to assert the wrong thing, say so explicitly in the PR body and explain
+      what you changed about it and why.
+      {{- end }}
+
+      The agreed scope is `.vincent-issue/brief.md`, the units it was cut into
+      are in `.vincent-issue/units.jsonl`, and the original report is in
+      `.vincent-issue/issue.json`. What actually landed is
+      `git log --oneline {{.Task.BaseBranch}}..HEAD` and
+      `git diff {{.Task.BaseBranch}}..HEAD`. Read the diff: it is the first
+      time anyone or anything has seen the whole change.
+
+      You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
+      a dedicated worktree at {{.Worktree.Path}}.
+
+      This step is budgeted 45 minutes and its check runs the whole suite and
+      the linter afterwards, so say what you are doing as you go:
+
+          vincent status "<one short line about what you are doing now>"
+
+      Before each phase — reading the merged diff, running the suite, repairing,
+      writing the PR body. Under ten words. If the suite or the linter is red,
+      set the status to what is actually red: "3 tests red in internal/store",
+      not "fixing tests". That sentence is the one thing a `check_failed` reason
+      cannot carry, and it is what a person sees when this step burns its
+      second attempt.
+
+      ## What to do
+
+      1. Run the suite and the linter. They are your bar and they are the first
+         thing that has judged the units together rather than apart.
+      2. Repair what only breaks in combination: a signature two units disagreed
+         on, a duplicated helper, a test that passes alone and fails in the
+         package, an import cycle nobody could see from one lane.
+      3. **Stay out of the units' work.** A unit that delivered its scope and
+         passed its own check is done. If one of them is genuinely wrong rather
+         than merely inconsistent with another, fix the smallest thing that
+         makes the branch correct and say so in the PR body — do not rewrite it.
+         An integrator that starts redoing lanes spends a full session undoing
+         the parallelism this workflow exists for.
+      4. Say `CHANGELOG.md` once. No unit was allowed to touch it, so the
+         user-visible change is unrecorded until you record it under
+         `## [Unreleased]` — a bug a user could hit belongs there too.
+      5. If the change makes something in `docs/spec.md` no longer true — or if
+         the brief concluded the spec was the side that was wrong — amend the
+         spec on this branch with a dated note. That is a hard rule of this
+         repository, not a nicety. The documentation *audit* is a later step
+         and it is not a substitute for this.
+
+      **Cross-platform is a hard requirement** (`CLAUDE.md`): Windows, macOS and
+      Linux all run the full suite. Platform-specific code goes in `_unix.go` /
+      `_windows.go` / `_darwin.go` / `_linux.go`. Never assume a POSIX shell,
+      `/`-separated paths, or signal semantics.
+
+      Commit your own work. Commits follow Conventional Commits (`feat`, `fix`,
+      `docs`, `ci`, `chore`, `refactor`, `test`). Never add a co-author trailer.
+
+      ## Then write the pull request
+
+      This repository's pull request template makes four claims. Satisfy the
+      ones that apply and be honest about the ones that do not:
+
+      - Conventional Commits.
+      - Tests added or updated for behaviour changes.
+      - User-visible changes noted under `## [Unreleased]` in `CHANGELOG.md`.
+      - The affected page under `docs/` updated — the config reference tracks
+        `internal/config`, the CLI page the cobra tree, the API page the route
+        table in `internal/api/server.go`, the TUI key tables
+        `internal/tui/bindings.go`, the block reasons the `Reason*` constants.
+
+      Write two files:
+
+      - `.vincent-issue/pr-title.txt` — one line, Conventional Commits style,
+        no trailing prose.
+      - `.vincent-issue/pr.md` — the pull request body, following
+        `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
+        `Closes #<the issue number from issue.json>` so merging the PR closes
+        the issue.
+
+        Describe **one change**, not a list of units. The reviewer is reading a
+        pull request, not a project plan; that the work was split across
+        branches is an implementation detail of how it got written and belongs
+        nowhere in the body.
+        {{- if eq (index .Steps "is-bug").ExitCode 0 }}
+        Say plainly what the root cause was and how the regression test would
+        catch it coming back.
+        {{- end }}
+        Tick a checklist box only if you actually did that thing; a checklist
+        ticked unconditionally is worth nothing to the reviewer, and leaving a
+        box unticked with a one-line reason is the correct outcome when it does
+        not apply.
+
+      **Never stage or commit `.vincent-issue/`.** It is scratch space for this
+      workflow and must not appear in the diff — do not `git add -A` without
+      excluding it. A later step deletes it.
+    # The sequential workflow's `implement` check, unchanged, and it is the
+    # first place in this file where the whole suite is a fair bar: the units
+    # have landed, so the seeded regression test is expected green.
+    #
+    # Cheap assertions first, so an obvious failure does not wait out a full
+    # test run: scratch stayed untracked, something is on the branch (an empty
+    # one would only fail at `gh pr create`, after you had already approved it
+    # at the gate), the PR artifacts exist. Then — on the bug path only — the
+    # narrow regression test, which is the fastest signal that the fix works.
+    # Then the real bar.
+    check: >
+      ! git ls-files .vincent-issue | grep -q . &&
+      test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+      test -s .vincent-issue/pr-title.txt &&
+      test -s .vincent-issue/pr.md &&
+      {{if eq (index .Steps "is-bug").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
+      go run mage.go test &&
+      go run mage.go lint
+    check_timeout: 15m
+
+  - id: docs-scope
+    name: List what the change touched
+    type: command
+    shell: sh
+    timeout: 2m
+    max_retries: 0
+    # This is a data step first and a guard second. Its stdout is the list of
+    # behaviour-bearing files the audit prompt reads, and its exit code is what
+    # skips the audit for a change that touched nothing but tests — the only
+    # kind that cannot make a documented claim false.
+    #
+    # `pre-docs.sha` is taken here rather than derived later: the audit's check
+    # needs to know which commits are *its own*, and the fan-out's merges and
+    # `integrate` between them will have left a great many.
+    allow_failure: true
+    # The second `allow_failure` step whose red row is a normal outcome: exit 1
+    # here means "nothing but tests changed", which is a saving, not a fault.
+    # The status says so, because `nonzero_exit` cannot.
+    #
+    # Set before `grep` runs, not after, because grep's exit code has to be the
+    # last thing this script does — anything after it would become the step's
+    # exit code and destroy the guard `docs-sync` reads.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      git rev-parse HEAD > .vincent-issue/pre-docs.sha
+      git diff --name-only {{.Task.BaseBranch}}..HEAD > .vincent-issue/changed.txt
+      # `|| true` and the default together: `grep -c` exits 1 on no match, and
+      # an unset `n` would make the `[` below a syntax error rather than a
+      # count — either of which would kill this step under `set -e` and take
+      # the guard `docs-sync` reads with it.
+      n=$(grep -cvE '(_test\.go$|(^|/)testdata/)' .vincent-issue/changed.txt || true)
+      n=${n:-0}
+      if [ "$n" -eq 0 ]; then
+        say "tests only: the documentation audit is skipped"
+      else
+        say "$n behaviour-bearing file(s) changed: auditing the docs"
+      fi
+      # grep's exit code is the step's: 1 means nothing outside tests changed.
+      grep -vE '(_test\.go$|(^|/)testdata/)' .vincent-issue/changed.txt
+
+  - id: docs-sync
+    name: Bring the documentation up to date
+    type: agent
+    if: '{{ eq (index .Steps "docs-scope").ExitCode 0 }}'
+    timeout: 30m
+    max_retries: 1
+    # `integrate` is already told to update the affected page, and this step
+    # exists because a step that is doing something else does that badly. This
+    # one has one job, sees the finished change rather than the one it is
+    # partway through writing, and is checked against the derived-source rules
+    # in CLAUDE.md rather than against a checklist it wrote itself.
+    #
+    # It runs *before* `verify` on purpose: it may edit
+    # `skills/vincent-workflows/SKILL.md`, which `skills/embed.go` embeds into
+    # the built-in `create-workflow` workflow at build time, or the header in
+    # `internal/workflow/builtin.go`. Those are code. Putting the audit after
+    # the cross-platform legs would mean the legs never saw them.
+    prompt: |
+      The change for this issue is written, committed and passing
+      `go run mage.go test` and `go run mage.go lint`. Your job is the
+      documentation, and nothing else.
+
+      This is an **audit**. "Nothing needed changing" is a normal and frequent
+      outcome — say so and stop. Do not rewrite prose that is still true, do
+      not restructure a page you happen to be reading, and do not add a
+      paragraph about the change to a page that never mentioned that area.
+
+      Say what you are auditing as you go, so the board is not a blank
+      `running` row for half an hour:
+
+          vincent status "<one short line about what you are doing now>"
+
+      One before each derivation you check — "checking the CLI page against the
+      cobra tree" — and one when you commit. Under ten words. End on the
+      verdict you are about to write into `docs.md`: "docs: none needed, 6
+      derivations checked" or "docs: updated spec §7.9 and the schema page".
+      That last message is what stays on the finished step.
+
+      What the change touched:
+
+      {{ (index .Steps "docs-scope").Result }}
+
+      The plan it was written against is `.vincent-issue/brief.md`, the drafted
+      pull request body is `.vincent-issue/pr.md`, and the original issue is
+      `.vincent-issue/issue.json`.
+
+      Read `CLAUDE.md` first. Public documentation there is **derived from the
+      source, not from planning records**, and each derivation is a rule you
+      check one at a time:
+
+      - `internal/config` → `docs/reference/configuration.md`
+      - the cobra tree → `docs/reference/cli.md`
+      - the route table in `internal/api/server.go` → `docs/reference/api.md`
+      - `internal/tui/bindings.go` → the key tables in `docs/guides/tui.md`
+      - the `Reason*` constants in `internal/worktree` and
+        `internal/taskrun/engine.go` → the block-reason tables
+      - `internal/workflow` and `internal/taskrun`'s step types →
+        `docs/reference/workflow-schema.md` and `docs/reference/task-lifecycle.md`
+      - `internal/agent/*` → `docs/guides/agents.md` and spec §9.x. A capability
+        an adapter lacks is **stated, never emulated** — if this change altered
+        what an adapter can do, the page says so plainly.
+      - anything a user can see → `docs/features.md`, the relevant
+        `docs/guides/` page, and `## [Unreleased]` in `CHANGELOG.md`
+
+      Then the records that are not derived from anything:
+
+      - **`docs/spec.md`** is the only spec, is deliberately unversioned, and is
+        amended **in place with a dated note, in the same PR as the code that
+        makes the amendment true**. If this change made a sentence in it false,
+        that is a hard rule of this repository, not a nicety. Its section
+        numbers are cited from code comments, so never renumber one.
+      - **`docs/tasks/`** — if this change completes or advances a task, update
+        its status marker and the index row in `docs/tasks/README.md` **in the
+        same edit**. Never delete a task.
+      - **`docs/gates/`** — if the behaviour a gate walks through changed, the
+        walkthrough changed.
+      - `docs/history/v0-tasks.md` is **closed and frozen**. Read it, never
+        edit it.
+
+      One file is not documentation at all:
+
+      - **`skills/vincent-workflows/SKILL.md` is runtime text.**
+        `skills/embed.go` embeds it and `internal/workflow/builtin.go` splices
+        it into the built-in `create-workflow` workflow's prompt at build time
+        (task 024). Editing it changes what the daemon tells an agent to do. If
+        this change altered the workflow schema — a step type, a field, a
+        validation rule, a template variable, a human-interaction mechanism —
+        that file is out of date and is part of this pull request. The three
+        standing corrections the prompt applies to it live in
+        `createWorkflowHeader` in `internal/workflow/builtin.go` and **never in
+        the skill**; if one of those needs to change, change it there.
+
+      Two things you must **not** do:
+
+      - **Never draw a screen.** No ASCII mock-up of a panel, no hand-written
+        "example" frame. Every `docs/assets/tui-*.png` is a capture of the
+        running TUI produced by `scripts/screenshots.sh`, and that script needs
+        VHS, ttyd and ffmpeg and seeds a throwaway daemon. Do not run it. If a
+        panel in the pictures no longer matches the code, write that down in
+        the report below and in `.vincent-issue/pr.md`, and leave the images
+        alone — a person re-runs the script.
+      - **Do not touch anything outside** `docs/`, `skills/`, `CHANGELOG.md`,
+        `README.md` and `internal/workflow/builtin.go`. If you find a bug in
+        the change itself, report it rather than fixing it here; this step's
+        commits are documentation commits.
+
+      This repository's own `.vincent/workflows/*.yaml` are consumers of the
+      schema too. If the schema changed under them, fix them — this step's
+      check runs both `vincent workflow validate` and `vincent workflow render`
+      over every one of them, so a template that parses but no longer executes
+      fails here rather than at the first task created from it.
+
+      Then:
+
+      1. **Commit** whatever you changed, `docs:` (or `chore:` for the skill),
+         separately from the implementation commits.
+      2. Update `.vincent-issue/pr.md` so its checklist tells the truth about
+         the documentation and CHANGELOG boxes, and so anything you found but
+         did not fix — a stale screenshot, a bug in the change — is written in
+         the body where the reviewer will see it.
+      3. Write `.vincent-issue/docs.md`. Its **first line** must be exactly one
+         of:
+
+             docs: updated
+             docs: none needed
+
+         Below it, list every page you changed and what claim was stale, or —
+         on `none needed` — name the derivations you checked and why each was
+         already true. A `none needed` that names nothing is not an audit.
+
+      Never stage or commit `.vincent-issue/`.
+    # Four assertions. The report exists and is machine-readable, because the
+    # gate step reads it. The worktree is committed and the scratch directory
+    # is still untracked. The step stayed inside its lane — the offenders
+    # clause names the paths on stderr rather than exiting silently, because
+    # §8.4 hands the retry this output and "check failed" tells an agent
+    # nothing. And the tree still builds, the repo's own workflow files still
+    # validate *and* still render — `validate` only parses a template, so a
+    # `{{.Task.Titel}}` or a `.Steps.plan.Reslt` this change introduced passes
+    # it and fails at the first task created from the file; `render` executes
+    # every one of them offline and is the half that catches that — and the
+    # packages whose tests assert what the published pages and the embedded
+    # skill say still pass.
+    #
+    # It deliberately does not re-run the full suite: `verify` is next.
+    check: >
+      test -s .vincent-issue/docs.md &&
+      head -n 1 .vincent-issue/docs.md | grep -Eq '^docs: (updated|none needed)$' &&
+      ! git ls-files .vincent-issue | grep -q . &&
+      git diff --quiet &&
+      git diff --cached --quiet &&
+      { offenders=$(git diff --name-only "$(cat .vincent-issue/pre-docs.sha)"..HEAD | grep -vE '^(docs/|skills/|CHANGELOG\.md$|README\.md$|internal/workflow/builtin\.go$)'); test -z "$offenders" || { echo 'docs-sync changed files outside docs/, skills/, CHANGELOG.md, README.md and internal/workflow/builtin.go:' >&2; echo "$offenders" >&2; false; }; } &&
+      go build -o .vincent-issue/vincent ./cmd/vincent &&
+      { for f in .vincent/workflows/*.yaml; do .vincent-issue/vincent workflow validate "$f" && .vincent-issue/vincent workflow render "$f" > /dev/null || exit 1; done; } &&
+      go test ./internal/config ./internal/cli ./internal/workflow ./internal/api
+    check_timeout: 15m
+
+  - id: verify
+    name: Verify across platforms
+    type: loop
+    # Four probes and three repairs. `defaults.timeout` bounds the *whole* loop
+    # (§7.8), not an iteration, so it has to be stated here or the loop is
+    # killed 30 minutes in, mid-repair.
+    count: 4
+    timeout: 5h
+    steps:
+      - id: verify-probe
+        name: Run the cross-platform legs
+        type: command
+        shell: sh
+        timeout: 20m
+        # A probe never retries — a second identical run is the same run — and
+        # `allow_failure` is what turns a red leg into something the `break`
+        # guard and the repair prompt can read instead of a blocked task.
+        max_retries: 0
+        allow_failure: true
+        # These are the legs CLAUDE.md requires before pushing but that are too
+        # slow to put in `integrate`'s check. `testrace` needs cgo and a C
+        # compiler; on a machine without one this fails, and that is the honest
+        # answer rather than a silently skipped race detector — which matters
+        # more for a bug fix than for a feature, since "intermittent" is how
+        # half of them are reported. That failure is also not one an agent can
+        # repair, which is what `verify-final` exists to stop.
+        #
+        # The GOOS loop is not decorative: `go tool golangci-lint` cross-*builds*
+        # the linter and then cannot run it, so the linter is built for the host
+        # once and re-run per target. A host-only lint hides every finding in a
+        # build-tagged file — exactly where a platform-specific bug fix lands.
+        # The clearest case in this file for a status per phase. Four legs run
+        # under one `set -e`, so the step dies at the first red one and the
+        # status set just before it is still standing — the finished attempt
+        # then reads "linting GOOS=windows" and a person knows which of the
+        # four failed without opening a 20-minute transcript. `check_failed`
+        # and `nonzero_exit` cannot say that.
+        #
+        # The loop index is in the message because this step runs up to four
+        # times and the board shows the latest attempt: without the pass number
+        # the same four messages cycle with nothing to date them. (This is a
+        # YAML comment, outside the `run:` scalar, so the braces below are not
+        # rendered here — a template action in a comment *inside* the body
+        # would be.)
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          pass="pass {{.Loop.Index}}/4"
+
+          say "$pass: go run mage.go testrace"
+          go run mage.go testrace
+          LINT=$(go tool -n golangci-lint)
+          for os in windows darwin linux; do
+            echo "--- golangci-lint GOOS=$os ---"
+            say "$pass: linting GOOS=$os"
+            GOOS=$os "$LINT" run ./...
+          done
+          say "$pass: race detector and all three lint targets green"
+
+      - id: verify-ok
+        name: Stop once the legs are green
+        type: break
+        if: '{{ eq (index .Steps "verify-probe").ExitCode 0 }}'
+
+      - id: repair
+        name: Repair the failing legs
+        type: agent
+        # Never on the last pass: nothing would probe it, so its work would
+        # reach the gate unverified while costing a whole session.
+        if: '{{ not .Loop.IsLast }}'
+        timeout: 45m
+        # An iteration *is* the retry here, and the next probe is a better
+        # judge than a retry of this step's own budget would be. One session
+        # per iteration, three at most.
+        max_retries: 0
+        prompt: |
+          The cross-platform verification legs are red on this branch. This is
+          the command that ran, and it failed:
+
+              go run mage.go testrace
+              LINT=$(go tool -n golangci-lint)
+              for os in windows darwin linux; do GOOS=$os "$LINT" run ./...; done
+
+          Its output (this is pass {{.Loop.Index}} of the repair loop):
+
+          {{ (index .Steps "verify-probe").Result }}
+
+          You are on branch {{.Task.BranchName}}, based on
+          {{.Task.BaseBranch}}, in a dedicated worktree at
+          {{.Worktree.Path}}. The change under repair is the one described in
+          `.vincent-issue/brief.md`; the original issue is in
+          `.vincent-issue/issue.json`.
+
+          Say what you are doing as you go — this is one of at most three
+          repair passes and someone may be watching it burn:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Keep the pass number in it, because the board shows only the latest
+          attempt and the three passes are otherwise indistinguishable. Under
+          ten words after the prefix. Name the actual fault rather than the
+          activity — "race in scheduler admit, fixing the lock" beats
+          "investigating". If you conclude the legs are red for a reason that
+          predates this branch, say *that* in the status: it is the one finding
+          that should stop a person from waiting for pass three.
+
+          Fix the underlying cause:
+
+          - **Do not weaken, skip, delete or `t.Skip` a test**, and do not
+            relax a lint rule or add a `//nolint` to silence a finding. If a
+            finding is genuinely a false positive, `nolintlint` requires the
+            directive to carry a reason — write the reason, and say so in
+            `.vincent-issue/pr.md` too.
+          - A **race** the detector found is a real bug in the change, not
+            noise. Fix the synchronisation, do not serialise the test to hide
+            it.
+          - A finding under `GOOS=windows` or `GOOS=darwin` is usually a
+            build-tagged file the host lint never compiled. Cross-platform is
+            a hard requirement (`CLAUDE.md`): platform-specific code belongs in
+            `_unix.go` / `_windows.go` / `_darwin.go` / `_linux.go`.
+          - Stay inside the scope the brief agreed. If the legs are red for a
+            reason that predates this branch, say so plainly and fix only what
+            this branch broke.
+
+          **Commit your fix.** The next pass re-runs the legs against what is
+          committed, and two files should still be true afterwards: update
+          `.vincent-issue/pr.md` if this repair changed what the change does,
+          and the affected page under `docs/` if it changed a documented claim.
+          A documentation audit already ran on the code you are repairing, so
+          anything you make stale here is stale for good.
+
+          Never stage or commit `.vincent-issue/`.
+        # Cheap, and deliberately not a re-run of the legs — that is the next
+        # iteration's job, and paying for it twice is what makes a repair loop
+        # expensive. This only asserts the repair left the worktree in a state
+        # the probe can judge: committed, scratch untracked, and still building.
+        check: >
+          ! git ls-files .vincent-issue | grep -q . &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
+          go build ./...
+        check_timeout: 5m
+
+  - id: verify-final
+    name: Refuse an unverified branch
+    type: command
+    shell: sh
+    timeout: 1m
+    max_retries: 0
+    # A loop that runs out of iterations *succeeds* — only exceeding
+    # `max_iterations` blocks (§7.8) — so the loop cannot be the assertion.
+    # This is. `.Steps` resolves a repeated id to its latest iteration, so the
+    # guard reads the fourth probe, the one no repair ran after.
+    #
+    # False guard ⇒ skipped ⇒ the workflow carries on, which is the green path.
+    if: '{{ ne (index .Steps "verify-probe").ExitCode 0 }}'
+    # The probe's output is not interpolated here on purpose: it is compiler and
+    # linter text, full of quotes and backticks, and rendering it into a shell
+    # script is how a diagnostic becomes a syntax error. It is already in the
+    # transcript under `verify-probe`, which is where you read it.
+    #
+    # The status is the same restraint applied to the board: a short line
+    # saying the branch was refused and where the failure is written down. It
+    # deliberately does not try to summarise the compiler output either.
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "legs still red after 3 repair passes: see the last verify-probe run"
+      echo "the cross-platform legs are still red after three repair passes." >&2
+      echo "read the last 'verify-probe' run in this task's transcript for the failure." >&2
+      exit 1
+
+  - id: gate
+    name: Approve the pull request
+    type: manual
+    instructions: |
+      Read the diff for task #{{.Task.ID}} before it goes out.
+
+      The next step pushes {{.Task.BranchName}} to `origin` and opens a public
+      pull request against {{.Task.BaseBranch}} under your account. It notifies
+      whoever watches the repository, and closing the PR afterwards does not
+      unsend that.
+
+      The worktree is {{.Worktree.Path}}. The brief and the drafted PR body are
+      in `.vincent-issue/`. Tests, lint and the cross-platform legs have already
+      passed — what is left is the judgement they cannot make.
+
+      {{ if eq (index .Steps "is-bug").ExitCode 0 -}}
+      This ran as a **bug fix**:
+
+      - Does the diff fix the **cause** named in the brief, or guard the symptom
+        somewhere upstream of it?
+      - Is there a regression test in the diff, and does it assert the behaviour
+        that was actually broken? Read the reproduction check below: if it says
+        NO AUTOMATED REPRODUCTION, this fix ships with no proof at all and you
+        are it.
+      - Did the fix stay small, or did a refactor come along for the ride?
+
+      Reproduction check:
+
+      {{ (index .Steps "confirm-red").Result }}
+      {{- else -}}
+      This ran as an **enhancement**: does it actually solve the issue, is it
+      the change you want, and did it stay inside the scope the brief agreed?
+      {{- end }}
+
+      The implementation reported:
+
+      {{ (index .Steps "integrate").Result }}
+
+      {{ if eq (index .Steps "docs-sync").Status "skipped" -}}
+      The documentation audit was skipped: the change touched nothing but
+      tests, so no documented claim can have gone stale.
+      {{- else -}}
+      The documentation audit reported:
+
+      {{ (index .Steps "docs-sync").Result }}
+
+      `.vincent-issue/docs.md` has the long form. If it says a screenshot under
+      `docs/assets/` is now stale, nothing automated will fix that —
+      `./scripts/screenshots.sh` is a person's job, and this is the moment to
+      notice.
+      {{- end }}
+
+      Approve to push and open the PR. Reject if the change is wrong, out of
+      scope, or not worth shipping.
+
+      This is the first of two gates. Approving here publishes the branch; it
+      does not merge anything. A second gate, after the PR exists, is what
+      authorizes rebasing it onto {{.Task.BaseBranch}} and merging it.
+
+  - id: publish
+    name: Push and open the PR
+    type: command
+    shell: sh
+    timeout: 5m
+    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # nothing distinguishes "the call failed" from "the call succeeded and the
+    # response was lost".
+    max_retries: 0
+    # `--head` is passed explicitly rather than letting gh infer it: inference
+    # from the current branch is exactly the kind of thing that behaves
+    # differently inside a linked worktree.
+    #
+    # `set -e` carries the same guarantee the folded `&&` chain this replaced
+    # did — first failure wins, nothing after it runs — and it makes the two
+    # halves distinguishable on the board, which matters here more than
+    # anywhere: a failed push and a failed `gh pr create` need completely
+    # different responses, and this step never retries.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "pushing {{.Task.BranchName}} to origin"
+      git push -u origin {{.Task.BranchName}}
+
+      say "opening the pull request against {{.Task.BaseBranch}}"
+      gh pr create \
+        --base {{.Task.BaseBranch}} \
+        --head {{.Task.BranchName}} \
+        --title "$(cat .vincent-issue/pr-title.txt)" \
+        --body-file .vincent-issue/pr.md \
+        > .vincent-issue/url.txt
+      say "opened $(cat .vincent-issue/url.txt)"
+
+  - id: report
+    name: Report the PR
+    type: command
+    shell: sh
+    timeout: 2m
+    # Unlike `publish` above, this one may retry: it is a pure read, and it
+    # runs immediately after a push and a `gh pr create`, which is exactly when
+    # a secondary-rate-limit is most likely. Blocking the task on a lost read
+    # of a pull request that was just created successfully is the wrong
+    # outcome, and the pause is what keeps the retry from landing in the same
+    # window.
+    max_retries: 1
+    retry_backoff: 20s
+    # stdout becomes this step's Result and lands in the transcript — that is
+    # where you read the PR url, and it is also what `gate-merge` puts in front
+    # of you.
+    #
+    # It no longer deletes `.vincent-issue/`: the merge tail below still needs
+    # `url.txt`, so the scratch directory now lives until `merged`.
+    run: gh pr view "$(cat .vincent-issue/url.txt)"
+
+  - id: gate-merge
+    name: Approve the merge
+    type: manual
+    # The second authority boundary. `gate` said "make this branch public";
+    # this one says "put it in the base branch". It is the last point at which
+    # a person decides anything, and since the tail became a loop it authorizes
+    # more than it used to: up to three rebase-push-wait-merge passes, and up
+    # to two agent sessions committing repairs to a branch this person has
+    # already read. The instructions say so — an approval whose scope the
+    # workflow quietly widened is not an approval.
+    instructions: |
+      The pull request for task #{{.Task.ID}} is open:
+
+      {{ (index .Steps "report").Result }}
+
+      Approving here rebases {{.Task.BranchName}} onto the current
+      {{.Task.BaseBranch}}, **force-pushes it** — rewriting the branch anyone
+      else may have pulled — waits for every required check to pass **on the
+      commit it pushed**, and then merges the pull request with a merge commit.
+      Merging closes the issue, because the body says `Closes #…`, and GitHub
+      deletes the remote branch.
+
+      It will do that up to **three times**. If a required check goes red on
+      the commit it pushed, an agent reads the failing job, commits a fix on
+      this branch, and the whole attempt runs again — a new rebase, a new
+      force-push, another hour of CI. So approving here also authorizes up to
+      two unattended agent sessions writing code on a branch you have already
+      read, which means the diff that merges may not be the diff you approved
+      at `gate`. Every commit they make is in the branch history and on the
+      pull request.
+
+      Read the PR itself, not just the diff you already approved: the review
+      thread, and whether the base branch has moved under it in a way that
+      makes this change wrong rather than merely conflicted.
+
+      What stops the tail rather than merging: someone else pushing to the
+      branch, a rebase whose conflicts the resolver cannot finish, a required
+      check still red after two repair passes, and a pull request merged or
+      closed outside this task. All of them leave the branch pushed and the PR
+      as they found it, and re-running this task from here starts the passes
+      over.
+
+      {{.Task.BaseBranch}} moving while the checks run no longer stops it: this
+      repository requires a branch to be up to date, so that makes the rebase
+      stale, and the next pass rebases onto the base that moved.
+
+      Reject to leave the pull request open and unmerged. Nothing is undone by
+      rejecting — the branch stays pushed and the PR stays up.
+
+  - id: checks-required
+    name: Resolve the required checks
+    type: command
+    shell: sh
+    timeout: 2m
+    max_retries: 0
+    # The expected set, by name, read before anything is pushed so a
+    # misconfigured repository costs two seconds rather than an hour of
+    # polling. This is what makes a missing check legible: a rollup only ever
+    # contains the checks that already exist, so without a set to grade it
+    # against, "every required check is green" and "no required check has been
+    # created yet" are the same sentence.
+    #
+    # Classic branch protection first, rulesets second — this repository uses
+    # the former, a repository using the latter answers the same question
+    # through the other endpoint. Both are read-only.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "reading the required checks on {{.Task.BaseBranch}}"
+      slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      printf '%s\n' "$slug" > .vincent-issue/slug.txt
+
+      : > .vincent-issue/required.txt
+
+      # The exit status decides whether an answer is kept, not whether the file
+      # has bytes in it: `gh api` prints GitHub's error body to *stdout*, so a
+      # repository with no classic protection would otherwise be handed a
+      # required check named `{"message":"Branch not found"...}` and wait an
+      # hour for it to report.
+      if gh api "repos/$slug/branches/{{.Task.BaseBranch}}/protection/required_status_checks" \
+        --jq '.contexts[]' > .vincent-issue/protection.txt 2>/dev/null; then
+        cp .vincent-issue/protection.txt .vincent-issue/required.txt
+      fi
+
+      if [ ! -s .vincent-issue/required.txt ]; then
+        if gh api "repos/$slug/rules/branches/{{.Task.BaseBranch}}" \
+          --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' \
+          > .vincent-issue/rules.txt 2>/dev/null; then
+          cp .vincent-issue/rules.txt .vincent-issue/required.txt
+        fi
+      fi
+
+      if [ ! -s .vincent-issue/required.txt ]; then
+        say "{{.Task.BaseBranch}} has no required checks this token can read"
+        echo "no required status checks are configured on {{.Task.BaseBranch}}, or this token cannot read them." >&2
+        echo "this workflow waits for a named set of checks on the commit it pushes; with no such set," >&2
+        echo "'all required checks passed' would only mean 'nothing has reported yet' and the merge" >&2
+        echo "would race the CI that is supposed to gate it. protect the branch, or merge by hand." >&2
+        exit 1
+      fi
+
+      echo "required checks on {{.Task.BaseBranch}} ($slug):"
+      cat .vincent-issue/required.txt
+      say "$(wc -l < .vincent-issue/required.txt | tr -d ' ') required check(s) to wait for"
+
+  - id: merge-attempt
+    name: Rebase, verify and merge the pull request
+    type: loop
+    # One clean attempt and at most two repairs. A pass is a whole merge
+    # attempt — rebase, force-push, wait for the required checks *on the commit
+    # it pushed*, merge — and it is worth repeating because the two ways it
+    # goes red are both answered by another pass rather than by a person: a
+    # required check that failed on this branch, which `repair-checks` commits
+    # a fix for, and a `BEHIND` verdict, which the next rebase resolves.
+    count: 3
+    # `defaults.timeout` (30m) bounds the *whole* loop (§7.8), not a pass, and
+    # one pass can legitimately spend an hour in `wait-checks` alone. Three of
+    # rebase + resolve + push + an hour of CI + a repair is where this comes
+    # from. It is a ceiling, not an expectation: the ordinary run breaks out on
+    # the first pass in the time the checks take.
+    timeout: 13h
+    steps:
+      - id: rebase
+        name: Rebase onto the base branch
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # `allow_failure` because a conflict is the expected other outcome, not
+        # an error: `resolve` reads this exit code. A failed row here is normal.
+        #
+        # A failure leaves the worktree mid-rebase, which is exactly the state
+        # `resolve` needs to finish the job — so nothing aborts it here.
+        allow_failure: true
+        # The conflict path is handled explicitly rather than left to `set -e`
+        # because this is the third step whose red row is a normal outcome, and
+        # the status is the only thing that can distinguish the two ways it goes
+        # red: a conflict, which `resolve` is about to pick up, and a failed
+        # `git fetch`, which it cannot do anything about. `resolve`'s prompt
+        # already tells the agent to check for that second case — this puts the
+        # same distinction on the board.
+        #
+        # `exit 1` after the guard rather than the rebase's own code: the `if:`
+        # below reads `ne … 0`, so any non-zero is equivalent, and the fetch
+        # path keeps `set -e`'s code by construction.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "fetching origin/{{.Task.BaseBranch}}"
+          git fetch origin {{.Task.BaseBranch}}
+
+          say "rebasing onto origin/{{.Task.BaseBranch}}"
+          if ! git rebase origin/{{.Task.BaseBranch}}; then
+            say "rebase stopped on conflicts: the resolver runs next"
+            exit 1
+          fi
+          say "rebased cleanly onto origin/{{.Task.BaseBranch}}"
+
+      - id: resolve
+        name: Resolve the rebase conflicts
+        type: agent
+        if: '{{ ne (index .Steps "rebase").ExitCode 0 }}'
+        timeout: 45m
+        # One session, no retry: a second attempt inherits whatever state the
+        # first left behind, which is not the state this prompt describes. If it
+        # cannot finish, the task blocks and you finish the rebase by hand.
+        max_retries: 0
+        prompt: |
+          The rebase of {{.Task.BranchName}} onto `origin/{{.Task.BaseBranch}}`
+          stopped. It said:
+
+          {{ (index .Steps "rebase").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}, most likely mid-rebase.
+          Run `git status` first and find out what is actually true before you
+          change anything — it may be a conflict, or it may be that the fetch
+          itself failed, in which case there is nothing here to resolve and you
+          should say so rather than inventing a fix.
+
+          Say what you find and what you are doing about it:
+
+              vincent status "<one short line about what you are doing now>"
+
+          Start with what `git status` actually showed — "mid-rebase, 2 conflicted
+          files" or "the fetch failed, nothing to resolve" — because those two lead
+          to opposite outcomes and the board cannot tell them apart otherwise. Then
+          one per conflicted commit you continue past, and one at the end. Under ten
+          words. If the two sides are genuinely incompatible and you are stopping,
+          make the status say so: "internal/store conflict needs a human decision".
+
+          If it is a conflict, resolve it:
+
+          - The change being rebased is described in `.vincent-issue/brief.md`, and
+            the pull request body is in `.vincent-issue/pr.md`. Both say what this
+            branch is *for*; that is what decides how a conflict resolves.
+          - Keep both sides' intent. Do not resolve a conflict by discarding the
+            base branch's side because it is in the way — someone else's change
+            landed there on purpose. If the two are genuinely incompatible, stop
+            and leave the rebase in place rather than picking a winner.
+          - `git add` the resolved files and `git rebase --continue` for each
+            conflicted commit until the rebase is finished. Do not `git rebase
+            --skip` a commit of this branch.
+          - Never `git rebase --abort` and never `git merge` the base branch
+            instead: the next step asserts that the base is an ancestor of HEAD.
+          - Do not push. A later step does that.
+
+          When the rebase is finished, run `go run mage.go test` and
+          `go run mage.go lint` and fix what the rebase broke — a conflict resolved
+          so that it compiles is not the same thing as one resolved correctly.
+
+          Never stage or commit `.vincent-issue/`.
+        # Asserts the rebase is actually finished (no rebase state directory in
+        # this worktree — `--git-path` resolves the linked worktree's own, not
+        # the main repo's), that nothing was left half-resolved, that the branch
+        # really does sit on top of the base rather than having been merged or
+        # aborted, and that the tree still passes the bar.
+        check: >
+          test ! -d "$(git rev-parse --git-path rebase-merge)" &&
+          test ! -d "$(git rev-parse --git-path rebase-apply)" &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          ! git ls-files .vincent-issue | grep -q . &&
+          git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 20m
+
+      - id: repush
+        name: Force-push the rebased branch
+        type: command
+        shell: sh
+        timeout: 5m
+        # Load-bearing and not repeatable in any meaningful sense: if the push
+        # succeeded and the response was lost, a second one is either a no-op or
+        # a lease failure, and neither is worth automating.
+        max_retries: 0
+        # The ancestor test is the postcondition of the whole rebase leg,
+        # checked once here whether `resolve` ran or not: if the base is not an
+        # ancestor of HEAD, the branch was not rebased and there is nothing to
+        # force-push.
+        #
+        # `--force-with-lease` rather than `--force`: it refuses if `origin`'s
+        # copy of this branch is not the commit `publish` left there — which is
+        # the case exactly when someone else pushed to it while the gate was
+        # open.
+        #
+        # A rebase that changed nothing makes this a no-op push, which is fine —
+        # and `head.sha` then names the commit `publish` already pushed, whose
+        # checks have long since run. Nothing downstream needs to know which of
+        # the two happened.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
+            say "branch is not on top of the base: nothing was pushed"
+            echo "{{.Task.BranchName}} is not on top of origin/{{.Task.BaseBranch}}:" >&2
+            echo "the rebase did not finish, or it was aborted. nothing was pushed." >&2
+            git status --short --branch >&2
+            exit 1
+          fi
+
+          # The two shas the rest of the tail pins to, both recorded *before*
+          # the push. `head` is what this push makes the branch, and every
+          # question asked of GitHub after this names it instead of naming the
+          # pull request — which is what makes the wait immune to the
+          # propagation window. `prev` is the value `--force-with-lease` is
+          # about to assert about origin, which is what lets `await-head` tell
+          # "GitHub has not caught up yet" apart from "someone else pushed".
+          if ! prev=$(git rev-parse --verify --quiet "origin/{{.Task.BranchName}}"); then
+            say "no origin/{{.Task.BranchName}} to replace: nothing was pushed"
+            echo "this worktree has no origin/{{.Task.BranchName}}, so there is no published commit" >&2
+            echo "for the force-push to replace and no lease for it to hold. nothing was pushed." >&2
+            exit 1
+          fi
+          printf '%s\n' "$prev" > .vincent-issue/prev-head.sha
+          git rev-parse HEAD > .vincent-issue/head.sha
+
+          # A lease failure is the one interesting way this dies, and the status
+          # set here is what survives to say so: someone pushed to the branch
+          # while the merge gate was open.
+          say "force-pushing $(cut -c1-7 .vincent-issue/head.sha) over $(printf '%s' "$prev" | cut -c1-7)"
+          git push --force-with-lease origin {{.Task.BranchName}}
+          echo "pushed $(cat .vincent-issue/head.sha) over $(cat .vincent-issue/prev-head.sha)"
+          say "pushed $(cut -c1-7 .vincent-issue/head.sha)"
+
+      - id: await-head
+        name: Wait for the PR to point at the pushed commit
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # The first of the two windows a force-push opens. Until GitHub moves
+        # the pull request's head, every question about "this PR's checks" is
+        # answered about the pre-rebase commit — which is green, because it
+        # passed before the gate. Waiting here is what stops that answer from
+        # being mistaken for this commit's.
+        #
+        # A head that is neither sha is not a race to wait out:
+        # `--force-with-lease` already proved origin was at `prev` when this
+        # task pushed, so a third value means someone pushed afterwards. That
+        # branch is not the one anyone approved, so nothing merges it.
+        #
+        # The wait is paced rather than fixed. GitHub usually moves the head
+        # within a second or two of the push, so the first polls are close
+        # together and the interval then doubles to a 15s ceiling: the common
+        # case is detected in ~2s instead of 5, and an unusually slow one costs
+        # ~25 calls over five minutes rather than 60. The budget is counted in
+        # *seconds waited*, not in polls, so it stays the five minutes the
+        # failure message claims even though the polls are no longer evenly
+        # spaced.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+          prev=$(cat .vincent-issue/prev-head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          # Set once, outside the loop: this usually finishes in about two
+          # seconds and re-stating the same sentence per poll would be noise the
+          # coalescing floor cannot even see. The polls that say something new —
+          # a third sha, the timeout — say it where they exit.
+          say "waiting for the PR head to become $short"
+
+          nap=2
+          waited=0
+          while :; do
+            # The exit status, not the captured text: a failed `gh` must read as
+            # "no answer yet" and be waited out, never as a third sha.
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>/dev/null)
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              oid=''
+            fi
+
+            if [ "$oid" = "$head" ]; then
+              echo "the pull request head is $head"
+              say "the PR points at $short"
+              break
+            fi
+
+            if [ -n "$oid" ] && [ "$oid" != "$prev" ]; then
+              say "someone else pushed to {{.Task.BranchName}}: refusing to wait"
+              echo "the pull request head is $oid, which is neither the commit this task pushed" >&2
+              echo "($head) nor the one it replaced ($prev): someone else pushed to" >&2
+              echo "{{.Task.BranchName}}. refusing to wait on checks for a branch this task no longer owns." >&2
+              exit 1
+            fi
+
+            if [ "$waited" -ge 300 ]; then
+              say "PR head still not $short five minutes after the push"
+              echo "five minutes after the force-push the pull request still reports $oid," >&2
+              echo "not the pushed commit $head. nothing was merged." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: wait-checks
+        name: Wait for the required checks
+        type: command
+        shell: sh
+        # The step's own timeout is the outer bound; the loop's poll budget is
+        # what produces a legible message instead of a `timeout` block reason.
+        timeout: 90m
+        max_retries: 0
+        # A red required check is the repairer's input, not the end of the run,
+        # so this row has to survive as data (§7.2). Everything downstream reads
+        # it as `Status "succeeded"` rather than as an exit code: a step skipped
+        # by its own guard has exit code 0, which would make "the checks are
+        # green" and "nobody asked" the same sentence — the bug this whole tail
+        # is built to avoid, one level up.
+        allow_failure: true
+        # Not `gh pr checks --required`. That command resolves the pull
+        # request's head at query time and reports the rollup it finds there,
+        # which makes it wrong in both of the windows a force-push opens: it
+        # answers about the old commit until the head moves, and it answers
+        # about a half-created set of runs afterwards. In both, "every required
+        # check is green" is a true sentence about the wrong thing, and exit
+        # code 0 does not distinguish it from the real one.
+        #
+        # So this asks the **commit** — by sha, from `head.sha` — for its check
+        # runs and its commit statuses, and grades what comes back against the
+        # expected set `checks-required` read from branch protection. A required
+        # context that has no row yet is *pending*, which is the entire fix: an
+        # absence can no longer be read as a pass.
+        #
+        # Both kinds are collected because either can satisfy a required
+        # context: Actions jobs arrive as check runs, third-party integrations
+        # as commit statuses. A check run that has not finished has no
+        # conclusion, and that is the pending this loop sleeps on.
+        #
+        # The head is re-asserted every poll: a push that lands during the hour
+        # ends the wait rather than being merged by it.
+        #
+        # An hour of CI, budgeted in *seconds waited* rather than in polls,
+        # because the polls are no longer evenly spaced. The pending interval
+        # starts at 15s and doubles to a 60s ceiling: a three-platform matrix
+        # takes minutes, so a fixed 30s spent most of the hour asking a question
+        # whose answer had not changed. The ramp reaches the same hour in
+        # roughly 60 calls instead of 120, while answering a fast run sooner
+        # than the old first poll did.
+        #
+        # A transient API failure is not a verdict — five in a row are tolerated
+        # so one 502 does not throw away forty minutes of waiting. Those retries
+        # get their *own*, longer ramp (30s doubling to 120s): an outage that
+        # has already produced three failures is not one more 30s pause away
+        # from being over, and six failures crammed into two and a half minutes
+        # spends the whole tolerance on a single bad moment. The error interval
+        # resets the moment a poll answers, so a blip does not slow the rest of
+        # the wait.
+        #
+        # Both sleeps draw on the one budget, so an alternating error/pending
+        # pattern — which never reaches six errors in a row — is still bounded
+        # by the hour. This is the step the status message exists for. It can
+        # hold a task for an hour with a `running` row and no other output — the
+        # polling is silent by design — so it reports the live tally instead:
+        # how many of the expected contexts have reported success, and how long
+        # it has been waiting. The tally comes out of the same `checks.txt` the
+        # verdict is graded from, so the board and the exit code can never
+        # disagree.
+        #
+        # Once per *pending* poll, which is at worst every 15 seconds — well
+        # clear of the one-second coalescing floor (§5.4) and around 60 messages
+        # across a full hour. The error path deliberately says nothing per
+        # attempt: five tolerated blips are not news, and overwriting the tally
+        # with "the API blipped" would lose the one number a person is watching.
+        # Only the sixth, which ends the wait, speaks.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          slug=$(cat .vincent-issue/slug.txt)
+          head=$(cat .vincent-issue/head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+          nreq=$(wc -l < .vincent-issue/required.txt | tr -d ' ')
+          echo "waiting for the required checks on $head"
+          echo "($url)"
+          say "waiting for $nreq required check(s) on $short"
+
+          budget=3600
+          waited=0
+          nap=15
+          enap=30
+          errors=0
+          while :; do
+            set +e
+            oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>.vincent-issue/api-err.txt)
+            rc_head=$?
+            gh api --paginate "repos/$slug/commits/$head/check-runs" \
+              --jq '.check_runs[] | [.name, (if .status != "completed" then "PENDING" else (.conclusion // "PENDING" | ascii_upcase) end)] | @tsv' \
+              > .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
+            rc_runs=$?
+            gh api "repos/$slug/commits/$head/status" \
+              --jq '.statuses[] | [.context, (.state | ascii_upcase)] | @tsv' \
+              >> .vincent-issue/seen.tsv 2>>.vincent-issue/api-err.txt
+            rc_status=$?
+            set -e
+
+            # Before the transient-error gate, not after it: a head that
+            # answered and disagrees is a definite answer, and the calls that
+            # fail *because* the branch moved under this task would otherwise be
+            # retried five times as if they were blips.
+            if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
+              say "someone pushed to {{.Task.BranchName}} during the wait: not merging"
+              echo "the pull request head moved to $oid while waiting for checks on $head:" >&2
+              echo "someone pushed to {{.Task.BranchName}}. nothing was merged." >&2
+              exit 1
+            fi
+
+            if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
+              errors=$((errors + 1))
+              if [ "$errors" -gt 5 ]; then
+                say "the GitHub API failed six times in a row: not merging"
+                echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
+                cat .vincent-issue/api-err.txt >&2
+                exit 1
+              fi
+              if [ "$waited" -ge "$budget" ]; then
+                say "an hour up with the GitHub API failing: not merging"
+                echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
+                cat .vincent-issue/api-err.txt >&2
+                exit 1
+              fi
+              sleep "$enap"
+              waited=$((waited + enap))
+              if [ "$enap" -lt 120 ]; then
+                enap=$((enap * 2))
+                if [ "$enap" -gt 120 ]; then enap=120; fi
+              fi
+              continue
+            fi
+            errors=0
+            enap=30
+
+            # Grades every expected context and prints the verdict on line 1.
+            # SKIPPED and NEUTRAL count as passes because branch protection
+            # counts them as passes; anything that is neither a pass nor a
+            # recognised in-flight state is a failure, so a state this does not
+            # know about stops the tail instead of being waited out.
+            awk -F '\t' '
+              NR == FNR { req[++n] = $1; next }
+              { seen[$1] = seen[$1] " " $2 }
+              END {
+                verdict = "pass"
+                for (i = 1; i <= n; i++) {
+                  c = req[i]
+                  if (!(c in seen)) {
+                    rows = rows "  pending  " c "  (not reported yet)\n"
+                    if (verdict != "fail") verdict = "pending"
+                    continue
+                  }
+                  m = split(seen[c], st, " ")
+                  worst = "pass"
+                  for (j = 1; j <= m; j++) {
+                    s = st[j]
+                    if (s == "SUCCESS" || s == "SKIPPED" || s == "NEUTRAL") continue
+                    if (s == "PENDING" || s == "EXPECTED" || s == "QUEUED" || s == "IN_PROGRESS" || s == "WAITING" || s == "REQUESTED") {
+                      if (worst != "fail") worst = "pending"
+                      continue
+                    }
+                    worst = "fail"
+                  }
+                  rows = rows "  " worst "  " c " " seen[c] "\n"
+                  if (worst == "fail") verdict = "fail"
+                  else if (worst == "pending" && verdict != "fail") verdict = "pending"
+                }
+                printf "%s\n%s", verdict, rows
+              }
+            ' .vincent-issue/required.txt .vincent-issue/seen.tsv > .vincent-issue/checks.txt
+
+            verdict=$(head -n 1 .vincent-issue/checks.txt)
+            case "$verdict" in
+              pass)
+                sed -n '2,$p' .vincent-issue/checks.txt
+                echo "--- every required check passed on $head ---"
+                say "all $nreq required check(s) green on $short"
+                break
+                ;;
+              fail)
+                # Name the contexts, not the count: "ci (windows-latest)
+                # FAILURE" is actionable from the board, "a required check
+                # failed" sends someone to the transcript to find out which. `NR
+                # > 1` skips the verdict word on line 1, which is itself `fail`
+                # here; dropping the marker field and keeping the rest is what
+                # survives a context name containing spaces, which every matrix
+                # job's does. Over-long lists are truncated at 256 bytes rather
+                # than refused (§5.4).
+                say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' .vincent-issue/checks.txt)"
+                echo "a required check did not pass on $head; not merging:" >&2
+                sed -n '2,$p' .vincent-issue/checks.txt >&2
+                exit 1
+                ;;
+            esac
+
+            if [ "$waited" -ge "$budget" ]; then
+              say "still pending after an hour on $short: not merging"
+              echo "required checks on $head still pending after an hour; not merging:" >&2
+              sed -n '2,$p' .vincent-issue/checks.txt >&2
+              exit 1
+            fi
+
+            # The live tally, refreshed on every pending poll: the one number a
+            # person watching an hour-long wait actually wants. `NR > 1` again —
+            # line 1 of checks.txt is the verdict, which is `pending` every time
+            # execution reaches here, and counting it would report one context
+            # fewer as green than is true.
+            pend=$(awk 'NR > 1 && $1 == "pending"' .vincent-issue/checks.txt | wc -l | tr -d ' ')
+            say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 60 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 60 ]; then nap=60; fi
+            fi
+          done
+
+      - id: merge-ready
+        name: Wait for GitHub to call it mergeable
+        type: command
+        shell: sh
+        timeout: 10m
+        max_retries: 0
+        # Nothing to wait for if the checks never went green: `wait-checks` has
+        # already named the red context, which is more than `BLOCKED` will ever
+        # say.
+        if: '{{ eq (index .Steps "wait-checks").Status "succeeded" }}'
+        # `BEHIND` and `DIRTY` are answers the next pass acts on rather than
+        # errors to block on — both are fixed by rebasing again, which is where
+        # a pass starts. Under `allow_failure` they end this pass; `merge` is
+        # guarded on this step having succeeded, so nothing merges on the way
+        # out.
+        allow_failure: true
+        # GitHub's own verdict lags the checks: for a few seconds after the last
+        # required context turns green the pull request is still `BLOCKED`, and
+        # a merge attempted in that window is refused. Waiting for the verdict
+        # here keeps `merge` a single call that either works or means something.
+        #
+        # This is not a substitute for `wait-checks` and could not be: `BLOCKED`
+        # is opaque — a red required check, a missing one and an unmet review
+        # requirement are the same word — so a loop that only watched this would
+        # wait the full hour on a failure `wait-checks` names in two minutes.
+        #
+        # `BEHIND` is the other side of `strict: true` branch protection: the
+        # base moved while CI ran, so the rebase is stale. That is a real
+        # answer, not something to poll through — and the fix is another rebase,
+        # which is what the next pass of this loop begins with. Before the loop
+        # it cost a person a re-run from `gate-merge`.
+        #
+        # The wait is paced to what is being waited on: the verdict usually
+        # settles in a few seconds, so the first polls are 2s apart and the
+        # interval then doubles to a 15s ceiling. A fixed 15s spent a quarter of
+        # a minute on the overwhelmingly common case of "already clean by the
+        # time we asked". The five-minute budget is unchanged and now counted in
+        # seconds waited, so the failure message stays true.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+
+          # Set once: the common case settles in seconds. Each of the four
+          # states this refuses gets its own message where it exits, because
+          # `BEHIND`, `DIRTY` and `DRAFT` need three different responses from a
+          # person and `nonzero_exit` is the same word for all of them.
+          say "waiting for GitHub to call the PR mergeable"
+
+          nap=2
+          waited=0
+          while :; do
+            # Same rule as `await-head`: a failed call leaves an empty answer to
+            # be waited out rather than a value to act on.
+            if ! gh pr view "$url" --json headRefOid,mergeable,mergeStateStatus \
+              --jq '[.headRefOid, .mergeable, .mergeStateStatus] | @tsv' \
+              > .vincent-issue/mergeable.tsv 2>/dev/null; then
+              : > .vincent-issue/mergeable.tsv
+            fi
+            oid=$(cut -f1 .vincent-issue/mergeable.tsv)
+            mergeable=$(cut -f2 .vincent-issue/mergeable.tsv)
+            state=$(cut -f3 .vincent-issue/mergeable.tsv)
+
+            if [ -n "$oid" ] && [ "$oid" != "$head" ]; then
+              say "the PR head moved off the verified commit: not merging"
+              echo "the pull request head moved to $oid, not the verified commit $head." >&2
+              echo "nothing was merged." >&2
+              exit 1
+            fi
+
+            case "$state" in
+              CLEAN|UNSTABLE|HAS_HOOKS)
+                echo "mergeable: $mergeable, state: $state"
+                say "GitHub calls it mergeable: $state"
+                break
+                ;;
+              BEHIND)
+                say "BEHIND: {{.Task.BaseBranch}} moved — the next pass rebases again"
+                echo "{{.Task.BaseBranch}} moved while the checks ran, and this repository requires a branch" >&2
+                echo "to be up to date before merging: this rebase is stale. nothing was merged on this" >&2
+                echo "pass; the next one rebases onto the base that moved." >&2
+                exit 1
+                ;;
+              DIRTY)
+                say "DIRTY: the PR conflicts with {{.Task.BaseBranch}} — the next pass rebases"
+                echo "the pull request conflicts with {{.Task.BaseBranch}}; nothing was merged on this pass." >&2
+                echo "the next pass rebases, and the resolver picks up the conflicts it stops on." >&2
+                exit 1
+                ;;
+              DRAFT)
+                say "DRAFT: the PR is not ready to merge"
+                echo "the pull request is a draft; nothing was merged." >&2
+                exit 1
+                ;;
+            esac
+
+            if [ "$waited" -ge 300 ]; then
+              say "GitHub still says ${state:-unknown} five minutes after the checks went green"
+              echo "GitHub still reports this pull request as ${state:-unknown} (mergeable: ${mergeable:-unknown})" >&2
+              echo "five minutes after every required check went green; not merging. read the PR." >&2
+              exit 1
+            fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 15 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 15 ]; then nap=15; fi
+            fi
+          done
+
+      - id: merge
+        name: Merge the pull request
+        type: command
+        shell: sh
+        timeout: 10m
+        # Only where GitHub said it would take it. `merge-ready` is itself
+        # guarded on the checks, so this one guard carries both — and it reads
+        # `Status` rather than an exit code because a skipped step's exit code
+        # is 0.
+        if: '{{ eq (index .Steps "merge-ready").Status "succeeded" }}'
+        # A refused or lost merge call ends the pass rather than the run: the
+        # loop's answer to it is to ask GitHub what actually happened
+        # (`merge-probe`) and, only if nothing did, to attempt the whole thing
+        # again from the rebase.
+        allow_failure: true
+        # The one irreversible step in the tail, and the reason nothing above it
+        # retries either. A retried merge is a merge attempted against a state
+        # this workflow no longer knows; `merged` reads the real answer back
+        # instead.
+        max_retries: 0
+        # `--merge` is the repository's rule, not a preference: squash and
+        # rebase merges are disabled on this repo because a branch's history
+        # becomes master's history (CLAUDE.md). No `--delete-branch`: the
+        # repository deletes the remote branch itself, and gh's flag would also
+        # delete the local branch this worktree is sitting on.
+        #
+        # `--match-head-commit` closes the last gap in the tail: between the
+        # final poll and this call, a push could still land. GitHub refuses the
+        # merge if the head is not the commit whose checks were verified, which
+        # is a server -side guarantee rather than one this workflow has to win a
+        # race for.
+        #
+        # The status is set before the call and never after it: this is the
+        # irreversible step, and a message claiming success would be a claim
+        # this step is not entitled to make — `gh pr merge` exiting 0 is the API
+        # accepting the merge, not GitHub having recorded it. `merged` reads the
+        # real answer back and says so. What survives here on a failure —
+        # "merging <sha>" — is exactly the sentence a person needs before
+        # deciding whether to look at the PR.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "merging $(cut -c1-7 .vincent-issue/head.sha) with a merge commit"
+          gh pr merge "$(cat .vincent-issue/url.txt)" \
+            --merge \
+            --match-head-commit "$(cat .vincent-issue/head.sha)"
+
+      - id: merge-probe
+        name: Ask GitHub whether the merge landed
+        type: command
+        shell: sh
+        timeout: 3m
+        max_retries: 0
+        # The break condition, and the only step in this loop entitled to say
+        # the merge happened: `gh pr merge` exiting 0 is the API accepting the
+        # call, not GitHub having recorded it.
+        #
+        # It runs on every pass, including one where `merge` was skipped or
+        # failed, because that is the case a retrying tail makes newly
+        # dangerous. A merge call whose response was lost leaves a pull request
+        # that *is* merged and a step that exited non-zero; the next pass would
+        # then force-push over a branch GitHub has already merged and deleted.
+        # Asking the server before repeating anything is what closes that.
+        #
+        # Three answers, three exit codes, because the loop has to tell them
+        # apart: 0 landed at the commit this task verified, 2 the pull request
+        # is merged at some *other* commit or closed under this task — neither
+        # is a thing to retry — and 1 it is still open, which is the pass that
+        # repairs and goes round again.
+        allow_failure: true
+        # It waits wherever the merge call **ran**, and that includes the pass
+        # where it exited non-zero. `gh pr merge` returning is the API accepting
+        # the merge, not GitHub having finished recording it: for a second or
+        # two afterwards the pull request can still read OPEN. A merge whose
+        # response was lost looks exactly like a failed one, so reading once and
+        # calling it "not merged" is how the next pass would come to force-push
+        # over a merged branch. Only a *skipped* merge — the checks were red, or
+        # GitHub never called it mergeable — has no window to wait out, and
+        # there a minute per pass would buy nothing.
+        run: |
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          url=$(cat .vincent-issue/url.txt)
+          head=$(cat .vincent-issue/head.sha)
+          short=$(printf '%s' "$head" | cut -c1-7)
+
+          budget=60
+          if [ '{{ (index .Steps "merge").Status }}' = skipped ]; then
+            budget=0
+          fi
+
+          nap=2
+          waited=0
+          while :; do
+            # A failed read is "no answer yet", the same rule every wait in this
+            # tail uses: it must never be mistaken for a state.
+            if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+              > .vincent-issue/merged.json 2>/dev/null; then
+              printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+                > .vincent-issue/merged.json
+            fi
+            state=$(jq -r .state .vincent-issue/merged.json)
+            if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then break; fi
+            if [ "$waited" -ge "$budget" ]; then break; fi
+
+            sleep "$nap"
+            waited=$((waited + nap))
+            if [ "$nap" -lt 10 ]; then
+              nap=$((nap * 2))
+              if [ "$nap" -gt 10 ]; then nap=10; fi
+            fi
+          done
+
+          jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+            .vincent-issue/merged.json
+
+          oid=$(jq -r .headRefOid .vincent-issue/merged.json)
+
+          if [ "$state" = MERGED ] && [ "$oid" = "$head" ]; then
+            say "merged $short"
+            exit 0
+          fi
+
+          if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then
+            echo "the pull request is $state at $oid, not open at the commit this task pushed ($head):" >&2
+            echo "somebody merged or closed it outside this task. nothing here will push over that." >&2
+            exit 2
+          fi
+
+          say "pass {{.Loop.Index}}: the PR is ${state:-unreadable}, not merged"
+          echo "the pull request is ${state:-unreadable} at $oid; it did not merge on this pass." >&2
+          exit 1
+
+      - id: merge-elsewhere
+        name: Refuse a pull request this task no longer owns
+        type: command
+        shell: sh
+        timeout: 1m
+        max_retries: 0
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 2 }}'
+        # No `allow_failure`: this is the one outcome inside the loop that has
+        # to stop the run rather than start another pass. Everything a pass does
+        # next — rebase, force-push — would be done to a pull request somebody
+        # else has already finished with.
+        run: |
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "the PR was merged or closed outside this task: stopping"
+          echo "the pull request is no longer an open one this task owns; see the 'merge-probe'" >&2
+          echo "run above for its state and head. nothing further was pushed or merged." >&2
+          exit 1
+
+      - id: merge-ok
+        name: Stop once the merge has landed
+        type: break
+        if: '{{ eq (index .Steps "merge-probe").ExitCode 0 }}'
+
+      - id: repair-checks
+        name: Repair the failing required checks
+        type: agent
+        # The only failure in this loop an agent can do anything about, and only
+        # while a pass remains to prove the repair — a repair nothing re-runs CI
+        # against would reach `merged` unverified while costing a whole session,
+        # which is `verify`'s rule applied here.
+        #
+        # A `BEHIND` verdict, a refused merge and a lease failure are not
+        # repairs: the next pass's rebase and force-push are what answer those,
+        # and an agent asked to "fix" one would invent work.
+        if: '{{ and (ne (index .Steps "wait-checks").Status "succeeded") (not .Loop.IsLast) }}'
+        timeout: 60m
+        # A pass *is* the retry here, and the next one re-runs the real checks —
+        # a better judge than a second session against this step's own budget.
+        max_retries: 0
+        prompt: |
+          A required check failed on the pull request for {{.Task.BranchName}},
+          on the commit this task pushed. This is how the required contexts
+          graded at that commit:
+
+          {{ (index .Steps "wait-checks").Result }}
+
+          You are in the worktree at {{.Worktree.Path}}, on
+          {{.Task.BranchName}}, rebased onto {{.Task.BaseBranch}} and already
+          pushed. This is pass {{.Loop.Index}} of at most three merge attempts,
+          and the next one rebases, force-pushes and re-runs those same checks
+          against whatever you commit here.
+
+          Say what you are doing as you go — someone may be watching this
+          branch wait on CI:
+
+              vincent status "pass {{.Loop.Index}}: <one short line>"
+
+          Name the failing job and then the fault — "ci windows: path separator
+          in config test" beats "investigating". Under ten words after the
+          prefix. If you conclude the check is red for a reason that has
+          nothing to do with this branch, say *that* in the status: it is the
+          one finding that should stop a person from waiting out another hour
+          of CI.
+
+          Read the actual failure before you change anything. The table above
+          names the contexts; the logs are on GitHub, not in this worktree:
+
+              gh pr checks "$(cat .vincent-issue/url.txt)"
+              gh run list --commit "$(cat .vincent-issue/head.sha)"
+              gh run view <run-id> --log-failed
+
+          Then fix the underlying cause:
+
+          - **Do not weaken, skip, delete or `t.Skip` a test**, do not relax a
+            lint rule or add a `//nolint` to silence a finding, and do not edit
+            `.github/workflows/` to stop a red job from running. A check that
+            no longer runs is not a check that passed, and this repository's
+            required contexts are named in branch protection — removing one
+            leaves the wait hanging on a context nothing will ever report.
+          - A failure only CI sees is usually a platform or a race. CI runs the
+            suite and every gate on Windows, macOS and Linux (`CLAUDE.md`) and
+            this machine is one of the three, so reproduce it the way the
+            failing job did — `GOOS=windows go tool golangci-lint run ./...`,
+            `go run mage.go testrace`, the gate script the job named — rather
+            than assuming the host is representative.
+          - Stay inside the scope the brief agreed
+            (`.vincent-issue/brief.md`). If the check is red for a reason that
+            predates this branch, say so plainly and fix only what this branch
+            broke.
+          - Update `.vincent-issue/pr.md` if this repair changed what the
+            change does, and the affected page under `docs/` if it changed a
+            documented claim. A documentation audit already ran on the code you
+            are repairing, so anything you make stale here is stale for good.
+
+          **Commit your fix, and do not push.** The next pass force-pushes what
+          you committed under a lease it takes itself; pushing from here breaks
+          that lease and stops the run.
+
+          Never stage or commit `.vincent-issue/`.
+        # Asserts the repair is a committed, self-consistent branch the next
+        # pass can rebase and push: nothing staged or dirty, the scratch
+        # directory untracked, at least one commit that is not on the remote yet
+        # — which is what says a repair actually happened — and the local legs
+        # green. The local legs are not the checks that failed and cannot be;
+        # what they are is the cheapest way to stop a pass from spending an hour
+        # of CI on a branch that does not build.
+        check: >
+          ! git ls-files .vincent-issue | grep -q . &&
+          git diff --quiet &&
+          git diff --cached --quiet &&
+          test "$(git rev-list --count origin/{{.Task.BranchName}}..HEAD)" -gt 0 &&
+          go run mage.go test &&
+          go run mage.go lint
+        check_timeout: 25m
+
+  - id: merged
+    name: Confirm the merge
+    type: command
+    shell: sh
+    timeout: 3m
+    max_retries: 0
+    # The postcondition, and it sits outside the loop for the reason
+    # `verify-final` sits outside `verify`: a loop that runs out of passes
+    # **succeeds** (§7.8), so the loop cannot be its own assertion. This is.
+    #
+    # It asks two things, because MERGED alone does not say *what* was merged —
+    # the head is asserted against `head.sha`, so the run ends having confirmed
+    # that the commit whose checks it waited for is the commit that landed.
+    # `merge-probe` already waited for the state to settle, so this reads once
+    # rather than polling.
+    #
+    # Clearing the scratch directory last leaves the worktree clean, so
+    # archiving the task does not warn about a dirty tree — and leaves the
+    # drafts in place for inspection if anything above failed, which is the
+    # same reason nothing deletes them when `publish` fails.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      url=$(cat .vincent-issue/url.txt)
+      head=$(cat .vincent-issue/head.sha)
+      short=$(printf '%s' "$head" | cut -c1-7)
+
+      say "confirming the merge landed at $short"
+
+      # A failed read is not a state: an unreadable answer is reported as one
+      # below rather than being mistaken for MERGED.
+      if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+        > .vincent-issue/merged.json 2>/dev/null; then
+        printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+          > .vincent-issue/merged.json
+      fi
+
+      jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+        .vincent-issue/merged.json
+
+      state=$(jq -r .state .vincent-issue/merged.json)
+      if [ "$state" != "MERGED" ]; then
+        say "every merge pass is spent and the PR is ${state:-unreadable}"
+        echo "the pull request is ${state:-unreadable}, not MERGED, after every merge pass." >&2
+        echo "read the last 'wait-checks', 'merge-ready' and 'merge-probe' runs in this task's" >&2
+        echo "transcript for what stopped it. the branch is pushed, the pull request is open," >&2
+        echo "and the scratch directory is left in place." >&2
+        exit 1
+      fi
+
+      oid=$(jq -r .headRefOid .vincent-issue/merged.json)
+      if [ "$oid" != "$head" ]; then
+        say "merged at $(printf '%s' "$oid" | cut -c1-7), not the verified commit $short"
+        echo "the pull request merged at $oid, not at the verified commit $head." >&2
+        echo "the scratch directory is left in place." >&2
+        exit 1
+      fi
+      # Read before the delete, said after it: the merge commit lives in the
+      # scratch directory that the next line removes.
+      commit=$(jq -r '.mergeCommit.oid // "unknown"' .vincent-issue/merged.json | cut -c1-7)
+      rm -rf .vincent-issue
+      # The last word of the whole run, and the one the board keeps.
+      say "merged $short as $commit"
