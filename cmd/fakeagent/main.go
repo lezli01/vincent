@@ -9,7 +9,7 @@
 // cursor's run argv is otherwise claude-shaped, and --trust is the one flag
 // only cursor passes, in both permission modes); anything else is
 // claude-shaped. `models` and `status` as argv[1] answer cursor's option and
-// login probes (§9.7). Scenario selection is environment-driven so argv stays
+// login probes (§9.7), and `app-server` answers codex's quota reader (§9.6). Scenario selection is environment-driven so argv stays
 // true to the real CLIs:
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
@@ -65,6 +65,14 @@
 //	                      caller's deadline kills it: the T4.22 leg where a
 //	                      Windows timeout exits 1 and must not read as
 //	                      "not authenticated"
+//	FAKEAGENT_CODEX_APP_SERVER
+//	                      picks what `app-server --stdio` answers the §9.6
+//	                      quota reader with (task 082): healthy (default) |
+//	                      malformed | unauthenticated | hang. Its own
+//	                      variable rather than a FAKEAGENT_SCENARIO value
+//	                      because a probe answer and a run scenario are set
+//	                      independently — the m2 gate reads a quota while
+//	                      FAKEAGENT_SCENARIO is pinned to `usage-limit`
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
 //	                      "cursor" the calver+sha style (run dialect is
 //	                      argv-driven; this only affects the version probe,
@@ -196,6 +204,12 @@ func main() {
 	// argv[1] the codex run dialect uses.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "app-server":
+			// codex's JSON-RPC-over-stdio server (task 082). It is argv[1]
+			// with `--stdio` after it and no run flags, so it lands here for
+			// the same reason `models` and `login status` do.
+			appServerMain()
+			return
 		case "models":
 			fmt.Print(cursorModels)
 			return
