@@ -1333,10 +1333,15 @@ func (r *Runner) finishStepRun(run *store.StepRun, outcome stepOutcome, log *slo
 	run.FailureReason = outcome.reason
 	run.ResultSummary = truncate(outcome.result, resultSummaryLimit)
 	if outcome.stdoutTail != nil {
-		// Bounded like result_summary, and separately: the two carry different
-		// text, so one cap cannot serve both. Left nil otherwise, which is the
-		// signal to render `.Result` from result_summary (§8.4).
-		tail := truncate(*outcome.stdoutTail, resultSummaryLimit)
+		// Stored as it arrives, and deliberately *not* at resultSummaryLimit:
+		// it is already at §8.4's bound — outputTailLines lines, outputTailBytes
+		// — from newOutputTail, which drops whole leading lines and cuts a
+		// byte ceiling at a rune boundary. resultSummaryLimit bounds a row a
+		// human reads and takes a raw head slice; a `for_each:` (§7.6, §7.8)
+		// splits this value into items, so that cut lost or corrupted an item
+		// the command had printed whole (#313). Left nil otherwise, which is
+		// the signal to render `.Result` from result_summary (§8.4).
+		tail := *outcome.stdoutTail
 		run.StdoutTail = &tail
 	}
 	run.ExitCode = outcome.exitCode

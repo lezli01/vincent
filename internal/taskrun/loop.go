@@ -355,9 +355,12 @@ var errLoopLimit = errors.New("loop iteration limit")
 // form — `for_each: '{{ .Steps.changed.Result }}'`, the case that opened
 // task 016 — and a hand-written sequence one mechanism rather than two.
 //
-// A list drawn from a step's output is bounded by outputTailLines: `.Steps[…]
-// .Result` is the *tail* of what the command printed, so a producer emitting
-// more paths than that silently loses the earliest ones. Producing a list
+// A list drawn from a step's output is bounded by outputTailLines *and* by
+// outputTailBytes (256 KiB), whichever binds first: `.Steps[…].Result` is the
+// *tail* of what the command printed, so a producer emitting more paths than
+// that — or more bytes, which a list of JSON objects reaches first — silently
+// loses the earliest ones. Both bounds drop whole leading lines, so what is
+// lost is whole items and never half of one (#313). Producing a list
 // longer than the loop may run blocks with `loop_limit` anyway, and that
 // ceiling is an order of magnitude lower.
 func resolveForEach(list workflow.ForEach, rc workflow.RenderContext) ([]string, error) {
