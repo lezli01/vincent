@@ -243,8 +243,16 @@ vincent's words:
   for it, and empty always for the step types that run no process (`manual`,
   `parallel`, `fan_out`, `condition`, `loop`, `break`).
 - **`result_summary`** — the agent's final result text, or the last 200 lines of
-  a command step's stdout. Recorded on every attempt, readable from a later
-  step's `{% raw %}{{ .Steps.<id>.Result }}{% endraw %}`.
+  a command step's output: **both** its stdout and its stderr, because a step
+  that failed with a stderr-only diagnostic must not summarize as blank.
+  Recorded on every attempt, and what the board, the detail view and the repair
+  prompt show. A later step's `{% raw %}{{ .Steps.<id>.Result }}{% endraw %}`
+  reads it for an agent step, and for a command step reads a narrower record of
+  the same attempt — the 200-line tail of its **stdout alone**, so that a
+  `for_each:` over it cannot pick up a progress meter or a
+  `Switched to branch …` as an item. An attempt that recorded no stdout tail,
+  which is any that ran before vincent kept one, falls back to
+  `result_summary`.
 
 Neither is a failure reason, and no surface renders either as one. The reasons
 below are a closed set vincent authors; these two are whatever the step

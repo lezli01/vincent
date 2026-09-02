@@ -734,6 +734,19 @@ list with the user-facing context a commit subject cannot carry.
   still carry both streams — a step that failed with a stderr-only diagnostic
   would otherwise summarize as blank. Steps that ran before upgrading keep
   rendering as they did, so a task already in flight is not disturbed.
+
+  **Check your own workflows for the other half of this.** A prompt that quotes
+  a command step's `.Result` back to an agent — "the rebase said: …", "the
+  checks graded: …" — used to receive that step's stderr too, and now does not.
+  `git`'s conflict report, a `go build` error and most tools' diagnostics are
+  written there, so such a prompt can arrive empty. Print what the prompt needs
+  on **stdout** (`exec 2>&1` at the top of a `run:` body whose whole output is
+  diagnostics restores the old text exactly); the step's summary and transcript
+  are unaffected either way. Neither `vincent workflow validate` nor
+  `vincent workflow render` can find this for you — the template still parses
+  and still executes, it just renders empty at run time — so it is a read of
+  every prompt that quotes a command step. The `update-workflows` built-in now
+  asks that question of a project's workflows.
 - **The chat workspace's footer hint was drawn off the bottom of the screen.**
   The composer counted as one line while it rendered three, so the chat's body
   overran its frame by two rows: the hint line naming `enter send`,

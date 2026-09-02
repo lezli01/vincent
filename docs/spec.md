@@ -431,7 +431,16 @@ row shadows it.
 first, **`result_summary`**, is not new — it has been recorded, served on the
 §13.2 DTO and read by `.Steps.<id>.Result` and the repair prompt since the first
 release — and was simply never listed here. It holds the agent's final result
-text, or the last 200 lines of a command step's stdout.
+text, or the last 200 lines of a command step's stdout. *Corrected 2026-09-02
+(issue #311): the second half of that sentence was never true of the column —
+it holds the last 200 lines of a command step's stdout **and stderr**, which is
+what a human reading a failed step wants and what the repair prompt appends.
+The stdout-only value that sentence promised is a separate column,
+`stdout_tail` (§14, migration 0025), added because `.Steps.<id>.Result` is a
+value a template consumes rather than prose a person reads. A command step's
+`.Result` reads that column, and falls back to `result_summary` only for a row
+that recorded none — every row written before 0025, and every step type that
+runs no command.*
 
 The second is new: the **status message**, a short piece of free text a
 *running* step writes about itself through
@@ -5951,7 +5960,22 @@ CREATE TABLE step_runs (
   check_exit_code     INTEGER,
   failure_reason      TEXT,
   skip_reason         TEXT,                   -- 'condition' for a false `if:` (§7.7); NULL for the human skip (§6)
-  result_summary      TEXT,                   -- agent result text / command stdout tail
+  result_summary      TEXT,                   -- agent result text / tail of a command's stdout *and* stderr
+  -- The stdout-only tail of a command attempt (§8.4, issue #311, migration
+  -- 0025). `result_summary` above carries both streams and is what a human
+  -- reads on the board, in the detail view and in the repair prompt, where a
+  -- step that failed with a stderr-only diagnostic must not summarize as
+  -- blank; this is what `.Steps.<id>.Result` renders from, because a
+  -- `for_each:` (§7.6, §7.8) splitting that into items turns one incidental
+  -- `Switched to branch …` into an item that is not an item.
+  --
+  -- NULL means none was recorded: every row written before migration 0025, and
+  -- every step type that runs no command — an agent step's `.Result` is its
+  -- final result text, not its output. Readers fall back to `result_summary`
+  -- there, so a task already in flight over an upgrade renders as it did.
+  -- Empty string is a distinct fact: a command that printed nothing on stdout
+  -- has an empty `.Result`.
+  stdout_tail         TEXT,                   -- NULL = none recorded; falls back to result_summary
   -- What the step said about *itself* (§5.4, task 036, migration 0015): short
   -- free text its own process set through
   -- POST /v1/tasks/{id}/steps/{step_id}/status while it was running. NULL is

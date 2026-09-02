@@ -1089,10 +1089,15 @@ it — and three consequences follow from it:
   iteration.
 
 `.Steps.<id>.Result` is the agent's final result text for agent steps, or the
-last **200** lines of stdout for command steps. That is how one step's output
-feeds the next — and, with `for_each:`, how one step's output becomes a loop's
-item list. A producer meant to feed a loop should filter at the source rather
-than lean on that tail:
+last **200** lines of stdout for command steps — **stdout only**, never stderr.
+A command step may therefore print a header, a count or a note for whoever is
+watching on stderr without it becoming part of the value, and a step whose
+`.Result` a later prompt quotes must put what that prompt needs on **stdout**:
+`git`, `curl` and most tools write their diagnostics to stderr, and those reach
+the transcript and the step's summary but not here. That is how one step's
+output feeds the next — and, with `for_each:`, how one step's output becomes a
+loop's item list. A producer meant to feed a loop should filter at the source
+rather than lean on that tail:
 
 ```yaml
   - id: fix
