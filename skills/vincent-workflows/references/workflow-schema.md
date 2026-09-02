@@ -349,7 +349,10 @@ inherits its parent's copy.
 Only completed steps are visible in `.Steps`. Parallel siblings are not
 visible to one another. Within a loop, later body steps see earlier steps from
 the current iteration; repeated ids resolve to the latest iteration. Command
-`Result` is the last 200 stdout lines, so filter producer output at its source.
+`Result` is the last 200 **stdout** lines — never stderr — so filter producer
+output at its source. A note meant for whoever is watching belongs on stderr,
+where it still reaches the transcript and the step's summary; anything a later
+prompt or a `for_each:` reads out of `Result` has to be printed on stdout.
 
 Common guards:
 
