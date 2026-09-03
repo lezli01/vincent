@@ -15,6 +15,11 @@
 #   6. a patch that would not validate answers the §13.1 envelope and leaves
 #      the file byte-identical
 #   7. the write routes are not MCP tools; the schema route is
+#   8. an insert lands a step at the index it addressed, and the file keeps
+#      every comment, blank line and `|` block scalar it had
+#   9. a move reorders two steps and carries their comments with them
+#  10. a remove takes the inserted step back out and touches nothing else
+#  11. a CRLF file comes back CRLF: decision 1 is a promise about bytes
 #
 # No agent CLI: what is under test is three endpoints and a file.
 #
@@ -128,7 +133,22 @@ steps:
   - id: check
     type: command
     run: git status
+
+  # A `|` block scalar: a run: body with newlines in it, which scenarios 8-10
+  # reorder the file around and must hand back byte-identical.
+  - id: report
+    type: command
+    run: |
+      git --version
+      git status
 YAML
+# Read the fidelity constants off the fixture that was just written, and pin
+# them: an edit to the heredoc that quietly drops a comment must fail here
+# rather than weaken every assertion below it.
+HAND_COMMENTS="$(grep -c '#' "$GLOBAL_DIR/hand.yaml" || true)"
+[[ "$HAND_COMMENTS" == "5" ]] \
+  || fail "the fixture carries $HAND_COMMENTS comments, want the 5 this gate asserts"
+BLOCK=$'    run: |\n      git --version\n      git status'
 "$VINCENT" workflow list >/dev/null 2>&1 || true
 # The registry watch picks the file up; poll rather than sleep.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -148,8 +168,9 @@ api PATCH "/workflows?name=hand" \
 CHANGED="$(diff "$TMP/hand.before" "$GLOBAL_DIR/hand.yaml" | grep -c '^[<>]' || true)"
 [[ "$CHANGED" == "2" ]] \
   || fail "the patch touched more than the one line it addressed ($CHANGED changed lines)"
-COMMENTS="$(grep -c '#' "$GLOBAL_DIR/hand.yaml")"
-[[ "$COMMENTS" == "3" ]] || fail "a comment was lost: $COMMENTS remain, want 3"
+COMMENTS="$(grep -c '#' "$GLOBAL_DIR/hand.yaml" || true)"
+[[ "$COMMENTS" == "$HAND_COMMENTS" ]] \
+  || fail "a comment was lost: $COMMENTS remain, want $HAND_COMMENTS"
 
 echo "== 4. a fork into a project scope shadows what it copied"
 PROJECT="$(api POST /projects -d "{\"path\":\"$(hostpath "$REPO")\"}")" \
@@ -221,7 +242,111 @@ for tool in workflow_create workflow_patch; do
   fi
 done
 
-echo "== 8. the daemon is still up"
+# Scenarios 8-10 drive the three operations no client had ever called — insert,
+# move and remove — against the same hand-written file, and assert decision 1's
+# promise on the bytes rather than implying it: the comment count, the `|`
+# block scalar and the line endings all survive a structural edit.
+
+# ids NAME -> the workflow's step ids, one per line. jq writes CRLF on Windows
+# and $() strips only the trailing one, so the interior CRs have to go or an
+# exact comparison against a $'a\nb' literal fails.
+ids() { api "GET" "/workflows/definition?name=$1" | jq -r '.definition.steps[].id' | tr -d '\r'; }
+
+# fidelity WHAT — what every structural operation owes the file it edited.
+fidelity() {
+  local what="$1" comments blk crs
+  comments="$(grep -c '#' "$GLOBAL_DIR/hand.yaml" || true)"
+  [[ "$comments" == "$HAND_COMMENTS" ]] \
+    || fail "$what lost a comment: $comments remain, want $HAND_COMMENTS"
+  # -F -x so the pattern's own `|` is a byte and not an alternation.
+  blk="$(grep -F -x -A 2 '    run: |' "$GLOBAL_DIR/hand.yaml" | tr -d '\r')"
+  [[ "$blk" == "$BLOCK" ]] || fail "$what rewrote the | block scalar: $blk"
+  crs="$(tr -cd '\r' < "$GLOBAL_DIR/hand.yaml" | wc -c | tr -d ' ')"
+  [[ "$crs" == "0" ]] || fail "$what gave an LF file $crs carriage returns"
+}
+
+echo "== 8. insert lands a step at the index it addressed"
+cp "$GLOBAL_DIR/hand.yaml" "$TMP/hand.insert"
+VERSION="$(api "GET" "/workflows/definition?name=hand" | jq -r .version)"
+INSERTED="$(api PATCH "/workflows?name=hand" \
+  -d "{\"version\":\"$VERSION\",\"ops\":[{\"op\":\"insert\",\"path\":\"steps[1]\",\"item\":[{\"key\":\"id\",\"value\":\"added\"},{\"key\":\"type\",\"value\":\"command\"},{\"key\":\"run\",\"value\":\"git --version\"}]}]}")" \
+  || fail "PATCH /v1/workflows (insert) failed"
+printf '%s' "$INSERTED" | jq -e '.errors == []' >/dev/null \
+  || fail "the file did not parse after the insert: $INSERTED"
+STEPS="$(ids hand)"
+[[ "$STEPS" == $'build\nadded\ncheck\nreport' ]] \
+  || fail "the inserted step is not at steps[1]: $STEPS"
+# The insertion is the whole diff: three lines written, none taken away.
+WROTE="$(diff "$TMP/hand.insert" "$GLOBAL_DIR/hand.yaml" | grep -c '^>' || true)"
+LOST="$(diff "$TMP/hand.insert" "$GLOBAL_DIR/hand.yaml" | grep -c '^<' || true)"
+[[ "$WROTE" == "3" && "$LOST" == "0" ]] \
+  || fail "insert changed more than the step it wrote ($WROTE added, $LOST removed)"
+fidelity insert
+
+echo "== 9. move reorders the steps and carries their comments along"
+cp "$GLOBAL_DIR/hand.yaml" "$TMP/hand.move"
+VERSION="$(api "GET" "/workflows/definition?name=hand" | jq -r .version)"
+MOVED="$(api PATCH "/workflows?name=hand" \
+  -d "{\"version\":\"$VERSION\",\"ops\":[{\"op\":\"move\",\"path\":\"steps[0]\",\"to\":2}]}")" \
+  || fail "PATCH /v1/workflows (move) failed"
+printf '%s' "$MOVED" | jq -e '.errors == []' >/dev/null \
+  || fail "the file did not parse after the move: $MOVED"
+STEPS="$(ids hand)"
+[[ "$STEPS" == $'added\ncheck\nbuild\nreport' ]] \
+  || fail "move did not reorder the steps: $STEPS"
+# A move writes no line and deletes none, so the two files hold the same lines
+# in a different order — which a diff line count cannot say and sorting can.
+# The moved step's own trailing comment travels inside its extent.
+[[ "$(sort "$TMP/hand.move")" == "$(sort "$GLOBAL_DIR/hand.yaml")" ]] \
+  || fail "move did not preserve the file's lines"
+fidelity move
+
+echo "== 10. remove takes the inserted step back out and nothing else"
+cp "$GLOBAL_DIR/hand.yaml" "$TMP/hand.remove"
+VERSION="$(api "GET" "/workflows/definition?name=hand" | jq -r .version)"
+GONE="$(api PATCH "/workflows?name=hand" \
+  -d "{\"version\":\"$VERSION\",\"ops\":[{\"op\":\"remove\",\"path\":\"steps[0]\"}]}")" \
+  || fail "PATCH /v1/workflows (remove) failed"
+printf '%s' "$GONE" | jq -e '.errors == []' >/dev/null \
+  || fail "the file did not parse after the removal: $GONE"
+STEPS="$(ids hand)"
+[[ "$STEPS" == $'check\nbuild\nreport' ]] \
+  || fail "remove did not leave the file its own three steps: $STEPS"
+WROTE="$(diff "$TMP/hand.remove" "$GLOBAL_DIR/hand.yaml" | grep -c '^>' || true)"
+LOST="$(diff "$TMP/hand.remove" "$GLOBAL_DIR/hand.yaml" | grep -c '^<' || true)"
+[[ "$WROTE" == "0" && "$LOST" == "3" ]] \
+  || fail "remove touched more than the step it addressed ($WROTE added, $LOST removed)"
+fidelity remove
+
+echo "== 11. a CRLF file comes back CRLF"
+# Written with printf rather than a heredoc: bash writes LF, and the endings
+# are the point. A Windows author's file must not be normalised out from under
+# them by an edit that never addressed a line they wrote.
+printf '# crlf — a Windows author wrote this\r\nname: crlf\r\ndescription: Keep the endings\r\n\r\nsteps:\r\n  - id: one\r\n    type: command\r\n    run: git --version\r\n' \
+  > "$GLOBAL_DIR/crlf.yaml"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if api GET /workflows | jq -e '[.workflows[].name] | index("crlf")' >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+VERSION="$(api "GET" "/workflows/definition?name=crlf" | jq -r .version)"
+[[ -n "$VERSION" && "$VERSION" != "null" ]] || fail "the CRLF file never reached the registry"
+api PATCH "/workflows?name=crlf" \
+  -d "{\"version\":\"$VERSION\",\"ops\":[{\"op\":\"insert\",\"path\":\"steps[1]\",\"item\":[{\"key\":\"id\",\"value\":\"added\"},{\"key\":\"type\",\"value\":\"command\"},{\"key\":\"run\",\"value\":\"git --version\"}]}]}" \
+  >/dev/null || fail "PATCH /v1/workflows (insert into a CRLF file) failed"
+STEPS="$(ids crlf)"
+[[ "$STEPS" == $'one\nadded' ]] || fail "the insert into the CRLF file went wrong: $STEPS"
+# Count the bytes rather than grepping for one: whether grep opens a file in
+# text mode is a platform's business, and this assertion is about bytes.
+NEWLINES="$(wc -l < "$GLOBAL_DIR/crlf.yaml" | tr -d ' ')"
+RETURNS="$(tr -cd '\r' < "$GLOBAL_DIR/crlf.yaml" | wc -c | tr -d ' ')"
+[[ "$NEWLINES" == "11" && "$RETURNS" == "11" ]] \
+  || fail "the CRLF file came back with $NEWLINES lines and $RETURNS returns, want 11 and 11"
+COMMENTS="$(grep -c '#' "$GLOBAL_DIR/crlf.yaml" || true)"
+[[ "$COMMENTS" == "1" ]] || fail "the CRLF file lost its comment"
+
+echo "== 12. the daemon is still up"
 api GET /health | jq -e '.status == "ok"' >/dev/null \
   || fail "the daemon did not survive the gate"
 
