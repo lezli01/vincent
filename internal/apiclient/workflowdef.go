@@ -57,6 +57,22 @@ type WorkflowDefaults struct {
 	MaxRetries     *int    `json:"max_retries,omitempty"`
 	RetryBackoff   *string `json:"retry_backoff,omitempty"`
 	Timeout        *string `json:"timeout,omitempty"`
+	// Container is the §16 containerization override, absent when the
+	// workflow sets none. It is on the wire because it changes where every
+	// step of a task runs, which the structured editor's `defaults.container`
+	// form has to be able to read back (§8.6, tasks 061 and 065).
+	Container *WorkflowContainerDef `json:"container,omitempty"`
+}
+
+// WorkflowContainerDef is `defaults.container:` on the wire. Every field is a
+// pointer for the reason the YAML's are: `image: ""` in a workflow means "run
+// this one on the host" and must stay distinguishable from an absent key.
+type WorkflowContainerDef struct {
+	Image            *string  `json:"image,omitempty"`
+	Runtime          *string  `json:"runtime,omitempty"`
+	MountAgentConfig *bool    `json:"mount_agent_config,omitempty"`
+	Network          *bool    `json:"network,omitempty"`
+	ExtraMounts      []string `json:"extra_mounts,omitempty"`
 }
 
 // WorkflowStepDef is one step as authored, flat across every type the way the
@@ -95,7 +111,16 @@ type WorkflowStepDef struct {
 	Steps       []WorkflowStepDef `json:"steps,omitempty"`
 	MaxParallel *int              `json:"max_parallel,omitempty"`
 
-	Lanes []WorkflowLaneDef `json:"lanes,omitempty"`
+	// Lanes is the declared list; Lane is the single lane template a
+	// *derived* fan-out renders once per ForEach item (§7.6, task 080), and
+	// exactly one of the two is set in an authored file. A derived step's
+	// Lanes fills in — and its Lane and ForEach empty — once the step
+	// materializes its lanes into the task's snapshot at spawn, which is what
+	// lets one DTO describe a registry entry, an underived snapshot and a
+	// materialized one alike.
+	Lanes    []WorkflowLaneDef `json:"lanes,omitempty"`
+	Lane     *WorkflowLaneDef  `json:"lane,omitempty"`
+	MaxLanes *int              `json:"max_lanes,omitempty"`
 	// Schedule is a fan_out's lane scheduling mode: `barrier` (what an
 	// absent field means) or `eager` (§7.6, task 081). The graph draws the
 	// difference, so the client has to carry it.
