@@ -1139,10 +1139,6 @@ func (d *detail) recordSeqs() []int64 {
 	return d.seqs
 }
 
-// stepTypeFanOut is the §7.6 step whose lanes are child tasks. It is the one
-// step type the workspace treats as a place to go rather than a row to read.
-const stepTypeFanOut = "fan_out"
-
 // fanOutBlockReasons are the §18 reasons a `fan_out` step blocks its task on.
 // The attribution below speaks for exactly these and stays silent otherwise:
 // a `timeout` on a fan_out is about the step, not about a lane.

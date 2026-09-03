@@ -134,11 +134,12 @@ func (b *board) markedTargets() []markedTask {
 	if len(b.marks) == 0 {
 		return nil
 	}
-	sorted := make([]apiclient.Task, len(b.tasks))
-	copy(sorted, b.tasks)
-	sortTasks(sorted)
 	out := make([]markedTask, 0, len(b.marks))
-	for _, t := range sorted {
+	// Every task the board is showing, lanes included (boardlanes.go): a lane
+	// is an ordinary task to the daemon, so a marked one has to be dispatched
+	// with the rest rather than silently dropped for not being in a listing
+	// that excludes lanes by design.
+	for _, t := range b.orderedTasks() {
 		if b.marks.has(t.ID) {
 			out = append(out, markedTask{id: t.ID, actions: t.AvailableActions})
 		}

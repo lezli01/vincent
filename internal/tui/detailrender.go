@@ -654,7 +654,9 @@ func (d *detail) tierNoun(index int) string {
 	return "iteration"
 }
 
-// stepTypeFanOut is the §7.6 step type as the task snapshot spells it.
+// stepTypeFanOut is the §7.6 step type as the task snapshot spells it: the
+// step whose lanes are child tasks, and the one step type the workspace
+// treats as a place to go rather than a row to read.
 const stepTypeFanOut = "fan_out"
 
 // foldedSelection is the tier the timeline cursor sits in when that tier is

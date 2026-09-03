@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
 // T4.18. The binding registry is the single source `?`, the palette and the
@@ -138,6 +139,115 @@ func foldingShell(t *testing.T) *shell {
 	return s
 }
 
+// laneOpenProbe is the shared `l` assertion: on the given tab, the press
+// resolves the reader's position to a lane and opens that lane's workspace,
+// remembering the parent so `esc` comes back to it (issue #316).
+func laneOpenProbe(tab taskViewTab) func(*testing.T) {
+	return func(t *testing.T) {
+		v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+		v.width, v.height = 140, 40
+		v.setTab(tab)
+		cmd := v.updateKey(registryKey(t, "l"))
+		if cmd == nil {
+			t.Fatalf("l on tab %v produced no command", tab)
+		}
+		msg, ok := cmd().(openTaskMsg)
+		if !ok {
+			t.Fatalf("l on tab %v produced %T, want openTaskMsg", tab, cmd())
+		}
+		if msg.id != 42 || msg.from != 7 {
+			t.Fatalf("l on tab %v opened %+v, want lane task 42 from parent 7", tab, msg)
+		}
+	}
+}
+
+// laneTaskView is a lane: a task whose parent is the fan-out that derived it,
+// which is the only state `U` exists in.
+func laneTaskView(t *testing.T, tab taskViewTab) *taskView {
+	t.Helper()
+	d := taskDetailFixture(t)
+	parent := int64(7)
+	d.taskID = 42
+	d.task.Task = apiclient.Task{
+		ID: 42, ProjectID: 3, Title: "api lane", State: stateBlocked, ParentTaskID: &parent,
+	}
+	v := newTaskView(d)
+	v.width, v.height = 140, 40
+	v.setTab(tab)
+	return v
+}
+
+// laneParentProbe is the shared `U` assertion: from a lane, the press opens
+// the fan-out that derived it.
+func laneParentProbe(tab taskViewTab) func(*testing.T) {
+	return func(t *testing.T) {
+		v := laneTaskView(t, tab)
+		if id, ok := v.parentJump(); !ok || id != 7 {
+			t.Fatalf("parentJump on tab %v = (%d, %v), want (7, true)", tab, id, ok)
+		}
+		cmd := v.updateKey(registryKey(t, "U"))
+		if cmd == nil {
+			t.Fatalf("U on tab %v produced no command", tab)
+		}
+		msg, ok := cmd().(openTaskMsg)
+		if !ok || msg.id != 7 || msg.from != 42 {
+			t.Fatalf("U on tab %v opened %+v, want parent 7 from lane 42", tab, msg)
+		}
+	}
+}
+
+// laneSelectProbe is the shared `<` / `>` assertion: the press walks the
+// Output pane's lane selector, whose cycle includes the task's own output —
+// so one press from there lands on the first lane going forwards and on the
+// last going back.
+func laneSelectProbe(delta int, want int64) func(*testing.T) {
+	return func(t *testing.T) {
+		key := ">"
+		if delta < 0 {
+			key = "<"
+		}
+		v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+		v.width, v.height = 140, 40
+		v.setTab(taskTabOutput)
+		if _, ok := v.outputLane(); ok {
+			t.Fatal("the Output pane starts on a lane, want the task's own output")
+		}
+		v.updateKey(registryKey(t, key))
+		if id, ok := v.outputLane(); !ok || id != want {
+			t.Fatalf("%s selected (%d, %v), want lane task %d", key, id, ok, want)
+		}
+	}
+}
+
+// fanOutGraphTaskView is the parent's Workflow tab with a fan_out drawn on it
+// and the cursor inside the `web` lane — the one tab whose `l` resolves to a
+// lane the failure does not blame.
+func fanOutGraphTaskView(t *testing.T) *taskView {
+	t.Helper()
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.width, v.height = 160, 40
+	v.setTab(taskTabWorkflow)
+	v.update(taskWorkflowMsg{taskID: 7, def: apiclient.TaskWorkflow{
+		TaskID: 7, Name: "fixture", Definition: &apiclient.WorkflowBody{
+			Name: "fixture", Steps: []apiclient.WorkflowStepDef{
+				{ID: "plan", Type: "agent"},
+				{ID: "lanes", Type: stepTypeFanOut, Lanes: []apiclient.WorkflowLaneDef{
+					{ID: "api", Steps: []apiclient.WorkflowStepDef{{ID: "build", Type: "command"}}},
+					{ID: "web", Steps: []apiclient.WorkflowStepDef{{ID: "build", Type: "command"}}},
+				}},
+			},
+		},
+	}})
+	for _, col := range v.workflow.graph.Lanes() {
+		if col.Key == workflowgraph.LaneKey("lanes", "web") && len(col.Nodes) > 0 {
+			v.workflow.graph.Select(col.Nodes[0])
+			return v
+		}
+	}
+	t.Fatalf("the graph drew no node inside the web lane")
+	return nil
+}
+
 func followUpFormFixture() *followUpForm {
 	return newFollowUpForm(7, 1, "done")
 }
@@ -243,19 +353,22 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s, _ := newShellFixture(t, task(4, stateAwaitingChildren))
 			s.focus = panelTasks
 			s.update(registryKey(t, "L"))
-			if s.board.laneParent != 4 {
-				t.Fatalf("L did not drill into the fan-out (laneParent %d, want 4)", s.board.laneParent)
+			if !s.board.lanes.expanded.has(4) {
+				t.Fatalf("L did not expand the fan-out (expanded %v)", s.board.lanes.expanded)
 			}
 			s.update(registryKey(t, "L"))
-			if s.board.laneParent != 0 {
-				t.Fatalf("L did not back out (laneParent %d, want 0)", s.board.laneParent)
+			if s.board.lanes.expanded.has(4) {
+				t.Fatalf("L did not collapse it again (expanded %v)", s.board.lanes.expanded)
 			}
-			// A task that is not a fan-out has no lanes to drill into.
+			// A task with no lanes answers the press with none: the fetch
+			// comes back empty and the row closes itself, so the marker never
+			// promises rows that are not there.
 			s2, _ := newShellFixture(t, task(5, stateRunning))
 			s2.focus = panelTasks
 			s2.update(registryKey(t, "L"))
-			if s2.board.laneParent != 0 {
-				t.Fatalf("L drilled into a task with no lanes (laneParent %d)", s2.board.laneParent)
+			s2.update(boardLanesMsg{parentID: 5})
+			if s2.board.lanes.expanded.has(5) {
+				t.Fatalf("an empty lane fetch left task 5 expanded (%v)", s2.board.lanes.expanded)
 			}
 		},
 		"left": func(t *testing.T) {
@@ -387,6 +500,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("C left a tier open:\n%s", got)
 			}
 		},
+		"l": laneOpenProbe(taskTabSteps),
+		"U": laneParentProbe(taskTabSteps),
 	},
 
 	ctxTaskDetails: {
@@ -429,6 +544,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("P did not open the compare-URL editor")
 			}
 		},
+		"l": laneOpenProbe(taskTabDetails),
+		"U": laneParentProbe(taskTabDetails),
 	},
 
 	// The chat surfaces (task 067). Every probe drives the real view with
@@ -879,6 +996,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("right selected run %d, want 2", v.detail.selectedRun)
 			}
 		},
+		"l": laneOpenProbe(taskTabOutput),
+		"<": laneSelectProbe(-1, 43),
+		">": laneSelectProbe(1, 42),
 	},
 
 	ctxDiff: {
@@ -932,6 +1052,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("C left %d files expanded", len(d.diff.open))
 			}
 		},
+		"l": laneOpenProbe(taskTabDiff),
 	},
 
 	ctxNewTask: {
@@ -1294,6 +1415,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("u did not unlink the pull request")
 			}
 		},
+		"l": laneOpenProbe(taskTabPull),
 	},
 	ctxTaskWorkflow: {
 		"down": func(t *testing.T) {
@@ -1317,6 +1439,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "5"))
 			if v.tab != taskTabWorkflow {
 				t.Fatalf("5 moved to %v, want Workflow", v.tab)
+			}
+		},
+		// The graph's `l` is the one that resolves to the lane under the
+		// cursor rather than to the blamed one, so it gets the graph fixture.
+		"l": func(t *testing.T) {
+			v := fanOutGraphTaskView(t)
+			msg, ok := v.updateKey(registryKey(t, "l"))().(openTaskMsg)
+			if !ok || msg.id != 43 || msg.from != 7 {
+				t.Fatalf("l on the Workflow tab opened %+v, want lane task 43 from parent 7", msg)
 			}
 		},
 	},

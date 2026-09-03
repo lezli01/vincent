@@ -129,9 +129,18 @@ type boardRow struct {
 	// what it is on gets the same answer wherever in the block the cursor
 	// happens to be.
 	line int
-	// depth is the nesting level: 0 for an outermost header, len(grouping)
-	// for every task row.
+	// depth is the *grouping* nesting level: 0 for an outermost header,
+	// len(grouping) for every task row — a fan-out lane included, so a
+	// collapsed group swallows an expanded subtree whole (applyFolds compares
+	// depths).
 	depth int
+	// lane is the fan-out nesting of a task row (boardlanes.go, issue #316):
+	// 0 for a task the daemon listed, 1 for a lane hanging under one, and up
+	// to fan_out.max_depth. It indents the title and nothing else — a lane is
+	// an ordinary task row to folding, to the bulk selection, to the attention
+	// badge and to the column ladder, which is the property the tree was built
+	// not to cost.
+	lane int
 	// label, count and attention describe the group a header opens. The
 	// attention count is on the header so a collapsed group can never hide
 	// that something is waiting on a human (§15, task 054 decision 3).

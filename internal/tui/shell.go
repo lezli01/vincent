@@ -676,11 +676,13 @@ func (s *shell) focusedContext() bindingContext {
 
 // stateOf reads a task's state off the board's rows — the hint that decides
 // whether an open subscribes before the authoritative fetch lands.
+// stateOf is the board's snapshot hint for a task about to be opened. It
+// reads every task the board knows, lanes included (boardlanes.go): opening an
+// expanded lane must subscribe to a running one just as opening its parent
+// does, and the board's own list never carries lanes.
 func (s *shell) stateOf(id int64) string {
-	for _, t := range s.board.tasks {
-		if t.ID == id {
-			return t.State
-		}
+	if t, ok := s.board.taskByID(id); ok {
+		return t.State
 	}
 	return ""
 }

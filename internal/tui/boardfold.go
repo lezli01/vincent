@@ -340,13 +340,16 @@ func (b *board) expandFor(id int64) bool {
 	if len(b.folds) == 0 {
 		return false
 	}
-	i := slices.IndexFunc(b.tasks, func(t apiclient.Task) bool { return t.ID == id })
-	if i < 0 {
+	// Every task the board can name, an expanded fan-out's lanes included
+	// (boardlanes.go): a lane sits in its parent's group, so the fold hiding
+	// it is the same one.
+	t, ok := b.taskByID(id)
+	if !ok {
 		return false
 	}
 	// The path is read against the grouping on screen: what has to open is
 	// what is hiding the task now.
-	p := taskPath(b.tasks[i], b.group)
+	p := taskPath(t, b.group)
 	next := b.folds
 	for n := 1; n <= len(p); n++ {
 		next = next.without(p[:n])
@@ -416,11 +419,11 @@ func (b *board) persistFolds() {
 // a board where the task's group is closed. The cursor belongs there rather
 // than at the top of the list.
 func (b *board) foldedHome(rows []boardRow) int {
-	i := slices.IndexFunc(b.tasks, func(t apiclient.Task) bool { return t.ID == b.selectedID })
-	if i < 0 {
+	t, ok := b.taskByID(b.selectedID)
+	if !ok {
 		return -1
 	}
-	p := taskPath(b.tasks[i], b.group)
+	p := taskPath(t, b.group)
 	if len(p) == 0 {
 		return -1
 	}
