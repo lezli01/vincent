@@ -999,7 +999,11 @@ type boardCell struct {
 // cellsFor is one task's cells in column order. It and boardColumns share one
 // shape — the same optional columns in the same order — and move together; a
 // row that disagrees with the column set indexes the table out of range.
-func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set columnSet) []boardCell {
+//
+// cols is passed for the widths, not the shape: the STEP cell chooses how
+// much of a loop rollup it can say before it is laid out, because dropping a
+// clause is a better answer there than wrapping one (formatStep).
+func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set columnSet, cols []table.Column) []boardCell {
 	cells := make([]boardCell, 0, maxBoardColumns)
 	plain := func(text string) boardCell { return boardCell{text: text} }
 	if set.mark {
@@ -1023,7 +1027,7 @@ func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set col
 	cells = append(cells,
 		boardCell{text: t.Title, wrap: true, indent: indent},
 		boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true},
-		boardCell{text: formatStep(t, set.stepName), wrap: true},
+		boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
 		plain(elapsed),
 	)
 	if set.cost {
@@ -1080,7 +1084,7 @@ func (b *board) rowHeight(rows []boardRow, cols []table.Column, set columnSet) i
 		if r.header {
 			continue
 		}
-		for _, lines := range layoutCells(b.cellsFor(r.task, now, indent, set), cols) {
+		for _, lines := range layoutCells(b.cellsFor(r.task, now, indent, set, cols), cols) {
 			h = max(h, len(lines))
 		}
 		if h >= boardRowLines {
@@ -1109,7 +1113,7 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 		// Continuations follow their first line, so the layout is computed
 		// once per task and read down.
 		if r.line == 0 || lines == nil {
-			lines = layoutCells(b.cellsFor(r.task, now, indent, set), cols)
+			lines = layoutCells(b.cellsFor(r.task, now, indent, set, cols), cols)
 		}
 		row := make(table.Row, 0, maxBoardColumns)
 		for _, cell := range lines {

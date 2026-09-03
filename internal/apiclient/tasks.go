@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -202,7 +203,11 @@ type StepRun struct {
 	// LoopItem is the `for_each` item that iteration ran on; nil for a
 	// `count:` loop and outside a loop.
 	LoopItem *string `json:"loop_item"`
-	State    string  `json:"state"`
+	// LoopTotal is how many iterations the admission that wrote this row
+	// planned — the real extent, 0 outside a loop and 0 for a row written
+	// before the column existed.
+	LoopTotal int    `json:"loop_total"`
+	State     string `json:"state"`
 
 	Agent  *string `json:"agent"`
 	Model  *string `json:"model"`
@@ -277,24 +282,56 @@ type ChildrenRollup struct {
 // LoopRollup is the §7.8 loop rollup: where a task is inside the `loop` step
 // it is currently on.
 type LoopRollup struct {
-	Driver        string `json:"driver"`
-	Iteration     int    `json:"iteration"`
+	Driver    string `json:"driver"`
+	Iteration int    `json:"iteration"`
+	// MaxIterations is the bound the loop would block on. Total is what it is
+	// actually running: for a `for_each` the derived list's length, which the
+	// snapshot cannot know because the list is rendered at run time. They are
+	// two numbers — a 3-item list bounded by a ceiling of 10 has Total 3 and
+	// MaxIterations 10 — and the counter reports Total whenever it has one.
 	MaxIterations int    `json:"max_iterations"`
 	Item          string `json:"item,omitempty"`
+	Total         int    `json:"total,omitempty"`
+	// BodyStep names the body step the current iteration is on, with
+	// BodyIndex its 1-based place among BodyTotal body steps. Absent together
+	// when the server could not place the row in a body it recognizes.
+	BodyStep  string `json:"body_step,omitempty"`
+	BodyIndex int    `json:"body_index,omitempty"`
+	BodyTotal int    `json:"body_total,omitempty"`
 }
 
-// Display is the short form a board row shows beside the k/n step column:
-// "loop 4/10", plus the item when a `for_each` is running one. Empty before
-// the first iteration has a row, when there is nothing yet to report.
-func (r *LoopRollup) Display() string {
+// Clauses is the rollup's parts in priority order — the counter, the
+// for_each item, the body step — so a narrow column can drop from the
+// tail. Nil before the first iteration has a row, when there is nothing yet
+// to report.
+func (r *LoopRollup) Clauses() []string {
 	if r == nil || r.Iteration == 0 {
-		return ""
+		return nil
 	}
-	out := fmt.Sprintf("loop %d/%d", r.Iteration, r.MaxIterations)
+	// Total is the loop's own extent and MaxIterations only the bound it is
+	// under; the fallback is for a server that has no extent to give — an
+	// iteration whose row predates the column.
+	total := r.Total
+	if total == 0 {
+		total = r.MaxIterations
+	}
+	out := make([]string, 0, 3)
+	out = append(out, fmt.Sprintf("loop %d/%d", r.Iteration, total))
 	if r.Item != "" {
-		out += " " + r.Item
+		out = append(out, r.Item)
+	}
+	if r.BodyStep != "" {
+		out = append(out, fmt.Sprintf("%s %d/%d", r.BodyStep, r.BodyIndex, r.BodyTotal))
 	}
 	return out
+}
+
+// Display is the full short form a header shows beside the k/n step column:
+// "loop 4/10 · alpha · repair 2/3". Empty before the first iteration has a
+// row. A column too narrow for all of it reads Clauses and drops from the
+// tail rather than truncating this string.
+func (r *LoopRollup) Display() string {
+	return strings.Join(r.Clauses(), " · ")
 }
 
 // Summary is the short form a board row shows beside `awaiting_children` —

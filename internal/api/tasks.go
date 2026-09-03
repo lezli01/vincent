@@ -255,7 +255,12 @@ type stepRunResponse struct {
 	Iteration int `json:"iteration"`
 	// LoopItem is the `for_each` item that iteration ran on; null for a
 	// `count:` loop and outside a loop.
-	LoopItem      *string `json:"loop_item"`
+	LoopItem *string `json:"loop_item"`
+	// LoopTotal is how many iterations the admission that wrote this row
+	// planned to run — the `for_each` list's real length, which the snapshot
+	// does not have. 0 for a row outside a loop, and for one written before
+	// the column existed.
+	LoopTotal     int     `json:"loop_total"`
 	State         string  `json:"state"`
 	Agent         *string `json:"agent"`
 	Model         *string `json:"model"`
@@ -328,6 +333,7 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		StepType:       r.StepType,
 		Iteration:      r.Iteration,
 		LoopItem:       nilIfEmpty(r.LoopItem),
+		LoopTotal:      r.LoopTotal,
 		PromptOverride: r.PromptOverride != "",
 		RunOverride:    r.RunOverride != "",
 		Attempt:        r.Attempt,
@@ -1003,6 +1009,30 @@ type loopResponse struct {
 	// Item is the `for_each` item the current iteration is running on; empty
 	// for a `count:` loop.
 	Item string `json:"item,omitempty"`
+	// Total is the loop's *real* extent — how many iterations the admission
+	// that is running it planned. For a `for_each` that is the derived list's
+	// length, which the snapshot cannot know: the list is rendered at run
+	// time, so a snapshot-derived denominator is the ceiling and not the
+	// loop's own number. Absent (0) until a row records one, because before
+	// the first iteration there is nothing to report and a guess would read
+	// like an answer.
+	//
+	// MaxIterations keeps its own meaning beside it — the bound the loop
+	// would block on. They are two numbers and neither stands in for the
+	// other.
+	Total int `json:"total,omitempty"`
+	// BodyStep, BodyIndex and BodyTotal name the body step the current
+	// iteration is on and its 1-based place in the body. The outer `step k/n`
+	// counts a whole loop as one step, so without these "where is this task"
+	// stops at the loop's own name.
+	//
+	// All three are absent together, and only together: a row whose step id
+	// is not one of the snapshot's body ids — a repair row, or any row at all
+	// once the snapshot no longer parses — gets no clause rather than a
+	// position counted against a body that is not the one it ran in.
+	BodyStep  string `json:"body_step,omitempty"`
+	BodyIndex int    `json:"body_index,omitempty"`
+	BodyTotal int    `json:"body_total,omitempty"`
 }
 
 // loopRollup builds the §7.8 rollup for a task whose current step is a loop,
@@ -1020,9 +1050,31 @@ func (s *Server) loopRollup(ctx context.Context, t *store.Task, summary snapshot
 		s.deps.Logger.Error("loop rollup", "task", t.ID, "error", err)
 		return out
 	}
+	// The newest row of the highest iteration is the loop's current position:
+	// its iteration and item, the extent its admission planned, and the body
+	// step it is on.
+	var current *store.StepRun
 	for i := range runs {
 		if run := &runs[i]; run.Iteration >= out.Iteration {
-			out.Iteration, out.Item = run.Iteration, run.LoopItem
+			out.Iteration, out.Item, current = run.Iteration, run.LoopItem, run
+		}
+	}
+	if current == nil {
+		// No rows: the loop has not started an iteration, so there is no
+		// extent to report. Falling back to the ceiling here would put a
+		// denominator on the wire that no admission ever planned.
+		return out
+	}
+	// A row written before migration 0026 carries no extent; the snapshot's
+	// bound is the only number left, and it is the one the rollup reported
+	// for that row's whole lifetime.
+	if out.Total = current.LoopTotal; out.Total == 0 {
+		out.Total = def.total
+	}
+	for i, id := range def.body {
+		if id == current.StepID {
+			out.BodyStep, out.BodyIndex, out.BodyTotal = id, i+1, len(def.body)
+			break
 		}
 	}
 	return out

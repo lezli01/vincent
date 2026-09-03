@@ -269,7 +269,15 @@ type StepRun struct {
 	// re-derived: it is the loop's extent, not a question, and re-asking it
 	// mid-loop would re-index a resumed iteration onto different work
 	// (decision 8).
-	LoopItem      string
+	LoopItem string
+	// LoopTotal is how many iterations the admission that wrote this row
+	// planned to run: the `count:`, or the resolved `for_each` list length.
+	// 0 means no extent was recorded — every row outside a loop, and every
+	// row written before the column existed.
+	//
+	// Like LoopItem it is written once, at insert, and never updated: it is
+	// what *that* admission planned, not a running total (migration 0026).
+	LoopTotal     int
 	State         StepRunState
 	Agent         string // adapter name; agent steps only
 	Model         string // resolved model as passed to the adapter (spec §8.6); "" = CLI default

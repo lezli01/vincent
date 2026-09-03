@@ -200,7 +200,16 @@ var bindings = []binding{
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTimeline, hint: "[/] views", priority: 2},
 	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
-	{key: "enter", label: "open the selected attempt in the Output tab", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
+	{key: "enter", label: "open the selected attempt in the Output tab, or open the folded iteration/round tier the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
+	// Folding a loop's iterations and a `fan_out`'s rounds (issue #317). The
+	// Diff tab's vocabulary verbatim, because it is the same gesture on the
+	// same screen. ↑/↓ stop once on a folded tier — its first row — so every
+	// selection they reach is drawn.
+	{key: "space", label: "open or close the iteration/round tier the cursor is in (enter and →/← too)", scope: scopePanel, context: ctxTimeline, hint: "space fold", priority: 4, fold: true},
+	{key: "right", label: "open the folded tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
+	{key: "left", label: "close the tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
+	{key: "O", label: "open every iteration and round tier of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
+	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true},
 
 	// Task details.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},

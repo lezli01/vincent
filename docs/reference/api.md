@@ -1047,7 +1047,7 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart. A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body |
+| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 
@@ -1388,16 +1388,44 @@ Both the list and the detail endpoint carry `loop` while a task's **current**
 step is a `loop` (§7.8), and omit it otherwise:
 
 ```json
-"loop": { "driver": "for_each", "iteration": 4, "max_iterations": 10, "item": "internal/store" }
+"loop": {
+  "driver": "for_each", "iteration": 4, "total": 7, "max_iterations": 10,
+  "item": "internal/store",
+  "body_step": "repair", "body_index": 2, "body_total": 3
+}
 ```
 
 `iteration` is the pass in progress (0 before the first one starts) and
 `max_iterations` is the largest it could reach — the `count:` itself, or the
-ceiling a `for_each` is bounded by, whose real length is only known at run
-time. It is on the list endpoint too, so a board can render `loop 4/10` without
-a request per row. Like `children`, it is derived per request from the step
-rows rather than stored: a persisted loop cursor would be a second truth that
-recovery would have to reconcile. There is deliberately **no** step-lifecycle
+ceiling a `for_each` is bounded by. `total` is what the loop is **actually**
+running: the `count:`, or the length of the `for_each` list the running
+admission derived, which the workflow does not carry because the list is
+rendered at run time. Render `total` when it is there and fall back to
+`max_iterations` when it is not, so a 3-item `for_each` under a ceiling of 10
+reads `loop 2/3` rather than `loop 2/10`. `total` is absent until the loop has
+a body row at all — before the first iteration there is nothing to report and a
+denominator would be a guess that reads like an answer. A row written before the
+daemon recorded extents carries none, and `total` is then the same bound
+`max_iterations` reports, which is the number that row's rollup gave for its
+whole life; the fallback happens on the daemon, so a client that renders `total`
+whenever it is present is right either way.
+
+`body_step` names the body step that iteration is on, with `body_index` its
+1-based place among `body_total` body steps; the outer `step k/n` counts a
+whole loop as one step, so this is the only thing on the response that says
+where inside the loop the task is. The three are absent **together**, and only
+together, for a row whose `step_id` is not one of the body ids the task's
+workflow snapshot declares: a repair row, or a row whose step an edit-and-retry
+rewrite of the snapshot (§6) has taken out of the body. A position counted
+against a body the row did not run in is worse than no position. (A snapshot
+that no longer parses at all does not narrow the rollup, it removes it: `loop`
+is absent from the response entirely, because nothing is left to say the current
+step is a loop.) The rollup is on
+the list endpoint too, so a board can render
+`loop 4/7 · internal/store · repair 2/3` without a request per row. Like
+`children`, it is derived per request from the step rows rather than stored: a
+persisted loop cursor would be a second truth that recovery would have to
+reconcile. There is deliberately **no** step-lifecycle
 event for iterations — ten passes of a four-step body would put forty durable
 events on the stream to say what forty rows already say.
 - **`?archived=` defaults to false.** `true` selects only archived tasks, `all`

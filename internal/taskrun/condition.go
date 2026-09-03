@@ -72,6 +72,7 @@ func (r *Runner) recordDecisionRow(
 		// loop.
 		Iteration:     env.iteration(),
 		LoopItem:      env.loopItem(),
+		LoopTotal:     env.loopTotal(),
 		State:         state,
 		SkipReason:    skipReason,
 		FailureReason: failureReason,

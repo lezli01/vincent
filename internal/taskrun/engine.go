@@ -978,6 +978,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		Attempt:   attempt,
 		Iteration: env.iteration(),
 		LoopItem:  env.loopItem(),
+		LoopTotal: env.loopTotal(),
 		State:     store.StepRunning,
 	}
 	var sel agent.Selection

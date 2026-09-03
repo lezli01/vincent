@@ -84,13 +84,13 @@ func TestTitleCapSpendsTheSurplus(t *testing.T) {
 		{width: 120, g: grouped, title: 50, step: widthStepLong, wantStatusColumnGated: true},
 		// The give-back band: STATUS is gated off, STEP fills, and the rest
 		// comes back to the title rather than rendering as dead cells.
-		{width: 160, g: grouped, title: 76, step: widthStepMax, wantStatusColumnGated: true},
+		{width: 160, g: grouped, title: 74, step: widthStepMax, wantStatusColumnGated: true},
 		// STATUS admitted: the title drops to the cap and both other columns
 		// take the surplus in order.
-		{width: 200, g: grouped, title: maxTitle, step: widthStepMax, status: 50},
+		{width: 200, g: grouped, title: maxTitle, step: widthStepMax, status: 48},
 		{width: 200, g: nil, title: maxTitle, step: 22, status: widthStatus},
 		// Both ceilings reached: only now does the title exceed its cap.
-		{width: 300, g: grouped, title: 118, step: widthStepMax, status: widthStatusMax},
+		{width: 300, g: grouped, title: 116, step: widthStepMax, status: widthStatusMax},
 	} {
 		t.Run(strconv.Itoa(tc.width)+" "+tc.g.label(), func(t *testing.T) {
 			cols, _ := boardColumns(tc.width, tc.g, false)

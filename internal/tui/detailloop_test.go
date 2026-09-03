@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -80,9 +82,10 @@ func TestDetailTimelineGroupsLoopIterations(t *testing.T) {
 	}
 }
 
-// TestLoopRollupDisplay pins what the board renders beside k/n. A task with no
-// rollup — every task not currently in a loop — must render nothing at all,
-// or the column would grow a permanent empty suffix.
+// TestLoopRollupDisplay pins what the board and the detail header render
+// beside k/n. A task with no rollup — every task not currently in a loop —
+// must render nothing at all, or the column would grow a permanent empty
+// suffix.
 func TestLoopRollupDisplay(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -95,16 +98,36 @@ func TestLoopRollupDisplay(t *testing.T) {
 			rollup: &apiclient.LoopRollup{Driver: "count", MaxIterations: 10},
 		},
 		{
-			name:   "count",
+			name: "count",
+			rollup: &apiclient.LoopRollup{
+				Driver: "count", Iteration: 4, Total: 10, MaxIterations: 10,
+			},
+			want: "loop 4/10",
+		},
+		{
+			// A row written before the extent column existed carries none,
+			// so the bound is the only number left to count against.
+			name:   "a row with no recorded extent falls back to the bound",
 			rollup: &apiclient.LoopRollup{Driver: "count", Iteration: 4, MaxIterations: 10},
 			want:   "loop 4/10",
 		},
 		{
-			name: "for_each names its item",
+			// The whole of issue #317's third fault: the ceiling is not the
+			// loop's number, and the extent is.
+			name: "for_each counts against its real extent, not the ceiling",
 			rollup: &apiclient.LoopRollup{
-				Driver: "for_each", Iteration: 2, MaxIterations: 25, Item: "internal/store",
+				Driver: "for_each", Iteration: 2, Total: 3, MaxIterations: 25,
+				Item: "internal/store",
 			},
-			want: "loop 2/25 internal/store",
+			want: "loop 2/3 · internal/store",
+		},
+		{
+			name: "the running body step is the last clause",
+			rollup: &apiclient.LoopRollup{
+				Driver: "for_each", Iteration: 4, Total: 10, MaxIterations: 10,
+				Item: "alpha", BodyStep: "repair", BodyIndex: 2, BodyTotal: 3,
+			},
+			want: "loop 4/10 · alpha · repair 2/3",
 		},
 	}
 	for _, tt := range tests {
@@ -116,20 +139,53 @@ func TestLoopRollupDisplay(t *testing.T) {
 	}
 }
 
-// TestFormatStepAppendsTheLoop: the board's step column carries the iteration
-// only for a task that is in one, so nothing changes for every other row.
-func TestFormatStepAppendsTheLoop(t *testing.T) {
+// TestFormatStepFitsTheLoopToItsColumn: the step column carries as much of
+// the rollup as its width allows and drops the rest from the tail — the body
+// step first, then the `for_each` item, then the counter (issue #317). The
+// alternative is what the cell did before: wrap a counter onto a second and
+// third line, spending the row's whole height on the least of what it says.
+func TestFormatStepFitsTheLoopToItsColumn(t *testing.T) {
 	task := apiclient.Task{CurrentStep: 2, StepTotal: 7, StepName: "green"}
-	if got, want := formatStep(task, true), "3/7 green"; got != want {
+	if got, want := formatStep(task, true, widthStepMax), "3/7 green"; got != want {
 		t.Errorf("formatStep without a loop = %q, want %q", got, want)
 	}
-	task.Loop = &apiclient.LoopRollup{Driver: "count", Iteration: 4, MaxIterations: 10}
-	if got, want := formatStep(task, true), "3/7 green · loop 4/10"; got != want {
-		t.Errorf("formatStep in a loop = %q, want %q", got, want)
+	task.Loop = &apiclient.LoopRollup{
+		Driver: "for_each", Iteration: 4, Total: 10, MaxIterations: 10,
+		Item: "alpha", BodyStep: "repair", BodyIndex: 2, BodyTotal: 3,
 	}
+	for _, tt := range []struct {
+		name  string
+		width int
+		want  string
+	}{
+		{name: "everything fits", width: 42, want: "3/7 green · loop 4/10 · alpha · repair 2/3"},
+		{name: "one cell short of the body step", width: 41, want: "3/7 green · loop 4/10 · alpha"},
+		{name: "one cell short of the item", width: 28, want: "3/7 green · loop 4/10"},
+		{name: "one cell short of the counter", width: 20, want: "3/7 green"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatStep(task, true, tt.width); got != tt.want {
+				t.Errorf("formatStep at width %d = %q, want %q", tt.width, got, tt.want)
+			}
+		})
+	}
+
+	// widthStepMax is measured off the tier boardcols.go names, a `count:`
+	// loop reporting its body step. If this no longer fits exactly, one of
+	// the two moved without the other.
+	task.Loop.Driver, task.Loop.Item = "count", ""
+	full := formatStep(task, true, widthStepMax)
+	if want := "3/7 green · loop 4/10 · repair 2/3"; full != want {
+		t.Errorf("formatStep at widthStepMax = %q, want %q", full, want)
+	}
+	if got := ansi.StringWidth(full); got != widthStepMax {
+		t.Errorf("the widest tier is %d cells, widthStepMax is %d — boardcols.go is measured off it",
+			got, widthStepMax)
+	}
+
 	// The narrow column drops the name, and the loop with it: what survives
 	// the width budget is k/n (boardcols.go).
-	if got, want := formatStep(task, false), "3/7"; got != want {
+	if got, want := formatStep(task, false, widthStepShort), "3/7"; got != want {
 		t.Errorf("formatStep without names = %q, want %q", got, want)
 	}
 }

@@ -256,14 +256,14 @@ func TestFormatHelpers(t *testing.T) {
 		t.Errorf("cost = %q", got)
 	}
 	// An unparsable snapshot has no step count; "1/0" would be a lie.
-	if got := formatStep(apiclient.Task{StepTotal: 0}, true); got != "—" {
+	if got := formatStep(apiclient.Task{StepTotal: 0}, true, widthStepLong); got != "—" {
 		t.Errorf("stepless task = %q, want a dash", got)
 	}
-	withName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, true)
+	withName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, true, widthStepLong)
 	if withName != "2/6 build" {
 		t.Errorf("step = %q, want %q", withName, "2/6 build")
 	}
-	if noName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, false); noName != "2/6" {
+	if noName := formatStep(apiclient.Task{CurrentStep: 1, StepTotal: 6, StepName: "build"}, false, widthStepShort); noName != "2/6" {
 		t.Errorf("narrow step = %q, want %q", noName, "2/6")
 	}
 }

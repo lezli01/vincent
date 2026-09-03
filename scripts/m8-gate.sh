@@ -147,6 +147,15 @@ iterations_ran() { # iterations_ran TASK_ID
   steps_json "$1" | jq '[.[] | select(.iteration > 0) | .iteration] | unique | length'
 }
 
+# loop_totals prints the distinct extents the rows at one step index recorded
+# (§7.8, issue #317), one per line — so a capture of `3` alone means every
+# body row of that loop agrees on 3.
+loop_totals() { # loop_totals TASK_ID STEP_INDEX
+  steps_json "$1" | jq --argjson i "$2" \
+    '[.[] | select(.step_index == $i) | .loop_total] | unique | .[]' \
+    | tr -d '\r'
+}
+
 # items_ran prints the for_each item of each iteration, in iteration order.
 items_ran() { # items_ran TASK_ID
   steps_json "$1" | jq -r '[.[] | select(.loop_item != null)]
@@ -332,6 +341,17 @@ YAML
     [[ "$(subject_count "$REPO" "$TID" "$item")" == 1 ]] \
       || fail "item $item did not get exactly one iteration's work"
   done
+  # The extent recorded on every body row is the list's length, not the
+  # ceiling (issue #317). This `for_each` declares no `max_iterations:`, so a
+  # denominator derived from the snapshot would be the global 10 — a number
+  # this loop was never going to reach.
+  #
+  # It is read off the rows rather than off the task's `loop` rollup because
+  # the task is `done`: its cursor sits past the loop step, so there is no
+  # rollup on the response at all. The rows are the deterministic answer, and
+  # they need no race against a running loop.
+  [[ "$(loop_totals "$TID" 0)" == 3 ]] \
+    || fail "body rows recorded extent $(loop_totals "$TID" 0), want 3 — the list length, not the ceiling"
   daemon_down
 fi
 

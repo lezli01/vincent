@@ -34,8 +34,12 @@ import (
 type loopEnv struct {
 	iteration int // 1-based
 	item      string
-	isFirst   bool
-	isLast    bool
+	// total is the extent this admission planned — plan.total, recorded on
+	// every body row beside its item so a reader can say "2 of 3" without
+	// re-deriving a number the loop definition does not carry (issue #317).
+	total   int
+	isFirst bool
+	isLast  bool
 	// pos is this step's position in the body, and order maps every body
 	// step id to its own. Together they are the third component of the
 	// position comparison stepEnv.precedes makes (decision 9).
@@ -64,6 +68,15 @@ func (e *stepEnv) loopItem() string {
 		return ""
 	}
 	return e.loop.item
+}
+
+// loopTotal is the extent recorded on this step's rows: how many iterations
+// the admission that writes them planned to run. 0 outside a loop.
+func (e *stepEnv) loopTotal() int {
+	if e.loop == nil {
+		return 0
+	}
+	return e.loop.total
 }
 
 // loopPlan is a loop's extent for one admission: how many iterations it will
@@ -170,6 +183,7 @@ func (r *Runner) runIteration(
 			loop: &loopEnv{
 				iteration: iteration,
 				item:      itemAt(plan.items, iteration),
+				total:     plan.total,
 				isFirst:   iteration == 1,
 				isLast:    iteration == plan.total,
 				pos:       pos,
