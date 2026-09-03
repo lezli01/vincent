@@ -52,9 +52,16 @@ func TestChatFetchesOlderTurnsWhenScrolledTo(t *testing.T) {
 	v.fetchTranscripts()
 	v.bodyDirty = true
 	v.render(60, 14)
-	v.updateKey(registryKey(t, "pgup"))
-	v.updateKey(registryKey(t, "pgup"))
-	v.updateKey(registryKey(t, "pgup"))
+	// Paged to the top, not paged a fixed number of times: how many pages a
+	// conversation is depends on how many rows the body has, and the body is
+	// whatever the header and the framed composer left it.
+	for range 20 {
+		before := v.vp.YOffset()
+		v.updateKey(registryKey(t, "pgup"))
+		if v.vp.YOffset() == before {
+			break
+		}
+	}
 	if !v.fetched[1] {
 		t.Fatalf("scrolling to the top fetched %v, never turn 1", v.fetched)
 	}

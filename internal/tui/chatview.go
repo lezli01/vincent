@@ -267,7 +267,7 @@ func (v *chatView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
-		v.composer.SetWidth(max(msg.Width-4, 10))
+		v.composer.SetWidth(chatComposerWidth(msg.Width))
 		return v, nil
 	case openChatMsg:
 		return v, v.open(msg.id)

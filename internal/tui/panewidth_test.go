@@ -28,39 +28,76 @@ func countRune(frame string, r rune) int { return strings.Count(ansi.Strip(frame
 // message longer than the composer is wide wraps inside the textarea, and
 // the chat pane draws exactly one row of it.
 //
-// chatrender.go:228 appends `v.composer.View()` — three rows, `ta.SetHeight(3)`
-// at chatview.go:136 — as a single element of a slice whose every other
-// element is one line. render (chatrender.go:49-63) then counts it as one
-// line in `room`, so the frame is two lines taller than the terminal it was
-// given, and runs `ansi.Truncate(line, width, "…")` over all three rows at
-// once: `ansi.StringWidth` never resets across the `\n`s, so the composer is
+// footerLines appended `v.composer.View()` — three rows, `ta.SetHeight(3)` at
+// chatview.go:136 — as a single element of a slice whose every other element
+// is one line. render then counts it as one line in `room`, so the frame is
+// two lines taller than the terminal it was given, and runs
+// `ansi.Truncate(line, width, "…")` over all three rows at once:
+// `ansi.StringWidth` never resets across the `\n`s, so the composer is
 // measured as the sum of its rows and everything past the pane width — the
 // remaining rows, newlines included — is dropped.
+//
+// The claim covers the border the composer now wears: a frame is two more
+// rows in the same slice, and a joined box would collapse to its top edge for
+// exactly the reason a joined textarea collapsed to its first row. What the
+// frame costs, the body gives up — "a composer that grew is a body that
+// shrank, not a frame that overflowed" (§15's #299 amendment) — so the drawn
+// height is unchanged at any terminal size.
 func TestPaneWidthChatComposerKeepsEveryWrappedRow(t *testing.T) {
-	const (
-		width  = 80
-		height = 24
-	)
-	v := chatViewFixture()
-	v.update(tea.WindowSizeMsg{Width: width, Height: height})
+	for _, tc := range []struct{ width, height int }{
+		{80, 24}, {80, 12}, {40, 20}, {120, 40}, {24, 10},
+	} {
+		v := chatViewFixture()
+		v.update(tea.WindowSizeMsg{Width: tc.width, Height: tc.height})
 
-	// Long enough to wrap, short enough to still fit the composer's three
-	// rows: what is asserted is that the wrapped rows are drawn, not that an
-	// over-full composer scrolls.
-	msg := strings.Repeat("Z", width+panePad)
-	v.composer.SetValue(msg)
+		// Long enough to wrap, short enough to still fit the composer's three
+		// rows: what is asserted is that the wrapped rows are drawn, not that
+		// an over-full composer scrolls.
+		msg := strings.Repeat("Z", tc.width+panePad)
+		v.composer.SetValue(msg)
 
-	frame := v.render(width, height)
+		// What the composer drew is the yardstick, not what was typed: at a
+		// narrow width a textarea three rows tall scrolls its own value, and
+		// that is the widget's business. The claim is that every row it drew
+		// reaches the pane.
+		drew := countRune(v.composer.View(), 'Z')
+		var wrappedRows int
+		for _, row := range strings.Split(v.composer.View(), "\n") {
+			if strings.ContainsRune(ansi.Strip(row), 'Z') {
+				wrappedRows++
+			}
+		}
+		if wrappedRows < 2 {
+			t.Fatalf("%dx%d: the value did not wrap onto a second row, so the test has nothing to catch", tc.width, tc.height)
+		}
 
-	if got := len(strings.Split(frame, "\n")); got != height {
-		t.Errorf("the chat frame is %d lines at height %d: the composer's rows are not counted in room, so its tail falls off the bottom of the terminal", got, height)
-	}
-	if got := countRune(frame, 'Z'); got != len(msg) {
-		t.Errorf("%d of the %d typed characters reached the screen: the composer is truncated to its first row and the rest is typed blind", got, len(msg))
-	}
-	for i, line := range strings.Split(frame, "\n") {
-		if w := ansi.StringWidth(line); w > width {
-			t.Errorf("line %d is %d columns wide in a %d-column pane: %q", i, w, width, ansi.Strip(line))
+		frame := v.render(tc.width, tc.height)
+		lines := strings.Split(frame, "\n")
+
+		if got := len(lines); got != tc.height {
+			t.Errorf("%dx%d: the chat frame is %d lines: the composer's rows are not counted in room, so its tail falls off the bottom of the terminal",
+				tc.width, tc.height, got)
+		}
+		if got := countRune(frame, 'Z'); got != drew {
+			t.Errorf("%dx%d: %d of the %d drawn characters reached the screen: the composer is truncated to its first row and the rest is typed blind",
+				tc.width, tc.height, got, drew)
+		}
+		for i, line := range lines {
+			if w := ansi.StringWidth(line); w > tc.width {
+				t.Errorf("%dx%d: line %d is %d columns wide: %q", tc.width, tc.height, i, w, ansi.Strip(line))
+			}
+		}
+		// The composer is a field, not more conversation: a titled box around
+		// it, and the hint still below the box and last on the pane.
+		plain := ansi.Strip(frame)
+		if !strings.Contains(plain, "─ message ") {
+			t.Errorf("%dx%d: the composer is not framed:\n%s", tc.width, tc.height, plain)
+		}
+		if !strings.Contains(plain, "└") || !strings.Contains(plain, "┐") {
+			t.Errorf("%dx%d: the frame lost a corner, so it collapsed to an edge:\n%s", tc.width, tc.height, plain)
+		}
+		if last := ansi.Strip(lines[len(lines)-1]); !strings.Contains(last, "enter send") {
+			t.Errorf("%dx%d: the last line of the pane is %q, want the hint below the frame", tc.width, tc.height, last)
 		}
 	}
 }
