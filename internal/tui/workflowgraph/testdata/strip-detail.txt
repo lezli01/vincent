@@ -34,6 +34,14 @@ spread.web/build: id=build type=command
 #merge:spread: on_conflict=block join=spread
 ship: id=ship type=command
 #end:
+== lanetemplate
+plan: id=plan type=agent
+spread: id=spread type=fan_out
+spread.{{ .Item.id }}/work: id=work type=agent
+spread.{{ .Item.id }}/verify: id=verify type=command
+#merge:spread: on_conflict=block join=spread
+ship: id=ship type=command
+#end:
 == loop
 plan: id=plan type=agent
 repeat: id=repeat type=loop

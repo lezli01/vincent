@@ -38,17 +38,18 @@ func TestLayoutIsDeterministic(t *testing.T) {
 
 func corpus() map[string]*apiclient.WorkflowBody {
 	return map[string]*apiclient.WorkflowBody{
-		"sequential": fixtureSequential(),
-		"guarded":    fixtureGuarded(),
-		"condition":  fixtureCondition(),
-		"parallel":   fixtureParallel(),
-		"fanout":     fixtureFanOut(),
-		"loop":       fixtureLoop(),
-		"loopbreak":  fixtureLoopBreak(),
-		"nested":     fixtureNested(),
-		"wide":       fixtureWideLabels(),
-		"laneshadow": fixtureLaneShadow(),
-		"lanedag":    fixtureLaneDAG(),
+		"sequential":   fixtureSequential(),
+		"guarded":      fixtureGuarded(),
+		"condition":    fixtureCondition(),
+		"parallel":     fixtureParallel(),
+		"fanout":       fixtureFanOut(),
+		"loop":         fixtureLoop(),
+		"loopbreak":    fixtureLoopBreak(),
+		"nested":       fixtureNested(),
+		"wide":         fixtureWideLabels(),
+		"laneshadow":   fixtureLaneShadow(),
+		"lanedag":      fixtureLaneDAG(),
+		"lanetemplate": fixtureLaneTemplate(),
 	}
 }
 

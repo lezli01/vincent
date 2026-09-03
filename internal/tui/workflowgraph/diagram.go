@@ -459,16 +459,37 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 		Label:  st.DisplayName(),
 		Header: header,
 		Parent: f.group,
-		Note:   derivedNote(st),
+		Note:   fanOutNote(st),
+	}
+	// §7.6 spells a fan-out's lanes three ways and this is where they
+	// converge: a hand-authored `lanes:` list, a registry entry's single
+	// `lane:` template that `for_each:` renders into a list when the step
+	// runs, and the materialized list a task's snapshot carries. The template
+	// is drawn as one column standing for the list it becomes — the same
+	// answer a `for_each` loop's body gets, and for the same reason the
+	// ForEach comment on WorkflowStepDef gives: what it iterates is
+	// discovered at run time, so a definition reader cannot know the count
+	// and must not be shown an invented one. Sourcing the lanes from st.Lanes
+	// alone drew no column at all, which said the step spawns nothing.
+	lanes := st.Lanes
+	if len(lanes) == 0 && st.Lane != nil {
+		tmpl := *st.Lane
+		// A template has no siblings: the lanes it stands for do not exist
+		// until the step runs, so there is no DAG over them to draw. Its
+		// `needs:` is dropped from this copy — never from the DTO — rather
+		// than pointed at lane ids the picture does not contain, which leaves
+		// one wave, no needs edges, and a column entered from the header.
+		tmpl.Needs = nil
+		lanes = []apiclient.WorkflowLaneDef{tmpl}
 	}
 	// The waves are read off the `needs:` graph rather than out of the
 	// document, because nothing in the document declares them: a round is
 	// the set of lanes whose dependencies have all merged, which is exactly
 	// a topological level (§7.6, task 080).
-	waves := laneWaves(st.Lanes)
+	waves := laneWaves(lanes)
 	exitsOf := map[string][]string{}
 	entryOf := map[string]string{}
-	for _, lane := range st.Lanes {
+	for _, lane := range lanes {
 		col := Column{
 			ID: lane.ID, Key: LaneKey(header, lane.ID),
 			Label: lane.ID, Detail: laneDetail(lane),
@@ -515,7 +536,7 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 	// Needs edges are added after every lane exists: an edge may run to a
 	// lane declared before or after the one it leaves, and a forward
 	// reference has no node to attach to yet.
-	for _, lane := range st.Lanes {
+	for _, lane := range lanes {
 		entry, ok := entryOf[lane.ID]
 		if !ok {
 			continue
@@ -663,6 +684,46 @@ func laneWaves(lanes []apiclient.WorkflowLaneDef) map[string]int {
 		depth(lane.ID, map[string]bool{})
 	}
 	return waves
+}
+
+// fanOutNote is the sentence a fan-out's frame carries, and it is how the
+// three lane lists §7.6 allows are told apart on the picture: a materialized
+// list says what it *was* derived from, an underived `lane:` template says what
+// it *will be*, and a hand-authored `lanes:` list says nothing, because there
+// is nothing to say — its frame is drawn exactly as it was before either of
+// the other two existed.
+//
+// Materialization empties Lane and fills Lanes, so the first two never both
+// apply; DerivedFrom is checked first because it is the one that describes a
+// list already on screen.
+func fanOutNote(st apiclient.WorkflowStepDef) string {
+	if note := derivedNote(st); note != "" {
+		return note
+	}
+	if len(st.Lanes) == 0 && st.Lane != nil {
+		return templateNote(st)
+	}
+	return ""
+}
+
+// templateNote is what an *underived* fan-out's frame says: one lane per item
+// of a list this file does not contain. It names the templates the list comes
+// from and never a count — a definition reader cannot know one, exactly as
+// the ForEach comment on WorkflowStepDef says — and it names `max_lanes` when
+// the step caps the list, because that is the one bound the file does state.
+//
+// It leads with "templated" so that the frame's one-word fallback (render.go)
+// still separates it from "derived": which of the two a reader is looking at
+// is the half they cannot recover from anywhere else on the picture.
+func templateNote(st apiclient.WorkflowStepDef) string {
+	note := "templated"
+	if from := strings.Join(st.ForEach, " "); from != "" {
+		note += " from " + from
+	}
+	if st.MaxLanes != nil {
+		note += ", at most " + strconv.Itoa(*st.MaxLanes)
+	}
+	return note
 }
 
 // derivedNote is what a materialized fan-out's frame says about where its
@@ -934,11 +995,19 @@ func (b *builder) stepSectionsTitled(st apiclient.WorkflowStepDef, title string)
 		structure.add("for_each", strings.Join(st.ForEach, "\n"))
 	}
 	structure.addInt("max_iterations", st.MaxIterations)
+	structure.addInt("max_lanes", st.MaxLanes)
 	if n := len(st.Steps); n > 0 {
 		structure.add("steps", plural(n, "step")+" drawn inside the frame")
 	}
 	if n := len(st.Lanes); n > 0 {
 		structure.add("lanes", plural(n, "lane")+" drawn as the frame's columns")
+	}
+	if st.Lane != nil {
+		// The counterpart of the `lanes` row above, and the difference is the
+		// whole point: this step declares one lane *shape*, and the list it
+		// becomes is rendered from `for_each` when the step runs (§7.6, task
+		// 080). The column on the picture is that shape, not a lane.
+		structure.add("lane", "one lane per for_each item, derived when the step runs")
 	}
 	structure.add("schedule", st.Schedule)
 	if st.DerivedFrom != nil {
@@ -1032,7 +1101,14 @@ func (b *builder) mergeSections(st apiclient.WorkflowStepDef) []DetailSection {
 		policy = st.Merge.ConflictPolicy()
 	}
 	f.add("on_conflict", policy)
-	f.add("merges", plural(len(st.Lanes), "lane"))
+	if len(st.Lanes) == 0 && st.Lane != nil {
+		// An underived fan-out has no lane list to count yet, and "0 lanes"
+		// would say the join merges nothing — the one thing it is certain
+		// not to do (§7.6, task 080).
+		f.add("merges", "every lane the step derives")
+	} else {
+		f.add("merges", plural(len(st.Lanes), "lane"))
+	}
 	out = out.with(f)
 	if st.Merge != nil && st.Merge.Agent != nil {
 		out = append(out, b.stepSectionsTitled(*st.Merge.Agent, "Resolver")...)

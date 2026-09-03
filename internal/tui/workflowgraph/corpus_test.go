@@ -86,6 +86,23 @@ func fixtureLaneDAG() *apiclient.WorkflowBody {
 	return body(step("plan", "agent"), spread, step("ship", "command"))
 }
 
+// 5c — an *underived* fan_out, as a registry entry spells one: a single
+// `lane:` template plus the `for_each:` that renders it into a lane list when
+// the step runs, capped at `max_lanes` (§7.6, task 080). How many lanes that
+// becomes is unknowable from the file, so the picture draws the template
+// once, labelled with the id template as authored.
+func fixtureLaneTemplate() *apiclient.WorkflowBody {
+	spread := step("spread", "fan_out")
+	spread.ForEach = []string{`{{ .Steps.plan.Result }}`}
+	spread.MaxLanes = intp(4)
+	spread.Lane = &apiclient.WorkflowLaneDef{
+		ID:    "{{ .Item.id }}",
+		Steps: []apiclient.WorkflowStepDef{step("work", "agent"), step("verify", "command")},
+	}
+	spread.Merge = &apiclient.WorkflowMergeDef{OnConflict: "block"}
+	return body(step("plan", "agent"), spread, step("ship", "command"))
+}
+
 // 6 — a counted loop with a body and a back-edge.
 func fixtureLoop() *apiclient.WorkflowBody {
 	loop := step("repeat", "loop")
