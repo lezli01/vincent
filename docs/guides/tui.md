@@ -195,7 +195,7 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
-| `L` | Drill into the selected fan-out's lanes, or back out. Lanes are hidden from the board otherwise |
+| `L` | Expand the selected fan-out's lanes as indented rows under it, or collapse them again. Lanes are hidden from the board otherwise, and stay out of every count |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title
@@ -575,6 +575,73 @@ Folds are remembered **per file path**, so leaving and re-entering the tab — a
 refresh — keeps what you had open, even if the agent has since touched other
 files. Moving to another task starts collapsed again, and nothing is written to
 disk: a fold is how you are reading one diff, not a setting.
+
+On a task that **fanned out**, the tab grows an outer level: `lane › file`, one
+row per lane in the order the parent merged them, and a final **the task's own
+commits** holding everything that belongs to no lane. After the join the
+parent's diff is otherwise one wall of merged hunks with nothing saying who
+wrote what. A lane that merged cleanly and changed nothing says so rather than
+reading `+0 -0`, `l` opens the lane whose section the cursor is in, and a task
+that fanned nothing out is the flat file list it has always been — including its
+fold state, which is still keyed by path alone.
+
+### Walking a fan-out
+
+A [`fan_out` step](workflows.md) runs its lanes as **real child tasks**, each
+with its own worktree, branch, steps and transcript. None of that lives in the
+parent, so the parent's job is to be the way in.
+
+Lanes are kept off the board's list on purpose — a sixty-four-lane tree would
+bury the work you actually asked for — so `L` on a fan-out parent hangs them
+underneath it as indented rows, and `L` again folds them away. Nested fan-outs
+compose, down to `fan_out.max_depth`. An expanded lane row is an ordinary task
+row: the same folding, the same `space` selection, the same action keys. Lanes
+stay out of the flat count, out of every group header's count and out of the `!`
+attention badge, so a board with nothing expanded reads exactly as it did
+before. What is expanded is remembered for the session and not written to disk —
+a task id is not a label, and there is no honest way to restore one archived
+while the TUI was down.
+
+Inside the workspace:
+
+| Key | Does |
+|---|---|
+| `l` | Open the selected lane's workspace |
+| `U` | Open this lane's parent task |
+| `<` / `>` | Step the Output pane's lane selector |
+| `esc` | Back to the task you came *from*, one at a time |
+
+`l` and `U` work in **every** state the parent is in — a parent `blocked` on a
+lane or parked `done` is exactly when a lane is worth reading. Which lane `l`
+means depends on where you are standing: the Workflow tab's graph cursor, the
+Output pane's selector and the Diff tab's lane sections are each taken at their
+word, the Steps timeline means the `fan_out` row under the cursor, and every
+other tab means the lane the failure is about. `U` is its reciprocal — `parent
+task` in **Task Details** is a jump, not a number to memorize. Where a tab
+already gave `l` the vim meaning of `→`, that is kept for a task with no lane to
+open.
+
+`esc` pops **one task**, so three lanes deep is three presses back rather than
+one jump to the board. A task on that trail that has since been archived is
+dropped from it rather than opened.
+
+The **Output** pane's `<`/`>` cycle the parent's own output and each lane's, so
+you can watch a running lane without leaving the parent. Exactly one extra live
+stream is open at a time — interleaving sixty-four would be a lossy render of
+something that looks like a bug, and the transcript file is still the durable
+copy.
+
+When the join fails, the workspace **says which lane**. A parent blocked on
+`lane_failed`, `merge_conflict`, `fan_out_invalid` or `fan_out_limit` carries
+the lane id, its child task, the engine's own sentence — the conflicted paths,
+the offending line or bound — and the lane's *own* block reason, on the detail
+header and on the `fan_out` step row, with `l` to go there. Only the attempt the
+task is parked on is annotated; an earlier retried one is history.
+
+The **Pull Request** tab grows one row per lane beneath the parent's own
+section, with the lane's branch and any linked pull request. Lane rows carry no
+checks — checks stay one call for one task, and `l` opens the lane, whose own
+tab has them.
 
 ### The action bar
 
@@ -1002,6 +1069,9 @@ How to read it. Every one of these works with color turned off:
 | `agent` on a merge | `on_conflict: agent` — an agent may resolve a conflict |
 | A light frame | A `parallel` group |
 | A heavy frame | A `fan_out`, with its lanes captioned by id and guard |
+| `eager` on a `fan_out` | `schedule: eager` — a lane's dependents start before its siblings finish. `barrier` is the default and is not badged |
+| `derived from …` on a heavy frame | The lane list was **derived** at run time from a `for_each:`, not written out by hand |
+| `w1`, `w2` on a lane caption | Which wave the lane runs in. Lanes stack below the ones they `needs:` |
 | A double frame | A `loop` body, with a back-edge to its header |
 | `true` / `false` | A `condition`'s or `break`'s two ways out |
 | `END` | Where the workflow finishes |
@@ -1094,11 +1164,20 @@ the picture never moves under you while you are reading it.
 | `↑` `↓` `←` `→` or `hjkl` | Move the selection — the view follows it |
 | `shift` + arrows | Pan the canvas |
 | `pgup` `pgdn` | Page it |
-| `esc` | Back to the board |
+| `l` | Open the workspace of the fan-out lane the cursor is in |
+| `esc` | Back to the task you came from, or the board |
 
 `tab` here is the workspace's tab cycle, not the graph's node walk — the arrows
 select nodes. There is no `e` or `R`: a snapshot has no file to open and no
 registry entry to re-read.
+
+Lanes are drawn as the engine schedules them. A lane with `needs:` sits **below**
+the lanes it needs with an edge from each, one row per round, so the picture has
+the waves the run has; a lane that needs nothing hangs off the step's own header
+and a fan-out whose lanes need nothing is one wave, laid out exactly as before.
+A lane's caption carries the child task, its state and — the one fact the parent
+cannot otherwise tell you — that lane's **own block reason**, because a lane's
+steps run in the child and never appear on this graph.
 
 ### Chats
 

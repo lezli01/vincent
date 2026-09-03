@@ -121,6 +121,30 @@ that task's rows — and `derive.go`'s header says so out loud.
 Lane id uniqueness and the slug rule, load-time checks for a declared list,
 become spawn-time blocking checks as well: two items can render to one id.
 
+**Amended 2026-09-03 (issue #316).** "An ordinary static `fan_out`, so the
+graph, preview, editor and `workflowdef` are correct with no further change"
+was true of everything that *runs* the step and false of everything that
+*draws* it: after materialization a derived list and a hand-authored one are
+the same lanes, so nothing downstream could say which it was looking at. The
+`lane:`/`for_each:` pair now **moves rather than being dropped**, into a
+`derived_from:` record on the step — the same move a resolved lane's
+`workflow:` makes to `resolved_from:`. It keeps the `lane:` id template and the
+`for_each:` templates only; the rest of the `lane:` template is already visible
+on every lane it produced, and copying it would be one more thing that could
+disagree with the lanes beside it.
+
+The rest of this decision stands: materialization still happens once, at spawn,
+and the two live fields are still cleared. `derived_from:` is the first
+**snapshot-only** field, and it is safe on three load-time terms — exempt from
+`validateFanOutShape`'s exclusivity check (a snapshot is re-parsed on every
+admission, so `lanes:` beside a *record* has to be accepted where `lanes:`
+beside a live `lane:` is refused), refused in an authored document with the
+wording an unknown key gets, and absent from `GET /v1/workflows/schema` so the
+structured editor never offers a control for it. Recovering the provenance from
+the spawn round's `step_runs` row was the alternative and was rejected: the
+retry budget can rewrite that row, and the picture a reader is shown must not
+change because a lane was retried. Spec §7.6 carries the same note.
+
 ### 6. Bounds move to spawn time for derived lists
 
 `fan_out.max_depth` survives unchanged — it counts nesting, and a dynamic width
@@ -185,5 +209,8 @@ starting tree depend on timing rather than on the graph.
   new fields reach `GET /v1/workflows/schema` and the workflow-definition DTO,
   and a materialized step draws exactly as any `fan_out` does; an underived one
   draws with no lanes. `workflow.SentinelLane` is in place for the "unknown
-  width" label the graph should show.
+  width" label the graph should show. *Claimed 2026-09-03 (issue #316) for the
+  TUI half:* the graph draws `needs:` edges, stacks the waves, badges `eager`
+  and marks a derived list with what it came from. The CLI renderer is still
+  deferred, and `SentinelLane` is still in place for it.
 - A `scripts/m6-gate.sh` scenario driving a derived DAG end to end.

@@ -40,6 +40,57 @@ list with the user-facing context a commit subject cannot carry.
   [the API reference](docs/reference/api.md) and
   [Using the TUI](docs/guides/tui.md).
 
+- **A fan-out is something you can watch.** A `fan_out` step's lanes are real
+  child tasks with their own worktrees, branches and transcripts, and almost
+  none of that used to be reachable from the parent. Now it is, from every
+  surface that observes a run.
+
+  On the **board**, `L` on a fan-out parent hangs its lanes underneath it as
+  indented rows and `L` again folds them away — nested fan-outs included, down
+  to `fan_out.max_depth`. It works in every state the parent passes through,
+  which the old drill did not: a parent `blocked` on a failed lane or a merge
+  conflict is exactly when you want to read a lane, and was exactly when you
+  could not. Lanes stay out of the flat count, out of every group header's
+  count and out of the attention badge, so a 64-lane tree still cannot bury the
+  work you asked for, and a board with nothing expanded looks and behaves
+  precisely as it did before.
+
+  In the **task workspace**, `l` opens the lane your selection points at and
+  `U` opens a lane's parent — the `parent task` line in Task Details is an
+  action now, not a number to memorise. `esc` walks back one task at a time
+  through the chain you drilled down, instead of jumping to the board from
+  three levels deep. The Output pane grows a lane selector (`<`/`>`) so you can
+  watch a running lane without leaving the parent, holding exactly one extra
+  live subscription at a time. The Pull Request tab lists each lane with its
+  branch and linked pull request.
+
+  When a join fails, the workspace **says which lane**. A parent blocked on
+  `lane_failed`, `merge_conflict`, `fan_out_invalid` or `fan_out_limit` shows
+  the lane id, its child task, the engine's own message — the conflicted paths,
+  the offending line or bound — and the lane's *own* block reason, on the
+  header and on the `fan_out` step row, with `l` to go there.
+
+  The **workflow graph** draws what the engine actually does: `needs:` edges
+  between lanes, waves stacked in the rounds they run in, an `eager` badge for
+  `schedule: eager`, and a mark on a lane list that was derived saying what it
+  was derived from. A lane's caption carries its block reason, not just its
+  state.
+
+- **`GET /v1/tasks/{id}/diff?by=lane`** returns a fan-out parent's diff split
+  by the lane that produced it — one section per lane, cut from the parent's
+  own merge commits, plus a remainder section for the parent's own work. The
+  Diff tab groups lane › file over its existing file grouping, so after the
+  join you can see which lane wrote what instead of one wall of merged hunks,
+  and `l` there opens the lane whose section you are reading.
+  A task that fanned nothing out comes back as a single remainder holding the
+  whole diff; without the parameter the endpoint is byte-for-byte what it
+  always was, and any other value is a `400`.
+
+  A derived lane list now records what it was derived from in the task's
+  snapshot (`derived_from:`), which is what lets the graph tell a derived list
+  from a hand-written one. It is written by the daemon only: a workflow file
+  carrying it is rejected, and the workflow editor never offers it.
+
 - **vincent shows the real usage quota, where the agent CLI reports one.** The
   `quota` block on `GET /v1/agents` and `GET /v1/info` was an observation of a
   wall vincent had already watched a task hit; now it carries a measurement of

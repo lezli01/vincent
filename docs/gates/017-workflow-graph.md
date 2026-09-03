@@ -249,6 +249,39 @@ Use `spread.yaml` in a window about 40 columns wide.
 you move, and — narrower than about 26 columns — the message that the terminal
 is too narrow, rather than a graph flattened into a shape that is not true.
 
+### 12. `lanedag.yaml` — a lane DAG, scheduled eager
+
+```yaml
+name: lanedag
+steps:
+  - {id: plan, type: agent, prompt: plan the split}
+  - id: spread
+    type: fan_out
+    schedule: eager
+    lanes:
+      - id: api
+        steps:
+          - {id: api_impl, type: agent, prompt: build the api}
+      - id: db
+        steps:
+          - {id: db_migrate, type: command, run: make migrate}
+      - id: wire
+        needs: [api, db]
+        steps:
+          - {id: wire_up, type: agent, prompt: wire the two together}
+```
+
+**Look for:** an `eager` badge on the `fan_out` node; `api` and `db` captioned
+`w1` side by side, each with an edge from the step's header; and `wire`
+captioned `w2` **below** them, with an edge coming from each of the two it
+needs and **none** from the header — a `needs:` lane does not start in round
+one, and drawing both would say it did.
+
+A *derived* lane list cannot be in this corpus: `derived_from:` is written by
+the daemon into a task's snapshot and an authored document carrying it is
+refused (§7.6). The derived mark is judged on the runtime leg instead — leg 13
+below.
+
 ## The manual legs
 
 These cannot be asserted from a test, which is why the gate exists.
@@ -289,12 +322,21 @@ then `5`.
 | 10 | Press `?` on the Workflow tab | The help lists this tab's keys — no `e`, no `R` |
 | 11 | `NO_COLOR=1`, then repeat 2–6 | Every state above is still readable as words and glyphs |
 | 12 | Narrow the terminal below ~26 columns | The tab says so rather than drawing a flattened shape |
+| 13 | Run a workflow whose `fan_out` derives its lanes with `lane:`/`for_each:` (task 080), then open `5` | The heavy frame is marked `derived from …` with the `for_each:` it came from; narrow the pane and the mark degrades to `derived` rather than vanishing. A hand-written list — `lanedag.yaml` — has no mark at all |
+| 14 | Watch `lanedag.yaml` run, and block one lane | `api`/`db` carry `w1` and `wire` `w2` throughout; a blocked lane's caption carries that lane's **own** block reason, not just its state |
+| 15 | Press `l` with the cursor inside a lane | That lane's task workspace opens. `esc` comes back to this task, not to the board. On a node outside every lane, `l` does nothing |
 
 ## Runs
 
 | Date | Version | Platform | By | Result |
 |---|---|---|---|---|
 | — | — | — | — | not yet walked |
+
+Corpus entry 12 and runtime legs 13–15 were added on 2026-09-03 with issue #316
+(the lane DAG, the derived mark and `l`) and have not been walked. The
+automated half of that work is `internal/tui/workflowgraph/lanedag_test.go`,
+which pins entry 12's picture against
+`internal/tui/workflowgraph/testdata/lanedag.txt`.
 
 Legs 8–10 and corpus entry 10 were added on 2026-08-29 with task 053 (the
 step-detail popup) and have not been walked either; the automated half of that
