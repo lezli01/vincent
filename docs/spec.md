@@ -1593,9 +1593,11 @@ once, a loop is a **sequence** run more than once.
   the column existed, and a reader falls back to the ceiling on 0.
 - **Position on the wire.** *Added 2026-09-03 (issue #317).* The `loop` rollup
   a task carries while its current step is a loop (§13.2) reports the loop's
-  **real extent** as `total` — the newest row's `loop_total`, absent until a row
-  records one, because before the first iteration a denominator would be a
-  guess that reads like an answer — and names the body step that iteration is
+  **real extent** as `total` — the newest row's `loop_total`, absent until the
+  loop has a body row at all, because before the first iteration a denominator
+  would be a guess that reads like an answer, and falling back to the snapshot's
+  bound for a row that predates the column, which is the number that row's
+  rollup reported for its whole life — and names the body step that iteration is
   on as `body_step` with its 1-based `body_index` of `body_total`. The outer
   `step k/n` counts a whole loop as one step, so without that clause "where is
   this task" stops at the loop's own name. `max_iterations` keeps its own
@@ -1603,8 +1605,11 @@ once, a loop is a **sequence** run more than once.
   numbers and neither stands in for the other — a 3-item `for_each` under a
   ceiling of 10 is `total: 3`, `max_iterations: 10`, and reads `loop 2/3`. The
   body clause is absent **whole** — no id, no index, no total — for a row whose
-  `step_id` is not one of the snapshot's body ids: a repair row, or any row at
-  all once the snapshot no longer parses.
+  `step_id` is not one of the snapshot's body ids: a repair row, or a row whose
+  step an edit-and-retry rewrite of the snapshot (§6) has taken out of the body.
+  A snapshot that no longer parses is the other case and not this one: it does
+  not narrow the rollup, it removes it, because nothing is then left to say the
+  current step is a loop.
 - **`.Loop`** (§8.4) is `Index`, `Item`, `IsFirst`, `IsLast`, with `Index: 0`
   outside any loop.
 - **`iteration` is not only a loop's.** *Added 2026-09-01 (task 080).* A

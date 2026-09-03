@@ -66,6 +66,16 @@ two names for one threshold and an invitation for them to drift apart.
 then `STATUS` to `widthStatusMax`, then the remainder back to the title.**
 *(2026-08-29)*
 
+> **Superseded in part, 2026-09-03 — [task 083](083-loop-legibility.md).** The
+> allocation order stands; the measurement it was taken against grew. The loop
+> rollup now names its body step, so the sample is
+> `3/7 green · loop 4/10 · repair 2/3` and `widthStepMax` is **34**. A rollup
+> too wide for the cell **drops clauses from the tail** — body step, then item,
+> then counter — rather than taking decision 4's uniform second line: three
+> clauses outgrow every width below the ceiling, and a whole board grown a line
+> so one cell can finish a counter spends that height on the least of what the
+> rollup says. Decision 4 still governs every other cell.
+
 `widthStepMax = 32` fits `3/7 green · loop 4/10` (21 cells) with room for a
 step name longer than the sample's; `widthStatusMax = 96` is a couple of the
 board's lines of prose, past which wrapping is the better answer than a column

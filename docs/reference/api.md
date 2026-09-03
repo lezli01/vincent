@@ -1402,21 +1402,30 @@ running: the `count:`, or the length of the `for_each` list the running
 admission derived, which the workflow does not carry because the list is
 rendered at run time. Render `total` when it is there and fall back to
 `max_iterations` when it is not, so a 3-item `for_each` under a ceiling of 10
-reads `loop 2/3` rather than `loop 2/10`. `total` is absent until a step run
-records one — before the first iteration there is nothing to report and a
-denominator would be a guess that reads like an answer — and it is absent for a
-row written before the daemon recorded extents at all.
+reads `loop 2/3` rather than `loop 2/10`. `total` is absent until the loop has
+a body row at all — before the first iteration there is nothing to report and a
+denominator would be a guess that reads like an answer. A row written before the
+daemon recorded extents carries none, and `total` is then the same bound
+`max_iterations` reports, which is the number that row's rollup gave for its
+whole life; the fallback happens on the daemon, so a client that renders `total`
+whenever it is present is right either way.
 
 `body_step` names the body step that iteration is on, with `body_index` its
 1-based place among `body_total` body steps; the outer `step k/n` counts a
 whole loop as one step, so this is the only thing on the response that says
 where inside the loop the task is. The three are absent **together**, and only
-together, when the daemon cannot place the row in a body it recognizes — a
-repair row, or any row at all once the task's workflow snapshot no longer
-parses. The rollup is on the list endpoint too, so a board can render
-`loop 4/7 · internal/store · repair 2/3` without a request per row. Like `children`, it is derived per request from the step
-rows rather than stored: a persisted loop cursor would be a second truth that
-recovery would have to reconcile. There is deliberately **no** step-lifecycle
+together, for a row whose `step_id` is not one of the body ids the task's
+workflow snapshot declares: a repair row, or a row whose step an edit-and-retry
+rewrite of the snapshot (§6) has taken out of the body. A position counted
+against a body the row did not run in is worse than no position. (A snapshot
+that no longer parses at all does not narrow the rollup, it removes it: `loop`
+is absent from the response entirely, because nothing is left to say the current
+step is a loop.) The rollup is on
+the list endpoint too, so a board can render
+`loop 4/7 · internal/store · repair 2/3` without a request per row. Like
+`children`, it is derived per request from the step rows rather than stored: a
+persisted loop cursor would be a second truth that recovery would have to
+reconcile. There is deliberately **no** step-lifecycle
 event for iterations — ten passes of a four-step body would put forty durable
 events on the stream to say what forty rows already say.
 - **`?archived=` defaults to false.** `true` selects only archived tasks, `all`
