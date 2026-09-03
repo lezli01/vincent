@@ -388,6 +388,21 @@ func (p *diffPane) moveCursor(delta int) {
 	p.built = false
 }
 
+// selectedLane is the lane the cursor is standing in, and false when the diff
+// is ungrouped or the cursor is in the remainder. It is what `l` means on this
+// tab: a reader parked on a lane's own section of the change means *that*
+// lane, not whichever one the join blamed.
+func (p *diffPane) selectedLane() (childTaskID int64, ok bool) {
+	if !p.grouped || p.cursor < 0 || p.cursor >= len(p.nodes) {
+		return 0, false
+	}
+	sec := p.sections[p.nodes[p.cursor].section]
+	if sec.remainder || sec.childTaskID == 0 {
+		return 0, false
+	}
+	return sec.childTaskID, true
+}
+
 func (p *diffPane) toggle() {
 	if len(p.nodes) == 0 {
 		return

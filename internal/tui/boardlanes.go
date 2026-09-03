@@ -129,7 +129,7 @@ func (l *laneTree) known(t apiclient.Task) bool {
 		return false
 	}
 	switch *t.BlockReason {
-	case "lane_failed", "merge_conflict", "fan_out_limit", "fan_out_invalid":
+	case reasonLaneFailed, reasonMergeConflict, reasonFanOutLimit, reasonFanOutInvalid:
 		return true
 	default:
 		return false

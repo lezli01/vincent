@@ -1470,17 +1470,25 @@ func (t *taskView) openParentCmd() tea.Cmd {
 	return func() tea.Msg { return openTaskMsg{id: id, from: from} }
 }
 
-// laneJump is the lane `l` opens from where the reader is standing. The
-// Workflow tab and the Output pane both carry an explicit lane selection and
-// are taken at their word; every other tab means "the lane this task's
-// failure is about", and the first lane in merge order when nothing is
-// blamed.
+// laneJump is the lane `l` opens from where the reader is standing. A tab that
+// carries an explicit lane selection — the Workflow tab's graph cursor, the
+// Output pane's selector, the Diff tab's lane sections — is taken at its word;
+// every other tab means "the lane this task's failure is about", and the first
+// lane in merge order when nothing is blamed.
 func (t *taskView) laneJump() (int64, bool) {
 	switch t.tab {
 	case taskTabWorkflow:
 		return t.graphLane()
 	case taskTabOutput:
 		if id, ok := t.outputLane(); ok {
+			return id, true
+		}
+	case taskTabDiff:
+		// The diff is grouped lane > file once the parent has merged
+		// anything, so the row under the cursor names a lane on its own.
+		// Falling through to the blamed lane here would open a different
+		// lane than the one whose hunks the reader is reading.
+		if id, ok := t.detail.diff.selectedLane(); ok {
 			return id, true
 		}
 	case taskTabSteps:

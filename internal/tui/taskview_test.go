@@ -610,3 +610,50 @@ func TestOpenLaneFromTheWorkflowGraphSelection(t *testing.T) {
 		t.Errorf("l offered a lane from a top-level node")
 	}
 }
+
+// TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor: the Diff tab grew
+// lane sections and `l` means "open the lane" everywhere, so on this tab it
+// has to mean the lane whose hunks are under the cursor. Resolving it to the
+// blamed lane instead — which is what every tab without a selection of its
+// own does — would open lane `api` while the reader is reading `web`'s diff.
+func TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.width, v.height = 160, 40
+	v.setTab(taskTabDiff)
+	v.detail.diff.openTask(7)
+	v.detail.diff.apply(diffLoadedMsg{taskID: 7, sections: []apiclient.DiffSection{
+		{LaneID: "api", ChildTaskID: 42, MergeCommit: "aaaaaaa", Diff: sampleDiff},
+		{LaneID: "web", ChildTaskID: 43, MergeCommit: "bbbbbbb", Diff: sampleDiff},
+		{Remainder: true, Diff: remainderDiff},
+	}})
+
+	// The cursor starts on the first lane's header and walks a row at a time.
+	if id, ok := v.laneJump(); !ok || id != 42 {
+		t.Fatalf("laneJump on the first lane's section = (%d, %v), want (42, true)", id, ok)
+	}
+	v.detail.diff.moveCursor(1)
+	id, ok := v.laneJump()
+	if !ok || id != 43 {
+		t.Fatalf("laneJump on lane web's section = (%d, %v), want (43, true)", id, ok)
+	}
+	msg, ok := v.updateKey(synthKey("l"))().(openTaskMsg)
+	if !ok || msg.id != 43 || msg.from != 7 {
+		t.Fatalf("l on the Diff tab opened %+v, want lane task 43 from 7", msg)
+	}
+
+	// The remainder is nobody's lane, so the tab falls back to the lane the
+	// join blamed rather than offering the reader nothing.
+	v.detail.diff.moveCursor(1)
+	if id, ok := v.laneJump(); !ok || id != 42 {
+		t.Fatalf("laneJump on the remainder = (%d, %v), want the blamed lane 42", id, ok)
+	}
+
+	// And a task that fanned nothing out has no lane section to stand on, so
+	// the tab means exactly what it meant before.
+	v.detail.diff.apply(diffLoadedMsg{taskID: 7, sections: []apiclient.DiffSection{
+		{Remainder: true, Diff: remainderDiff},
+	}})
+	if _, ok := v.detail.diff.selectedLane(); ok {
+		t.Errorf("an ungrouped diff offered a lane")
+	}
+}
