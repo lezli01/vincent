@@ -466,5 +466,5 @@ func (w *workflowsView) capturesInput() bool {
 	if w.create != nil {
 		return w.create.capturing()
 	}
-	return w.editor != nil && w.editor.input != nil
+	return w.editor != nil && w.editor.capturing()
 }

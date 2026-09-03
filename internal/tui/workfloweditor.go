@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -62,6 +60,31 @@ type wfEditRow struct {
 	// label overrides the field name, which is how a step row reads as
 	// "plan (agent)" rather than as "steps[0]".
 	label string
+	// list is the dotted path of the sequence this row is an item of —
+	// "steps", "steps[3].steps", "steps[7].lanes", "fields" — and index
+	// its position in it. Both are zero on a row that is a field rather
+	// than a list item. They are what the insert/remove/move keys address.
+	list  string
+	index int
+}
+
+// wfEditorOverlay is a value editor that takes the keyboard from the row
+// list: the multi-line pane a `prompt:` needs, a picker for a closed set.
+// Nothing implements it on this branch and e.overlay is always nil here —
+// the seam is deliberate, so the write half of issue #320 can add the pane
+// and its keys without touching the read path this file owns.
+type wfEditorOverlay interface {
+	// Update takes a key the layer did not claim and returns the overlay to keep.
+	Update(msg tea.KeyPressMsg) (wfEditorOverlay, tea.Cmd)
+	// View draws the overlay in the space it was given.
+	View(width, height int) string
+	// FullPane reports whether View replaces the whole form body rather than
+	// drawing in the value column of the row being edited.
+	FullPane() bool
+	// Value is the text a commit would send.
+	Value() string
+	// Dirty is false while the value is still the one the overlay opened on.
+	Dirty() bool
 }
 
 // wfEditorLayer is the open editor.
@@ -81,7 +104,11 @@ type wfEditorLayer struct {
 	cursor int
 
 	// input is the focused text row, nil when the list has the keyboard.
-	input   *textField
+	input *textField
+	// overlay is the value editor that has the keyboard instead, nil when
+	// the row list does. The row it belongs to is editing, the same as
+	// input's.
+	overlay wfEditorOverlay
 	editing int
 
 	loading bool
@@ -133,240 +160,51 @@ func (w *workflowsView) editorLoadCmd(key wfResolveKey) tea.Cmd {
 	}
 }
 
-// rebuild recomputes the visible rows for the current breadcrumb.
+// rebuild recomputes the visible rows for the current breadcrumb. The
+// breadcrumb decides which form is drawn, so every block the resolver can
+// reach is a block the editor can render: steps and their nested bodies,
+// a fan-out's lanes and its merge, the declared fields, and defaults.
 func (e *wfEditorLayer) rebuild() {
 	e.rows = nil
 	if e.def == nil {
 		return
 	}
-	if e.path == "" {
+	node, ok := e.resolve(e.path)
+	if !ok {
+		// The file moved underneath: an index that resolved when the row was
+		// drawn no longer does.
+		e.err = "the block at " + e.path + " is no longer there"
+		return
+	}
+	switch node.kind {
+	case wfNodeRoot:
 		e.buildTopLevel()
-	} else {
-		e.buildStep(e.path)
+	case wfNodeStep:
+		e.buildStep(e.path, node.step)
+	case wfNodeSteps:
+		e.buildSteps(e.path, node.steps)
+	case wfNodeLanes:
+		e.buildLanes(e.path, node.lanes)
+	case wfNodeLane:
+		e.buildLane(e.path, node.lane)
+	case wfNodeMerge:
+		e.buildMerge(e.path, node.merge)
+	case wfNodeFields:
+		e.buildFields()
+	case wfNodeField:
+		e.buildField(e.path, node.field)
+	case wfNodeDefaults:
+		e.buildDefaults()
+	case wfNodeContainer:
+		e.buildContainer()
 	}
 	if e.cursor >= len(e.rows) {
 		e.cursor = max(0, len(e.rows)-1)
 	}
 }
 
-func (e *wfEditorLayer) buildTopLevel() {
-	for _, f := range e.schema.TopLevel {
-		row := wfEditRow{field: f, path: f.Name}
-		switch f.Name {
-		case "name":
-			row.value = e.def.Name
-		case "description":
-			row.value = e.def.Description
-		case "platforms":
-			row.value = strings.Join(e.def.Platforms, ", ")
-		case "fields":
-			row.value = fmt.Sprintf("%d declared", len(e.def.Fields))
-			row.path = ""
-		case "defaults":
-			row.value = defaultsSummary(e.def.Defaults)
-			row.path = ""
-		case "steps":
-			row.path = ""
-			row.value = fmt.Sprintf("%d steps", len(e.def.Steps))
-		}
-		e.rows = append(e.rows, row)
-	}
-	for i, st := range e.def.Steps {
-		e.rows = append(e.rows, stepRow(fmt.Sprintf("steps[%d]", i), st))
-	}
-}
-
-// stepRow is the summary line a step gets in a list: its id, its type, and
-// the sub-list it descends into.
-func stepRow(path string, st apiclient.WorkflowStepDef) wfEditRow {
-	label := st.ID
-	if label == "" {
-		label = "(no id)"
-	}
-	return wfEditRow{
-		field:   apiclient.WorkflowSchemaField{Name: path, Control: apiclient.WorkflowControlSteps},
-		label:   label,
-		value:   st.Type,
-		descend: path,
-	}
-}
-
-func defaultsSummary(d apiclient.WorkflowDefaults) string {
-	var parts []string
-	if d.Agent != "" {
-		parts = append(parts, "agent "+d.Agent)
-	}
-	if d.Model != "" {
-		parts = append(parts, "model "+d.Model)
-	}
-	if len(parts) == 0 {
-		return "(unset)"
-	}
-	return strings.Join(parts, " · ")
-}
-
-// buildStep draws the form for one step: its type's schema fields plus the
-// common fields that type accepts, and a descend row per nested body.
-func (e *wfEditorLayer) buildStep(path string) {
-	st, ok := e.stepAt(path)
-	if !ok {
-		e.err = "the step at " + path + " is no longer there"
-		return
-	}
-	typ, known := e.stepType(st.Type)
-	if !known {
-		e.rows = append(e.rows, wfEditRow{
-			field: apiclient.WorkflowSchemaField{Name: "type", Control: apiclient.WorkflowControlString},
-			path:  path + ".type", value: st.Type,
-		})
-		return
-	}
-	accepts := map[string]bool{}
-	for _, name := range typ.Common {
-		accepts[name] = true
-	}
-	// `type` first: it is the discriminator, and changing it changes every
-	// row below.
-	e.rows = append(e.rows, wfEditRow{
-		field: apiclient.WorkflowSchemaField{
-			Name: "type", Control: apiclient.WorkflowControlEnum,
-			Values: e.typesFor(e.contextOf(path)), Required: true, Help: typ.Help,
-		},
-		path: path + ".type", value: st.Type,
-	})
-	for _, f := range e.schema.Common {
-		if !accepts[f.Name] {
-			continue
-		}
-		e.rows = append(e.rows, wfEditRow{field: f, path: path + "." + f.Name, value: stepValue(st, f.Name)})
-	}
-	for _, f := range typ.Fields {
-		row := wfEditRow{field: f, path: path + "." + f.Name, value: stepValue(st, f.Name)}
-		switch f.Control {
-		case apiclient.WorkflowControlSteps:
-			row.path, row.descend = "", path+"."+f.Name
-			row.value = fmt.Sprintf("%d steps", len(st.Steps))
-		case apiclient.WorkflowControlLanes:
-			row.path, row.descend = "", path+".lanes"
-			row.value = fmt.Sprintf("%d lanes", len(st.Lanes))
-		case apiclient.WorkflowControlMerge:
-			row.path, row.descend = "", path+".merge"
-			row.value = "(unset)"
-			if st.Merge != nil {
-				row.value = st.Merge.OnConflict
-			}
-		}
-		e.rows = append(e.rows, row)
-	}
-	// The nested body's own steps, so descending twice is not needed to see
-	// what is inside a group.
-	if len(st.Steps) > 0 {
-		for i, sub := range st.Steps {
-			e.rows = append(e.rows, stepRow(fmt.Sprintf("%s.steps[%d]", path, i), sub))
-		}
-	}
-}
-
-// contextOf reports which §8.2 nesting context a path sits in, which is what
-// decides the members of its `type` row.
-func (e *wfEditorLayer) contextOf(path string) string {
-	if i := strings.LastIndex(path, ".steps["); i >= 0 {
-		if st, ok := e.stepAt(path[:i]); ok {
-			switch st.Type {
-			case "parallel":
-				return apiclient.WorkflowContextParallel
-			case "loop":
-				return apiclient.WorkflowContextLoop
-			}
-		}
-	}
-	return apiclient.WorkflowContextBody
-}
-
-// typesFor is StepTypesFor, read off the served descriptor rather than
-// re-derived: a type a context forbids is one the row does not offer.
-func (e *wfEditorLayer) typesFor(context string) []string {
-	var out []string
-	for _, s := range e.schema.Steps {
-		for _, c := range s.Contexts {
-			if c == context {
-				out = append(out, s.Type)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func (e *wfEditorLayer) stepType(typ string) (apiclient.WorkflowSchemaStepType, bool) {
-	for _, s := range e.schema.Steps {
-		if s.Type == typ {
-			return s, true
-		}
-	}
-	return apiclient.WorkflowSchemaStepType{}, false
-}
-
-// stepAt resolves a "steps[i].steps[j]" path against the fetched definition.
-func (e *wfEditorLayer) stepAt(path string) (apiclient.WorkflowStepDef, bool) {
-	if e.def == nil {
-		return apiclient.WorkflowStepDef{}, false
-	}
-	steps := e.def.Steps
-	var cur apiclient.WorkflowStepDef
-	found := false
-	for _, part := range strings.Split(path, ".") {
-		if !strings.HasPrefix(part, "steps[") || !strings.HasSuffix(part, "]") {
-			return apiclient.WorkflowStepDef{}, false
-		}
-		var idx int
-		if _, err := fmt.Sscanf(part, "steps[%d]", &idx); err != nil {
-			return apiclient.WorkflowStepDef{}, false
-		}
-		if idx < 0 || idx >= len(steps) {
-			return apiclient.WorkflowStepDef{}, false
-		}
-		cur, found = steps[idx], true
-		steps = cur.Steps
-	}
-	return cur, found
-}
-
-// stepValue reads one field of a step for display. It is a switch rather than
-// reflection because the wire type is the client's own, and a field it does
-// not carry is one the row shows as unset rather than one that panics.
-func stepValue(st apiclient.WorkflowStepDef, name string) string {
-	switch name {
-	case "id":
-		return st.ID
-	case "name":
-		return st.Name
-	case "type":
-		return st.Type
-	case "if":
-		return st.If
-	case "prompt":
-		return st.Prompt
-	case "agent":
-		return st.Agent
-	case "model":
-		return st.Model
-	case "effort":
-		return st.Effort
-	case "permission_mode":
-		return st.PermissionMode
-	case "on_input":
-		return st.OnInput
-	case "check":
-		return st.Check
-	case "run":
-		return st.Run
-	case "shell":
-		return st.Shell
-	case "instructions":
-		return st.Instructions
-	case "workflow":
-		return st.Workflow
-	}
-	return ""
-}
+// capturing reports whether the layer has the keyboard for a value: a focused
+// one-line field, or an overlay. The view above asks this rather than the
+// fields themselves, so a new overlay does not have to be wired into the
+// global key path a second time.
+func (e *wfEditorLayer) capturing() bool { return e.input != nil || e.overlay != nil }

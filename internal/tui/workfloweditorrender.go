@@ -25,6 +25,12 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	}
 	out = append(out, "")
 	switch {
+	case e.overlay != nil && e.overlay.FullPane():
+		// A full-pane overlay is the body: the multi-line pane a `prompt:`
+		// is edited in has no room to share with the rows behind it. The
+		// breadcrumb and the key footer stay, so it is still one layer of
+		// the same form (issue #320's write half).
+		out = append(out, e.overlay.View(width, height))
 	case e.loading && e.def == nil:
 		out = append(out, styleDim.Render("  loading the schema and the definition…"))
 	case e.def == nil:
@@ -63,10 +69,15 @@ func (w *workflowsView) renderEditorRows(width int) []string {
 		if value == "" {
 			value = unsetMarker
 		}
-		if e.input != nil && i == e.editing {
+		if i == e.editing {
 			// 21 is the mark and the padded label the value sits after.
-			e.input.SetWidth(max(width-21, 10))
-			value = e.input.View()
+			switch {
+			case e.input != nil:
+				e.input.SetWidth(max(width-21, 10))
+				value = e.input.View()
+			case e.overlay != nil:
+				value = e.overlay.View(max(width-21, 10), 0)
+			}
 		}
 		if row.descend != "" {
 			value += "  →"
