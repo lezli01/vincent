@@ -98,6 +98,7 @@ the living engineering specification records implementation contracts.
 | [082](082-reported-agent-quota.md) | The real usage quota codex's app-server and Claude Code's status line now report, merged over the observed window on `GET /v1/agents` | ✅ done (1/1) |
 | [083](083-loop-legibility.md) | A loop's real extent and running body step on the rollup, and openable iteration/round tiers in the timeline that never lose the cursor | ✅ done (1/1) |
 | [084](084-fan-out-observability.md) | Make a fan-out run observable: lanes as expandable board rows, `l`/`U`/`esc` through the workspace, `?by=lane` diff attribution, and the lane DAG drawn | ✅ done (5/5) |
+| [085](085-chat-workspace-ux.md) | A fourth output level, `quiet`, below `compact`; the chat's user turn as a right-aligned bubble; the composer inside a titled border | ✅ done (1/1) |
 
 ## How to add and update a task document
 

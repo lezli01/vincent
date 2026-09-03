@@ -13,6 +13,34 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `quiet` level, below `compact`, for reading a chat as a conversation.**
+  The verbosity cycle `v` walks in the task workspace's output pane and
+  `ctrl+r` walks in the chat workspace is four levels now —
+  `quiet → compact → normal → verbose` — and `quiet` is the one that shows what
+  the agent *said* and what went wrong, and nothing it narrated about its own
+  machinery. Relative to `compact` it drops the `▸` tool calls and their
+  outcomes, the `✓ done · …` line of a run that succeeded, and unrecognized
+  lines entirely: not even the `… N unrecognized line(s)` count, because a
+  count is an offer to expand and `quiet` is the level that makes no offers. A
+  two-sentence answer arrives as two sentences instead of buried in file reads
+  and greps.
+
+  A failure is never hidden by a display level: `agent.error`, an `agent.result`
+  that failed, a turn's own fail reason and the `── turn N ──` separators all
+  render at `quiet`, and so does the result *text* of a turn that produced no
+  prose at all — a codex turn with no `agent_message` — which would otherwise
+  leave a turn header with nothing under it. A command step's pane is byte for
+  byte the same at `quiet` as at `compact`: `quiet` is a rule about what the
+  agent narrated, and a command step narrates nothing.
+
+  It is still **one level for the session**, shared by both panes and persisted
+  nowhere, and the default is still `normal` — no existing screen moves until
+  you press the key. The pane title and the chat header name `quiet` while it is
+  on, which matters most for this level, since it is the one whose effect can be
+  to hide the only thing a turn produced. `compact`, `normal` and `verbose`
+  render exactly what they rendered before. See
+  [Using the TUI](docs/guides/tui.md#what-v-adds).
+
 - **A loop says where it is, and its earlier passes open.** The loop rollup on
   the board and in the task header names the body step the current iteration is
   on — `3/7 green · loop 4/10 · repair 2/3` — so "where is this task, right
@@ -759,6 +787,28 @@ list with the user-facing context a commit subject cannot carry.
   See [Using the TUI](docs/guides/tui.md#what-v-adds).
 
 ### Changed
+
+- **The chat workspace reads as a conversation: a user turn you can find, and a
+  composer with an edge.** Your own message is drawn as a right-aligned bubble —
+  shrink-to-fit, capped at about two thirds of the pane, wrapped inside itself
+  and marked with `›` on *every* line rather than only the first. The agent's
+  half is untouched, flush left at the full width, so scrolling back through a
+  long chat no longer reads as one undifferentiated column. The distinction is
+  an accent foreground and bold, never a background band: right alignment and
+  the per-line marker carry it on a monochrome terminal or under `NO_COLOR`,
+  where a tint carries nothing.
+
+  A prompt's own line breaks now survive into the bubble, and a long prompt is
+  no longer cut off after six lines with an ellipsis. The composer is multi-line
+  by design, so a pasted snippet or a numbered list is content you wrote, not
+  incidental whitespace — and truncating it put the tail of your own question
+  out of reach on a body that already scrolls.
+
+  The composer sits inside a titled border, so the field you type into stops
+  looking like one more row of the conversation. The border is spent out of the
+  height budget rather than added after it: the frame is exactly as tall as the
+  terminal at every size, the hint line is still the last row, and nothing is
+  pushed off the bottom.
 
 - **The new-chat form uses the same list every other create form uses.**
   Project, agent, model and effort are now `picker` rows: `enter` opens the
