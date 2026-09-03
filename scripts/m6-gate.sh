@@ -16,6 +16,7 @@
 #   8. a cancelled lane blocks the join with `lane_failed`, merging nothing
 #   9. both creation-time 400s: a workflow cycle and fan_out.max_tasks
 #  10. `schedule: eager` starts a lane while an unrelated sibling still runs
+#  11. the merged diff is attributed back to the lane that produced it
 #
 # Every scenario uses command steps only, so no agent CLI is involved at all
 # and the gate is as fast on CI as it is locally.
@@ -611,6 +612,107 @@ YAML
   done
   daemon_down
   echo "=== scenario 10 PASS"
+fi
+
+# --------------------------------------------------------------------------
+# Scenario 11: the parent's merged diff is attributed to its lanes.
+#
+# After the `--no-ff` join the parent's diff is one wall of merged hunks with
+# nothing in it saying which lane wrote what. `?by=lane` splits it along the
+# merges the parent itself made — the message `Merge lane '{id}' of task {n}`
+# §7.6 fixes, which this scenario makes a tested contract rather than a
+# convention.
+#
+# The load-bearing assertion is the negative one on the *second* lane. Both
+# lanes are cut from the same tip and joined one after the other, so by the
+# time `docs` is merged the first parent of its merge already carries `api`.
+# A section that reported `api.txt` inside `docs` would be attribution that
+# gets the second lane wrong every time, and would still satisfy every
+# positive assertion here.
+# --------------------------------------------------------------------------
+if run_scenario 11; then
+  echo "=== scenario 11: ?by=lane attributes the merged diff to its lanes"
+  scenario_dirs s11
+  REPO="$TMP/s11/repo"; make_repo "$REPO"
+  write_workflow fan-attributed "$(cat <<'YAML'
+name: fan-attributed
+steps:
+  - id: build
+    type: fan_out
+    lanes:
+      - id: api
+        steps:
+          - {id: write-api, type: command, max_retries: 0, run: 'git config -f api.txt gate.lane api && git add -A && git commit -qm api'}
+      - id: docs
+        steps:
+          - {id: write-docs, type: command, max_retries: 0, run: 'git config -f docs.txt gate.lane docs && git add -A && git commit -qm docs'}
+  - id: tail
+    type: command
+    max_retries: 0
+    run: 'git config -f tail.txt gate.tail 1 && git add -A && git commit -qm tail'
+YAML
+)"
+  daemon_up
+  PID="$(register_project "$REPO")"
+  TID="$(create_task "$PID" fan-attributed "attributed fan out")"
+  wait_for_state "$TID" done 180
+
+  DIFF="$(api GET "/tasks/$TID/diff?by=lane")"
+  # Several lines of jq output: jq writes CRLF on Windows and `$(...)` drops
+  # only the trailing one, so the interior CRs would fail the comparison.
+  LANES="$(jq -r '.sections[] | select(.remainder | not) | .lane_id' <<<"$DIFF" | tr -d '\r')"
+  [[ "$LANES" == $'api\ndocs' ]] || fail "lane sections are [$LANES], want api then docs in merge order"
+  COUNT="$(jq '.sections | length' <<<"$DIFF")"
+  [[ "$COUNT" == 3 ]] || fail "got $COUNT sections, want two lanes and a remainder"
+  REST="$(jq -r '[.sections[] | select(.remainder)] | length' <<<"$DIFF")"
+  [[ "$REST" == 1 ]] || fail "got $REST remainder sections, want exactly 1"
+
+  # Each lane carries its own file and nothing another section wrote.
+  # Captured and matched against a here-string rather than piped into
+  # `grep -q` — see m7 scenario 4's comment.
+  #
+  # A negative assertion is spelled as an `if`, never as `grep ... && fail`:
+  # the `&&` list returns 1 when the match is absent, which is the passing
+  # case, and `set -e` would kill the gate on it.
+  for lane in api docs; do
+    SECTION="$(jq -r --arg l "$lane" '.sections[] | select(.lane_id == $l) | .diff' <<<"$DIFF")"
+    grep -qF "$lane.txt" <<<"$SECTION" || fail "lane $lane does not carry $lane.txt: $SECTION"
+    for other in api docs tail; do
+      if [[ "$other" != "$lane" ]] && grep -qF "$other.txt" <<<"$SECTION"; then
+        fail "lane $lane claims $other.txt, which another section wrote: $SECTION"
+      fi
+    done
+  done
+
+  # The remainder holds the parent's own post-join commit, and no lane's work.
+  SECTION="$(jq -r '.sections[] | select(.remainder) | .diff' <<<"$DIFF")"
+  grep -qF 'tail.txt' <<<"$SECTION" || fail "the remainder lost the parent's own commit: $SECTION"
+  for other in api docs; do
+    if grep -qF "$other.txt" <<<"$SECTION"; then
+      fail "the remainder claims $other.txt, which lane $other wrote: $SECTION"
+    fi
+  done
+
+  # Absent, the parameter changes nothing: the same task still answers with
+  # the flat unified diff every existing client reads.
+  FLAT="$(api GET "/tasks/$TID/diff")"
+  for f in api docs tail; do
+    grep -qF "$f.txt" <<<"$FLAT" || fail "the ungrouped diff is missing $f.txt: $FLAT"
+  done
+  if grep -qF '"sections"' <<<"$FLAT"; then
+    fail "the ungrouped diff came back grouped: $FLAT"
+  fi
+
+  # `lane` is the only grouping there is, so anything else is a 400 rather
+  # than a silent fall-through to the ungrouped body.
+  OUT="$(api_status GET "/tasks/$TID/diff?by=file")"
+  STATUS="${OUT%%$'\n'*}"
+  [[ "$STATUS" == 400 ]] || fail "by=file -> HTTP $STATUS, want 400"
+  CODE="$(jq -r .error.code <<<"${OUT#*$'\n'}" | tr -d '\r')"
+  [[ "$CODE" == "validation_failed" ]] || fail "by=file error code = $CODE, want validation_failed"
+
+  daemon_down
+  echo "=== scenario 11 PASS"
 fi
 
 echo "M6 GATE PASS"

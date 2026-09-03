@@ -545,3 +545,49 @@ func (c *Client) CreateTask(ctx context.Context, req CreateTaskRequest) (TaskDet
 	}
 	return out, nil
 }
+
+// DiffSection is one section of GET /v1/tasks/{id}/diff?by=lane (§7.6,
+// §13.2): what a single fan-out lane contributed to the parent's branch, or —
+// for the one section with Remainder set — the parent's own commits and
+// uncommitted work.
+//
+// The daemon computes the attribution because only it can: it walks the parent
+// branch's own merges, which is the one place the lane a commit came from is
+// recorded. Asking each lane for its own diff instead would cost a request per
+// lane on a live-refreshing surface, and would double-count a dependency a
+// `needs:` lane merged into itself.
+type DiffSection struct {
+	// LaneID and ChildTaskID name the lane. Both are zero on the remainder.
+	LaneID      string `json:"lane_id"`
+	ChildTaskID int64  `json:"child_task_id"`
+	// MergeCommit is the merge the section was cut from; empty on the
+	// remainder.
+	MergeCommit string `json:"merge_commit"`
+	// Remainder marks the section that belongs to no lane. Exactly one
+	// section carries it, and it is last.
+	Remainder bool `json:"remainder"`
+	// Diff is a unified diff, spelled as the ungrouped endpoint spells its
+	// whole body.
+	Diff string `json:"diff"`
+}
+
+// DiffByLane fetches the task's diff attributed to its fan-out lanes.
+//
+// A task that fanned out nothing is not an error and not a special case: it
+// comes back as a single remainder section holding the whole diff, which is
+// what lets a caller ask for the grouped form unconditionally and render the
+// flat one when that is all there is.
+//
+// Diff (actions.go) remains the ungrouped text/plain call, unchanged; the two
+// answer the same 409s for a task with no worktree and for one whose worktree
+// is gone.
+func (c *Client) DiffByLane(ctx context.Context, id int64) ([]DiffSection, error) {
+	var out struct {
+		Sections []DiffSection `json:"sections"`
+	}
+	path := "/v1/tasks/" + strconv.FormatInt(id, 10) + "/diff?by=lane"
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return out.Sections, nil
+}
