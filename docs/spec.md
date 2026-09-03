@@ -6857,6 +6857,49 @@ stream for the live tail.
    daemon's checks in the TUI is how the two drift. There is **no delete**:
    the view gains no destructive action. A file the forms cannot load is what
    `e` is still there for.
+
+   *Amended 2026-09-03 (tasks 085 and 086, issue #320).* **The structured
+   editor reads every block of the file and writes every block it reads.** As
+   first built it did neither: its value column was a hand-written switch that
+   rendered a dozen published fields — `timeout:`, `max_retries:`,
+   `retry_backoff:`, `env:`, `max_parallel:`, `count:`, `for_each:`,
+   `max_iterations:`, `schedule:` among them — as `(unset)` however the file
+   spelled them, its `lanes:`, `lane:`, `merge:`, `fields:` and `defaults:`
+   rows led nowhere, and committing a `prompt:` or a `run:` rewrote the block
+   scalar as a single line. One sentence above is therefore narrowed and the
+   key table grows; everything else in this view stands:
+
+   - **"No delete" means no *unconfirmed destructive action*, not that the
+     editor may never remove anything.** `d` removes the step, lane or
+     declared field under the cursor **after a confirmation**; `set`,
+     `insert` and `move` still commit on `enter` with no prompt, because
+     each of those leaves the removed thing recoverable in the file's own
+     history and a removal does not. Removing the **workflow file** is still
+     not offered: that is what the sentence was written to refuse, and it
+     keeps refusing it.
+   - **The editor's key table gains four rows,** all inside its own context so
+     the list's `a`/`i`/`f` are untouched: `a` adds an entry after the one
+     under the cursor — on a steps list it first asks which type, offering
+     only the types the served descriptor marks legal for that path, and then
+     writes a skeleton carrying that type's required fields, so the file is
+     valid between operations; `d` removes, per the paragraph above; `K` and
+     `J` move the entry up and down, capitalised because `k` and `j` still
+     move the cursor and a file rewritten by a typo is not a trade worth
+     making.
+   - **A multi-line value is edited in a multi-line pane.** A `prompt:`,
+     `run:` or `instructions:` row opens a full-pane editing surface where
+     `enter` inserts a newline, `ctrl+s` saves as a `|` block scalar and `esc`
+     abandons; opening one and closing it again writes nothing. The one-line
+     field's newline-flattening is deliberate everywhere else it is used and
+     is unchanged.
+
+   Unamended: `e` still means `$EDITOR`; the forms are still rendered from the
+   served descriptor and never from a second copy of §8.2 — the agent, model
+   and effort pickers read `GET /v1/agents`, which is where those sets live
+   (they are deliberately not in the descriptor); every write is still one
+   operation and one PATCH carrying the version the last read handed back;
+   editing from the graph is still out, and the graph stays a read-only
+   projection.
    **A control-flow graph (task 017, added 2026-08-18):** `g` draws the entry under
    the cursor as a graph — sequence, `parallel` groups, `fan_out` lanes and their
    merge, guards, `condition`, `loop` and `break` — in a sub-layer over the list.

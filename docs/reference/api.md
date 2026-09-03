@@ -902,6 +902,25 @@ are done and merged, which makes that lane's starting tree timing-dependent;
 `barrier` is the reproducible default. `GET /v1/workflows/schema` publishes the
 two values as an enum, from the same constants the parser checks against.
 
+A **derived** fan-out is the other shape this endpoint serves, and a client that
+reads only `lanes` sees an empty step where one is: the registry entry carries a
+single lane template in `lane`, the lists it will be rendered over in `for_each`,
+and the ceiling on the result in `max_lanes` — with `lanes` absent, because the
+list does not exist until the step runs (§7.6).
+
+```json
+{ "id": "spread", "type": "fan_out",
+  "lane": { "id": "{{ .Item.name }}", "workflow": "unit",
+            "fields": { "target": "{{ .Item.name }}" } },
+  "for_each": ["{{ (index .Steps \"plan\").Result }}"],
+  "max_lanes": 8 }
+```
+
+Exactly one of `lanes` and `lane` is set in an authored file. Materialization
+inverts them: a task's snapshot of the same step carries the rendered `lanes`,
+no `lane` and no `for_each`, and a `derived_from` record saying where the list
+came from (below).
+
 Three things about this contract are deliberate.
 
 **The name is a query parameter, not a path segment.** A registry name is

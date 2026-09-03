@@ -99,6 +99,8 @@ the living engineering specification records implementation contracts.
 | [083](083-loop-legibility.md) | A loop's real extent and running body step on the rollup, and openable iteration/round tiers in the timeline that never lose the cursor | ✅ done (1/1) |
 | [084](084-fan-out-observability.md) | Make a fan-out run observable: lanes as expandable board rows, `l`/`U`/`esc` through the workspace, `?by=lane` diff attribution, and the lane DAG drawn | ✅ done (5/5) |
 | [085](085-chat-workspace-ux.md) | A fourth output level, `quiet`, below `compact`; the chat's user turn as a right-aligned bubble; the composer inside a titled border | ✅ done (1/1) |
+| [086](086-editor-and-graph-misreport.md) | Make the workflow editor's value column a schema-keyed table with a coverage test, carry `lane:`/`max_lanes:` through to the client, and draw a fan-out derived from a lane template | ✅ done (2/2) |
+| [087](087-editor-cannot-write.md) | Give the workflow editor a multi-line pane, descents into every block, `a`/`d`/`K`/`J` structural edits and pickers for the closed sets | ✅ done (4/4) |
 
 ## How to add and update a task document
 
