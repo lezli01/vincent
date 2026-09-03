@@ -79,6 +79,13 @@ const (
 	EdgeBranch EdgeKind = "branch"
 	// EdgeBack returns to a loop header for another iteration.
 	EdgeBack EdgeKind = "back"
+	// EdgeNeeds is a fan_out lane's `needs:` dependency (§7.6, task 080):
+	// this lane is spawned only once the lane it leaves is done **and
+	// merged**. It is drawn as its own kind because it is not succession —
+	// nothing flows from one lane into another, they are separate child
+	// tasks — and a reader who cannot tell the two apart is being told the
+	// wrong thing about what runs where.
+	EdgeNeeds EdgeKind = "needs"
 )
 
 // Synthetic ids are prefixed with `#`, which an authored step id may contain
@@ -194,6 +201,11 @@ type Group struct {
 	Header  string
 	Parent  string
 	Columns []Column
+	// Note is a sentence the frame carries on its border beside its kind:
+	// today, what a derived fan-out's lane list was derived from (task 080).
+	// Empty for every group that has nothing extra to say, which is what
+	// keeps a frame that is not derived drawn exactly as it always was.
+	Note string
 }
 
 // Column is one division of a group. ID and Label are a fan_out lane's; a
@@ -210,6 +222,16 @@ type Column struct {
 	Badges []string
 	Nodes  []string
 	Detail []DetailField
+	// Wave is which round of its fan_out's lane DAG this lane belongs to,
+	// 1-based: 1 for a lane that needs nothing, one more than the deepest
+	// lane it needs otherwise. It is 0 for the columns nothing names.
+	//
+	// It is *derived*, never authored: no workflow names a wave, and the
+	// engine's rounds are this same topological level (§7.6, task 080). The
+	// layout stacks the waves so the picture and the schedule agree.
+	Wave int
+	// Needs is the lane ids this lane depends on, as authored.
+	Needs []string
 }
 
 // Build converts a workflow definition into its semantic graph. It is pure:
@@ -437,11 +459,20 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 		Label:  st.DisplayName(),
 		Header: header,
 		Parent: f.group,
+		Note:   derivedNote(st),
 	}
+	// The waves are read off the `needs:` graph rather than out of the
+	// document, because nothing in the document declares them: a round is
+	// the set of lanes whose dependencies have all merged, which is exactly
+	// a topological level (§7.6, task 080).
+	waves := laneWaves(st.Lanes)
+	exitsOf := map[string][]string{}
+	entryOf := map[string]string{}
 	for _, lane := range st.Lanes {
 		col := Column{
 			ID: lane.ID, Key: LaneKey(header, lane.ID),
 			Label: lane.ID, Detail: laneDetail(lane),
+			Wave: waves[lane.ID], Needs: lane.Needs,
 		}
 		if lane.If != "" {
 			col.Badges = append(col.Badges, "if")
@@ -470,9 +501,28 @@ func (b *builder) fanOut(st apiclient.WorkflowStepDef, f flow) []string {
 				col.Nodes = append(col.Nodes, inner.id(s.ID))
 			}
 		}
-		b.link(header, entry, EdgeFlow, "")
+		// A lane that needs nothing is spawned by the step; a lane that
+		// needs others is spawned by *them*, once they are done and merged,
+		// so its incoming edges are the dependencies and not the header.
+		// Drawing both would say a dependent lane starts in round one.
+		if len(lane.Needs) == 0 {
+			b.link(header, entry, EdgeFlow, "")
+		}
 		b.linkAll(exits, merge, EdgeFlow)
+		entryOf[lane.ID], exitsOf[lane.ID] = entry, exits
 		g.Columns = append(g.Columns, col)
+	}
+	// Needs edges are added after every lane exists: an edge may run to a
+	// lane declared before or after the one it leaves, and a forward
+	// reference has no node to attach to yet.
+	for _, lane := range st.Lanes {
+		entry, ok := entryOf[lane.ID]
+		if !ok {
+			continue
+		}
+		for _, need := range lane.Needs {
+			b.linkAll(exitsOf[need], entry, EdgeNeeds)
+		}
 	}
 	b.d.Groups = append(b.d.Groups, g)
 	b.add(Node{
@@ -556,8 +606,80 @@ func badges(st apiclient.WorkflowStepDef) []string {
 		if st.MaxParallel != nil {
 			out = append(out, "max "+strconv.Itoa(*st.MaxParallel))
 		}
+	case KindFanOut:
+		// `barrier` gets no badge: it is the default, and the difference
+		// worth seeing without selecting is the one where a lane's
+		// dependents start before its siblings have finished (§7.6, task
+		// 081).
+		if st.Schedule == "eager" {
+			out = append(out, "eager")
+		}
+		// A derived list is marked on the *frame*, not here: the derivation
+		// produced the lanes, and the lanes are what the frame encloses. It
+		// also keeps this badge from crowding out `eager`, which the node
+		// drops whole rather than truncating (kindLine).
 	}
 	return out
+}
+
+// laneWaves numbers each lane by how many rounds must precede it, 1-based: 1
+// for a lane that needs nothing, one more than the deepest lane it needs
+// otherwise. It is the same derivation the engine schedules rounds by
+// (workflow.LaneWaves, §7.6), restated here because this package draws the
+// DTO and never imports the parser.
+//
+// An edge to a lane that does not exist is ignored, and a cycle — which
+// validation refuses before a document can reach a graph — resolves to wave 1
+// rather than recursing: a viewer must draw a broken snapshot, not hang on it.
+func laneWaves(lanes []apiclient.WorkflowLaneDef) map[string]int {
+	byID := make(map[string]apiclient.WorkflowLaneDef, len(lanes))
+	for _, lane := range lanes {
+		byID[lane.ID] = lane
+	}
+	waves := make(map[string]int, len(lanes))
+	var depth func(id string, seen map[string]bool) int
+	depth = func(id string, seen map[string]bool) int {
+		if w, ok := waves[id]; ok {
+			return w
+		}
+		if seen[id] {
+			return 1
+		}
+		seen[id] = true
+		w := 1
+		for _, need := range byID[id].Needs {
+			if _, ok := byID[need]; !ok {
+				continue
+			}
+			if d := depth(need, seen) + 1; d > w {
+				w = d
+			}
+		}
+		delete(seen, id)
+		waves[id] = w
+		return w
+	}
+	for _, lane := range lanes {
+		depth(lane.ID, map[string]bool{})
+	}
+	return waves
+}
+
+// derivedNote is what a materialized fan-out's frame says about where its
+// lanes came from (task 080). A hand-authored list has none, and its frame is
+// drawn exactly as it was before the field existed.
+func derivedNote(st apiclient.WorkflowStepDef) string {
+	if st.DerivedFrom == nil {
+		return ""
+	}
+	from := strings.Join(st.DerivedFrom.ForEach, " ")
+	if from == "" {
+		from = st.DerivedFrom.Lane
+	}
+	if from == "" {
+		return "derived"
+	}
+	return "derived from " + from
 }
 
 // mergeBadges marks a join that may be resolved by an agent. `block` gets no
@@ -615,6 +737,7 @@ func laneDetail(lane apiclient.WorkflowLaneDef) []DetailField {
 		}
 	}
 	add("workflow", lane.Workflow)
+	add("needs", strings.Join(lane.Needs, ", "))
 	add("if", lane.If)
 	add("agent", lane.Agent)
 	add("model", lane.Model)
@@ -817,6 +940,13 @@ func (b *builder) stepSectionsTitled(st apiclient.WorkflowStepDef, title string)
 	if n := len(st.Lanes); n > 0 {
 		structure.add("lanes", plural(n, "lane")+" drawn as the frame's columns")
 	}
+	structure.add("schedule", st.Schedule)
+	if st.DerivedFrom != nil {
+		// Snapshot-only: a registry entry never carries it, so this row
+		// appears exactly on the tasks whose fan-out has already run
+		// (task 080).
+		structure.add("derived_from", derivationValue(*st.DerivedFrom))
+	}
 	if st.Merge != nil {
 		structure.add("merge", "the join below the frame")
 	}
@@ -844,6 +974,20 @@ func envValue(env map[string]string) string {
 	return strings.Join(lines, "\n")
 }
 
+// derivationValue prints a lane list's provenance as the two templates it
+// came from, which is what a reader needs to go and read the step that
+// produced the list.
+func derivationValue(d apiclient.WorkflowDerivationDef) string {
+	var parts []string
+	if len(d.ForEach) > 0 {
+		parts = append(parts, "for_each: "+strings.Join(d.ForEach, "\n"))
+	}
+	if d.Lane != "" {
+		parts = append(parts, "lane: "+d.Lane)
+	}
+	return strings.Join(parts, "\n")
+}
+
 func plural(n int, unit string) string {
 	if n == 1 {
 		return "1 " + unit
@@ -862,6 +1006,7 @@ func laneSections(lane apiclient.WorkflowLaneDef) []DetailSection {
 		f.add("becomes", "a child task running that workflow")
 	}
 	f.add("from", lane.ResolvedFrom)
+	f.add("needs", strings.Join(lane.Needs, ", "))
 	f.add("if", lane.If)
 	f.add("agent", lane.Agent)
 	f.add("model", lane.Model)

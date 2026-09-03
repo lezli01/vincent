@@ -1090,6 +1090,25 @@ curl -sS "http://127.0.0.1:$PORT/v1/tasks/12/workflow" \
 outermost first — after a splice there is no `include` step left to attribute
 it to, so the step carries it.
 
+`derived_from` is the other field only a snapshot has. A `fan_out` step whose
+lanes were **derived** at run time from `for_each:` carries the lane list it
+produced in `lanes` and a record of what produced it beside them:
+
+```json
+{ "id": "spread", "type": "fan_out",
+  "lanes": [ { "id": "auth", … }, { "id": "billing", … } ],
+  "derived_from": { "lane": "{{ .Item.name }}",
+                    "for_each": ["{{ (index .Steps \"plan\").Result }}"] } }
+```
+
+Only the `lane:` id template and the `for_each:` templates are kept — the rest
+of the lane template is already visible on every lane it produced. It is what
+lets a client tell a derived lane list from a hand-written one after
+materialization, which is otherwise lossy; the TUI's Workflow tab marks the
+frame with it. A registry entry never carries it, `GET /v1/workflows/schema`
+does not publish it, and a workflow document that declares it is rejected the
+way an unknown key is (§7.6).
+
 The envelope carries no `scope`, `file`, `platforms` or `platform_supported`:
 those are registry facts a snapshot has none of. Where the task's definition
 came from is `workflow_origin` on `GET /v1/tasks/{id}`.
@@ -1665,7 +1684,7 @@ status, not as the cause of anything.
 
 ```
 GET /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
-GET /v1/tasks/{id}/diff
+GET /v1/tasks/{id}/diff?by=
 ```
 
 The transcript is the attempt's JSONL file, ranged:
@@ -1710,6 +1729,34 @@ already on disk.
 commit the task was cut from — its recorded `base_sha`, and the base branch by
 name for a task that has none — including uncommitted changes. Untracked files
 are excluded — a documented limitation.
+
+`?by=lane` asks for the same change **split by the fan-out lane that produced
+it**, as JSON rather than as `text/plain`:
+
+```json
+{
+  "sections": [
+    {"lane_id": "api",  "child_task_id": 42, "merge_commit": "a1b2c3d", "remainder": false, "diff": "diff --git …"},
+    {"lane_id": "docs", "child_task_id": 43, "merge_commit": "e4f5a6b", "remainder": false, "diff": "diff --git …"},
+    {"lane_id": "",     "child_task_id": 0,  "merge_commit": "",        "remainder": true,  "diff": "diff --git …"}
+  ]
+}
+```
+
+One section per lane, in the order the parent merged them, cut from the
+`Merge lane '{id}' of task {n}` commits on the parent's own first-parent chain —
+which is why that message is a contract and not a convenience. The trailing
+`remainder` section is everything that belongs to no lane: the parent's own
+commits and its uncommitted work. Every key is always present — `lane_id`,
+`child_task_id` and `merge_commit` are zero on the remainder — and a lane that
+merged cleanly without changing anything is a section with an empty `diff`
+rather than a missing one.
+
+A task that never fanned anything out comes back as a **single remainder**
+holding the whole diff, so a client can read the grouped shape unconditionally.
+Without the parameter the response is byte-for-byte the `text/plain` body it has
+always been, and any other value is a `400 validation_failed` rather than a
+silent fall-through.
 
 ## Events (SSE)
 

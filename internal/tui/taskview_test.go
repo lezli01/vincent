@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
 func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
@@ -243,4 +244,416 @@ func taskDetailFixture(t *testing.T) *detail {
 		}},
 	}
 	return d
+}
+
+// ---------------------------------------------------------------------------
+// #316: reaching a fan-out's lanes from the task workspace.
+// ---------------------------------------------------------------------------
+
+// openThroughJump is what the root does with an openTaskMsg: push the task
+// being left, then open the target by the ordinary selectTaskMsg path. Tests
+// drive it directly because the binding registry row for `l` lands with a
+// later unit; the handler and the behaviour are what this file proves.
+func openThroughJump(v *taskView, from int64, id int64, state string) {
+	v.pushTask(from)
+	v.update(selectTaskMsg{id: id, state: state})
+}
+
+func TestWorkspaceEscapePopsOneTaskPerPress(t *testing.T) {
+	v := newTaskView(taskDetailFixture(t))
+	v.alive = func(int64) (string, bool) { return stateRunning, true }
+
+	v.update(selectTaskMsg{id: 7, state: stateRunning})
+	if len(v.stack) != 0 {
+		t.Fatalf("a task opened from the board has stack %v, want empty", v.stack)
+	}
+	for _, hop := range [][2]int64{{7, 41}, {41, 42}, {42, 43}} {
+		openThroughJump(v, hop[0], hop[1], stateRunning)
+	}
+	if got, want := v.stack, []int64{7, 41, 42}; !equalInt64s(got, want) {
+		t.Fatalf("stack after three jumps = %v, want %v", got, want)
+	}
+
+	// Three escapes, three tasks — and only then the board.
+	for _, want := range []int64{42, 41, 7} {
+		id, ok := escapeTo(t, v)
+		if !ok {
+			t.Fatalf("esc went to the board, want task %d", want)
+		}
+		if id != want {
+			t.Fatalf("esc landed on task %d, want %d", id, want)
+		}
+	}
+	if _, ok := escapeTo(t, v); ok {
+		t.Fatalf("esc from the task the chain started on did not reach the board")
+	}
+}
+
+func TestWorkspaceEscapeDropsAnArchivedTaskFromTheStack(t *testing.T) {
+	v := newTaskView(taskDetailFixture(t))
+	// 42 was archived while the reader was inside its lane; 7 is still there.
+	v.alive = func(id int64) (string, bool) {
+		if id == 42 {
+			return "", false
+		}
+		return stateBlocked, true
+	}
+	v.update(selectTaskMsg{id: 7, state: stateRunning})
+	openThroughJump(v, 7, 42, stateRunning)
+	openThroughJump(v, 42, 43, stateRunning)
+
+	id, ok := escapeTo(t, v)
+	if !ok || id != 7 {
+		t.Fatalf("esc landed on (%d, %v), want task 7 — the archived hop is dropped, not popped to", id, ok)
+	}
+	if len(v.stack) != 0 {
+		t.Fatalf("stack after the drop = %v, want empty", v.stack)
+	}
+}
+
+func TestWorkspaceEscapeFromABoardOpenedLaneReachesTheBoard(t *testing.T) {
+	v := newTaskView(taskDetailFixture(t))
+	v.alive = func(int64) (string, bool) { return stateRunning, true }
+	// A lane opened straight from the board has nothing behind it.
+	v.update(selectTaskMsg{id: 42, state: stateBlocked})
+	if _, ok := escapeTo(t, v); ok {
+		t.Fatalf("esc from a board-opened lane did not reach the board")
+	}
+}
+
+// escapeTo presses esc and reports the task the workspace landed on, applying
+// the pop to the view exactly as the root's message loop would.
+func escapeTo(t *testing.T, v *taskView) (int64, bool) {
+	t.Helper()
+	cmd := v.updateKey(synthKey("esc"))
+	if cmd == nil {
+		t.Fatalf("esc produced no command")
+	}
+	switch msg := cmd().(type) {
+	case selectViewMsg:
+		return 0, false
+	case navPopMsg:
+		next := v.applyPop(msg)
+		if next == nil {
+			t.Fatalf("a pop produced no command")
+		}
+		switch out := next().(type) {
+		case selectViewMsg:
+			return 0, false
+		case selectTaskMsg:
+			v.update(out)
+			return out.id, true
+		default:
+			t.Fatalf("pop produced %T", out)
+		}
+	default:
+		t.Fatalf("esc produced %T", msg)
+	}
+	return 0, false
+}
+
+func equalInt64s(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// fanOutFixture is a parent parked on a `fan_out` join, with two lanes.
+func fanOutFixture(t *testing.T, reason, message string) *taskView {
+	t.Helper()
+	d := taskDetailFixture(t)
+	d.width = 120
+	d.task.State = stateBlocked
+	d.task.BlockReason = &reason
+	d.task.WorkflowSteps = []apiclient.WorkflowStep{{Index: 0, ID: "lanes", Type: stepTypeFanOut}}
+	d.task.Steps = []apiclient.StepRun{{
+		ID: 9, StepIndex: 0, StepID: "lanes", StepName: "lanes", StepType: stepTypeFanOut,
+		Attempt: 1, State: "failed", FailureReason: &reason, ResultSummary: message,
+	}}
+	d.selectedRun = 9
+	v := newTaskView(d)
+	v.update(taskLaneListMsg{taskID: 7, children: []apiclient.Task{
+		laneRow(42, "api", 0, stateBlocked, "worktree_dirty", "vincent/42-api"),
+		laneRow(43, "web", 1, stateDone, "", "vincent/43-web"),
+	}})
+	return v
+}
+
+func laneRow(id int64, lane string, order int, state, block, branch string) apiclient.Task {
+	row := apiclient.Task{
+		ID: id, ProjectID: 3, Title: lane + " lane", State: state,
+		BranchName: branch, LaneID: &lane, LaneOrder: &order,
+	}
+	parent := int64(7)
+	row.ParentTaskID = &parent
+	if block != "" {
+		row.BlockReason = &block
+	}
+	return row
+}
+
+func TestFanOutFailureNamesTheLaneItsTaskAndTheLanesOwnBlockReason(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+
+	header := strings.Join(v.detail.headerLines(), "\n")
+	for _, want := range []string{"lane_failed", `lane "api"`, "task 42", "worktree_dirty", "l open the lane"} {
+		if !strings.Contains(ansi.Strip(header), want) {
+			t.Errorf("header misses %q:\n%s", want, ansi.Strip(header))
+		}
+	}
+
+	row := ansi.Strip(strings.Join(v.detail.attemptLines(v.detail.task.Steps[0], false), "\n"))
+	for _, want := range []string{`lane "api"`, "task 42", "worktree_dirty", "l open the lane"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the fan_out step row misses %q:\n%s", want, row)
+		}
+	}
+
+	// And the jump it offers goes to that lane.
+	id, ok := v.laneJump()
+	if !ok || id != 42 {
+		t.Fatalf("laneJump from the blamed fan_out row = (%d, %v), want (42, true)", id, ok)
+	}
+}
+
+func TestFanOutMergeConflictNamesTheConflictingLaneAndItsPaths(t *testing.T) {
+	v := fanOutFixture(t, "merge_conflict", "lane \"api\" (task 42) conflicts in:\ninternal/api/server.go")
+	header := ansi.Strip(strings.Join(v.detail.headerLines(), "\n"))
+	for _, want := range []string{"merge_conflict", `lane "api"`, "task 42", "internal/api/server.go", "worktree_dirty"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("header misses %q:\n%s", want, header)
+		}
+	}
+}
+
+func TestFanOutDeriveFailuresSurfaceTheEnginesOwnMessage(t *testing.T) {
+	for reason, message := range map[string]string{
+		"fan_out_limit":   "fan_out over the limit: 200 lanes exceeds fan_out.max_tasks 64",
+		"fan_out_invalid": "line 12: lane id \"api\" is used twice",
+	} {
+		v := fanOutFixture(t, reason, message)
+		header := ansi.Strip(strings.Join(v.detail.headerLines(), "\n"))
+		if !strings.Contains(header, reason) || !strings.Contains(header, message) {
+			t.Errorf("header for %s misses the engine's message:\n%s", reason, header)
+		}
+		// Neither reason blames a lane, and neither may invent one.
+		blame, ok := v.detail.laneBlame()
+		if !ok {
+			t.Fatalf("%s produced no attribution", reason)
+		}
+		if blame.taskID != 0 {
+			t.Errorf("%s blamed task %d; it names no lane", reason, blame.taskID)
+		}
+	}
+}
+
+func TestOpenLaneFromTheFanOutStepRowPushesTheParent(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	cmd := v.updateKey(synthKey("l"))
+	if cmd == nil {
+		t.Fatalf("l on the fan_out row produced no command")
+	}
+	msg, ok := cmd().(openTaskMsg)
+	if !ok {
+		t.Fatalf("l produced %T, want openTaskMsg", cmd())
+	}
+	if msg.id != 42 || msg.from != 7 || msg.state != stateBlocked {
+		t.Fatalf("l opened %+v, want task 42 from 7 in state blocked", msg)
+	}
+
+	// A row that is not a fan_out has no lanes to open, whatever the task
+	// around it is doing.
+	v.detail.task.Steps = append(v.detail.task.Steps, apiclient.StepRun{
+		ID: 10, StepIndex: 1, StepID: "ship", StepType: "command", Attempt: 1, State: "failed",
+	})
+	v.detail.selectedRun = 10
+	if _, ok := v.laneJump(); ok {
+		t.Errorf("l offered a lane from a command step row")
+	}
+}
+
+func TestOpenParentWorksWhateverTheParentIsDoing(t *testing.T) {
+	for _, state := range []string{stateBlocked, stateDone, stateRunning} {
+		d := taskDetailFixture(t)
+		parent := int64(7)
+		d.taskID = 42
+		d.task.Task = apiclient.Task{
+			ID: 42, ProjectID: 3, Title: "api lane", State: state, ParentTaskID: &parent,
+		}
+		v := newTaskView(d)
+		id, ok := v.parentJump()
+		if !ok || id != 7 {
+			t.Fatalf("parentJump for a lane of a %s parent = (%d, %v), want (7, true)", state, id, ok)
+		}
+		msg, ok := v.updateKey(synthKey("U"))().(openTaskMsg)
+		if !ok || msg.id != 7 || msg.from != 42 {
+			t.Fatalf("U from a lane of a %s parent = %+v", state, msg)
+		}
+	}
+
+	// A task that is not a lane offers nothing.
+	v := newTaskView(taskDetailFixture(t))
+	if _, ok := v.parentJump(); ok {
+		t.Errorf("parentJump offered a parent for a root task")
+	}
+}
+
+func TestOutputPaneLaneSelectorWalksTheLanesAndBackToTheTask(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.width, v.height = 120, 30
+	v.setTab(taskTabOutput)
+
+	if _, ok := v.outputLane(); ok {
+		t.Fatalf("the Output pane starts on a lane, want the task's own output")
+	}
+	v.selectLane(1)
+	if id, ok := v.outputLane(); !ok || id != 42 {
+		t.Fatalf("> selected (%d, %v), want lane task 42", id, ok)
+	}
+	v.selectLane(1)
+	if id, ok := v.outputLane(); !ok || id != 43 {
+		t.Fatalf("a second > selected (%d, %v), want lane task 43", id, ok)
+	}
+	v.selectLane(1)
+	if _, ok := v.outputLane(); ok {
+		t.Fatalf("the cycle did not come back to the task's own output")
+	}
+	v.selectLane(-1)
+	if id, ok := v.outputLane(); !ok || id != 43 {
+		t.Fatalf("< from the task's own output selected (%d, %v), want the last lane", id, ok)
+	}
+
+	v.selectLane(1)
+	v.selectLane(1)
+	got := ansi.Strip(v.render(120, 30))
+	for _, want := range []string{"Lane", "api (task 42)", "worktree_dirty", "</> select lane"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the Output pane's lane selector misses %q:\n%s", want, got)
+		}
+	}
+	// And `l` opens whatever the selector is pointed at.
+	msg, ok := v.updateKey(synthKey("l"))().(openTaskMsg)
+	if !ok || msg.id != 42 {
+		t.Fatalf("l from the Output pane opened %+v, want lane task 42", msg)
+	}
+}
+
+func TestPullRequestTabRendersOneRowPerLane(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.pull = apiclient.GitHubTaskPull{Linked: true, Repo: "lezli01/vincent", Number: 300}
+	number := int64(42)
+	v.applyLanePulls(taskLanePullsMsg{taskID: 7, pulls: []apiclient.GitHubPullRequest{{
+		Number: 301, State: "open", TaskID: &number,
+	}}})
+	v.tab = taskTabPull
+
+	got := ansi.Strip(v.render(140, 30))
+	for _, want := range []string{
+		"lezli01/vincent#300", // the parent's own row is unchanged
+		"lanes — 2",
+		"#301 open", "api · task 42", "vincent/42-api",
+		"no pull request", "web · task 43", "vincent/43-web",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the Pull Request tab's lane rows miss %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestOpenLaneFromTheWorkflowGraphSelection(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.width, v.height = 160, 40
+	wf := &apiclient.WorkflowBody{Name: "fixture", Steps: []apiclient.WorkflowStepDef{
+		{ID: "plan", Type: "agent"},
+		{ID: "lanes", Type: stepTypeFanOut, Lanes: []apiclient.WorkflowLaneDef{
+			{ID: "api", Steps: []apiclient.WorkflowStepDef{{ID: "build", Type: "command"}}},
+			{ID: "web", Steps: []apiclient.WorkflowStepDef{{ID: "build", Type: "command"}}},
+		}},
+	}}
+	v.setTab(taskTabWorkflow)
+	v.update(taskWorkflowMsg{taskID: 7, def: apiclient.TaskWorkflow{
+		TaskID: 7, Name: "fixture", Definition: wf,
+	}})
+
+	// The graph selection is a node *inside* a lane, and the lane column it
+	// belongs to is what names it (workflowgraph.LaneKey).
+	var inner string
+	for _, col := range v.workflow.graph.Lanes() {
+		if col.Key == workflowgraph.LaneKey("lanes", "web") && len(col.Nodes) > 0 {
+			inner = col.Nodes[0]
+			break
+		}
+	}
+	if inner == "" {
+		t.Fatalf("the graph drew no node inside the web lane")
+	}
+	v.workflow.graph.Select(inner)
+
+	id, ok := v.laneJump()
+	if !ok || id != 43 {
+		t.Fatalf("laneJump from a node inside the web lane = (%d, %v), want lane task 43", id, ok)
+	}
+	msg, ok := v.updateKey(synthKey("l"))().(openTaskMsg)
+	if !ok || msg.id != 43 || msg.from != 7 {
+		t.Fatalf("l on the Workflow tab opened %+v, want lane task 43 from 7", msg)
+	}
+
+	// A node outside every lane resolves to no lane at all.
+	v.workflow.graph.Select("plan")
+	if _, ok := v.laneJump(); ok {
+		t.Errorf("l offered a lane from a top-level node")
+	}
+}
+
+// TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor: the Diff tab grew
+// lane sections and `l` means "open the lane" everywhere, so on this tab it
+// has to mean the lane whose hunks are under the cursor. Resolving it to the
+// blamed lane instead — which is what every tab without a selection of its
+// own does — would open lane `api` while the reader is reading `web`'s diff.
+func TestOpenLaneFromTheDiffTabUsesTheSectionUnderTheCursor(t *testing.T) {
+	v := fanOutFixture(t, "lane_failed", `lane "api" (task 42) is blocked, not done`)
+	v.width, v.height = 160, 40
+	v.setTab(taskTabDiff)
+	v.detail.diff.openTask(7)
+	v.detail.diff.apply(diffLoadedMsg{taskID: 7, sections: []apiclient.DiffSection{
+		{LaneID: "api", ChildTaskID: 42, MergeCommit: "aaaaaaa", Diff: sampleDiff},
+		{LaneID: "web", ChildTaskID: 43, MergeCommit: "bbbbbbb", Diff: sampleDiff},
+		{Remainder: true, Diff: remainderDiff},
+	}})
+
+	// The cursor starts on the first lane's header and walks a row at a time.
+	if id, ok := v.laneJump(); !ok || id != 42 {
+		t.Fatalf("laneJump on the first lane's section = (%d, %v), want (42, true)", id, ok)
+	}
+	v.detail.diff.moveCursor(1)
+	id, ok := v.laneJump()
+	if !ok || id != 43 {
+		t.Fatalf("laneJump on lane web's section = (%d, %v), want (43, true)", id, ok)
+	}
+	msg, ok := v.updateKey(synthKey("l"))().(openTaskMsg)
+	if !ok || msg.id != 43 || msg.from != 7 {
+		t.Fatalf("l on the Diff tab opened %+v, want lane task 43 from 7", msg)
+	}
+
+	// The remainder is nobody's lane, so the tab falls back to the lane the
+	// join blamed rather than offering the reader nothing.
+	v.detail.diff.moveCursor(1)
+	if id, ok := v.laneJump(); !ok || id != 42 {
+		t.Fatalf("laneJump on the remainder = (%d, %v), want the blamed lane 42", id, ok)
+	}
+
+	// And a task that fanned nothing out has no lane section to stand on, so
+	// the tab means exactly what it meant before.
+	v.detail.diff.apply(diffLoadedMsg{taskID: 7, sections: []apiclient.DiffSection{
+		{Remainder: true, Diff: remainderDiff},
+	}})
+	if _, ok := v.detail.diff.selectedLane(); ok {
+		t.Errorf("an ungrouped diff offered a lane")
+	}
 }

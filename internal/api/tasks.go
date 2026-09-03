@@ -1325,7 +1325,19 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 // merge-base against the name resolves to the stale local commit and the
 // reviewer reads every upstream change the fetch brought in as the task's own
 // work.
+//
+// `?by=lane` serves the same change split by the fan-out lane that produced it
+// (difflane.go). It is a strictly additive branch: without the parameter the
+// body is the text/plain diff it has always been, for a fan-out parent as much
+// as for anything else.
 func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
+	// The request's shape is checked before the task's state, so a typo in the
+	// parameter reads as a 400 rather than as whatever the task happens to be
+	// doing.
+	byLane, ok := diffByLane(w, r)
+	if !ok {
+		return
+	}
 	t, ok := s.taskFromPath(w, r)
 	if !ok {
 		return
@@ -1349,6 +1361,16 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("cannot compute merge-base with %q: %v", base, err))
 		return
 	}
+	if byLane {
+		sections, sErr := s.laneDiffSections(ctx, t.WorktreePath, mergeBase)
+		if sErr != nil {
+			writeError(w, http.StatusConflict, CodeInvalidState,
+				fmt.Sprintf("git diff failed: %v", sErr))
+			return
+		}
+		writeJSON(w, http.StatusOK, diffLanesResponse{Sections: sections})
+		return
+	}
 	diff, err := s.git(ctx, t.WorktreePath, "diff", mergeBase)
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState, fmt.Sprintf("git diff failed: %v", err))
@@ -1358,6 +1380,23 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if diff != "" {
 		_, _ = io.WriteString(w, diff+"\n")
+	}
+}
+
+// diffByLane reads the `by` parameter. `lane` is the only grouping there is,
+// so anything else is a typo rather than a grouping this build does not know:
+// answering it with the ungrouped diff would hand a client the wrong shape and
+// call it success.
+func diffByLane(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	switch v := r.URL.Query().Get("by"); v {
+	case "":
+		return false, true
+	case "lane":
+		return true, true
+	default:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("by must be \"lane\"; got %q", v))
+		return false, false
 	}
 }
 

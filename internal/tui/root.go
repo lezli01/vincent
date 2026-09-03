@@ -164,6 +164,23 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deliver(viewTask, msg),
 			m.switchTo(viewTask),
 		)
+	case openTaskMsg:
+		// A jump made inside the task workspace (#316): the lane or parent
+		// opens by exactly the path every other task opens by, with the task
+		// it was reached from pushed onto the workspace's back stack first.
+		// Pushing here rather than inside the message is what keeps
+		// selectTaskMsg — the board's, and shared with the palette and the
+		// pull-request takeover — unchanged.
+		if v, ok := m.views[viewTask].(*taskView); ok {
+			v.pushTask(msg.from)
+		}
+		m.selectedTask = msg.id
+		open := selectTaskMsg{id: msg.id, state: msg.state}
+		return m, tea.Batch(
+			m.deliver(viewHome, open),
+			m.deliver(viewTask, open),
+			m.switchTo(viewTask),
+		)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
 	case openChatMsg:

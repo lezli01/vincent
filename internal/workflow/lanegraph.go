@@ -192,6 +192,13 @@ func joinArrow(ids []string) string {
 // source: a static `lanes:` list, or a single `lane:` template driven by
 // `for_each:` (§7.6, task 080).
 func validateFanOutShape(step Step, base string, add func(string, string, ...any)) {
+	// `derived_from` is exempt from the exclusivity below, deliberately. It
+	// is the *record* of a derivation, not a derivation: a materialized
+	// snapshot carries it beside the `lanes:` it produced, and that snapshot
+	// is re-parsed on every admission (§5.3), so refusing the pair here
+	// would make a task unrunnable the moment its fan-out derived its lanes
+	// (task 080 decision 5 as amended). The pair that is still an error is
+	// `lanes:` beside a live `lane:`/`for_each:`.
 	switch {
 	case len(step.Lanes) == 0 && step.Lane == nil:
 		add(base+".lanes", "fan_out steps require at least one lane, "+

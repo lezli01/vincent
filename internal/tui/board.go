@@ -52,10 +52,12 @@ type (
 	}
 	// boardConfigMsg carries the view preferences the daemon relays (§15,
 	// task 009). The TUI reads no configuration from disk, so this is where
-	// the task table's grouping comes from.
+	// the task table's grouping comes from — and, since issue #316, how deep
+	// an expanded fan-out is allowed to nest (§7.6 `fan_out.max_depth`).
 	boardConfigMsg struct {
-		board apiclient.ConfigBoard
-		err   error
+		board     apiclient.ConfigBoard
+		laneDepth int
+		err       error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg time.Time
@@ -97,12 +99,12 @@ type board struct {
 	// is a row (task 054 decision 2) — and the render has to be able to put
 	// the cursor back on it, which selectedID cannot say.
 	selectedPath foldPath
-	// laneParent drills the board into one fan-out parent's lanes (§7.6,
-	// task 014). Zero is the ordinary board, which hides lanes entirely
-	// (decision 13); non-zero shows exactly that parent's lanes, in merge
-	// order. It is a lens on the same table rather than a second view: the
-	// rows are ordinary tasks and every action key means what it always does.
-	laneParent int64
+	// lanes is the fan-out tree: which parent rows are expanded and the lanes
+	// hanging under them (boardlanes.go, §7.6, issue #316). Lanes are still
+	// absent from b.tasks — task 014 decision 13 is kept — so an unexpanded
+	// board is the board this field did not exist on. Session-only: nothing
+	// here is written to tui.json.
+	lanes laneTree
 
 	// marks is the bulk selection (boardmark.go, task 011): the tasks the §6
 	// action keys act on instead of the row under the cursor.
@@ -227,18 +229,35 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(elapsedTick, func(t time.Time) tea.Msg { return boardTickMsg(t) })
 }
 
+// loadCmd refetches the board: its own task list, plus one lane fetch per
+// expanded fan-out parent (boardlanes.go). With nothing expanded the batch is
+// the single request every earlier version made.
 func (b *board) loadCmd() tea.Cmd {
+	root := b.tasksCmd()
+	if root == nil {
+		return nil
+	}
+	lanes := b.laneCmds()
+	if len(lanes) == 0 {
+		return root
+	}
+	return tea.Batch(append([]tea.Cmd{root}, lanes...)...)
+}
+
+// tasksCmd is the board's own listing. Lanes are excluded by the daemon by
+// default (§13.2, task 014 decision 13), which is what keeps every count on
+// the board a count of the work someone asked for.
+func (b *board) tasksCmd() tea.Cmd {
 	client := b.client
 	if client == nil {
 		return nil
 	}
 	b.loadSeq++
 	seq := b.loadSeq
-	parent := b.laneParent
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: parent})
+		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{})
 		return boardLoadedMsg{seq: seq, tasks: tasks, err: err}
 	}
 }
@@ -269,7 +288,7 @@ func (b *board) configCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		cfg, err := client.Config(ctx)
-		return boardConfigMsg{board: cfg.TUI.Board, err: err}
+		return boardConfigMsg{board: cfg.TUI.Board, laneDepth: cfg.FanOut.MaxDepth, err: err}
 	}
 }
 
@@ -284,6 +303,7 @@ func (b *board) applyConfig(msg boardConfigMsg) {
 	if !b.groupPinned {
 		b.group = b.configGroup
 	}
+	b.lanes.maxDepth = msg.laneDepth
 }
 
 // scheduleRefresh opens a debounce window, or does nothing if one is open.
@@ -302,6 +322,9 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		return b, nil
 	case boardLoadedMsg:
 		b.updateLoaded(msg)
+		return b, nil
+	case boardLanesMsg:
+		b.lanes.apply(msg)
 		return b, nil
 	case boardInfoMsg:
 		if msg.err == nil {
@@ -377,7 +400,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 	// project was removed — would be counted in the panel title and dispatched
 	// to a 404. Only a *successful* load prunes: a failed refresh is not news
 	// about which tasks exist.
-	b.marks = b.marks.keep(msg.tasks)
+	b.marks = b.marks.keep(b.knownTasks())
 	// The same argument for the fold set: a group whose project was removed
 	// would otherwise re-collapse it months later when it comes back
 	// (task 054 decision 4). Pruning is against the task values rather than
@@ -530,24 +553,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		b.markVisible()
 		return b, nil
 	case "L":
-		// Drill into the selected fan-out parent's lanes, or back out.
-		// Lanes are hidden from the board by design; this is the way in.
-		if b.laneParent != 0 {
-			parent := b.laneParent
-			b.laneParent = 0
-			b.selectedID = parent
-			return b, b.loadCmd()
-		}
-		if id, ok := b.selected(); ok {
-			for _, t := range b.tasks {
-				if t.ID == id && t.State == stateAwaitingChildren {
-					b.laneParent = id
-					b.selectedID = 0
-					return b, b.loadCmd()
-				}
-			}
-		}
-		return b, nil
+		// Expand or collapse the fan-out under the cursor (boardlanes.go).
+		// Lanes stay out of the list and out of every count; this is the way
+		// to see them, in whatever state the parent is in.
+		return b, b.toggleLanes()
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config
 		// file stays the starting point and is never written from here. This
@@ -745,7 +754,7 @@ func (b *board) allRows() []boardRow {
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
 	sortTasks(sorted)
-	return groupRows(sorted, b.group)
+	return b.spliceLanes(groupRows(sorted, b.group))
 }
 
 // wrapRows expands each task row into one row per rendered line, so an index
@@ -996,6 +1005,15 @@ type boardCell struct {
 	indent string
 }
 
+// rowIndent is how far a task row's title is inset: one level per grouping
+// level, plus one per fan-out level for a lane hanging under an expanded
+// parent (boardlanes.go). It is the same groupIndent the headers use, so a
+// lane reads as nested under its parent exactly the way a task reads as nested
+// under its group.
+func (b *board) rowIndent(r boardRow) string {
+	return strings.Repeat(groupIndent, len(b.group)+r.lane)
+}
+
 // cellsFor is one task's cells in column order. It and boardColumns share one
 // shape — the same optional columns in the same order — and move together; a
 // row that disagrees with the column set indexes the table out of range.
@@ -1003,7 +1021,9 @@ type boardCell struct {
 // cols is passed for the widths, not the shape: the STEP cell chooses how
 // much of a loop rollup it can say before it is laid out, because dropping a
 // clause is a better answer there than wrapping one (formatStep).
-func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set columnSet, cols []table.Column) []boardCell {
+func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.Column) []boardCell {
+	t := r.task
+	indent := b.rowIndent(r)
 	cells := make([]boardCell, 0, maxBoardColumns)
 	plain := func(text string) boardCell { return boardCell{text: text} }
 	if set.mark {
@@ -1024,8 +1044,16 @@ func (b *board) cellsFor(t apiclient.Task, now time.Time, indent string, set col
 	if d, ok := t.Elapsed(now); ok {
 		elapsed = formatElapsed(d)
 	}
+	// The disclosure marker leads the title on a row with lanes, the way it
+	// leads a group header's label. It goes in the text rather than the
+	// indent so it lands on the row's first line only: a glyph repeated down
+	// a wrapped row would read as three expandable rows rather than one.
+	title := t.Title
+	if glyph := b.laneGlyph(t); glyph != "" {
+		title = glyph + " " + title
+	}
 	cells = append(cells,
-		boardCell{text: t.Title, wrap: true, indent: indent},
+		boardCell{text: title, wrap: true, indent: indent},
 		boardCell{text: boardStateLabel(t), style: stateStyles[t.State], wrap: true},
 		boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
 		plain(elapsed),
@@ -1078,13 +1106,12 @@ func layoutCells(cells []boardCell, cols []table.Column) [][]string {
 // renders exactly as it did before rows could wrap.
 func (b *board) rowHeight(rows []boardRow, cols []table.Column, set columnSet) int {
 	now := b.now()
-	indent := strings.Repeat(groupIndent, len(b.group))
 	h := 1
 	for _, r := range rows {
 		if r.header {
 			continue
 		}
-		for _, lines := range layoutCells(b.cellsFor(r.task, now, indent, set, cols), cols) {
+		for _, lines := range layoutCells(b.cellsFor(r, now, set, cols), cols) {
 			h = max(h, len(lines))
 		}
 		if h >= boardRowLines {
@@ -1100,8 +1127,6 @@ func (b *board) rowHeight(rows []boardRow, cols []table.Column, set columnSet) i
 // that disagrees with the column set indexes the table out of range.
 func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []table.Row {
 	now := b.now()
-	// Task titles sit under their headers, one indent per grouping level.
-	indent := strings.Repeat(groupIndent, len(b.group))
 	out := make([]table.Row, 0, len(rows))
 	var lines [][]string
 	for _, r := range rows {
@@ -1113,7 +1138,7 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 		// Continuations follow their first line, so the layout is computed
 		// once per task and read down.
 		if r.line == 0 || lines == nil {
-			lines = layoutCells(b.cellsFor(r.task, now, indent, set, cols), cols)
+			lines = layoutCells(b.cellsFor(r, now, set, cols), cols)
 		}
 		row := make(table.Row, 0, maxBoardColumns)
 		for _, cell := range lines {

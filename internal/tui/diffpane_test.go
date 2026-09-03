@@ -352,3 +352,212 @@ func TestDiffDropsAnotherTasksResponse(t *testing.T) {
 		t.Error("a diff for another task was installed")
 	}
 }
+
+// --------------------------------------------------------------------------
+// The lane level (§7.6, issue #316): a fan-out parent's diff attributed to
+// the lanes that produced it, one level above task 012's file grouping.
+// --------------------------------------------------------------------------
+
+// sharedFileDiff touches main.go the way sampleDiff does but with a different
+// hunk, so a file that two lanes both changed is recognisable in each.
+const sharedFileDiff = `diff --git a/main.go b/main.go
+index 5555555..6666666 100644
+--- a/main.go
++++ b/main.go
+@@ -20,3 +20,4 @@ func other() {}
+ // second lane's region
++func alsoNew() {}
+`
+
+// remainderDiff is the parent's own work, in a file no lane touched — so an
+// assertion about a lane's file cannot be satisfied by the remainder.
+const remainderDiff = `diff --git a/notes.txt b/notes.txt
+index 7777777..8888888 100644
+--- a/notes.txt
++++ b/notes.txt
+@@ -1,2 +1,2 @@
+ notes
+-before the join
++after the join
+`
+
+// laneSections is a two-lane fan-out where both lanes touched main.go and only
+// one touched README.md, plus a remainder the parent committed itself.
+func laneSections() []apiclient.DiffSection {
+	return []apiclient.DiffSection{
+		{LaneID: "api", ChildTaskID: 7, MergeCommit: "aaaaaaa", Diff: twoFileDiff},
+		{LaneID: "docs", ChildTaskID: 8, MergeCommit: "bbbbbbb", Diff: sharedFileDiff},
+		{Remainder: true, Diff: remainderDiff},
+	}
+}
+
+// loadedLaneDiff is the pane as the tab looks on a joined fan-out.
+func loadedLaneDiff(t *testing.T) *diffPane {
+	t.Helper()
+	p := newDiffPane()
+	p.openTask(1)
+	p.apply(diffLoadedMsg{taskID: 1, sections: laneSections()})
+	return &p
+}
+
+// TestDiffLanesOpenAsTheLaneList: the first screen of a joined fan-out is the
+// lanes, not the files — the merged wall is exactly what the grouping exists
+// to stop a reviewer scrolling through.
+func TestDiffLanesOpenAsTheLaneList(t *testing.T) {
+	p := loadedLaneDiff(t)
+	view := diffView(p, 30)
+	for _, want := range []string{
+		diffFoldClosed + " lane api", "task 7",
+		diffFoldClosed + " lane docs", "task 8",
+		diffFoldClosed + " the task's own commits",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the lane list is missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "README.md") {
+		t.Errorf("a file is on screen before its lane was opened:\n%s", view)
+	}
+	// The summary counts the lanes, and the files across all of them.
+	if !strings.Contains(view, "2 lanes") {
+		t.Errorf("the summary does not count the lanes:\n%s", view)
+	}
+}
+
+// TestDiffLanesFoldToTheirFiles: the tab's existing fold keys drive the new
+// outer level — no key was added for it, so `enter` on a lane has to mean the
+// same thing it means on a file.
+func TestDiffLanesFoldToTheirFiles(t *testing.T) {
+	p := loadedLaneDiff(t)
+	diffPress(p, "enter")
+	view := diffView(p, 30)
+	if !strings.Contains(view, diffFoldOpen+" lane api") {
+		t.Fatalf("enter did not open the lane under the cursor:\n%s", view)
+	}
+	for _, want := range []string{"main.go", "README.md"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the open lane does not list %s:\n%s", want, view)
+		}
+	}
+	// Its files are still folded: the lane level is above the file level, it
+	// does not replace it.
+	if strings.Contains(view, "func new() {}") {
+		t.Errorf("opening a lane expanded a file's body too:\n%s", view)
+	}
+
+	// The cursor walks into the lane's files, and the file it lands on folds
+	// on the same key.
+	diffPress(p, "down")
+	diffPress(p, "enter")
+	if view = diffView(p, 30); !strings.Contains(view, "func new() {}") {
+		t.Errorf("enter on a file inside a lane did not expand it:\n%s", view)
+	}
+
+	// Closing the lane takes its files off screen and leaves the cursor on the
+	// lane rather than pointing into a fold that is shut.
+	p.cursor = 0
+	p.syncCursorPath()
+	diffPress(p, "enter")
+	view = diffView(p, 30)
+	if strings.Contains(view, "README.md") {
+		t.Errorf("closing the lane left its files on screen:\n%s", view)
+	}
+	if !strings.HasPrefix(p.cursorPath, diffKeySep+"lane") {
+		t.Errorf("the cursor is on %q, want the lane it just closed", p.cursorPath)
+	}
+}
+
+// TestDiffFileTouchedByTwoLanesAppearsUnderBoth. Two lanes really did change
+// main.go, and a single row would have to pick one of them to credit. The
+// counts differ per lane because each row is that lane's own hunks.
+func TestDiffFileTouchedByTwoLanesAppearsUnderBoth(t *testing.T) {
+	p := loadedLaneDiff(t)
+	diffPress(p, "O")
+	view := diffView(p, 60)
+
+	if n := strings.Count(view, "main.go"); n < 2 {
+		t.Errorf("main.go appears %d times, want a row under each lane that touched it:\n%s", n, view)
+	}
+	// Both lanes' own hunks are on screen at once, which is only possible if
+	// the file was not collapsed into one row.
+	for _, want := range []string{"func new() {}", "func alsoNew() {}"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expanding everything lost %q:\n%s", want, view)
+		}
+	}
+	// The fold state is per lane, so folding main.go in one lane leaves the
+	// other lane's copy open.
+	p.cursor, p.cursorPath = 0, ""
+	p.syncCursorPath()
+	diffPress(p, "down") // the api lane's main.go
+	diffPress(p, "enter")
+	view = diffView(p, 60)
+	if strings.Contains(view, "func new() {}") {
+		t.Errorf("folding one lane's main.go did not hide its body:\n%s", view)
+	}
+	if !strings.Contains(view, "func alsoNew() {}") {
+		t.Errorf("folding one lane's main.go folded the other lane's copy too:\n%s", view)
+	}
+}
+
+// TestDiffWithoutLanesStaysFlat: the daemon answers a task that fanned nothing
+// out with a single remainder section, and that must render as the file list
+// it has always been — no outer level, and the fold state still keyed by path
+// so nothing about task 012's tab changed for the tasks it was written for.
+func TestDiffWithoutLanesStaysFlat(t *testing.T) {
+	p := newDiffPane()
+	p.openTask(1)
+	p.apply(diffLoadedMsg{taskID: 1, sections: []apiclient.DiffSection{
+		{Remainder: true, Diff: twoFileDiff},
+	}})
+	view := diffView(&p, 30)
+	if strings.Contains(view, "lane") || strings.Contains(view, "own commits") {
+		t.Errorf("a task with no lanes grew an outer level:\n%s", view)
+	}
+	if !strings.Contains(view, "2 files") || strings.Contains(view, "lanes") {
+		t.Errorf("the summary counts lanes that do not exist:\n%s", view)
+	}
+	diffPress(&p, "enter")
+	if !p.open["main.go"] {
+		t.Errorf("the flat fold state is no longer keyed by path: %v", p.open)
+	}
+}
+
+// TestDiffLaneWithNoChangesSaysSo: a lane that merged cleanly and changed
+// nothing is a fact worth a row. `+0 -0` over an empty list would read as a
+// rendering fault instead.
+func TestDiffLaneWithNoChangesSaysSo(t *testing.T) {
+	p := newDiffPane()
+	p.openTask(1)
+	p.apply(diffLoadedMsg{taskID: 1, sections: []apiclient.DiffSection{
+		{LaneID: "empty", ChildTaskID: 9, MergeCommit: "ccccccc"},
+		{LaneID: "real", ChildTaskID: 10, MergeCommit: "ddddddd", Diff: sampleDiff},
+		{Remainder: true},
+	}})
+	view := diffView(&p, 30)
+	if !strings.Contains(view, "lane empty") || !strings.Contains(view, "no changes") {
+		t.Errorf("an empty lane is not stated as one:\n%s", view)
+	}
+}
+
+// TestDiffLaneFoldsSurviveARefresh: the tab refetches on every refresh, and a
+// lane the reader opened must not fold shut because the diff was re-parsed.
+func TestDiffLaneFoldsSurviveARefresh(t *testing.T) {
+	p := loadedLaneDiff(t)
+	diffPress(p, "enter") // open the api lane
+	diffPress(p, "down")  // onto its main.go
+	diffPress(p, "enter") // open the file
+	before := p.cursorPath
+
+	p.apply(diffLoadedMsg{taskID: 1, sections: laneSections()})
+	view := diffView(p, 40)
+	if !strings.Contains(view, diffFoldOpen+" lane api") {
+		t.Errorf("the refresh folded the open lane shut:\n%s", view)
+	}
+	if !strings.Contains(view, "func new() {}") {
+		t.Errorf("the refresh folded the open file shut:\n%s", view)
+	}
+	if p.cursorPath != before {
+		t.Errorf("the cursor moved to %q across the refresh, want %q", p.cursorPath, before)
+	}
+}

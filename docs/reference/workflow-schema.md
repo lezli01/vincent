@@ -1220,7 +1220,12 @@ other half of the same pre-commit check.
   `merge.agent` is required by, and only valid with, `on_conflict: agent`; it is
   a full agent step, needs an `id`, and may not declare `on_input: require`. A
   lane's inline steps have their own id namespace, because each lane becomes its
-  own task. `resolved_from` is written by task creation and is an error by hand.
+  own task. `resolved_from` is written by task creation and is an error by hand,
+  and so is `derived_from` — written by the daemon when a derived lane list is
+  rendered into the task's snapshot, so that a reader can tell a derived list
+  from a hand-written one afterwards. Neither appears in
+  `GET /v1/workflows/schema`, so the structured editor never offers a control
+  for them.
 - An `include` step has a `workflow` and nothing else. `workflow` is rejected on
   every other type, and `resolved_from` — written by task creation — is an error
   beside it. Whether the name resolves is *not* checked here: see the note

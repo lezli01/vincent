@@ -1,0 +1,27 @@
+# Corpus entry 12 (issue #316): a fan_out whose lanes form a `needs:` DAG,
+# scheduled eager. `api` and `db` are wave one and are spawned by the step;
+# `wire` needs both and is spawned by their merges, so it draws below them
+# with a `needs:` edge coming from each. `eager` is badged on the step node.
+#
+# A *derived* lane list cannot appear here: `derived_from:` is snapshot-only
+# and an authored document carrying it is refused (§7.6, task 080 decision 5
+# as amended). The derived mark on a frame is judged from a task's own
+# workflow tab instead — docs/gates/017-workflow-graph.md says how.
+name: lanedag
+steps:
+  - {id: plan, type: agent, prompt: plan the split}
+  - id: spread
+    type: fan_out
+    schedule: eager
+    lanes:
+      - id: api
+        steps:
+          - {id: api_impl, type: agent, prompt: build the api}
+      - id: db
+        steps:
+          - {id: db_migrate, type: command, run: make migrate}
+      - id: wire
+        needs: [api, db]
+        steps:
+          - {id: wire_up, type: agent, prompt: wire the two together}
+  - {id: ship, type: command, run: make ship}

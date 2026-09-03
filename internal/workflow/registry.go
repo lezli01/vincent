@@ -112,6 +112,12 @@ func NewRegistry(globalDir string, opts Options, log *slog.Logger) *Registry {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	// Everything the registry parses is a document somebody wrote — a file
+	// on disk, or a candidate a client sent to be judged exactly as a file
+	// would be. That is what makes this the place the snapshot-only fields
+	// are refused: a task's own snapshot never comes through here, and every
+	// path that re-parses one spells its options `Options{}`.
+	opts.Authored = true
 	return &Registry{
 		globalDir: globalDir,
 		opts:      opts,

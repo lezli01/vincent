@@ -148,7 +148,7 @@ var bindings = []binding{
 	// running it from the palette would paste into a field the palette just
 	// closed.
 	{key: "ctrl+v", label: "paste into the focused field (Cmd+V and the terminal's own paste work too)", scope: scopeGlobal, noPalette: true},
-	{key: "esc", label: "close one layer: popup → screen → selection → filter — never quits", scope: scopeGlobal, noPalette: true},
+	{key: "esc", label: "close one layer: popup → the task you came from → screen → selection → filter — never quits", scope: scopeGlobal, noPalette: true},
 	{key: "q", label: "quit the TUI (the daemon keeps running)", scope: scopeGlobal},
 	{key: "ctrl+c", label: "quit the TUI", scope: scopeGlobal, noPalette: true},
 
@@ -187,7 +187,7 @@ var bindings = []binding{
 	{key: "g", label: "group the tasks: project › workflow → project → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
-	{key: "L", label: "drill into the selected fan-out's lanes, or back out (lanes are hidden from the board otherwise)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
+	{key: "L", label: "expand or collapse the selected fan-out's lanes, as indented rows under it (lanes are hidden from the board otherwise, and stay out of every count)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
 	// Folding (task 054). ← and → walk the group tree a level at a time; the
 	// cursor rests on a collapsed header, which is how every level stays
 	// addressable. C/O are the diff pane's two letters in the same meaning.
@@ -210,6 +210,8 @@ var bindings = []binding{
 	{key: "left", label: "close the tier the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
 	{key: "O", label: "open every iteration and round tier of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
 	{key: "C", label: "close every one — the timeline opens with the latest pass showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9},
+	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 
 	// Task details.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
@@ -220,6 +222,12 @@ var bindings = []binding{
 	// keeps §15's "read-only inspector" true in the sense it was written.
 	{key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskDetails, hint: "o pull request", priority: 4, github: true},
 	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskDetails, hint: "P open a PR", priority: 5, github: true},
+	// Walking a fan-out (issue #316). `l` and `U` are registered on every tab
+	// that can name a lane, because a reader standing anywhere in a parent's
+	// workspace means the same thing by them; the tabs differ only in which
+	// lane `l` resolves to (taskView.laneJump).
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskDetails, priority: 6},
+	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskDetails, priority: 7},
 
 	// Output pane.
 	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab views", priority: 1},
@@ -231,6 +239,9 @@ var bindings = []binding{
 	{key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
 	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput},
+	{key: "<", label: "previous fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 8},
+	{key: ">", label: "next fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 9},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxOutput, priority: 10},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
@@ -242,6 +253,7 @@ var bindings = []binding{
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
 	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5},
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6},
 
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
@@ -345,6 +357,9 @@ var bindings = []binding{
 	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxTaskWorkflow, hint: "↑↓←→ select", priority: 1},
 	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxTaskWorkflow, hint: "⇧ pan", priority: 2},
 	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, hint: "5 workflow", priority: 3},
+	// Here the lane is the one under the graph cursor, which is the only tab
+	// that can point at a lane the failure does not blame.
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4},
 
 	// The task workspace's Pull Request tab (task 068). The tab is on the
 	// strip only when this task has a live link and the integration is
@@ -357,6 +372,10 @@ var bindings = []binding{
 	{key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true},
 	{key: "r", label: "re-read the pull request and its checks now (they also refresh on their own while the tab is open)", scope: scopePanel, context: ctxTaskPull, hint: "r refresh", priority: 5, github: true},
 	{key: "u", label: "unlink this pull request from the task — the refusal sticks, and the reconciler will not link it again", scope: scopePanel, context: ctxTaskPull, hint: "u unlink", priority: 6, github: true},
+	// Not github-gated: `l` is a jump between two tasks vincent owns, and it
+	// means the same thing on this tab whether or not a lane has a pull
+	// request of its own.
+	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7},
 
 	// Pull requests (task 052.6). Link and unlink live only here: they are the
 	// two actions that write vincent's own column, and they belong on the one

@@ -1247,6 +1247,30 @@ does not finish until every lane is merged.
   `GET /v1/tasks/{id}/workflow` are all correct with no further case. An empty
   derived list is the same no-op success an all-guarded-off lane list is.
 
+  *Amended 2026-09-03 (issue #316), amending task 080 decision 5.* "An ordinary
+  static `fan_out`" was true of everything that **runs** the step and false of
+  everything that **draws** it: after materialization a derived list and a
+  hand-authored one are the same lanes, so no reader could be told which they
+  were looking at. The `lane:`/`for_each:` pair therefore **moves rather than
+  disappearing**, into a `derived_from:` record on the step — the way a
+  resolved lane's `workflow:` moves to `resolved_from:`. It carries only the
+  `lane:` id template and the `for_each:` templates; the rest of the `lane:`
+  template is already visible on every lane it produced.
+
+  `derived_from:` is the first **snapshot-only** field, and three rules make
+  that safe. It is exempt from the exclusivity check above — `lanes:` beside a
+  live `lane:`/`for_each:` is still a load-time error, but `lanes:` beside a
+  *record* of one is what every later admission re-parses (§5.3). It is
+  **refused in an authored document** — a registry file, or a body sent to
+  `POST`/`PATCH /v1/workflows` or the validate route — with the wording an
+  unknown key gets, because it cannot be refused at decode and still be
+  readable back out of a snapshot. And it is **absent from
+  `GET /v1/workflows/schema`**, so the structured editor never offers a control
+  for something no author may set. Recovering the provenance from the spawn
+  round's `step_runs` row was the alternative and was rejected: the retry
+  budget can rewrite that row, and the picture a reader is shown must not
+  change because a lane was retried.
+
   `fan_out.max_depth` is unchanged: it counts nesting, and a dynamic width does
   not nest. `fan_out.max_tasks` **cannot** be checked at task creation for a
   derived list, so a per-step `max_lanes:` and a run-time tree-size check block
@@ -1334,7 +1358,12 @@ does not finish until every lane is merged.
   lane order, message `Merge lane '{lane_id}' of task {child_id}`, stopping at
   the first conflict. Declared rather than completion order is what makes a
   re-run conflict identically. Git identity is the user's own: vincent runs as
-  the invoking user (§16) and invents no author.
+  the invoking user (§16) and invents no author. *Amended 2026-09-03 (issue
+  #316): that message is a **machine-read contract**, not a convenience.* It is
+  the only record of which commits came from which lane, and
+  `GET /v1/tasks/{id}/diff?by=lane` (§13.2) parses it to attribute the parent's
+  merged diff back to the lanes that produced it. Changing the wording breaks
+  attribution for every branch already on disk.
 - **A conflict blocks** with `merge_conflict`, leaving the worktree conflicted
   so a human resolves in place. `on_conflict: agent` opts into an agent
   attempt first — a full agent step, gated by its own `check` — falling back
@@ -5681,6 +5710,14 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         levels.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
+                                        ?by=lane -> JSON {sections:[...]} instead: one section per
+                                        fan_out lane, cut from the `Merge lane '{id}' of task {n}`
+                                        commits on the parent's own first-parent chain (§7.6), plus
+                                        one `remainder` section for the parent's own commits and
+                                        uncommitted work. A task that fanned nothing out is one
+                                        remainder holding the whole diff; the parameter absent is
+                                        byte-for-byte the text/plain body above; any other value
+                                        is a 400. Added 2026-09-03 (issue #316)
 
 GET    /v1/events                       SSE stream (§13.3)
 GET    /v1/tasks/{id}/events            SSE, single task incl. live output
@@ -6462,6 +6499,38 @@ stream for the live tail.
    is applied per row and faking it per cell would come out with unshaded
    gutters between the columns.
 
+   **A fan-out parent is expandable (issue #316, added 2026-09-03).** Task 014
+   decision 13 — descendants are excluded from the task list — is **kept**: a
+   list is the work someone asked for, and a 64-task tree buries it. What
+   changes is that a `fan_out` parent's row is now a disclosure control. `L`
+   hangs its lanes underneath it as indented task rows and `L` again takes them
+   away, composing to `fan_out.max_depth` (§7.6). It replaces the modal drill
+   `L` used to be, which could only be entered from `awaiting_children` and
+   backed out to the root board however deep the reader had gone — so a
+   `blocked` or `done` parent's lanes, the ones actually worth reading, were
+   unreachable. The press acts in **every** state, because no list row carries a
+   field saying "this task once had lanes" (§13.2 serves `children` on the
+   detail endpoint only): the press asks, and a task with no lanes answers with
+   none and nothing moves.
+
+   The lanes stay out of the counts **by construction** rather than by
+   filtering. They come from their own `GET /v1/tasks?parent_id=N`, one request
+   per expanded parent, and never enter the board's task list — so the flat
+   count, every group header's count and its `!` attention badge are computed
+   from exactly the list they were computed from before, and a board with
+   nothing expanded issues exactly the request it issued before and renders
+   exactly the rows it rendered before. A lane row is an ordinary task row to
+   everything else: folding, the bulk selection, the action keys and the column
+   ladder. It is not filtered — the filter is a question about the list, and
+   hiding half of an opened fan-out would make the expansion lie about what it
+   opened.
+
+   The expanded set is **session-only** and deliberately not written to
+   `{data_dir}/tui.json` beside task 054's folds. A fold is a label path, which
+   survives a restart meaning what it meant; a task id is not, and 054
+   decision 4's rule for dropping a path whose project or workflow has left the
+   board has no honest counterpart for a task archived while the TUI was down.
+
 2. **Task detail.** *Amended 2026-08-28 (task 049): task detail is a separate
    full-screen workspace with four full-view tabs. **Steps & Attempts** is the
 	   default and renders the existing step/attempt timeline. **Task Details** is
@@ -6648,6 +6717,48 @@ stream for the live tail.
    workflow "step 5" would say the workflow grew, which it did not (§5.3). A
    round's steps share one index and are named individually beneath that header,
    the way a `parallel` group's members are.
+
+   *Amended 2026-09-03 (issue #316): the workspace can walk a fan-out.* A
+   `fan_out`'s lanes are child tasks (§7.6) and were reachable only by knowing
+   their ids. Four things change, and all of them are rendering — the engine
+   already names the lane in every failure it writes.
+
+   - **`esc` pops one task.** The workspace remembers the chain it was opened
+     *through*, so drilling three lanes deep is three presses back rather than
+     one jump to the board. A task opened from the board arrives with an empty
+     chain, and a task on it that has been archived or has vanished is
+     **dropped** from the chain rather than opened.
+   - **`l` opens a lane and `U` opens the parent.** `l` resolves the lane from
+     where the reader is standing: a tab that carries a lane selection of its
+     own — the Workflow tab's graph cursor, the Output pane's selector, the
+     Diff tab's lane sections — is taken at its word, the Steps timeline
+     means the `fan_out` row under the cursor, and every other tab means the
+     lane the failure is about. `U` is its reciprocal — the `parent task` fact
+     in the Task Details inspector becomes an action rather than a bare number.
+     Both work in **every** state the parent is in.
+   - **The Output pane gains a lane selector.** `<`/`>` cycle the task's own
+     output and each lane's, one at a time, and **exactly one** extra live
+     subscription exists at a time: it is torn down when the selection moves and
+     when the workspace leaves the task. Interleaving every lane was rejected —
+     it would open 64 streams on a live-refreshing surface, and the daemon drops
+     live chunks for a slow subscriber (§13.3), so a wide fan-out would render a
+     lossy interleave and read as a bug. The transcript file stays the durable
+     copy; this is a view, not a second store.
+   - **A failed join names the lane.** A parent parked on `lane_failed`,
+     `merge_conflict`, `fan_out_invalid` or `fan_out_limit` (§18) carries the
+     engine's own sentence — `lane "api" (task 42) is blocked, not done`, the
+     conflicted paths, the offending line or bound — on the detail header *and*
+     on the `fan_out` step row, with the lane's own state and block reason
+     beside it, which is the one fact the engine's message cannot carry. Only
+     the attempt the task is parked on is annotated; an earlier retried one is
+     history. The **Diff** tab groups `lane > file` over task 012's file
+     grouping, one section per lane in merge order plus a remainder for the
+     parent's own work, from `?by=lane` (§13.2); a task that fanned nothing out
+     is the flat file list it was, fold state keyed by path and all. The
+     **Pull Request** tab grows one row per lane beneath the
+     parent's own section — branch, linked pull request and its state, from one
+     project listing. Lane rows carry **no checks**: checks stay one call for
+     one task, and `l` opens the lane, whose own tab has them.
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
@@ -7658,6 +7769,37 @@ because step-id uniqueness is per body (§7.6): a top-level `build` and a lane's
 node keeps the raw step id as its `step_id`, which is what a `step_run` row is
 joined on.
 
+*Amended 2026-09-03 (issue #316): the picture draws what the engine actually
+does with a fan-out.* Tasks 080 and 081 gave a `fan_out` a lane DAG and an
+eager schedule, and neither was visible — a `needs:` edge, the round a lane runs
+in and a derived lane list were all implied by a document nobody was shown. Four
+additions, over the **authored** lane columns; task 051's non-goal stands and
+nothing unrolls:
+
+- **`needs:` edges** are drawn between lane columns, as their own kind. A lane
+  that needs nothing is spawned by the step and keeps its edge from the header;
+  a lane that needs others is spawned by *their* merges and takes its incoming
+  edges from them instead, because drawing both would say a dependent lane
+  starts in round one.
+- **Waves are stacked.** A lane sits below the lanes it needs, one row per
+  round, so the rounds §7.6 schedules in are the rows the picture has. The wave
+  is *derived* — a topological level over `needs:`, the same derivation the
+  engine schedules by — never authored. A fan-out whose lanes need nothing is
+  one wave and lays out exactly as it always did.
+- **`schedule: eager` is badged** on the step node. `barrier` gets none: it is
+  the default, and the difference worth seeing without selecting is the one
+  where a lane's dependents start before its siblings have finished (§7.6).
+- **A derived lane list is marked on its frame**, with what it was derived from,
+  from the `derived_from:` record the runner writes into the snapshot (§7.6, task
+  080 decision 5 as amended). The frame is where the mark belongs, because the
+  derivation produced the lanes and the lanes are what the frame encloses. A
+  hand-authored list has no record and its frame is drawn exactly as before.
+
+A lane's caption additionally carries the lane's own **block reason**, not just
+its state: the lane's steps run in the child, so the caption is the only place
+that fact can be told (051 decision 1 is kept — the state rides on the caption,
+never on the inline step nodes). `l` opens the lane under the graph cursor.
+
 `e` and `R` are absent from this tab: a snapshot has no file to open and no
 registry entry to re-read.
 
@@ -7831,6 +7973,18 @@ In the daemon view, identity, config and adapters refresh on open and on `R`; th
 log alone re-reads on a short timer, because it is the only part that changes while
 you watch. Uptime ticks locally from the daemon's `started_at` rather than from a
 fetched figure, so it cannot drift between refreshes.
+
+*Amended 2026-09-03 (issue #316).* Walking a fan-out is four keys, registered in
+`internal/tui/bindings.go` like every other. On the **board**, `L` expands or
+collapses the selected fan-out's lanes rather than drilling into them. In the
+**task workspace**, `l` opens the lane the current tab's selection resolves to
+and `U` opens this lane's parent — both on every tab that can name a lane,
+because a reader standing anywhere in a parent means the same thing by them, and
+the tabs differ only in which lane `l` resolves to. In the **Output pane**,
+`<`/`>` step the lane selector. Where a tab already had a meaning for `l` — the
+vim-right that steps the attempt selector — that meaning is kept for a task with
+no lane to open. `esc` gains one rung below the popup and above the screen: the
+task this one was opened *from*.
 
 ### Mouse
 

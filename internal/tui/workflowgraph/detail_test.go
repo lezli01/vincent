@@ -41,12 +41,21 @@ func fullStep() apiclient.WorkflowStepDef {
 		Steps:          []apiclient.WorkflowStepDef{step("inner", "command")},
 		MaxParallel:    intp(2),
 		Lanes:          []apiclient.WorkflowLaneDef{{ID: "api"}},
-		Merge:          &apiclient.WorkflowMergeDef{OnConflict: "block"},
-		Count:          intp(3),
-		ForEach:        []string{`{{ .Steps.plan.Result }}`},
-		MaxIterations:  intp(5),
-		Workflow:       "go-checks",
-		ResolvedFrom:   []string{"outer", "inner"},
+		Schedule:       "eager",
+		// Snapshot-only, and in the fixture for that reason: the modal is the
+		// one view that shows a step in full, and a derived lane list that
+		// did not say what it was derived from would read as a hand-written
+		// one (task 080).
+		DerivedFrom: &apiclient.WorkflowDerivationDef{
+			Lane:    "{{ .Item.id }}",
+			ForEach: []string{`{{ .Steps.plan.Result }}`},
+		},
+		Merge:         &apiclient.WorkflowMergeDef{OnConflict: "block"},
+		Count:         intp(3),
+		ForEach:       []string{`{{ .Steps.plan.Result }}`},
+		MaxIterations: intp(5),
+		Workflow:      "go-checks",
+		ResolvedFrom:  []string{"outer", "inner"},
 	}
 }
 

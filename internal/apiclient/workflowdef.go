@@ -96,7 +96,16 @@ type WorkflowStepDef struct {
 	MaxParallel *int              `json:"max_parallel,omitempty"`
 
 	Lanes []WorkflowLaneDef `json:"lanes,omitempty"`
-	Merge *WorkflowMergeDef `json:"merge,omitempty"`
+	// Schedule is a fan_out's lane scheduling mode: `barrier` (what an
+	// absent field means) or `eager` (§7.6, task 081). The graph draws the
+	// difference, so the client has to carry it.
+	Schedule string `json:"schedule,omitempty"`
+	// DerivedFrom is what a materialized lane list was derived from (task
+	// 080). A registry entry never has it; a snapshot whose fan-out has
+	// already derived its lanes always does, which is how the graph tells a
+	// derived list from a hand-authored one after materialization.
+	DerivedFrom *WorkflowDerivationDef `json:"derived_from,omitempty"`
+	Merge       *WorkflowMergeDef      `json:"merge,omitempty"`
 
 	// Exactly one of Count and ForEach drives a loop. ForEach is templates,
 	// not values: what it iterates is discovered when the loop runs, so a
@@ -115,11 +124,22 @@ type WorkflowStepDef struct {
 	ResolvedFrom []string `json:"resolved_from,omitempty"`
 }
 
+// WorkflowDerivationDef is `derived_from:`: the `lane:` id template and the
+// `for_each:` templates a materialized lane list was rendered from.
+type WorkflowDerivationDef struct {
+	Lane    string   `json:"lane,omitempty"`
+	ForEach []string `json:"for_each,omitempty"`
+}
+
 // WorkflowLaneDef is one fan_out lane: a named registry workflow or inline
 // steps, never both in an authored file.
 type WorkflowLaneDef struct {
-	ID           string            `json:"id"`
-	If           string            `json:"if,omitempty"`
+	ID string `json:"id"`
+	If string `json:"if,omitempty"`
+	// Needs names the sibling lanes that must be done and merged before this
+	// one spawns (§7.6, task 080). It is the lane DAG's edge list, which the
+	// graph draws.
+	Needs        []string          `json:"needs,omitempty"`
 	Workflow     string            `json:"workflow,omitempty"`
 	ResolvedFrom string            `json:"resolved_from,omitempty"`
 	Steps        []WorkflowStepDef `json:"steps,omitempty"`

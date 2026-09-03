@@ -237,6 +237,10 @@ func (t *taskView) renderPullTab(width, height int) string {
 	lines = append(lines, t.pullHeaderLines(width)...)
 	lines = append(lines, "")
 	lines = append(lines, t.checkLines(width)...)
+	if lanes := t.laneRowLines(width); len(lanes) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, lanes...)
+	}
 	if note := t.pullTab.note; note != "" {
 		style := styleDim
 		if t.pullTab.noteBad {
@@ -362,8 +366,93 @@ func shortRef(ref string) string {
 // same lie in a different place.
 func (t *taskView) pullHintLine() string {
 	hints := []string{"o open PR", "r refresh", "u unlink"}
+	if len(t.lanes) > 0 {
+		hints = append(hints, "l open lane")
+	}
 	if run := t.selectedCheck(); run != nil && run.URL != "" {
 		hints = append([]string{"c open check"}, hints...)
 	}
 	return strings.Join(hints, " · ")
+}
+
+// ---------------------------------------------------------------------------
+// Lane rows (#316).
+//
+// A fan-out parent's own pull request is unchanged and stays on top. Beneath
+// it, one row per lane: its branch, and the pull request linked to it. The
+// rows carry no checks — checks stay one call for one task, and `l` opens the
+// lane, whose own Pull Request tab has them.
+// ---------------------------------------------------------------------------
+
+// lanePullsCmd fetches the project's pull requests once, rather than one
+// call per lane: every row carries the task it is linked to, so a single
+// listing answers for all of them. `all` rather than the default `open`
+// because a merged lane is precisely the one a reader is checking on.
+func (t *taskView) lanePullsCmd() tea.Cmd {
+	client, id := t.detail.client, t.detail.taskID
+	project := t.detail.task.ProjectID
+	if client == nil || id == 0 || project == 0 || len(t.lanes) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		pulls, err := client.ListGitHubPulls(ctx, project, apiclient.GitHubPullsOptions{State: "all"})
+		return taskLanePullsMsg{taskID: id, pulls: pulls, err: err}
+	}
+}
+
+// applyLanePulls keeps the last good mapping on a failed listing: GitHub
+// being unreachable is not a lane losing its pull request, and blanking the
+// rows would say it was.
+func (t *taskView) applyLanePulls(msg taskLanePullsMsg) {
+	if msg.taskID != t.detail.taskID || msg.err != nil {
+		return
+	}
+	pulls := make(map[int64]apiclient.GitHubPullRequest, len(t.lanes))
+	for _, pull := range msg.pulls {
+		if pull.TaskID != nil {
+			pulls[*pull.TaskID] = pull
+		}
+	}
+	t.lanePulls = pulls
+}
+
+// laneRowLines is the lane block under the parent's own pull request.
+func (t *taskView) laneRowLines(width int) []string {
+	if len(t.lanes) == 0 {
+		return nil
+	}
+	out := []string{styleTitle.Render(fmt.Sprintf("  lanes — %d", len(t.lanes)))}
+	for i, lane := range t.lanes {
+		marker := "  "
+		if i == t.laneSel {
+			marker = "▸ "
+		}
+		pull := "no pull request"
+		if p, ok := t.lanePulls[lane.ID]; ok {
+			pull = fmt.Sprintf("#%d %s", p.Number, p.Status())
+		}
+		line := fmt.Sprintf("  %s%-14s %-12s %s", marker, lane.State, pull,
+			valueOr(lane.BranchName, "no branch"))
+		line = laneRowStyle(lane).Render(line) +
+			styleDim.Render("  "+laneName(lane)+" · task "+strconv.FormatInt(lane.ID, 10))
+		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
+	}
+	return out
+}
+
+// laneRowStyle colours a lane row by whether it is news: a lane that stopped
+// short of `done` is what a reader on this tab is looking for.
+func laneRowStyle(lane apiclient.Task) lipgloss.Style {
+	switch {
+	case lane.State == stateDone:
+		return styleOK
+	case lane.State == stateBlocked:
+		return styleBad
+	case laneSettled(lane.State):
+		return styleWarn
+	default:
+		return styleDim
+	}
 }

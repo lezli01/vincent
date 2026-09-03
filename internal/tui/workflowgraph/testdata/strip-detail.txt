@@ -17,6 +17,15 @@ plan: id=plan type=agent check=go build ./...
 maybe: id=maybe type=command if={{ eq .Fields.mode "full" }}
 ship: id=ship type=command
 #end:
+== lanedag
+plan: id=plan type=agent
+spread: id=spread type=fan_out
+spread.api/api_work: id=api_work type=agent
+spread.db/db_work: id=db_work type=agent
+spread.wire/wire_work: id=wire_work type=agent
+#merge:spread: on_conflict=block join=spread
+ship: id=ship type=command
+#end:
 == laneshadow
 build: id=build type=command
 spread: id=spread type=fan_out

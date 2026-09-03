@@ -282,12 +282,19 @@ func buildOverlay(task apiclient.TaskDetail, nodes []workflowgraph.Node, laneCol
 	}
 	sort.Slice(out.Off, func(i, j int) bool { return out.Off[i].StepID < out.Off[j].StepID })
 
+	// A lane's caption is the only place its child task's state can be told,
+	// so it is filled the way a node's is rather than with the state alone:
+	// a lane blocked on `worktree_dirty` has to say `worktree_dirty` on the
+	// caption, because the lane's own steps run in the child and the parent
+	// paints none of them (decision 1).
 	for _, col := range laneCols {
 		child, ok := lanes[col.ID]
 		if !ok {
 			continue
 		}
-		out.Lanes[col.Key] = workflowgraph.RunState{State: child.State, ChildTaskID: child.ID}
+		rs := workflowgraph.RunState{State: child.State, ChildTaskID: child.ID}
+		rs.Task, rs.BlockReason = parkedFrom(child.State, child.BlockReason, child.PauseRequested)
+		out.Lanes[col.Key] = rs
 	}
 	return out
 }
@@ -306,17 +313,26 @@ func currentStepID(task apiclient.TaskDetail) string {
 // it: a task waiting on a human or stopped by the daemon says *where* it is
 // stuck, which is the gap this tab exists to close.
 func parkedState(task apiclient.TaskDetail) (state, reason string) {
-	switch task.State {
+	return parkedFrom(task.State, task.BlockReason, task.PauseRequested)
+}
+
+// parkedFrom is the judgement itself, over the three fields it needs. It is
+// separate from parkedState because a fan_out lane is parked on exactly these
+// terms and carries them on an `apiclient.Task` rather than a TaskDetail: one
+// definition, so a lane and the task it hangs off cannot disagree about what
+// `blocked` means.
+func parkedFrom(state string, blockReason *string, pauseRequested bool) (string, string) {
+	switch state {
 	case "blocked", "awaiting_input":
-		state = task.State
 	default:
-		if task.PauseRequested {
+		if pauseRequested {
 			return "paused", ""
 		}
 		return "", ""
 	}
-	if task.BlockReason != nil {
-		reason = *task.BlockReason
+	reason := ""
+	if blockReason != nil {
+		reason = *blockReason
 	}
 	return state, reason
 }

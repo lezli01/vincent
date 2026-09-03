@@ -59,10 +59,13 @@ type PlacedGroup struct {
 	ID    string
 	Kind  GroupKind
 	Label string
-	X     int
-	Y     int
-	W     int
-	H     int
+	// Note is the group's extra sentence, drawn on the frame's top border
+	// beside its kind. Empty for every frame that has nothing to add.
+	Note string
+	X    int
+	Y    int
+	W    int
+	H    int
 }
 
 // RoutedEdge is one connector as an orthogonal polyline. Points are the
@@ -186,11 +189,7 @@ func (l *layouter) leaf(id string) block {
 func (l *layouter) group(g Group) block {
 	header := l.leaf(g.Header)
 
-	var cols []block
-	for _, c := range g.Columns {
-		cols = append(cols, l.sequence(c.Nodes))
-	}
-	inner := row(cols, l.opts.ColumnGap)
+	inner := l.columns(g)
 
 	// The frame is a border on every side plus one blank row inside the top
 	// and bottom. Those rows are where the connectors fanning into the
@@ -208,7 +207,8 @@ func (l *layouter) group(g Group) block {
 	inner.translate(1, 2+captions)
 	frame.absorb(inner)
 	frame.groups = append(frame.groups, PlacedGroup{
-		ID: g.ID, Kind: g.Kind, Label: g.Label, X: 0, Y: 0, W: frame.w, H: frame.h,
+		ID: g.ID, Kind: g.Kind, Label: g.Label, Note: g.Note,
+		X: 0, Y: 0, W: frame.w, H: frame.h,
 	})
 
 	parts := []block{header, frame}
@@ -216,6 +216,58 @@ func (l *layouter) group(g Group) block {
 		parts = append(parts, l.leaf(merge))
 	}
 	return stack(parts, l.opts.RankGap)
+}
+
+// columns lays a group's columns out inside its frame: one row of them, or —
+// when a fan_out's lanes form a `needs:` DAG — one row per wave, stacked in
+// round order (§7.6, task 080).
+//
+// Stacking is what makes the rounds visible: a dependent lane sits *below*
+// the lanes it needs, so its `needs:` connectors run downward into it the way
+// every other edge in the picture does. A list where no lane needs another is
+// one wave and lays out exactly as it always has, which is the property that
+// keeps every flat fan-out's geometry unchanged.
+func (l *layouter) columns(g Group) block {
+	waves := waveOrder(g.Columns)
+	rows := make([]block, 0, len(waves))
+	for _, wave := range waves {
+		cols := make([]block, 0, len(wave))
+		for _, c := range wave {
+			cols = append(cols, l.sequence(c.Nodes))
+		}
+		rows = append(rows, row(cols, l.opts.ColumnGap))
+	}
+	// Two rows above each wave past the first: its captions, and the blank
+	// row its incoming connectors turn in — the same pair the frame keeps
+	// above wave one.
+	return stack(rows, l.opts.RankGap+2)
+}
+
+// waveOrder groups a fan_out's columns into waves, source order preserved
+// inside each. Every other group kind — and any fan_out whose lanes need
+// nothing — is one wave, which is the whole list in the order it was
+// declared.
+func waveOrder(cols []Column) [][]Column {
+	maxWave := 0
+	for _, c := range cols {
+		maxWave = max(maxWave, c.Wave)
+	}
+	if maxWave <= 1 {
+		return [][]Column{cols}
+	}
+	out := make([][]Column, 0, maxWave)
+	for w := 1; w <= maxWave; w++ {
+		var row []Column
+		for _, c := range cols {
+			if c.Wave == w {
+				row = append(row, c)
+			}
+		}
+		if len(row) > 0 {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // mergeOf names a fan_out group's join node, and is empty for every other

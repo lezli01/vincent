@@ -141,6 +141,13 @@ type canvas struct {
 	// crossing instead of one silently overwriting the other.
 	wires  map[Point]dirSet
 	arrows map[Point]string
+	// reserved are the cells a lane caption claimed. The layout keeps a row
+	// above a fan_out's columns for exactly this text, and the header's
+	// connector crosses it on its way down — so the caption wins there, and
+	// the connector shows the one-cell gap. A caption punched through in the
+	// middle of a word ("blo│ked") is unreadable; a vertical run with a gap
+	// on the row a caption owns still reads as one line.
+	reserved map[Point]bool
 	// labels are drawn last, onto blank cells only: a `true` printed over a
 	// connector is worse than one that had to move.
 	labels []pendingLabel
@@ -152,7 +159,10 @@ type pendingLabel struct {
 }
 
 func newCanvas(w, h int) *canvas {
-	c := &canvas{w: max(w, 0), h: max(h, 0), wires: map[Point]dirSet{}, arrows: map[Point]string{}}
+	c := &canvas{
+		w: max(w, 0), h: max(h, 0),
+		wires: map[Point]dirSet{}, arrows: map[Point]string{}, reserved: map[Point]bool{},
+	}
 	c.runes = make([][]rune, c.h)
 	c.styles = make([][]cellStyle, c.h)
 	for y := range c.runes {
@@ -223,8 +233,28 @@ func (c *canvas) frame(g PlacedGroup, gl glyphSet) {
 	c.set(right, bottom, f.br, styleFrame)
 
 	// The kind is spelled on the border, because a frame weight alone is not
-	// something a reader can name (decision 18).
+	// something a reader can name (decision 18). A note — today, what a
+	// derived fan-out's lanes were derived from — rides beside it, and gives
+	// way whole rather than truncating the word the frame is named by.
 	label := " " + string(g.Kind) + " "
+	if g.Note != "" {
+		// The note gives way in one step before it disappears: a frame too
+		// narrow for "derived from {{ … }}" still has room to say "derived",
+		// and that a list was derived at all is the half a reader cannot
+		// recover from anywhere else on the picture.
+		//
+		// It also has to end before the frame's centre column, which is where
+		// the connector from the group's header crosses the border: a note
+		// drawn under it is painted through, because wires are resolved after
+		// frames and a wire may legitimately cross one.
+		for _, note := range []string{g.Note, firstWord(g.Note)} {
+			wide := " " + string(g.Kind) + " · " + note + " "
+			if 2+ansi.StringWidth(wide) < g.W/2 {
+				label = wide
+				break
+			}
+		}
+	}
 	if g.W > ansi.StringWidth(label)+4 {
 		c.text(g.X+2, g.Y, label, styleFrame)
 	}
@@ -244,11 +274,47 @@ func (c *canvas) captions(g Group, s Scene, run Overlay) {
 	if !ok {
 		return
 	}
+	// Waves are captioned per row rather than once at the top of the frame:
+	// a dependent lane sits below the lanes it needs (task 080), and a
+	// caption pinned to the frame would name a column that is nowhere near
+	// it. Two rows above a lane's first node is where the frame already
+	// keeps room, so a one-wave fan-out is captioned exactly where it always
+	// was.
+	rounds := 0
+	for _, col := range g.Columns {
+		rounds = max(rounds, col.Wave)
+	}
+	// A caption may run past its own column into the gap beside it, stopping
+	// at the next caption on its row or at the frame. A lane says more than a
+	// node does — its child task, that task's state, and the reason it
+	// blocked — and a lane truncated to `blocked worktr…` has lost the half
+	// that was worth printing (task 051 decision 1).
+	type placedCaption struct{ x, y, limit int }
+	spots := map[string]placedCaption{}
 	for _, col := range g.Columns {
 		if len(col.Nodes) == 0 || col.Label == "" {
 			continue
 		}
-		first, found := s.Node(col.Nodes[0])
+		if first, found := s.Node(col.Nodes[0]); found {
+			spots[col.Key] = placedCaption{
+				x: first.X, y: max(first.Y-2, frame.Y+1), limit: frame.X + frame.W - 1 - first.X,
+			}
+		}
+	}
+	for key, spot := range spots {
+		for _, other := range spots {
+			if other.y != spot.y || other.x <= spot.x {
+				continue
+			}
+			spot.limit = min(spot.limit, other.x-spot.x-1)
+		}
+		spots[key] = spot
+	}
+	for _, col := range g.Columns {
+		if len(col.Nodes) == 0 || col.Label == "" {
+			continue
+		}
+		spot, found := spots[col.Key]
 		if !found {
 			continue
 		}
@@ -256,26 +322,51 @@ func (c *canvas) captions(g Group, s Scene, run Overlay) {
 		if len(col.Badges) > 0 {
 			text += " " + strings.Join(col.Badges, " ")
 		}
+		// The round is named only where there is more than one of them: on a
+		// flat list every lane is round 1 and saying so would be noise.
+		if rounds > 1 && col.Wave > 0 {
+			text += " w" + strconv.Itoa(col.Wave)
+		}
 		// A lane's run state lands here rather than on its inline steps: they
 		// run in a child task, so the parent holds no step_run for them
 		// (task 051 decision 1).
 		if rs, ok := run.Lanes[col.Key]; ok {
 			text = laneCaption(text, rs)
 		}
-		c.text(first.X, frame.Y+1, truncate(text, first.W), styleFrame)
+		caption := truncate(text, spot.limit)
+		c.text(spot.x, spot.y, caption, styleFrame)
+		for i := range ansi.StringWidth(caption) {
+			c.reserved[Point{spot.x + i, spot.y}] = true
+		}
 	}
 }
 
-// laneCaption appends a lane's child task and its state to the caption that
-// already carries the lane id and its guard.
+// laneCaption appends a lane's child task and what that task is doing to the
+// caption that already carries the lane id and its guard.
+//
+// It says as much as an ordinary node's label row does, and by the same
+// words: a lane that is blocked names the reason it blocked on, because a
+// lane *is* a task and "blocked" without the reason is the one thing this
+// surface exists to say and does not (task 051 decision 1 — the state rides
+// on the caption, never on the lane's inline step nodes, which run in the
+// child and which the parent holds no row for).
 func laneCaption(text string, rs RunState) string {
 	if rs.ChildTaskID > 0 {
 		text += " #" + strconv.FormatInt(rs.ChildTaskID, 10)
 	}
-	if rs.State != "" {
-		text += " " + rs.State
+	if words := stateWords(rs); len(words) > 0 {
+		text += " " + strings.Join(words, " ")
 	}
 	return text
+}
+
+// firstWord is a note reduced to its head — "derived from {{ … }}" to
+// "derived" — which is what a frame narrow enough to lose the rest still says.
+func firstWord(s string) string {
+	if i := strings.IndexByte(s, ' '); i > 0 {
+		return s[:i]
+	}
+	return s
 }
 
 func placedGroup(s Scene, id string) (PlacedGroup, bool) {
@@ -390,6 +481,9 @@ func (c *canvas) paintWires(gl glyphSet) {
 	for _, p := range keys {
 		glyph, ok := gl.junction[c.wires[p]]
 		if !ok {
+			continue
+		}
+		if c.reserved[p] {
 			continue
 		}
 		if arrow, isHead := c.arrows[p]; isHead && arrow != "" {
