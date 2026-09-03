@@ -1,0 +1,33 @@
+-- 0026_loop_extent: how many iterations the admission that wrote a body row
+-- planned to run — the loop's extent, recorded beside the item that row ran on
+-- (§7.8, issue #317).
+--
+-- A reader asking "iteration 2 of how many?" had no answer on the row, so it
+-- reconstructed one from the definition: `count:`, else the step's
+-- `max_iterations:`, else the global `loop.max_iterations` ceiling. For a
+-- `for_each` carrying neither, that ceiling is not the loop's number at all —
+-- a three-item loop rendered `2/10`. The extent is only knowable from the
+-- resolved list, and only the admission that resolved it knows it.
+--
+-- It is recorded rather than re-asked for the same reason `loop_item` is
+-- (migration 0009, task 016 decision 8): asking the live actor works only
+-- while one exists, so a blocked or paused loop — the one a human is actually
+-- looking at — would fall back to the ceiling again. This is decision 8's
+-- sentence carried one word further: the row already says *which item*
+-- iteration 3 ran on, and now says *how many iterations that admission
+-- planned*.
+--
+-- It is **not** a cursor (decision 7 refused one): nothing reads it back to
+-- decide what to run next, and §12.4 recovery has nothing to reconcile with
+-- it. It is display only.
+--
+-- 0 means no extent was recorded: every row outside a loop, and every row
+-- written before this migration. Readers fall back to what they did before on
+-- 0, so a task already in flight renders exactly as it did before the upgrade.
+--
+-- The value written is whatever planLoop computed, *including* its clamp
+-- against the iterations already on record — which is what keeps a shrinking
+-- `for_each` source from making a later row disagree with an earlier one.
+--
+-- No index: it is read only through rows already selected by task and step.
+ALTER TABLE step_runs ADD COLUMN loop_total INTEGER NOT NULL DEFAULT 0; -- 0 = no extent recorded

@@ -10,6 +10,7 @@ import (
 )
 
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
+	loop_total,
 	state, agent, model, effort, pid,
 	proc_started_at, proc_identity, container_id, exit_code, check_exit_code, failure_reason, skip_reason,
 	result_summary,
@@ -97,13 +98,15 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 	}
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
+			loop_total,
 			state, agent, model, effort, pid,
 			proc_started_at, proc_identity, container_id, exit_code, check_exit_code, failure_reason,
 			skip_reason,
 			result_summary, stdout_tail, status_message, prompt_override, run_override, transcript_path,
 			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
+		r.LoopTotal,
 		string(r.State),
 		nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ContainerID, r.ExitCode, r.CheckExitCode,
@@ -378,7 +381,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		started                                 string
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
-		&r.Iteration, &loopItem,
+		&r.Iteration, &loopItem, &r.LoopTotal,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &procIdentity, &containerID,
 		&exitCode, &checkExit,
 		&failure, &skip, &summary, &stdoutTail, &status, &promptOv, &runOv, &transcript,
