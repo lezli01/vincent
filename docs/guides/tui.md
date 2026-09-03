@@ -1053,6 +1053,7 @@ Inside the form:
 | `a` | Add a step, lane or declared field after the one under the cursor |
 | `d` | Remove the step, lane or declared field under the cursor — asks first |
 | `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |
+| `ctrl+s` | Save, in the multi-line pane and the key/value sub-form below — the two places `enter` does something else |
 | `R` | Re-read the file — the reload a refused save offers |
 | `esc` | Leave the nested body, then the editor |
 

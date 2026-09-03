@@ -1,0 +1,15 @@
+name: lanetemplate
+steps:
+  - {id: plan, type: agent, prompt: emit the work units}
+  - id: spread
+    type: fan_out
+    max_lanes: 4
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      steps:
+        - {id: work, type: agent, prompt: build this unit}
+        - {id: verify, type: command, run: make test}
+    merge:
+      on_conflict: block
+  - {id: ship, type: command, run: make ship}
