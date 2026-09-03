@@ -212,6 +212,12 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
   Output, Diff, and Workflow tabs, plus a Pull Request tab on a task that has
   one linked; each tab uses the whole view.
+- A fan-out is something you can watch. `L` hangs a fan-out parent's lanes
+  under it as indented board rows in every state it passes through — without
+  putting them in any count — one key opens the lane you are pointing at and
+  another opens a lane's parent, the Output pane cycles the lanes' live output,
+  the Diff tab groups `lane › file` so you can see which lane wrote what, and a
+  failed join names the lane, its child task and that lane's own block reason.
 - The Output tab and the chat workspace share one renderer, and one verbosity
   level. Assistant prose is rendered as Markdown — headings, lists, blockquotes,
   inline and fenced code, rules, tables, links and images become terminal
@@ -244,10 +250,11 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   once, with the task claiming each one, and is where a link is made or removed
   by hand. It is offered only when at least one project qualifies.
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
-  conditions, loops, guards, checks, and nested includes — and, on a task's own
-  Workflow tab, what each step of that task did on it, live. `enter` opens any
-  node in full: its prompt or `run:` body, and the values it inherits from the
-  file's `defaults` block.
+  the `needs:` edges between lanes and the waves they run in, conditions,
+  loops, guards, checks, and nested includes — and, on a task's own Workflow
+  tab, what each step of that task did on it, live. `enter` opens any node in
+  full: its prompt or `run:` body, and the values it inherits from the file's
+  `defaults` block.
 
 The screenshots in the main [README](../README.md#tui-tour) are real renders
 using representative workloads. [Using the TUI](guides/tui.md) documents every

@@ -1090,6 +1090,25 @@ curl -sS "http://127.0.0.1:$PORT/v1/tasks/12/workflow" \
 outermost first — after a splice there is no `include` step left to attribute
 it to, so the step carries it.
 
+`derived_from` is the other field only a snapshot has. A `fan_out` step whose
+lanes were **derived** at run time from `for_each:` carries the lane list it
+produced in `lanes` and a record of what produced it beside them:
+
+```json
+{ "id": "spread", "type": "fan_out",
+  "lanes": [ { "id": "auth", … }, { "id": "billing", … } ],
+  "derived_from": { "lane": "{{ .Item.name }}",
+                    "for_each": ["{{ (index .Steps \"plan\").Result }}"] } }
+```
+
+Only the `lane:` id template and the `for_each:` templates are kept — the rest
+of the lane template is already visible on every lane it produced. It is what
+lets a client tell a derived lane list from a hand-written one after
+materialization, which is otherwise lossy; the TUI's Workflow tab marks the
+frame with it. A registry entry never carries it, `GET /v1/workflows/schema`
+does not publish it, and a workflow document that declares it is rejected the
+way an unknown key is (§7.6).
+
 The envelope carries no `scope`, `file`, `platforms` or `platform_supported`:
 those are registry facts a snapshot has none of. Where the task's definition
 came from is `workflow_origin` on `GET /v1/tasks/{id}`.

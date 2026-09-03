@@ -269,6 +269,7 @@ steps:
         needs: [api, db]
         steps:
           - {id: wire_up, type: agent, prompt: wire the two together}
+  - {id: ship, type: command, run: make ship}
 ```
 
 **Look for:** an `eager` badge on the `fan_out` node; `api` and `db` captioned
