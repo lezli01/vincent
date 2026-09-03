@@ -106,8 +106,10 @@ under width pressure they are dropped instead.
 comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
 the two columns whose content actually outgrows them — and only what neither
 can use comes back to the title. So a 200-column board shows
-`3/7 green · loop 4/10` whole instead of spending the room on a title's
-trailing blanks.
+`3/7 green · loop 4/10 · repair 2/3` whole instead of spending the room on a
+title's trailing blanks. A loop rollup too wide for the column it is given
+drops clauses from the tail rather than wrapping — the body step goes first,
+then the `for_each` item, then the counter, which is the last thing to survive.
 
 A wide terminal also gets a **`STATUS` column**: what the task's newest step run
 said about *itself*, if it said anything —
@@ -321,8 +323,24 @@ iteration**, folded shut with the latest one open, and a `for_each` iteration's
 header names the item it ran on. Ten passes of a four-step body is forty rows,
 and the one you arrived to read is almost always the pass it stopped on.
 
+Folded is not unreachable. `space` opens or closes the tier the cursor is in,
+`→` opens it and `←` closes it, `enter` on a folded tier's header opens it
+(and on a drawn attempt still opens Output), and `O`/`C` open and close every
+tier of the task — the same two letters the Diff tab uses. Latest-open is only
+where the timeline *starts*: what you open stays open while the task refreshes,
+and opening another task starts fresh. `↑`/`↓` stop **once** on a folded tier,
+on its header, so the cursor is always somewhere you can see; the Output tab's
+`←`/`→` still walk every attempt, folded or not.
+
+A multi-round `fan_out` (§7.6) gets the same tier under a different word: its
+rounds read `round 0`, `round 1`, … — 0-based, because that is the number the
+transcript file and the log line use — and the same keys open and close them.
+
 The board's and the header's step column say the same thing more briefly: a
-task inside a loop reads `3/7 green · loop 4/10`.
+task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it is
+on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the
+ceiling it is bounded by), and the body step that pass is on, which is the one
+thing the outer `3/7` cannot say because it counts the whole loop as one step.
 
 Two things on an attempt line are worth telling apart. A red word like
 `check_failed` is vincent's **failure reason** — a fixed set of constants, and
@@ -341,7 +359,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `]` / `[` | Next / previous task tab |
 | `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
 | `6` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
-| `enter` | From Steps & Attempts, open the selected attempt in Output |
+| `enter` | From Steps & Attempts, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
+| `space` | On Steps & Attempts, open or close the iteration/round tier the cursor is in |
+| `←`/`→` | On Steps & Attempts, close / open that tier |
+| `O` / `C` | On Steps & Attempts, open / close every iteration and round tier of this task |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `v` | More or less detail: compact → normal → verbose (reasoning, the run's own metadata, then unrecognized lines) |

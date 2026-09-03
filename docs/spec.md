@@ -1379,6 +1379,15 @@ does not finish until every lane is merged.
     the retry budget and the §12.2 transcript name. `.Steps["build"].Result`
     still resolves to the latest row.
 
+  *Amended 2026-09-03 (issue #317).* Because rounds ride the loop's column, the
+  TUI renders them as the loop's tier too (§15): a multi-round step's rows are
+  grouped and folded under a **`round N`** header, 0-based, opened and closed
+  with the same keys a loop's iterations are. The number is the column's value,
+  so the screen, the log line and the §12.2 transcript name all say the same
+  one. Which noun titles the tier comes from the step's type in the task's
+  workflow snapshot — the rows alone cannot tell a round from a pass — and a
+  task whose snapshot has not arrived keeps the loop's word.
+
   A step whose **selected lanes declare no `needs:`** among themselves runs as
   a barrier whatever `schedule:` says. Such a list spawns in one round under
   either mode, so eager could only change *when* the lanes merge — and merging
@@ -1572,6 +1581,30 @@ once, a loop is a **sequence** run more than once.
   `for_each` row also carries its `loop_item`. The loop has no row of its own;
   its outcome is derived. A body step's transcript is
   `{step_index}-i{iteration}-{step_id}-{attempt}.jsonl` (§12.2).
+  *Amended 2026-09-03 (issue #317):* every body row also carries `loop_total`
+  (migration 0026) — how many iterations **the admission that wrote it**
+  planned, which is the `count:` or the resolved `for_each` list's length,
+  clamp included. That is the sentence beside `loop_item` carried one word
+  further: the row already said which item iteration 3 ran on, and now says how
+  many iterations that pass was one of. It is not a cursor (task 016 decision 7
+  refused one): nothing reads it back to decide what to run next and §12.4 has
+  nothing to reconcile with it, because the position is still derived from the
+  rows. It is 0 for every row outside a loop and for every row written before
+  the column existed, and a reader falls back to the ceiling on 0.
+- **Position on the wire.** *Added 2026-09-03 (issue #317).* The `loop` rollup
+  a task carries while its current step is a loop (§13.2) reports the loop's
+  **real extent** as `total` — the newest row's `loop_total`, absent until a row
+  records one, because before the first iteration a denominator would be a
+  guess that reads like an answer — and names the body step that iteration is
+  on as `body_step` with its 1-based `body_index` of `body_total`. The outer
+  `step k/n` counts a whole loop as one step, so without that clause "where is
+  this task" stops at the loop's own name. `max_iterations` keeps its own
+  meaning beside `total`: the bound the loop would block on. They are two
+  numbers and neither stands in for the other — a 3-item `for_each` under a
+  ceiling of 10 is `total: 3`, `max_iterations: 10`, and reads `loop 2/3`. The
+  body clause is absent **whole** — no id, no index, no total — for a row whose
+  `step_id` is not one of the snapshot's body ids: a repair row, or any row at
+  all once the snapshot no longer parses.
 - **`.Loop`** (§8.4) is `Index`, `Item`, `IsFirst`, `IsLast`, with `Index: 0`
   outside any loop.
 - **`iteration` is not only a loop's.** *Added 2026-09-01 (task 080).* A
@@ -6102,6 +6135,10 @@ CREATE TABLE step_runs (
   -- from these.
   iteration           INTEGER NOT NULL DEFAULT 0, -- 1-based inside a loop; 0 outside one
   loop_item           TEXT,                   -- the `for_each` item this iteration ran on; NULL otherwise
+  -- Added 2026-09-03 (0026, issue #317). How many iterations the admission
+  -- that wrote this row planned: the `count:`, or the resolved `for_each`
+  -- list's length. Display only — never read back to decide what runs next.
+  loop_total          INTEGER NOT NULL DEFAULT 0, -- 0 outside a loop, and for pre-0026 rows
   state               TEXT NOT NULL,          -- running | succeeded | failed | interrupted
                                               -- | approved | rejected | skipped | stopped
   agent               TEXT,                   -- adapter name, agent steps only
@@ -6381,7 +6418,9 @@ stream for the live tail.
    column, and it takes the width the fixed set leaves — but only up to a
    ceiling. Past that ceiling the surplus is spent in a fixed order: `STEP`
    first, up to a maximum wide enough for a step name with a loop rollup beside
-   it (`3/7 green · loop 4/10`); then `STATUS`, up to a maximum of a couple of
+   it (`3/7 green · loop 4/10 · repair 2/3`, amended 2026-09-03 for issue #317
+   from `3/7 green · loop 4/10`, which is the same measurement taken before the
+   rollup named its body step); then `STATUS`, up to a maximum of a couple of
    the board's lines of prose; and only then does the remainder go back to the
    title. The give-back is not a softening of the ceiling — it is what stops a
    board that has shed `STATUS` leaving dead cells on the right, and the title
@@ -6389,7 +6428,12 @@ stream for the live tail.
    ceiling and the `STATUS` column's admission gate are one value, because they
    are one fact: the title has cleared a comfortable width, so there is room to
    spend elsewhere. Below that width nothing changes — the shedding ladder, the
-   minimum title and every narrow board render exactly as they did. `STATE` is
+   minimum title and every narrow board render exactly as they did. *Amended
+   2026-09-03 (issue #317): a loop rollup that does not fit the `STEP` column it
+   is given **drops clauses from the tail** — the body step first, then the
+   `for_each` item, then the counter — rather than wrapping onto a second line.
+   Three clauses outgrow every width below the ceiling, and a row grown a line
+   to finish a counter spends its height on the least of what it says.* `STATE` is
    deliberately not among the columns a surplus reaches: the recorded reasoning
    above holds, and the wrap is what makes its overflow readable.
 
@@ -6450,6 +6494,22 @@ stream for the live tail.
 	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
 	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
 	   on that attempt.
+	   *Amended 2026-09-03 (issue #317):* a `loop`'s iterations and a multi-round
+	   `fan_out`'s rounds are folded tiers on the Steps & Attempts timeline, and
+	   they **open**. Latest-open stays the arrival default (task 016 decision 14
+	   — a reader arriving at a blocked task wants the pass it stopped on);
+	   `space` toggles the tier the cursor is in, `→` opens it, `←` closes it,
+	   and `O`/`C` open and close every tier of the task — the Diff tab's fold
+	   vocabulary verbatim. `enter` means both things, chosen by the row under
+	   the cursor: on a folded tier it opens the fold, and otherwise it opens
+	   Output as above. The timeline's selection stays a run id — `↑`/`↓` treat a
+	   folded tier as **one** cursor stop, its first row, and that tier's header
+	   carries the highlight while such a row is selected, so every selection
+	   they can reach is drawn. They previously walked onto rows a fold had not
+	   rendered, which left the highlight invisible and jumped the window to the
+	   top of the timeline. The Output tab's `←`/`→` are unchanged and still
+	   reach every attempt: a fold is a fact about the timeline pane, not about
+	   the task.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*

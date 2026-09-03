@@ -96,6 +96,7 @@ the living engineering specification records implementation contracts.
 | [080](080-fan-out-dag.md) | `needs:` between fan-out lanes, a round scheduler derived from the graph, and lanes derived from an earlier step's output | ✅ done (2/2) |
 | [081](081-eager-fan-out-scheduling.md) | `schedule: eager` on a `fan_out` step: a lane starts when its own `needs:` merge, woken by a settled-child watermark | ✅ done (1/1) |
 | [082](082-reported-agent-quota.md) | The real usage quota codex's app-server and Claude Code's status line now report, merged over the observed window on `GET /v1/agents` | ✅ done (1/1) |
+| [083](083-loop-legibility.md) | A loop's real extent and running body step on the rollup, and openable iteration/round tiers in the timeline that never lose the cursor | ✅ done (1/1) |
 
 ## How to add and update a task document
 

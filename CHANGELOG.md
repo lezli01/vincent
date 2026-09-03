@@ -13,6 +13,33 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A loop says where it is, and its earlier passes open.** The loop rollup on
+  the board and in the task header names the body step the current iteration is
+  on — `3/7 green · loop 4/10 · repair 2/3` — so "where is this task, right
+  now" no longer stops at the loop's own name, which is all the outer `k/n`
+  could ever say about a step that counts a whole loop as one. A `STEP` column
+  too narrow for all of it drops clauses from the tail rather than wrapping:
+  the body step goes first, then the `for_each` item, then the counter.
+
+  In the task workspace's Steps & Attempts tab, a folded iteration is no longer
+  unreachable. `space` opens or closes the tier the cursor is in, `→` opens and
+  `←` closes it, `enter` on a folded tier's header opens it (and still opens
+  Output on a drawn attempt), and `O`/`C` open and close every tier of the task
+  — the Diff tab's two letters in the same meaning. The timeline still *opens*
+  with the latest pass showing and the rest folded, so a reader arriving at a
+  blocked task lands on the pass it stopped on; what changed is that iteration
+  1 of a loop now on iteration 7 can be opened, its attempts selected, and
+  their output and transcript read. A multi-round `fan_out` gets the same tier
+  under its own word — `round 0`, `round 1`, … , 0-based, the number its
+  transcript file and log line already use — instead of being labelled as a
+  loop's iterations with its first round missing a header entirely.
+
+  On the wire the `loop` rollup gains `total`, `body_step`, `body_index` and
+  `body_total`, `GET /v1/tasks/{id}/steps` gains `loop_total` per row, and a
+  new column records what each admission planned. See
+  [the API reference](docs/reference/api.md) and
+  [Using the TUI](docs/guides/tui.md).
+
 - **vincent shows the real usage quota, where the agent CLI reports one.** The
   `quota` block on `GET /v1/agents` and `GET /v1/info` was an observation of a
   wall vincent had already watched a task hit; now it carries a measurement of
@@ -747,6 +774,25 @@ list with the user-facing context a commit subject cannot carry.
   filesystem and the shell, and that is all it claims to bound.
 
 ### Fixed
+
+- **A `for_each` loop showed a denominator that was never its own.** With no
+  `count:` and no step-level `max_iterations:`, the loop's total was read off
+  the workflow — where a `for_each` list does not exist yet, because it is
+  rendered at run time — and fell through to the global `loop.max_iterations`
+  ceiling. A 3-item loop rendered `loop 2/10` on the board and in the detail
+  header. Each body row now records how many iterations the admission that
+  wrote it planned, so the same loop reads `loop 2/3`. `max_iterations` keeps
+  its own meaning beside it — the bound the loop would block on — and a task
+  whose rows predate the column renders exactly as it did before the upgrade.
+
+- **`↑`/`↓` in the step timeline could leave no visible cursor.** The selection
+  walked every attempt including the ones a fold had not drawn, so pressing
+  `↓` through a loop moved it onto rows that were not on screen: the highlight
+  disappeared and the window jumped to the top of the timeline. A folded tier
+  is now a single stop — its first row — and the tier's header carries the
+  highlight while it is selected, so every selection the arrow keys can reach
+  is drawn. The Output tab's `←`/`→` are unchanged and still reach every
+  attempt.
 
 - **A `for_each:` list longer than 4 KiB was cut mid-item.** `.Steps.<id>.Result`
   for a command step is documented as the last 200 lines of its stdout, and the
