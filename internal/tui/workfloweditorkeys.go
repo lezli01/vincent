@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -27,6 +29,15 @@ func (w *workflowsView) updateEditorKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if e.input != nil {
 		return w.updateEditorInput(msg)
 	}
+	if e.overlay != nil {
+		// An overlay owns every key while it is open, its own esc included:
+		// what "cancel" and "save" mean belongs to the value being edited —
+		// enter is a newline in a pane and a choice in a picker — and the
+		// layer has no way to tell which without asking.
+		overlay, cmd := e.overlay.Update(msg)
+		e.overlay = overlay
+		return w, cmd
+	}
 	switch msg.String() {
 	case "up", "k":
 		e.cursor = max(0, e.cursor-1)
@@ -36,6 +47,17 @@ func (w *workflowsView) updateEditorKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return w, nil
 	case "enter":
 		return w, w.editorActivate()
+	case "a":
+		return w, w.editorAdd()
+	case "d":
+		// The removal itself waits on the confirmation the overlay asks for,
+		// so nothing is sent from here.
+		w.editorRemove()
+		return w, nil
+	case "K":
+		return w, w.editorMove(-1)
+	case "J":
+		return w, w.editorMove(1)
 	case "R":
 		// The reload a 409 offers, and the manual one. Both re-read the file
 		// and rebuild the rows from what it now says.
@@ -97,6 +119,25 @@ func (w *workflowsView) editorActivate() tea.Cmd {
 			next = "false"
 		}
 		return w.commitRow(row, next)
+	case apiclient.WorkflowControlText:
+		// A block scalar opens in the multi-line pane, never in the one-line
+		// field: the field's SetValue flattens newlines by design, and
+		// committing the flattened text rewrote a 60-line prompt as one line
+		// (issue #320, claim 2).
+		e.editing = e.cursor
+		pane, cmd := newWFEditorPane(row.value, func(v string) tea.Cmd { return w.commitRow(row, v) })
+		e.overlay = pane
+		return cmd
+	case apiclient.WorkflowControlAgent, apiclient.WorkflowControlModel,
+		apiclient.WorkflowControlEffort:
+		return w.openValuePicker(row)
+	case apiclient.WorkflowControlMap:
+		// A mapping row committed as a scalar is a file the daemon refuses;
+		// the sub-form is what makes `env:` and a lane's `fields:` editable
+		// at all (claim 6).
+		e.editing = e.cursor
+		e.overlay = newWFEditorMap(row.value, func(v string) tea.Cmd { return w.commitRow(row, v) })
+		return nil
 	}
 	in := newTextField()
 	in.SetValue(row.value)
@@ -159,7 +200,18 @@ func (w *workflowsView) commitRow(row wfEditRow, value string) tea.Cmd {
 		op.Value, op.Block = value, true
 	case row.field.Control == apiclient.WorkflowControlList:
 		op.Value = renderFlowList(value)
+	case row.field.Control == apiclient.WorkflowControlMap:
+		op.Value = renderFlowMap(value)
 	default:
+		if err := validateRowValue(row.field.Control, value); err != "" {
+			// An obvious mistake should not need a daemon round trip. The
+			// daemon stays the authority — a value that passes here and is
+			// still refused lands on the same row beside the same error —
+			// but "2 minutes" is not a §12.1 duration and never was.
+			e.rows[e.cursor].value = value
+			e.err = row.field.Name + ": " + err
+			return nil
+		}
 		op.Value = renderYAMLScalar(value)
 	}
 	// The row shows what was typed until the daemon answers. A rejected value
@@ -180,6 +232,38 @@ func renderFlowList(value string) string {
 		}
 	}
 	return "[" + strings.Join(out, ", ") + "]"
+}
+
+// renderFlowMap turns a `k=v, k=v` row into a YAML flow mapping. It is
+// [wfMap]'s inverse, so a mapping row shows what a commit would send.
+func renderFlowMap(value string) string {
+	pairs := parseMapRow(value)
+	out := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		if p.key == "" {
+			continue
+		}
+		out = append(out, renderYAMLScalar(p.key)+": "+renderYAMLScalar(p.value))
+	}
+	return "{" + strings.Join(out, ", ") + "}"
+}
+
+// validateRowValue is the check a typed row runs before the PATCH, and it
+// covers exactly the two controls whose shape a person gets wrong by typing:
+// an int and a §12.1 Go duration string. Everything else is the daemon's to
+// judge, and it judges all of them anyway.
+func validateRowValue(control, value string) string {
+	switch control {
+	case apiclient.WorkflowControlInt:
+		if _, err := strconv.Atoi(strings.TrimSpace(value)); err != nil {
+			return "must be a whole number, got " + strconv.Quote(value)
+		}
+	case apiclient.WorkflowControlDuration:
+		if _, err := time.ParseDuration(strings.TrimSpace(value)); err != nil {
+			return "must be a duration such as 30s, 5m or 1h30m, got " + strconv.Quote(value)
+		}
+	}
+	return ""
 }
 
 // renderYAMLScalar quotes a value YAML would otherwise read back as something
@@ -239,6 +323,16 @@ func (w *workflowsView) updateEditorMsg(msg tea.Msg) (panel, tea.Cmd, bool) {
 			return w, nil, true
 		}
 		e.rebuild()
+		return w, nil, true
+	case wfEditorAgentsMsg:
+		if msg.key != e.key {
+			return w, nil, true
+		}
+		// The catalog is only ever the answer to the picker that asked for
+		// it: a row the user has already left keeps whatever it had.
+		if pick, ok := e.overlay.(*wfEditorPicker); ok && pick.control == msg.control {
+			pick.setOptions(wfPickerOptions(msg.control, msg.agent, msg.agents))
+		}
 		return w, nil, true
 	case wfEditorSavedMsg:
 		e.saving = false

@@ -321,6 +321,14 @@ var bindings = []binding{
 	{key: "enter", label: "edit the row, cycle its values, or descend into a nested body", scope: scopePanel, context: ctxWorkflowEditor, hint: "enter edit", priority: 2},
 	{key: "R", label: "re-read the file (what a stale-write 409 offers)", scope: scopePanel, context: ctxWorkflowEditor, hint: "R reload", priority: 3},
 	{key: "esc", label: "leave the nested body, then the editor", scope: scopePanel, context: ctxWorkflowEditor, hint: "esc back", priority: 4},
+	// The structural keys (issue #320). They sit behind the takeover, so they
+	// never reach the workflows list's own `a`/`i`/`f`, and an insert carries
+	// the new entry's required fields: the daemon re-parses the whole file on
+	// every PATCH, so a step the form itself created must be valid on arrival.
+	{key: "a", label: "add a step, lane or declared field after the one under the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "a add", priority: 5},
+	{key: "d", label: "remove the item under the cursor (asks first)", scope: scopePanel, context: ctxWorkflowEditor, hint: "d remove", priority: 6},
+	{key: "K/J", label: "move the item up (K) or down (J); k and j still move the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "K/J move", priority: 7},
+	{key: "ctrl+s", label: "in the multi-line pane: save (enter inserts a newline there)", scope: scopePanel, context: ctxWorkflowEditor, hint: "ctrl+s save", priority: 8},
 
 	// The create/fork prompt. noPalette for the reason the step-detail
 	// modal's rows are: a form holds the keyboard on a text field, so `:`
