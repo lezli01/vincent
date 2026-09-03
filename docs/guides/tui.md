@@ -1014,7 +1014,17 @@ explaining itself](../assets/tui-workflow-editor.png)
 Every row comes from the schema the daemon serves, so a field that is not legal
 on the step you are editing is one the form does not offer — an `agent` step has
 no `run:` row, and the `type` row inside a `parallel` group lists only what may
-go there.
+go there. Every field the schema publishes has a row: a step's `timeout:`,
+`max_retries:`, `retry_backoff:`, `env:`, `max_parallel:`, `count:`,
+`for_each:`, `max_iterations:` and `schedule:` are read from the file and shown
+as it wrote them, and `max_retries: 0` reads as `0` rather than as `(unset)` —
+those two mean different things.
+
+The rows that hold a nested body are entered with `enter` and left with `esc`,
+one layer per press: a step's `steps:` and a fan-out's `lanes:`, `lane:` and
+`merge:`, and the workflow's own `fields:` and `defaults:` — the declared fields
+your new-task form will ask for, and the agent, model, effort, permission mode,
+retry and timeout every step inherits, including a `container:` block.
 
 `a` creates a workflow: choose a scope (global, or one of your projects) and a
 file name, and the editor opens on what was written. `f` forks the entry under
@@ -1022,7 +1032,9 @@ the cursor — including a built-in, which is the only way to change one. **A
 fork keeps the source's own `name:`**, which is what makes the copy shadow the
 original; pick a project scope and the project's copy wins from then on.
 
-There is no delete. Removing a workflow means removing its file.
+There is no delete of a **workflow**: removing one means removing its file. A
+step, a lane or a declared field inside a workflow can be removed, and `d` asks
+before it does.
 
 Saving preserves everything you did not edit — comments, key order, blank
 lines. The daemon owns the file and applies your change to its bytes, so the
@@ -1038,13 +1050,37 @@ Inside the form:
 |---|---|
 | `↑` / `↓` | Move between rows |
 | `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `a` | Add a step, lane or declared field after the one under the cursor |
+| `d` | Remove the step, lane or declared field under the cursor — asks first |
+| `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |
+| `ctrl+s` | Save, in the multi-line pane and the key/value sub-form below — the two places `enter` does something else |
 | `R` | Re-read the file — the reload a refused save offers |
 | `esc` | Leave the nested body, then the editor |
 
-There is no save key, because there is nothing to save: committing a row with
-`enter` **is** the write. Each row becomes one edit operation carrying the
-version the last read handed back, and a value the daemon refuses stays on
-screen beside its error rather than being reverted under you.
+There is no save key for a row, because there is nothing to save: committing a
+row with `enter` **is** the write, and so is answering `a`, `d` or `K`/`J`. Each
+one becomes a single edit operation carrying the version the last read handed
+back, and a value the daemon refuses stays on screen beside its error rather
+than being reverted under you.
+
+`a` on a list of steps asks which type first, offering only the types that are
+legal where the cursor is, and writes a skeleton with that type's required
+fields filled in with placeholders — so the file is valid between edits and the
+next change is not refused for a step the form itself just wrote.
+
+Some rows open something bigger than a text field:
+
+| Row | What `enter` opens |
+|---|---|
+| `prompt:`, `run:`, `instructions:` | A full-pane multi-line editor. `enter` inserts a newline, `ctrl+s` saves it back as a `\|` block scalar, `esc` abandons it. Opening one and closing it again writes nothing |
+| `agent:`, `model:`, `effort:` | The same filterable picker the new-task form uses, listing the agents the daemon detected and the selected agent's own catalog |
+| `env:`, a lane's `fields:` | A key/value sub-form: `enter` edits or adds a key, `d` drops one, `ctrl+s` writes the mapping |
+| An enum, a boolean | Nothing — `enter` cycles it in place |
+
+A whole-number row and a duration row are checked before the write, so
+`timeout: 2 minutes` is refused on the row that typed it rather than after a
+round trip. The daemon stays the authority for everything else, and for these
+too.
 
 And in the prompt `a` and `f` open:
 
@@ -1086,6 +1122,7 @@ How to read it. Every one of these works with color turned off:
 | A heavy frame | A `fan_out`, with its lanes captioned by id and guard |
 | `eager` on a `fan_out` | `schedule: eager` — a lane's dependents start before its siblings finish. `barrier` is the default and is not badged |
 | `derived from …` on a heavy frame | The lane list was **derived** at run time from a `for_each:`, not written out by hand |
+| `templated from …` on a heavy frame | The workflow declares one lane `lane:` **shape**, not a list: the single column stands for the lanes `for_each:` will render at run time, and `at most N` is its `max_lanes:` ceiling |
 | `w1`, `w2` on a lane caption | Which wave the lane runs in. Lanes stack below the ones they `needs:` |
 | A double frame | A `loop` body, with a back-edge to its header |
 | `true` / `false` | A `condition`'s or `break`'s two ways out |

@@ -1251,6 +1251,57 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the editor")
 			}
 		},
+		"a": func(t *testing.T) {
+			w := editorFixture(t)
+			editorStepRow(t, w, 0)
+			w.updateKey(registryKey(t, "a"))
+			if _, ok := w.editor.overlay.(*wfEditorPicker); !ok {
+				t.Fatalf("a opened %T, want the new-step type picker", w.editor.overlay)
+			}
+		},
+		"d": func(t *testing.T) {
+			w := editorFixture(t)
+			editorStepRow(t, w, 0)
+			if _, cmd := w.updateKey(registryKey(t, "d")); cmd != nil {
+				t.Fatal("d removed the step without asking")
+			}
+			if _, ok := w.editor.overlay.(*wfEditorConfirm); !ok {
+				t.Fatalf("d opened %T, want the confirmation", w.editor.overlay)
+			}
+		},
+		"K/J": func(t *testing.T) {
+			w := editorFixture(t)
+			editorStepRow(t, w, 1)
+			if _, cmd := w.updateKey(registryKey(t, "K")); cmd == nil {
+				t.Fatal("K did not move the step up")
+			}
+			w = editorFixture(t)
+			editorStepRow(t, w, 1)
+			if _, cmd := w.updateKey(registryKey(t, "J")); cmd == nil {
+				t.Fatal("J did not move the step down")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			w := editorFixtureWith(t, promptDefinition("one\ntwo"))
+			w.editor.path = "steps[0]"
+			w.editor.rebuild()
+			w.editor.cursor = editorRowIndex(t, w, "prompt")
+			w.updateKey(registryKey(t, "enter"))
+			pane, ok := w.editor.overlay.(*wfEditorPane)
+			if !ok {
+				t.Fatalf("enter on a prompt opened %T, want the pane", w.editor.overlay)
+			}
+			// A pane that was typed into saves; the clean case is a no-op and
+			// is pinned by the live regression instead.
+			next, _ := pane.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+			w.editor.overlay = next
+			if _, cmd := w.updateKey(registryKey(t, "ctrl+s")); cmd == nil {
+				t.Fatal("ctrl+s did not save the pane")
+			}
+			if w.editor.overlay != nil {
+				t.Fatal("ctrl+s left the pane open")
+			}
+		},
 	},
 
 	ctxWorkflowCreate: {

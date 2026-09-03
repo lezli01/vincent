@@ -41,7 +41,12 @@ func fullStep() apiclient.WorkflowStepDef {
 		Steps:          []apiclient.WorkflowStepDef{step("inner", "command")},
 		MaxParallel:    intp(2),
 		Lanes:          []apiclient.WorkflowLaneDef{{ID: "api"}},
-		Schedule:       "eager",
+		// A file sets `lanes:` or `lane:` + `max_lanes:`, never both — but
+		// the coverage fixture is the whole surface at once, and the modal
+		// has a row for each of the two ways §7.6 spells a lane list.
+		Lane:     &apiclient.WorkflowLaneDef{ID: "{{ .Item.id }}"},
+		MaxLanes: intp(4),
+		Schedule: "eager",
 		// Snapshot-only, and in the fixture for that reason: the modal is the
 		// one view that shows a step in full, and a derived lane list that
 		// did not say what it was derived from would read as a hand-written

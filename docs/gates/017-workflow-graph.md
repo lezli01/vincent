@@ -278,10 +278,47 @@ captioned `w2` **below** them, with an edge coming from each of the two it
 needs and **none** from the header — a `needs:` lane does not start in round
 one, and drawing both would say it did.
 
-A *derived* lane list cannot be in this corpus: `derived_from:` is written by
-the daemon into a task's snapshot and an authored document carrying it is
-refused (§7.6). The derived mark is judged on the runtime leg instead — leg 13
-below.
+A lane list that has already been *derived* cannot be in this corpus:
+`derived_from:` is written by the daemon into a task's snapshot and an authored
+document carrying it is refused (§7.6). That mark is judged on the runtime leg
+instead — leg 13 below. The **template** it will be derived from can be
+authored, and is entry 13.
+
+### 13. `lanetemplate.yaml` — a fan-out that declares one lane shape
+
+```yaml
+name: lanetemplate
+steps:
+  - {id: plan, type: agent, prompt: emit the work units}
+  - id: spread
+    type: fan_out
+    max_lanes: 4
+    for_each: '{{ (index .Steps "plan").Result }}'
+    lane:
+      id: '{{ .Item.id }}'
+      steps:
+        - {id: work, type: agent, prompt: build this unit}
+        - {id: verify, type: command, run: make test}
+    merge:
+      on_conflict: block
+  - {id: ship, type: command, run: make ship}
+```
+
+**Look for:** **one** column inside the heavy frame, captioned with the id
+template as authored — `{{ .Item.id }}` — and entered from the step's header
+with no `w1` badge and no `needs:` edges, because the lanes it stands for do not
+exist yet and there is no DAG over them to draw. The frame is marked
+`templated from {{ (index .Steps "plan").Result }}, at most 4`; narrow the pane
+and it degrades to `templated`, which is the word that has to survive — which of
+`templated` and `derived` you are looking at is the half the rest of the picture
+does not tell you. `enter` on the frame says `lane: one lane per for_each item,
+derived when the step runs`, and `enter` on the merge says it merges *every lane
+the step derives*, not `0 lanes`.
+
+The one thing that must **not** appear is a lane count: what a `for_each`
+iterates is discovered when the step runs, so any number of columns other than
+the one template would be invented. Before task 086 this frame drew *no* columns
+at all — a picture that said the step spawns nothing.
 
 ## The manual legs
 
@@ -332,6 +369,12 @@ then `5`.
 | Date | Version | Platform | By | Result |
 |---|---|---|---|---|
 | — | — | — | — | not yet walked |
+
+Corpus entry 13 was added on 2026-09-03 with issue #320 (task 086, the fan-out
+drawn from a lane template) and has not been walked. Its automated half is
+`internal/tui/workflowgraph/lanetemplate_test.go`, which pins the picture
+against `internal/tui/workflowgraph/testdata/lanetemplate.txt` and the frame's
+mark at both widths.
 
 Corpus entry 12 and runtime legs 13–15 were added on 2026-09-03 with issue #316
 (the lane DAG, the derived mark and `l`) and have not been walked. The

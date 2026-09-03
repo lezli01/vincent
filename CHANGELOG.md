@@ -41,6 +41,46 @@ list with the user-facing context a commit subject cannot carry.
   render exactly what they rendered before. See
   [Using the TUI](docs/guides/tui.md#what-v-adds).
 
+- **The TUI's workflow editor shows the whole file, and changes all of it.**
+  `i` on the Workflows view opened a form that could see about half of a real
+  workflow and write rather less. It now reads every field the daemon's schema
+  publishes and writes every block it reads.
+
+  What was invisible is visible. A step's `timeout:`, `max_retries:`,
+  `retry_backoff:`, `allow_failure:`, `input_timeout:`, `check_timeout:`,
+  `env:`, `max_parallel:`, `count:`, `for_each:`, `max_iterations:` and
+  `schedule:` all render as the file wrote them instead of as `(unset)` — and
+  `max_retries: 0` reads as `0`, because "retry none" and "inherit the default"
+  are not the same instruction. A field the schema publishes and the form
+  cannot read is now a test failure rather than a blank row.
+
+  What was a dead end is a door. `enter` descends into a fan-out's `lanes:`,
+  its single `lane:` template and its `merge:`, and into the workflow's own
+  `fields:` and `defaults:` — the declared fields your new-task form will ask
+  for, and the agent, model, effort, permission mode, retries, timeouts and
+  `container:` block every step inherits. Before, those five rows led nowhere:
+  pressing `enter` reported the step was no longer there.
+
+  Structure is editable. `a` adds a step, lane or declared field after the one
+  under the cursor — on a steps list it asks which type first, offers only the
+  types legal at that spot, and writes a skeleton carrying that type's required
+  fields, so the file stays valid between edits. `d` removes the entry under
+  the cursor **after a confirmation**. `K` and `J` move it up and down;
+  capitalised, because `k` and `j` still move the cursor and a file reordered
+  by a typo is not a trade worth making. Comments, blank lines, key order,
+  block scalars and CRLF line endings all survive a structural edit — the same
+  promise a single-field edit already made, now driven end to end over the API
+  by `scripts/m13-gate.sh` on all three platforms.
+
+  Values that are not free text no longer pretend to be. `agent:`, `model:` and
+  `effort:` open the filterable picker the new-task form uses, scoped to the
+  agents the daemon actually detected; `env:` and a lane's `fields:` open a
+  key/value sub-form instead of committing a quoted string over a mapping,
+  which the daemon refused; and a whole-number or duration row is checked on
+  the row that typed it, so `timeout: 2 minutes` fails where you can see it.
+
+  See [Using the TUI](docs/guides/tui.md#authoring--i-a-f).
+
 - **A loop says where it is, and its earlier passes open.** The loop rollup on
   the board and in the task header names the body step the current iteration is
   on — `3/7 green · loop 4/10 · repair 2/3` — so "where is this task, right
@@ -875,6 +915,30 @@ list with the user-facing context a commit subject cannot carry.
   filesystem and the shell, and that is all it claims to bound.
 
 ### Fixed
+
+- **Editing a `prompt:` or a `run:` in the workflow editor destroyed it.** The
+  row opened in a single-line text field, which collapses newlines by design;
+  committing it wrote the whole body back as one line, so a 60-line agent
+  prompt became 60 sentences run together and the block scalar was gone. Those
+  rows now open a full-pane multi-line editor — `enter` inserts a newline,
+  `ctrl+s` saves as a `|` block scalar, `esc` abandons — and opening one and
+  closing it again writes nothing at all.
+
+- **The workflow graph drew an empty fan-out for a derived one.** `g` on a
+  workflow whose `fan_out` declares a single `lane:` template plus `for_each:`
+  — the shape the shipped `github-resolve-issue-dag` uses — drew a heavy frame
+  with no columns in it, which says the step spawns nothing. It now draws the
+  template as one column standing for the list it becomes, captioned
+  `templated from …` with the `max_lanes:` ceiling when the file states one,
+  and never an invented lane count: what a `for_each` iterates is discovered
+  when the step runs. Its merge node says it merges "every lane the step
+  derives" rather than the `0 lanes` it used to claim.
+
+  The cause was wire drift the tests could not see: `lane:` and `max_lanes:`
+  had been on the API since fan-out derivation landed, and the Go client type
+  never grew them. A reflection test now walks the parser's own types through
+  to the client's, so a field the daemon serves and a client drops fails from
+  now on.
 
 - **A `for_each` loop showed a denominator that was never its own.** With no
   `count:` and no step-level `max_iterations:`, the loop's total was read off
