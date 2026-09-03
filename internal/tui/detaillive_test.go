@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // TestDetailTailJoinsTranscriptWithoutGapOrDuplicate is T3.3's headline: the
@@ -218,4 +219,87 @@ func appendAssistant(t *testing.T, path string, text string) int64 {
 		t.Fatalf("stat transcript: %v", err)
 	}
 	return fi.Size()
+}
+
+// TestOutputPaneHoldsOneLaneSubscriptionAtATime is #316's cost objection made
+// into an assertion. The Output pane's lane selector is allowed exactly one
+// extra live subscription — never one per lane, which at 64 lanes is task 051
+// decision 1's objection and task 049 decision 4's one-SSE-seam rule broken at
+// once, and would render lossy besides: the daemon drops live chunks for a
+// slow subscriber (§13.3).
+//
+// It runs against the real handlers and the real broker because "how many
+// subscriptions exist" is a fact about the server, not about the model.
+func TestOutputPaneHoldsOneLaneSubscriptionAtATime(t *testing.T) {
+	h := newBoardLiveHarness(t)
+	ctx := context.Background()
+	parent := h.createTask(t, "fan-out parent")
+	laneA := h.createLaneTask(t, parent.ID, "api", 0)
+	laneB := h.createLaneTask(t, parent.ID, "web", 1)
+	// Only a running task has live output worth a stream (§13.3), so the
+	// lanes have to actually be running for the assertion to mean anything.
+	for _, lane := range []*store.Task{laneA, laneB} {
+		if _, _, err := h.st.TransitionTask(ctx, lane.ID,
+			store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+			t.Fatalf("transition lane to running: %v", err)
+		}
+	}
+
+	_, cmd := h.m.Update(selectTaskMsg{id: parent.ID})
+	h.p.push(cmd)
+	view := h.m.views[viewTask].(*taskView)
+	h.p.until(20*time.Second, "the parent's lanes to load", func() bool {
+		return len(view.lanes) == 2
+	})
+	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	h.p.push(cmd)
+
+	// `>` walks onto the first lane: exactly one subscription, and it is that
+	// lane's.
+	h.p.push(view.updateKey(synthKey(">")))
+	h.p.until(20*time.Second, "the first lane's subscription to attach", func() bool {
+		return h.broker.OutputSubscribers(laneA.ID) == 1
+	})
+	if got := h.broker.OutputSubscribers(laneB.ID); got != 0 {
+		t.Fatalf("the unselected lane has %d subscribers, want none", got)
+	}
+
+	// `>` again moves the selection, and the previous stream goes with it.
+	h.p.push(view.updateKey(synthKey(">")))
+	h.p.until(20*time.Second, "the second lane's subscription to attach", func() bool {
+		return h.broker.OutputSubscribers(laneB.ID) == 1
+	})
+	h.p.until(20*time.Second, "the first lane's subscription to go", func() bool {
+		return h.broker.OutputSubscribers(laneA.ID) == 0
+	})
+	if got := h.broker.OutputSubscribers(laneB.ID); got != 1 {
+		t.Fatalf("the selected lane has %d subscribers, want exactly one", got)
+	}
+
+	// Leaving the fan-out leaves no lane subscription behind.
+	_, cmd = h.m.Update(selectTaskMsg{id: laneA.ID})
+	h.p.push(cmd)
+	h.p.until(20*time.Second, "the lane subscription to be torn down", func() bool {
+		return h.broker.OutputSubscribers(laneB.ID) == 0
+	})
+	if view.laneDetail != nil {
+		t.Fatalf("a lane sub-model survived the workspace moving off the fan-out")
+	}
+}
+
+// createLaneTask is one lane of a fan_out: a child task carrying the parent,
+// the lane id and its merge order (§7.6).
+func (h *boardLiveHarness) createLaneTask(t *testing.T, parentID int64, lane string, order int) *store.Task {
+	t.Helper()
+	index := 0
+	task := &store.Task{
+		ProjectID: h.projectID, Title: lane + " lane", WorkflowName: "three",
+		WorkflowSnapshot: threeStepWorkflow, BaseBranch: "main", State: store.TaskQueued,
+		ParentTaskID: &parentID, ParentStepIndex: &index, LaneID: lane, LaneOrder: order,
+	}
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, task.Title), nil }
+	if err := h.st.CreateTask(context.Background(), task, resolve); err != nil {
+		t.Fatalf("CreateTask lane %s: %v", lane, err)
+	}
+	return task
 }

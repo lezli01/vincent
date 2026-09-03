@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,6 +175,13 @@ type detail struct {
 	// loadSeq stamps outgoing fetches; appliedSeq is the newest installed.
 	loadSeq    uint64
 	appliedSeq uint64
+
+	// laneRows are this task's fan-out lanes (§7.6), handed down by the
+	// workspace so the header and the fan_out step row can name the lane
+	// that blocked the join *and* what that lane's own block reason was —
+	// the one fact the engine's message does not carry (#316). Empty for
+	// every task that is not a fan-out parent, which is nearly all of them.
+	laneRows []apiclient.Task
 
 	// timelineTop and visibleRuns are the last-rendered timeline geometry,
 	// kept so a click can name the attempt on the line it landed on.
@@ -1129,4 +1137,149 @@ func (d *detail) toggleTab() tea.Cmd {
 func (d *detail) recordSeqs() []int64 {
 	d.seqs = d.stamp.fit(d.seqs, len(d.records))
 	return d.seqs
+}
+
+// stepTypeFanOut is the §7.6 step whose lanes are child tasks. It is the one
+// step type the workspace treats as a place to go rather than a row to read.
+const stepTypeFanOut = "fan_out"
+
+// fanOutBlockReasons are the §18 reasons a `fan_out` step blocks its task on.
+// The attribution below speaks for exactly these and stays silent otherwise:
+// a `timeout` on a fan_out is about the step, not about a lane.
+var fanOutBlockReasons = map[string]bool{
+	reasonLaneFailed:    true,
+	reasonMergeConflict: true,
+	reasonFanOutInvalid: true,
+	reasonFanOutLimit:   true,
+}
+
+// The four reason strings, spelled here rather than imported: internal/tui
+// depends on internal/apiclient and on nothing under internal/taskrun, and
+// the wire vocabulary is snake_case and stable (§18).
+const (
+	reasonLaneFailed    = "lane_failed"
+	reasonMergeConflict = "merge_conflict"
+	reasonFanOutInvalid = "fan_out_invalid"
+	reasonFanOutLimit   = "fan_out_limit"
+)
+
+// laneBlame is what a failed `fan_out` says about which lane caused it.
+//
+// The engine already names the lane in every case — join.go writes
+// `lane "api" (task 42) is blocked, not done` and `lane "api" (task 42)
+// conflicts in:` with the paths, and derive.go names the offending line, id
+// or bound for an invalid or over-limit fan_out. Nothing here re-derives any
+// of that; it is lifted onto the header and the step row, and the lane's own
+// state and block reason are added from the lane rows, because that is the
+// one thing the message cannot say.
+type laneBlame struct {
+	// reason is the snake_case §18 reason, message the engine's own sentence.
+	reason  string
+	message string
+	// laneID and taskID identify the lane, when the message or the rows name
+	// one. A `fan_out_invalid` names neither, and says so by leaving both
+	// empty rather than blaming an arbitrary lane.
+	laneID string
+	taskID int64
+	// state and block are the lane's own, read off the child task.
+	state string
+	block string
+}
+
+// laneBlamePattern matches the lane the engine named. Both join.go messages
+// open with it, in the same shape.
+var laneBlamePattern = regexp.MustCompile(`lane "([^"]*)" \(task ([0-9]+)\)`)
+
+// laneBlame reads the newest `fan_out` attempt's verdict. ok=false whenever
+// the step did not fail on one of the four fan-out reasons, which is what
+// keeps the attribution off every other kind of failure.
+func (d *detail) laneBlame() (laneBlame, bool) {
+	run, ok := d.newestFanOutRun()
+	if !ok {
+		return laneBlame{}, false
+	}
+	b := laneBlame{message: strings.TrimSpace(run.ResultSummary)}
+	if run.FailureReason != nil {
+		b.reason = *run.FailureReason
+	}
+	if b.reason == "" && d.task.BlockReason != nil {
+		b.reason = *d.task.BlockReason
+	}
+	if !fanOutBlockReasons[b.reason] {
+		return laneBlame{}, false
+	}
+	if b.message == "" && run.StatusMessage != nil {
+		b.message = strings.TrimSpace(*run.StatusMessage)
+	}
+	if m := laneBlamePattern.FindStringSubmatch(b.message); m != nil {
+		b.laneID = m[1]
+		b.taskID, _ = strconv.ParseInt(m[2], 10, 64)
+	}
+	d.fillLaneBlame(&b)
+	return b, true
+}
+
+// fillLaneBlame joins the blame onto the lane rows: the lane's state and its
+// own block reason when the message named one, and the lane itself when it
+// did not — the first lane in merge order that settled without finishing is
+// the one a `lane_failed` join stopped at.
+func (d *detail) fillLaneBlame(b *laneBlame) {
+	for _, lane := range d.laneRows {
+		byID := lane.ID == b.taskID
+		byLane := b.taskID == 0 && b.laneID != "" &&
+			lane.LaneID != nil && *lane.LaneID == b.laneID
+		if !byID && !byLane {
+			continue
+		}
+		d.copyLaneFacts(b, lane)
+		return
+	}
+	if b.taskID != 0 || b.laneID != "" || b.reason == reasonFanOutInvalid ||
+		b.reason == reasonFanOutLimit {
+		return
+	}
+	for _, lane := range d.laneRows {
+		if lane.State != stateDone && laneSettled(lane.State) {
+			d.copyLaneFacts(b, lane)
+			return
+		}
+	}
+}
+
+func (d *detail) copyLaneFacts(b *laneBlame, lane apiclient.Task) {
+	b.taskID, b.state = lane.ID, lane.State
+	if lane.LaneID != nil && *lane.LaneID != "" {
+		b.laneID = *lane.LaneID
+	}
+	if lane.BlockReason != nil {
+		b.block = *lane.BlockReason
+	}
+}
+
+// laneSettled is §6's "this lane will not finish on its own". `blocked` is
+// included because a blocked lane is exactly what join.go refuses to merge —
+// it is waiting on a human, which the join cannot do for it.
+func laneSettled(state string) bool {
+	switch state {
+	case stateDone, stateAborted, stateBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// newestFanOutRun is the last `fan_out` attempt, which is the one whose
+// verdict the task is parked on.
+func (d *detail) newestFanOutRun() (apiclient.StepRun, bool) {
+	var out apiclient.StepRun
+	found := false
+	for _, r := range d.task.Steps {
+		if r.StepType != stepTypeFanOut {
+			continue
+		}
+		if !found || r.ID >= out.ID {
+			out, found = r, true
+		}
+	}
+	return out, found
 }

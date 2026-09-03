@@ -2,8 +2,10 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,6 +95,46 @@ type taskView struct {
 
 	tabHits []taskTabHit
 	bodyY   int
+
+	// stack is the chain of tasks this workspace was opened *through* — the
+	// parents and lanes a reader drilled down from (#316). `esc` pops one
+	// before it falls through to the board, so three lanes deep is three
+	// presses. A task opened from the board arrives with an empty stack,
+	// because there is nothing behind it but the board.
+	stack []int64
+	// stackPush is the task the next selectTaskMsg should push, and stackKeep
+	// says that message is a pop and must leave the stack alone. Both are
+	// fields rather than fields on the message because selectTaskMsg is the
+	// board's, shared with every other way of opening a task.
+	stackPush int64
+	stackKeep bool
+	// alive reports whether a task on the stack can still be opened, so an
+	// archived or vanished one is dropped from the stack rather than popped
+	// to. Injected so the walk is testable without a daemon; nil asks one.
+	alive func(id int64) (state string, ok bool)
+
+	// lanes are this task's fan-out lanes in merge order (§7.6), from the
+	// existing GET /v1/tasks?parent_id= listing. It is the workspace's own
+	// copy: the Workflow tab keeps a map keyed by lane id for its captions,
+	// and this is a list because everything here — the Output pane's
+	// selector, the Pull Request tab's rows, the `l` jump — walks merge order.
+	lanes       []apiclient.Task
+	lanesTaskID int64
+	// laneSel indexes lanes for the Output pane's lane selector. -1 is the
+	// task's own output, which is where the pane starts and returns to.
+	laneSel int
+	// laneDetail is the selected lane's own sub-model, and therefore the one
+	// extra live subscription the Output pane is allowed to hold. Exactly one
+	// at a time, torn down when the selection moves and when the workspace
+	// leaves the fan-out: interleaving every lane would open 64 streams at
+	// task 051 decision 1's expense and render lossy besides, because the
+	// daemon drops live chunks for a slow subscriber (§13.3). The transcript
+	// file stays the durable copy; this is a view, not a second store.
+	laneDetail *detail
+	// lanePulls is each lane task's pull request, keyed by lane task id. It
+	// is one project listing rather than one call per lane — the same rule
+	// the check rollup follows, one call for one screen.
+	lanePulls map[int64]apiclient.GitHubPullRequest
 }
 
 // popupTab names the two tabs the three §6/§7.4 form popups carry (task 059).
@@ -107,7 +149,7 @@ const (
 )
 
 func newTaskView(detail *detail) *taskView {
-	return &taskView{detail: detail, connected: true, workflow: newWorkflowTab()}
+	return &taskView{detail: detail, connected: true, workflow: newWorkflowTab(), laneSel: -1}
 }
 
 func (t *taskView) title() string {
@@ -195,6 +237,19 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.width, t.height = msg.Width, msg.Height
 		return t, t.detail.update(msg)
 	case selectTaskMsg:
+		// Which of the three ways this task was opened decides what happens
+		// to the back stack: a jump pushes what it left, a pop keeps what it
+		// already truncated, and every other route — the board, the palette,
+		// the pull-request takeover — starts fresh.
+		switch {
+		case t.stackKeep:
+			t.stackKeep = false
+		case t.stackPush != 0:
+			t.stack = append(t.stack, t.stackPush)
+			t.stackPush = 0
+		default:
+			t.stack = nil
+		}
 		t.tab = taskTabSteps
 		t.workflow = newWorkflowTab()
 		t.details.reset()
@@ -206,20 +261,23 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
 		t.detail.active = true
-		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd())
+		laneCmd := t.resetLanes()
+		return t, tea.Batch(t.detail.open(msg.id, msg.state), t.pullCmd(), laneCmd, t.lanesCmd())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
 		}
 		t.detail.active = true
-		return t, tea.Batch(t.detail.loadCmd(), t.detail.syncStream(), t.pullCmd())
+		return t, tea.Batch(t.detail.loadCmd(), t.detail.syncStream(), t.pullCmd(),
+			t.lanesCmd(), t.syncLaneDetail())
 	case viewDeactivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
 		}
 		t.detail.active = false
 		t.popup = false
-		return t, t.detail.syncStream()
+		// The lane subscription belongs to a screen nobody is looking at.
+		return t, tea.Batch(t.detail.syncStream(), t.syncLaneDetail())
 	case tea.KeyPressMsg:
 		return t, t.updateKey(msg)
 	case tea.MouseClickMsg:
@@ -232,6 +290,13 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case taskLanesMsg:
 		t.applyLanes(msg)
 		return t, nil
+	case taskLaneListMsg:
+		return t, t.applyLaneList(msg)
+	case taskLanePullsMsg:
+		t.applyLanePulls(msg)
+		return t, nil
+	case navPopMsg:
+		return t, t.applyPop(msg)
 	case taskPullMsg:
 		t.applyPull(msg)
 		return t, nil
@@ -267,7 +332,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case noteMsg:
 		// A reconciler tick that linked or unlinked this task's pull request
 		// re-reads the section; the detail sub-model still sees the note.
-		cmd := t.detail.update(msg)
+		cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {
 			cmds := []tea.Cmd{cmd, t.pullCmd()}
@@ -280,7 +345,12 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		return t, cmd
 	}
-	cmd := t.detail.update(msg)
+	// Everything that is not a key press, a click or one of the arms above
+	// reaches both sub-models. Each one guards on its own task, attempt and
+	// stream id, so a message for the parent is ignored by the lane and the
+	// other way round — which is what lets the lane pane be an ordinary
+	// detail rather than a second, thinner copy of one.
+	cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 	if t.popup && t.detail.form == nil && t.detail.repair == nil &&
 		t.detail.followUp == nil && t.createPR == nil {
 		t.popup = false
@@ -321,7 +391,27 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return t.setTab(taskTabDiff)
 	case "esc":
-		return func() tea.Msg { return selectViewMsg{id: viewHome} }
+		// One task at a time. Drilling into a lane and pressing esc used to
+		// land on the board however deep the reader had gone (#316).
+		return t.popCmd()
+	case "l":
+		if cmd := t.openLaneCmd(); cmd != nil {
+			return cmd
+		}
+		// No lane under the selection: `l` keeps whatever the tab under it
+		// already made of the key — vim-right in the Output pane.
+	case "U":
+		if cmd := t.openParentCmd(); cmd != nil {
+			return cmd
+		}
+	case "<":
+		if t.tab == taskTabOutput {
+			return t.selectLane(-1)
+		}
+	case ">":
+		if t.tab == taskTabOutput {
+			return t.selectLane(1)
+		}
 	case "enter":
 		if t.detail.form != nil {
 			t.openPopup()
@@ -514,7 +604,7 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 	if tab == taskTabPull {
 		// Fetched on open, never per render: a stored check result reads
 		// exactly like a current one while being wrong.
-		return tea.Batch(t.checksCmd(), t.checksTickCmd())
+		return tea.Batch(t.checksCmd(), t.checksTickCmd(), t.lanePullsCmd())
 	}
 	return nil
 }
@@ -693,19 +783,50 @@ func (t *taskView) renderTabBody(width, height int) string {
 
 func (t *taskView) renderOutput(width, height int) string {
 	t.detail.width = width
-	selector := t.renderOutputAttemptSelector(width)
-	if height <= 1 {
-		return selector
+	head := make([]string, 0, 2)
+	if len(t.lanes) > 0 {
+		head = append(head, t.renderLaneSelector(width))
 	}
-	return selector + "\n" + t.detail.renderOutputPane(height-1)
+	pane := t.detail
+	if lane := t.laneDetail; lane != nil {
+		lane.width = width
+		lane.tab = tabOutput
+		pane = lane
+	}
+	head = append(head, renderAttemptSelector(pane, width))
+	if height <= len(head) {
+		return strings.Join(head[:max(height, 1)], "\n")
+	}
+	return strings.Join(append(head, pane.renderOutputPane(height-len(head))), "\n")
 }
 
-func (t *taskView) renderOutputAttemptSelector(width int) string {
-	runs := t.detail.attempts()
+// renderLaneSelector is the Output pane's lane strip (#316). It names the
+// lane whose output is on screen, which is the task's own until `>` moves
+// off it, and it is drawn only for a task that has lanes at all.
+func (t *taskView) renderLaneSelector(width int) string {
+	label := "this task's own output"
+	if lane, ok := t.selectedLane(); ok {
+		label = fmt.Sprintf("%d/%d · %s (task %d) · %s",
+			t.laneSel+1, len(t.lanes), laneName(lane), lane.ID, lane.State)
+		if lane.BlockReason != nil && *lane.BlockReason != "" {
+			label += " · " + *lane.BlockReason
+		}
+	}
+	line := "  Lane  " + styleSelected.Render(label) +
+		styleDim.Render("   </> select lane · l open it")
+	return ansi.Truncate(line, max(width, 1), "…")
+}
+
+// renderAttemptSelector is the Output pane's attempt strip. It takes the
+// sub-model rather than reading t.detail because the pane below it is the
+// selected lane's when one is selected, and a strip describing a different
+// task's attempts than the pane under it is worse than no strip at all.
+func renderAttemptSelector(d *detail, width int) string {
+	runs := d.attempts()
 	if len(runs) == 0 {
 		return ansi.Truncate("  Attempt  —  no attempts", max(width, 1), "…")
 	}
-	i := t.detail.runIndex(t.detail.selectedRun)
+	i := d.runIndex(d.selectedRun)
 	if i < 0 {
 		return ansi.Truncate("  Attempt  —  no attempt selected", max(width, 1), "…")
 	}
@@ -865,7 +986,13 @@ func (t *taskView) detailLines(width int) []string {
 
 	relationships := make([]taskDetailFact, 0, 8)
 	if task.ParentTaskID != nil {
-		relationships = append(relationships, taskDetailFact{"parent task", strconv.FormatInt(*task.ParentTaskID, 10)})
+		// An action, not a fact: a lane's parent is the one place a reader
+		// standing in a lane wants to go, and a bare number was every route
+		// they had (#316).
+		relationships = append(relationships, taskDetailFact{
+			"parent task",
+			strconv.FormatInt(*task.ParentTaskID, 10) + "   " + styleDim.Render("U open it"),
+		})
 	}
 	if task.LaneID != nil {
 		relationships = append(relationships, taskDetailFact{"fan-out lane", *task.LaneID})
@@ -1202,4 +1329,366 @@ func (t *taskView) overlayCreatePR(bg string) string {
 	popup := frame("Open a pull request — #"+strconv.FormatInt(t.detail.taskID, 10),
 		t.createPR.render(inner, ph-2), pw, ph, true)
 	return overlay(bg, popup, max((t.width-pw)/2, 0), max((t.height-ph)/3, 1))
+}
+
+// ---------------------------------------------------------------------------
+// Fan-out reach (#316): the back stack, the two jumps, and the Output pane's
+// lane selector.
+//
+// A fan_out's lanes are child tasks (§7.6) and were reachable only by
+// knowing their ids: the workspace rendered `parent task 41` as a number and
+// `esc` always meant "the board". Everything below is one idea — a lane is a
+// task, so opening one is opening a task, and coming back is popping the
+// chain you came through rather than throwing it away.
+// ---------------------------------------------------------------------------
+
+// openTaskMsg is a jump made from inside the workspace: open `id`, and
+// remember `from` so `esc` comes back to it. The root turns it into the
+// board's own selectTaskMsg after pushing, so a lane opens by exactly the
+// path every other task opens by.
+type openTaskMsg struct {
+	id    int64
+	state string
+	from  int64
+}
+
+// navPopMsg is the answer to `esc`: the stack with the popped entries already
+// removed, and the task to land on. ok=false means nothing on the stack could
+// be opened, and the board is the honest destination.
+type navPopMsg struct {
+	rest  []int64
+	id    int64
+	state string
+	ok    bool
+}
+
+// taskLaneListMsg carries the workspace's own copy of GET /v1/tasks?parent_id=.
+type taskLaneListMsg struct {
+	taskID   int64
+	children []apiclient.Task
+	err      error
+}
+
+// taskLanePullsMsg carries one project pull-request listing, which is where
+// the Pull Request tab's lane rows get their numbers and states.
+type taskLanePullsMsg struct {
+	taskID int64
+	pulls  []apiclient.GitHubPullRequest
+	err    error
+}
+
+// pushTask records the task a jump is leaving, to be pushed when the
+// selectTaskMsg the jump turns into arrives. The root calls it.
+func (t *taskView) pushTask(id int64) {
+	if id != 0 {
+		t.stackPush = id
+	}
+}
+
+// popCmd is `esc`. It walks the stack from the top, dropping tasks that
+// cannot be opened any more — archived, or gone — rather than popping to
+// one, and falls through to the board when nothing is left.
+//
+// The walk is a command rather than a field read because "can this still be
+// opened" is a question only the daemon can answer, and answering it wrongly
+// strands a reader on a blank workspace.
+func (t *taskView) popCmd() tea.Cmd {
+	if len(t.stack) == 0 {
+		return func() tea.Msg { return selectViewMsg{id: viewHome} }
+	}
+	stack := append([]int64(nil), t.stack...)
+	alive := t.aliveFunc()
+	return func() tea.Msg {
+		for i := len(stack) - 1; i >= 0; i-- {
+			if state, ok := alive(stack[i]); ok {
+				return navPopMsg{rest: stack[:i], id: stack[i], state: state, ok: true}
+			}
+		}
+		return navPopMsg{}
+	}
+}
+
+func (t *taskView) applyPop(msg navPopMsg) tea.Cmd {
+	if !msg.ok {
+		t.stack = nil
+		return func() tea.Msg { return selectViewMsg{id: viewHome} }
+	}
+	t.stack = msg.rest
+	// The selectTaskMsg below is a pop, not a fresh open: the stack it lands
+	// on is already the truncated one.
+	t.stackKeep = true
+	id, state := msg.id, msg.state
+	return func() tea.Msg { return selectTaskMsg{id: id, state: state} }
+}
+
+// aliveFunc answers "can this task still be opened". Disconnected, the
+// stack is all this view knows and is taken at its word — refusing to go
+// back because the daemon is down would be the wrong kind of correct.
+func (t *taskView) aliveFunc() func(int64) (string, bool) {
+	if t.alive != nil {
+		return t.alive
+	}
+	client := t.detail.client
+	if client == nil {
+		return func(int64) (string, bool) { return "", true }
+	}
+	return func(id int64) (string, bool) {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		task, err := client.GetTask(ctx, id)
+		if err != nil || task.ArchivedAt != nil {
+			return "", false
+		}
+		return task.State, true
+	}
+}
+
+// openLaneCmd is `l`: open the lane the current tab's selection resolves to,
+// remembering this task so `esc` comes back to it.
+func (t *taskView) openLaneCmd() tea.Cmd {
+	id, ok := t.laneJump()
+	if !ok {
+		return nil
+	}
+	state := ""
+	if lane, ok := t.laneByID(id); ok {
+		state = lane.State
+	}
+	from := t.detail.taskID
+	return func() tea.Msg { return openTaskMsg{id: id, state: state, from: from} }
+}
+
+// openParentCmd is `U`: the reciprocal of `l`. It works from any state the
+// parent is in — a `blocked` or `done` parent's lanes are exactly the ones
+// worth walking, which is the gap #316 opens on.
+func (t *taskView) openParentCmd() tea.Cmd {
+	id, ok := t.parentJump()
+	if !ok {
+		return nil
+	}
+	from := t.detail.taskID
+	return func() tea.Msg { return openTaskMsg{id: id, from: from} }
+}
+
+// laneJump is the lane `l` opens from where the reader is standing. The
+// Workflow tab and the Output pane both carry an explicit lane selection and
+// are taken at their word; every other tab means "the lane this task's
+// failure is about", and the first lane in merge order when nothing is
+// blamed.
+func (t *taskView) laneJump() (int64, bool) {
+	switch t.tab {
+	case taskTabWorkflow:
+		return t.graphLane()
+	case taskTabOutput:
+		if id, ok := t.outputLane(); ok {
+			return id, true
+		}
+	case taskTabSteps:
+		// The timeline's own answer is the row under the cursor, and only a
+		// fan_out row has lanes to open.
+		if !t.selectedFanOutRun() {
+			return 0, false
+		}
+	}
+	return t.blamedLane()
+}
+
+// parentJump is the task `U` opens: this lane's parent, or nothing at all for
+// a task that is not a lane.
+func (t *taskView) parentJump() (int64, bool) {
+	if !t.detail.loaded || t.detail.task.ParentTaskID == nil {
+		return 0, false
+	}
+	return *t.detail.task.ParentTaskID, true
+}
+
+// outputLane is the lane whose output the Output pane is showing, and false
+// while it is showing the task's own.
+func (t *taskView) outputLane() (childTaskID int64, ok bool) {
+	lane, ok := t.selectedLane()
+	if !ok {
+		return 0, false
+	}
+	return lane.ID, true
+}
+
+func (t *taskView) selectedLane() (apiclient.Task, bool) {
+	if t.laneSel < 0 || t.laneSel >= len(t.lanes) {
+		return apiclient.Task{}, false
+	}
+	return t.lanes[t.laneSel], true
+}
+
+// selectLane is `<` and `>`. The cycle includes the task's own output, so a
+// reader who walked into the lanes can walk back out of them the same way.
+func (t *taskView) selectLane(delta int) tea.Cmd {
+	if len(t.lanes) == 0 || delta == 0 {
+		return nil
+	}
+	n := len(t.lanes) + 1
+	t.laneSel = ((t.laneSel+1+delta)%n+n)%n - 1
+	return t.syncLaneDetail()
+}
+
+// graphLane resolves the Workflow tab's selection to a lane.
+//
+// The join is against the lane columns the component already publishes —
+// Column.Nodes is exactly the inline steps drawn inside one lane, and
+// Column.Key is the lane's own key (workflowgraph.LaneKey). Node.Group is
+// deliberately *not* it: a lane's inline node carries the enclosing fan_out
+// group there, not the lane, so grouping on it would answer "some lane of
+// this fan_out" rather than the one under the cursor.
+func (t *taskView) graphLane() (int64, bool) {
+	w := t.workflow
+	if w == nil {
+		return 0, false
+	}
+	node, ok := w.graph.SelectedNode()
+	if !ok {
+		return 0, false
+	}
+	for _, col := range w.graph.Lanes() {
+		if col.Key != node.ID && !slices.Contains(col.Nodes, node.ID) {
+			continue
+		}
+		if child, ok := t.laneByLaneID(col.ID); ok {
+			return child.ID, true
+		}
+		return 0, false
+	}
+	return 0, false
+}
+
+// selectedFanOutRun reports whether the timeline's cursor is on a fan_out
+// attempt — the row whose lanes `l` opens.
+func (t *taskView) selectedFanOutRun() bool {
+	return t.detail.runByID(t.detail.selectedRun).StepType == stepTypeFanOut
+}
+
+// blamedLane is the lane a tab with no selection of its own means: the one
+// the join blamed, then whatever the Output pane is pointed at, then the
+// first in merge order.
+func (t *taskView) blamedLane() (int64, bool) {
+	if len(t.lanes) == 0 {
+		return 0, false
+	}
+	if blame, ok := t.detail.laneBlame(); ok && blame.taskID != 0 {
+		return blame.taskID, true
+	}
+	if lane, ok := t.selectedLane(); ok {
+		return lane.ID, true
+	}
+	return t.lanes[0].ID, true
+}
+
+func (t *taskView) laneByID(id int64) (apiclient.Task, bool) {
+	for _, lane := range t.lanes {
+		if lane.ID == id {
+			return lane, true
+		}
+	}
+	return apiclient.Task{}, false
+}
+
+func (t *taskView) laneByLaneID(id string) (apiclient.Task, bool) {
+	for _, lane := range t.lanes {
+		if lane.LaneID != nil && *lane.LaneID == id {
+			return lane, true
+		}
+	}
+	return apiclient.Task{}, false
+}
+
+// laneName is what a lane is called on screen: its lane id, and its title
+// when the daemon recorded no lane id for it.
+func laneName(lane apiclient.Task) string {
+	if lane.LaneID != nil && *lane.LaneID != "" {
+		return *lane.LaneID
+	}
+	return valueOr(lane.Title, "lane")
+}
+
+// lanesCmd fetches this task's lanes. It is the existing subtree listing —
+// the rows already carry lane_id, lane_order, state, block_reason and
+// branch_name, which is the whole of what the selector, the failure
+// attribution and the Pull Request tab's rows need. No endpoint is added.
+func (t *taskView) lanesCmd() tea.Cmd {
+	client, id := t.detail.client, t.detail.taskID
+	if client == nil || id == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		kids, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: id})
+		return taskLaneListMsg{taskID: id, children: kids, err: err}
+	}
+}
+
+func (t *taskView) applyLaneList(msg taskLaneListMsg) tea.Cmd {
+	if msg.taskID != t.detail.taskID || msg.err != nil {
+		return nil
+	}
+	t.lanes, t.lanesTaskID = msg.children, msg.taskID
+	// The timeline and the header render the lane's own block reason, which
+	// the engine's message does not carry, so the sub-model needs the rows.
+	t.detail.laneRows = msg.children
+	if t.laneSel >= len(t.lanes) {
+		t.laneSel = len(t.lanes) - 1
+	}
+	return t.syncLaneDetail()
+}
+
+// resetLanes drops everything about the task being left, tearing the lane
+// subscription down with it.
+func (t *taskView) resetLanes() tea.Cmd {
+	t.lanes, t.lanesTaskID, t.laneSel = nil, 0, -1
+	t.lanePulls = nil
+	t.detail.laneRows = nil
+	return t.syncLaneDetail()
+}
+
+// syncLaneDetail opens or closes the lane's sub-model so exactly one exists,
+// for exactly the selected lane, while the workspace is on screen. It is the
+// same shape detail.syncStream has and for the same reason: the subscription
+// is derived from what is being looked at, never opened by hand.
+func (t *taskView) syncLaneDetail() tea.Cmd {
+	want := int64(0)
+	if id, ok := t.outputLane(); ok && t.detail.active {
+		want = id
+	}
+	if t.laneDetail != nil && t.laneDetail.taskID == want {
+		return nil
+	}
+	if t.laneDetail != nil {
+		t.laneDetail.active = false
+		t.laneDetail.syncStream()
+		t.laneDetail = nil
+	}
+	if want == 0 {
+		return nil
+	}
+	lane := newDetail(t.detail.ctx, t.detail.level, t.detail.raw)
+	lane.client = t.detail.client
+	// The parent's opener, not the client's, so a test counting streams
+	// counts this one too.
+	lane.openStream = t.detail.openStream
+	lane.active = true
+	lane.width = t.width
+	state := ""
+	if row, ok := t.laneByID(want); ok {
+		state = row.State
+	}
+	t.laneDetail = lane
+	return lane.open(want, state)
+}
+
+// laneUpdate feeds the lane sub-model the same background messages the
+// parent gets. Key presses and clicks never reach here — they are answered
+// above, by the tab that has the keyboard.
+func (t *taskView) laneUpdate(msg tea.Msg) tea.Cmd {
+	if t.laneDetail == nil {
+		return nil
+	}
+	return t.laneDetail.update(msg)
 }

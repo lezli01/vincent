@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -268,7 +269,7 @@ func (d *detail) headerLines() []string {
 			"  workflow  ", workflow, d.width, styleDim,
 		)...)
 	}
-	return lines
+	return append(lines, d.laneBlameLines()...)
 }
 
 func (d *detail) headerOverviewParts() []string {
@@ -734,7 +735,7 @@ func (d *detail) attemptLines(r apiclient.StepRun, indented bool) []string {
 			*r.StatusMessage, statusGlyph, indent, d.width, 0, styleStatus,
 		)...)
 	}
-	return lines
+	return append(lines, d.laneBlameStepLines(r, indent)...)
 }
 
 func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
@@ -1256,4 +1257,115 @@ func recordFromChunk(n apiclient.OutputNote) apiclient.TranscriptRecord {
 		rec.Type = n.Type
 	}
 	return rec
+}
+
+// ---------------------------------------------------------------------------
+// Fan-out failure attribution (#316).
+//
+// A parent blocked on `lane_failed` used to render the reason and nothing
+// else: which lane, which task and what *that* lane was stuck on were three
+// separate lookups a reader had to do by hand. The engine already names the
+// lane — join.go writes it for both `lane_failed` and `merge_conflict`, and
+// derive.go names the offending line, id or bound for `fan_out_invalid` and
+// `fan_out_limit` — so this is a rendering change and nothing else: the
+// message is lifted onto the header and the fan_out step row, and the lane's
+// own block reason is added beside it from the lane rows.
+// ---------------------------------------------------------------------------
+
+// laneBlameLines are the header's attribution block, empty for every task
+// that is not parked on a fan-out failure.
+func (d *detail) laneBlameLines() []string {
+	b, ok := d.laneBlame()
+	if !ok {
+		return nil
+	}
+	width := max(d.width, 1)
+	head := "  ⚠ " + b.reason
+	if b.laneID != "" {
+		head += "  ·  lane " + strconv.Quote(b.laneID)
+	}
+	if b.taskID != 0 {
+		head += "  ·  task " + strconv.FormatInt(b.taskID, 10)
+	}
+	lines := []string{ansi.Truncate(styleBad.Render(head), width, "…")}
+	for _, line := range b.messageLines() {
+		lines = append(lines, ansi.Truncate(styleDim.Render("      "+line), width, "…"))
+	}
+	if tail := b.laneFactLine(); tail != "" {
+		lines = append(lines, ansi.Truncate(styleWarn.Render("      "+tail)+
+			styleDim.Render("   l open the lane"), width, "…"))
+	}
+	return lines
+}
+
+// laneBlameStepLines are the same attribution on the `fan_out` step row,
+// where a reader walking the timeline meets the failure first.
+func (d *detail) laneBlameStepLines(r apiclient.StepRun, indent string) []string {
+	if r.StepType != stepTypeFanOut {
+		return nil
+	}
+	b, ok := d.laneBlame()
+	if !ok || b.reason == "" {
+		return nil
+	}
+	if newest, found := d.newestFanOutRun(); !found || newest.ID != r.ID {
+		// Only the attempt the task is parked on. An earlier fan_out attempt
+		// that was retried is history, and its lanes are not the ones the
+		// jump would open.
+		return nil
+	}
+	line := indent + "↳ "
+	switch {
+	case b.laneID != "" && b.taskID != 0:
+		line += fmt.Sprintf("lane %s (task %d)", strconv.Quote(b.laneID), b.taskID)
+	case b.taskID != 0:
+		line += fmt.Sprintf("lane task %d", b.taskID)
+	default:
+		line += b.reason
+	}
+	if fact := b.laneFactLine(); fact != "" {
+		line += "  ·  " + fact
+	}
+	out := []string{styleBad.Render(line)}
+	if b.taskID != 0 {
+		out[0] += styleDim.Render("   l open the lane")
+	}
+	for _, m := range b.messageLines() {
+		out = append(out, styleDim.Render(indent+"  "+m))
+	}
+	if d.width > 0 {
+		for i, line := range out {
+			out[i] = ansi.Truncate(line, d.width, "…")
+		}
+	}
+	return out
+}
+
+// messageLines is the engine's own sentence, minus the lane it opens with
+// when that lane is already named on the line above. `merge_conflict` carries
+// the conflicted paths after it, which are the point of showing it at all.
+func (b laneBlame) messageLines() []string {
+	message := strings.TrimSpace(b.message)
+	if message == "" {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for _, line := range strings.Split(message, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// laneFactLine is what the engine's message does not carry: the lane's own
+// state and the reason *it* is stuck on.
+func (b laneBlame) laneFactLine() string {
+	if b.state == "" {
+		return ""
+	}
+	if b.block == "" {
+		return "the lane is " + b.state
+	}
+	return "the lane is " + b.state + " on " + b.block
 }

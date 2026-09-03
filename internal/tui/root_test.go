@@ -384,3 +384,34 @@ func TestReconnectingState(t *testing.T) {
 		t.Fatalf("phase after reconnect = %v, want phaseConnected", m.phase)
 	}
 }
+
+// TestRootJumpPushesTheTaskItLeaves is the root's half of #316's back stack:
+// a jump made inside the workspace opens the target by the ordinary
+// selectTaskMsg path — so the board, the palette and the takeovers keep the
+// route they have always had — and the task it came from is pushed first.
+func TestRootJumpPushesTheTaskItLeaves(t *testing.T) {
+	m := newRoot(testCtx(t), connector{}, ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	view := m.views[viewTask].(*taskView)
+
+	m.Update(openTaskMsg{id: 42, state: stateBlocked, from: 7})
+	if m.active != viewTask {
+		t.Fatalf("a jump left the active view at %v, want the task workspace", m.active)
+	}
+	if m.selectedTask != 42 {
+		t.Fatalf("the board's selection is %d, want 42", m.selectedTask)
+	}
+	if got := view.stack; len(got) != 1 || got[0] != 7 {
+		t.Fatalf("stack after the jump = %v, want [7]", got)
+	}
+	if view.detail.taskID != 42 {
+		t.Fatalf("the workspace opened task %d, want 42", view.detail.taskID)
+	}
+
+	// The board's own way of opening a task still clears the chain: there is
+	// nothing behind a task opened from the board but the board.
+	m.Update(selectTaskMsg{id: 43, state: stateRunning})
+	if len(view.stack) != 0 {
+		t.Fatalf("stack after a board open = %v, want empty", view.stack)
+	}
+}
