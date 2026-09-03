@@ -119,6 +119,11 @@ func TestSchemaCoversEveryStepField(t *testing.T) {
 		// hand, and validateStep refuses a hand-written one (task 019
 		// decision 6). It is deliberately unauthorable.
 		"resolved_from": true,
+		// derived_from is written by the runner into a task's own snapshot
+		// when a fan_out derives its lanes (task 080 decision 5 as amended).
+		// It is the first snapshot-only field: offering it would put a
+		// control on a form for something no author may set.
+		"derived_from": true,
 	}
 	for _, f := range commonStepFields() {
 		known[f.Name] = true
@@ -253,5 +258,32 @@ func TestSchemaCoversEveryStepType(t *testing.T) {
 	}
 	if len(have) != len(StepTypes) {
 		t.Errorf("schema declares %d step types, StepTypes has %d", len(have), len(StepTypes))
+	}
+}
+
+// The snapshot-only fields are withheld by the served schema, which is what
+// GET /v1/workflows/schema generates the structured editor's forms from: a
+// field offered there is a field a client would write into an authored
+// document, and validation refuses exactly that (task 080).
+func TestSchemaWithholdsSnapshotOnlyFields(t *testing.T) {
+	for _, name := range []string{"derived_from", "resolved_from"} {
+		for _, s := range SchemaDescriptor().Steps {
+			for _, f := range s.Fields {
+				if f.Name == name {
+					t.Errorf("the schema offers %q for a %s step; it is written by the daemon, "+
+						"never authored", name, s.Type)
+				}
+			}
+			for _, common := range s.Common {
+				if common == name {
+					t.Errorf("the schema offers %q as a common field of a %s step", name, s.Type)
+				}
+			}
+		}
+		for _, f := range SchemaDescriptor().Lane {
+			if f.Name == name {
+				t.Errorf("the schema offers %q on a lane", name)
+			}
+		}
 	}
 }

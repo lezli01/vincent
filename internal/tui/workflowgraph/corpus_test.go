@@ -63,6 +63,29 @@ func fixtureFanOut() *apiclient.WorkflowBody {
 	return body(step("plan", "agent"), spread, step("ship", "command"))
 }
 
+// 5b — a derived fan_out whose lanes form a `needs:` DAG and whose schedule
+// is eager: two lanes in round one, one that needs both in round two, and the
+// provenance the runner recorded when it materialized the list (§7.6, tasks
+// 080 and 081).
+func fixtureLaneDAG() *apiclient.WorkflowBody {
+	spread := step("spread", "fan_out")
+	spread.Schedule = "eager"
+	spread.DerivedFrom = &apiclient.WorkflowDerivationDef{
+		Lane:    "{{ .Item.id }}",
+		ForEach: []string{"{{ .Steps.plan.Result }}"},
+	}
+	lane := func(id string, needs ...string) apiclient.WorkflowLaneDef {
+		return apiclient.WorkflowLaneDef{
+			ID: id, Needs: needs,
+			Steps: []apiclient.WorkflowStepDef{step(id+"_work", "agent")},
+		}
+	}
+	spread.Lanes = []apiclient.WorkflowLaneDef{
+		lane("api"), lane("db"), lane("wire", "api", "db"),
+	}
+	return body(step("plan", "agent"), spread, step("ship", "command"))
+}
+
 // 6 — a counted loop with a body and a back-edge.
 func fixtureLoop() *apiclient.WorkflowBody {
 	loop := step("repeat", "loop")

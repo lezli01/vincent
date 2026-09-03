@@ -161,13 +161,30 @@ func (r *Runner) renderLane(
 }
 
 // materializeLanes writes the derived lanes into the task's snapshot, in place
-// of the `lane:`/`for_each:` pair that produced them (decision 5).
+// of the `lane:`/`for_each:` pair that produced them (decision 5) — keeping a
+// record of that pair in `derived_from:`.
+//
+// Decision 5 originally dropped it, which made a derived list and a
+// hand-authored one indistinguishable the moment the step ran. That is
+// amended here: the pair moves rather than disappearing, the way a resolved
+// lane's `workflow:` moves to `resolved_from:`. The two fields cannot stay
+// where they are — `lanes:` beside a live `lane:`/`for_each:` is a load-time
+// error, and this snapshot is re-parsed on every admission — so a *record* is
+// the only shape the provenance can survive in.
+//
+// The alternative was to read it back off the spawn round's `step_runs` row.
+// That was rejected: the retry budget can rewrite that row, and the picture a
+// reader is shown must not change because a lane was retried.
 func (r *Runner) materializeLanes(env *stepEnv, lanes []workflow.Lane) error {
 	body := *env.wf
 	steps := make([]workflow.Step, len(env.wf.Steps))
 	copy(steps, env.wf.Steps)
 	step := steps[env.index]
 	step.Lanes = lanes
+	step.DerivedFrom = &workflow.Derivation{ForEach: step.ForEach}
+	if step.Lane != nil {
+		step.DerivedFrom.Lane = step.Lane.ID
+	}
 	step.Lane = nil
 	step.ForEach = nil
 	steps[env.index] = step

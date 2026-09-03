@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -408,5 +409,63 @@ func TestGateCorpusIsServable(t *testing.T) {
 		if got.Definition == nil || len(got.Definition.Steps) == 0 {
 			t.Errorf("%s served no steps", name)
 		}
+	}
+}
+
+// A materialized fan-out's provenance reaches the wire. Both endpoints that
+// serve a definition share one encoder, so this pins the task's own workflow
+// snapshot (GET /v1/tasks/{id}/workflow) as much as the registry's — and the
+// snapshot is the only place the field ever appears.
+func TestStepDefCarriesDerivedProvenance(t *testing.T) {
+	step := workflow.Step{
+		ID: "spread", Type: workflow.StepFanOut, Schedule: workflow.ScheduleEager,
+		Lanes: []workflow.Lane{
+			{ID: "api", Steps: []workflow.Step{{ID: "work", Type: workflow.StepCommand, Run: "go test ./..."}}},
+			{ID: "wire", Needs: workflow.LaneNeeds{"api"}},
+		},
+		DerivedFrom: &workflow.Derivation{
+			Lane:    "{{ .Item.id }}",
+			ForEach: workflow.ForEach{"{{ .Steps.plan.Result }}"},
+		},
+	}
+	out, err := json.Marshal(toWorkflowStepDef(step))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	derived, ok := got["derived_from"].(map[string]any)
+	if !ok {
+		t.Fatalf("derived_from is not on the wire: %s", out)
+	}
+	if derived["lane"] != "{{ .Item.id }}" {
+		t.Errorf("derived_from.lane = %v: %s", derived["lane"], out)
+	}
+	if list, _ := derived["for_each"].([]any); len(list) != 1 {
+		t.Errorf("derived_from.for_each = %v: %s", derived["for_each"], out)
+	}
+	if got["schedule"] != "eager" {
+		t.Errorf("schedule = %v: %s", got["schedule"], out)
+	}
+	// The lane DAG's edges travel with it; the graph is drawn from them.
+	lanes, _ := got["lanes"].([]any)
+	if len(lanes) != 2 {
+		t.Fatalf("lanes = %v: %s", got["lanes"], out)
+	}
+	wire, _ := lanes[1].(map[string]any)
+	if needs, _ := wire["needs"].([]any); len(needs) != 1 || needs[0] != "api" {
+		t.Errorf("the second lane's needs did not reach the wire: %s", out)
+	}
+	// A hand-authored list says nothing, which is the whole point of the
+	// field: it is what tells the two apart after materialization.
+	step.DerivedFrom = nil
+	plain, err := json.Marshal(toWorkflowStepDef(step))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(plain, []byte("derived_from")) {
+		t.Errorf("a step with no provenance still sent one: %s", plain)
 	}
 }

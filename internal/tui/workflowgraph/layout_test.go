@@ -48,6 +48,7 @@ func corpus() map[string]*apiclient.WorkflowBody {
 		"nested":     fixtureNested(),
 		"wide":       fixtureWideLabels(),
 		"laneshadow": fixtureLaneShadow(),
+		"lanedag":    fixtureLaneDAG(),
 	}
 }
 

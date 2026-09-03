@@ -253,7 +253,21 @@ type Step struct {
 	// workflow that never names it marshals byte-for-byte as it did before
 	// the field existed — the snapshot a task carries is compared as text.
 	Schedule string `yaml:"schedule,omitempty"`
-	Merge    *Merge `yaml:"merge,omitempty"`
+	// DerivedFrom records what a materialized lane list was derived from,
+	// and is written by the runner into the task's own snapshot when a
+	// derived fan-out renders its lanes (§7.6, task 080 decision 5 as
+	// amended). It is the first **snapshot-only** field: it is never
+	// authorable, never offered by the served schema, and a hand-written
+	// document carrying it is refused the way an unknown key is.
+	//
+	// It exists because materialization is otherwise lossy — a derived list
+	// and a hand-authored one are the same twelve lanes afterwards — and the
+	// graph has to be able to say which it is drawing. Recovering it from
+	// the spawn round's `step_runs` row was the alternative, and was
+	// rejected: it would make the picture depend on a row the retry budget
+	// can rewrite.
+	DerivedFrom *Derivation `yaml:"derived_from,omitempty"`
+	Merge       *Merge      `yaml:"merge,omitempty"`
 
 	// loop steps (task 016). Steps above carries the body — a loop and a
 	// group are the two structure steps, and one field for "the steps inside
@@ -395,6 +409,25 @@ type Lane struct {
 	Priority *int   `yaml:"priority,omitempty"`
 }
 
+// Derivation is the provenance of a materialized lane list: the `lane:` id
+// template and the `for_each:` templates the lanes were rendered from (§7.6,
+// task 080). The runner moves them here when it writes the rendered lanes
+// into `lanes:`, so the snapshot says both what the lanes are and where they
+// came from, and the two can no longer be confused.
+//
+// Only what a reader has to be told is kept. The whole `lane:` template is
+// not: its `workflow:`, `fields:` and `if:` are already visible on every lane
+// the derivation produced, and copying them here would be one more thing that
+// could disagree with the lanes beside it.
+type Derivation struct {
+	// Lane is the `lane:` template's id — `{{ .Item.name }}`, the shape
+	// every derived lane id took.
+	Lane string `yaml:"lane,omitempty"`
+	// ForEach is the templates the item list was rendered from, exactly as
+	// the step authored them.
+	ForEach ForEach `yaml:"for_each,omitempty"`
+}
+
 // Merge is how a `fan_out` step joins its lanes back (§7.6, decisions 7, 8).
 // Lanes are merged `--no-ff` one at a time in declared order, stopping at the
 // first conflict.
@@ -482,6 +515,19 @@ type Options struct {
 	// caller wanting only structural validation — a snapshot re-parse, a test
 	// — gets by leaving it unset.
 	MaxIterations func() int
+	// Authored marks a document a person wrote — a registry file, or the
+	// body of a workflow-write request — rather than a task's own snapshot.
+	// It is what refuses the snapshot-only fields: `derived_from` is written
+	// by the runner and must be readable back out of a snapshot, so it
+	// cannot be refused at decode the way an unknown key is, and this is
+	// where the refusal lands instead.
+	//
+	// False is the permissive reading because every snapshot re-parse in the
+	// daemon spells its options `workflow.Options{}` — the engine's, the
+	// recovery path's, the task-workflow endpoint's. The registry sets it on
+	// the options it parses files with and on the ones it hands the API, so
+	// every surface that accepts an authored document gets it.
+	Authored bool
 }
 
 // Error is a single validation failure, located in the source file when the
@@ -765,6 +811,15 @@ func derefString(p *string) string {
 // validateStep checks one step: its type, the fields that type requires, the
 // fields that do not belong to it, and every template it carries.
 func validateStep(step Step, base string, opts Options, add func(string, string, ...any)) {
+	// The snapshot-only fields, refused on every step type at once: they are
+	// the daemon's to write, and a document that carries one is a document
+	// somebody typed a key the language does not have (task 080 decision 5
+	// as amended). Strict decoding cannot say this — the key has to decode
+	// out of a snapshot — so the wording is the decoder's.
+	if opts.Authored && step.DerivedFrom != nil {
+		add(base+".derived_from", `unknown field "derived_from": it is written into a `+
+			"task's snapshot when a fan_out derives its lanes, and cannot be authored")
+	}
 	switch step.Type {
 	case "":
 		add(base+".type", "type is required (one of %s)", stepTypeList)

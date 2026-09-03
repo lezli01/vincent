@@ -175,3 +175,66 @@ func TestWorkflowTabFallsBackWhenTooNarrow(t *testing.T) {
 }
 
 func strptr(s string) *string { return &s }
+
+// A lane's caption is the only place its child task's state can be told —
+// the lane's own steps run in the child, so the parent paints none of them
+// (task 051 decision 1) — which is why the caption has to carry the child's
+// own block reason, not just the word `blocked`.
+func TestBuildOverlayCarriesALanesOwnBlockReason(t *testing.T) {
+	lane := "api"
+	wf := &apiclient.WorkflowBody{Steps: []apiclient.WorkflowStepDef{
+		{ID: "spread", Type: "fan_out", Lanes: []apiclient.WorkflowLaneDef{
+			{ID: "api", Steps: []apiclient.WorkflowStepDef{{ID: "work", Type: "command"}}},
+		}},
+	}}
+	m := workflowgraph.New()
+	m.SetDefinition(wf)
+	d := workflowgraph.Build(wf)
+	reason := "worktree_dirty"
+	ov := buildOverlay(
+		apiclient.TaskDetail{
+			Task:          apiclient.Task{State: "running"},
+			WorkflowSteps: []apiclient.WorkflowStep{{ID: "spread"}},
+		},
+		d.Nodes, m.Lanes(),
+		map[string]apiclient.Task{
+			"api": {ID: 42, State: "blocked", BlockReason: &reason, LaneID: &lane},
+		})
+
+	got := ov.Lanes[workflowgraph.LaneKey("spread", "api")]
+	if got.Task != "blocked" || got.BlockReason != reason {
+		t.Fatalf("lane run state = %+v, want the child's parked state and reason", got)
+	}
+
+	// And it reaches the picture, which is what the caption is for. How much
+	// of it a narrow column can print is the graph's own question, and is
+	// pinned there.
+	m.SetSize(120, 60)
+	m.SetOverlay(ov)
+	if view := m.View(); !strings.Contains(view, "#42") || !strings.Contains(view, "blocked") {
+		t.Errorf("the caption does not carry the child task and its state:\n%s", view)
+	}
+}
+
+// A lane whose child is only paused says so, and names no reason it does not
+// have.
+func TestBuildOverlayCarriesALanesPause(t *testing.T) {
+	lane := "api"
+	wf := &apiclient.WorkflowBody{Steps: []apiclient.WorkflowStepDef{
+		{ID: "spread", Type: "fan_out", Lanes: []apiclient.WorkflowLaneDef{
+			{ID: "api", Steps: []apiclient.WorkflowStepDef{{ID: "work", Type: "command"}}},
+		}},
+	}}
+	m := workflowgraph.New()
+	m.SetDefinition(wf)
+	ov := buildOverlay(
+		apiclient.TaskDetail{WorkflowSteps: []apiclient.WorkflowStep{{ID: "spread"}}},
+		workflowgraph.Build(wf).Nodes, m.Lanes(),
+		map[string]apiclient.Task{
+			"api": {ID: 7, State: "running", PauseRequested: true, LaneID: &lane},
+		})
+	got := ov.Lanes[workflowgraph.LaneKey("spread", "api")]
+	if got.Task != "paused" || got.BlockReason != "" {
+		t.Errorf("lane run state = %+v, want paused with no reason", got)
+	}
+}

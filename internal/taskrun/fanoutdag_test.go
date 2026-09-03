@@ -9,6 +9,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // requireFileStep is a command step that fails unless a path is already in the
@@ -196,17 +197,53 @@ func TestFanOutDerivesItsLanes(t *testing.T) {
 	}
 
 	// Materialized: the step in the task's own snapshot is a plain lanes list,
-	// which is what makes every snapshot consumer correct with no new case.
+	// which is what makes every snapshot consumer correct with no new case —
+	// and it re-validates, because the snapshot is re-parsed on every later
+	// admission (§5.3).
 	reloaded, err := h.store.GetTask(t.Context(), task.ID)
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if strings.Contains(reloaded.WorkflowSnapshot, "for_each") {
-		t.Errorf("the snapshot still carries for_each after the spawn:\n%s", reloaded.WorkflowSnapshot)
+	wf, _, perr := workflow.Parse([]byte(reloaded.WorkflowSnapshot), workflow.Options{})
+	if perr != nil {
+		t.Fatalf("the materialized snapshot no longer validates: %v\n%s",
+			perr, reloaded.WorkflowSnapshot)
 	}
-	if !strings.Contains(reloaded.WorkflowSnapshot, "lanes:") {
-		t.Errorf("the snapshot has no materialized lanes:\n%s", reloaded.WorkflowSnapshot)
+	step, ok := stepByID(wf, "build")
+	if !ok {
+		t.Fatalf("the snapshot has no build step:\n%s", reloaded.WorkflowSnapshot)
 	}
+	if step.Lane != nil || len(step.ForEach) > 0 {
+		t.Errorf("the snapshot still carries a live lane:/for_each: driver:\n%s",
+			reloaded.WorkflowSnapshot)
+	}
+	if len(step.Lanes) != 3 {
+		t.Errorf("the snapshot has %d materialized lanes, want 3:\n%s",
+			len(step.Lanes), reloaded.WorkflowSnapshot)
+	}
+	// The provenance survives the materialization: a derived list and a
+	// hand-authored one must not read the same afterwards, because the graph
+	// draws the difference (task 080 decision 5 as amended).
+	if step.DerivedFrom == nil {
+		t.Fatalf("the materialized step records nothing about what it derived from:\n%s",
+			reloaded.WorkflowSnapshot)
+	}
+	if len(step.DerivedFrom.ForEach) == 0 {
+		t.Errorf("derived_from carries no for_each templates: %+v", *step.DerivedFrom)
+	}
+	if step.DerivedFrom.Lane != "{{ .Item.id }}" {
+		t.Errorf("derived_from.lane = %q, want the lane id template",
+			step.DerivedFrom.Lane)
+	}
+}
+
+func stepByID(wf *workflow.Workflow, id string) (workflow.Step, bool) {
+	for _, s := range wf.Steps {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return workflow.Step{}, false
 }
 
 // TestFanOutBlocksOnANonJSONItem: an item that is not a JSON object blocks at

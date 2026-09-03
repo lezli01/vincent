@@ -168,8 +168,14 @@ type workflowStepDef struct {
 	// Schedule is the lane scheduling mode: `barrier` or `eager` (§7.6, task
 	// 081). Absent means barrier, which is what a workflow written before the
 	// field says.
-	Schedule string            `json:"schedule,omitempty"`
-	Merge    *workflowMergeDef `json:"merge,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	// DerivedFrom is what a materialized lane list was derived from (§7.6,
+	// task 080). It appears only in a task's snapshot — the daemon writes it
+	// when a derived fan-out renders its lanes — and is absent from every
+	// registry entry, which is what makes a derived list and a hand-authored
+	// one tell apart on the wire after materialization.
+	DerivedFrom *workflowDerivationDef `json:"derived_from,omitempty"`
+	Merge       *workflowMergeDef      `json:"merge,omitempty"`
 
 	// loop steps. Exactly one of Count and ForEach is set: the driver. A
 	// ForEach list is templates, not values — what it iterates is discovered
@@ -189,6 +195,13 @@ type workflowStepDef struct {
 	// anything carries a chain.
 	Workflow     string   `json:"workflow,omitempty"`
 	ResolvedFrom []string `json:"resolved_from,omitempty"`
+}
+
+// workflowDerivationDef is `derived_from:` on the wire: the `lane:` id
+// template and the `for_each:` templates a materialized lane list came from.
+type workflowDerivationDef struct {
+	Lane    string   `json:"lane,omitempty"`
+	ForEach []string `json:"for_each,omitempty"`
 }
 
 // workflowLaneDef is one fan_out lane. Exactly one of Workflow and Steps is
@@ -344,6 +357,12 @@ func toWorkflowStepDef(st workflow.Step) workflowStepDef {
 	if st.Lane != nil {
 		lane := toWorkflowLaneDef(*st.Lane)
 		out.Lane = &lane
+	}
+	if st.DerivedFrom != nil {
+		out.DerivedFrom = &workflowDerivationDef{
+			Lane:    st.DerivedFrom.Lane,
+			ForEach: []string(st.DerivedFrom.ForEach),
+		}
 	}
 	if st.Merge != nil {
 		merge := &workflowMergeDef{OnConflict: st.Merge.OnConflict}

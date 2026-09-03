@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -346,5 +347,48 @@ func TestWorkflowCreateRejectsBadScopeAndName(t *testing.T) {
 				t.Fatalf("status %d, want %d: %s", resp.StatusCode, tc.want, body)
 			}
 		})
+	}
+}
+
+// The served schema is what the structured editor builds its forms from, so a
+// snapshot-only field appearing anywhere in it is a control a client would use
+// to write a document validation then refuses (task 080 decision 5 as
+// amended).
+func TestWorkflowSchemaWithholdsDerivedFrom(t *testing.T) {
+	h := newWorkflowHarness(t)
+	resp, body := h.doJSON(t, http.MethodGet, "/v1/workflows/schema", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if bytes.Contains(body, []byte("derived_from")) {
+		t.Errorf("GET /v1/workflows/schema offers derived_from:\n%s", body)
+	}
+}
+
+// And a document that carries it is refused by the write API exactly as one
+// carrying an unknown key is: the registry judges a candidate as the authored
+// document it is.
+func TestWorkflowValidateRejectsDerivedFrom(t *testing.T) {
+	h := newWorkflowHarness(t)
+	src := `name: authored
+steps:
+  - id: spread
+    type: fan_out
+    lanes:
+      - id: api
+        steps:
+          - id: work
+            type: command
+            run: go test ./...
+    derived_from:
+      for_each: '{{ .Steps.plan.Result }}'
+`
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/workflows/validate",
+		map[string]any{"yaml": src})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if !bytes.Contains(body, []byte("derived_from")) {
+		t.Errorf("validate accepted a hand-written derived_from:\n%s", body)
 	}
 }

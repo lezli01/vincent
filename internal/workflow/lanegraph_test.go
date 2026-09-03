@@ -254,3 +254,101 @@ func TestFanOutScheduleSurvivesAMarshalRoundTrip(t *testing.T) {
 		t.Errorf("an eager step did not marshal its schedule:\n%s", out)
 	}
 }
+
+// The snapshot-only provenance field (§7.6, task 080 decision 5 as amended).
+//
+// `derived_from:` is the record a materialized fan-out keeps of the
+// `lane:`/`for_each:` pair that produced its lanes. Three properties make it
+// safe, and all three are load-time facts:
+
+// A materialized snapshot re-validates. It is re-parsed on every later
+// admission (§5.3), so a `lanes:` list beside a derivation record has to be
+// accepted where a `lanes:` list beside a live `lane:` template is refused.
+func TestMaterializedSnapshotValidatesWithItsProvenance(t *testing.T) {
+	src := []byte(`name: root
+steps:
+  - id: spread
+    type: fan_out
+    lanes:
+      - id: api
+        steps:
+          - id: work
+            type: command
+            run: go test ./...
+      - id: wire
+        needs: [api]
+        steps:
+          - id: work
+            type: command
+            run: go test ./...
+    derived_from:
+      lane: '{{ .Item.id }}'
+      for_each: '{{ .Steps.plan.Result }}'
+`)
+	wf, _, err := Parse(src, Options{})
+	if err != nil {
+		t.Fatalf("a materialized snapshot must re-validate: %v", err)
+	}
+	got := wf.Steps[0].DerivedFrom
+	if got == nil {
+		t.Fatal("derived_from did not survive the round trip")
+	}
+	if got.Lane != "{{ .Item.id }}" || len(got.ForEach) != 1 {
+		t.Errorf("derived_from = %+v, want the lane and for_each templates it was written with", *got)
+	}
+	// And it survives being marshalled back out, which is the shape the
+	// snapshot is stored in.
+	out, merr := Marshal(wf)
+	if merr != nil {
+		t.Fatalf("Marshal: %v", merr)
+	}
+	if !strings.Contains(string(out), "derived_from:") {
+		t.Errorf("the re-encoded snapshot dropped its provenance:\n%s", out)
+	}
+}
+
+// A hand-written document carrying it is refused the way an unknown key is.
+// Strict decoding cannot say so — the key has to decode out of a snapshot —
+// so the refusal lands in validation, and only for a document somebody wrote.
+func TestDerivedFromIsNotAuthorable(t *testing.T) {
+	src := []byte(`name: root
+steps:
+  - id: spread
+    type: fan_out
+    lanes:
+      - id: api
+        steps:
+          - id: work
+            type: command
+            run: go test ./...
+    derived_from:
+      for_each: '{{ .Steps.plan.Result }}'
+`)
+	_, _, err := Parse(src, Options{Authored: true})
+	if err == nil {
+		t.Fatal("an authored document carrying derived_from was accepted")
+	}
+	var errs Errors
+	if !asErrors(err, &errs) {
+		t.Fatalf("Parse returned %T, want Errors", err)
+	}
+	var found bool
+	for _, e := range errs {
+		if e.Path == "steps[0].derived_from" && strings.Contains(e.Message, "unknown field") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("findings %v name no unknown field at steps[0].derived_from", errs)
+	}
+}
+
+// The registry is where authored documents enter — a file on disk, or a
+// candidate POSTed to be judged exactly as a file would be — so it is the
+// registry that carries the refusal to every one of those surfaces.
+func TestRegistryParsesAsAuthored(t *testing.T) {
+	if !NewRegistry(t.TempDir(), Options{}, nil).Options().Authored {
+		t.Error("the registry judges files as authored documents; " +
+			"without that, POST /v1/workflows/validate accepts a snapshot-only field")
+	}
+}
