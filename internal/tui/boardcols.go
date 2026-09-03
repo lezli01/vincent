@@ -60,13 +60,35 @@ const (
 	maxTitle = 64
 	// widthStepMax and widthStatusMax are how far a surplus may take those
 	// two columns before the rest goes back to the title (task 050 decision
-	// 3). The step's ceiling fits `3/7 green · loop 4/10` — 21 cells — with
-	// room for a step name longer than the sample's; the status' is a couple
-	// of the board's lines of prose, past which wrapping is the better answer
-	// than a column nothing else can see around.
-	widthStepMax   = 32
+	// 3). The step's ceiling is measured off its widest content, a task in a
+	// `for_each` loop reporting its body step: `3/7 green · loop 4/10 ·
+	// repair 2/3` is 34 cells, and formatStep drops clauses from the tail
+	// below that rather than wrapping. The status' is a couple of the board's
+	// lines of prose, past which wrapping is the better answer than a column
+	// nothing else can see around.
+	//
+	// Amended 2026-09-03 (issue #317): 32 was the same measurement taken
+	// against `3/7 green · loop 4/10` — 21 cells — plus room for a longer
+	// step name. The body-step clause is 13 cells more, so a ceiling of 34
+	// now buys the full sample exactly and the slack goes to the title, which
+	// is the column that always has an appetite for it.
+	widthStepMax   = 34
 	widthStatusMax = 96
 )
+
+// columnWidth is the width the current column set gave the column headed
+// title, or 0 when this board is not carrying it. cellsFor and boardColumns
+// already share one shape (the same optional columns in the same order), so
+// the heading is the one stable name a cell can find its own width by — a
+// cell's index moves with every optional column ahead of it.
+func columnWidth(cols []table.Column, title string) int {
+	for i := range cols {
+		if cols[i].Title == title {
+			return cols[i].Width
+		}
+	}
+	return 0
+}
 
 // maxBoardColumns is every column the widest board can carry — the size a row
 // is built at, so rowsFor and groupHeaderRow never grow their slice mid-loop.

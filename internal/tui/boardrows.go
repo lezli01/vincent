@@ -337,21 +337,37 @@ func wrapCellLines(text string, width, height int) []string {
 // that would not parse has no step count, so it renders a dash rather than
 // a confident "1/0".
 //
-// A task inside a `loop` gets its iteration appended — `3/7 green · loop 4/10`
-// — because k/n alone says nothing about the one number that is moving
-// (§7.8, task 016 decision 14). Every other task carries no rollup and reads
-// exactly as it did.
-func formatStep(t apiclient.Task, withName bool) string {
+// A task inside a `loop` gets its position appended — `3/7 green · loop 4/10
+// · repair 2/3` — because k/n counts the whole loop as one step and so says
+// nothing about either number that is moving (§7.8, task 016 decision 14).
+// Every other task carries no rollup and reads exactly as it did.
+//
+// Those clauses are *fitted* to the column rather than left for the cell to
+// wrap: three of them outgrow every width below widthStepMax, and a STEP
+// column spilling onto a second and third line to finish a counter is the
+// row height spent on the least of what the row says. width is the STEP
+// column's own width, so the clauses drop from the tail — the body step
+// first, then the item, then the counter — and what is left always fits on
+// one line.
+func formatStep(t apiclient.Task, withName bool, width int) string {
 	k, n, ok := t.StepDisplay()
 	if !ok {
 		return "—"
 	}
 	s := fmt.Sprintf("%d/%d", k, n)
-	if withName && t.StepName != "" {
+	if !withName {
+		// The narrow column shows k/n alone; the loop goes with the name,
+		// because a bare `loop 4/10` beside no step name names nothing.
+		return s
+	}
+	if t.StepName != "" {
 		s += " " + t.StepName
 	}
-	if loop := t.Loop.Display(); withName && loop != "" {
-		s += " · " + loop
+	for clauses := t.Loop.Clauses(); len(clauses) > 0; clauses = clauses[:len(clauses)-1] {
+		fitted := s + " · " + strings.Join(clauses, " · ")
+		if ansi.StringWidth(fitted) <= width {
+			return fitted
+		}
 	}
 	return s
 }

@@ -41,6 +41,11 @@ type stepDefinition struct {
 type loopDefinition struct {
 	driver string
 	total  int
+	// body is the loop's body step ids in declaration order (§7.8). It is
+	// what turns a body row's step id into "repair 2/3": body rows carry the
+	// *loop's* step index, so a client has nothing to count a position
+	// against unless the snapshot hands it the order.
+	body []string
 }
 
 // stepName returns the display name of step index i, or "" when the index is
@@ -119,6 +124,9 @@ func loopDefinitionOf(step workflow.Step, ceiling int) *loopDefinition {
 		return nil
 	}
 	def := &loopDefinition{driver: step.Driver()}
+	for i := range step.Steps {
+		def.body = append(def.body, step.Steps[i].ID)
+	}
 	switch {
 	case step.Count != nil:
 		def.total = *step.Count
