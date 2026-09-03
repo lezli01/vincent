@@ -1775,3 +1775,39 @@ func TestOutputTabKeysWorkFromEitherFocus(t *testing.T) {
 		}
 	}
 }
+
+// TestLevelKeysNameEveryLevel: the two rows that spell the cycle out are the
+// only place the help says what the key does, so a level missing from a label
+// is a level a reader has no way to know exists. Both rows are checked
+// because the two panes cycle one shared holder — a label naming three levels
+// beside one naming four would describe two different keys.
+func TestLevelKeysNameEveryLevel(t *testing.T) {
+	rows := map[bindingContext]string{ctxOutput: "v", ctxChat: "ctrl+r"}
+	found := map[bindingContext]bool{}
+	for _, b := range bindings {
+		key, ok := rows[b.context]
+		if !ok || b.key != key {
+			continue
+		}
+		found[b.context] = true
+		for _, l := range []outputLevel{levelQuiet, levelCompact, levelNormal, levelVerbose} {
+			if !strings.Contains(b.label, l.String()) {
+				t.Errorf("the %s row for %q does not name %s: %q",
+					b.context, key, l, b.label)
+			}
+		}
+		// Named in the order the key walks them, so the label is a promise
+		// about the next press rather than a list of the levels that exist.
+		want := levelQuiet.String() + " → " + levelCompact.String() +
+			" → " + levelNormal.String() + " → " + levelVerbose.String()
+		if !strings.Contains(b.label, want) {
+			t.Errorf("the %s row for %q does not spell the cycle %q: %q",
+				b.context, key, want, b.label)
+		}
+	}
+	for ctx, key := range rows {
+		if !found[ctx] {
+			t.Errorf("no %s row for %q in the registry", ctx, key)
+		}
+	}
+}

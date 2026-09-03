@@ -1134,20 +1134,35 @@ func toolUsePane(tools []apiclient.TranscriptTool) paneLine {
 	}
 }
 
-// renderResult renders the terminal record. On success it shows the outcome
-// and nothing else: every dialect's result text repeats assistant messages
-// already on screen — cursor's is the entire turn concatenated — so printing
-// it again is the same words twice. The text is kept when nothing else
-// rendered, which is what a codex turn with no agent_message looks like, and
-// always on error, where it is the error and may be the only content there is.
-func renderResult(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) paneLine {
+// renderResult renders the terminal record, reporting whether it produced a
+// line at all. On success it shows the outcome and nothing else: every
+// dialect's result text repeats assistant messages already on screen —
+// cursor's is the entire turn concatenated — so printing it again is the same
+// words twice. The text is kept when nothing else rendered, which is what a
+// codex turn with no agent_message looks like, and always on error, where it
+// is the error and may be the only content there is.
+//
+// levelQuiet suppresses the outcome branch and only that branch. The other
+// two are meanings of the record rather than level rules — §15 states them as
+// such — and a display level is not allowed to hide a failure, which in a
+// step run has no other line carrying it, nor to reduce a turn that produced
+// no prose at all to a bare `── turn N ──` with nothing under it.
+//
+// sawOutput is unperturbed by what quiet hides: it is set only by the
+// assistant-document path, so dropping the tool lines cannot change which
+// branch is taken, and the !sawOutput fallback fires at quiet exactly when it
+// fires everywhere else.
+func renderResult(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) (paneLine, bool) {
 	if rec.IsError {
-		return marked("✗ ", firstNonEmpty(rec.Message, rec.ResultText, "run failed"), styleBad)
+		return marked("✗ ", firstNonEmpty(rec.Message, rec.ResultText, "run failed"), styleBad), true
 	}
 	if !sawOutput {
-		return marked("✓ ", firstNonEmpty(rec.ResultText, "run finished"), styleOK)
+		return marked("✓ ", firstNonEmpty(rec.ResultText, "run finished"), styleOK), true
 	}
-	return marked("✓ ", resultOutcome(rec, level), styleOK)
+	if level == levelQuiet {
+		return paneLine{}, false
+	}
+	return marked("✓ ", resultOutcome(rec, level), styleOK), true
 }
 
 // resultOutcome is the one-line summary that replaces a repeated result text.
@@ -1160,7 +1175,9 @@ func renderResult(rec apiclient.TranscriptRecord, sawOutput bool, level outputLe
 // said and did, nothing else", and how long a run took is neither. From
 // normal up it carries what the run said about itself, and the per-model and
 // cache breakdown — the part that is several lines, not several words — is
-// verbose only.
+// verbose only. levelQuiet does not reach here at all: it drops the outcome
+// line rather than shortening it further (see renderResult), which is why the
+// short form below is `== levelCompact` and not "compact and below".
 func resultOutcome(rec apiclient.TranscriptRecord, level outputLevel) string {
 	if level == levelCompact {
 		if rec.CostUSD != nil {

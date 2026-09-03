@@ -87,13 +87,27 @@ func isTerminalControl(r rune) bool {
 // outputLevel is how much of a record the pane shows. One key cycles it
 // (§15 `v`); the level is session state, so switching attempts does not
 // silently reset what a reader is looking at.
+//
+// Four levels, quietest first, so `l < levelNormal` reads as "quieter than
+// the default" and a guard meaning "compact and below" is spelled
+// `level <= levelCompact`. Nothing outside this file may depend on the
+// numbers: they renumbered once already, when quiet was added underneath,
+// and nothing persists them (see levelHolder).
 type outputLevel int
 
 const (
+	// levelQuiet is the reading level: the agent's prose and anything that
+	// went wrong, and nothing it narrated about its own machinery. Below
+	// compact it drops the tool calls and their outcomes, the `done · …`
+	// outcome of a run that succeeded, and unrecognized lines entirely —
+	// not even their count, since a count is an offer to expand and quiet
+	// is the level that makes no offers.
+	levelQuiet outputLevel = iota
 	// levelCompact hides reasoning: what the agent said and did, nothing
-	// else. Unrecognized lines stay behind their count at every level below
-	// verbose — the count is the affordance that says there is more.
-	levelCompact outputLevel = iota
+	// else. Unrecognized lines stay behind their count at compact and at
+	// normal — the count is the affordance that says there is more, and
+	// quiet is the one level that does not show even that.
+	levelCompact
 	// levelNormal is the default — reasoning truncated to its first lines.
 	levelNormal
 	// levelVerbose shows everything, including the lines vincent's parsers
@@ -103,6 +117,8 @@ const (
 
 func (l outputLevel) String() string {
 	switch l {
+	case levelQuiet:
+		return "quiet"
 	case levelCompact:
 		return "compact"
 	case levelVerbose:
@@ -112,10 +128,12 @@ func (l outputLevel) String() string {
 	}
 }
 
-// next cycles compact → normal → verbose → compact.
+// next cycles quiet → compact → normal → verbose → quiet. One press is still
+// "one louder, wrap to the quietest", so the gesture did not change when the
+// fourth level went in underneath.
 func (l outputLevel) next() outputLevel {
 	if l >= levelVerbose {
-		return levelCompact
+		return levelQuiet
 	}
 	return l + 1
 }
@@ -128,6 +146,9 @@ func (l outputLevel) next() outputLevel {
 // dies with the process, exactly as §15 already reasons for the task pane.
 type levelHolder struct{ level outputLevel }
 
+// newLevelHolder starts at levelNormal, which since issue #321 is no longer
+// the zero value: a session must be constructed through here rather than as a
+// bare levelHolder{}, which would open every pane at quiet.
 func newLevelHolder() *levelHolder { return &levelHolder{level: levelNormal} }
 
 func (h *levelHolder) get() outputLevel { return h.level }
@@ -600,10 +621,10 @@ func toolResultLine(r apiclient.TranscriptToolResult) paneLine {
 }
 
 // thinkingBlock renders a reasoning block at the given level: hidden at
-// compact, truncated at normal, whole at verbose. Truncation is applied
-// after wrapping, so "3 lines" means three lines of the pane.
+// compact and below, truncated at normal, whole at verbose. Truncation is
+// applied after wrapping, so "3 lines" means three lines of the pane.
 func thinkingBlock(text string, level outputLevel, width int, expandKey string) []string {
-	if level == levelCompact || text == "" {
+	if level <= levelCompact || text == "" {
 		return nil
 	}
 	lines := wrapLine(paneLine{
@@ -700,6 +721,14 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	rawRun := 0
 	flushRaw := func() {
 		if rawRun == 0 {
+			return
+		}
+		// Quiet is the level below the count. Everywhere else the count is
+		// an offer — "there are lines here, `v` shows them" — and quiet is
+		// the level that makes no offers, so an unparsed line leaves no
+		// trace at all rather than a row of arithmetic about itself.
+		if level == levelQuiet {
+			rawRun = 0
 			return
 		}
 		note([]string{styleDim.Render(fmt.Sprintf(
@@ -812,12 +841,15 @@ func assistantBlockLines(text string, width int, raw bool) ([]string, []int) {
 func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel) (paneLine, bool) {
 	switch rec.Type {
 	case "agent.tool_use":
-		if len(rec.Tools) == 0 {
+		// levelQuiet is "what the agent said, and what went wrong". A tool
+		// call is what it *did*, which is exactly the half compact keeps
+		// and quiet drops.
+		if level == levelQuiet || len(rec.Tools) == 0 {
 			return paneLine{}, false
 		}
 		return toolUsePane(rec.Tools), true
 	case "agent.tool_result":
-		if len(rec.Results) == 0 {
+		if level == levelQuiet || len(rec.Results) == 0 {
 			return paneLine{}, false
 		}
 		// One record can report several outcomes; the first owns the line
@@ -825,16 +857,18 @@ func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLe
 		return toolResultLine(rec.Results[0]), true
 	case "agent.run_header":
 		// levelCompact is "what the agent said and did, nothing else"; the
-		// run header is neither, so it appears from normal up (task 066).
-		if level == levelCompact {
+		// run header is neither, so it appears from normal up (task 066) —
+		// and so is hidden at quiet for the same reason, one level down.
+		if level <= levelCompact {
 			return paneLine{}, false
 		}
 		return runHeaderLine(rec), true
 	case "agent.plan":
 		// levelCompact is "what the agent said and did, nothing else". A
 		// plan is neither — it is what the agent intends — so it appears
-		// from normal up, where the run header does (task 070).
-		if level == levelCompact || len(rec.Items) == 0 {
+		// from normal up, where the run header does (task 070), and stays
+		// hidden at everything below compact too.
+		if level <= levelCompact || len(rec.Items) == 0 {
 			return paneLine{}, false
 		}
 		return planLine(rec.Items), true
@@ -854,7 +888,10 @@ func renderRecord(rec apiclient.TranscriptRecord, sawOutput bool, level outputLe
 	case "agent.error":
 		return marked("✗ ", rec.Message, styleBad), true
 	case "agent.result":
-		return renderResult(rec, sawOutput, level), true
+		// The only arm that decides for itself whether it has a line: quiet
+		// suppresses the success outcome and keeps the other two forms, so
+		// the answer is not "always" (see renderResult).
+		return renderResult(rec, sawOutput, level)
 	case "command.output", "vincent.output":
 		if rec.Stream == "stderr" {
 			return plain(rec.Text, styleStderr, false), true

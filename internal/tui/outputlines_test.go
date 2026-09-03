@@ -123,8 +123,10 @@ func TestWrapLineJoinsGutterToFirstWord(t *testing.T) {
 func TestThinkingLevels(t *testing.T) {
 	text := strings.Repeat("reasoning words ", 30)
 
-	if got := thinkingBlock(text, levelCompact, 40, "v"); got != nil {
-		t.Errorf("compact rendered %d lines, want none", len(got))
+	for _, level := range []outputLevel{levelQuiet, levelCompact} {
+		if got := thinkingBlock(text, level, 40, "v"); got != nil {
+			t.Errorf("%s rendered %d lines, want none", level, len(got))
+		}
 	}
 
 	normal := plainLines(thinkingBlock(text, levelNormal, 40, "v"))
@@ -148,17 +150,30 @@ func TestThinkingLevels(t *testing.T) {
 	}
 }
 
-// TestOutputLevelCycle pins the order the key advances through.
+// TestOutputLevelCycle pins the order the key advances through: four levels
+// since issue #321, and one press is still "one louder, wrap to the
+// quietest", so the gesture did not change when quiet went in underneath.
 func TestOutputLevelCycle(t *testing.T) {
-	got := []outputLevel{levelNormal}
-	for range 3 {
+	got := []outputLevel{levelQuiet}
+	for range 4 {
 		got = append(got, got[len(got)-1].next())
 	}
-	want := []outputLevel{levelNormal, levelVerbose, levelCompact, levelNormal}
+	want := []outputLevel{levelQuiet, levelCompact, levelNormal, levelVerbose, levelQuiet}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("cycle = %v, want %v", got, want)
 		}
+	}
+	names := []string{"quiet", "compact", "normal", "verbose"}
+	for i, name := range names {
+		if l := outputLevel(i); l.String() != name {
+			t.Errorf("level %d names itself %q, want %q", i, l.String(), name)
+		}
+	}
+	// A fifth value would mean a level with no name, since String falls back
+	// to "normal" rather than reporting one.
+	if outputLevel(len(names)).next() != levelQuiet {
+		t.Error("the cycle does not close after the four named levels")
 	}
 }
 
@@ -199,7 +214,7 @@ func TestUsageOnlyAtVerbose(t *testing.T) {
 	d.records = []apiclient.TranscriptRecord{
 		{Type: "agent.usage", Raw: json.RawMessage(`{"input_tokens":10}`)},
 	}
-	for _, level := range []outputLevel{levelCompact, levelNormal} {
+	for _, level := range []outputLevel{levelQuiet, levelCompact, levelNormal} {
 		d.level.set(level)
 		if got := d.outputLines(); len(got) != 0 {
 			t.Errorf("%s rendered usage: %q", level, got)
@@ -372,9 +387,11 @@ func TestRunHeaderLevels(t *testing.T) {
 		AvailableTools: []string{"Task", "Bash", "Write"},
 	}}
 
-	d.level.set(levelCompact)
-	if got := d.outputLines(); len(got) != 0 {
-		t.Errorf("compact rendered the run header: %q", got)
+	for _, level := range []outputLevel{levelQuiet, levelCompact} {
+		d.level.set(level)
+		if got := d.outputLines(); len(got) != 0 {
+			t.Errorf("%s rendered the run header: %q", level, got)
+		}
 	}
 
 	var atNormal string
@@ -564,10 +581,12 @@ func TestPlanFromNormalUp(t *testing.T) {
 	}
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: "working"}, plan}
 
-	d.level.set(levelCompact)
-	compact := plainLines(d.outputLines())
-	if len(compact) != 1 || strings.TrimSpace(compact[0]) != "working" {
-		t.Errorf("compact = %q, want only the agent's own words", compact)
+	for _, level := range []outputLevel{levelQuiet, levelCompact} {
+		d.level.set(level)
+		got := plainLines(d.outputLines())
+		if len(got) != 1 || strings.TrimSpace(got[0]) != "working" {
+			t.Errorf("%s = %q, want only the agent's own words", level, got)
+		}
 	}
 	for _, level := range []outputLevel{levelNormal, levelVerbose} {
 		d.level.set(level)
@@ -621,7 +640,7 @@ func TestCommandOutputOnlyAtVerbose(t *testing.T) {
 	d.records = []apiclient.TranscriptRecord{
 		{Type: "agent.command_output", CallID: "item_2", Output: "total 8\n", Truncated: true},
 	}
-	for _, level := range []outputLevel{levelCompact, levelNormal} {
+	for _, level := range []outputLevel{levelQuiet, levelCompact, levelNormal} {
 		d.level.set(level)
 		if got := d.outputLines(); len(got) != 0 {
 			t.Errorf("%s rendered a command's output body: %q", level, got)

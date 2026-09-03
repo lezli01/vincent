@@ -112,17 +112,21 @@ func TestChatLevelIsTheOutputPanesLevel(t *testing.T) {
 	if d.level.get() != levelVerbose {
 		t.Fatalf("the task pane is on %s, want the level the chat cycled to", d.level.get())
 	}
-	// And back the other way.
+	// And back the other way. Verbose wraps to the quietest level, which is
+	// quiet since issue #321.
 	d.cycleLevel()
-	if v.level.get() != levelCompact {
-		t.Fatalf("cycling in the task pane left the chat on %s, want compact", v.level.get())
+	if v.level.get() != levelQuiet {
+		t.Fatalf("cycling in the task pane left the chat on %s, want quiet", v.level.get())
 	}
-	// compact → normal → verbose → compact, three presses back to the start.
-	for range 3 {
+	// quiet → compact → normal → verbose → quiet, four presses back to the
+	// start, and the two panes agree at every stop along the way.
+	want := []outputLevel{levelCompact, levelNormal, levelVerbose, levelQuiet}
+	for _, w := range want {
 		v.updateKey(registryKey(t, "ctrl+r"))
-	}
-	if v.level.get() != levelCompact {
-		t.Fatalf("three presses landed on %s, want compact again", v.level.get())
+		if v.level.get() != w || d.level.get() != w {
+			t.Fatalf("a press landed on %s (chat) and %s (task), want %s",
+				v.level.get(), d.level.get(), w)
+		}
 	}
 	// Leaving and reopening the chat keeps it: the holder outlives the view's
 	// per-chat state.
@@ -142,7 +146,7 @@ func TestChatHeaderNamesANonDefaultLevel(t *testing.T) {
 	if strings.Contains(header(), "normal") {
 		t.Error("the header names the default level, which is noise")
 	}
-	for _, l := range []outputLevel{levelCompact, levelVerbose} {
+	for _, l := range []outputLevel{levelQuiet, levelCompact, levelVerbose} {
 		v.level.set(l)
 		if !strings.Contains(header(), l.String()) {
 			t.Errorf("the header does not name the %s level", l)
@@ -229,7 +233,7 @@ func TestChatLiveAndRefetchedAgree(t *testing.T) {
 	for _, note := range live {
 		streamed = append(streamed, recordFromChunk(note))
 	}
-	for _, level := range []outputLevel{levelCompact, levelNormal, levelVerbose} {
+	for _, level := range []outputLevel{levelQuiet, levelCompact, levelNormal, levelVerbose} {
 		opts := lineOpts{expandKey: chatExpandKey}
 		want := plainLines(outputLines(fetched, level, 80, opts))
 		got := plainLines(outputLines(streamed, level, 80, opts))
@@ -256,7 +260,7 @@ func TestChatAndTaskPaneRenderMarkdownIdentically(t *testing.T) {
 		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Edit", CallID: "c1"}}},
 		{Type: "agent.output", Text: mdFixture},
 	}
-	for _, level := range []outputLevel{levelCompact, levelNormal, levelVerbose} {
+	for _, level := range []outputLevel{levelQuiet, levelCompact, levelNormal, levelVerbose} {
 		for _, width := range []int{40, 80} {
 			d := newTestDetail(t)
 			d.width = width
