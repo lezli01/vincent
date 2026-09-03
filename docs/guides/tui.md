@@ -365,7 +365,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `O` / `C` | On Steps & Attempts, open / close every iteration and round tier of this task |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
-| `v` | More or less detail: compact → normal → verbose (reasoning, the run's own metadata, then unrecognized lines) |
+| `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
@@ -469,6 +469,21 @@ Copying a link's destination is not here yet: links still render as the
 characters the agent sent, so there is no destination for the picker to offer.
 
 ### What `v` adds
+
+`quiet` is what the agent **said**, and whatever went wrong. Below compact it
+drops the `▸` tool calls and the outcomes under them, the `✓ done · …` line of a
+run that succeeded, and the lines vincent's parsers do not model — not even
+their count, because a count is an offer to expand and this is the level that
+makes no offers. It is the level for reading an answer rather than watching a
+run: a two-sentence reply arrives as two sentences instead of buried in file
+reads and greps.
+
+A failure is never hidden by a level. An `✗` result, an error line and a turn's
+own fail reason all render at `quiet`, and so does the result *text* of an
+attempt that printed nothing else — a codex turn with no assistant message —
+which would otherwise leave a turn header with nothing under it. A command
+step's pane is identical at `quiet` and `compact`: `quiet` is a rule about what
+the *agent* narrated, and a command step narrates nothing.
 
 `compact` is what the agent **said and did**, and nothing else. Reasoning is
 hidden, and so is everything about the run itself.
@@ -1262,11 +1277,25 @@ the draft alone; a second press discards the draft and returns you to the board.
 One conversation: the finished turns above, the running turn's live output below
 them, and a composer at the bottom.
 
+Your own messages are easy to find in it. A prompt is drawn as a right-aligned
+bubble — as wide as it needs to be, up to about two thirds of the pane, wrapping
+inside itself and marked with `›` on *every* line, not just the first. The
+agent's half of a turn is untouched: flush left, full width. The distinction is
+alignment and the marker as much as it is the colour, so it survives a
+monochrome terminal, `NO_COLOR` and an SSH session that lost the palette. Line
+breaks you typed are line breaks in the bubble, and a long prompt is not cut
+short — the tail of what you asked stays readable.
+
+The composer sits inside a titled `message` box, so the field you type into does
+not read as one more row of the conversation. The border comes out of the pane's
+height rather than being added on top of it: the screen is the same height it
+always was, and the hint line is still the last row of it.
+
 | Key | Does |
 |---|---|
 | `enter` | Send the message |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
-| `ctrl+r` | How much of the conversation to show: compact → normal → verbose |
+| `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
@@ -1288,16 +1317,19 @@ a merge or rebase is refused with the operation named.
 
 The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
-`#` the run header, `✓`/`✗` the result. `ctrl+r` cycles the same three levels
+`#` the run header, `✓`/`✗` the result. `ctrl+r` cycles the same four levels
 `v` cycles there, and it is the **same level** — set it in either place and the
 other is on it too. `ctrl+r` rather than `v` because the composer owns every
 printable key: a letter would be typed into your draft.
 
+At `quiet` you get the agent's prose and anything that went wrong, with the
+tool calls, the closing outcome line and the unrecognized-line count all gone.
 At `compact` you get what the agent said and did and nothing else. At `normal`
 reasoning is truncated to its first lines and the run header appears. At
 `verbose` you get everything, including the dialect lines vincent does not
-model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at the
-other two levels rather than filling the screen.
+model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at
+`compact` and `normal`, and leave no trace at all at `quiet`, rather than
+filling the screen.
 
 Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
 The **mouse wheel** does this too — a line per tick, from anywhere in the view,

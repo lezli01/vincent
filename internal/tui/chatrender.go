@@ -176,7 +176,11 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		t := &v.turns[i]
 		v.turnAt[t.Seq] = len(lines)
 		lines = append(lines, styleDim.Render(fmt.Sprintf(" ── turn %d ──", t.Seq)))
-		prompt := wrapCellLines("› "+t.Prompt, width-2, 6)
+		// The human's half of the turn is a right-aligned bubble; the agent's
+		// half below is untouched, flush left at the full width. The pad is
+		// by the bubble's *actual* height, so the prompt keeps carrying the
+		// zero anchor and v.turnAt[t.Seq] still points at the separator.
+		prompt := promptBubbleLines(t.Prompt, width)
 		lines = append(lines, prompt...)
 		pad(1 + len(prompt))
 		switch recs := v.turnRecords[t.Seq]; {
@@ -220,6 +224,12 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	return lines, anchors
 }
 
+// chatComposerWidth is how many columns the composer gets inside its border:
+// the pane's, less the frame's two. It is one function because two callers
+// size the composer — footerLines on every render and the WindowSizeMsg
+// handler in chatview.go — and two copies of the arithmetic drift.
+func chatComposerWidth(pane int) int { return max(pane-2, 10) }
+
 func (v *chatView) footerLines(width int) []string {
 	out := []string{""}
 	if v.note != "" {
@@ -231,21 +241,34 @@ func (v *chatView) footerLines(width int) []string {
 	}
 	// One element per rendered line, not one per widget (issue #299): the
 	// composer is SetHeight(3) and bubbles' viewport pads its View to that
-	// height, so a joined string would report a height of 1 and render 3.
-	// render's `room := height - len(head) - len(foot)` would then overrun the
-	// frame by two lines — the frame keeps the first h-2 — and the hint line
-	// below would never be drawn. It would also feed a multi-line string to
-	// render's per-line ansi.Truncate pass, which measures the whole thing as
-	// the *sum* of its rows — ansi.StringWidth treats the `\n`s as zero-width
-	// and never resets — so once that sum passes the pane width the tail is cut
-	// and the composer collapses to its first row. newtaskrender.go does the
-	// same split for the description textarea.
+	// height, and the border around it adds two more, so a joined string would
+	// report a height of 1 and render 5. render's
+	// `room := height - len(head) - len(foot)` would then overrun the frame by
+	// four lines — the frame keeps the first h-4 — and the hint line below
+	// would never be drawn. It would also feed a multi-line string to render's
+	// per-line ansi.Truncate pass, which measures the whole thing as the *sum*
+	// of its rows — ansi.StringWidth treats the `\n`s as zero-width and never
+	// resets — so once that sum passes the pane width the tail is cut and the
+	// box collapses to its top edge. That is why the frame is split here the
+	// same way the composer's own View is, and why the border is spent out of
+	// the budget rather than added after the join: §15's #299 amendment, "a
+	// composer that grew is a body that shrank, not a frame that overflowed".
 	//
 	// The width is the pane's, not the terminal's: render is what knows how
 	// many columns the composer actually has, and a composer sized from the
-	// whole terminal has its rows cut by the Truncate pass above.
-	v.composer.SetWidth(max(width-4, 10))
-	out = append(out, strings.Split(v.composer.View(), "\n")...)
+	// whole terminal has its rows cut by the Truncate pass above. Two of them
+	// go to the border, which is what shell.go's frame draws in.
+	v.composer.SetWidth(chatComposerWidth(width))
+	rows := strings.Split(v.composer.View(), "\n")
+	// focused=false on purpose: the composer holds the keyboard nearly always
+	// here, so a permanently lit focus glyph would say nothing.
+	box := frame("message", v.composer.View(), width, len(rows)+2, false)
+	if box == "" {
+		// Narrower or shorter than a box can be drawn in; the rows still are.
+		out = append(out, rows...)
+	} else {
+		out = append(out, strings.Split(box, "\n")...)
+	}
 	hint := " enter send · ctrl+x stop the turn · ctrl+r detail · " +
 		rawToggleKey + " raw · " + copyPickKey + " copy · " +
 		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"

@@ -7065,6 +7065,35 @@ stream for the live tail.
    the §7.4 popup takes the wheel out of the conversation behind it, the way it
    already takes clicks.
 
+   *Amended 2026-09-03 (issue #321).* `ctrl+r` cycles **four** levels here, as
+   `v` does there — `quiet → compact → normal → verbose` — and `quiet` is the
+   level this view exists to have: a chat read as a conversation, with the tool
+   calls, the success outcome line and the unrecognized-line count gone and the
+   prose left. It is not a chat dialect of `compact`: the task workspace's
+   output pane hides exactly the same records at exactly the same level, because
+   the whole point of task 071's amendment above is that the two panes are one
+   vocabulary. Nothing else in that amendment moves — the level is still one
+   shared session value, and the header still names it when it is not `normal`.
+
+   Two pieces of chrome are this view's own, and are what "the output pane's
+   line model" was never a claim about. The **human's half of a turn is a
+   right-aligned bubble**: shrink-to-fit, capped at about two thirds of the
+   pane, wrapping inside itself, with the `›` marker on every line of it and an
+   accent foreground rather than a background band — this section's Colour rule
+   requires the palette to degrade under `NO_COLOR` and at 16 colours, and right
+   alignment plus a per-line marker are what survive that. The prompt's own line
+   breaks survive into the bubble and there is no line cap, for the reason task
+   073 decision 5 dropped the §17 fallback's: a truncated prompt puts the tail of
+   what a human asked out of reach on a body that scrolls. The agent's half is
+   untouched — flush left, full width, the output pane's renderer verbatim — and
+   a §17 retained-away turn still renders its `ResultText` as assistant prose.
+   The **composer wears a titled border**, drawn with this section's one
+   box-drawing routine, so the field reads as a field rather than as one more
+   row of the conversation. The border is spent out of the height budget, not
+   added after the join: the #299 amendment below governs it verbatim — a
+   composer that grew is a body that shrank — and the footer still carries one
+   element per *rendered* line, the border's two rows included.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -7423,7 +7452,13 @@ on an error, where it is the error and may be the only content there is.
   columns saying nothing, and the whole point of the field is to distinguish
   "the model finished" from "it hit a limit". `verbose` adds the API-time split
   and, on wrapped continuation lines of the same record, the cache read/write
-  split and the per-model breakdown.
+  split and the per-model breakdown. *Amended 2026-09-03 (issue #321):* the
+  line does not shrink below compact — at `quiet` it is **absent**. Only the
+  success outcome is: the `✗ ` error form and the fallback that prints the
+  result *text* when the attempt rendered nothing else both still render at
+  `quiet`, because those two are meanings of the record rather than level
+  rules, and a level that erased them would hide a failure outright or leave a
+  turn's separator with nothing under it.
 
 *Amended 2026-08-31 (task 070).* One more gutter mark, and one record with no
 mark at all:
@@ -7881,6 +7916,26 @@ where they are read, so a chat says `(ctrl+r)` and never `(v)`. `e` opens `$EDIT
 re-reads a registry or the daemon blocks. One key jumps to the next task needing a
 human, surfaced in the footer only when that count is non-zero — the board has
 always pinned and belled those tasks without offering any way to *go* to one.
+
+*Amended 2026-09-03 (issue #321).* That cycle is **four levels, not three**:
+`quiet → compact → normal → verbose`, wrapping from verbose back to quiet, so
+one press is still "one louder, wrap to the quietest" and the gesture is
+unchanged. `quiet` sits below compact and is what the agent **said**, plus
+anything that went wrong: relative to compact it drops `agent.tool_use` and
+`agent.tool_result`, the success outcome of the result line, and unrecognized
+lines altogether. That last one amends the sentence above rather than adding
+below it — unrecognized lines stay behind their count at **compact and normal**,
+not at every level below verbose, because a count is an offer to expand and
+quiet is the level that makes no offers. `agent.error`, a chat turn's own fail
+reason and the `── turn N ──` separators render at every level including this
+one: a display level is not allowed to hide a failure. `command.output` and
+`vincent.output` are untouched, so a command step's pane is byte for byte the
+same at quiet as at compact — quiet is a rule about what the *agent* narrated,
+and a command step narrates nothing. Everything else here holds verbatim: the
+level is still one value for the session shared by both panes, still persisted
+nowhere, the default is still `normal`, and the pane title still names any level
+but the default — which matters most for this one, since it is the level whose
+effect can be to hide the only thing a turn produced.
 
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the
