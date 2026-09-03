@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -338,6 +339,52 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "enter"))
 			if v.tab != taskTabOutput || v.detail.selectedRun != selected {
 				t.Fatalf("enter opened tab %v with run %d, want Output with run %d", v.tab, v.detail.selectedRun, selected)
+			}
+		},
+		// The five fold keys (issue #317). Each drives the workspace on a
+		// task whose step 1 has three passes, where the two earlier tiers are
+		// folded shut and the cursor starts on the first of them.
+		"space": func(t *testing.T) {
+			v := tierTaskView(t, 1, 2, 3)
+			selectTier(t, v.detail, 1)
+			v.updateKey(registryKey(t, "space"))
+			if v.detail.timelineFolded() {
+				t.Fatal("space did not open the tier under the cursor")
+			}
+			v.updateKey(registryKey(t, "space"))
+			if !v.detail.timelineFolded() {
+				t.Fatal("space did not close it again")
+			}
+		},
+		"right": func(t *testing.T) {
+			v := tierTaskView(t, 1, 2, 3)
+			selectTier(t, v.detail, 1)
+			v.updateKey(registryKey(t, "right"))
+			if v.detail.timelineFolded() {
+				t.Fatal("→ did not open the folded tier")
+			}
+		},
+		"left": func(t *testing.T) {
+			v := tierTaskView(t, 1, 2, 3)
+			selectTier(t, v.detail, 3)
+			v.updateKey(registryKey(t, "left"))
+			if !v.detail.timelineFolded() {
+				t.Fatal("← did not close the tier the cursor is in")
+			}
+		},
+		"O": func(t *testing.T) {
+			v := tierTaskView(t, 1, 2, 3)
+			v.updateKey(registryKey(t, "O"))
+			if got := v.detail.renderTimeline(200); strings.Contains(got, diffFoldClosed) {
+				t.Fatalf("O left a tier folded:\n%s", got)
+			}
+		},
+		"C": func(t *testing.T) {
+			v := tierTaskView(t, 1, 2, 3)
+			v.updateKey(registryKey(t, "C"))
+			got := v.detail.renderTimeline(200)
+			if strings.Contains(got, diffFoldOpen) {
+				t.Fatalf("C left a tier open:\n%s", got)
 			}
 		},
 	},

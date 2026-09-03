@@ -327,6 +327,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 			return nil
 		}
+		if t.tab == taskTabSteps && t.detail.timelineFolded() {
+			// `enter` means both things, chosen by the row under the cursor:
+			// on a folded tier it opens the fold, and there is nothing else
+			// it could usefully mean there — the attempt it would carry the
+			// reader to is one they cannot see yet (issue #317).
+			return t.detail.setTimelineFold(true)
+		}
 		if t.tab == taskTabSteps && t.detail.selectedRun != 0 {
 			return t.setTab(taskTabOutput)
 		}
@@ -352,6 +359,24 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if t.tab == taskTabPull {
 		return t.updatePullTabKey(msg)
+	}
+	if t.tab == taskTabSteps {
+		// Gated on the tab, not handled in the switch above: ←/→ already walk
+		// the Output tab's attempt selection just below, and O/C are the Diff
+		// tab's fold-all. Each pair means the fold only while Steps &
+		// Attempts has the screen.
+		switch msg.String() {
+		case " ", "space":
+			return t.detail.toggleTimelineFold()
+		case "right":
+			return t.detail.setTimelineFold(true)
+		case "left":
+			return t.detail.setTimelineFold(false)
+		case "O":
+			return t.detail.setAllTimelineFolds(true)
+		case "C":
+			return t.detail.setAllTimelineFolds(false)
+		}
 	}
 	if t.tab == taskTabOutput {
 		switch msg.String() {
@@ -552,7 +577,7 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	}
 	switch t.tab {
 	case taskTabSteps:
-		return t.detail.moveSelection(delta)
+		return t.detail.moveTimelineSelection(delta)
 	case taskTabDetails:
 		t.details.scrollAt(msg.X, delta)
 	case taskTabOutput:

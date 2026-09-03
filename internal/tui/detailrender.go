@@ -372,18 +372,30 @@ func (d *detail) renderTimeline(height int) string {
 	// members get a tier of their own beneath it. Outside both the shape is
 	// unchanged: one header, then its attempts.
 	//
-	// A loop's iterations are folded shut with the latest open. Ten passes of
-	// a four-step body is forty rows, and a reader arriving at a blocked task
-	// wants the pass it stopped on, not the nine that worked — the same
-	// judgement task 012 made about a twenty-file diff.
+	// A loop's iterations — and a multi-round `fan_out`'s rounds, which ride
+	// the same column (task 080 decision 3) — are folded shut with the latest
+	// open. Ten passes of a four-step body is forty rows, and a reader
+	// arriving at a blocked task wants the pass it stopped on, not the nine
+	// that worked — the same judgement task 012 made about a twenty-file
+	// diff. Folded is not unreachable, though: the tiers open (§15, issue
+	// #317), and d.timelineFolds carries what a reader chose.
 	groups := groupedIndexes(runs)
 	loops := loopIndexes(runs)
-	openIteration := latestIterations(runs)
+	latest := latestIterations(runs)
+	// The tier the cursor sits in, when that tier is folded shut: its rows
+	// are not drawn, so its header stands in for them and takes the
+	// highlight. Without this the selection is invisible and the window jumps
+	// to the top of the timeline, which is the fault issue #317 names.
+	selTier, selFolded := d.foldedSelection(loops, latest)
 	lines := make([]string, 0, len(runs)*2)
 	ids := make([]int64, 0, len(runs)*2)
 	cursorLine := 0
 	lastStep := -1
-	lastIteration := 0
+	// -1 rather than 0, because a `fan_out`'s rounds are 0-based (task 080
+	// decision 3) and round 0 deserves a header like every other tier. A
+	// header is only emitted on a change, so starting at the first legal
+	// value would swallow it.
+	lastIteration := -1
 	lastSub := ""
 	for _, r := range runs {
 		looped := loops[r.StepIndex]
@@ -399,20 +411,31 @@ func (d *detail) renderTimeline(height int) string {
 				ids = append(ids, 0)
 			}
 			lastStep = r.StepIndex
-			lastSub, lastIteration = "", 0
+			lastSub, lastIteration = "", -1
 			lines = append(lines, d.timelineHeader(r, round, looped, grouped))
 			ids = append(ids, 0)
 		}
+		open := looped && d.tierOpen(r.StepIndex, r.Iteration, latest[r.StepIndex])
 		if looped && r.Iteration != lastIteration {
 			lastIteration = r.Iteration
 			lastSub = ""
-			lines = append(lines, styleDim.Render("    "+iterationHeader(r, openIteration[r.StepIndex])))
+			header := "    " + iterationHeader(r, open, d.tierNoun(r.StepIndex))
+			if selFolded && selTier == (tierKey{r.StepIndex, r.Iteration}) {
+				cursorLine = len(lines)
+				header = styleSelected.Render(header)
+			} else {
+				header = styleDim.Render(header)
+			}
+			lines = append(lines, header)
 			ids = append(ids, 0)
 		}
-		if looped && r.Iteration != openIteration[r.StepIndex] {
-			// Folded: the header above stands for the whole iteration, and
-			// its attempts are not rendered. Selecting a run inside a folded
-			// iteration cannot happen, because it never entered ids.
+		if looped && !open {
+			// Folded: the header above stands for the whole tier, and its
+			// attempts are not rendered. A run inside one can still be
+			// *selected* — ↑/↓ treat a folded tier as one cursor stop, its
+			// first row (issue #317) — which is why the header above carries
+			// the cursor and no row here enters ids. A click cannot land on
+			// one: it is not on screen.
 			continue
 		}
 		// A repair is not an attempt of the blocked step and must never read
@@ -543,8 +566,9 @@ func groupedIndexes(runs []apiclient.StepRun) map[int]bool {
 }
 
 // loopIndexes reports which step indexes hold rows from more than one
-// iteration, or any row carrying an iteration at all — which is exactly the
-// `loop` steps, since every other step type writes iteration 0.
+// iteration, or any row carrying an iteration at all — the `loop` steps and
+// the multi-round `fan_out`s, since every other step type writes iteration 0.
+// What the two share is the tier: which *noun* titles it is tierNoun's job.
 //
 // Derived from the rows rather than the snapshot for the reason groupedIndexes
 // is: the timeline has to render before workflow_steps arrives, and for a task
@@ -559,8 +583,10 @@ func loopIndexes(runs []apiclient.StepRun) map[int]bool {
 	return out
 }
 
-// latestIterations is the highest iteration each loop index has a row for —
-// the one iteration that renders open.
+// latestIterations is the highest iteration each index has a row for — the
+// one tier that renders open until a reader says otherwise (task 016
+// decision 14: whoever arrives at a blocked task wants the pass it stopped
+// on).
 func latestIterations(runs []apiclient.StepRun) map[int]int {
 	out := map[int]int{}
 	for _, r := range runs {
@@ -571,32 +597,76 @@ func latestIterations(runs []apiclient.StepRun) map[int]int {
 	return out
 }
 
-// iterationHeader is one iteration's tier line, carrying the fold glyph and —
-// for a `for_each` loop — the item that pass ran on, which is the whole reason
-// a reader wants iteration headers rather than a flat list.
-func iterationHeader(r apiclient.StepRun, open int) string {
+// iterationHeader is one tier's line, carrying the fold glyph, the noun that
+// names the tier and — for a `for_each` loop — the item that pass ran on,
+// which is the whole reason a reader wants tier headers rather than a flat
+// list.
+func iterationHeader(r apiclient.StepRun, open bool, noun string) string {
 	glyph := diffFoldClosed
-	if r.Iteration == open {
+	if open {
 		glyph = diffFoldOpen
 	}
-	out := fmt.Sprintf("%s iteration %d", glyph, r.Iteration)
+	out := fmt.Sprintf("%s %s %d", glyph, noun, r.Iteration)
 	if r.LoopItem != nil && *r.LoopItem != "" {
 		out += " · " + *r.LoopItem
 	}
 	return out
 }
 
-// structureLabel names a `parallel` group or a `loop` from the task's
-// snapshot, since neither writes a step_runs row to take a name from (task
-// 014 decision 17, task 016 decision 7). A snapshot that has not loaded yet
-// falls back to the type name, which is still true.
-func (d *detail) structureLabel(index int, kind string) string {
+// structureLabel names a `parallel` group, a `loop` or a `fan_out` from the
+// task's snapshot, since none of them writes a step_runs row to take a name
+// from (task 014 decision 17, task 016 decision 7).
+//
+// The kind is the snapshot step's own type rather than the caller's guess, so
+// a multi-round `fan_out` reads as one instead of as the loop its rows look
+// like. `fallback` is what the rows imply and is used only for a task whose
+// snapshot has not arrived, or no longer parses — the row-only derivation is
+// all such a task can honestly be labelled from.
+func (d *detail) structureLabel(index int, fallback string) string {
 	for _, s := range d.task.WorkflowSteps {
-		if s.Index == index {
-			return fmt.Sprintf("%s (%s)", s.ID, kind)
+		if s.Index != index {
+			continue
+		}
+		kind := s.Type
+		if kind == "" {
+			kind = fallback
+		}
+		return fmt.Sprintf("%s (%s)", s.ID, kind)
+	}
+	return "(" + fallback + ")"
+}
+
+// tierNoun names the fold tiers at one step index. A multi-round `fan_out`
+// writes its round on the very column a `loop` writes its pass on (task 080
+// decision 3), so the rows alone cannot tell the two apart; only the
+// snapshot's step type can, and a task without one keeps the loop's word.
+//
+// The number is the column's value either way, so the screen, the log line
+// and the transcript name (`{step_index}-i{iteration}-{step_id}-{attempt}`)
+// all say the same one — which is why a round is labelled 0-based.
+func (d *detail) tierNoun(index int) string {
+	for _, s := range d.task.WorkflowSteps {
+		if s.Index == index && s.Type == stepTypeFanOut {
+			return "round"
 		}
 	}
-	return "(" + kind + ")"
+	return "iteration"
+}
+
+// stepTypeFanOut is the §7.6 step type as the task snapshot spells it.
+const stepTypeFanOut = "fan_out"
+
+// foldedSelection is the tier the timeline cursor sits in when that tier is
+// folded shut, so renderTimeline can move the highlight onto its header.
+func (d *detail) foldedSelection(loops map[int]bool, latest map[int]int) (tierKey, bool) {
+	sel := d.runByID(d.selectedRun)
+	if sel.ID == 0 || !loops[sel.StepIndex] {
+		return tierKey{}, false
+	}
+	if d.tierOpen(sel.StepIndex, sel.Iteration, latest[sel.StepIndex]) {
+		return tierKey{}, false
+	}
+	return tierKey{sel.StepIndex, sel.Iteration}, true
 }
 
 // includedFrom names the workflow step `index` was spliced in from (§7.9,

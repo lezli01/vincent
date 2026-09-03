@@ -179,6 +179,13 @@ type detail struct {
 	// kept so a click can name the attempt on the line it landed on.
 	timelineTop int
 	visibleRuns []int64
+	// timelineFolds records the iteration and round tiers a reader has opened
+	// or closed in the Steps & Attempts timeline. It holds *decisions only*:
+	// a tier that is absent renders at the arrival default, latest-open (task
+	// 016 decision 14), which is what lets a tier arriving mid-run open by
+	// itself while a refresh cannot close one the reader opened. `open` and
+	// `deselect` clear it, so another task starts at the default again.
+	timelineFolds map[tierKey]bool
 
 	width, height int
 }
@@ -335,6 +342,7 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.task = apiclient.TaskDetail{}
 	d.loaded, d.loadErr = false, nil
 	d.selectedRun, d.displayRun = 0, 0
+	d.timelineFolds = nil // the folds a reader opened belong to that task
 	d.resetOutput()
 	d.buffer = nil // held output belongs to the task being left
 	d.focus = focusTimeline
@@ -355,6 +363,7 @@ func (d *detail) deselect() {
 	d.task = apiclient.TaskDetail{}
 	d.loaded, d.loadErr = false, nil
 	d.selectedRun, d.displayRun = 0, 0
+	d.timelineFolds = nil
 	d.resetOutput()
 	d.buffer = nil
 	d.actions.clear()
@@ -740,9 +749,22 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if d.focus == focusTimeline {
 		switch msg.String() {
 		case "up", "k":
-			return d.moveSelection(-1)
+			return d.moveTimelineSelection(-1)
 		case "down", "j":
-			return d.moveSelection(1)
+			return d.moveTimelineSelection(1)
+		// The fold keys live here rather than in the workspace so the popup's
+		// timeline and the full-screen one are the same pane in the same
+		// state. ←/→ keep no alias: h/l are the Output tab's attempt walk.
+		case " ", "space":
+			return d.toggleTimelineFold()
+		case "right":
+			return d.setTimelineFold(true)
+		case "left":
+			return d.setTimelineFold(false)
+		case "O":
+			return d.setAllTimelineFolds(true)
+		case "C":
+			return d.setAllTimelineFolds(false)
 		}
 		return nil
 	}
@@ -808,6 +830,10 @@ func (d *detail) syncFollowToViewport() {
 	d.following = false
 }
 
+// moveSelection walks every attempt in timeline order, drawn or not. This is
+// the Output tab's ←/→, whose job is to reach each attempt's output in turn —
+// a fold is a fact about the timeline pane and must not hide an attempt from
+// the pane that exists to show it.
 func (d *detail) moveSelection(delta int) tea.Cmd {
 	runs := d.attempts()
 	if len(runs) == 0 {
@@ -817,9 +843,152 @@ func (d *detail) moveSelection(delta int) tea.Cmd {
 	if i < 0 {
 		i = len(runs) - 1
 	}
-	i = min(max(i+delta, 0), len(runs)-1)
-	d.selectedRun = runs[i].ID
+	return d.selectRun(runs, i+delta)
+}
+
+// moveTimelineSelection is ↑/↓ on the timeline, where a folded tier is a
+// single cursor stop — its first row — and renderTimeline highlights that
+// tier's header while such a row is selected. Every selection this can reach
+// is therefore drawn; walking onto an undrawn row left cursorLine at 0, so
+// the highlight vanished and the window jumped to the top of the timeline
+// (issue #317).
+//
+// A separate entry point rather than a flag read off d.focus: which of the
+// two moves is wanted is the caller's business — the wheel over the Steps
+// tab wants this one, the Output tab's ←/→ want the other — and correlating
+// it with a field is how the two came to share the wrong behaviour.
+func (d *detail) moveTimelineSelection(delta int) tea.Cmd {
+	runs := d.attempts()
+	if len(runs) == 0 {
+		return nil
+	}
+	stops := d.timelineStops(runs)
+	if len(stops) == 0 {
+		return nil
+	}
+	i := d.runIndex(d.selectedRun)
+	if i < 0 {
+		i = len(runs) - 1
+	}
+	// The cursor can sit on a row that is not itself a stop — `C` folds the
+	// tier under it — so a move from there steps to the neighbouring stop
+	// instead of counting from a position the list no longer has.
+	pos, exact := 0, false
+	for p, s := range stops {
+		if s == i {
+			pos, exact = p, true
+			break
+		}
+		if s < i {
+			pos = p + 1
+		}
+	}
+	switch {
+	case exact:
+		pos += delta
+	case delta < 0:
+		pos--
+	}
+	pos = min(max(pos, 0), len(stops)-1)
+	return d.selectRun(runs, stops[pos])
+}
+
+// timelineStops are the positions in `runs` that ↑/↓ may land on: every drawn
+// row, plus the first row of each folded tier, which stands for the tier its
+// header draws.
+func (d *detail) timelineStops(runs []apiclient.StepRun) []int {
+	loops := loopIndexes(runs)
+	latest := latestIterations(runs)
+	stops := make([]int, 0, len(runs))
+	seen := map[tierKey]bool{}
+	for i, r := range runs {
+		k := tierKey{r.StepIndex, r.Iteration}
+		switch {
+		case !loops[r.StepIndex], d.tierOpen(r.StepIndex, r.Iteration, latest[r.StepIndex]):
+			stops = append(stops, i)
+		case !seen[k]:
+			seen[k] = true
+			stops = append(stops, i)
+		}
+	}
+	return stops
+}
+
+func (d *detail) selectRun(runs []apiclient.StepRun, i int) tea.Cmd {
+	d.selectedRun = runs[min(max(i, 0), len(runs)-1)].ID
 	return d.syncOutput()
+}
+
+// tierKey identifies one fold tier of the timeline: an iteration of a `loop`
+// or a round of a `fan_out`, which ride the same column (task 080 decision 3).
+type tierKey struct {
+	index     int
+	iteration int
+}
+
+// tierOpen reports whether a tier renders its attempts. `latest` is the
+// highest iteration its step index has a row for — the tier that is open
+// until a reader says otherwise.
+func (d *detail) tierOpen(index, iteration, latest int) bool {
+	if open, ok := d.timelineFolds[tierKey{index, iteration}]; ok {
+		return open
+	}
+	return iteration == latest
+}
+
+// timelineTier is the tier the timeline cursor sits in, and false when the
+// selected row is at a step index that renders no tiers at all.
+func (d *detail) timelineTier() (tierKey, int, bool) {
+	runs := d.attempts()
+	sel := d.runByID(d.selectedRun)
+	if sel.ID == 0 || !loopIndexes(runs)[sel.StepIndex] {
+		return tierKey{}, 0, false
+	}
+	return tierKey{sel.StepIndex, sel.Iteration}, latestIterations(runs)[sel.StepIndex], true
+}
+
+// timelineFolded reports whether the cursor sits inside a tier that is folded
+// shut — the state in which `enter` opens the tier instead of carrying the
+// reader to the Output tab.
+func (d *detail) timelineFolded() bool {
+	k, latest, ok := d.timelineTier()
+	return ok && !d.tierOpen(k.index, k.iteration, latest)
+}
+
+// setTimelineFold opens (→) or closes (←) the tier under the cursor.
+func (d *detail) setTimelineFold(open bool) tea.Cmd {
+	if k, _, ok := d.timelineTier(); ok {
+		d.setFold(k, open)
+	}
+	return nil
+}
+
+// toggleTimelineFold is `space`, and `enter` on a folded tier.
+func (d *detail) toggleTimelineFold() tea.Cmd {
+	if k, latest, ok := d.timelineTier(); ok {
+		d.setFold(k, !d.tierOpen(k.index, k.iteration, latest))
+	}
+	return nil
+}
+
+// setAllTimelineFolds acts on every tier of the task — `O` and `C`, the Diff
+// tab's two letters in the same meaning.
+func (d *detail) setAllTimelineFolds(open bool) tea.Cmd {
+	runs := d.attempts()
+	loops := loopIndexes(runs)
+	for _, r := range runs {
+		if loops[r.StepIndex] {
+			d.setFold(tierKey{r.StepIndex, r.Iteration}, open)
+		}
+	}
+	return nil
+}
+
+func (d *detail) setFold(k tierKey, open bool) {
+	if d.timelineFolds == nil {
+		d.timelineFolds = map[tierKey]bool{}
+	}
+	d.timelineFolds[k] = open
 }
 
 // attempts returns every attempt in timeline order: by step, then by

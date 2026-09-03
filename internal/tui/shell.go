@@ -583,7 +583,7 @@ func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		return s.checkSelection()
 	case panelTimeline:
 		s.syncDetailFocus()
-		return s.detail.moveSelection(delta)
+		return s.detail.moveTimelineSelection(delta)
 	default:
 		// Whichever tab the pane is showing is the one that scrolls: wheeling
 		// over a diff used to move the output tail nobody could see.
@@ -636,13 +636,17 @@ func (s *shell) jumpAttention() tea.Cmd {
 // current state, so the footer never offers a press that does nothing. The
 // board's fold keys are the only ones: with `group_by: []` the table has no
 // groups at all (task 054 decision 5).
+//
+// The timeline's fold rows carry the same marker but not the same condition —
+// a loop's iterations and a `fan_out`'s rounds are tiers whatever the board is
+// grouped by — so the drop is scoped to the surface the decision was about.
 func (s *shell) liveBindings(rows []binding) []binding {
 	if len(s.board.group) > 0 {
 		return rows
 	}
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
-		if !b.fold {
+		if !b.fold || b.context != ctxTasks {
 			out = append(out, b)
 		}
 	}
