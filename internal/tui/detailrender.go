@@ -756,6 +756,9 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 	if dur, ok := r.Duration(d.now()); ok {
 		fields = append(fields, formatElapsed(dur))
 	}
+	if rollup := d.fanOutRollupField(r); rollup != "" {
+		fields = append(fields, rollup)
+	}
 	if r.InputWaitMS > 0 {
 		// The wait is excluded from the duration (§17), so it is shown rather
 		// than silently subtracted.
@@ -784,6 +787,60 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 		fields = append(fields, styleDim.Render(agentTriple(r)))
 	}
 	return fields
+}
+
+// fanOutRollupField annotates the `fan_out` step's own running row with what
+// its subtree is doing (§15): the round, and how many lanes are done, blocked
+// or waiting at a gate. A bare `running` on a fan-out tells a reader nothing
+// they can act on — the step itself executes none of the work — which is the
+// same judgement the board makes when it renders `awaiting_children
+// (2 blocked)` rather than a bare state (boardStateLabel).
+//
+// The text is derived from the task's children rollup (§13.2,
+// `apiclient.Task.Children`), never from the row. The row is written once,
+// when the lanes are spawned, and nothing rewrites it as they settle, so a
+// count frozen into `result_summary` would be stale by the time it is read.
+//
+// The round is printed only when no tier header above the row already names
+// it. A fan-out's rounds ride the `iteration` column and are drawn as
+// foldable `round N` tiers once any row is past round 0 (task 080 decision 3,
+// loopIndexes); saying it twice on the same screen buys nothing.
+//
+// A field of its own rather than a parenthetical on the state cell, which is
+// padded to a fixed width. The timeline styles whole fields and wraps between
+// them (wrapTimelineFields), so — unlike the board, which wraps first and
+// styles after — this needs no wrap-aware styling: it is dim like the row's
+// other qualifiers, and a lane that actually blocked the parent gets the
+// styleBad line laneBlameStepLines puts underneath.
+func (d *detail) fanOutRollupField(r apiclient.StepRun) string {
+	if r.StepType != stepTypeFanOut || r.State != "running" {
+		return ""
+	}
+	// Nil children, or a rollup with nothing to report: the row renders
+	// exactly as it would have, with no separator or bracket left dangling.
+	summary := d.task.Children.Summary()
+	if summary == "" {
+		return ""
+	}
+	if !d.roundTiered(r.StepIndex) {
+		summary = fmt.Sprintf("round %d · %s", r.Iteration, summary)
+	}
+	return styleDim.Render(summary)
+}
+
+// roundTiered reports whether renderTimeline draws round tiers at this step
+// index — true once any row there is past round 0, which is the rule
+// loopIndexes keys on and so the condition for a `round N` header standing
+// above the row. Read straight off the rows for the reason loopIndexes is:
+// the timeline renders before the snapshot arrives, and for a task whose
+// snapshot no longer parses.
+func (d *detail) roundTiered(index int) bool {
+	for _, s := range d.task.Steps {
+		if s.StepIndex == index && s.Iteration > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func wrapTimelineFields(fields []string, width int, continuationIndent string) []string {
