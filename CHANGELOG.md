@@ -9,7 +9,7 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
-## [Unreleased]
+## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
 ### Added
 
@@ -440,16 +440,13 @@ list with the user-facing context a commit subject cannot carry.
   over the API. Mid-run questions use the existing §7.4 flow verbatim; answering
   one is `vincent chat answer` or `POST /v1/chats/{id}/answer`.
 
-  Two limits worth knowing before you reach for it. **codex and cursor cannot
-  hold a chat**: creating one on either is refused with `400
-  agent_cannot_resume`. Both CLIs have a resume of some shape, but vincent does
-  not read it yet and no fixture captured against a named CLI version pins it,
-  and replaying the conversation into the prompt would be an emulation of a
-  capability the adapter does not have — so vincent refuses instead of faking
-  it. A stored session the CLI no longer knows fails that turn with
-  `session_lost` and leaves the chat usable, for the same reason: a silently
-  fresh session answers as if it had context it does not have, and you could
-  not tell that apart from a working conversation.
+  One limit is worth knowing before you reach for it: the session belongs to the
+  agent CLI, so a stored session the CLI no longer knows fails that turn with
+  `session_lost` and leaves the chat usable, rather than starting a fresh one
+  under the same id. A silently fresh session answers as if it had context it
+  does not have, and you could not tell that apart from a working conversation.
+  All three adapters can hold a chat — see *Chats work on codex and cursor*
+  below for what each of them can and cannot promise about a resumed session.
 - **`max_parallel_chats` (default 3).** Chats are bounded by their own cap,
   counted independently of `max_parallel_tasks`: a running chat consumes no task
   slot and never delays an admissible task. A `send` over the cap is refused
@@ -826,6 +823,25 @@ list with the user-facing context a commit subject cannot carry.
   today. Codex and cursor report none of it and nothing is synthesised for them.
   See [Using the TUI](docs/guides/tui.md#what-v-adds).
 
+- **The workflows this repository runs on itself put the new fan-out and loop
+  to work.** They are not built-ins and nothing installs them — they live in
+  `.vincent/workflows/` and are readable as worked examples of the features
+  above. `github-resolve-issue-dag`, with its lane body
+  `github-resolve-issue-unit`, is `github-resolve-issue` with the single long
+  `implement` session replaced by a planner that cuts the brief into units and
+  the edges between them, a human gate on the graph, a derived `fan_out`
+  (`max_lanes: 6`, `schedule: eager`, `on_conflict: agent`) and an integrator
+  that runs the suite on the joined branch; everything outside that middle is
+  copied byte for byte from the original, so a fix to one is a legible diff
+  against the other. And `github-resolve-issue`'s merge tail — rebase, repush,
+  wait for checks, merge — now runs inside a `count: 3` loop, so a required
+  check that goes red on the pushed commit is read and repaired by an agent and
+  the merge retried, instead of ending the run and handing the branch back to a
+  person. The repair agent may not weaken a test, relax a lint rule, add a
+  `//nolint` or edit `.github/workflows/` to stop a red job running, and a
+  merge probe reads the pull request back so a merge that happened elsewhere
+  stops the run rather than being retried.
+
 ### Changed
 
 - **The chat workspace reads as a conversation: a user turn you can find, and a
@@ -1098,7 +1114,7 @@ list with the user-facing context a commit subject cannot carry.
   five newest when the chat opens, the rest as you scroll to them — so raising
   the level reveals what already happened and not only what happens next; a turn
   whose transcript has aged out still shows its answer.
-  See [Using the TUI](docs/guides/tui.md#chat-workspace) (#282).
+  See [Using the TUI](docs/guides/tui.md#chat-workspace).
 
 - **A chat turn that hit its transcript cap, either clock or a cancel could
   hang forever.** When a turn ended early the runner stopped reading the
@@ -1192,20 +1208,6 @@ list with the user-facing context a commit subject cannot carry.
   top-level `build` are different steps — but the graph gave both boxes the same
   node id, which made selecting one ambiguous. Lane-inner nodes are now
   namespaced by their lane.
-
-### Not included
-
-- **codex and cursor cannot hold a chat yet, and say so.** Creating one on
-  either is refused with `400 agent_cannot_resume`. Both CLIs have a resume of
-  some shape, but vincent does not read it yet and no fixture captured against a
-  named CLI version pins it. Replaying the conversation into the prompt would be
-  an emulation of a capability the adapter does not have, so vincent refuses
-  instead of faking it. A stored session the CLI no longer knows fails that turn
-  with `session_lost` and leaves the chat usable, for the same reason: a silently
-  fresh session answers as if it had context it does not have, and you could not
-  tell that apart from a working conversation.
-- **No chats view in the TUI yet.** Chats are driven from `vincent chat` and the
-  API in this release.
 
 ## [0.7.0](https://github.com/lezli01/vincent/compare/v0.6.0...v0.7.0) (2026-08-29)
 
