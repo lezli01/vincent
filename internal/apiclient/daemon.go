@@ -49,15 +49,20 @@ func (a AgentStatus) NotAuthenticated() bool {
 // Info is the GET /v1/info body: the daemon's own identity, its global cap
 // and adapter availability.
 type Info struct {
-	Version          string        `json:"version"`
-	Commit           string        `json:"commit"`
-	Built            string        `json:"built"`
-	PID              int           `json:"pid"`
-	StartedAt        time.Time     `json:"started_at"`
-	UptimeSeconds    int64         `json:"uptime_seconds"`
-	Listen           string        `json:"listen"`
-	MaxParallelTasks int           `json:"max_parallel_tasks"`
-	Agents           []AgentStatus `json:"agents"`
+	Version          string    `json:"version"`
+	Commit           string    `json:"commit"`
+	Built            string    `json:"built"`
+	PID              int       `json:"pid"`
+	StartedAt        time.Time `json:"started_at"`
+	UptimeSeconds    int64     `json:"uptime_seconds"`
+	Listen           string    `json:"listen"`
+	MaxParallelTasks int       `json:"max_parallel_tasks"`
+	// Slots is how much of MaxParallelTasks is in use right now (§11). The
+	// daemon counts it, so every client renders the same number — a client
+	// that counted running rows itself would miss awaiting_input and every
+	// fan-out lane (issue #324).
+	Slots  InfoSlots     `json:"slots"`
+	Agents []AgentStatus `json:"agents"`
 	// Orphans counts data-root directories no task row claims (task 005).
 	// It is a pointer to a leak a human clears with `vincent gc`, not
 	// something a client acts on by itself.
@@ -66,6 +71,17 @@ type Info struct {
 	// only: the row counts and the retention span are scans and ride
 	// GET /v1/doctor instead, which is the cold path.
 	Database InfoDatabase `json:"database"`
+}
+
+// InfoSlots is the §11 concurrency picture carried on GET /v1/info: how many
+// tasks hold a slot, how many of those are fan-out lanes rather than root
+// tasks, and how many are parked awaiting input rather than working. Used is
+// the figure a "used / cap" header renders; the other two explain it when it
+// does not match the rows a board is showing.
+type InfoSlots struct {
+	Used          int `json:"used"`
+	Lanes         int `json:"lanes"`
+	AwaitingInput int `json:"awaiting_input"`
 }
 
 // InfoDatabase is the database footprint carried on GET /v1/info: the main
