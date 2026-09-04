@@ -113,8 +113,11 @@ func (p *projectsView) renderProjectRail(rows []apiclient.Project, height int) s
 	return strings.Join(windowRange(lines, from, to, height), "\n")
 }
 
+// projectRailSummary pairs a project's slot count with the cap that count is
+// measured against, so both numbers come from the daemon's §11 arithmetic
+// (see capCell) rather than from the root-only task list.
 func (p *projectsView) projectRailSummary(pr apiclient.Project) string {
-	running := p.runningIn(pr.ID)
+	running := pr.SlotsUsed
 	if pr.MaxParallelTasks != nil {
 		return fmt.Sprintf("%d running · cap %d", running, *pr.MaxParallelTasks)
 	}
@@ -139,7 +142,7 @@ func (p *projectsView) renderProjectOverview(pr apiclient.Project, height int) s
 		p.projectFact("workflow", pr.Workflow()),
 		p.projectFact("project cap", projectCap(pr)),
 		p.projectFact("global cap", p.globalCapLabel()),
-		p.projectFact("running now", strconv.Itoa(p.runningIn(pr.ID))),
+		p.projectFact("running now", strconv.Itoa(pr.SlotsUsed)),
 		"",
 		section("Current workload"),
 	)

@@ -55,22 +55,25 @@ func testProject(id int64, name string) apiclient.Project {
 }
 
 // The two caps are independent, so a project with none of its own must not
-// read as though it were capped at the daemon-wide figure.
+// read as though it were capped at the daemon-wide figure. Both numerators
+// are the served `slots_used` (§11), so the projects carry the figure rather
+// than a task list to be walked — see capCell and issue #324.
 func TestProjectCapCellSeparatesTheProjectCapFromTheGlobalOne(t *testing.T) {
 	p := newProjectsView()
 	capped := testProject(1, "capped")
 	two := 2
 	capped.MaxParallelTasks = &two
-	loadedProjects(p, []apiclient.Project{capped, testProject(2, "uncapped")}, []apiclient.Task{
-		{ID: 10, ProjectID: 1, State: stateRunning},
-		{ID: 11, ProjectID: 2, State: stateRunning},
+	capped.SlotsUsed = 1
+	uncapped := testProject(2, "uncapped")
+	uncapped.SlotsUsed = 1
+	loadedProjects(p, []apiclient.Project{capped, uncapped}, []apiclient.Task{
 		{ID: 12, ProjectID: 2, State: stateQueued},
 	})
 
 	if got, want := p.capCell(capped), "1 / 2"; got != want {
 		t.Errorf("capped cell = %q, want %q", got, want)
 	}
-	got := p.capCell(testProject(2, "uncapped"))
+	got := p.capCell(uncapped)
 	if !strings.Contains(got, "global 3") {
 		t.Errorf("uncapped cell = %q, want it to name the daemon-wide limit", got)
 	}
