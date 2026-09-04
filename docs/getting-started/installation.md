@@ -138,8 +138,8 @@ GitHub artifact attestation before extracting the archive. Pin a project or
 machine to a specific release instead with:
 
 ```sh
-mise use github:lezli01/vincent@0.3.0       # current directory
-mise use -g github:lezli01/vincent@0.3.0    # global
+mise use github:lezli01/vincent@0.8.0       # current directory
+mise use -g github:lezli01/vincent@0.8.0    # global
 ```
 
 Use `mise upgrade github:lezli01/vincent` to move an unpinned install forward.
