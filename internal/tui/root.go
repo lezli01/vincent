@@ -829,6 +829,10 @@ func (m *root) framedView(id viewID) string {
 // non-destructive by construction, and a confirmation on a harmless action
 // is friction.
 //
+// The figure is the board's, which is the daemon's §11 slot count and not a
+// walk of the listed rows (board.slotsUsed, issue #324): a walk tells the
+// person leaving that nothing is running while six fan-out lanes are.
+//
 // Nothing is printed at zero, and nothing when the board never loaded: "0
 // tasks running" from a TUI that never reached the daemon is a false
 // statement, not a reassuring one.
@@ -837,7 +841,7 @@ func (m *root) quitReminder() (string, bool) {
 	if !ok || !s.board.loaded {
 		return "", false
 	}
-	n := countRunning(s.board.tasks)
+	n := s.board.slotsUsed()
 	if n == 0 {
 		return "", false
 	}
