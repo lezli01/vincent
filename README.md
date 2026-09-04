@@ -307,7 +307,7 @@ vincent version
 ```
 
 mise selects the matching GitHub release archive for the current OS and
-architecture. Pin a version with `github:lezli01/vincent@0.3.0`.
+architecture. Pin a version with `github:lezli01/vincent@0.8.0`.
 
 Package-manager metadata moves on stable releases only. If a newly added
 channel has not received its first stable release yet, use mise or the archive
