@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
@@ -17,7 +19,10 @@ const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, it
 	stdout_tail,
 	status_message,
 	prompt_override, run_override, transcript_path,
-	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at`
+	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at,
+	rendered_prompt, rendered_run, rendered_check, rendered_if, rendered_for_each, input_truncated,
+	agent_source, model_source, effort_source, permission_mode,
+	timeout_ms, check_timeout_ms, shell, work_dir`
 
 // TerminalizeOpenStepRuns closes every still-running step run of a task,
 // recording state and reason. It exists for the human actions that end a
@@ -96,6 +101,16 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 	if r.StartedAt.IsZero() {
 		r.StartedAt = time.Now()
 	}
+	// A decision row's rendered guard and a loop body row's resolved
+	// `for_each` list are known *at insert* — the same rule loop_item and
+	// loop_total already follow (what that admission planned) — so the insert
+	// is the second write path for the input record, and takes the same cut.
+	// The cut values go back onto r so the struct agrees with the row.
+	r.RenderedPrompt = cutStepInput(r.RenderedPrompt, &r.InputTruncated)
+	r.RenderedRun = cutStepInput(r.RenderedRun, &r.InputTruncated)
+	r.RenderedCheck = cutStepInput(r.RenderedCheck, &r.InputTruncated)
+	r.RenderedIf = cutStepInput(r.RenderedIf, &r.InputTruncated)
+	r.RenderedForEach = cutStepInput(r.RenderedForEach, &r.InputTruncated)
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO step_runs (task_id, step_index, step_id, step_type, attempt, iteration, loop_item,
 			loop_total,
@@ -103,8 +118,13 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 			proc_started_at, proc_identity, container_id, exit_code, check_exit_code, failure_reason,
 			skip_reason,
 			result_summary, stdout_tail, status_message, prompt_override, run_override, transcript_path,
-			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at,
+			rendered_prompt, rendered_run, rendered_check, rendered_if, rendered_for_each,
+			input_truncated,
+			agent_source, model_source, effort_source, permission_mode,
+			timeout_ms, check_timeout_ms, shell, work_dir)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
 		r.LoopTotal,
 		string(r.State),
@@ -115,7 +135,12 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 		nullString(r.StatusMessage),
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS,
-		formatTime(r.StartedAt), formatTimePtr(r.FinishedAt))
+		formatTime(r.StartedAt), formatTimePtr(r.FinishedAt),
+		r.RenderedPrompt, r.RenderedRun, r.RenderedCheck, r.RenderedIf, r.RenderedForEach,
+		r.InputTruncated,
+		nullString(r.AgentSource), nullString(r.ModelSource), nullString(r.EffortSource),
+		nullString(r.PermissionMode),
+		r.TimeoutMS, r.CheckTimeoutMS, nullString(r.Shell), nullString(r.WorkDir))
 	if err != nil {
 		return fmt.Errorf("insert step run: %w", err)
 	}
@@ -129,6 +154,15 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 
 // UpdateStepRun writes every mutable field of r (matched by ID). Returns
 // ErrNotFound when the row does not exist.
+//
+// The migration-0027 input record is **not** in the SET list either, for the
+// same reason and with more at stake (issue #323). The rendered input is
+// written before the process starts, by RecordStepRunInput, and must already
+// be on the row while the attempt is `running` and after §12.4 recovery
+// finalizes it `interrupted` — which is precisely the attempt someone opens
+// the details pane for. An UPDATE here carrying an actor's stale struct, whose
+// new fields are zero because it read the row before the render, would erase
+// the record and make the feature silently useless.
 //
 // `status_message` is deliberately **not** in the SET list (task 036). It is
 // the one column the actor is not the sole writer of: the step's own process
@@ -156,6 +190,136 @@ func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 		return fmt.Errorf("update step run %d: %w", r.ID, err)
 	}
 	return oneRowAffected(res, fmt.Sprintf("step run %d", r.ID))
+}
+
+// StepInputLimit bounds each recorded input field (issue #323).
+//
+// 64 KiB, and the number is not arbitrary. On a retry the bytes an adapter
+// receives are the §8.4 render *plus* the daemon's appended
+// `<previous-attempt-failure>` block, whose output tail is bounded at 200
+// lines **or 256 KiB** (taskrun's outputTailBytes) — a quarter-megabyte per
+// retried attempt of bytes the transcript and result_summary already hold.
+// Nothing prunes step_runs (taskrun's prune drops only archived-task
+// transcripts and idempotency keys) and the database ships whole in `vincent
+// daemon backup`, so an uncapped column is a permanent cost. The largest
+// prompt vincent renders today is the `create-workflow` built-in's, about
+// 10 KB, so this is roughly six times the biggest real case while still
+// cutting the pathological one.
+//
+// resultSummaryLimit's 4096 is deliberately not reused: that bounds a summary
+// a board renders, and this is a record whose value is being exact.
+const StepInputLimit = 64 << 10
+
+// cutStepInput bounds one recorded input field at StepInputLimit bytes,
+// cutting on a rune boundary so a stored record is never invalid UTF-8, and
+// sets *truncated when it removed anything. *truncated is only ever raised,
+// never cleared: truncation is a fact about the row, and the several render
+// sites of one attempt each write their own field.
+//
+// Both write paths — the insert and RecordStepRunInput — route every rendered
+// field through here, which is what keeps a caller from storing an unbounded
+// one.
+func cutStepInput(v *string, truncated *bool) *string {
+	if v == nil {
+		return nil
+	}
+	s := *v
+	if len(s) > StepInputLimit {
+		// Back off to the start of the rune straddling the boundary: a cut
+		// mid-rune would render as a replacement character forever after.
+		cut := StepInputLimit
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = s[:cut]
+		*truncated = true
+	}
+	return &s
+}
+
+// StepRunInput is the rendered input and run-time resolution recorded on a
+// `step_runs` row (migration 0027). Only the members a call sets are written:
+// a call carrying just Check cannot clear a Prompt an earlier call wrote.
+//
+// Guard is the rendered `if:` and ForEach the JSON array of resolved
+// `for_each` items. Both are display only — a guard is re-evaluated every
+// time it is reached and is never sticky (task 015 decision 10).
+type StepRunInput struct {
+	Prompt, Run, Check, Guard, ForEach     *string
+	AgentSource, ModelSource, EffortSource string
+	PermissionMode                         string
+	TimeoutMS, CheckTimeoutMS              int64
+	Shell, WorkDir                         string
+}
+
+// RecordStepRunInput records what one attempt was given. Additive: the SET
+// list is built from the members that are non-nil (pointers) or non-zero
+// (strings and ints), so the several render sites of one attempt each write
+// their own field without clobbering the others — an agent step records its
+// prompt at one moment, a command step its script at another and its check
+// command later still, and all three are the same row. `input_truncated` is
+// OR-ed, never cleared.
+//
+// A call whose in sets nothing is a no-op returning nil — an empty
+// `UPDATE step_runs SET WHERE id = ?` is not a statement. Returns ErrNotFound
+// when the row does not exist.
+//
+// It is narrow the way SetStepRunStatus is, rather than a widening of
+// UpdateStepRun, and the reason is in UpdateStepRun's own comment: these
+// columns are written once, before the process starts, and an actor's later
+// UPDATE must not be able to carry them.
+func (s *Store) RecordStepRunInput(ctx context.Context, runID int64, in StepRunInput) error {
+	truncated := false
+	sets := make([]string, 0, 14)
+	args := make([]any, 0, 15)
+	// Fixed order rather than a map walk: the SET list and the argument list
+	// are two halves of one statement, so anything that reorders one silently
+	// misaligns the other.
+	add := func(col string, v any) {
+		sets = append(sets, col+" = ?")
+		args = append(args, v)
+	}
+	addRendered := func(col string, v *string) {
+		if cut := cutStepInput(v, &truncated); cut != nil {
+			add(col, *cut)
+		}
+	}
+	addText := func(col, v string) {
+		if v != "" {
+			add(col, v)
+		}
+	}
+	addRendered("rendered_prompt", in.Prompt)
+	addRendered("rendered_run", in.Run)
+	addRendered("rendered_check", in.Check)
+	addRendered("rendered_if", in.Guard)
+	addRendered("rendered_for_each", in.ForEach)
+	addText("agent_source", in.AgentSource)
+	addText("model_source", in.ModelSource)
+	addText("effort_source", in.EffortSource)
+	addText("permission_mode", in.PermissionMode)
+	addText("shell", in.Shell)
+	addText("work_dir", in.WorkDir)
+	if in.TimeoutMS != 0 {
+		add("timeout_ms", in.TimeoutMS)
+	}
+	if in.CheckTimeoutMS != 0 {
+		add("check_timeout_ms", in.CheckTimeoutMS)
+	}
+	if truncated {
+		add("input_truncated", true)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	args = append(args, runID)
+	//nolint:gosec // G202: sets holds literal column names; every value binds as an argument
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE step_runs SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
+	if err != nil {
+		return fmt.Errorf("record step run input %d: %w", runID, err)
+	}
+	return oneRowAffected(res, fmt.Sprintf("step run %d", runID))
 }
 
 // GetStepRun returns the step run with the given id, or ErrNotFound.
@@ -379,15 +543,35 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		procStarted, procIdentity, finished     sql.NullString
 		containerID                             sql.NullString
 		started                                 string
+		prompt, run, check, guard, forEach      sql.NullString
+		agentSrc, modelSrc, effortSrc, permMode sql.NullString
+		shell, workDir                          sql.NullString
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
 		&r.Iteration, &loopItem, &r.LoopTotal,
 		(*string)(&r.State), &agent, &model, &effort, &pid, &procStarted, &procIdentity, &containerID,
 		&exitCode, &checkExit,
 		&failure, &skip, &summary, &stdoutTail, &status, &promptOv, &runOv, &transcript,
-		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished); err != nil {
+		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished,
+		&prompt, &run, &check, &guard, &forEach, &r.InputTruncated,
+		&agentSrc, &modelSrc, &effortSrc, &permMode,
+		&r.TimeoutMS, &r.CheckTimeoutMS, &shell, &workDir); err != nil {
 		return nil, err
 	}
+	// NULL and empty are different facts for the rendered fields: nil is "no
+	// input recorded" (a pre-0027 row, or a step type with no such input) and
+	// a non-nil empty string is a render that produced nothing.
+	r.RenderedPrompt = stringPtr(prompt)
+	r.RenderedRun = stringPtr(run)
+	r.RenderedCheck = stringPtr(check)
+	r.RenderedIf = stringPtr(guard)
+	r.RenderedForEach = stringPtr(forEach)
+	r.AgentSource = agentSrc.String
+	r.ModelSource = modelSrc.String
+	r.EffortSource = effortSrc.String
+	r.PermissionMode = permMode.String
+	r.Shell = shell.String
+	r.WorkDir = workDir.String
 	r.Agent = agent.String
 	r.Model = model.String
 	r.Effort = effort.String

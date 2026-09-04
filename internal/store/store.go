@@ -185,6 +185,18 @@ func nullInt(n *int) any {
 	return *n
 }
 
+// stringPtr maps a scanned column back to a *string, keeping SQL NULL and the
+// empty string apart. It is nullString's inverse, for the columns where that
+// distinction is the point: a NULL `rendered_prompt` is "nothing was
+// recorded", an empty one is "the render produced nothing" (migration 0027).
+func stringPtr(s sql.NullString) *string {
+	if !s.Valid {
+		return nil
+	}
+	v := s.String
+	return &v
+}
+
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error

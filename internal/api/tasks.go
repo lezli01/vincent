@@ -295,8 +295,46 @@ type stepRunResponse struct {
 	// prompt or command before retrying it (§6 edit+retry). Booleans, not the
 	// text: a timeline flags the edit, and the text itself lives in the task's
 	// workflow_snapshot, which is the execution truth (§5.3).
-	PromptOverride bool    `json:"prompt_override"`
-	RunOverride    bool    `json:"run_override"`
+	PromptOverride bool `json:"prompt_override"`
+	RunOverride    bool `json:"run_override"`
+	// The rendered input this attempt was handed (§5.4, issue #323): the
+	// §8.4 render as the adapter or the shell received it. These are the
+	// **full recorded bytes**, deliberately unlike prompt_override/run_override
+	// above — those flag a human's edit for a timeline, this is the record a
+	// details pane reads, and a template is not an answer when the render is
+	// what went wrong.
+	//
+	// Null means no input was recorded: an attempt from before the record
+	// existed, and every field the step type has no input for. An empty string
+	// is a render that produced nothing, which is a different fact. rendered_if
+	// is display only — a guard is re-evaluated every time it is reached and is
+	// never sticky (§7.7) — and rendered_for_each is a JSON array of the
+	// resolved items.
+	RenderedPrompt  *string `json:"rendered_prompt"`
+	RenderedRun     *string `json:"rendered_run"`
+	RenderedCheck   *string `json:"rendered_check"`
+	RenderedIf      *string `json:"rendered_if"`
+	RenderedForEach *string `json:"rendered_for_each"`
+	// InputTruncated says a recorded field lost bytes to the store's size
+	// ceiling, so a pane renders the record as a prefix rather than as the
+	// whole of what the step got.
+	InputTruncated bool `json:"input_truncated"`
+	// The run-time resolution behind this attempt: which level supplied the
+	// agent, model and effort (§8.6), and the limits and shell it ran under.
+	// Null / 0 mean not recorded, which is what a pre-record attempt reads and
+	// what every step type with no such resolution reads.
+	//
+	// They are the row's own values, not a re-resolution: `config.yaml`
+	// hot-reloads (§12.3) and a task's overrides are patchable, so asking now
+	// can name a different level than the one that actually supplied it.
+	AgentSource    *string `json:"agent_source"`
+	ModelSource    *string `json:"model_source"`
+	EffortSource   *string `json:"effort_source"`
+	PermissionMode *string `json:"permission_mode"`
+	TimeoutMS      int64   `json:"timeout_ms"`
+	CheckTimeoutMS int64   `json:"check_timeout_ms"`
+	Shell          *string `json:"shell"`
+	WorkDir        *string `json:"work_dir"`
 	StartedAt      string  `json:"started_at"`
 	FinishedAt     *string `json:"finished_at"`
 }
@@ -353,8 +391,24 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		OutputTokens:   r.OutputTokens,
 		CostUSD:        r.CostUSD,
 		InputWaitMS:    r.InputWaitMS,
-		StartedAt:      r.StartedAt.UTC().Format(time.RFC3339),
-		FinishedAt:     timePtr(r.FinishedAt),
+		// The rendered fields pass through as-is: they are already pointers,
+		// and nilIfEmpty here would erase the empty-render fact.
+		RenderedPrompt:  r.RenderedPrompt,
+		RenderedRun:     r.RenderedRun,
+		RenderedCheck:   r.RenderedCheck,
+		RenderedIf:      r.RenderedIf,
+		RenderedForEach: r.RenderedForEach,
+		InputTruncated:  r.InputTruncated,
+		AgentSource:     nilIfEmpty(r.AgentSource),
+		ModelSource:     nilIfEmpty(r.ModelSource),
+		EffortSource:    nilIfEmpty(r.EffortSource),
+		PermissionMode:  nilIfEmpty(r.PermissionMode),
+		TimeoutMS:       r.TimeoutMS,
+		CheckTimeoutMS:  r.CheckTimeoutMS,
+		Shell:           nilIfEmpty(r.Shell),
+		WorkDir:         nilIfEmpty(r.WorkDir),
+		StartedAt:       r.StartedAt.UTC().Format(time.RFC3339),
+		FinishedAt:      timePtr(r.FinishedAt),
 	}
 }
 

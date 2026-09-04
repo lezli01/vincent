@@ -337,6 +337,47 @@ type StepRun struct {
 	// at a point in time, even though the snapshot keeps it thereafter.
 	PromptOverride string
 	RunOverride    string
+	// The rendered input this attempt was handed (migration 0027, §5.4): the
+	// §8.4 render as the adapter or the shell received it, not the template
+	// the snapshot keeps. `prompt_override` and friends stay what they are —
+	// the human's edit — and are empty on the ordinary attempt these describe.
+	//
+	// nil means none was recorded: a pre-0027 row, and every field the step
+	// type has no input for. A non-nil empty string is a genuinely empty
+	// render, which is a different fact and is why these are pointers.
+	//
+	// RenderedIf is display only. A guard is re-evaluated every time it is
+	// reached and is never sticky (task 015 decision 10); nothing reads this
+	// back to decide anything. It records what the guard rendered *to*, beside
+	// the raw template ResultSummary already carries.
+	//
+	// Each is bounded at StepInputLimit bytes on a rune boundary by the store's
+	// own writers, and InputTruncated says a cut happened — false on a pre-0027
+	// row, which recorded nothing to cut.
+	RenderedPrompt  *string
+	RenderedRun     *string
+	RenderedCheck   *string
+	RenderedIf      *string
+	RenderedForEach *string // JSON array of the resolved `for_each` items
+	InputTruncated  bool
+	// The run-time resolution behind this attempt: which level supplied the
+	// agent, model and effort, and the limits and shell the step actually ran
+	// under. Empty string / 0 mean not recorded — a pre-0027 row, and every
+	// field the step type has no resolution for — following LoopTotal's
+	// precedent, so a reader falls back to what it did before.
+	//
+	// Persisted rather than re-resolved on read, on purpose: `config.yaml`
+	// hot-reloads (§12.3) and a task's overrides are patchable, so asking the
+	// resolver later can name a different level than the one that actually
+	// supplied the value.
+	AgentSource    string // agent.Source: step|task|workflow|adapter
+	ModelSource    string
+	EffortSource   string
+	PermissionMode string // agent.PermissionMode: full-auto|restricted
+	TimeoutMS      int64
+	CheckTimeoutMS int64
+	Shell          string // resolved shell name for a command step
+	WorkDir        string
 	TranscriptPath string
 	InputTokens    *int64
 	OutputTokens   *int64

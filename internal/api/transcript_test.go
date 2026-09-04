@@ -202,6 +202,78 @@ func TestStepRunResponseOverrides(t *testing.T) {
 	}
 }
 
+// TestStepRunResponseInputRecord covers the migration-0027 record (issue
+// #323): the rendered input an attempt was handed and the resolution behind
+// it, including the nil-versus-empty distinction the pointers exist for.
+func TestStepRunResponseInputRecord(t *testing.T) {
+	summary := snapshotSummary{stepTotal: 2, stepNames: []string{"plan", "implement"}}
+
+	// An attempt from before the record existed: every field says "nothing was
+	// recorded", which is not "given an empty prompt".
+	bare := toStepRunResponse(&store.StepRun{ID: 7, StepIndex: 1, StepID: "impl"}, summary)
+	if bare.RenderedPrompt != nil || bare.RenderedRun != nil || bare.RenderedCheck != nil ||
+		bare.RenderedIf != nil || bare.RenderedForEach != nil {
+		t.Errorf("unrecorded attempt claims an input: %+v", bare)
+	}
+	if bare.InputTruncated || bare.TimeoutMS != 0 || bare.CheckTimeoutMS != 0 {
+		t.Errorf("unrecorded attempt claims limits: %+v", bare)
+	}
+	if bare.AgentSource != nil || bare.ModelSource != nil || bare.EffortSource != nil ||
+		bare.PermissionMode != nil || bare.Shell != nil || bare.WorkDir != nil {
+		t.Errorf("unrecorded attempt claims a resolution: %+v", bare)
+	}
+
+	empty := ""
+	run := &store.StepRun{
+		ID: 8, StepIndex: 1, StepID: "impl", StepType: "command",
+		RenderedRun: strptr("go test ./..."), RenderedCheck: &empty,
+		RenderedIf: strptr("true"), RenderedForEach: strptr(`["a","b"]`),
+		InputTruncated: true,
+		AgentSource:    "task", ModelSource: "workflow", EffortSource: "adapter",
+		PermissionMode: "restricted", TimeoutMS: 600_000, CheckTimeoutMS: 120_000,
+		Shell: "/bin/sh", WorkDir: "/tmp/wt",
+	}
+	got := toStepRunResponse(run, summary)
+	if got.RenderedRun == nil || *got.RenderedRun != "go test ./..." {
+		t.Errorf("rendered_run = %v, want the recorded bytes", got.RenderedRun)
+	}
+	// The empty render passes through as a non-null empty string: nilIfEmpty
+	// here would collapse it into "nothing was recorded".
+	if got.RenderedCheck == nil || *got.RenderedCheck != "" {
+		t.Errorf("rendered_check = %v, want a non-null empty render", got.RenderedCheck)
+	}
+	if got.RenderedPrompt != nil {
+		t.Errorf("rendered_prompt = %v, want null on a command step", got.RenderedPrompt)
+	}
+	if got.RenderedIf == nil || *got.RenderedIf != "true" {
+		t.Errorf("rendered_if = %v, want the guard's render", got.RenderedIf)
+	}
+	if got.RenderedForEach == nil || *got.RenderedForEach != `["a","b"]` {
+		t.Errorf("rendered_for_each = %v, want the resolved list", got.RenderedForEach)
+	}
+	if !got.InputTruncated {
+		t.Error("input_truncated dropped")
+	}
+	if got.AgentSource == nil || *got.AgentSource != "task" ||
+		got.ModelSource == nil || *got.ModelSource != "workflow" ||
+		got.EffortSource == nil || *got.EffortSource != "adapter" {
+		t.Errorf("sources = %v/%v/%v, want task/workflow/adapter",
+			got.AgentSource, got.ModelSource, got.EffortSource)
+	}
+	if got.PermissionMode == nil || *got.PermissionMode != "restricted" {
+		t.Errorf("permission_mode = %v, want restricted", got.PermissionMode)
+	}
+	if got.TimeoutMS != 600_000 || got.CheckTimeoutMS != 120_000 {
+		t.Errorf("timeouts = %d/%d, want 600000/120000", got.TimeoutMS, got.CheckTimeoutMS)
+	}
+	if got.Shell == nil || *got.Shell != "/bin/sh" || got.WorkDir == nil || *got.WorkDir != "/tmp/wt" {
+		t.Errorf("shell/work_dir = %v/%v, want /bin/sh and /tmp/wt", got.Shell, got.WorkDir)
+	}
+}
+
+// strptr is the test's way of writing a recorded field that is present.
+func strptr(s string) *string { return &s }
+
 // TestTranscriptRangesAndFormats drives the endpoint over a real transcript
 // written by a real run: the tail window, the normalized format, the
 // line-aligned resume cursor, and the two parameter rejections.
