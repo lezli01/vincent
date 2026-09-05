@@ -410,7 +410,11 @@ daemon running.
   `state` and `open_step_runs`. Such a task is refused by admission and will not
   run until crash recovery reconciles it, so it also raises a `tasks` problem.
   The waiting states are deliberately absent: an open run is correct under
-  `awaiting_input` and `awaiting_gate`.
+  `awaiting_input` and `awaiting_gate`. `fan_out` rows are excluded for the same
+  reason in the other direction: a fan-out round's row is opened by the park and
+  finalized by the merge admission (§7.6), so the parent is `queued` between the
+  two holding a row that is this round's rather than an unfinalized previous
+  attempt. Admission skips it too, so such a task is not refused.
 - **Agent availability is re-probed by default**, unlike `GET /v1/agents`.
   Authentication is not a function of the binary, so a cached `logged_in: false`
   would survive the user logging in — which would break the endpoint in the loop

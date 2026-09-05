@@ -1010,6 +1010,23 @@ list with the user-facing context a commit subject cannot carry.
   header now refreshes on task events rather than only on connect, so the number
   is live while a fan-out fills the pool.
 
+- **A running `fan_out` step was missing from the Steps & Attempts timeline.**
+  While its lanes worked, the parent task carried no step run for the fan-out
+  at all, so the last row on the timeline was the step *before* it and a task
+  busy fanning work out looked exactly like one that had stalled — while the
+  header on the same screen read `awaiting_children · step 4/7`, pointing at a
+  step the timeline underneath could not draw. The row now appears when the
+  lanes are spawned and stays for as long as they run, in `vincent task steps`
+  and `GET /v1/tasks/{id}/steps` as well as the TUI, and it is annotated in the
+  workspace with what the subtree is doing — `2 blocked`, `3/5 done` — in the
+  same words the board already uses beside `awaiting_children`.
+
+  It is still one row per round: the fan-out opens it when it spawns, and the
+  merge that ends the round finishes that same row rather than adding a second
+  one, so nothing about rounds, retries or the join changes. `vincent doctor`
+  does not report such a parent as unreconciled, and admission does not refuse
+  it.
+
 - **Editing a `prompt:` or a `run:` in the workflow editor destroyed it.** The
   row opened in a single-line text field, which collapses newlines by design;
   committing it wrote the whole body back as one line, so a 60-line agent

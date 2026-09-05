@@ -1417,7 +1417,12 @@ does not finish until every lane is merged.
   it, and a wake lost to a race degrades to barrier timing rather than
   stranding the parent. The settled-descendant rule above keeps running for an
   eager parent too. A wake that finds nothing to merge and nothing ready parks
-  again without recording a `step_runs` row and without holding a slot.
+  again without recording a *new* `step_runs` row and without holding a slot.
+  *Narrowed 2026-09-05 (issue #322):* that last sentence read "without
+  recording a `step_runs` row" until the park began opening the round's row
+  (below). A re-park that finds the round's row already open still writes
+  nothing, so the property this was buying — a wake that did no work spends no
+  retry budget — is unchanged.
 - **The join** merges each lane branch with `git merge --no-ff` in **declared**
   lane order, message `Merge lane '{lane_id}' of task {child_id}`, stopping at
   the first conflict. Declared rather than completion order is what makes a
@@ -1496,6 +1501,32 @@ does not finish until every lane is merged.
   repeat of this step's rows is this", which is what keeps round 2's merge from
   spending round 1's retry budget. The two meanings cannot collide, because a
   `fan_out` is not valid inside a loop body (§7.8).
+
+  *Amended 2026-09-05 (issue #322):* the round's row is **opened by the park
+  and finalized by the merge**, not written by the merge alone. A parent that
+  had spawned a round and parked in `awaiting_children` carried no row for the
+  step at all until its lanes settled, so the Steps & Attempts timeline (§15),
+  `vincent task steps`, `GET /v1/tasks/{id}/steps` and the `task_steps` MCP
+  tool — all of them `store.ListStepRuns` and nothing else — stopped at the
+  step *before* the fan-out for the whole time the lanes worked, and a parent
+  busy fanning work out could not be told from a task that stalled. It was the
+  one park in the engine breaking the phase 2 "every step index a task passes
+  through has at least one row" decision (§7.8): `enterGate` writes its row on
+  entry, and an `awaiting_input` step keeps the row its agent attempt already
+  has. It stays **one row per round**. The park inserts it `running` at the
+  round's `iteration`; a re-park at a round that already has an open row writes
+  nothing; and the merge admission for that round **adopts** that row — same
+  id, same `attempt`, same `started_at` — instead of inserting a second one, so
+  "which repeat of this step's rows is this" and the retry budget it scopes are
+  untouched. Nothing killable is journaled on it, because §12.4 kills what a
+  `running` row recorded and there is no process behind a park, and no lane
+  counts are frozen into it, because nothing rewrites the row until the merge:
+  what the lanes are doing is the `children` rollup §13.2 serves on the task
+  itself. A `fan_out` row is for that reason the one `running` row a `queued`
+  task may legitimately hold, and §11's admission guard and the doctor's
+  unreconciled report both skip it. A daemon restart finalizes an open park row
+  `interrupted` like any other owner's (§12.4) and the next merge admission,
+  finding none open, creates a fresh one — the `awaiting_gate` precedent.
 
 - **A lane that settles without finishing** blocks the step with
   `lane_failed`, and **nothing of that round** is merged. *Clarified
@@ -3892,7 +3923,8 @@ settling, at worst. The churn is bounded by the step's **direct** lane count
 and not by the size of the tree below it: the watermark counts direct children,
 so a depth-2 descendant settling does not move a root's number. Each such wake
 either does work or parks again immediately, releasing the slot; a parent that
-finds nothing to do writes no `step_runs` row. The deadlock-freedom argument in
+finds nothing to do writes no *new* `step_runs` row (§7.6, narrowed 2026-09-05
+by issue #322: the round's row is opened once, by the park that spawned it). The deadlock-freedom argument in
 §7.6 is untouched — the parent still releases its slot before its children need
 one — and `barrier` remains the default, so no existing workflow pays this.
 
@@ -6753,6 +6785,15 @@ stream for the live tail.
 	   top of the timeline. The Output tab's `←`/`→` are unchanged and still
 	   reach every attempt: a fold is a fact about the timeline pane, not about
 	   the task.
+	   *Amended 2026-09-05 (issue #322):* a `fan_out` step whose lanes are
+	   running is **on** this timeline — §7.6's park opens the round's row — and
+	   its `running` row is annotated with what its subtree is doing, since the
+	   step itself executes none of the work. The annotation is the `children`
+	   rollup §13.2 serves on the task (`2 blocked`, `3/5 done`), rendered live
+	   in the same words the board's `awaiting_children (2 blocked)` uses, never
+	   a count frozen into the row at spawn. The round is named beside it only
+	   when no round tier above the row already names it. Everything else on the
+	   row is unchanged, and no other step type is annotated.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*

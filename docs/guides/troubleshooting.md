@@ -54,7 +54,9 @@ in a script on a machine that only ever installs one of the three adapters.
 
 An **unreconciled** task is one whose state and step runs contradict each
 other — it is `queued` (or finished) while one of its step runs is still marked
-`running`. Crash recovery finalizes the old attempt before the task returns to
+`running`. A `fan_out` step's own row does not count: a parent between rounds is
+`queued` with that round's row deliberately left open, which is normal operation
+rather than a contradiction. Crash recovery finalizes the old attempt before the task returns to
 the queue, so this means recovery could not complete: the task is refused by
 admission and will sit at `queued` forever. Recovery runs at startup, so
 restarting the daemon retries it; the daemon log says why it failed the first
