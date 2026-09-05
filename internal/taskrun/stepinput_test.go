@@ -343,7 +343,7 @@ func TestStepInputGuardIsRecordedButNeverReplayed(t *testing.T) {
 		t.Fatalf("rendered_if = %v, want \"maybe\"", first[0].RenderedIf)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
