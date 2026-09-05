@@ -101,6 +101,8 @@ is at a schema version newer than this binary understands, orphaned worktrees
 are present, or a task is **unreconciled** — `queued` (or finished) while one of
 its step runs is still marked `running`, which means crash recovery could not
 close the previous attempt and admission will not run that task until it does
+(a `fan_out` step's own row is excluded: a parent waiting on its lanes holds
+one by design)
 ([Troubleshooting](../guides/troubleshooting.md#start-here-vincent-doctor)).
 The **Update** rows never set it either: a newer release and a daemon still
 running the previous build both leave everything working, so both are stated as

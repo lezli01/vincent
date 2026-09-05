@@ -30,6 +30,7 @@ package taskrun
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -99,7 +100,7 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		// rather than a fault, so the guard is skipped here and re-applied
 		// below for a declared-eager step whose selected lanes turn out flat
 		// (decision 4) — the only way to know that is to have selected them.
-		return r.parkForUnsettled(env, mine, unsettled)
+		return r.parkForUnsettled(ctx, env, mine, unsettled, roundUnknown)
 	}
 
 	// Derivation runs once, before anything is spawned, in the parent's
@@ -144,7 +145,8 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 	env.eager = declaredEager && lanesNeedOrdering(env.step.Lanes, selected)
 	if !env.eager {
 		if unsettled := unsettledLanes(mine); unsettled > 0 {
-			return r.parkForUnsettled(env, mine, unsettled)
+			return r.parkForUnsettled(ctx, env, mine, unsettled,
+				r.roundOf(env.step.Lanes, selected, mine))
 		}
 	}
 
@@ -227,7 +229,7 @@ func (r *Runner) spawnRound(
 			// it back. Both of the branches below would be wrong for it —
 			// nothing is unspawned *and* unreachable, and the step is not
 			// finished either, it is waiting.
-			return r.parkForUnsettled(env, mine, unsettled)
+			return r.parkForUnsettled(ctx, env, mine, unsettled, round)
 		}
 		if spawned := len(mine); spawned < len(selected) {
 			// Unreachable for a graph the load-time or spawn-time check
@@ -262,39 +264,118 @@ func (r *Runner) spawnRound(
 	}
 	// Park: the slot is released before the children need one, which is what
 	// makes this deadlock-free at any depth (decision 6).
-	if r.parkFanOut(env) {
+	if r.parkFanOut(ctx, env, round) {
 		env.log.Info("fan-out round spawned; awaiting children",
 			"step", env.step.ID, "round", round, "lanes", len(ready), "eager", env.eager)
 	}
 	return stepOutcome{}, true
 }
 
+// roundUnknown is the round a park reports when the admission cannot yet say
+// which one it is in: the guard at the top of runFanOut parks *before*
+// selecting lanes, deliberately, and the round is `roundOf` over the selected
+// set. openRoundRow opens no row for it.
+//
+// It costs nothing. That guard fires only when lanes exist and have not
+// settled, which means the admission that spawned them already parked and
+// already opened this round's row — the guard is the anomaly path (a park
+// transition that never committed), not a round boundary.
+const roundUnknown = -1
+
 // parkForUnsettled parks the parent because lanes it has spawned have not
 // settled. It reports the fan-out's stop-the-actor outcome, so a caller can
 // return it directly.
-func (r *Runner) parkForUnsettled(env *stepEnv, mine []store.Task, unsettled int) (stepOutcome, bool) {
+func (r *Runner) parkForUnsettled(
+	ctx context.Context, env *stepEnv, mine []store.Task, unsettled, round int,
+) (stepOutcome, bool) {
 	env.log.Info("fan-out lanes are still running; parking",
 		"lanes", len(mine), "unsettled", unsettled, "eager", env.eager)
-	if r.parkFanOut(env) {
+	if r.parkFanOut(ctx, env, round) {
 		env.log.Info("awaiting children", "step", env.step.ID)
 	}
 	return stepOutcome{}, true
 }
 
-// parkFanOut moves the parent to `awaiting_children`, recording an eager
-// step's wake position in the same statement as the state change (decision 1).
+// parkFanOut opens the round's `step_runs` row and moves the parent to
+// `awaiting_children`, recording an eager step's wake position in the same
+// statement as the state change (decision 1).
 //
-// A barrier park writes nothing: nil leaves the column NULL, which is what the
-// scheduler reads as "wake me when the whole subtree has settled". It cannot
-// carry an earlier eager step's number either — TransitionTask clears the
-// column on the way *out* of `awaiting_children`.
-func (r *Runner) parkFanOut(env *stepEnv) bool {
+// A barrier park writes no watermark: nil leaves the column NULL, which is
+// what the scheduler reads as "wake me when the whole subtree has settled". It
+// cannot carry an earlier eager step's number either — TransitionTask clears
+// the column on the way *out* of `awaiting_children`.
+//
+// The row comes first, which is `enterGate`'s order and for its reason: a park
+// is only visible in the timeline if the row is written on entry.
+func (r *Runner) parkFanOut(ctx context.Context, env *stepEnv, round int) bool {
+	r.openRoundRow(ctx, env, round)
 	ch := store.TaskChange{}
 	if env.eager {
 		watermark := env.laneWatermark
 		ch.SettledChildrenWatermark = &watermark
 	}
 	return r.transition(env.task, taskstate.FanOut, ch, env.log)
+}
+
+// openRoundRow opens the `running` step_runs row for one fan-out round.
+//
+// Without it a parked parent carries no row for the step it is on, so the
+// timeline — `store.ListStepRuns`, and every reader is that — stops at the
+// step *before* the fan-out for the whole time the lanes work, and a parent
+// busy fanning work out cannot be told from a task that stalled. That is the
+// phase 2 "every step index a task passes through has at least one row"
+// decision, and the fan-out park was the one park in the engine breaking it:
+// `enterGate` writes its row on entry, and an `awaiting_input` step keeps the
+// row its agent attempt already has.
+//
+// One round is one row (task 080 decision 3). The row is opened at the round's
+// `iteration` — which is the round — so the merge admission that ends the
+// round finds it at exactly the ref it computes and adopts it rather than
+// inserting a second one. A round that already has an open row gets nothing:
+// an eager parent is woken once per lane settling (§7.6, task 081), and a wake
+// that did no work must spend no retry budget, which a write that does not
+// happen cannot do.
+//
+// What is deliberately *not* on the row: no pid, container id or anything else
+// killable, because there is no process behind a park and §12.4 recovery kills
+// what a `running` row journaled; and no lane rollup in `result_summary`,
+// because nothing rewrites the row until the merge, so it would go stale as
+// the lanes settled. What the lanes are doing is the `children` rollup §13.2
+// serves on the task itself.
+func (r *Runner) openRoundRow(ctx context.Context, env *stepEnv, round int) {
+	if round == roundUnknown {
+		return
+	}
+	// Through a copy carrying the round, so the ref is built exactly the way
+	// the merge admission builds its own (see the roundEnv in runFanOut):
+	// `stepEnv.iteration` reads `round` for a `fan_out`, and validation
+	// rejects one inside a loop body, so the two meanings never collide.
+	roundEnv := *env
+	roundEnv.round = round
+	ref := roundEnv.ref()
+	open, err := r.deps.Store.OpenStepRun(ctx, ref)
+	if err != nil {
+		env.log.Error("look up the fan-out round's step run", "error", err)
+		return
+	}
+	if open != nil {
+		return
+	}
+	attempts, err := r.deps.Store.CountStepAttempts(ctx, ref, time.Time{})
+	if err != nil {
+		env.log.Error("count fan-out round attempts", "error", err)
+		return
+	}
+	run := &store.StepRun{
+		TaskID: env.task.ID, StepIndex: env.index, StepID: env.step.ID,
+		StepType: workflow.StepFanOut, Attempt: attempts.Last + 1,
+		Iteration: ref.Iteration, State: store.StepRunning,
+	}
+	if err := r.deps.Store.CreateStepRun(r.persistCtx(), run); err != nil {
+		// Logged, not fatal: a missing row costs the timeline this round, and
+		// failing the task over it would cost the run.
+		env.log.Error("create the fan-out round's step run", "error", err)
+	}
 }
 
 // eagerJoinDue reports whether an eager admission has anything for the join to

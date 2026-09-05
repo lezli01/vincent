@@ -125,14 +125,73 @@ func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 		}
 	}
 	// And the join is visible as a step, not an invisible git operation.
+	//
+	// Exactly one row, because one round is one row (task 080 decision 3):
+	// the park that spawned the lanes opened it and the merge admission that
+	// ended the round adopted it, keeping its id and its attempt number
+	// (issue #322). Two rows here would mean the merge inserted beside the
+	// park instead of adopting.
 	var sawJoin bool
+	var buildRows []store.StepRun
 	for _, run := range h.stepRuns(t, task.ID) {
-		if run.StepID == "build" && run.State == store.StepSucceeded {
+		if run.StepID != "build" {
+			continue
+		}
+		buildRows = append(buildRows, run)
+		if run.State == store.StepSucceeded {
 			sawJoin = true
 		}
 	}
 	if !sawJoin {
 		t.Error("the fan_out step recorded no successful step run")
+	}
+	if len(buildRows) != 1 {
+		t.Errorf("the fan_out step has %d rows for one round, want 1: %+v", len(buildRows), buildRows)
+	} else if buildRows[0].Attempt != 1 || buildRows[0].Iteration != 0 {
+		t.Errorf("the merge row is attempt %d of iteration %d, want attempt 1 of iteration 0 — "+
+			"the park's number is the one §12.2 named the transcript after",
+			buildRows[0].Attempt, buildRows[0].Iteration)
+	}
+}
+
+// TestFanOutReParkWritesNoSecondRow: a round's row is opened once and once
+// only. An eager parent is woken once per lane settling (§7.6, task 081) and
+// re-parks whenever it finds nothing to merge; a row per wake would spend the
+// merge's retry budget on admissions that did no work, because every attempt
+// count is scoped by `stepEnv.ref()` and the merge runs with `MaxRetries = 0`.
+// A park that finds the round already open therefore writes nothing — and a
+// park for the *next* round writes its own row, because iteration is the round
+// (task 080 decision 3).
+func TestFanOutReParkWritesNoSecondRow(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := fanOutSnapshot([2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"})
+	parent := h.createTask(t, snapshot)
+	env := h.firstStepEnv(t, parent, snapshot)
+
+	for range 3 {
+		h.runner.openRoundRow(ctx, env, 0)
+	}
+	h.runner.openRoundRow(ctx, env, 1)
+
+	var rounds []int
+	for _, run := range h.stepRuns(t, parent.ID) {
+		if run.StepID != "build" {
+			continue
+		}
+		if run.State != store.StepRunning || run.Attempt != 1 {
+			t.Errorf("round %d row is %s attempt %d, want a running attempt 1",
+				run.Iteration, run.State, run.Attempt)
+		}
+		if run.PID != nil || run.ContainerID != nil || run.ResultSummary != "" {
+			t.Errorf("the park row journaled something it must not: pid=%v container=%v summary=%q",
+				run.PID, run.ContainerID, run.ResultSummary)
+		}
+		rounds = append(rounds, run.Iteration)
+	}
+	if len(rounds) != 2 || rounds[0] != 0 || rounds[1] != 1 {
+		t.Errorf("fan_out rows at iterations %v, want one per round: [0 1]", rounds)
 	}
 }
 
@@ -394,4 +453,90 @@ func (h *engineHarness) mergeBase(t *testing.T, a, b string) string {
 		t.Fatalf("merge-base %s %s: %v", a, b, err)
 	}
 	return out
+}
+
+// TestFanOutParkWritesARunningStepRow: a parent that has spawned its lanes and
+// parked in `awaiting_children` carries a `running` step_runs row for the
+// `fan_out` step, so the step it is on is on the Steps & Attempts timeline
+// while its lanes work (issue #322).
+//
+// The timeline, `vincent task steps` and the `task_steps` MCP tool are all
+// `store.ListStepRuns` and nothing else, so a step with no row is a step no
+// reader can see. Round 0 writes none today: `spawnRound` parks and returns
+// stop, and `runAttempt` — the only writer of a `StepRunning` row — is reached
+// only by a *merge* admission. For the common case, a flat lane list, that
+// leaves the fan-out invisible for the entire time its lanes run and its one
+// row appearing at the moment the step finishes, which is the phase 2 decision
+// "every step index a task passes through has at least one row" broken by the
+// only park in the engine that does not write one — `enterGate` writes its row
+// on entry for exactly this reason (engine.go:1169).
+//
+// Driven directly rather than through the scheduler so the lanes never run:
+// what is under test is the state the parent is in *while* they do.
+func TestFanOutParkWritesARunningStepRow(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := fanOutSnapshot([2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"})
+	parent := h.createTask(t, snapshot)
+	if _, _, err := h.store.TransitionTask(ctx, parent.ID,
+		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+		t.Fatalf("put the parent in running: %v", err)
+	}
+	parent, err := h.store.GetTask(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+
+	env := h.firstStepEnv(t, parent, snapshot)
+	if _, stop := h.runner.runFanOut(ctx, env); !stop {
+		t.Fatalf("runFanOut stop = false, want true — the spawn round parks")
+	}
+
+	got, err := h.store.GetTask(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.State != store.TaskAwaitingChildren {
+		t.Fatalf("parent state = %s, want %s — nothing was spawned", got.State, store.TaskAwaitingChildren)
+	}
+	lanes, err := h.store.ListChildren(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("ListChildren: %v", err)
+	}
+	if len(lanes) != 2 {
+		t.Fatalf("lanes spawned = %d, want 2", len(lanes))
+	}
+
+	runs := h.stepRuns(t, parent.ID)
+	var row *store.StepRun
+	fanOutRows := 0
+	for i := range runs {
+		if runs[i].StepID == "build" {
+			fanOutRows++
+			row = &runs[i]
+		}
+	}
+	if fanOutRows > 1 {
+		t.Fatalf("the spawn round wrote %d rows for `build`; one round is one row", fanOutRows)
+	}
+	if row == nil {
+		t.Fatalf("the parked fan_out step has no step_runs row (%d rows on the task): "+
+			"the timeline stops at the step before it while the lanes run", len(runs))
+	}
+	if row.State != store.StepRunning {
+		t.Errorf("fan_out row state = %s, want %s while the lanes run", row.State, store.StepRunning)
+	}
+	if row.StepType != workflow.StepFanOut {
+		t.Errorf("fan_out row step_type = %q, want %q", row.StepType, workflow.StepFanOut)
+	}
+	if row.StepIndex != 0 {
+		t.Errorf("fan_out row step_index = %d, want 0", row.StepIndex)
+	}
+	// `iteration` is the round (task 080 decision 3), and the park that opens
+	// round N is the same round as the merge that finalizes it — so a park row
+	// for round 0 must not be a second row beside round 0's merge.
+	if row.Iteration != 0 {
+		t.Errorf("fan_out row iteration = %d, want 0 — the spawn round is round 0", row.Iteration)
+	}
 }
