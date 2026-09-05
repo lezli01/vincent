@@ -159,7 +159,7 @@ func TestRepairThenRetryCompletesTheWorkflow(t *testing.T) {
 	}
 	h.waitForRepair(t, blocked.ID, 1)
 
-	if _, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	done := h.waitForState(t, blocked.ID, store.TaskDone, store.TaskBlocked)
@@ -385,7 +385,7 @@ steps:
 		t.Fatalf("Repair: %v", err)
 	}
 	h.waitForRepair(t, task.ID, 1)
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
@@ -436,7 +436,7 @@ func TestRepairWithoutAWorktreeReblocksWithoutAnAgent(t *testing.T) {
 	if after.PendingRepair == nil {
 		t.Error("the repair request was drained by a block that never ran it")
 	}
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	retried, err := h.store.GetTask(t.Context(), task.ID)

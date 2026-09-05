@@ -53,8 +53,13 @@ var wantTransitions = map[State]map[Action]State{
 	// Notably absent is Pause — a parent owning nothing running has nothing
 	// to pause — and the approve/reject/skip trio, which is why this is not
 	// awaiting_gate.
+	// Retry's self-transition is the legality marker of task 088: it makes
+	// the action legal here so it can cascade to blocked descendants, and
+	// resolves to the state the parent is already in, because nothing on the
+	// parent's own row changes.
 	AwaitingChildren: {
 		Cancel:          Aborted,
+		Retry:           AwaitingChildren,
 		ChildrenSettled: Queued,
 	},
 	// Blocked is the only state `repair` is valid from (task 025): it is a
@@ -165,15 +170,16 @@ func TestTerminalAndSlots(t *testing.T) {
 
 func TestHumanActionsFrom(t *testing.T) {
 	tests := map[State][]Action{
-		Queued:        {Cancel, Pause},
-		Running:       {Cancel, Pause},
-		AwaitingGate:  {Approve, Cancel, Reject, Skip},
-		AwaitingInput: {Answer, Cancel},
-		Blocked:       {Cancel, Repair, Retry, Skip},
-		Paused:        {Cancel, Resume},
-		Done:          {Archive, FollowUp},
-		Aborted:       {Archive, FollowUp},
-		Archived:      nil,
+		Queued:           {Cancel, Pause},
+		Running:          {Cancel, Pause},
+		AwaitingGate:     {Approve, Cancel, Reject, Skip},
+		AwaitingInput:    {Answer, Cancel},
+		AwaitingChildren: {Cancel, Retry},
+		Blocked:          {Cancel, Repair, Retry, Skip},
+		Paused:           {Cancel, Resume},
+		Done:             {Archive, FollowUp},
+		Aborted:          {Archive, FollowUp},
+		Archived:         nil,
 	}
 	for state, want := range tests {
 		got := HumanActionsFrom(state)
@@ -242,13 +248,29 @@ func TestAwaitingChildrenHoldsNoSlot(t *testing.T) {
 	}
 }
 
-// TestAwaitingChildrenOffersOnlyCancel is the reason it is not a reuse of
+// TestAwaitingChildrenOffersCancelAndRetry is the reason it is not a reuse of
 // awaiting_gate: approve, reject and skip would be actions the API accepts
-// and the TUI renders while they mean nothing.
-func TestAwaitingChildrenOffersOnlyCancel(t *testing.T) {
+// and the TUI renders while they mean nothing. `retry` does mean something
+// (task 088) — it re-admits the blocked lanes holding the join open — and
+// `cancel`, which ends them, is the only other one.
+func TestAwaitingChildrenOffersCancelAndRetry(t *testing.T) {
 	got := HumanActionsFrom(AwaitingChildren)
-	if len(got) != 1 || got[0] != Cancel {
-		t.Errorf("HumanActionsFrom(awaiting_children) = %v, want [cancel]", got)
+	if !slices.Equal(got, []Action{Cancel, Retry}) {
+		t.Errorf("HumanActionsFrom(awaiting_children) = %v, want [cancel retry]", got)
+	}
+}
+
+// TestRetryIsLegalOnlyFromBlockedAndParked pins the whole from-set of the one
+// action task 088 widened: `blocked`, where it re-runs the failed step, and
+// `awaiting_children`, where it cascades to the blocked lanes. Nowhere else —
+// a retry from `aborted` in particular is what keeps a cascade from
+// resurrecting a lane a human ended (task 014 decision 22).
+func TestRetryIsLegalOnlyFromBlockedAndParked(t *testing.T) {
+	for _, s := range All {
+		want := s == Blocked || s == AwaitingChildren
+		if got := Can(s, Retry); got != want {
+			t.Errorf("Can(%s, retry) = %v, want %v", s, got, want)
+		}
 	}
 }
 

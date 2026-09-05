@@ -753,7 +753,7 @@ func TestEngineHumanRetryResetsBudget(t *testing.T) {
 		t.Fatalf("attempts before retry = %d, want 2", len(runs))
 	}
 
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	reblocked := h.waitForState(t, task.ID, store.TaskBlocked)
@@ -797,7 +797,7 @@ steps:
 	if blocked.State != store.TaskBlocked {
 		t.Fatalf("task = %s, want blocked", blocked.State)
 	}
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	h.waitForState(t, task.ID, store.TaskBlocked)

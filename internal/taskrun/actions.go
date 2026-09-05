@@ -79,6 +79,23 @@ func (e *FollowUpOverrideError) Error() string {
 			"retry without an override, or start another follow-up", e.TaskID)
 }
 
+// ParkedOverrideError reports an `edit + retry` aimed at a parent parked in
+// `awaiting_children`. The API answers 400.
+//
+// A parked parent's cursor is on its `fan_out` step, which has neither a
+// prompt nor a command to rewrite (task 088). The retry it does accept is a
+// cascade to its blocked lanes, and each lane's own step is what an override
+// would have to name — so the edit belongs on the lane, not here.
+type ParkedOverrideError struct {
+	TaskID int64
+}
+
+func (e *ParkedOverrideError) Error() string {
+	return fmt.Sprintf(
+		"task %d is parked on a fan_out step, which has no prompt or command to rewrite: "+
+			"retry without an override, or edit the blocked lane itself", e.TaskID)
+}
+
 // Cancel aborts a task and stops any process it is running (§6). The task
 // reaches `aborted` first, so a client that observes the state knows the
 // decision is final even while the process tree is still winding down.
@@ -163,13 +180,41 @@ func (r *Runner) Resume(ctx context.Context, id int64) (*store.Task, error) {
 // the retry budget reset (§6). A non-empty override rewrites that step in
 // this task's snapshot — the snapshot stays the single execution truth
 // (§5.3) — and is handed to the actor for the attempt it creates.
-func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store.Task, error) {
+//
+// From `awaiting_children` it means something else: the parked parent has no
+// step of its own to re-run, so the retry cascades to every blocked
+// descendant instead (task 088). Both shapes cascade — a parent blocked for
+// its own reason can have a blocked lane under it too — and the middle return
+// value is how many descendants this call re-admitted.
+func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store.Task, int, error) {
 	task, err := r.deps.Store.GetTask(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if !taskstate.Can(task.State, taskstate.Retry) {
-		return nil, &InvalidActionError{TaskID: id, Action: taskstate.Retry, State: task.State}
+		return nil, 0, &InvalidActionError{TaskID: id, Action: taskstate.Retry, State: task.State}
+	}
+	if task.State == store.TaskAwaitingChildren {
+		if !ov.Empty() {
+			// The cursor is on the `fan_out` step: no prompt, no command,
+			// nothing an override could rewrite.
+			return nil, 0, &ParkedOverrideError{TaskID: id}
+		}
+		// The parent's row is not written at all — no transition, no
+		// `task.state_changed` whose from and to are equal, and above all no
+		// `retry_cursor_at`. The reason is Repair's: nothing was retried on
+		// *this* task, and stamping the cursor would silently hand the join a
+		// fresh §7.2 budget the human did not ask for. (applyAction's
+		// pending-pause clear is moot here: `pause` is not valid from
+		// `awaiting_children`, so there is none to clear.)
+		//
+		// A cascade error is returned rather than logged, because nothing
+		// else happened on this path — reporting success would be a lie.
+		n, err := r.cascadeRetry(ctx, id)
+		if err != nil {
+			return nil, n, err
+		}
+		return task, n, nil
 	}
 	now := time.Now()
 	ch := store.TaskChange{RetryCursorAt: &now}
@@ -178,20 +223,37 @@ func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store
 			// The follow-up survives the retry (task 027 decision 6), so a
 			// plain retry re-runs it from its cursor. An override has nowhere
 			// to land: the follow-up is not a step of the snapshot.
-			return nil, &FollowUpOverrideError{TaskID: id}
+			return nil, 0, &FollowUpOverrideError{TaskID: id}
 		}
 		target, err := r.overrideTarget(ctx, task)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		snapshot, err := applyOverride(task, ov, target)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		ch.Snapshot = &snapshot
 		ch.PendingOverride = &ov
 	}
-	return r.transitionFrom(ctx, task, taskstate.Retry, ch)
+	updated, err := r.transitionFrom(ctx, task, taskstate.Retry, ch)
+	if err != nil {
+		return nil, 0, err
+	}
+	// After the parent's own transition, the shape Cancel already uses with
+	// cascadeCancel. A blocked task can have blocked descendants under it —
+	// an eager or DAG fan-out blocked on `merge_conflict` in round 1 with a
+	// round-2 lane blocked, or a lane set mixing one aborted and one blocked
+	// lane — and the human asking for a retry means all of them.
+	//
+	// The error is logged, not returned: the parent's own retry has already
+	// committed, and reporting it as a failure would tell the caller the
+	// opposite of what happened.
+	n, err := r.cascadeRetry(ctx, id)
+	if err != nil {
+		r.deps.Logger.Error("retry: cascade to lanes", "task", id, "error", err)
+	}
+	return updated, n, nil
 }
 
 // Repair launches a one-off agent in the blocked task's existing worktree
@@ -745,6 +807,14 @@ func AsFollowUpRequest(err error) (*FollowUpRequestError, bool) {
 // what it is.
 func AsFollowUpOverride(err error) (*FollowUpOverrideError, bool) {
 	var e *FollowUpOverrideError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
+// AsParkedOverride extracts a *ParkedOverrideError from err, if that is what
+// it is.
+func AsParkedOverride(err error) (*ParkedOverrideError, bool) {
+	var e *ParkedOverrideError
 	ok := errors.As(err, &e)
 	return e, ok
 }

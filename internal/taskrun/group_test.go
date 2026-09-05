@@ -221,7 +221,7 @@ func TestParallelGroupRetryDoesNotRerunSucceededSubSteps(t *testing.T) {
 	if blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone); blocked.State != store.TaskBlocked {
 		t.Fatalf("task state = %s, want blocked before the retry", blocked.State)
 	}
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
@@ -322,7 +322,7 @@ func TestGroupSiblingsStayInvisibleAcrossAdmissions(t *testing.T) {
 	if blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone); blocked.State != store.TaskBlocked {
 		t.Fatalf("task state = %s, want blocked before the retry", blocked.State)
 	}
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
