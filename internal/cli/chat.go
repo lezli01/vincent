@@ -3,13 +3,16 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/tui"
 )
 
 // newChatCmd is `vincent chat` (spec §5.5, §12.1, task 063): the CLI half of
@@ -104,6 +107,70 @@ func newChatSendCmd() *cobra.Command {
 	return cmd
 }
 
+// chatPollInterval is how often `vincent chat send` asks whether the turn has
+// ended. It is unchanged by the in-progress indicator: the frame moves ten
+// times faster than this, and it moves without asking the daemon anything.
+const chatPollInterval = 500 * time.Millisecond
+
+// turnSpinner is the in-progress indicator `vincent chat send` draws while it
+// waits for a turn (task 089, issue #330).
+//
+// The rules are requirements, not decoration. It writes to stderr and never to
+// stdout, because stdout carries the agent's answer and is what a script
+// consumes. It is off entirely under --json and when stderr is not a terminal,
+// so a piped or redirected send emits exactly the bytes it emitted before this
+// existed. And the line is erased before anything else is written, on every
+// exit path, so no residue can precede the answer or an error.
+type turnSpinner struct {
+	w     io.Writer
+	on    bool
+	start time.Time
+	frame int
+	// width is how many columns the drawn line occupies, and zero when
+	// nothing is drawn. It is what erase blanks and what a shrinking clock
+	// would otherwise leave behind.
+	width int
+}
+
+func newTurnSpinner(cmd *cobra.Command, start time.Time) *turnSpinner {
+	w := cmd.ErrOrStderr()
+	return &turnSpinner{w: w, on: !wantJSON(cmd) && isTTY(w), start: start}
+}
+
+// draw repaints the indicator in place.
+//
+// Erasing with spaces and a carriage return rather than an ANSI erase-to-
+// end-of-line is the cross-platform choice: a Windows console without
+// ENABLE_VIRTUAL_TERMINAL_PROCESSING prints the escape bytes literally, and
+// garbage on the line this exists to keep clean is worse than a few spaces.
+// A rune count is the right measure of the line's width here because every
+// rune in it — the braille frame, the ellipsis, the digits and letters — is
+// single-width.
+func (s *turnSpinner) draw(now time.Time) {
+	if !s.on {
+		return
+	}
+	line := tui.ProgressLabel(s.frame, now.Sub(s.start))
+	s.frame++
+	n := utf8.RuneCountInString(line)
+	pad := ""
+	if s.width > n {
+		pad = strings.Repeat(" ", s.width-n)
+	}
+	_, _ = fmt.Fprint(s.w, "\r"+line+pad)
+	s.width = n
+}
+
+// erase takes the indicator off the line. It is idempotent, so the deferred
+// call after an explicit one writes nothing.
+func (s *turnSpinner) erase() {
+	if !s.on || s.width == 0 {
+		return
+	}
+	_, _ = fmt.Fprint(s.w, "\r"+strings.Repeat(" ", s.width)+"\r")
+	s.width = 0
+}
+
 // runChatTurn sends a message and polls the chat until the turn ends, then
 // prints the agent's answer or the reason the turn failed.
 //
@@ -111,20 +178,45 @@ func newChatSendCmd() *cobra.Command {
 // send` is one round trip a human waits on, and a poll has no reconnect
 // semantics to get wrong. The TUI, which renders the turn as it arrives, uses
 // the stream.
+//
+// The two tickers live in this one goroutine on purpose (task 089 decision).
+// A writer goroutine drawing frames while this one prints the answer would
+// race on stderr for no gain; a select over three channels costs nothing and
+// leaves `-race` nothing to find.
 func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, message string) error {
 	turn, err := c.SendChat(ctx, id, message)
 	if err != nil {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 		return exitError{code: 1}
 	}
+	// Elapsed is measured from here rather than from turn.StartedAt: this is
+	// how long the human at the terminal has been waiting, and it needs no
+	// agreement between two machines' clocks to be true.
+	spin := newTurnSpinner(cmd, time.Now())
+	defer spin.erase()
+	poll := time.NewTicker(chatPollInterval)
+	defer poll.Stop()
+	// A nil channel blocks forever, so a suppressed indicator arms no ticker
+	// at all rather than waking this loop ten times a second to do nothing.
+	var frameC <-chan time.Time
+	if spin.on {
+		frames := time.NewTicker(tui.SpinnerTick)
+		defer frames.Stop()
+		frameC = frames.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
+			spin.erase()
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case now := <-frameC:
+			spin.draw(now)
+			continue
+		case <-poll.C:
 		}
 		_, turns, err := c.GetChat(ctx, id)
 		if err != nil {
+			spin.erase()
 			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 			return exitError{code: 1}
 		}
@@ -133,6 +225,7 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 			if t.ID != turn.ID || t.State == "running" {
 				continue
 			}
+			spin.erase()
 			if wantJSON(cmd) {
 				if err := emitJSON(cmd.OutOrStdout(), t); err != nil {
 					return err

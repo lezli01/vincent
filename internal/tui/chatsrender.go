@@ -110,9 +110,17 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	// that can usefully be truncated.
 	// The activity cell is wide enough for the absolute stamp a terminal chat
 	// shows instead of a duration (issue #298).
+	// A running row carries the moving frame *beside* the word, never instead
+	// of it (task 089): the state cell is a fixed-width column rendered
+	// through the shared chatStateLabel vocabulary, and swapping one state's
+	// word for a glyph breaks that vocabulary for that state alone.
+	state := chatStateLabel(c.State)
+	if c.State == "running" {
+		state += " " + spinnerFrame(v.frame)
+	}
 	fixed := fmt.Sprintf("%-5s %-15s %-8s %5s %11s  ",
 		"#"+strconv.FormatInt(c.ID, 10),
-		applyStateStyle(c.State, chatStateLabel(c.State)),
+		applyStateStyle(c.State, state),
 		c.Agent,
 		"", // the turn count is not on the list DTO; see chatTurnsCell
 		chatActivity(*c, v.now()))

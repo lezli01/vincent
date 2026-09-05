@@ -73,6 +73,9 @@ type (
 	}
 	// taskStreamDoneMsg reports the per-task note channel closed.
 	taskStreamDoneMsg struct{}
+	// detailTickMsg advances the in-progress indicator's frame (task 089).
+	// Render-only: it asks the daemon nothing.
+	detailTickMsg time.Time
 	// viewActivatedMsg and viewDeactivatedMsg tell a view it came on or off
 	// screen. The shell translates them for the detail sub-model, whose live
 	// subscription must not stay open for a task nobody is watching.
@@ -149,6 +152,13 @@ type detail struct {
 
 	following bool
 	newLines  int
+	// ticking guards the in-progress indicator's tick loop, and frame is the
+	// glyph it is on (task 089). Cleared on every tick and re-armed only
+	// while the displayed attempt is live, so a workspace on a finished task
+	// arms nothing — the opposite of board.go's arm-once ticker, which is
+	// right there because its elapsed column always has something to count.
+	ticking bool
+	frame   int
 	// outputDirty marks the rendered content stale; the pane rebuilds on the
 	// next frame rather than on every appended chunk.
 	outputDirty bool
@@ -223,7 +233,34 @@ func (d *detail) setClient(c *apiclient.Client) tea.Cmd {
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
 
+// update handles the message and then re-arms the in-progress indicator if
+// the attempt on screen is still live. One arming site, for the reason
+// chatView.update gives: a load, a stream note and a cursor move all change
+// whether something is running.
 func (d *detail) update(msg tea.Msg) tea.Cmd {
+	cmd := d.updateMsg(msg)
+	return tea.Batch(cmd, d.armTick())
+}
+
+// armTick starts the tick loop if the displayed attempt is live and one is not
+// already in flight.
+//
+// The gate is liveness, not step type. The issue says "a running agent step",
+// but a long `command:` step is silent for exactly the same reason and for
+// exactly as long, so what earns the indicator is that the attempt is still
+// producing output — which is what StepRun.Live() already means.
+//
+// It stops by not re-arming; a stray tick is a no-op, since tea.Tick cannot be
+// cancelled.
+func (d *detail) armTick() tea.Cmd {
+	if d.ticking || !d.runByID(d.displayRun).Live() {
+		return nil
+	}
+	d.ticking = true
+	return tea.Tick(SpinnerTick, func(t time.Time) tea.Msg { return detailTickMsg(t) })
+}
+
+func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		d.width, d.height = msg.Width, msg.Height
@@ -245,6 +282,12 @@ func (d *detail) update(msg tea.Msg) tea.Cmd {
 		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
+		return nil
+	case detailTickMsg:
+		// Render-only: update's armTick decides whether the attempt is still
+		// live enough to keep animating.
+		d.ticking = false
+		d.frame++
 		return nil
 	case detailRefreshMsg:
 		if msg.id != d.taskID {

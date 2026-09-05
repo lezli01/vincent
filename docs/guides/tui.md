@@ -298,6 +298,14 @@ unlinking lives there and on the Pull Request tab.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
+While the attempt on screen is still running, the pane's title carries the same
+in-progress indicator the [chat workspace](#chat-workspace) draws — a turning
+glyph and an elapsed clock, `⠋ working… 14s` — beside the level and the follow
+state, so an attempt that is thinking rather than printing is told apart from a
+screen that has stopped repainting. It is on Output only, never on Diff, and it
+follows the attempt being *live* rather than its step being an `agent` step: a
+long `command` step's pane goes quiet for exactly the same reason.
+
 **Step Details** answers the question the other tabs cannot: what this attempt
 was actually *given*. Task Details shows the workflow's template; this shows the
 substitution — the rendered prompt an agent step handed its CLI, the rendered
@@ -1312,6 +1320,14 @@ last-activity cell shows *when* the chat ended rather than a duration that keeps
 counting; and `a` on such a row declines with a note instead of asking to remove
 a worktree that is already gone, or that a handoff gave to a task.
 
+A `running` row moves. Its state cell carries a turning glyph **beside** the
+`running` label rather than instead of it — the cell is a fixed-width column in
+the same state vocabulary every other row uses — and its last-activity cell
+counts up while the turn runs instead of standing still. Nothing else animates:
+an `awaiting_input` chat is waiting on you rather than working, and the header
+already badges it. A board with no running chat repaints no more often than it
+did before.
+
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes
 project, title, agent, model, effort and base branch; `ctrl+s` creates and drops
@@ -1374,6 +1390,19 @@ The composer sits inside a titled `message` box, so the field you type into does
 not read as one more row of the conversation. The border comes out of the pane's
 height rather than being added on top of it: the screen is the same height it
 always was, and the hint line is still the last row of it.
+
+**While a turn runs, an in-progress indicator sits just above that box** — a
+turning glyph and an elapsed clock, `⠋ working… 14s` — for the whole time the
+turn is in `running`, not only until its first chunk arrives. That is the point
+of it: at `quiet` a turn that spends minutes running tools renders no new line
+in the conversation at all, and this is the only thing on the screen that moves.
+It is above the composer rather than inline at the end of the turn, because the
+conversation scrolls and a reader who has scrolled up — follow paused, `⏸` in
+the header — is exactly the reader who needs telling that waiting is still the
+right thing to do. It is gone the moment the turn reaches `done`, `failed`,
+`interrupted` or `awaiting_input`; a turn waiting on you is not working, and the
+header already says `waiting on you`. A chat with no running turn causes no
+periodic repaint.
 
 | Key | Does |
 |---|---|

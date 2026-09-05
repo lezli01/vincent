@@ -49,6 +49,12 @@ type (
 	// the root rather than straight to the view because the view is not
 	// active yet, and an inactive view receives nothing.
 	openChatMsg struct{ id int64 }
+	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
+	// as a consequence of the repaint, the "last activity" column: that cell
+	// already renders now - UpdatedAt, and UpdatedAt is only written on a
+	// state change, so for a running chat it is time-since-the-turn-started
+	// and was simply never redrawn.
+	chatsTickMsg time.Time
 )
 
 // archivePrompt is the inline confirmation an archive takes. force is set on
@@ -96,6 +102,14 @@ type chatsView struct {
 	// meaning anywhere else. `n` on the chats board makes a chat; `n`
 	// everywhere else still makes a task.
 	create *newChatForm
+
+	// ticking guards the in-progress indicator's tick loop, and frame is the
+	// glyph it is on (task 089). It is cleared on every tick and re-armed
+	// only while some chat is running — a board of idle chats must not
+	// repaint forever. board.go arms once and never clears, which is right
+	// there and wrong here; see chatView.ticking for the argument.
+	ticking bool
+	frame   int
 
 	note    string
 	noteBad bool
@@ -158,7 +172,41 @@ func (v *chatsView) hintedProject() int64 {
 	return 0
 }
 
+// update handles the message and then re-arms the in-progress indicator if
+// any chat on the board is still running. One arming site, for the reason
+// chatView.update gives.
 func (v *chatsView) update(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := v.updateMsg(msg)
+	return p, tea.Batch(cmd, v.armTick())
+}
+
+// anyRunning reports whether the board has a chat worth animating.
+//
+// Only `running` counts. `awaiting_input` does not: by this board's own
+// reading it is waiting on the human rather than working, and the header
+// already badges it (issue #330 left it off its list of non-animating states,
+// which is the omission this decides).
+func (v *chatsView) anyRunning() bool {
+	for i := range v.chats {
+		if v.chats[i].State == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+// armTick starts the tick loop if something is running and one is not already
+// in flight. It stops by not re-arming; a stray tick is a no-op, the rule
+// tea.Tick's un-cancellability forces.
+func (v *chatsView) armTick() tea.Cmd {
+	if v.ticking || !v.anyRunning() {
+		return nil
+	}
+	v.ticking = true
+	return tea.Tick(SpinnerTick, func(t time.Time) tea.Msg { return chatsTickMsg(t) })
+}
+
+func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
@@ -175,6 +223,12 @@ func (v *chatsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.loadCmd()
 	case chatsLoadedMsg:
 		v.applyLoaded(msg)
+		return v, nil
+	case chatsTickMsg:
+		// Render-only: no fetch, and update's armTick decides whether there
+		// is still anything to animate.
+		v.ticking = false
+		v.frame++
 		return v, nil
 	case newChatFieldsMsg:
 		// The new-chat form's own fetch landing. The form is a layer over

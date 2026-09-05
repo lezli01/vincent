@@ -183,6 +183,15 @@ func (d *detail) outputTitle() string {
 	if d.raw.get() {
 		level += styleDim.Render(" · raw")
 	}
+	// The in-progress indicator (task 089). The border title is where this
+	// view already keeps its live state — the tab strip, the level, the follow
+	// state — and it is the only spot in the workspace visible at every scroll
+	// position, which is the same argument that put the chat's indicator above
+	// the composer. It draws on the output tab only: the diff tab is not
+	// showing the attempt's output, so nothing there is waiting on it.
+	if run := d.runByID(d.displayRun); run.Live() {
+		level += styleDim.Render(" · " + ProgressLabel(d.frame, d.now().Sub(run.StartedAt)))
+	}
 	return strip + level + d.followIndicator()
 }
 
