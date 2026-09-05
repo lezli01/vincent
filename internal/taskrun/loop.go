@@ -21,6 +21,7 @@ package taskrun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,7 +38,11 @@ type loopEnv struct {
 	// total is the extent this admission planned — plan.total, recorded on
 	// every body row beside its item so a reader can say "2 of 3" without
 	// re-deriving a number the loop definition does not carry (issue #317).
-	total   int
+	total int
+	// forEach is the whole resolved list as JSON, recorded on every body row
+	// beside the item this iteration drew from it (issue #323). Empty for a
+	// `count:` loop, which resolves no list.
+	forEach string
 	isFirst bool
 	isLast  bool
 	// pos is this step's position in the body, and order maps every body
@@ -77,6 +82,35 @@ func (e *stepEnv) loopTotal() int {
 		return 0
 	}
 	return e.loop.total
+}
+
+// loopForEach is the resolved `for_each` list recorded on this step's rows,
+// and nil outside a `for_each` loop (issue #323).
+//
+// Like loopItem and loopTotal it is written at insert and never updated:
+// re-encoding a list the next admission re-derived would make a finished row
+// describe work it did not do, which is exactly decision 8's argument for
+// recording the item in the first place.
+func (e *stepEnv) loopForEach() *string {
+	if e.loop == nil || e.loop.forEach == "" {
+		return nil
+	}
+	return &e.loop.forEach
+}
+
+// encodeForEach renders a resolved `for_each` list as the JSON array the row
+// records. A []string cannot fail to marshal; a failure here would be a bug
+// in encoding/json, so it degrades to "not recorded" rather than to a failed
+// step — the record is context, never the run.
+func encodeForEach(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // loopPlan is a loop's extent for one admission: how many iterations it will
@@ -127,7 +161,7 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 		// degenerate case in the other structure step.
 		env.log.Info("loop ran nothing: the for_each list is empty")
 		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
-			"the for_each list is empty: the loop ran nothing")
+			"the for_each list is empty: the loop ran nothing", nil)
 		return stepOutcome{state: store.StepSucceeded}
 	}
 
@@ -184,6 +218,7 @@ func (r *Runner) runIteration(
 				iteration: iteration,
 				item:      itemAt(plan.items, iteration),
 				total:     plan.total,
+				forEach:   encodeForEach(plan.items),
 				isFirst:   iteration == 1,
 				isLast:    iteration == plan.total,
 				pos:       pos,
@@ -213,29 +248,29 @@ func (r *Runner) runIteration(
 // `stopped` outcome without stop ends only the iteration.
 func (r *Runner) runBodyStep(ctx context.Context, env *stepEnv) (out stepOutcome, stop bool) {
 	if env.step.Guarded() || env.step.Type == workflow.StepCondition {
-		pass, err := r.evaluateGuard(ctx, env)
+		pass, rendered, err := r.evaluateGuard(ctx, env)
 		switch {
 		case err != nil:
-			r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError)
+			r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError, rendered)
 			return stepOutcome{state: store.StepFailed, reason: ReasonConditionError}, true
 		case env.step.Type == workflow.StepBreak && pass:
 			// The loop ends here and **succeeds**; the cursor advances past
 			// it (§7.8). A break is a decision the workflow made, which is
 			// exactly what separates it from `loop_limit` (decision 5).
-			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
+			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
 			env.log.Info("loop ended by a break step")
 			return stepOutcome{state: store.StepSucceeded}, true
 		case env.step.Type == workflow.StepBreak:
-			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
+			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
 			return stepOutcome{}, false
 		case env.step.Type == workflow.StepCondition && !pass:
-			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
+			r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
 			return stepOutcome{state: store.StepStopped}, false
 		case env.step.Type == workflow.StepCondition:
-			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
+			r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
 			return stepOutcome{}, false
 		case !pass:
-			r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "")
+			r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "", rendered)
 			env.log.Info("body step skipped by its guard")
 			return stepOutcome{}, false
 		}

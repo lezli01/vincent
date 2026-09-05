@@ -47,17 +47,32 @@ func (e *ConditionError) Error() string {
 // guard is reading something that is not there — the one case where guessing
 // a verdict is worse than refusing to have one.
 func Evaluate(name, expr string, rc RenderContext) (bool, error) {
+	verdict, _, err := EvaluateRendered(name, expr, rc)
+	return verdict, err
+}
+
+// EvaluateRendered is Evaluate plus what the guard rendered to, so a caller
+// can record the value without re-rendering it (issue #323). A second render
+// would be a second answer: the §8.4 context is assembled fresh every time,
+// and a guard reading a clock or a step result could disagree with itself.
+//
+// The rendered value comes back on the *ConditionError path too, and that is
+// the case it exists for: a guard that rendered `<no value>` is precisely the
+// one whose value a human needs to see. Only a render failure has nothing to
+// report, because nothing was produced.
+func EvaluateRendered(name, expr string, rc RenderContext) (bool, string, error) {
 	out, err := Render(name, expr, rc)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	switch strings.TrimSpace(out) {
+	rendered := strings.TrimSpace(out)
+	switch rendered {
 	case TrueLiteral:
-		return true, nil
+		return true, rendered, nil
 	case FalseLiteral:
-		return false, nil
+		return false, rendered, nil
 	default:
-		return false, &ConditionError{Field: name, Output: strings.TrimSpace(out)}
+		return false, rendered, &ConditionError{Field: name, Output: rendered}
 	}
 }
 

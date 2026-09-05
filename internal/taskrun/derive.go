@@ -41,7 +41,7 @@ import (
 // recorded the row and blocked the task, and the caller must stop.
 func (r *Runner) deriveLanes(ctx context.Context, env *stepEnv) (stepOutcome, bool) {
 	block := func(reason, msg string) (stepOutcome, bool) {
-		r.recordDecisionRow(ctx, env, store.StepFailed, "", reason, msg)
+		r.recordDecisionRow(ctx, env, store.StepFailed, "", reason, msg, nil)
 		r.fail(env.task, reason, env.log, msg, nil)
 		return stepOutcome{}, false
 	}

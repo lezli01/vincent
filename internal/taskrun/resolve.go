@@ -14,8 +14,15 @@ const defaultMaxRetries = 1
 
 // resolveSelection maps the engine's types onto the §8.6 resolver, which
 // lives in internal/agent since T2.11 so catalog validation shares it.
-func resolveSelection(step workflow.Step, defaults workflow.Defaults, task *store.Task) agent.Selection {
-	return agent.Resolve(
+//
+// It asks for the provenance as well as the triple (issue #323), through the
+// same entry point `POST /v1/resolve` calls: the row records which level
+// supplied each field, and an engine that answered that question its own way
+// would be free to drift from the endpoint a user consults to predict it.
+func resolveSelection(
+	step workflow.Step, defaults workflow.Defaults, task *store.Task,
+) (agent.Selection, agent.Sources) {
+	return agent.ResolveWithSources(
 		agent.Level{Agent: step.Agent, Model: step.Model, Effort: step.Effort},
 		agent.Level{Agent: task.AgentOverride, Model: task.ModelOverride, Effort: task.EffortOverride},
 		agent.Level{Agent: defaults.Agent, Model: defaults.Model, Effort: defaults.Effort},
