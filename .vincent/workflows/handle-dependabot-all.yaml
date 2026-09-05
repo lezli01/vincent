@@ -1,0 +1,427 @@
+# handle-dependabot-all — put *every* open dependabot pull request onto the
+# board as its own `handle-dependabot` task, in one run.
+#
+# ## Why this spawns tasks instead of doing the work
+#
+# `handle-dependabot` handles one pull request because a task created with
+# `--github-pull` runs **on that pull request's head branch** (§13.5). That is
+# the whole mechanism, and it is per-task: a task has one branch.
+#
+# The obvious alternative — one `fan_out` with a lane per bump — does not work,
+# and the reason is structural rather than a missing feature. A lane's worktree
+# is cut from the **parent's** branch (§7.6) and merges back into it, so lanes
+# cannot each sit on a different pull request head, and any repair a lane made
+# would land on this sweep's branch instead of on dependabot's. Five open bumps
+# are five branches, five reviews and five merge decisions; five tasks is what
+# that actually is.
+#
+# So this workflow does the one thing the board cannot do for itself: it finds
+# the bumps and creates the tasks. It is a dispatcher, and it finishes as soon
+# as they exist. It does **not** wait for them, and it never reports on their
+# outcome — each child carries its own gate, its own transcript and its own row.
+#
+#     vincent task add --project N --workflow handle-dependabot-all --title "sweep dependabot"
+#
+# It needs no `--github-pull` and no field naming a number: finding the numbers
+# is its job.
+#
+# ## What it costs
+#
+# **Zero agent sessions, always.** Every step here is a command or a gate; there
+# is no `agent` step in this file and no way for one to appear. What it spends
+# is what the children spend, and that is bounded and legible before you
+# approve: each `handle-dependabot` task is at most 5 sessions (2 for `assess`,
+# 3 for `repair`), so a sweep that plans N tasks authorizes at most **5N**, and
+# the ordinary all-patch-bumps sweep spends 0. The gate below prints N.
+#
+# `on_red: report` makes that ceiling 0 for every child, which is the honest
+# setting for a large sweep you have not looked at yet.
+#
+# ## What it will not create a task for
+#
+# The survey drops a pull request that `handle-dependabot`'s own preflight would
+# refuse, because a task that is born to block is worse than no task: it costs a
+# worktree, a branch and a row someone has to go and read. Dropped are anything
+# not authored by dependabot, drafts, pull requests from a fork (their head has
+# no upstream, so a repair could not be pushed), and any pull request already
+# linked to a task.
+#
+# That last one is what makes re-running this safe: a second sweep an hour later
+# creates tasks only for bumps that appeared since, because the daemon reports
+# the link it stored (`task_id` on the listing) for every pull request the first
+# sweep claimed. Two caveats, both from the link being the guard:
+#
+#   - **archiving** a child unlinks it (`LinkCandidates` is scoped to
+#     `archived_at IS NULL`), so a later sweep will create a fresh task for a
+#     bump whose task was archived while the pull request stayed open. That is
+#     usually what you want and it is never silent — the plan lists it.
+#   - a **cancelled but unarchived** child keeps the link, so its bump is
+#     skipped until it is archived.
+#
+# ## Scratch
+#
+# Under `.git/` via `git rev-parse --git-path`, the same as `handle-dependabot`:
+# invisible to `git status`, and gone with the worktree. This workflow never
+# commits anything at all — its own branch stays empty, which is the correct
+# shape for a dispatcher.
+
+name: handle-dependabot-all
+description: Find every open dependabot pull request and create one handle-dependabot task for each, after you approve the plan.
+
+# `sh`, `jq` and a `$(...)`-heavy shell, plus `gh` and the `vincent` CLI itself.
+platforms: [posix]
+
+fields:
+  - name: limit
+    label: Most pull requests to sweep
+    description: >-
+      How far back down the open pull request list to look, newest first. It
+      bounds the listing and therefore the plan: a sweep can never create more
+      tasks than this, whatever GitHub returns. Raise it for a repository that
+      has let bumps pile up; the gate shows the plan either way.
+    type: integer
+    required: true
+    default: 20
+
+  - name: on_red
+    label: When a bump breaks the build
+    description: >-
+      Passed to every task this creates, and it is the field that decides what
+      the sweep costs. repair = each child may spend up to three unattended
+      agent sessions fixing what the new version broke and push the fix to
+      dependabot's branch. report = no agent anywhere in the sweep: a child
+      stops at the first red check and leaves its pull request untouched.
+      report is the setting for a large or unfamiliar batch.
+    type: enum
+    required: true
+    values: [repair, report]
+    default: repair
+
+  - name: merge
+    label: Merge the pull requests
+    description: >-
+      Passed to every task this creates. gate = each child asks for its own
+      approval once its required checks are green, and merges only then; the
+      approvals are per pull request and stay per pull request. never = the
+      children verify and stop, which is how you sweep a batch for damage
+      without landing any of it. Approving the plan below never merges
+      anything — merging is a decision this workflow delegates and does not
+      take.
+    type: enum
+    required: true
+    values: [gate, never]
+    default: gate
+
+  - name: create
+    label: Approve the plan before creating tasks
+    description: >-
+      gate = show the plan and wait. now = create the tasks unattended, for a
+      repository whose dependabot traffic you already trust to be routine. Note
+      what `now` skips: the plan is where the agent-session ceiling for the whole
+      sweep is stated, and with on_red = repair that ceiling is 5 per task.
+    type: enum
+    required: true
+    values: [gate, now]
+    default: gate
+
+defaults:
+  timeout: 10m
+  # Nothing here is worth a blind replay. The survey is a read, and the one step
+  # that writes — `spawn` — creates tasks: a retry that could not tell which of
+  # them already exist would double the board. It does not need one, because the
+  # skip-what-is-linked rule makes re-running the *workflow* the safe repeat.
+  max_retries: 0
+  # No agent step exists in this file, so this only forecloses one arriving by
+  # accident and parking the sweep in `awaiting_input` with nobody at the prompt.
+  on_input: deny
+
+steps:
+  - id: preflight
+    name: Check the tools and find the project
+    type: command
+    shell: sh
+    timeout: 5m
+    # Everything this refuses is `nonzero_exit`, and all of it is decided before
+    # anything is created. The interesting refusal is the last one: this
+    # workflow's entire output is `handle-dependabot` tasks, so a registry that
+    # does not have `handle-dependabot` in it makes the whole run pointless, and
+    # the task-creation error you would otherwise get arrives once per pull
+    # request instead of once.
+    #
+    # It also resolves and stores the project id. A step is told its project's
+    # *path* and *name* (§8.5) but not its id, and every `vincent` call below
+    # needs the id.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "checking the tools"
+      for tool in vincent gh git jq; do
+        command -v "$tool" >/dev/null 2>&1 || { say "$tool is not installed"; echo "$tool is required" >&2; exit 1; }
+      done
+      gh auth status >/dev/null 2>&1 || { say "gh is not authenticated"; echo "gh is not authenticated" >&2; exit 1; }
+
+      scratch=$(git rev-parse --git-path vincent-deps)
+      rm -rf "$scratch"
+      mkdir -p "$scratch"
+
+      # By path, not by name: the path is the project's identity, a name is a
+      # label someone may have reused. `vincent project ls` talks to the same
+      # daemon that is running this step, so a failure here also means the CLI
+      # in this environment cannot reach it — which is worth finding out now
+      # rather than in the middle of creating tasks.
+      say "resolving the project"
+      vincent project ls --json > "$scratch/projects.json" 2>"$scratch/projects.err" || {
+        say "cannot reach the daemon"
+        echo "vincent project ls failed:" >&2; cat "$scratch/projects.err" >&2; exit 1; }
+
+      project=$(jq -r --arg p "$VINCENT_PROJECT_PATH" \
+        'map(select(.path == $p)) | if length == 1 then .[0].id else empty end' "$scratch/projects.json")
+      if [ -z "$project" ]; then
+        say "cannot identify this project by path"
+        echo "no single registered project has path '$VINCENT_PROJECT_PATH'." >&2
+        echo "vincent project ls listed:" >&2
+        jq -r '.[] | "  \(.id)  \(.name)  \(.path)"' "$scratch/projects.json" >&2
+        exit 1
+      fi
+      printf '%s\n' "$project" > "$scratch/project"
+
+      # The deliverable is tasks running this workflow. If it is not in the
+      # merged registry for this project, refuse before the plan is drawn.
+      say "checking that handle-dependabot is registered"
+      vincent workflow ls --project "$project" --json \
+        | jq -e 'map(select(.name == "handle-dependabot")) | length == 1' >/dev/null || {
+          say "handle-dependabot is not in the registry"
+          echo "workflow 'handle-dependabot' is not registered for project $project." >&2
+          echo "this workflow only creates tasks that run it; add it to .vincent/workflows/ first." >&2
+          exit 1; }
+
+      echo "project:  $project ($VINCENT_PROJECT_NAME)"
+      echo "path:     $VINCENT_PROJECT_PATH"
+      echo "workflow: handle-dependabot is registered"
+      say "project $project is ready to sweep"
+
+  - id: survey
+    name: List the open dependabot pull requests
+    type: command
+    shell: sh
+    timeout: 5m
+    # One read of the daemon's listing and one jq expression, which is the whole
+    # of the selection. The filters are `handle-dependabot`'s own preflight
+    # refusals, moved forward: a pull request that would be refused there is
+    # dropped here instead of becoming a task that blocks on arrival.
+    #
+    # `task_id` is the daemon's stored link, not a branch-name heuristic
+    # (internal/api/githubpull.go), so a pull request a human deliberately
+    # linked or unlinked is honoured — and it is what makes this workflow
+    # re-runnable rather than duplicating.
+    #
+    # This step succeeds when the *survey* succeeds, including when it finds
+    # nothing. "Nothing to do" is not a failure, and `pending` below is where
+    # that distinction gets made, so a real GitHub error can still be one here.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      project=$(cat "$scratch/project")
+
+      say "listing open pull requests"
+      vincent github prs --project "$project" --state open --limit {{index .Task.Fields "limit"}} --json \
+        > "$scratch/prs.json" 2>"$scratch/prs.err" || {
+          say "cannot list pull requests"
+          echo "vincent github prs failed:" >&2; cat "$scratch/prs.err" >&2; exit 1; }
+
+      # `head_repo` and `base_branch` are omitempty, so a missing head_repo is
+      # read as "same repository" — the common case — and a missing base_branch
+      # drops the row rather than guessing a base to pass to --base-branch.
+      # Guessing there is exactly the mistake handle-dependabot's preflight
+      # refuses a task for: a merge gated on the wrong branch's CI.
+      jq '[ .[]
+            | select(.author != null and (.author | ascii_downcase | startswith("dependabot")))
+            | select(.draft == false)
+            | select(.task_id == null)
+            | select((.head_repo // .repo) == .repo)
+            | select((.base_branch // "") != "")
+          ]' "$scratch/prs.json" > "$scratch/plan.json"
+
+      jq -r '.[] | [.number, .base_branch, .title] | @tsv' "$scratch/plan.json" > "$scratch/plan.tsv"
+      jq '[.[].number]' "$scratch/plan.json" > "$scratch/numbers.json"
+      planned=$(jq 'length' "$scratch/plan.json")
+      printf '%s\n' "$planned" > "$scratch/planned"
+
+      total=$(jq 'length' "$scratch/prs.json")
+      bots=$(jq '[ .[] | select(.author != null and (.author | ascii_downcase | startswith("dependabot"))) ] | length' "$scratch/prs.json")
+
+      echo "open pull requests: $total (newest {{index .Task.Fields "limit"}})"
+      echo "by dependabot:      $bots"
+      echo "already on a task, draft or from a fork: $((bots - planned))"
+      echo "to be created:      $planned"
+      echo
+      if [ "$planned" -gt 0 ]; then
+        echo "plan:"
+        jq -r '.[] | "  #\(.number)  -> \(.base_branch)  \(.title)"' "$scratch/plan.json"
+      fi
+      say "$planned of $bots dependabot pull requests need a task"
+
+  - id: pending
+    name: Is there anything to create
+    type: command
+    shell: sh
+    timeout: 2m
+    # Carries one bit — "the plan is non-empty" — into a place the `condition`
+    # below can read it. A `condition`'s `if:` is a template over the task and
+    # the earlier steps, and cannot open a file, so an empty sweep has to be
+    # spelled as an exit code by a step that is allowed to be non-zero.
+    #
+    # Splitting it from `survey` is what keeps "GitHub is broken" and "there are
+    # no bumps today" from arriving as the same event.
+    allow_failure: true
+    run: |
+      scratch=$(git rev-parse --git-path vincent-deps)
+      [ "$(cat "$scratch/planned")" -gt 0 ]
+
+  - id: anything
+    name: Stop here when there is nothing to sweep
+    type: condition
+    # An empty sweep finishes `done`, with the survey's own row saying what it
+    # looked at. Nothing was wrong; there was simply nothing open.
+    if: '{{ eq (index .Steps "pending").ExitCode 0 }}'
+
+  - id: gate
+    name: Approve the plan
+    type: manual
+    if: '{{ eq (index .Task.Fields "create") "gate" }}'
+    # Placed immediately before the only step that creates anything. What it
+    # authorizes is the *fan-out of work*, not any merge: each task created here
+    # asks for its own approval before it touches its own pull request.
+    instructions: |
+      Create one `handle-dependabot` task for each of these pull requests?
+
+      {{ (index .Steps "survey").Result }}
+
+      Each task runs on its own pull request's head branch, verifies the bump,
+      {{ if eq (index .Task.Fields "on_red") "repair" }}repairs what the new version broke if the build goes red, {{ end }}waits for
+      the required checks{{ if eq (index .Task.Fields "merge") "gate" }} and then asks **you** to approve that one merge{{ else }} and then stops without merging{{ end }}.
+
+      What approving here spends:
+
+      - one worktree and one branch per task, on branches dependabot already
+        owns — this creates no new branches of its own;
+      - {{ if eq (index .Task.Fields "on_red") "repair" }}up to **5 agent sessions per task** (2 for assessing a major bump, 3 for
+        repairing a broken build), and 0 for the ordinary patch bump that
+        compiles. Nothing is spent on a green, minor bump{{ else }}**no agent sessions at all** — `on_red` is `report`, so every task stops
+        at its first red check and no agent is ever started{{ end }};
+      - a scheduler slot each, competing with everything else on the board.
+
+      Nothing is merged by approving this. {{ if eq (index .Task.Fields "merge") "gate" }}Every merge is a separate gate on a
+      separate task, read against that pull request's own diff and release notes.{{ else }}`merge` is `never`, so no task in this sweep can merge anything at all.{{ end }}
+
+      Rejecting blocks this task and creates nothing. The pull requests stay
+      open and untouched, and sweeping again later is one new task.
+
+  - id: spawn
+    name: Create a task for each pull request
+    type: command
+    shell: sh
+    timeout: 15m
+    # `--github-pull` is what puts each task on its pull request's head branch,
+    # and it prefills the title, the description and the declared `pull` field
+    # server-side (task 064) — the same prefill the TUI's form shows, so a task
+    # created here and one created by hand are the same task.
+    #
+    # Two things it does *not* fill, both passed explicitly:
+    #
+    #   --base-branch, because the prefill leaves the task's base branch at the
+    #     project's default (internal/api/github.go, applyPullPrefill). For a
+    #     bump onto the default branch the two coincide; for one onto a release
+    #     branch they do not, and handle-dependabot's preflight refuses that
+    #     task rather than gate a merge on the wrong branch's CI. Passing the
+    #     pull request's own base is what stops this sweep from manufacturing
+    #     that refusal N times.
+    #
+    #   --field, because on_red and merge are this sweep's policy, and an
+    #     explicit flag wins over what the prefill would put there.
+    #
+    # A failure to create one task does not abandon the rest: each is
+    # independent, and stopping at the first would leave a plan half-executed
+    # with no record of where. Failures are collected and the step exits
+    # non-zero at the end, so the row is red and names them.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      project=$(cat "$scratch/project")
+      planned=$(cat "$scratch/planned")
+
+      : > "$scratch/created"
+      : > "$scratch/failed"
+      done_n=0
+
+      while IFS="$(printf '\t')" read -r number base title; do
+        [ -n "$number" ] || continue
+        done_n=$((done_n + 1))
+        say "creating task $done_n/$planned for #$number"
+
+        # `</dev/null` because this loop's stdin *is* the plan: a child that
+        # read from it would silently eat the pull requests after this one.
+        if vincent task add \
+              --project "$project" \
+              --github-pull "$number" \
+              --base-branch "$base" \
+              --workflow handle-dependabot \
+              --field on_red={{index .Task.Fields "on_red"}} \
+              --field merge={{index .Task.Fields "merge"}} \
+              --json </dev/null > "$scratch/added.json" 2>"$scratch/added.err"; then
+          printf '%s\t%s\t%s\n' "$(jq -r .id "$scratch/added.json")" "$number" "$title" >> "$scratch/created"
+        else
+          printf '%s\t%s\n' "$number" "$(tr '\n' ' ' < "$scratch/added.err")" >> "$scratch/failed"
+        fi
+      done < "$scratch/plan.tsv"
+
+      created=$(wc -l < "$scratch/created" | tr -d ' ')
+      failed=$(wc -l < "$scratch/failed" | tr -d ' ')
+
+      echo "created $created of $planned task(s):"
+      awk -F'\t' '{ printf "  task %s  #%s  %s\n", $1, $2, $3 }' "$scratch/created"
+
+      if [ "$failed" -gt 0 ]; then
+        echo
+        echo "failed to create $failed task(s):" >&2
+        awk -F'\t' '{ printf "  #%s  %s\n", $1, $2 }' "$scratch/failed" >&2
+        say "$created created, $failed failed"
+        exit 1
+      fi
+      say "$created task(s) created"
+    # Read back from the daemon rather than trusting the exit codes above: every
+    # planned pull request must now report a link to a task. This is the
+    # postcondition for the one thing this workflow exists to do, and it is a
+    # different question from "did the command succeed" — a task created and
+    # then immediately cancelled would pass the first and fail this.
+    check: >-
+      s=$(git rev-parse --git-path vincent-deps);
+      vincent github prs --project "$(cat "$s/project")" --state open --limit {{index .Task.Fields "limit"}} --json
+      | jq -e --argjson want "$(cat "$s/numbers.json")"
+      '([.[] | select(.task_id != null) | .number]) as $linked | (($want - $linked) | length) == 0' >/dev/null
+    check_timeout: 5m
+
+  - id: report
+    name: Summarize the sweep
+    type: command
+    shell: sh
+    timeout: 5m
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      created=$(wc -l < "$scratch/created" | tr -d ' ')
+
+      echo "swept:   {{index .Task.Fields "limit"}} newest open pull requests in $VINCENT_PROJECT_NAME"
+      echo "created: $created handle-dependabot task(s)"
+      echo "policy:  on_red={{index .Task.Fields "on_red"}}, merge={{index .Task.Fields "merge"}}"
+      echo "ceiling: {{ if eq (index .Task.Fields "on_red") "repair" }}up to $((created * 5)) agent session(s) across the sweep, 0 for bumps that build{{ else }}0 agent sessions — no task in this sweep can start one{{ end }}"
+      echo
+      awk -F'\t' '{ printf "  task %s  #%s  %s\n", $1, $2, $3 }' "$scratch/created"
+      echo
+      echo "each task is now on the board with its own branch, its own transcript"
+      echo "{{ if eq (index .Task.Fields "merge") "gate" }}and its own merge gate. nothing merges without a separate approval.{{ else }}and no merge step. nothing in this sweep can merge.{{ end }}"
+      say "$created task(s) on the board"
