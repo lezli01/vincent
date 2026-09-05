@@ -60,6 +60,15 @@ One row per task: id, project, title, state, current step `k/n` with its name,
 elapsed, and cost so far. The header shows daemon status, agent availability,
 running-versus-cap counts, and how many tasks need a human.
 
+The running count is the daemon's own figure: every task holding a concurrency
+slot — `awaiting_input` as well as `running`, fan-out lanes as well as the root
+tasks the board lists — which is the number the scheduler admits against, so a
+full pool reads as full. Because that can exceed what is on screen, the header
+explains itself when it has to: `3/6 running · 2 lanes · 1 on input`, with each
+clause dropped when it is zero and shed on a terminal too narrow for it. A task
+on a question is counted in both the slot count and the needs-attention badge,
+being at once a slot holder and something waiting on you.
+
 Three behaviors matter:
 
 - **Tasks waiting on a human are pinned to the top** with a distinct badge —
@@ -916,6 +925,10 @@ project's path, branch convention, workflow and concurrency defaults, and
 current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
 in that same pane. This keeps the project you were looking at visible while you
 change its configuration.
+
+The `running / cap` column counts slots the way the board header does — lanes
+and tasks on a question included — so the numerator is the one the per-project
+cap is actually applied against.
 
 ![The Projects view: seven registered repositories with their running counts and
 caps on the left, and the selected project's path, branch convention, execution
