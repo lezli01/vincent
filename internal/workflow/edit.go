@@ -744,11 +744,9 @@ func WriteFile(path string, b []byte) (err error) {
 		return fmt.Errorf("write workflow: %w", err)
 	}
 	// A rename keeps the temporary file's own mode, so it is set on the
-	// replacement rather than inherited from the target.
-	if err = os.Chmod(tmp, perm); err != nil {
-		return fmt.Errorf("write workflow: %w", err)
-	}
-	if err = os.Rename(tmp, path); err != nil {
+	// replacement rather than inherited from the target — which is why the
+	// chmod and the rename are one step (replace_unix.go, replace_windows.go).
+	if err = replaceFile(tmp, path, perm); err != nil {
 		return fmt.Errorf("write workflow: %w", err)
 	}
 	return nil
