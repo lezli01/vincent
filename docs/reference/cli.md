@@ -791,8 +791,10 @@ task 42 is now awaiting_children
 
 All three flags are refused from that state: a `fan_out` step carries no prompt
 or command to edit, and `--branch` would rename the branch every live lane holds
-as its base. Edit the blocked lane itself instead. With `--json` the count is
-`retried_descendants` beside the task's own fields.
+as its base. Edit the blocked lane itself instead. With `--json` the count rides
+beside the task's own fields as `retried_descendants`; a retry that re-admitted
+nothing omits it and prints the plain task object, where
+[the API's own body](api.md) always carries the field and reads `0`.
 
 ### `vincent task repair`
 
