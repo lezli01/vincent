@@ -9,6 +9,48 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **An in-progress indicator, for as long as the work is actually running.**
+  A moving braille frame and an elapsed clock — `⠋ working… 14s` — now say that
+  an agent is working, on all four surfaces that used to go silent while it did:
+  the chat workspace, the chats board, the task workspace's output pane and
+  `vincent chat send`.
+
+  It is shown for the **whole** time a turn or an attempt is in `running`, not
+  only until the first chunk arrives. That is the part that matters: at the
+  `quiet` level the output pane drops tool calls and their results, so a turn
+  busy running tools for minutes used to render nothing new the whole time, and
+  a running chat turn that had produced no records yet rendered as literally
+  blank space under your own message. The elapsed clock is load-bearing beside
+  the animation — a number that advances is proof of life in a screenshot or in
+  scrollback, and it answers "how long has this been going" without a second
+  affordance.
+
+  In the **chat workspace** it sits above the composer, so it is there at every
+  scroll position, including after you have scrolled up and paused follow. It
+  disappears the moment the turn reaches `done`, `failed`, `interrupted` or
+  `awaiting_input` — a turn waiting on you is not working, and the header
+  already says so. On the **chats board** the frame appears beside a running
+  row's `running` label, and that row's "last activity" cell now advances
+  instead of standing still. In the **task workspace** it rides in the output
+  pane's border title while the attempt on screen is live — for a `command`
+  step as much as an `agent` one, since both are silent for the same reason.
+
+  A screen with nothing running repaints no more often than it did before: the
+  animation is armed only while something is actually running, and stops when it
+  ends.
+
+- **`vincent chat send` no longer waits in silence**, and prints exactly the
+  same bytes as before when you are not watching it. The indicator goes to
+  **stderr** only — the agent's answer is stdout and only stdout — and it is
+  suppressed entirely under `--json` and whenever stderr is not a terminal, so a
+  piped or redirected send is byte-for-byte what it always was. The line is
+  erased before anything else is written, so no spinner residue can land in
+  front of the answer or an error.
+
 ## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
 ### Added

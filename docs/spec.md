@@ -7028,6 +7028,17 @@ stream for the live tail.
      parent's own section — branch, linked pull request and its state, from one
      project listing. Lane rows carry **no checks**: checks stay one call for
      one task, and `l` opens the lane, whose own tab has them.
+
+   *Amended 2026-09-05 (task 089, issue #330).* The **Output** tab's border
+   title carries the view 9 in-progress indicator while the attempt it is
+   showing is still live — beside the tab strip, the level and the follow state,
+   which is where this workspace already keeps its live state and the one spot
+   visible at every scroll position. It draws on Output only, never on Diff, and
+   the gate is that the attempt is **live** rather than that its step is an
+   `agent` step: a long `command` step's pane is silent for exactly the same
+   reason and for exactly as long. A workspace whose displayed attempt has
+   finished arms no repaint.
+
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
@@ -7330,6 +7341,20 @@ stream for the live tail.
    left to remove, or — after a handoff — the task owns it, and the daemon's
    own refusal (§13.2) says the same thing from the other side.
 
+   *Amended 2026-09-05 (task 089, issue #330).* A `running` row's state cell
+   carries the view 9 in-progress indicator's moving frame **beside** the
+   `running` label, never instead of it: the cell is a fixed-width column
+   rendered through this board's shared state vocabulary, and swapping one
+   state's word for a glyph would break that vocabulary for that state alone.
+   The repaint it drives is also what makes the **last-activity cell advance**
+   while a chat is running — that cell already rendered `now - updated_at`, and
+   `updated_at` is written only on a state change, so for a running chat it was
+   already time-since-the-turn-started and was simply never redrawn. No column,
+   DTO or endpoint changes. `idle`, `awaiting_input`, `archived` and
+   `handed_off` rows do not animate, `awaiting_input` for view 9's reason — it
+   is waiting on a human, not working, and this header already badges it — and a
+   board with nothing running arms no repaint.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -7410,6 +7435,29 @@ stream for the live tail.
    added after the join: the #299 amendment below governs it verbatim — a
    composer that grew is a body that shrank — and the footer still carries one
    element per *rendered* line, the border's two rows included.
+
+   *Amended 2026-09-05 (task 089, issue #330).* A running turn carries an
+   **in-progress indicator** — one moving glyph and an elapsed clock,
+   `⠋ working… 14s` — for the **whole** time it is in `running`, not only until
+   its first chunk arrives. It sits in the footer, above the composer and beside
+   the note line, and not inline at the end of the turn's body: the body
+   scrolls, and a reader who has scrolled up is exactly the reader who needs to
+   be told that waiting is still the right thing to do. The frame advances every
+   120 ms; the clock is derived from the client's own clock on each render and
+   is spelled in this section's one duration vocabulary (`14s`, `2m03s`,
+   `1h04m`). The elapsed half is load-bearing on its own: a number that advances
+   is proof of life in a screenshot or a scrollback, where an animation is not.
+   It is gone the moment the turn reaches `done`, `failed`, `interrupted` or
+   `awaiting_input` — an `awaiting_input` turn is waiting on the human, not
+   working, and the header already says `waiting on you` — and a chat with no
+   running turn arms **no** repaint at all.
+
+   This does **not** contradict the "never a spinner" rule four paragraphs
+   above, and the two are never in force for the same turn. That rule is about a
+   send the daemon **refused**: a `409 chat_cap_reached` produces no turn, and a
+   client must not draw a pending anything for work that will never happen. This
+   indicator draws only for a turn the daemon is holding in `running` — state
+   the daemon does have and has told the client about.
 
 ### Layout
 

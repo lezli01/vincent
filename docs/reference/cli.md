@@ -1090,6 +1090,15 @@ and not one vincent can fix: it never refuses an unknown session id — it
 starts a fresh chat under it and answers — so a cursor chat whose session has
 aged out replies without remembering rather than failing.
 
+While it waits, an in-progress indicator — a moving glyph and an elapsed clock,
+`⠋ working… 14s` — is drawn on **stderr**, so a long turn never looks wedged.
+It is suppressed entirely in the two cases where anything extra would be wrong:
+under `--json`, and whenever stderr is not a terminal. A piped or redirected
+`vincent chat send` therefore emits exactly the bytes it would have emitted
+without it, on both streams. The answer itself is always stdout and only stdout,
+and the indicator's line is erased before anything else is written, so no
+residue can precede the answer or an error.
+
 If the agent asks a question mid-turn the chat enters `awaiting_input` and the
 send keeps waiting, because the turn has not ended. Answer it from another
 terminal with [`vincent chat answer`](#vincent-chat-answer).
