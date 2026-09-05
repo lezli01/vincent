@@ -39,7 +39,7 @@ type bulkResultMsg struct {
 	// — the one consequence of an archive that is invisible afterwards.
 	branches int
 	// lanes counts the blocked descendants a cascading retry re-admitted
-	// across the whole batch (task 088), for the same reason: a parked parent
+	// across the whole batch (task 090), for the same reason: a parked parent
 	// comes back in the state it went in, so its row says nothing about it.
 	lanes int
 }

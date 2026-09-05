@@ -28,7 +28,7 @@ type actionResultMsg struct {
 	// terminal and this is the one place a human is waiting for the answer.
 	branch apiclient.BranchOutcome
 	// retried is how many blocked descendants a retry on a parked fan_out
-	// parent re-admitted (task 088). Like branch it is a consequence the
+	// parent re-admitted (task 090). Like branch it is a consequence the
 	// task's own row does not show — the parent comes back unchanged, still
 	// `awaiting_children` — and no other action sets it.
 	retried int
@@ -238,7 +238,7 @@ func callAction(ctx context.Context, client *apiclient.Client, id int64, action 
 		task, err := client.Resume(ctx, id)
 		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionRetry:
-		// From a parked fan_out parent this is the cascade (task 088); the
+		// From a parked fan_out parent this is the cascade (task 090); the
 		// key is the same one, because available_actions is what says the
 		// action is on offer and the daemon is what decides it means.
 		task, retried, err := client.Retry(ctx, id, apiclient.Override{})
@@ -268,7 +268,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		status := msg.action + " · now " + msg.task.State
 		// A cascade leaves the parent exactly where it was, so "now
 		// awaiting_children" is all the task row can say about it; the lanes
-		// it re-admitted are the part a human acted for (task 088).
+		// it re-admitted are the part a human acted for (task 090).
 		if msg.retried > 0 {
 			status += " · " + plural(msg.retried, "lane", "lanes") + " re-admitted"
 		}

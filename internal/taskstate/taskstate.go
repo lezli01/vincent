@@ -205,7 +205,7 @@ var table = map[Action]map[State]Transition{
 	},
 	Resume: {Paused: {To: Queued}},
 	// Retry from `awaiting_children` is a **legality marker**, not a swap any
-	// caller performs (§6, task 088). It exists so that
+	// caller performs (§6, task 090). It exists so that
 	// `Can(AwaitingChildren, Retry)` is true — the API answers 200 instead of
 	// 409, and HumanActionsFrom lists `retry` — while Runner.Retry writes
 	// nothing at all to the parked parent's row: it only cascades the retry to

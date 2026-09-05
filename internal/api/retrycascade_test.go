@@ -63,7 +63,7 @@ func decodeRetry(t *testing.T, body []byte) retryResponse {
 	return out
 }
 
-// TestRetryFromParkedParentIs200 is task 088 at the HTTP seam: the action
+// TestRetryFromParkedParentIs200 is task 090 at the HTTP seam: the action
 // that used to be a 409 from `awaiting_children` now re-admits the blocked
 // lanes holding the join open, and says how many it reached.
 func TestRetryFromParkedParentIs200(t *testing.T) {

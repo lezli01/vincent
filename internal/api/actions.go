@@ -73,7 +73,7 @@ type retryRequest struct {
 }
 
 // retryResponse is the task as every other action renders it, plus how many
-// blocked descendants the retry re-admitted (§13.2, task 088). The task
+// blocked descendants the retry re-admitted (§13.2, task 090). The task
 // fields stay at the top level — a retry response is still a task — and
 // `retried_descendants` is always present, 0 for an ordinary blocked retry
 // with nothing under it, so a client never has to tell "no cascade" from "an
@@ -88,7 +88,7 @@ type retryResponse struct {
 
 // handleTaskRetry re-admits a blocked task, or cascades from a parent parked
 // in `awaiting_children` to the blocked lanes holding its join open (§6, task
-// 088).
+// 090).
 //
 // Like repair it cannot go through runAction: that path's taskAction returns a
 // task and nothing else, and the cascade's count is the second thing this one
@@ -162,7 +162,7 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkRetryBranchOverride refuses `branch_override` on a parent parked in
-// `awaiting_children` (task 088). Every live lane of that parent holds its
+// `awaiting_children` (task 090). Every live lane of that parent holds its
 // branch as its own `base_branch`, so renaming it would re-base a fan-out
 // already in flight onto a name that no longer exists — and unlike a
 // `branch_exists` block there is nothing here the rename would fix.
@@ -768,7 +768,7 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	// An `edit + retry` aimed at a parent parked in `awaiting_children`. Its
 	// cursor is on a `fan_out` step, which has neither a prompt nor a command
 	// for an override to rewrite — the edit belongs on the blocked lane (task
-	// 088).
+	// 090).
 	case isParkedOverride(err):
 		e, _ := taskrun.AsParkedOverride(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())

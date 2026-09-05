@@ -53,7 +53,7 @@ var wantTransitions = map[State]map[Action]State{
 	// Notably absent is Pause — a parent owning nothing running has nothing
 	// to pause — and the approve/reject/skip trio, which is why this is not
 	// awaiting_gate.
-	// Retry's self-transition is the legality marker of task 088: it makes
+	// Retry's self-transition is the legality marker of task 090: it makes
 	// the action legal here so it can cascade to blocked descendants, and
 	// resolves to the state the parent is already in, because nothing on the
 	// parent's own row changes.
@@ -251,7 +251,7 @@ func TestAwaitingChildrenHoldsNoSlot(t *testing.T) {
 // TestAwaitingChildrenOffersCancelAndRetry is the reason it is not a reuse of
 // awaiting_gate: approve, reject and skip would be actions the API accepts
 // and the TUI renders while they mean nothing. `retry` does mean something
-// (task 088) — it re-admits the blocked lanes holding the join open — and
+// (task 090) — it re-admits the blocked lanes holding the join open — and
 // `cancel`, which ends them, is the only other one.
 func TestAwaitingChildrenOffersCancelAndRetry(t *testing.T) {
 	got := HumanActionsFrom(AwaitingChildren)
@@ -261,7 +261,7 @@ func TestAwaitingChildrenOffersCancelAndRetry(t *testing.T) {
 }
 
 // TestRetryIsLegalOnlyFromBlockedAndParked pins the whole from-set of the one
-// action task 088 widened: `blocked`, where it re-runs the failed step, and
+// action task 090 widened: `blocked`, where it re-runs the failed step, and
 // `awaiting_children`, where it cascades to the blocked lanes. Nowhere else —
 // a retry from `aborted` in particular is what keeps a cascade from
 // resurrecting a lane a human ended (task 014 decision 22).

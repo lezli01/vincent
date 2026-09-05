@@ -722,7 +722,7 @@ fi
 # Both lanes fail on the same missing repository setting, so the parent parks
 # with two `blocked` children under it — `blocked` is not settled, so the join
 # stays open rather than failing `lane_failed` the way scenario 8's cancelled
-# lane does. Before task 088 that shape needed one retry per lane, walked by
+# lane does. Before task 090 that shape needed one retry per lane, walked by
 # hand; the one assertion this scenario exists for is that a single retry on
 # the *parent* clears all of them, and says how many it cleared.
 #

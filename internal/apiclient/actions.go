@@ -74,7 +74,7 @@ func (c *Client) Resume(ctx context.Context, id int64) (Task, error) {
 // From `awaiting_children` it means something else: the task is a fan_out
 // parent parked on a join no lane will ever close, and the retry cascades to
 // every blocked descendant instead of touching the parent's own row, which
-// comes back still `awaiting_children` (task 088). The second return is how
+// comes back still `awaiting_children` (task 090). The second return is how
 // many descendants were re-admitted — always reported, 0 when nothing was
 // cascaded. An override from that state is a 400: a parked parent's cursor is
 // a `fan_out` step, which carries no text to edit.

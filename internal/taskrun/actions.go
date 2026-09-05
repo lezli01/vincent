@@ -83,7 +83,7 @@ func (e *FollowUpOverrideError) Error() string {
 // `awaiting_children`. The API answers 400.
 //
 // A parked parent's cursor is on its `fan_out` step, which has neither a
-// prompt nor a command to rewrite (task 088). The retry it does accept is a
+// prompt nor a command to rewrite (task 090). The retry it does accept is a
 // cascade to its blocked lanes, and each lane's own step is what an override
 // would have to name — so the edit belongs on the lane, not here.
 type ParkedOverrideError struct {
@@ -183,7 +183,7 @@ func (r *Runner) Resume(ctx context.Context, id int64) (*store.Task, error) {
 //
 // From `awaiting_children` it means something else: the parked parent has no
 // step of its own to re-run, so the retry cascades to every blocked
-// descendant instead (task 088). Both shapes cascade — a parent blocked for
+// descendant instead (task 090). Both shapes cascade — a parent blocked for
 // its own reason can have a blocked lane under it too — and the middle return
 // value is how many descendants this call re-admitted.
 func (r *Runner) Retry(ctx context.Context, id int64, ov store.Override) (*store.Task, int, error) {

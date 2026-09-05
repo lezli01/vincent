@@ -216,7 +216,7 @@ func TestRepairStepIDMatchesTheEngine(t *testing.T) {
 }
 
 // TestRetryFromParkedParentCarriesTheCount: `retry` on a fan_out parent
-// parked in `awaiting_children` is the cascade (task 088), and the client
+// parked in `awaiting_children` is the cascade (task 090), and the client
 // reads how many blocked lanes it re-admitted out of the same flat object the
 // task comes from. Without it the only thing a human would see is a parent in
 // the state it was already in.

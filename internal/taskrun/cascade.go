@@ -122,7 +122,7 @@ func (r *Runner) cascadeArchive(ctx context.Context, id int64, force bool) error
 }
 
 // cascadeRetry re-admits every blocked descendant of a task, and reports how
-// many it re-admitted (task 088).
+// many it re-admitted (task 090).
 //
 // A parent parked in `awaiting_children` has nothing of its own to retry: the
 // join is held open by lanes below it, and before this the only action §6

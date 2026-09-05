@@ -44,7 +44,7 @@ func (h *actionHarness) stateEvents(t *testing.T, id int64) int {
 	return len(events)
 }
 
-// TestRetryFromParkedParentCascadesToLanes is task 088's whole point: the one
+// TestRetryFromParkedParentCascadesToLanes is task 090's whole point: the one
 // action a parked parent used to accept was `cancel`, which ends the work.
 // `retry` now re-admits every blocked lane holding the join open, in one call.
 func TestRetryFromParkedParentCascadesToLanes(t *testing.T) {

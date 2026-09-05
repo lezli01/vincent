@@ -172,7 +172,7 @@ func TestEditRetryPicksRunForCommandSteps(t *testing.T) {
 // command, so `E` is not offered and does not act.
 //
 // It is silent about it. The bar never advertised the key here — its hint has
-// always been gated on there being text to edit — and task 088 gave the key
+// always been gated on there being text to edit — and task 090 gave the key
 // itself the same check, because the other step with nothing to edit is the
 // `fan_out` a parked parent sits on, where the daemon answers an override
 // with a 400. An unadvertised key that does nothing is what every other one

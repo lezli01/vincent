@@ -71,7 +71,7 @@ func (h *actionLiveHarness) blockedLane(t *testing.T, parent *store.Task, n int)
 	return task
 }
 
-// TestDetailRetriesParkedParentLive is the client half of task 088: the bar
+// TestDetailRetriesParkedParentLive is the client half of task 090: the bar
 // offers `r` on a parent parked in `awaiting_children`, the one call
 // re-admits every blocked lane holding the join open, and the status line
 // says how many — because the parent's own row comes back in the state it
