@@ -488,6 +488,70 @@ event announces when it changed (§13.3), the row carries what it is, and a
 second column would have to be kept true by every writer for something no
 surface renders.
 
+*Amended 2026-09-05 (issue #323).* The field list gains **what the attempt was
+given**, and the run-time resolution behind it (migration 0027, §14): the
+rendered prompt an `agent` step handed its adapter, the rendered script a
+`command` step handed its shell, the rendered `check:` command, what an `if:`
+guard rendered to, the resolved `for_each` list an iteration drew its item from,
+a marker saying a recorded field was cut at the size ceiling, and — beside them
+— which §8.6 level supplied each of agent, model and effort, plus the permission
+mode, the step timeout, the check timeout, the resolved shell and the working
+directory.
+
+None of it was recorded anywhere. `prompt_override`/`run_override` hold only the
+text a human typed at edit+retry, so they are null on the ordinary attempt; the
+transcript's `step_started` note carries the triple but not the prompt, and the
+claude adapter passes the prompt on **stdin**, so not even the `debug: true`
+argv note contains it. A human asking "what did this attempt actually get?" had
+the workflow's *template* in the snapshot (§15 view 2) and the §8.4 substitution
+nowhere — and the template is not the answer when the render is the thing that
+went wrong.
+
+Four properties are normative:
+
+- **The recorded prompt is the bytes the adapter received**, which is the §8.4
+  render *after* the daemon appends the `<previous-attempt-failure>` block
+  (§7.2), not before. That half is the one a re-render can never reproduce: it
+  draws on the previous attempt's row. A client marks the appended part as
+  daemon-authored so a reader can tell what the workflow wrote from what vincent
+  added.
+- **These are recorded, never re-derived on read.** `config.yaml` hot-reloads
+  (§12.3), so a timeout or a shell default can move under a row that already
+  ran, and a task's agent/model/effort overrides are patchable after an attempt
+  (§6), so re-resolving later can name a level that had nothing to do with it. A
+  derived answer would quietly disagree with what the attempt got. For the same
+  reason `vincent workflow render --task` is not this: it is a *preview*, binds
+  run-discovered values to visible sentinels (§8.4) and renders against *now*.
+- **Every one of them is display-only, the rendered `if:` included.** Task 015
+  decision 10 — a guard is re-evaluated every time it is reached and is never
+  sticky (§7.7) — stands unamended and is not relitigated: it refuses a
+  *persisted verdict consulted later*, and nothing in the engine reads any of
+  these columns back to decide anything. `retry` and §12.4 recovery both
+  re-render the guard against current facts. This extends that decision's own
+  closing clause — the mitigation is visibility — by recording what the guard
+  rendered *to*, beside the raw template `result_summary` already carries.
+- **The record exists before the process does.** It is written as the engine
+  renders each input, so it is already on the row while the attempt is
+  `running` and after §12.4 recovery finalizes it `interrupted` — which is
+  precisely the attempt a human opens it for.
+
+Each recorded field is bounded at **64 KiB**, cut on a rune boundary, and the
+row says a cut happened rather than eliding it. The ceiling is the record's cost
+control, not a display concern: on a retry the bytes an adapter receives are the
+render plus a failure block whose output tail is itself bounded at 200 lines or
+256 KiB (§8.4), nothing prunes `step_runs` (§17) and the database ships whole in
+`vincent daemon backup`. `result_summary`'s 4096 is deliberately not reused —
+that bounds a summary a board renders, and this is a record whose value is being
+exact.
+
+Null on a rendered field means **no input was recorded** — every row written
+before the migration, and every field the step type has no input for — and a
+client must say so rather than draw an empty body, which would claim the step
+was handed nothing. An empty string is a distinct fact: a render that genuinely
+produced nothing. Empty or 0 on the resolution fields reads the same "not
+recorded", following `loop_total`'s precedent, so a task in flight over the
+upgrade renders as it did.
+
 ### 5.5 Chat and ChatTurn (task 063)
 
 A **Chat** is a titled conversation with an agent, scoped to a project. It is a
@@ -5642,6 +5706,25 @@ GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         `status_message` too, denormalized from the task's
                                         *newest* step run the way `step_name` and `cost_usd`
                                         are, so a board never fetches step rows for it)
+                                        (issue #323, 2026-09-05: each also carries what the
+                                        attempt was **given** and the resolution behind it —
+                                        `rendered_prompt`, `rendered_run`, `rendered_check`,
+                                        `rendered_if`, `rendered_for_each`,
+                                        `input_truncated`, `agent_source`, `model_source`,
+                                        `effort_source`, `permission_mode`, `timeout_ms`,
+                                        `check_timeout_ms`, `shell`, `work_dir` (§5.4, §14).
+                                        The rendered fields are the **full recorded bytes**,
+                                        deliberately unlike `prompt_override`/`run_override`,
+                                        which this DTO reports as booleans: those flag a
+                                        human's edit for a timeline, these are the record a
+                                        details pane reads. Null means nothing was recorded —
+                                        an attempt from before the record existed, and every
+                                        field the step type has no input for — while an empty
+                                        string is a render that produced nothing, and a client
+                                        must say the two differently. `rendered_if` is display
+                                        only (§7.7) and `rendered_for_each` is a JSON array.
+                                        `GET /v1/tasks` does **not** carry any of them: they
+                                        are per-attempt evidence, not a board column)
 POST   /v1/tasks/{id}/steps/{step_id}/status
                                         { message } → { message }, the value as stored
                                         (added 2026-08-26, task 036). Records what the
@@ -6261,6 +6344,55 @@ CREATE TABLE step_runs (
   status_message      TEXT,                   -- NULL = the step said nothing
   prompt_override     TEXT,                   -- edit+retry: the prompt a human supplied for this attempt (§6)
   run_override        TEXT,                   -- edit+retry: the command a human supplied for this attempt (§6)
+  -- What this attempt was *given*, and the resolution behind it (§5.4, issue
+  -- #323, migration 0027). The two columns above hold only the text a human
+  -- typed at edit+retry; these hold the §8.4 render as the adapter or the shell
+  -- received it — for the prompt, *after* the `<previous-attempt-failure>`
+  -- block is appended (§7.2), because that is the half a re-render can never
+  -- reproduce.
+  --
+  -- Recorded rather than re-derived on read, and the difference is not
+  -- cosmetic: `config.yaml` hot-reloads (§12.3) so a timeout or a shell default
+  -- can move under a row that already ran, and a task's agent/model/effort
+  -- overrides are patchable (§6) so re-resolving later can name a level that
+  -- had nothing to do with this attempt.
+  --
+  -- All of it is **display-only**, `rendered_if` included: a guard is
+  -- re-evaluated every time it is reached and is never sticky (§7.7, task 015
+  -- decision 10), and nothing in the engine reads any of these back to decide
+  -- anything. `rendered_if` records what the guard rendered *to*, beside the
+  -- raw template `result_summary` carries.
+  --
+  -- Written once, at render, and never updated: the input is known before the
+  -- process starts and must already be on the row while the attempt is
+  -- `running` and after §12.4 recovery finalizes it `interrupted`, which is
+  -- exactly the attempt a human opens it for. The writer is therefore a narrow
+  -- additive one, and the actor's own row update does not carry these columns —
+  -- a stale struct would erase them.
+  --
+  -- NULL on a rendered column means no input was recorded: every row written
+  -- before the migration, and every field the step type has no input for. An
+  -- empty string is distinct and meaningful — a render that produced nothing.
+  -- "" and 0 on the resolution columns read the same "not recorded",
+  -- `loop_total`'s precedent, so a task in flight over the upgrade renders as it
+  -- did. Each rendered field is bounded at 64 KiB on a rune boundary and
+  -- `input_truncated` says a cut happened; nothing prunes this table (§17) and
+  -- the database ships whole in `vincent daemon backup`, so the ceiling is the
+  -- record's cost control rather than a display concern.
+  rendered_prompt     TEXT,                   -- NULL = none recorded
+  rendered_run        TEXT,                   -- NULL = none recorded
+  rendered_check      TEXT,                   -- NULL = none recorded
+  rendered_if         TEXT,                   -- NULL = none recorded; display only (§7.7)
+  rendered_for_each   TEXT,                   -- NULL = none recorded; JSON array of the resolved items
+  input_truncated     INTEGER NOT NULL DEFAULT 0, -- 1 = a recorded field lost bytes to the ceiling
+  agent_source        TEXT,                   -- which §8.6 level supplied it: step|task|workflow|adapter
+  model_source        TEXT,
+  effort_source       TEXT,
+  permission_mode     TEXT,                   -- full-auto | restricted (§16)
+  timeout_ms          INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
+  check_timeout_ms    INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
+  shell               TEXT,                   -- the shell a command step resolved to (§8.3)
+  work_dir            TEXT,                   -- the directory the process ran in
   transcript_path     TEXT,
   input_tokens        INTEGER,
   output_tokens       INTEGER,
@@ -6659,6 +6791,45 @@ stream for the live tail.
    and the Pull Request tab is not. Neither writes to **GitHub**; task 068
    decision 1 settled that merge, close, re-run and comment will, and 068.4 is
    where they land and where decision record row 11 is rewritten.*
+   *Amended 2026-09-05 (issue #323): a **Step Details** tab, selected by `6`,
+   which **supersedes task 068.3's placement** above — it is inserted ahead of
+   Pull Request rather than appended after it, so Pull Request answers to `7`.
+   What 068.3 was protecting survives whole: the digits bind to tabs and not to
+   positions, and Step Details is unconditional, so no tab's number moves when
+   the pull-request tab is absent — `6` is Step Details either way, and `7` does
+   nothing when nothing is linked, exactly as `6` did before it. The conditional
+   tab stays **last** on the strip, so the strip's shape and the cycle are
+   unchanged. What is genuinely paid is that `6` changes meaning once, for a
+   reader with a linked pull request who had learned the old number; that cost
+   was accepted deliberately, and it is why this is written as a supersession
+   rather than a restatement.
+   The tab answers "what was **this attempt** actually given", which no client
+   could answer at all: it renders the selected attempt's recorded input and
+   resolution (§5.4) in four groups — **Input** (the rendered prompt or script,
+   the rendered `check:`, the result summary, with the appended
+   `<previous-attempt-failure>` block marked as daemon-authored and the 64 KiB
+   cut said out loud when the row carries the marker), **Resolution**
+   (agent/model/effort each with the §8.6 level that supplied it, permission
+   mode, both timeouts, the resolved shell, the working directory, and the §7.9
+   `resolved_from` include chain read from the snapshot), **Control flow** (what
+   the `if:` rendered to, the iteration and total, this iteration's `for_each`
+   item and the resolved list, and the task's own fan-out lane id) and
+   **Outcome** (tokens, cost, active duration, human wait, both exit codes,
+   failure and skip reason, the edit+retry badge, the transcript path).
+   A nil recorded field renders as *not recorded* rather than as an empty body:
+   drawing a pre-migration attempt as though it had been handed nothing is the
+   one thing this tab must not say, and an empty render is said differently.
+   The layout is the Task Details inspector's — a sidebar against an
+   independently scrolled content pane — but the sidebar lists **attempts**, and
+   the selection is the workspace's shared attempt cursor and not a second one
+   (task 049 decision 4): arriving from Output or Diff lands on the attempt
+   already being read, `←`/`→` still move it, and `↑`/`↓` move it here too while
+   `pgup`/`pgdn` scroll the facts. The tab is about the **open task's own**
+   attempts; a lane's inputs are read by opening the lane, which `l` and `U`
+   already make a short trip. Task Details' workflow-snapshot section, which
+   renders each step's *un-rendered* `prompt`/`run`/`instructions`, stays exactly
+   as it is — the two are the template and the substitution, and seeing both is
+   the point.*
    *Amended 2026-08-26 (task 036): the attempt line gains two
    fields.* The step's own **status message** (§5.4) renders last on the line,
    in its own style and behind a glyph, so it reads as a quotation from the step
@@ -7188,7 +7359,12 @@ task 051, 2026-08-29, added the Workflow tab). *Amended 2026-08-31 (task
 068.3): six on a task whose pull request is linked, five on one whose is not.
 The Pull Request tab is conditional, so the strip's length is a property of the
 task rather than a constant of the view, and the tab cycle walks the strip as it
-stands rather than a fixed count.* Views 3–7 are
+stands rather than a fixed count.*
+*Amended 2026-09-05 (issue #323): **seven** on a task whose pull request is
+linked, six on one whose is not — Step Details is unconditional and takes `6`,
+and the conditional tab stays last and takes `7`. Everything the sentence above
+says about the strip's length being a property of the task, and about the cycle
+walking the strip as it stands, is unchanged.* Views 3–7 are
 full-screen takeovers reached from the command palette (view 7 added
 2026-08-29 by task 052.6).
 

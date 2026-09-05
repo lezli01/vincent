@@ -210,8 +210,14 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   Groups fold away, and a folded one still carries its task count and its
   needs-attention badge.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
-  Output, Diff, and Workflow tabs, plus a Pull Request tab on a task that has
-  one linked; each tab uses the whole view.
+  Output, Diff, Workflow, and Step Details tabs, plus a Pull Request tab on a
+  task that has one linked; each tab uses the whole view.
+- Step Details answers what an attempt was actually *given*: the rendered prompt
+  or shell script it was handed rather than the workflow's template, what an
+  `if:` guard rendered to, which level supplied its agent, model and effort, and
+  the permission mode, timeouts, shell and working directory it ran under — all
+  recorded when it ran, so they still say what happened after you edit the config
+  or patch the task.
 - A fan-out is something you can watch. `L` hangs a fan-out parent's lanes
   under it as indented board rows in every state it passes through — without
   putting them in any count — one key opens the lane you are pointing at and

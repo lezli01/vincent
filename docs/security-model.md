@@ -442,8 +442,13 @@ Stated so you do not assume otherwise:
 - **Multi-user or multi-tenant operation.** One OS user, one daemon.
 - **Protecting you from your own workflow files.** A `command` step is a shell
   command.
-- **Secret redaction in transcripts.** A transcript records the rendered prompt
-  and everything the agent did. Read one before pasting it into an issue.
+- **Secret redaction in transcripts or step records.** Vincent records what it
+  ran and what came back, verbatim. A transcript records everything the agent
+  did, and each attempt's row records the **rendered prompt or command** it was
+  handed — the substituted text, not the workflow's template — which the task
+  workspace's Step Details tab shows. So a secret interpolated into a prompt is
+  on disk in the database as well as in the transcript, and `vincent daemon
+  backup` copies both. Read one before pasting it into an issue.
 - **Remote access.** There is no remote binding, and adding one would need a
   different auth story than a loopback token.
 

@@ -298,7 +298,28 @@ unlinking lives there and on the Pull Request tab.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-**Pull Request** is the sixth tab, and the only one that is sometimes not
+**Step Details** answers the question the other tabs cannot: what this attempt
+was actually *given*. Task Details shows the workflow's template; this shows the
+substitution — the rendered prompt an agent step handed its CLI, the rendered
+script a command step handed its shell, the rendered `check:` command. On a retry
+the block vincent appends about the previous failure is marked as vincent's, so
+you can tell it from what the workflow wrote. Beneath the input come the
+resolution (agent, model and effort each with the level that supplied it — step,
+task, workflow or adapter — the permission mode, both timeouts, the shell, the
+working directory and the `include` chain the step came from), the control flow
+(what an `if:` guard rendered to, the loop iteration and total, this iteration's
+`for_each` item and the whole resolved list) and the outcome (tokens, cost,
+durations, exit codes, reasons, the transcript path).
+
+These are the values the attempt ran with, recorded when it ran — not recomputed
+when you open the tab, which would quietly disagree once you edited `config.yaml`
+or patched the task's agent. The sidebar lists attempts and shares the selection
+with Output and Diff, so arriving here lands on the attempt you were reading.
+Two things it says out loud rather than hiding: a record cut at its 64 KiB
+ceiling, and an attempt from before vincent recorded any of this, which reads
+`not recorded` instead of showing an empty prompt.
+
+**Pull Request** is the last tab, and the only one that is sometimes not
 there: it appears when the task has a pull request linked and `github.enabled`
 is on. It carries the pull request's facts and one row per check on its head
 commit — name, state, and the check's own page — read live from the daemon on
@@ -367,7 +388,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
 | `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
-| `6` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
+| `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
+| `pgup`/`pgdn` | On Step Details, scroll the facts |
 | `enter` | From Steps & Attempts, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
 | `space` | On Steps & Attempts, open or close the iteration/round tier the cursor is in |
 | `←`/`→` | On Steps & Attempts, close / open that tier |
