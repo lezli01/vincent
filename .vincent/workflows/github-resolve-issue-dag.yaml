@@ -115,11 +115,13 @@
 # verbatim and `grep -f` / `sh <file>` never parse it as shell. This is the same
 # move `confirm-red` already makes with `green.sh`.
 #
-# Conflicts that survive all that are handled by `merge.on_conflict: agent`, and
-# its check is `go build ./...` and `go vet ./...` for the reason above — the
-# suite is not available as a bar mid-join on the bug path. A resolver that does
-# not resolve leaves the conflict blocked for a human, which is the default
-# behaviour and the right one.
+# Conflicts that survive all that are handled by `merge.on_conflict: agent`. Its
+# check asserts what is true mid-join and nothing more: nothing left unmerged, no
+# conflict marker staged, and `go build`/`go vet` over the packages this
+# resolution touched — not `./...`, which is red mid-join for both reasons above,
+# the seeded regression test on the bug path and a consumer unit that has not
+# merged yet on any path. A resolver that does not resolve leaves the conflict
+# blocked for a human, which is the default behaviour and the right one.
 #
 # ## Why the plan is a step's stdout, and why a human reads it
 #
@@ -1188,10 +1190,26 @@ steps:
         # branch carries a committed failing regression test until the unit
         # that fixes it merges, so the suite is red by construction mid-join
         # and would fail every resolution. The suite's bar is `integrate`,
-        # after the join. Build and vet are what can honestly be asserted here.
+        # after the join.
+        #
+        # `go build ./...` and `go vet ./...` are absent for the second
+        # structural reason, the one the lane check ran into on #328
+        # (2026-09-05): a provider unit merges before the consumer unit that
+        # updates its call sites — that is what `needs` means — so between
+        # those two merges the repository legitimately does not compile, and
+        # the red package is one this resolution never touched.
+        #
+        # So the build is scoped to the packages this resolution actually
+        # staged. Those are honest to assert: a package the merge touched can
+        # only depend on units that already merged, because `needs` put them
+        # first. Around it are the resolution's own bar — nothing left
+        # unmerged, no marker left behind. `git diff` feeds `grep -E` without
+        # `-q` on purpose (CLAUDE.md): an early-exiting consumer would kill the
+        # producer with SIGPIPE and fail the check *because* it matched.
         check: >
-          go build ./... &&
-          go vet ./...
+          test -z "$(git ls-files -u)" &&
+          { markers=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+(<<<<<<<|>>>>>>>)' || true); test -z "$markers" || { echo 'conflict markers survived the resolution:' >&2; echo "$markers" >&2; false; }; } &&
+          { dirs=$(git diff --cached --name-only --diff-filter=ACMR | sed -n 's#^\(.*\)/[^/]*\.go$#./\1#p' | sort -u); test -z "$dirs" || { go build $dirs && go vet $dirs; }; }
         check_timeout: 10m
 
   - id: integrate
