@@ -37,8 +37,8 @@ func TestTabOnTheWorkflowTabMovesToTheNextTab(t *testing.T) {
 	v := workflowTabFixture(t)
 	before := v.workflow.graph.Selected()
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
-	if v.tab != taskTabSteps {
-		t.Fatalf("tab moved to %v, want Steps & Attempts", v.tab)
+	if v.tab != taskTabStepDetails {
+		t.Fatalf("tab moved to %v, want Step Details", v.tab)
 	}
 	if got := v.workflow.graph.Selected(); got != before {
 		t.Errorf("tab also walked the graph selection to %q; it must not", got)

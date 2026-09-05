@@ -57,16 +57,26 @@ func TestPullTabPresenceFollowsTheLink(t *testing.T) {
 	if v.pullTabAvailable() {
 		t.Fatal("the tab is on offer for a task with no pull request")
 	}
-	if cmd := v.updateKey(registryKey(t, "6")); cmd != nil || v.tab != taskTabDetails {
-		t.Fatalf("6 moved to %v with nothing linked, want no move", v.tab)
+	if cmd := v.updateKey(registryKey(t, "7")); cmd != nil || v.tab != taskTabDetails {
+		t.Fatalf("7 moved to %v with nothing linked, want no move", v.tab)
 	}
+	// The unconditional neighbour is what makes that absence free: 6 is Step
+	// Details whether or not there is a pull request (issue #323).
+	if v.updateKey(registryKey(t, "6")); v.tab != taskTabStepDetails {
+		t.Fatalf("6 moved to %v with nothing linked, want Step Details", v.tab)
+	}
+	v.tab = taskTabDetails
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	if !v.pullTabAvailable() {
 		t.Fatal("the tab is absent for a task with a linked pull request")
 	}
-	v.updateKey(registryKey(t, "6"))
+	v.updateKey(registryKey(t, "7"))
 	if v.tab != taskTabPull {
-		t.Fatalf("6 moved to %v, want the Pull Request tab", v.tab)
+		t.Fatalf("7 moved to %v, want the Pull Request tab", v.tab)
+	}
+	v.updateKey(registryKey(t, "6"))
+	if v.tab != taskTabStepDetails {
+		t.Fatalf("6 moved to %v with a pull request linked, want Step Details", v.tab)
 	}
 }
 
@@ -80,24 +90,24 @@ func TestPullTabHiddenWhenGitHubDisabled(t *testing.T) {
 	if v.pullTabAvailable() {
 		t.Fatal("the tab is on offer while the integration is disabled")
 	}
-	if got := v.tabs(); len(got) != 5 {
-		t.Fatalf("the strip carries %d tabs, want 5", len(got))
+	if got := v.tabs(); len(got) != 6 {
+		t.Fatalf("the strip carries %d tabs, want 6", len(got))
 	}
 }
 
 // The cycle is the part the modulo arithmetic gets wrong first: tab/⇧tab must
 // walk the strip as it stands, not the enum.
 func TestPullTabCycleSkipsAnAbsentTab(t *testing.T) {
-	v := tabbedTaskFixture(t, taskTabWorkflow)
+	v := tabbedTaskFixture(t, taskTabStepDetails)
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabSteps {
-		t.Fatalf("tab from Workflow with no pull request landed on %v, want Steps", v.tab)
+		t.Fatalf("tab from Step Details with no pull request landed on %v, want Steps", v.tab)
 	}
-	v = tabbedTaskFixture(t, taskTabWorkflow)
+	v = tabbedTaskFixture(t, taskTabStepDetails)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabPull {
-		t.Fatalf("tab from Workflow with a pull request landed on %v, want Pull Request", v.tab)
+		t.Fatalf("tab from Step Details with a pull request landed on %v, want Pull Request", v.tab)
 	}
 	v.updateKey(registryKey(t, "tab"))
 	if v.tab != taskTabSteps {

@@ -38,7 +38,10 @@ func TestTaskWorkspaceDefaultsToStepsAndCyclesEveryFullViewTab(t *testing.T) {
 	if v.tab != taskTabSteps {
 		t.Fatalf("initial tab = %v, want Steps & Attempts", v.tab)
 	}
-	want := []taskViewTab{taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabSteps}
+	want := []taskViewTab{
+		taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabStepDetails,
+		taskTabSteps,
+	}
 	for _, tab := range want {
 		v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
 		if v.tab != tab {

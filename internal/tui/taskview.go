@@ -21,14 +21,24 @@ import (
 // first: entering a task lands on the execution history people most often came
 // to inspect. Workflow was deliberately last (task 051): appending it leaves
 // 1-4 bound to the tabs task 049 built the muscle memory on, and Pull Request
-// is appended after it for the same reason (task 068).
+// was appended after it for the same reason (task 068).
 //
-// Pull Request is the first **conditional** tab: it exists only for a task
-// with a live pull-request link and a usable integration. Being last is what
-// makes that free — no other tab's number moves when it is absent — but it is
-// not free for the *cycle*, which used to be modulo taskTabCount and would
-// otherwise land on a tab that is not on the strip. taskView.tabs is the
-// strip as it currently stands, and tab/⇧tab walk that instead.
+// Step Details (issue #323) is inserted **before** Pull Request rather than
+// after it, which supersedes 068.3's placement decision. What 068.3 was
+// protecting survives whole: digits bind to tabs and not to positions, and
+// Step Details is unconditional, so no tab's number moves when the
+// pull-request tab is absent — `6` is Step Details either way, and `7` does
+// nothing when nothing is linked, exactly as `6` did before it. What is
+// genuinely paid is that `6` changes meaning once, for a reader who has a
+// linked pull request and had learned the old number; that cost was accepted
+// deliberately.
+//
+// Pull Request is still the only **conditional** tab: it exists only for a
+// task with a live pull-request link and a usable integration, and it stays
+// last on the strip, so tabs() and the cycle keep the shape they have. Its
+// absence is not free for the *cycle*, which used to be modulo taskTabCount
+// and would otherwise land on a tab that is not on the strip. taskView.tabs is
+// the strip as it currently stands, and tab/⇧tab walk that instead.
 type taskViewTab int
 
 const (
@@ -37,6 +47,7 @@ const (
 	taskTabOutput
 	taskTabDiff
 	taskTabWorkflow
+	taskTabStepDetails
 	taskTabPull
 	taskTabCount
 )
@@ -92,6 +103,12 @@ type taskView struct {
 	details      detailsPane
 	popupDetails detailsPane
 	popupTab     popupTab
+
+	// stepDetails is the Step Details tab's pane (issue #323). It holds a
+	// scroll offset and the strip's geometry and no selection of its own:
+	// which attempt is being read is detail.selectedRun, shared with Output,
+	// Diff and the timeline (task 049 decision 4).
+	stepDetails stepDetailsPane
 
 	tabHits []taskTabHit
 	bodyY   int
@@ -222,6 +239,8 @@ func (t *taskView) bindingContext() bindingContext {
 		return ctxDiff
 	case taskTabWorkflow:
 		return ctxTaskWorkflow
+	case taskTabStepDetails:
+		return ctxTaskStepDetails
 	case taskTabPull:
 		return ctxTaskPull
 	default:
@@ -254,6 +273,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 		t.workflow = newWorkflowTab()
 		t.details.reset()
 		t.popupDetails.reset()
+		t.stepDetails.reset()
 		t.popup = false
 		t.createPR = nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
@@ -379,7 +399,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "5":
 		return t.setTab(taskTabWorkflow)
 	case "6":
-		// Absent means absent: with no pull request linked, 6 does nothing
+		return t.setTab(taskTabStepDetails)
+	case "7":
+		// Absent means absent: with no pull request linked, 7 does nothing
 		// rather than landing on an empty screen (task 068).
 		if !t.pullTabAvailable() {
 			return nil
@@ -446,6 +468,9 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if t.tab == taskTabWorkflow {
 		return t.updateWorkflowKey(msg)
+	}
+	if t.tab == taskTabStepDetails {
+		return t.updateStepDetailsKey(msg)
 	}
 	if t.tab == taskTabPull {
 		return t.updatePullTabKey(msg)
@@ -644,6 +669,8 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		return t.detail.clickTimeline(msg.Y - t.bodyY)
 	case taskTabDetails:
 		t.details.clickSidebar(msg.X, msg.Y-t.bodyY)
+	case taskTabStepDetails:
+		return t.clickStepDetailsSidebar(msg.X, msg.Y-t.bodyY)
 	case taskTabDiff:
 		t.detail.diff.clickRow(msg.Y - t.bodyY)
 	case taskTabWorkflow:
@@ -670,6 +697,8 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		return t.detail.moveTimelineSelection(delta)
 	case taskTabDetails:
 		t.details.scrollAt(msg.X, delta)
+	case taskTabStepDetails:
+		return t.scrollStepDetailsAt(msg.X, delta)
 	case taskTabOutput:
 		if delta > 0 {
 			t.detail.vp.ScrollDown(1)
@@ -730,12 +759,13 @@ func (t *taskView) render(width, height int) string {
 
 // taskTabNames are the strip's labels, indexed by taskViewTab.
 var taskTabNames = [taskTabCount]string{
-	taskTabSteps:    "Steps & Attempts",
-	taskTabDetails:  "Task Details",
-	taskTabOutput:   "Output",
-	taskTabDiff:     "Diff",
-	taskTabWorkflow: "Workflow",
-	taskTabPull:     "Pull Request",
+	taskTabSteps:       "Steps & Attempts",
+	taskTabDetails:     "Task Details",
+	taskTabOutput:      "Output",
+	taskTabDiff:        "Diff",
+	taskTabWorkflow:    "Workflow",
+	taskTabStepDetails: "Step Details",
+	taskTabPull:        "Pull Request",
 }
 
 func (t *taskView) renderTabs() string {
@@ -772,6 +802,8 @@ func (t *taskView) renderTabBody(width, height int) string {
 		return t.detail.diff.render(width, height)
 	case taskTabWorkflow:
 		return t.renderWorkflow(width, height)
+	case taskTabStepDetails:
+		return t.renderStepDetails(width, height)
 	case taskTabPull:
 		return t.renderPullTab(width, height)
 	default:

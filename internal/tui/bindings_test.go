@@ -37,6 +37,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "tab":
 		msg = tea.KeyPressMsg{Code: tea.KeyTab}
+	case "shift+tab":
+		msg = tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	case "up":
 		msg = tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
@@ -1424,13 +1426,32 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
-	ctxTaskPull: {
+	ctxTaskStepDetails: {
 		"6": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabSteps)
+			v.updateKey(registryKey(t, "6"))
+			if v.tab != taskTabStepDetails {
+				t.Fatalf("6 moved to %v, want the Step Details tab", v.tab)
+			}
+		},
+		"down": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabStepDetails)
+			runs := v.detail.attempts()
+			v.detail.selectedRun = runs[0].ID
+			v.updateKey(registryKey(t, "down"))
+			if v.detail.selectedRun != runs[1].ID {
+				t.Fatalf("down selected attempt %d, want %d", v.detail.selectedRun, runs[1].ID)
+			}
+		},
+	},
+
+	ctxTaskPull: {
+		"7": func(t *testing.T) {
 			v := pullTabFixture(t)
 			v.tab = taskTabDetails
-			v.updateKey(registryKey(t, "6"))
+			v.updateKey(registryKey(t, "7"))
 			if v.tab != taskTabPull {
-				t.Fatalf("6 moved to %v, want the Pull Request tab", v.tab)
+				t.Fatalf("7 moved to %v, want the Pull Request tab", v.tab)
 			}
 		},
 		"down": func(t *testing.T) {
