@@ -224,6 +224,8 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   another opens a lane's parent, the Output pane cycles the lanes' live output,
   the Diff tab groups `lane › file` so you can see which lane wrote what, and a
   failed join names the lane, its child task and that lane's own block reason.
+  The parent's own step timeline carries the fan-out for as long as its lanes
+  run, annotated with what the subtree is doing — `2 blocked`, `3/5 done`.
 - The Output tab and the chat workspace share one renderer, and one verbosity
   level. Assistant prose is rendered as Markdown — headings, lists, blockquotes,
   inline and fenced code, rules, tables, links and images become terminal

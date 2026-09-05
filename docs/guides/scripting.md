@@ -107,11 +107,11 @@ the daemon is alive but not answering, `PRAGMA integrity_check` is not `ok`, the
 database is at a schema version this binary does not understand, orphaned
 worktrees are present, or a task is unreconciled — `queued` (or finished) while
 one of its step runs is still marked `running`, which is crash recovery having
-failed to close the previous attempt. A `fan_out` step's own row is not counted:
-a parent waiting on its lanes is `queued` with that round's row open on purpose. A missing or logged-out agent CLI is
-reported and does *not* set the exit code — most machines have one of three
-adapters installed, so a doctor that exited `1` almost everywhere would be no
-use here. Neither do task *counts*: twelve blocked tasks is information, not a
+failed to close the previous attempt. A `fan_out` step's own row is not
+counted: a parent waiting on its lanes is `queued` with that round's row open
+on purpose. A missing or logged-out agent CLI is reported and does *not* set
+the exit code — most machines have one of three adapters installed, so a doctor
+that exited `1` almost everywhere would be no use here. Neither do task *counts*: twelve blocked tasks is information, not a
 defect.
 
 ## JSON output

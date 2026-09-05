@@ -1506,7 +1506,7 @@ does not finish until every lane is merged.
   and finalized by the merge**, not written by the merge alone. A parent that
   had spawned a round and parked in `awaiting_children` carried no row for the
   step at all until its lanes settled, so the Steps & Attempts timeline (§15),
-  `vincent task steps`, `GET /v1/tasks/{id}/steps` and the `task_steps` MCP
+  `vincent task show`, `GET /v1/tasks/{id}/steps` and the `task_steps` MCP
   tool — all of them `store.ListStepRuns` and nothing else — stopped at the
   step *before* the fan-out for the whole time the lanes worked, and a parent
   busy fanning work out could not be told from a task that stalled. It was the
@@ -3916,6 +3916,17 @@ Two consequences are handled rather than assumed away:
   the process, why it is logged once rather than every tick, and why
   `GET /v1/doctor` reports the same finding (§17).
 
+  *Narrowed 2026-09-05 (issue #322).* A `running` row whose `step_type` is
+  `fan_out` does not count for this guard. Since that issue the park that
+  spawns a round opens the round's row and the merge admission that ends the
+  round finalizes it (§7.6), so a parent passing through `queued` between the
+  two holds a row that is *this* round's rather than an unfinalized previous
+  attempt — counting it would have every fan-out refuse its own merge
+  admission. Nothing this guard was defending is given up: a crash during a
+  merge leaves a row of that type too, and the merge admission that follows
+  adopts it and re-runs the merge, which is the reconciliation the guard would
+  otherwise wait for a human to perform.
+
 *Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
 (§7.6) is woken by a lane settling rather than by its whole subtree settling,
 so it takes a slot more often than a barrier one — once per direct lane
@@ -3924,9 +3935,10 @@ and not by the size of the tree below it: the watermark counts direct children,
 so a depth-2 descendant settling does not move a root's number. Each such wake
 either does work or parks again immediately, releasing the slot; a parent that
 finds nothing to do writes no *new* `step_runs` row (§7.6, narrowed 2026-09-05
-by issue #322: the round's row is opened once, by the park that spawned it). The deadlock-freedom argument in
-§7.6 is untouched — the parent still releases its slot before its children need
-one — and `barrier` remains the default, so no existing workflow pays this.
+by issue #322: the round's row is opened once, by the park that spawned it).
+The deadlock-freedom argument in §7.6 is untouched — the parent still releases
+its slot before its children need one — and `barrier` remains the default, so
+no existing workflow pays this.
 
 *Added 2026-08-29 (task 057).* §13.4's `task_wait` **does not change what a slot
 means.** A step blocked in a wait keeps its slot, because its agent process is
@@ -4914,6 +4926,14 @@ that is `queued`, `done`, `aborted` or `archived` — naming the task. The
 waiting states are excluded deliberately: a `running` row is *correct* under
 `awaiting_input`, where a live process waits for an answer (§7.4), and under
 `awaiting_gate`, whose manual row its actor writes open before exiting (§6).
+
+*Narrowed 2026-09-05 (issue #322).* Both surfaces exclude one **step type** as
+well as those states: a `running` row on a `fan_out` step. §7.6's park opens
+the round's row and the merge admission finalizes it, so a parent woken between
+the two is `queued` holding this round's row, which is normal operation rather
+than the contradiction above. The exclusion is by `step_type`, so it costs
+nothing: a crash mid-merge leaves a `fan_out` row too, and the merge admission
+that follows adopts it and re-runs the merge on it.
 
 *Amended 2026-08-17 (task 014).* A `fan_out` join interrupted mid-merge is
 recovered the same way any step is — the attempt is `interrupted` and re-runs

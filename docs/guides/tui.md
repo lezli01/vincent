@@ -366,6 +366,16 @@ A multi-round `fan_out` (§7.6) gets the same tier under a different word: its
 rounds read `round 0`, `round 1`, … — 0-based, because that is the number the
 transcript file and the log line use — and the same keys open and close them.
 
+A `fan_out` step is on the timeline **while its lanes run**, not only once they
+have merged: the row opens `running` when the round is spawned and the merge
+that ends the round finishes that same row. Since the step itself executes none
+of the work, its running row carries what the subtree is doing beside the state
+— `2 blocked`, `3 at a gate`, `3/5 done`, the same words the board puts beside
+`awaiting_children` — read live from the task rather than frozen in when the
+lanes were spawned. The round is named on the row (`round 0 · 2 blocked`) only
+when the timeline is not already drawing `round N` tiers above it. No other
+step type is annotated.
+
 The board's and the header's step column say the same thing more briefly: a
 task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it is
 on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the

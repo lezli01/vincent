@@ -1016,7 +1016,7 @@ list with the user-facing context a commit subject cannot carry.
   busy fanning work out looked exactly like one that had stalled — while the
   header on the same screen read `awaiting_children · step 4/7`, pointing at a
   step the timeline underneath could not draw. The row now appears when the
-  lanes are spawned and stays for as long as they run, in `vincent task steps`
+  lanes are spawned and stays for as long as they run, in `vincent task show`
   and `GET /v1/tasks/{id}/steps` as well as the TUI, and it is annotated in the
   workspace with what the subtree is doing — `2 blocked`, `3/5 done` — in the
   same words the board already uses beside `awaiting_children`.
