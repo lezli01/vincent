@@ -124,7 +124,8 @@ func (h *actionHarness) invoke(
 	case taskstate.Resume:
 		return h.runner.Resume(ctx, id)
 	case taskstate.Retry:
-		return h.runner.Retry(ctx, id, store.Override{})
+		task, _, err := h.runner.Retry(ctx, id, store.Override{})
+		return task, err
 	case taskstate.Repair:
 		return h.runner.Repair(ctx, id, store.RepairRequest{Prompt: "fix it"})
 	case taskstate.Skip:
@@ -240,7 +241,7 @@ func TestHumanActionsClearPendingPause(t *testing.T) {
 		t.Fatalf("block: %v", err)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	if h.get(t, task.ID).PauseRequested {
@@ -351,7 +352,7 @@ func TestApproveWithoutOpenRowFabricatesNothing(t *testing.T) {
 func TestSkipClearsPendingOverride(t *testing.T) {
 	h := newActionHarness(t)
 	task := h.task(t, store.TaskBlocked)
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{Prompt: "edited"}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{Prompt: "edited"}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	// The retried attempt never drained the override (it failed before its
@@ -395,7 +396,7 @@ func TestRetryResetsBudgetCursor(t *testing.T) {
 	task := h.task(t, store.TaskBlocked)
 	before := time.Now()
 
-	got, err := h.runner.Retry(t.Context(), task.ID, store.Override{})
+	got, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{})
 	if err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
@@ -414,7 +415,7 @@ func TestRetryWithPromptOverride(t *testing.T) {
 	h := newActionHarness(t)
 	task := h.task(t, store.TaskBlocked)
 
-	got, err := h.runner.Retry(t.Context(), task.ID, store.Override{Prompt: "try harder"})
+	got, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{Prompt: "try harder"})
 	if err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
@@ -444,20 +445,20 @@ func TestRetryWithPromptOverride(t *testing.T) {
 func TestRetryOverrideMustMatchStepType(t *testing.T) {
 	h := newActionHarness(t)
 	agentStep := h.task(t, store.TaskBlocked)
-	if _, err := h.runner.Retry(t.Context(), agentStep.ID, store.Override{Run: "echo hi"}); err == nil {
+	if _, _, err := h.runner.Retry(t.Context(), agentStep.ID, store.Override{Run: "echo hi"}); err == nil {
 		t.Error("run_override accepted on an agent step")
 	} else if _, ok := AsOverrideMismatch(err); !ok {
 		t.Errorf("err = %v, want OverrideMismatchError", err)
 	}
 
 	commandStep := h.taskAtStep(t, store.TaskBlocked, 1)
-	if _, err := h.runner.Retry(t.Context(), commandStep.ID, store.Override{Prompt: "hi"}); err == nil {
+	if _, _, err := h.runner.Retry(t.Context(), commandStep.ID, store.Override{Prompt: "hi"}); err == nil {
 		t.Error("prompt_override accepted on a command step")
 	} else if _, ok := AsOverrideMismatch(err); !ok {
 		t.Errorf("err = %v, want OverrideMismatchError", err)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), commandStep.ID, store.Override{Run: "echo hi"}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), commandStep.ID, store.Override{Run: "echo hi"}); err != nil {
 		t.Errorf("run_override on a command step: %v", err)
 	}
 }

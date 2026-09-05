@@ -123,7 +123,7 @@ func TestEngineCostCapConsumesNoRetry(t *testing.T) {
 		t.Fatalf("attempts = %+v, want one attempt and no failure — the cap consumes no retry", attempts)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	reblocked := h.waitForState(t, task.ID, store.TaskBlocked)
@@ -283,7 +283,7 @@ func TestEngineCostCapRaisedByAReloadLetsARetryFinish(t *testing.T) {
 	}
 
 	h.reload(func(c *config.Config) { c.MaxTaskCostUSD = fakeAgentCostUSD * 100 })
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	final := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)

@@ -322,7 +322,7 @@ func TestEngineGuardIsReEvaluatedOnRetry(t *testing.T) {
 		t.Fatalf("task = %s, want blocked on the first pass", blocked.State)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)

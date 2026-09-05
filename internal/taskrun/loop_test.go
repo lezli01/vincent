@@ -377,7 +377,7 @@ func TestLoopRetryResumesMidIteration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
 		t.Fatalf("write flag file: %v", err)
 	}
-	if _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 

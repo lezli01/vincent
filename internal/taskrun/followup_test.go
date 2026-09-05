@@ -443,7 +443,7 @@ func TestFailedFollowUpBlocksAtItsOwnIndexAndRetryReRunsIt(t *testing.T) {
 		t.Fatalf("round 1 rows = %+v, want a failed row at the follow-up's own index", rows)
 	}
 
-	if _, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{}); err != nil {
+	if _, _, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	again := h.settle(t, blocked.ID)
@@ -472,7 +472,7 @@ func TestEditRetryOnABlockedFollowUpIsRefused(t *testing.T) {
 		t.Fatalf("task = %s, want blocked", blocked.State)
 	}
 
-	_, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{Run: "git --version"})
+	_, _, err := h.runner.Retry(t.Context(), blocked.ID, store.Override{Run: "git --version"})
 	if _, ok := AsFollowUpOverride(err); !ok {
 		t.Fatalf("Retry with an override: err = %v, want FollowUpOverrideError", err)
 	}

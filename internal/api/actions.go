@@ -72,6 +72,27 @@ type retryRequest struct {
 	BranchOverride string `json:"branch_override"`
 }
 
+// retryResponse is the task as every other action renders it, plus how many
+// blocked descendants the retry re-admitted (§13.2, task 090). The task
+// fields stay at the top level — a retry response is still a task — and
+// `retried_descendants` is always present, 0 for an ordinary blocked retry
+// with nothing under it, so a client never has to tell "no cascade" from "an
+// old daemon".
+//
+// A count and not the ids: §13.3's convention is that a client re-fetches
+// what it decides it needs, and the ids under a wide fan-out are unbounded.
+type retryResponse struct {
+	taskResponse
+	RetriedDescendants int `json:"retried_descendants"`
+}
+
+// handleTaskRetry re-admits a blocked task, or cascades from a parent parked
+// in `awaiting_children` to the blocked lanes holding its join open (§6, task
+// 090).
+//
+// Like repair it cannot go through runAction: that path's taskAction returns a
+// task and nothing else, and the cascade's count is the second thing this one
+// has to say.
 func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 	var req retryRequest
 	if r.ContentLength != 0 && !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
@@ -87,7 +108,14 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	id, ok := taskIDFromPath(w, r)
+	if !ok {
+		return
+	}
 	if branch := strings.TrimSpace(req.BranchOverride); branch != "" {
+		if !s.checkRetryBranchOverride(w, r, id) {
+			return
+		}
 		if !s.renameBranchForRetry(w, r, branch) {
 			return
 		}
@@ -98,19 +126,66 @@ func (s *Server) handleTaskRetry(w http.ResponseWriter, r *http.Request) {
 	// agent, or upgrade it back inside the verified family — so the verdict
 	// is re-taken here rather than assumed from creation time. A retry that
 	// would block again identically is refused with the reason instead.
+	//
+	// It applies to the addressed task and to nothing else. A cascade's lanes
+	// deliberately skip it: a lane that would block `input_unsupported`
+	// re-blocks on its own row, which is exactly what retrying it by hand
+	// does today. A parked parent passes it as a matter of course — the gate
+	// reads `on_input` off `agent` steps only, and the cursor is on a
+	// `fan_out`.
 	if !s.checkRetryInput(w, r) {
 		return
 	}
-	s.runAction(w, r, func(id int64) (*store.Task, error) {
-		t, err := s.deps.Runner.Retry(r.Context(), id,
-			store.Override{Prompt: req.PromptOverride, Run: req.RunOverride})
-		if err == nil && (req.PromptOverride != "" || req.RunOverride != "") {
-			// edit+retry rewrote this task's snapshot (§6), which is the one
-			// thing that can make a cached parse wrong.
-			s.snaps.forget(id)
-		}
-		return t, err
+	// The runner is needed only from here on, which is where runAction
+	// checked it when it was the caller. Moving the check up to the top of
+	// the handler would turn every 400 above into a 500 on a server wired
+	// without one.
+	if s.deps.Runner == nil {
+		s.internalError(w, "task actions", errors.New("no task runner is configured"))
+		return
+	}
+	updated, descendants, err := s.deps.Runner.Retry(r.Context(), id,
+		store.Override{Prompt: req.PromptOverride, Run: req.RunOverride})
+	if err != nil {
+		s.writeActionError(w, err)
+		return
+	}
+	if req.PromptOverride != "" || req.RunOverride != "" {
+		// edit+retry rewrote this task's snapshot (§6), which is the one
+		// thing that can make a cached parse wrong.
+		s.snaps.forget(id)
+	}
+	writeJSON(w, http.StatusOK, retryResponse{
+		taskResponse:       toTaskResponse(updated, s.snaps.get(updated.ID, updated.WorkflowSnapshot)),
+		RetriedDescendants: descendants,
 	})
+}
+
+// checkRetryBranchOverride refuses `branch_override` on a parent parked in
+// `awaiting_children` (task 090). Every live lane of that parent holds its
+// branch as its own `base_branch`, so renaming it would re-base a fan-out
+// already in flight onto a name that no longer exists — and unlike a
+// `branch_exists` block there is nothing here the rename would fix.
+//
+// It runs ahead of renameBranchForRetry because that rename is committed
+// before the action is, so a refusal afterwards would leave the branch moved.
+func (s *Server) checkRetryBranchOverride(w http.ResponseWriter, r *http.Request, id int64) bool {
+	task, err := s.deps.Store.GetTask(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
+		return false
+	}
+	if err != nil {
+		s.internalError(w, "get task", err)
+		return false
+	}
+	if task.State == store.TaskAwaitingChildren {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+			"task %d is parked on a fan_out step; branch_override would rename the branch "+
+				"every live lane holds as its base_branch", id))
+		return false
+	}
+	return true
 }
 
 // repairRequest is the §13.2 body of POST /v1/tasks/{id}/repair (§6, task
@@ -690,6 +765,14 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 		e, _ := taskrun.AsFollowUpOverride(err)
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
 
+	// An `edit + retry` aimed at a parent parked in `awaiting_children`. Its
+	// cursor is on a `fan_out` step, which has neither a prompt nor a command
+	// for an override to rewrite — the edit belongs on the blocked lane (task
+	// 090).
+	case isParkedOverride(err):
+		e, _ := taskrun.AsParkedOverride(err)
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, e.Error())
+
 	// A structurally mismatched answer is untranslatable to the live agent
 	// session; the request never reaches the task (§7.4, §13.2).
 	case isAnswerValidation(err):
@@ -730,6 +813,11 @@ func isFollowUpRequest(err error) bool {
 
 func isFollowUpOverride(err error) bool {
 	_, ok := taskrun.AsFollowUpOverride(err)
+	return ok
+}
+
+func isParkedOverride(err error) bool {
+	_, ok := taskrun.AsParkedOverride(err)
 	return ok
 }
 

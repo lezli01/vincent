@@ -91,7 +91,7 @@ Both are `queued_reason` values only. Neither is ever a `block_reason`, and
 `retry_backoff` is never a step's failure reason either — the step's row keeps
 whatever actually failed.
 
-**`awaiting_children` holds no slot, and offers only `cancel`.** A fan-out
+**`awaiting_children` holds no slot, and offers `cancel` and `retry`.** A fan-out
 parent waiting on its lanes owns no process, so keeping a slot would starve
 the queue for hours — and it is what makes fan-out deadlock-free at any depth,
 since a parent releases its slot before its children need one. It is not a
@@ -104,7 +104,11 @@ The parent resumes on its own once every lane has settled — finished or ended
 soon as a further lane settles, so such a parent parks and resumes more than
 once. A lane that is `blocked`, at a gate, or paused holds the join open until you
 deal with it; the `children` rollup on `GET /v1/tasks/{id}` (and the TUI's
-`awaiting_children (2 blocked)` row) is where you see that.
+`awaiting_children (2 blocked)` row) is where you see that. For blocked lanes,
+dealing with them is one `retry` on the **parent**: it re-admits every blocked
+lane beneath it, at any depth, without touching the parent's own row, and the
+join closes itself when they finish. Fix the cause first — the retry re-runs
+each lane's step exactly as it was.
 
 **`awaiting_input` keeps its concurrency slot.** The agent process is alive
 mid-step, idle on its stdin; killing or re-queueing it would lose the very
@@ -170,8 +174,8 @@ which it was not before follow-ups existed.
 | `cancel` | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process — graceful termination, then a kill after 10s — and moves to `aborted`. From `awaiting_children` it cascades to every unfinished lane, whose branches and worktrees survive |
 | `pause` | queued, running | From `running`, finishes the current step then holds. The request is persisted, so it survives a daemon crash; any other action clears it |
 | `resume` | paused | → `queued` |
-| `retry` | blocked | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued` |
-| `edit + retry` | blocked | Overrides the step's prompt or command **in this task's snapshot only**, then retries. The override is recorded on the step run |
+| `retry` | blocked, awaiting_children | Re-runs the failed step as a fresh attempt with the retry counter reset → `queued`. From `awaiting_children` it re-admits every blocked descendant instead and leaves the parent parked; the response says how many |
+| `edit + retry` | blocked | Overrides the step's prompt or command **in this task's snapshot only**, then retries. The override is recorded on the step run. A parked fan-out parent refuses it: its `fan_out` step has no text to edit, so edit the blocked lane instead |
 | `repair` | blocked | Runs one ad-hoc agent, prompted by you, in the task's existing worktree and branch → `queued`, and back to `blocked` at the same step with the same reason when it exits. It does not consume the blocked step's retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped` and advances → `queued`. A step skipped this way carries no `skip_reason`, which is how it stays distinguishable from one an `if:` guard skipped |
 | `answer` | awaiting_input | Delivers the answer into the live agent session → `running`, and the step clock resumes |

@@ -17,6 +17,7 @@
 #   9. both creation-time 400s: a workflow cycle and fan_out.max_tasks
 #  10. `schedule: eager` starts a lane while an unrelated sibling still runs
 #  11. the merged diff is attributed back to the lane that produced it
+#  12. one retry on a parked parent re-admits every blocked lane under it
 #
 # Every scenario uses command steps only, so no agent CLI is involved at all
 # and the gate is as fast on CI as it is locally.
@@ -713,6 +714,96 @@ YAML
 
   daemon_down
   echo "=== scenario 11 PASS"
+fi
+
+# --------------------------------------------------------------------------
+# Scenario 12: one retry on the parked parent re-admits every blocked lane.
+#
+# Both lanes fail on the same missing repository setting, so the parent parks
+# with two `blocked` children under it — `blocked` is not settled, so the join
+# stays open rather than failing `lane_failed` the way scenario 8's cancelled
+# lane does. Before task 090 that shape needed one retry per lane, walked by
+# hand; the one assertion this scenario exists for is that a single retry on
+# the *parent* clears all of them, and says how many it cleared.
+#
+# The fault is one repository setting rather than a per-worktree marker
+# because a linked worktree shares the repository's config: `git config`
+# written once on the repo is seen by both lanes, which is a human fixing one
+# root cause rather than the same cause twice. It is also a single command
+# whose own exit code is the pass/fail condition, which is what §8.3's
+# sh∩pwsh vocabulary allows — no `[ -f ]`, no `if`, no `exit` after an `&&`.
+#
+# The empty commit ahead of it is what makes the join observable. The lanes
+# write nothing, and `git merge --no-ff` of a branch that is already an
+# ancestor reports "Already up to date." and records no commit, so a join over
+# empty lanes would leave nothing on the parent's branch to assert against.
+# One `--allow-empty` commit per lane gives each merge something to do, and
+# the `Merge lane '{id}' of task {n}` subjects §7.6 fixes are then the proof
+# that both lanes actually landed.
+# --------------------------------------------------------------------------
+if run_scenario 12; then
+  echo "=== scenario 12: a retry on a parked parent cascades to its blocked lanes"
+  scenario_dirs s12
+  REPO="$TMP/s12/repo"; make_repo "$REPO"
+  write_workflow fan-cascade "$(cat <<'YAML'
+name: fan-cascade
+steps:
+  - id: build
+    type: fan_out
+    lanes:
+      - id: left
+        steps:
+          - {id: gate, type: command, max_retries: 0, run: 'git commit -q --allow-empty -m left && git config --get vincent.gate.go'}
+      - id: right
+        steps:
+          - {id: gate, type: command, max_retries: 0, run: 'git commit -q --allow-empty -m right && git config --get vincent.gate.go'}
+YAML
+)"
+  daemon_up
+  PID="$(register_project "$REPO")"
+  TID="$(create_task "$PID" fan-cascade "cascading retry")"
+
+  wait_for_state "$TID" awaiting_children 60
+  BLOCKED=""
+  for _ in $(seq 1 90); do
+    BLOCKED="$(api GET "/tasks?parent_id=$TID" \
+      | jq '[.[] | select(.state == "blocked")] | length' | tr -d '\r')"
+    [[ "$BLOCKED" == 2 ]] && break
+    sleep 1
+  done
+  [[ "$BLOCKED" == 2 ]] || fail "expected both lanes blocked, got $BLOCKED"
+  # The parent is still parked with them: a blocked lane holds the join open.
+  STATE="$(api GET "/tasks/$TID" | jq -r .state | tr -d '\r')"
+  [[ "$STATE" == "awaiting_children" ]] || fail "the parent left the join: $STATE"
+
+  # One write, on the repository both lanes' worktrees share.
+  git -C "$REPO" config vincent.gate.go 1
+
+  # One retry, on the parent — not on either lane.
+  OUT="$(api_status POST "/tasks/$TID/retry" '{}')"
+  STATUS="${OUT%%$'\n'*}"; BODY="${OUT#*$'\n'}"
+  [[ "$STATUS" == 200 ]] || fail "retry on the parked parent -> HTTP $STATUS: $BODY"
+  N="$(jq -r .retried_descendants <<<"$BODY" | tr -d '\r')"
+  [[ "$N" == 2 ]] || fail "retried_descendants = $N, want 2 — one per blocked lane"
+  # Read from the retry's own response, not from a fresh GET: the parked
+  # parent's row is deliberately not written on this path, and by the time a
+  # second request lands the re-admitted lanes may already have woken it.
+  STATE="$(jq -r .state <<<"$BODY" | tr -d '\r')"
+  [[ "$STATE" == "awaiting_children" ]] \
+    || fail "the retry moved the parked parent to $STATE; its row must not be written"
+
+  wait_for_state "$TID" done 180
+  BRANCH="$(api GET "/tasks/$TID" | jq -r .branch_name | tr -d '\r')"
+  # Several lines, so `tr -d '\r'` for the same reason scenario 11 gives, and
+  # captured before matching rather than piped into `grep -q` — see m7
+  # scenario 4's comment.
+  SUBJECTS="$(git -C "$REPO" log --format=%s "$BRANCH" | tr -d '\r')"
+  for lane in left right; do
+    grep -q "^Merge lane '$lane' of task " <<<"$SUBJECTS" \
+      || fail "the join never merged lane $lane: $SUBJECTS"
+  done
+  daemon_down
+  echo "=== scenario 12 PASS"
 fi
 
 echo "M6 GATE PASS"

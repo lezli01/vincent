@@ -70,11 +70,36 @@ func (c *Client) Resume(ctx context.Context, id int64) (Task, error) {
 
 // Retry re-runs the failed step. A zero Override is a plain retry; either
 // field set is edit+retry, which rewrites this task's snapshot (§6).
-func (c *Client) Retry(ctx context.Context, id int64, ov Override) (Task, error) {
-	if ov == (Override{}) {
-		return c.action(ctx, id, ActionRetry, nil)
+//
+// From `awaiting_children` it means something else: the task is a fan_out
+// parent parked on a join no lane will ever close, and the retry cascades to
+// every blocked descendant instead of touching the parent's own row, which
+// comes back still `awaiting_children` (task 090). The second return is how
+// many descendants were re-admitted — always reported, 0 when nothing was
+// cascaded. An override from that state is a 400: a parked parent's cursor is
+// a `fan_out` step, which carries no text to edit.
+func (c *Client) Retry(ctx context.Context, id int64, ov Override) (Task, int, error) {
+	// An empty Override posts no body at all, rather than an object of empty
+	// strings the daemon would have to read as "no override" anyway.
+	var body any
+	if ov != (Override{}) {
+		body = ov
 	}
-	return c.action(ctx, id, ActionRetry, ov)
+	var out retryResponse
+	path := fmt.Sprintf("/v1/tasks/%d/%s", id, ActionRetry)
+	if err := c.post(ctx, path, body, &out); err != nil {
+		return Task{}, 0, err
+	}
+	return out.Task, out.RetriedDescendants, nil
+}
+
+// retryResponse decodes the retry body, whose task fields sit at the top level
+// beside `retried_descendants` — the shape archive's response uses for
+// `branch`, so the task is decoded from the same object rather than a nested
+// one.
+type retryResponse struct {
+	Task
+	RetriedDescendants int `json:"retried_descendants"`
 }
 
 // RepairInput is the body of POST /v1/tasks/{id}/repair (§6, task 025).

@@ -757,7 +757,12 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "e":
 		return d.openTranscript()
 	case "E":
-		if d.target().has(apiclient.ActionRetry) {
+		// The same gate the hint line and the palette use: retry on offer
+		// *and* a step carrying text to edit. A fan_out parent parked in
+		// `awaiting_children` offers retry — as the cascade (task 090) — and
+		// its cursor step has no editable text, which the daemon answers with
+		// a 400 rather than an edited snapshot.
+		if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
 			return d.editRetry()
 		}
 		return nil

@@ -3,6 +3,7 @@ package apiclient_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -60,7 +61,7 @@ func TestRetryOverrideReachesTheWire(t *testing.T) {
 	h.setState(t, id, store.TaskBlocked)
 
 	const edited = "do it differently"
-	if _, err := h.client().Retry(ctx, id, apiclient.Override{Prompt: edited}); err != nil {
+	if _, _, err := h.client().Retry(ctx, id, apiclient.Override{Prompt: edited}); err != nil {
 		t.Fatalf("Retry: %v", err)
 	}
 	task, err := h.client().GetTask(ctx, id)
@@ -211,5 +212,91 @@ func TestRepairStepIDMatchesTheEngine(t *testing.T) {
 	if apiclient.RepairStepID != taskrun.RepairStepID {
 		t.Errorf("apiclient.RepairStepID = %q, engine says %q",
 			apiclient.RepairStepID, taskrun.RepairStepID)
+	}
+}
+
+// TestRetryFromParkedParentCarriesTheCount: `retry` on a fan_out parent
+// parked in `awaiting_children` is the cascade (task 090), and the client
+// reads how many blocked lanes it re-admitted out of the same flat object the
+// task comes from. Without it the only thing a human would see is a parent in
+// the state it was already in.
+func TestRetryFromParkedParentCarriesTheCount(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	parent := h.parkedParent(t)
+	h.lane(t, parent, store.TaskBlocked)
+	h.lane(t, parent, store.TaskBlocked)
+
+	got, retried, err := h.client().Retry(ctx, parent, apiclient.Override{})
+	if err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if retried != 2 {
+		t.Errorf("retried_descendants = %d, want 2", retried)
+	}
+	if got.State != string(store.TaskAwaitingChildren) {
+		t.Errorf("state = %q, want awaiting_children — the join is still open", got.State)
+	}
+}
+
+// TestRetryFromBlockedReportsNoCascade: the count is always on the wire, and
+// on the ordinary path it is 0 — a client that read a missing field as "some"
+// would announce lanes nobody re-admitted.
+func TestRetryFromBlockedReportsNoCascade(t *testing.T) {
+	h := newHarness(t)
+	id := h.snapshotTask(t)
+	h.setState(t, id, store.TaskRunning)
+	h.setState(t, id, store.TaskBlocked)
+
+	got, retried, err := h.client().Retry(context.Background(), id, apiclient.Override{})
+	if err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if retried != 0 {
+		t.Errorf("retried_descendants = %d on an ordinary retry, want 0", retried)
+	}
+	if got.State != string(store.TaskQueued) {
+		t.Errorf("state = %q, want queued", got.State)
+	}
+}
+
+// TestRetryOverrideFromParkedParentIsRefused: a parked parent's cursor is a
+// `fan_out` step, which carries no text — so edit+retry is a 400 there, which
+// is why the `E` key checks stepEditable before offering itself.
+func TestRetryOverrideFromParkedParentIsRefused(t *testing.T) {
+	h := newHarness(t)
+	parent := h.parkedParent(t)
+
+	_, _, err := h.client().Retry(context.Background(), parent,
+		apiclient.Override{Prompt: "try harder"})
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		t.Fatalf("edit+retry from awaiting_children = %v, want a 400", err)
+	}
+}
+
+// parkedParent is a task parked on a fan_out join, which is what a `retry`
+// cascades from.
+func (h *harness) parkedParent(t *testing.T) int64 {
+	t.Helper()
+	id := h.snapshotTask(t)
+	h.setState(t, id, store.TaskRunning)
+	h.setState(t, id, store.TaskAwaitingChildren)
+	return id
+}
+
+// lane is one descendant of a parked parent, in whatever state the fan_out
+// left it — what the cascade walks.
+func (h *harness) lane(t *testing.T, parent int64, state store.TaskState) {
+	t.Helper()
+	index := 0
+	child := &store.Task{
+		ProjectID: h.projectID, Title: "lane", WorkflowName: "three",
+		WorkflowSnapshot: snapshotWorkflow, BaseBranch: "main",
+		State: state, ParentTaskID: &parent, ParentStepIndex: &index,
+	}
+	if err := h.st.CreateTask(t.Context(), child,
+		func(id int64) (string, error) { return fmt.Sprintf("vincent/%d-lane", id), nil }); err != nil {
+		t.Fatalf("create lane: %v", err)
 	}
 }

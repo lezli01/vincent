@@ -203,8 +203,15 @@ var table = map[Action]map[State]Transition{
 		// A running task finishes its current step first; Park completes it.
 		Running: {To: Running, Deferred: true},
 	},
-	Resume:  {Paused: {To: Queued}},
-	Retry:   {Blocked: {To: Queued}},
+	Resume: {Paused: {To: Queued}},
+	// Retry from `awaiting_children` is a **legality marker**, not a swap any
+	// caller performs (§6, task 090). It exists so that
+	// `Can(AwaitingChildren, Retry)` is true — the API answers 200 instead of
+	// 409, and HumanActionsFrom lists `retry` — while Runner.Retry writes
+	// nothing at all to the parked parent's row: it only cascades the retry to
+	// every blocked descendant. A parent that has retried nothing of its own
+	// must not be stamped as if it had.
+	Retry:   {Blocked: {To: Queued}, AwaitingChildren: {To: AwaitingChildren}},
 	Repair:  {Blocked: {To: Queued}},
 	Skip:    {Blocked: {To: Queued}, AwaitingGate: {To: Queued}},
 	Answer:  {AwaitingInput: {To: Running}},

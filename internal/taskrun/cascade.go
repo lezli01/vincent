@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -118,4 +119,54 @@ func (r *Runner) cascadeArchive(ctx context.Context, id int64, force bool) error
 		r.deps.Logger.Info("archived fan-out lane", "parent", id, "child", child.ID)
 	}
 	return nil
+}
+
+// cascadeRetry re-admits every blocked descendant of a task, and reports how
+// many it re-admitted (task 090).
+//
+// A parent parked in `awaiting_children` has nothing of its own to retry: the
+// join is held open by lanes below it, and before this the only action §6
+// offered from that state was `cancel`, which ends work instead of resuming
+// it. Recovery was a manual walk of the lane tree, once per lane and once per
+// level to `fan_out.max_depth`.
+//
+// The walk needs no new query and no recursion here. `ChildrenOf`'s recursive
+// CTE already returns the whole subtree at any depth, so `rollup.Blocked` is
+// exactly the set to re-admit — nested fan-outs included. The ids are sorted
+// first because the CTE has no ORDER BY, and a deterministic order is
+// something a gate can assert.
+//
+// A descendant in `awaiting_children` is deliberately absent from that set and
+// is left parked. It needs no help: a parent re-admitted while its own lanes
+// are unsettled parks again through parkForUnsettled under barrier mode, and
+// reads an unsettled lane as "not yet" in mergeSet under eager. Whatever order
+// the scheduler picks, the tree converges.
+func (r *Runner) cascadeRetry(ctx context.Context, id int64) (int, error) {
+	rollup, err := r.deps.Store.ChildrenOf(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("retry: list descendants of task %d: %w", id, err)
+	}
+	blocked := slices.Clone(rollup.Blocked)
+	slices.Sort(blocked)
+	count := 0
+	for _, childID := range blocked {
+		// persistCtx per child, as cascadeCancel does: a client that
+		// disconnects mid-cascade must not leave half the tree re-admitted.
+		_, n, err := r.Retry(r.persistCtx(), childID, store.Override{})
+		if err != nil {
+			if _, invalid := AsInvalidAction(err); invalid {
+				continue // it moved between the rollup and the write
+			}
+			r.deps.Logger.Error("retry: cascade to lane", "task", id, "child", childID, "error", err)
+			continue
+		}
+		// One for the lane, plus whatever its own retry reached: a blocked
+		// lane that had itself fanned out and blocked again re-admits its own
+		// subtree. By the time this walk reaches that grandchild it is no
+		// longer blocked, and the InvalidActionError skip above keeps it from
+		// being counted twice.
+		count += 1 + n
+		r.deps.Logger.Info("retried fan-out lane", "parent", id, "child", childID)
+	}
+	return count, nil
 }
