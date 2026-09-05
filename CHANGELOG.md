@@ -9,6 +9,33 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [0.9.0](https://github.com/lezli01/vincent/compare/v0.8.0...v0.9.0) (2026-09-05)
+
+
+### Features
+
+* add the Step Details tab to the task workspace ([2006955](https://github.com/lezli01/vincent/commit/200695581837bb9911c73f54f4a41b532f970218))
+* **api:** report retried_descendants on POST /retry ([c5ebf12](https://github.com/lezli01/vincent/commit/c5ebf1260a021af3ed3f045713e195096b30e0d0))
+* **clients:** report the cascade count on a parked parent's retry ([0756882](https://github.com/lezli01/vincent/commit/07568824ad68f45976bfb44b1e42594a4c4c944a))
+* record an attempt's rendered input and resolution on step_runs ([dcba03d](https://github.com/lezli01/vincent/commit/dcba03db6b34dba0c0c6acf5f33f2ee2f26302df))
+* record each attempt's rendered input as the engine renders it ([0e30e09](https://github.com/lezli01/vincent/commit/0e30e095ec0fa858fb4f98808dff1ef982d00127))
+* serve the §11 slot counts from the daemon ([c18d1e7](https://github.com/lezli01/vincent/commit/c18d1e7007140eb081834776f8baa9d66ebbfe8a))
+* **taskrun:** cascade retry from a parked fan-out parent ([081981e](https://github.com/lezli01/vincent/commit/081981eda5caed434d4e9bfee7351476d2874659))
+* **tui:** annotate the running fan_out row with its lane rollup ([cbaa41f](https://github.com/lezli01/vincent/commit/cbaa41f3c2383189a21bb45e8c3b8fc26bb4f41b)), closes [#322](https://github.com/lezli01/vincent/issues/322)
+* **tui:** show an in-progress indicator while a turn or attempt runs ([0510873](https://github.com/lezli01/vincent/commit/0510873baca47d0ba5a6dbf858724c7bf94ad3cc))
+* **workflows:** add the handle-dependabot workflow ([19c2089](https://github.com/lezli01/vincent/commit/19c20890bd26219b94c99886e56a656e132c6e33))
+* **workflows:** add the handle-dependabot-all sweep workflow ([df0ce22](https://github.com/lezli01/vincent/commit/df0ce220ba960fceaf78143af4cb82673c536146))
+
+
+### Bug Fixes
+
+* **api:** bind the new arity of Runner.Retry ([071eecf](https://github.com/lezli01/vincent/commit/071eecfd7b8cfc4d66fd8318153044f954957c0f))
+* count every slot holder in the board header ([e55c6c7](https://github.com/lezli01/vincent/commit/e55c6c7edffb569dcbfde02d30c269ad73240215))
+* count every slot holder in the projects view ([aa1e874](https://github.com/lezli01/vincent/commit/aa1e874241515c9725781c25787363597b7e7c5d))
+* give a parked fan_out step a running step_runs row ([#322](https://github.com/lezli01/vincent/issues/322)) ([87ea9ab](https://github.com/lezli01/vincent/commit/87ea9ab3dd1e07cb5e23eda5cd5306716e34b3f8))
+* **taskrun:** bind the new Retry arity in the step-input test ([40ee87a](https://github.com/lezli01/vincent/commit/40ee87aa359908c86e8da76f3106ebf347214e22))
+* **workflow:** wait out a Windows handle when replacing a workflow file ([d67b6ea](https://github.com/lezli01/vincent/commit/d67b6ea12cb12c7608890b3219e0189a4863900f))
+
 ## [Unreleased]
 
 ### Added
