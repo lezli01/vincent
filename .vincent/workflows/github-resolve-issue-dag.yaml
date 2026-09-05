@@ -74,12 +74,23 @@
 # the full suite as its bar: `go run mage.go test` is red by construction there,
 # and a lane check that ran it would fail every lane for the same reason.
 #
-# Inside the fan-out the bar is therefore `go build ./...` plus the **unit's
-# own** `check` command, which the planner writes and which is scoped to what
-# that unit changed. The suite is `integrate`'s bar, after the join, where it is
-# meant to be green — and `verify` is still the cross-platform one after that.
-# That is not a weaker workflow than the sequential file; it is the same two
-# assertions in the same order, with the units' own checks added in front.
+# Inside the fan-out the bar is therefore the **unit's own** `check` command,
+# which the planner writes and which is scoped to what that unit changed. The
+# suite is `integrate`'s bar, after the join, where it is meant to be green —
+# and `verify` is still the cross-platform one after that. That is not a weaker
+# workflow than the sequential file; it is the same two assertions in the same
+# order, with the units' own checks added in front.
+#
+# `go build ./...` is not a lane bar either, for a structurally identical
+# reason. A unit that changes a signature and the unit that updates its call
+# sites are two units, the second `needs` the first and lands after it, and
+# between the two commits the repository does not compile. The first lane
+# cannot repair that — the call site is inside another unit's `files`
+# expression, so touching it fails the ownership clause below — so a whole-repo
+# build as its bar is a deadlock with no exit but `blocked`. It ran into
+# exactly that on #328 (2026-09-05), where the engine lane's `Runner.Retry`
+# signature change was consumed by a later `internal/api` lane. `integrate`
+# runs `go build ./...` once, after every unit has merged.
 #
 # ## What keeps lanes from fighting over the same file
 #
@@ -1316,13 +1327,17 @@ steps:
     # one would only fail at `gh pr create`, after you had already approved it
     # at the gate), the PR artifacts exist. Then — on the bug path only — the
     # narrow regression test, which is the fastest signal that the fix works.
-    # Then the real bar.
+    # Then the real bar — and `go build ./...` leads it, because this is the
+    # first point at which the whole repository is expected to compile: a lane
+    # that changed an interface and the lane that updated its call sites have
+    # both merged by now, which is exactly why neither of them could assert it.
     check: >
       ! git ls-files .vincent-issue | grep -q . &&
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       test -s .vincent-issue/pr-title.txt &&
       test -s .vincent-issue/pr.md &&
       {{if eq (index .Steps "is-bug").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
+      go build ./... &&
       go run mage.go test &&
       go run mage.go lint
     check_timeout: 15m
