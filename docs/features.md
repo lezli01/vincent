@@ -244,6 +244,15 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   so structure that an agent split across records renders whole, and a pane you have
   scrolled away from keeps its place across a resize, a level change, the raw
   toggle and output dropping off the front of the window.
+- Nothing waits in silence. While a chat turn or a step attempt is running, a
+  turning glyph and an elapsed clock — `⠋ working… 14s` — say so above the chat
+  composer, beside a running row on the chats board, and in the output pane's
+  title, for the whole time it runs rather than only until its first chunk
+  arrives — which is what makes it useful at the `quiet` level, where a
+  tool-heavy turn renders nothing new for minutes. `vincent chat send` draws the
+  same indicator while it blocks, on stderr and never under `--json` or into a
+  redirect. A screen with nothing running repaints no more often than it did
+  before.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual
