@@ -128,7 +128,7 @@ const WaitTool = "task_wait"
 // eye.
 var routes = []Route{
 	{http.MethodGet, "/v1/health", "health", "Daemon liveness and version."},
-	{http.MethodGet, "/v1/info", "info", "Daemon identity: version, pid, uptime, listen address, agent availability, orphan count and database size."},
+	{http.MethodGet, "/v1/info", "info", "Daemon identity: version, pid, uptime, listen address, agent availability, orphan count, database size, and the §11 concurrency slots in use right now: slots.used against max_parallel_tasks, plus how many of those are fan-out lanes and how many are awaiting input."},
 	{http.MethodGet, "/v1/config", "config_get", "The daemon's effective configuration (§12.3), as the daemon currently reads it. Read-only, and the values of environment.set and notify.command are masked on this path."},
 	{http.MethodGet, "/v1/agents", "agent_list", "The agent adapters and their selectable models and effort levels (§9.6)."},
 	{http.MethodGet, "/v1/doctor", "doctor", "The diagnostic report: directories, log, database figures and detected problems."},

@@ -26,9 +26,14 @@ type Project struct {
 	MaxParallelTasks *int    `json:"max_parallel_tasks"`
 	// BranchTemplate is this project's branch convention; nil inherits the one in
 	// config.yaml, and an unset config means the built-in name (task 001).
-	BranchTemplate *string   `json:"branch_template"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	BranchTemplate *string `json:"branch_template"`
+	// SlotsUsed is how many of this project's tasks hold a concurrency slot
+	// right now (§11): `running` or `awaiting_input`, fan-out lanes included.
+	// The daemon counts it against MaxParallelTasks, so it is 0 — not absent
+	// — for a project holding none.
+	SlotsUsed int       `json:"slots_used"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Workflow reports the workflow a new task in this project gets when the

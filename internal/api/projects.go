@@ -29,17 +29,24 @@ type projectResponse struct {
 	DefaultWorkflow  *string `json:"default_workflow"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks"`
 	BranchTemplate   *string `json:"branch_template"`
-	CreatedAt        string  `json:"created_at"`
-	UpdatedAt        string  `json:"updated_at"`
+	// SlotsUsed is how many of this project's tasks hold a concurrency slot
+	// right now (§11) — `running` or `awaiting_input`, lanes included. It is
+	// non-null and 0 when the project holds none, and it is served here so a
+	// client renders "used / max_parallel_tasks" without counting rows itself
+	// and getting the definition wrong (issue #324).
+	SlotsUsed int    `json:"slots_used"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
-func toProjectResponse(p *store.Project) projectResponse {
+func toProjectResponse(p *store.Project, slotsUsed int) projectResponse {
 	r := projectResponse{
 		ID:               p.ID,
 		Name:             p.Name,
 		Path:             p.Path,
 		DefaultBranch:    p.DefaultBranch,
 		MaxParallelTasks: p.MaxParallelTasks,
+		SlotsUsed:        slotsUsed,
 		CreatedAt:        p.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        p.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -60,9 +67,19 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "list projects", err)
 		return
 	}
+	// One GROUP BY for the whole list rather than a count per row: this is
+	// the endpoint the projects view refreshes, and an N+1 here would grow
+	// with the number of registered repositories.
+	slots, err := s.deps.Store.SlotCountsByProject(r.Context())
+	if err != nil {
+		// Degraded to zeros with a log line rather than a 500: the rows
+		// themselves are in hand, and slots_used is the live decoration on
+		// them, not the answer the caller asked for.
+		s.deps.Logger.Warn("count slots by project", "error", err)
+	}
 	out := make([]projectResponse, 0, len(projects))
 	for i := range projects {
-		out = append(out, toProjectResponse(&projects[i]))
+		out = append(out, toProjectResponse(&projects[i], slots[projects[i].ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -154,7 +171,10 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.projectsChanged()
-	writeJSON(w, http.StatusCreated, toProjectResponse(&p))
+	// A project registered one statement ago owns no task, so its slot count
+	// is 0 by construction — the field is filled here anyway so a client
+	// never has to ask which responses carry it.
+	writeJSON(w, http.StatusCreated, toProjectResponse(&p, 0))
 }
 
 func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +182,20 @@ func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, toProjectResponse(p))
+	writeJSON(w, http.StatusOK, toProjectResponse(p, s.projectSlots(r.Context(), p.ID)))
+}
+
+// projectSlots counts one project's §11 slot holders for the response field.
+// A failed count degrades to 0 with a log line, the same way /v1/info's does:
+// the project row is already in hand, and a live decoration on it must not
+// turn a successful read into a 500.
+func (s *Server) projectSlots(ctx context.Context, id int64) int {
+	n, err := s.deps.Store.CountSlotHoldersByProject(ctx, id)
+	if err != nil {
+		s.deps.Logger.Warn("count project slots", "project", id, "error", err)
+		return 0
+	}
+	return n
 }
 
 // projectPatchRequest distinguishes absent, null, and set fields: absent =
@@ -273,7 +306,7 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.projectsChanged()
-	writeJSON(w, http.StatusOK, toProjectResponse(p))
+	writeJSON(w, http.StatusOK, toProjectResponse(p, s.projectSlots(ctx, p.ID)))
 }
 
 // projectsChanged tells the workflow registry to follow the current set of

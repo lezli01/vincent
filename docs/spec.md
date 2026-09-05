@@ -3760,6 +3760,19 @@ Two consequences are handled rather than assumed away:
   stdin, so it costs a slot exactly like a running one):
   - **global** `max_parallel_tasks` (config file, default 3),
   - **per-project** `max_parallel_tasks` (project setting, default unlimited).
+
+  *Amended 2026-09-05 (issue #324).* **The daemon publishes both counts**, so
+  no client re-derives what a slot is. `GET /v1/info` carries `slots` — `used`,
+  plus `lanes` and `awaiting_input` to explain it — and every project row
+  carries `slots_used` (§13.2). Both read the same slot-holding states the
+  admission counters read, over **every** task row, fan-out lanes included
+  (§7.6). A client cannot compute this figure: a task list excludes descendants
+  by default (§13.2, task 014 decision 13), so a running lane is a held slot
+  with no row to count, and `awaiting_input` holds one without being the
+  literal state `running`. The TUI counted `state == "running"` over its
+  root-only list and so read `0/3` with every slot taken — a number that
+  answers "why is nothing starting" wrongly is worse than no number, and a
+  count a client cannot compute is one it must be served.
 - A `queued` task is admitted when both caps have headroom. Admission order:
   `priority` DESC, then `created_at` ASC (FIFO within a priority).
 - One task runs at most one step process at a time. *Amended 2026-08-17
@@ -5001,6 +5014,17 @@ GET    /v1/info                         daemon version, uptime, agent availabili
                                         on every debounced refresh, and a COUNT(*) over a
                                         multi-million-row events table on the daemon's single
                                         SQLite connection is not that. Nothing here is cached
+                                        *Added 2026-09-05 (issue #324):* a `slots` object —
+                                        { used, lanes, awaiting_input } — the §11 count of tasks
+                                        holding a concurrency slot right now, beside the
+                                        `max_parallel_tasks` it is measured against. `used` is
+                                        what a "used / cap" header renders; `lanes` and
+                                        `awaiting_input` are subsets of it that explain a
+                                        numerator not matching the rows a client is showing.
+                                        One indexed COUNT over `tasks`, which the scheduler
+                                        already runs on every admission pass — admissible by the
+                                        same cheapness rule, and unlike the events count it is
+                                        over a human-sized table
 GET    /v1/config                       effective global config
                                         *Amended 2026-08-30 (task 060, issue #244):* it is no
                                         longer read-only, and no longer a subset. Every key in
@@ -5127,7 +5151,12 @@ POST   /v1/maintenance/gc               { force?, dry_run? } → the same body, 
                                         a locked file is reported per path and the rest of the
                                         run continues
 
-GET    /v1/projects                     list
+GET    /v1/projects                     list. *Amended 2026-09-05 (issue #324):* every project
+                                        row carries `slots_used` — how many of that project's
+                                        tasks hold a slot right now (§11), lanes included, which
+                                        is the numerator the per-project `max_parallel_tasks` is
+                                        applied against. One GROUP BY for the whole list; a
+                                        project holding none reads 0, never absent
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
 GET    /v1/projects/{id}
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
@@ -6422,7 +6451,15 @@ stream for the live tail.
    human for 35 of its 40 minutes must not read as "5m" on the board that is trying to
    flag it. Cost-so-far sums every attempt, retries included (§17). Filter by
    project/state; sort respects scheduler order for queued tasks. Header shows daemon status, agent
-   availability, running/cap counts, and a needs-attention count. Tasks waiting on
+   availability, running/cap counts, and a needs-attention count. *Amended
+   2026-09-05 (issue #324): the running count is the daemon's `slots.used`
+   (§11, §13.2) — every task holding a slot, `awaiting_input` and fan-out lanes
+   included — not a walk of the listed rows, which can see neither. It grows
+   the clauses that explain it when they are non-zero, `3/6 running · 2 lanes ·
+   1 on input`, dropping each at zero so an ordinary board is unchanged and
+   shedding them last-first on a narrow panel. The needs-attention count is
+   untouched: a task on a question is counted in both, being at once a slot
+   holder and a person's problem.* Tasks waiting on
    a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
    with a distinct badge, and the TUI rings the terminal bell when a task enters
    `awaiting_input` — most terminals flash/badge the window even unfocused
@@ -6825,6 +6862,11 @@ stream for the live tail.
    terminal the project list remains as a rail while the selected repository's
    configuration, execution defaults, current workload, or add/edit form uses
    the focused surface (task 020, added 2026-08-20).
+   *Amended 2026-09-05 (issue #324): the `running / cap` column and the rail's
+   workload line render the project row's own `slots_used` (§13.2), so the
+   numerator is counted the way the scheduler applies that cap — lanes and
+   `awaiting_input` included — rather than from the root-only task list the
+   view also holds.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry

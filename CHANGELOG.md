@@ -932,6 +932,27 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The board header said `1/6 running` while every slot was taken.** The
+  header's numerator, the projects view's `running / cap` column and the quit
+  reminder each counted `state == "running"` over the task list the client
+  holds — which is roots only, by design. So a fan-out lane, an ordinary task
+  admitted under the same cap, was a held slot with no row to count, and a task
+  parked on a question was subtracted from nothing despite its agent process
+  being alive. With six lanes running under two parked parents the header read
+  `0/6`, a new task sat in `queued`, and the one number that answers "why is
+  nothing starting" said there were six free slots.
+
+  The daemon serves the count now, from the same query the scheduler admits
+  against: `GET /v1/info` carries `slots` and every project row carries
+  `slots_used`, so a client renders the figure instead of re-deriving a
+  definition it has no rows to apply. The header explains itself when the
+  numerator cannot match what is on screen — `3/6 running · 2 lanes · 1 on
+  input` — dropping each clause at zero, so an ordinary board reads exactly as
+  it did, and shedding them on a narrow terminal. A task on a question counts in
+  both the slot count and the needs-attention badge, which is what it is. The
+  header now refreshes on task events rather than only on connect, so the number
+  is live while a fan-out fills the pool.
+
 - **Editing a `prompt:` or a `run:` in the workflow editor destroyed it.** The
   row opened in a single-line text field, which collapses newlines by design;
   committing it wrote the whole body back as one line, so a 60-line agent

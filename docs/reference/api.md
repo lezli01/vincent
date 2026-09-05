@@ -125,7 +125,7 @@ are long-lived by contract and no write deadline is set.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
-| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, the database's byte footprint, and the container runtime |
+| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `slots`, `orphans`, the database's byte footprint, and the container runtime |
 | `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
 | `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe — including the reported [usage quota](#usage-quota) |
@@ -461,6 +461,27 @@ a readdir and one id query — no size walk, no git — so it is cheap and drops
 moment `gc` runs. It is deliberately **not** on `/v1/health`, which stays
 `{ status, version }` and is the one unauthenticated endpoint.
 
+`slots` on `GET /v1/info` is how much of `max_parallel_tasks` is in use right
+now, counted the way the scheduler counts it when it decides whether one more
+task may start:
+
+```json
+{ "max_parallel_tasks": 6,
+  "slots": { "used": 3, "lanes": 2, "awaiting_input": 1 } }
+```
+
+A task holds a slot while it is `running` **or** `awaiting_input` — a task
+parked on a question still owns a live agent process, so it costs a slot like a
+working one — and the count is over every task row, fan-out lanes included.
+That is why it is served rather than derived: `GET /v1/tasks` omits descendants
+by default, so a client walking its own list cannot see a lane at all, and a
+client matching `state == "running"` misses the questions too. `lanes` and
+`awaiting_input` are subsets of `used`, published so a client can explain a
+number that does not match the rows it is showing — the TUI renders
+`3/6 running · 2 lanes · 1 on input` from exactly these three fields. It is one
+indexed `COUNT` over a human-sized table, and the same one the scheduler already
+runs on every admission pass.
+
 `container` on `GET /v1/info` reports the container runtime the way `agents[]`
 reports the adapters — presence, never a verdict on an image:
 
@@ -537,6 +558,14 @@ archived rows included, because the cascade erases the branch names for good.
 here; failures are logged and the delete proceeds. Set
 [`delete_empty_branch_on_archive: false`](configuration.md#delete_empty_branch_on_archive)
 to disable the sweep.
+
+Every project object carries `slots_used`: how many of that project's tasks hold
+a concurrency slot right now, by the same definition `slots` on `GET /v1/info`
+uses — `running` or `awaiting_input`, fan-out lanes included. It is the
+numerator that project's `max_parallel_tasks` is applied against, so a client
+renders `slots_used / max_parallel_tasks` without counting rows itself. A
+project holding none reads `0`, never absent, and a project created a moment ago
+reads `0` because it owns no task yet.
 
 ### GitHub issues
 
