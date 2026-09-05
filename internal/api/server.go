@@ -387,15 +387,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // infoResponse is the GET /v1/info body (initial shape, phase 1 decision;
 // agent availability joined in T1.7).
 type infoResponse struct {
-	Version          string        `json:"version"`
-	Commit           string        `json:"commit"`
-	Built            string        `json:"built"`
-	PID              int           `json:"pid"`
-	StartedAt        string        `json:"started_at"`
-	UptimeSeconds    int64         `json:"uptime_seconds"`
-	Listen           string        `json:"listen"`
-	MaxParallelTasks int           `json:"max_parallel_tasks"`
-	Agents           []AgentStatus `json:"agents"`
+	Version          string `json:"version"`
+	Commit           string `json:"commit"`
+	Built            string `json:"built"`
+	PID              int    `json:"pid"`
+	StartedAt        string `json:"started_at"`
+	UptimeSeconds    int64  `json:"uptime_seconds"`
+	Listen           string `json:"listen"`
+	MaxParallelTasks int    `json:"max_parallel_tasks"`
+	// Slots is how much of that cap is in use right now (§11). It rides
+	// beside MaxParallelTasks because the two are only meaningful together:
+	// "3" is not a status, "3 of 6" is.
+	Slots  infoSlots     `json:"slots"`
+	Agents []AgentStatus `json:"agents"`
 	// Orphans is how many data-root directories no task row claims right now
 	// (task 005, §10). It rides /v1/info rather than /v1/health because
 	// health is deliberately {status, version} and is the one unauthenticated
@@ -410,6 +414,25 @@ type infoResponse struct {
 	// 061). A machine with no runtime is a healthy machine — this is
 	// information, not a problem.
 	Container map[string]any `json:"container"`
+}
+
+// infoSlots is the §11 concurrency picture: how many tasks hold a slot, how
+// many of those are fan-out lanes rather than roots, and how many are parked
+// on a question rather than burning CPU. A client renders "used / cap" from
+// Used alone; the other two are what makes the number explicable when it does
+// not match the rows a board is showing.
+//
+// A COUNT over `tasks` is admissible on this hot endpoint where §17's row
+// counts were not (see infoDatabase below). Two things separate them: the
+// `tasks` table is human-sized — a busy install has hundreds of rows, not the
+// millions an events table accumulates — and the scheduler already runs this
+// exact subquery on every admission pass, so the daemon is paying for it
+// regardless. The events count is a scan that exists for no other reason and
+// grows without bound; that one still lives on /v1/doctor.
+type infoSlots struct {
+	Used          int `json:"used"`
+	Lanes         int `json:"lanes"`
+	AwaitingInput int `json:"awaiting_input"`
 }
 
 // infoDatabase is the byte half of §17's database figures: the file plus the
@@ -476,11 +499,28 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		UptimeSeconds:    int64(time.Since(s.deps.StartedAt).Seconds()),
 		Listen:           s.deps.ListenAddr,
 		MaxParallelTasks: cfg.MaxParallelTasks,
+		Slots:            s.infoSlots(r.Context()),
 		Agents:           agents,
 		Orphans:          orphans,
 		Database:         s.infoDatabase(),
 		Container:        s.containerInfo(r.Context()),
 	})
+}
+
+// infoSlots counts the §11 slot holders for the payload. A nil store or a
+// failed count degrades to zeros with a log line, for the same reason the
+// orphan count does: identity is what every client polls this endpoint for,
+// and one broken figure must not take the whole payload down.
+func (s *Server) infoSlots(ctx context.Context) infoSlots {
+	if s.deps.Store == nil {
+		return infoSlots{}
+	}
+	c, err := s.deps.Store.SlotCounts(ctx)
+	if err != nil {
+		s.deps.Logger.Warn("count slots", "error", err)
+		return infoSlots{}
+	}
+	return infoSlots{Used: c.Total, Lanes: c.Lanes, AwaitingInput: c.AwaitingInput}
 }
 
 // infoDatabase stats the store's files. A failed stat degrades to zeros with a

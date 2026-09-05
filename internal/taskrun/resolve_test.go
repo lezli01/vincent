@@ -11,10 +11,11 @@ import (
 )
 
 // TestResolveSelection proves the wrapper feeds each §8.6 level's fields to
-// the shared resolver; the precedence ladder itself is table-tested where
-// the resolver lives, in internal/agent (T2.11).
+// the shared resolver and hands back the provenance beside the triple; the
+// precedence ladder itself is table-tested where the resolver lives, in
+// internal/agent (T2.11).
 func TestResolveSelection(t *testing.T) {
-	got := resolveSelection(
+	got, src := resolveSelection(
 		workflow.Step{Effort: "low"},
 		workflow.Defaults{Agent: "claude", Model: "sonnet"},
 		&store.Task{ModelOverride: "opus"},
@@ -22,6 +23,12 @@ func TestResolveSelection(t *testing.T) {
 	want := agent.Selection{Agent: "claude", Model: "opus", Effort: "low"}
 	if got != want {
 		t.Errorf("resolveSelection = %+v, want %+v (step effort, override model, defaults agent)", got, want)
+	}
+	wantSrc := agent.Sources{
+		Agent: agent.SourceWorkflow, Model: agent.SourceTask, Effort: agent.SourceStep,
+	}
+	if src != wantSrc {
+		t.Errorf("resolveSelection sources = %+v, want %+v", src, wantSrc)
 	}
 }
 

@@ -30,6 +30,17 @@ renders, plus a live per-check rollup for the head commit, and it carries seven
 operations: open the pull request, open the selected check's run page, unlink,
 merge, close/reopen, re-run the failed Actions jobs, and comment.
 
+> **Superseded in part, 2026-09-05 — [task 088](088-step-details-tab.md).** The
+> tab is no longer the sixth and no longer answers to `6`: 088 inserted **Step
+> Details** ahead of it, so Pull Request is selected by `7`. Everything else
+> 068.3 settled stands, and the property it was protecting is intact — the tab
+> is still conditional, still **last** on the strip, and still costs nothing
+> when it is absent, because the digits bind to tabs and not to positions and
+> Step Details is unconditional. `6` is Step Details either way, and `7` does
+> nothing on a task with no linked pull request, exactly as `6` did before.
+> What was paid, deliberately, is that `6` changes meaning once for a reader
+> who had learned the old number. Spec §15 view 2 records it as a supersession.
+
 Four of those write to GitHub. They are the first writes vincent has ever made
 to GitHub, and they are what makes this task large.
 

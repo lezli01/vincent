@@ -125,7 +125,7 @@ are long-lived by contract and no write deadline is set.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
-| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `orphans`, the database's byte footprint, and the container runtime |
+| `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `slots`, `orphans`, the database's byte footprint, and the container runtime |
 | `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
 | `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe — including the reported [usage quota](#usage-quota) |
@@ -410,7 +410,11 @@ daemon running.
   `state` and `open_step_runs`. Such a task is refused by admission and will not
   run until crash recovery reconciles it, so it also raises a `tasks` problem.
   The waiting states are deliberately absent: an open run is correct under
-  `awaiting_input` and `awaiting_gate`.
+  `awaiting_input` and `awaiting_gate`. `fan_out` rows are excluded for the same
+  reason in the other direction: a fan-out round's row is opened by the park and
+  finalized by the merge admission (§7.6), so the parent is `queued` between the
+  two holding a row that is this round's rather than an unfinalized previous
+  attempt. Admission skips it too, so such a task is not refused.
 - **Agent availability is re-probed by default**, unlike `GET /v1/agents`.
   Authentication is not a function of the binary, so a cached `logged_in: false`
   would survive the user logging in — which would break the endpoint in the loop
@@ -460,6 +464,27 @@ directories is a different promise from a report.
 a readdir and one id query — no size walk, no git — so it is cheap and drops the
 moment `gc` runs. It is deliberately **not** on `/v1/health`, which stays
 `{ status, version }` and is the one unauthenticated endpoint.
+
+`slots` on `GET /v1/info` is how much of `max_parallel_tasks` is in use right
+now, counted the way the scheduler counts it when it decides whether one more
+task may start:
+
+```json
+{ "max_parallel_tasks": 6,
+  "slots": { "used": 3, "lanes": 2, "awaiting_input": 1 } }
+```
+
+A task holds a slot while it is `running` **or** `awaiting_input` — a task
+parked on a question still owns a live agent process, so it costs a slot like a
+working one — and the count is over every task row, fan-out lanes included.
+That is why it is served rather than derived: `GET /v1/tasks` omits descendants
+by default, so a client walking its own list cannot see a lane at all, and a
+client matching `state == "running"` misses the questions too. `lanes` and
+`awaiting_input` are subsets of `used`, published so a client can explain a
+number that does not match the rows it is showing — the TUI renders
+`3/6 running · 2 lanes · 1 on input` from exactly these three fields. It is one
+indexed `COUNT` over a human-sized table, and the same one the scheduler already
+runs on every admission pass.
 
 `container` on `GET /v1/info` reports the container runtime the way `agents[]`
 reports the adapters — presence, never a verdict on an image:
@@ -537,6 +562,14 @@ archived rows included, because the cascade erases the branch names for good.
 here; failures are logged and the delete proceeds. Set
 [`delete_empty_branch_on_archive: false`](configuration.md#delete_empty_branch_on_archive)
 to disable the sweep.
+
+Every project object carries `slots_used`: how many of that project's tasks hold
+a concurrency slot right now, by the same definition `slots` on `GET /v1/info`
+uses — `running` or `awaiting_input`, fan-out lanes included. It is the
+numerator that project's `max_parallel_tasks` is applied against, so a client
+renders `slots_used / max_parallel_tasks` without counting rows itself. A
+project holding none reads `0`, never absent, and a project created a moment ago
+reads `0` because it owns no task yet.
 
 ### GitHub issues
 
@@ -1066,7 +1099,7 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body |
+| `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 

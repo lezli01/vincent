@@ -110,8 +110,10 @@ func TestQuitReminderCountsRunningTasks(t *testing.T) {
 		if !ok {
 			t.Fatal("no reminder with tasks running")
 		}
-		// awaiting_input is waiting on the person who is leaving, and the
-		// bell already covered it; only running work is reported here.
+		// This board never reached /v1/info, so the reminder is on its
+		// fallback: a walk of the listed rows for the literal state
+		// `running`. The served §11 figure, which counts the awaiting_input
+		// row too, is TestQuitReminderUsesTheServedSlotCount.
 		if !strings.Contains(line, "2 tasks are still running") {
 			t.Errorf("reminder = %q, want 2", line)
 		}

@@ -206,3 +206,134 @@ func TestParseWarnsOnTrailingCondition(t *testing.T) {
 		t.Errorf("warning path = %q, want steps[1].type", warns[0].Path)
 	}
 }
+
+// TestEvaluateRendered covers the sibling Evaluate delegates to (issue #323):
+// the verdict is the same one Evaluate reports, and the rendered string comes
+// back beside it so a caller can record the value without re-rendering.
+//
+// The cases that matter most are the ones that fail. A guard rendering to
+// neither literal is a *ConditionError, and it is exactly the guard whose
+// value a human needs to read — so the rendered string is returned on that
+// path too. Only a render failure has nothing to report: nothing was produced.
+func TestEvaluateRendered(t *testing.T) {
+	rc := RenderContext{
+		Task:  TaskContext{Title: "t", Fields: map[string]string{"ship": "yes"}},
+		Steps: map[string]StepResult{"probe": {Status: "failed", ExitCode: 3}},
+		Host:  HostContext{OS: "linux", Arch: "amd64"},
+	}
+	tests := []struct {
+		name         string
+		expr         string
+		want         bool
+		wantRendered string
+		wantCondErr  bool
+		wantErr      string
+	}{
+		{name: "literal true", expr: "{{ true }}", want: true, wantRendered: "true"},
+		{name: "literal false", expr: "{{ false }}", wantRendered: "false"},
+		{
+			// The rendered value is the trimmed one, which is what the
+			// verdict was taken from — recording the untrimmed bytes would
+			// show a value that disagrees with the answer beside it.
+			name: "surrounding whitespace is trimmed",
+			expr: "  {{ true }}\n", want: true, wantRendered: "true",
+		},
+		{
+			name: "field comparison",
+			expr: `{{ eq (index .Task.Fields "ship") "yes" }}`, want: true, wantRendered: "true",
+		},
+		{
+			name: "a number is not a verdict, and the number is reported",
+			expr: "{{ 7 }}", wantRendered: "7", wantCondErr: true,
+		},
+		{
+			name: "yes is not true, and yes is reported",
+			expr: "yes", wantRendered: "yes", wantCondErr: true,
+		},
+		{
+			// The empty render is the one a truthiness table would swallow:
+			// there is a value to report and it is "".
+			name: "empty is not false",
+			expr: "", wantRendered: "", wantCondErr: true,
+		},
+		{
+			// A field that is not set renders to the empty string rather
+			// than failing, so it reaches the *ConditionError path with a
+			// value — an empty one. This is the guard a human stares at.
+			name: "an absent field renders to empty, not to a failure",
+			expr: `{{ index .Task.Fields "absent" }}`, wantRendered: "", wantCondErr: true,
+		},
+		{
+			// A render that never produced anything reports nothing: there
+			// is no value to show, only the error.
+			name: "a render failure has no rendered value",
+			expr: "{{ .Nope }}", wantRendered: "", wantErr: "render",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, rendered, err := EvaluateRendered("if", tt.expr, rc)
+			if rendered != tt.wantRendered {
+				t.Errorf("rendered = %q, want %q", rendered, tt.wantRendered)
+			}
+			var condErr *ConditionError
+			switch {
+			case tt.wantCondErr:
+				if !errors.As(err, &condErr) {
+					t.Fatalf("error is %v (%T), want a *ConditionError", err, err)
+				}
+				if condErr.Output != tt.wantRendered {
+					t.Errorf("ConditionError.Output = %q, want %q", condErr.Output, tt.wantRendered)
+				}
+			case tt.wantErr != "":
+				if err == nil {
+					t.Fatalf("EvaluateRendered(%q) = %v, want an error", tt.expr, got)
+				}
+				if errors.As(err, &condErr) {
+					t.Fatalf("error is a *ConditionError, want a render failure: %v", err)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want it to mention %q", err, tt.wantErr)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("EvaluateRendered(%q): %v", tt.expr, err)
+				}
+			}
+			if got != tt.want {
+				t.Errorf("EvaluateRendered(%q) = %v, want %v", tt.expr, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEvaluateDelegatesToEvaluateRendered pins the two together: Evaluate kept
+// its exact signature and must keep answering identically, so no caller had to
+// move for issue #323.
+func TestEvaluateDelegatesToEvaluateRendered(t *testing.T) {
+	rc := RenderContext{
+		Task: TaskContext{Fields: map[string]string{"ship": "yes"}},
+		Host: HostContext{OS: "linux"},
+	}
+	for _, expr := range []string{
+		"{{ true }}", "{{ false }}", "  {{ true }}\n", "{{ 7 }}", "yes", "",
+		`{{ eq (index .Task.Fields "ship") "yes" }}`,
+		`{{ index .Task.Fields "absent" }}`, "{{ .Nope }}",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			want, wantErr := Evaluate("if", expr, rc)
+			got, _, gotErr := EvaluateRendered("if", expr, rc)
+			if got != want {
+				t.Errorf("verdict = %v, Evaluate says %v", got, want)
+			}
+			switch {
+			case wantErr == nil && gotErr != nil:
+				t.Errorf("EvaluateRendered errored where Evaluate did not: %v", gotErr)
+			case wantErr != nil && gotErr == nil:
+				t.Errorf("EvaluateRendered succeeded where Evaluate returned %v", wantErr)
+			case wantErr != nil && gotErr.Error() != wantErr.Error():
+				t.Errorf("error = %v, Evaluate says %v", gotErr, wantErr)
+			}
+		})
+	}
+}

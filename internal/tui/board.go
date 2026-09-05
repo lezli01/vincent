@@ -45,10 +45,13 @@ type (
 		tasks []apiclient.Task
 		err   error
 	}
-	// boardInfoMsg carries the daemon info the header renders.
+	// boardInfoMsg carries the daemon info the header renders. thenLoad is
+	// set on the fetch a closing debounce window issues, and is what makes
+	// the task list follow it rather than race it (boardRefreshMsg).
 	boardInfoMsg struct {
-		info apiclient.Info
-		err  error
+		info     apiclient.Info
+		err      error
+		thenLoad bool
 	}
 	// boardConfigMsg carries the view preferences the daemon relays (§15,
 	// task 009). The TUI reads no configuration from disk, so this is where
@@ -262,7 +265,15 @@ func (b *board) tasksCmd() tea.Cmd {
 	}
 }
 
-func (b *board) infoCmd() tea.Cmd {
+func (b *board) infoCmd() tea.Cmd { return b.infoFetch(false) }
+
+// infoFetch is the /v1/info request. thenLoad marks the response so the
+// update loop follows it with the task fetch (boardRefreshMsg): the header's
+// slot count and the rows it is rendered above have to reach the screen in
+// that order, and two commands batched together arrive in whichever order
+// the two requests finish — /v1/info is the slower of the two, so batching
+// paints a count that is a window behind the rows explaining it (issue #324).
+func (b *board) infoFetch(thenLoad bool) tea.Cmd {
 	client := b.client
 	if client == nil {
 		return nil
@@ -271,7 +282,7 @@ func (b *board) infoCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		info, err := client.Info(ctx)
-		return boardInfoMsg{info: info, err: err}
+		return boardInfoMsg{info: info, err: err, thenLoad: thenLoad}
 	}
 }
 
@@ -330,12 +341,27 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.err == nil {
 			b.info, b.infoOK = msg.info, true
 		}
+		if msg.thenLoad {
+			// A failed info still loads: the rows are what the board is for,
+			// and a header one window stale is not a reason to withhold them.
+			return b, b.loadCmd()
+		}
 		return b, nil
 	case boardConfigMsg:
 		b.applyConfig(msg)
 		return b, nil
 	case boardRefreshMsg:
 		b.refreshPending = false
+		// /v1/info rides the debounced refresh because the header's slot
+		// count rides /v1/info (issue #324): fetched on connect and on
+		// agent.quota_changed alone, it would go stale exactly when a full
+		// cap is what the reader is looking at. It leads the task fetch
+		// rather than being batched beside it (infoFetch), and stays a fetch
+		// of its own rather than being folded into loadCmd — connect issues
+		// both already, and folding would make that a double fetch.
+		if cmd := b.infoFetch(true); cmd != nil {
+			return b, cmd
+		}
 		return b, b.loadCmd()
 	case boardTickMsg:
 		// Render-only: the elapsed column advances without asking the daemon
@@ -1181,29 +1207,93 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	return row
 }
 
+// slotsUsed is the header's numerator: §11's slot count — every task in a
+// slot-holding state, `running` or `awaiting_input`, lanes included — as the
+// daemon computes it on GET /v1/info (`store.CountSlotHolders`). It is the
+// number the scheduler admits against, so it is the only one that answers
+// "why is nothing starting" (issue #324).
+//
+// It cannot be computed here. The board lists roots only (§13.2, task 014
+// decision 13) and lanes arrive on their own request and never enter b.tasks
+// by construction (boardlanes.go), so no walk of that list can ever see a
+// running lane; and `awaiting_input` holds a slot — its agent process is
+// alive, idle on stdin (§7.4) — while not being the literal state `running`.
+//
+// The fallback is for a board that never reached /v1/info: it renders exactly
+// what every earlier version rendered rather than a confident zero.
+func (b *board) slotsUsed() int {
+	if b.infoOK {
+		return b.info.Slots.Used
+	}
+	return countRunning(b.tasks)
+}
+
+// slotBreakdown explains a numerator that does not match the rows on screen:
+// how many of the held slots are fan-out lanes the board does not list, and
+// how many are parked on a question rather than working. A zero clause is
+// dropped rather than printed — an ordinary board reads as it always did —
+// which is also why they are ordered widest-explanation first: the lanes are
+// the slots with no row at all, while an `awaiting_input` task is on screen.
+func (b *board) slotBreakdown() []string {
+	if !b.infoOK {
+		return nil
+	}
+	var out []string
+	if n := b.info.Slots.Lanes; n > 0 {
+		noun := " lanes"
+		if n == 1 {
+			noun = " lane"
+		}
+		out = append(out, styleDim.Render(strconv.Itoa(n)+noun))
+	}
+	if n := b.info.Slots.AwaitingInput; n > 0 {
+		out = append(out, styleDim.Render(strconv.Itoa(n)+" on input"))
+	}
+	return out
+}
+
 // headerLine reports what the daemon is doing overall (§15): how much work
 // is in flight against the cap, how much needs a human, and which adapters
-// are actually usable. The counts come from the whole fetched list, not the
-// filtered view — a filter must not hide that something needs you.
+// are actually usable. The attention count comes from the whole fetched list,
+// not the filtered view — a filter must not hide that something needs you —
+// and a task on a question counts in both it and the slot count, because it
+// is both holding a slot and waiting on a person.
+//
+// The breakdown clauses are shed rather than wrapped when the panel is too
+// narrow for them, last one first. The budget follows from what the line
+// actually measures rather than from a threshold constant that could
+// silently disagree with it; an unsized board (b.width <= 0) has no budget
+// to fail, so it keeps them.
 func (b *board) headerLine() string {
-	running := countRunning(b.tasks)
 	attention := countAttention(b.tasks)
 
 	limit := "?"
 	if b.infoOK {
 		limit = strconv.Itoa(b.info.MaxParallelTasks)
 	}
-	parts := []string{fmt.Sprintf(" %d/%s running", running, limit)}
+	head := fmt.Sprintf(" %d/%s running", b.slotsUsed(), limit)
+
+	var tail []string
 	if attention > 0 {
-		parts = append(parts, styleWarn.Render(
+		tail = append(tail, styleWarn.Render(
 			fmt.Sprintf("%s %d need attention", attentionBadge, attention)))
 	} else {
-		parts = append(parts, styleDim.Render("0 need attention"))
+		tail = append(tail, styleDim.Render("0 need attention"))
 	}
 	if b.infoOK {
-		parts = append(parts, b.agentsSummary())
+		tail = append(tail, b.agentsSummary())
 	}
-	return strings.Join(parts, styleDim.Render(" · "))
+
+	sep := styleDim.Render(" · ")
+	breakdown := b.slotBreakdown()
+	for {
+		parts := append([]string{head}, breakdown...)
+		line := strings.Join(append(parts, tail...), sep)
+		if len(breakdown) == 0 || b.width <= 0 || lipgloss.Width(line) <= b.width {
+			return line
+		}
+		breakdown = breakdown[:len(breakdown)-1]
+	}
 }
 
 func (b *board) agentsSummary() string {

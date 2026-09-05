@@ -58,6 +58,9 @@ type (
 		chatID int64
 		err    error
 	}
+	// chatTickMsg advances the in-progress indicator's frame (task 089). It
+	// asks the daemon nothing: the footer redraws, the body does not.
+	chatTickMsg time.Time
 )
 
 // chatView is the workspace.
@@ -122,6 +125,16 @@ type chatView struct {
 	// stream is the per-chat SSE subscription's cancel, held so opening a
 	// second chat does not leave the first one's stream running.
 	streamStop context.CancelFunc
+
+	// ticking guards the in-progress indicator's tick loop, and frame is the
+	// glyph it is on (task 089). Unlike board.go's b.ticking this one is
+	// *cleared*, and the divergence is deliberate rather than an oversight to
+	// unify later: the task board always has an elapsed column to advance, so
+	// arming once and ticking forever is right there, while a chat with no
+	// running turn has nothing moving and must arm no tick at all (issue
+	// #330's own acceptance criterion).
+	ticking bool
+	frame   int
 
 	note    string
 	noteBad bool
@@ -263,7 +276,30 @@ func readNextChatNote(id int64, ch <-chan apiclient.Note) tea.Cmd {
 	}
 }
 
+// update handles the message and then re-arms the in-progress indicator if a
+// turn is still running. Arming in one place rather than at every site that
+// can start or end a turn is what makes the guard hold: a send, a load, a
+// stream note and a cancel all change whether something is running, and a
+// missed site would leave the indicator either frozen or ticking forever.
 func (v *chatView) update(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := v.updateMsg(msg)
+	return p, tea.Batch(cmd, v.armTick())
+}
+
+// armTick starts the tick loop if a turn is running and one is not already in
+// flight. It stops by not re-arming: tea.Tick cannot be cancelled (recorded in
+// docs/history/v0-tasks.md and honoured by daemon.go's log poll), so the only
+// way a ticker ends is that the tick which arrives after the turn finished
+// finds nothing running and returns no command.
+func (v *chatView) armTick() tea.Cmd {
+	if v.ticking || v.runningTurn() == nil {
+		return nil
+	}
+	v.ticking = true
+	return tea.Tick(SpinnerTick, func(t time.Time) tea.Msg { return chatTickMsg(t) })
+}
+
+func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
@@ -293,6 +329,13 @@ func (v *chatView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyAnswered(msg)
 	case chatCanceledMsg:
 		return v, v.applyCanceled(msg)
+	case chatTickMsg:
+		// Render-only, and a no-op for a stray tick: clearing the guard is
+		// all this does, and update's armTick re-arms only while a turn is
+		// still running.
+		v.ticking = false
+		v.frame++
+		return v, nil
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:

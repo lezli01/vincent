@@ -142,9 +142,16 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	return out
 }
 
-// countRunning and countAttention feed the header. They count the whole
-// fetched list, not the filtered view: a filter hiding the one task that
-// needs you must not also hide that it exists.
+// countAttention feeds the header, and countRunning feeds it only when
+// /v1/info has never loaded (board.slotsUsed). Both count the whole fetched
+// list, not the filtered view: a filter hiding the one task that needs you
+// must not also hide that it exists.
+//
+// countRunning is not §11's slot count and cannot be made into one from this
+// list: it sees neither the fan-out lanes, which never enter it, nor
+// `awaiting_input`, which holds a slot without being `running` (issue #324).
+// It is the honest thing to render from a board that never reached the
+// daemon, and nothing more.
 func countRunning(tasks []apiclient.Task) int {
 	n := 0
 	for _, t := range tasks {

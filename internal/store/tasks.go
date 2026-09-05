@@ -494,6 +494,25 @@ func (s *Store) CountSlotHoldersByProject(ctx context.Context, projectID int64) 
 		`SELECT COUNT(*) FROM tasks WHERE state IN `+slotPlaceholders+` AND project_id = ?`, args...)
 }
 
+// StepTypeFanOut is the one step type whose `running` row legitimately
+// outlives the actor that wrote it.
+//
+// A `fan_out` step runs in two admissions (§7.6, task 080 decision 3): the
+// park that spawns a round opens the round's row so the step is on the
+// timeline while its lanes work (issue #322), and the merge admission that
+// ends the round adopts and finalizes that same row. Between the two the
+// parent passes through `queued` — the scheduler wakes it when its subtree
+// settles — carrying an open row that is not an unreconciled previous
+// attempt but this round's, waiting for its second half.
+//
+// So it is excluded from both readings of "a previous attempt was never
+// finalized": the admission guard below and UnreconciledTasks. Nothing is
+// lost by it. A crash *during* a merge leaves a row of this type too, and the
+// merge admission that follows adopts it and re-runs the merge on it, which
+// is the reconciliation the guard would otherwise be waiting for a human to
+// perform.
+const StepTypeFanOut = "fan_out"
+
 // ListAdmissible returns every queued task in admission order — priority
 // DESC, created_at ASC, id ASC (spec §11) — each carrying its project's
 // current slot count and cap, plus how many step runs it still has open.
@@ -510,11 +529,13 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			(SELECT COUNT(*) FROM tasks o
 			  WHERE o.project_id = t.project_id AND o.state IN ` + slotPlaceholders + `),
 			p.max_parallel_tasks,
-			(SELECT COUNT(*) FROM step_runs r WHERE r.task_id = t.id AND r.state = ?)
+			(SELECT COUNT(*) FROM step_runs r
+			  WHERE r.task_id = t.id AND r.state = ? AND r.step_type <> ?)
 		FROM tasks t JOIN projects p ON p.id = t.project_id
 		WHERE t.state = ?
 		ORDER BY t.priority DESC, t.created_at ASC, t.id ASC`
-	args := append(append([]any{}, slotStates...), string(StepRunning), string(TaskQueued))
+	args := append(append([]any{}, slotStates...),
+		string(StepRunning), StepTypeFanOut, string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list admissible: %w", err)
@@ -564,12 +585,16 @@ var unreconcilableStates, unreconcilablePlaceholders = func() ([]any, string) {
 // each other, ordered by id. It is `GET /v1/doctor`'s view of the §12.4
 // invariant (§17): the combination is impossible, so any row here means a
 // task was never reconciled and the scheduler is refusing to admit it.
+//
+// `fan_out` rows are skipped, and the same rows the scheduler skips: see
+// StepTypeFanOut. Reporting them would report normal operation, exactly as
+// including `awaiting_gate` in unreconcilableStates would.
 func (s *Store) UnreconciledTasks(ctx context.Context) ([]Unreconciled, error) {
-	args := append([]any{string(StepRunning)}, unreconcilableStates...)
+	args := append([]any{string(StepRunning), StepTypeFanOut}, unreconcilableStates...)
 	//nolint:gosec // G202: unreconcilablePlaceholders is placeholders(); states bind
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.state, COUNT(r.id)
-		FROM tasks t JOIN step_runs r ON r.task_id = t.id AND r.state = ?
+		FROM tasks t JOIN step_runs r ON r.task_id = t.id AND r.state = ? AND r.step_type <> ?
 		WHERE t.state IN `+unreconcilablePlaceholders+`
 		GROUP BY t.id, t.state
 		ORDER BY t.id ASC`, args...)

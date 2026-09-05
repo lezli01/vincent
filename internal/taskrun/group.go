@@ -179,13 +179,13 @@ func (r *Runner) applySubStepGuards(
 			followUp: env.followUp,
 			log:      env.log.With("sub_step", sub.ID),
 		}
-		pass, evalErr := r.evaluateGuard(ctx, subEnv)
+		pass, rendered, evalErr := r.evaluateGuard(ctx, subEnv)
 		if evalErr != nil {
-			r.recordGuardOutcome(ctx, subEnv, store.StepFailed, "", ReasonConditionError)
+			r.recordGuardOutcome(ctx, subEnv, store.StepFailed, "", ReasonConditionError, rendered)
 			return nil, 0, evalErr
 		}
 		if !pass {
-			r.recordGuardOutcome(ctx, subEnv, store.StepSkipped, store.SkipReasonCondition, "")
+			r.recordGuardOutcome(ctx, subEnv, store.StepSkipped, store.SkipReasonCondition, "", rendered)
 			subEnv.log.Info("sub-step skipped by its guard")
 			guardedOff++
 			continue

@@ -210,14 +210,22 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   Groups fold away, and a folded one still carries its task count and its
   needs-attention badge.
 - Task detail is a full-screen workspace with Steps & Attempts, Task Details,
-  Output, Diff, and Workflow tabs, plus a Pull Request tab on a task that has
-  one linked; each tab uses the whole view.
+  Output, Diff, Workflow, and Step Details tabs, plus a Pull Request tab on a
+  task that has one linked; each tab uses the whole view.
+- Step Details answers what an attempt was actually *given*: the rendered prompt
+  or shell script it was handed rather than the workflow's template, what an
+  `if:` guard rendered to, which level supplied its agent, model and effort, and
+  the permission mode, timeouts, shell and working directory it ran under — all
+  recorded when it ran, so they still say what happened after you edit the config
+  or patch the task.
 - A fan-out is something you can watch. `L` hangs a fan-out parent's lanes
   under it as indented board rows in every state it passes through — without
   putting them in any count — one key opens the lane you are pointing at and
   another opens a lane's parent, the Output pane cycles the lanes' live output,
   the Diff tab groups `lane › file` so you can see which lane wrote what, and a
   failed join names the lane, its child task and that lane's own block reason.
+  The parent's own step timeline carries the fan-out for as long as its lanes
+  run, annotated with what the subtree is doing — `2 blocked`, `3/5 done`.
 - The Output tab and the chat workspace share one renderer, and one verbosity
   level. Assistant prose is rendered as Markdown — headings, lists, blockquotes,
   inline and fenced code, rules, tables, links and images become terminal
@@ -236,6 +244,15 @@ Running `vincent` opens a Bubble Tea interface for active agent workloads:
   so structure that an agent split across records renders whole, and a pane you have
   scrolled away from keeps its place across a resize, a level change, the raw
   toggle and output dropping off the front of the window.
+- Nothing waits in silence. While a chat turn or a step attempt is running, a
+  turning glyph and an elapsed clock — `⠋ working… 14s` — say so above the chat
+  composer, beside a running row on the chats board, and in the output pane's
+  title, for the whole time it runs rather than only until its first chunk
+  arrives — which is what makes it useful at the `quiet` level, where a
+  tool-heavy turn renders nothing new for minutes. `vincent chat send` draws the
+  same indicator while it blocks, on stderr and never under `--json` or into a
+  redirect. A screen with nothing running repaints no more often than it did
+  before.
 - Guided task creation exposes project, workflow, declared fields, git and
   priority settings, agent overrides, and a final review stage.
 - Project and workflow workspaces keep navigation visible beside contextual

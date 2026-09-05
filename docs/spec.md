@@ -488,6 +488,70 @@ event announces when it changed (§13.3), the row carries what it is, and a
 second column would have to be kept true by every writer for something no
 surface renders.
 
+*Amended 2026-09-05 (issue #323).* The field list gains **what the attempt was
+given**, and the run-time resolution behind it (migration 0027, §14): the
+rendered prompt an `agent` step handed its adapter, the rendered script a
+`command` step handed its shell, the rendered `check:` command, what an `if:`
+guard rendered to, the resolved `for_each` list an iteration drew its item from,
+a marker saying a recorded field was cut at the size ceiling, and — beside them
+— which §8.6 level supplied each of agent, model and effort, plus the permission
+mode, the step timeout, the check timeout, the resolved shell and the working
+directory.
+
+None of it was recorded anywhere. `prompt_override`/`run_override` hold only the
+text a human typed at edit+retry, so they are null on the ordinary attempt; the
+transcript's `step_started` note carries the triple but not the prompt, and the
+claude adapter passes the prompt on **stdin**, so not even the `debug: true`
+argv note contains it. A human asking "what did this attempt actually get?" had
+the workflow's *template* in the snapshot (§15 view 2) and the §8.4 substitution
+nowhere — and the template is not the answer when the render is the thing that
+went wrong.
+
+Four properties are normative:
+
+- **The recorded prompt is the bytes the adapter received**, which is the §8.4
+  render *after* the daemon appends the `<previous-attempt-failure>` block
+  (§7.2), not before. That half is the one a re-render can never reproduce: it
+  draws on the previous attempt's row. A client marks the appended part as
+  daemon-authored so a reader can tell what the workflow wrote from what vincent
+  added.
+- **These are recorded, never re-derived on read.** `config.yaml` hot-reloads
+  (§12.3), so a timeout or a shell default can move under a row that already
+  ran, and a task's agent/model/effort overrides are patchable after an attempt
+  (§6), so re-resolving later can name a level that had nothing to do with it. A
+  derived answer would quietly disagree with what the attempt got. For the same
+  reason `vincent workflow render --task` is not this: it is a *preview*, binds
+  run-discovered values to visible sentinels (§8.4) and renders against *now*.
+- **Every one of them is display-only, the rendered `if:` included.** Task 015
+  decision 10 — a guard is re-evaluated every time it is reached and is never
+  sticky (§7.7) — stands unamended and is not relitigated: it refuses a
+  *persisted verdict consulted later*, and nothing in the engine reads any of
+  these columns back to decide anything. `retry` and §12.4 recovery both
+  re-render the guard against current facts. This extends that decision's own
+  closing clause — the mitigation is visibility — by recording what the guard
+  rendered *to*, beside the raw template `result_summary` already carries.
+- **The record exists before the process does.** It is written as the engine
+  renders each input, so it is already on the row while the attempt is
+  `running` and after §12.4 recovery finalizes it `interrupted` — which is
+  precisely the attempt a human opens it for.
+
+Each recorded field is bounded at **64 KiB**, cut on a rune boundary, and the
+row says a cut happened rather than eliding it. The ceiling is the record's cost
+control, not a display concern: on a retry the bytes an adapter receives are the
+render plus a failure block whose output tail is itself bounded at 200 lines or
+256 KiB (§8.4), nothing prunes `step_runs` (§17) and the database ships whole in
+`vincent daemon backup`. `result_summary`'s 4096 is deliberately not reused —
+that bounds a summary a board renders, and this is a record whose value is being
+exact.
+
+Null on a rendered field means **no input was recorded** — every row written
+before the migration, and every field the step type has no input for — and a
+client must say so rather than draw an empty body, which would claim the step
+was handed nothing. An empty string is a distinct fact: a render that genuinely
+produced nothing. Empty or 0 on the resolution fields reads the same "not
+recorded", following `loop_total`'s precedent, so a task in flight over the
+upgrade renders as it did.
+
 ### 5.5 Chat and ChatTurn (task 063)
 
 A **Chat** is a titled conversation with an agent, scoped to a project. It is a
@@ -1353,7 +1417,12 @@ does not finish until every lane is merged.
   it, and a wake lost to a race degrades to barrier timing rather than
   stranding the parent. The settled-descendant rule above keeps running for an
   eager parent too. A wake that finds nothing to merge and nothing ready parks
-  again without recording a `step_runs` row and without holding a slot.
+  again without recording a *new* `step_runs` row and without holding a slot.
+  *Narrowed 2026-09-05 (issue #322):* that last sentence read "without
+  recording a `step_runs` row" until the park began opening the round's row
+  (below). A re-park that finds the round's row already open still writes
+  nothing, so the property this was buying — a wake that did no work spends no
+  retry budget — is unchanged.
 - **The join** merges each lane branch with `git merge --no-ff` in **declared**
   lane order, message `Merge lane '{lane_id}' of task {child_id}`, stopping at
   the first conflict. Declared rather than completion order is what makes a
@@ -1432,6 +1501,32 @@ does not finish until every lane is merged.
   repeat of this step's rows is this", which is what keeps round 2's merge from
   spending round 1's retry budget. The two meanings cannot collide, because a
   `fan_out` is not valid inside a loop body (§7.8).
+
+  *Amended 2026-09-05 (issue #322):* the round's row is **opened by the park
+  and finalized by the merge**, not written by the merge alone. A parent that
+  had spawned a round and parked in `awaiting_children` carried no row for the
+  step at all until its lanes settled, so the Steps & Attempts timeline (§15),
+  `vincent task show`, `GET /v1/tasks/{id}/steps` and the `task_steps` MCP
+  tool — all of them `store.ListStepRuns` and nothing else — stopped at the
+  step *before* the fan-out for the whole time the lanes worked, and a parent
+  busy fanning work out could not be told from a task that stalled. It was the
+  one park in the engine breaking the phase 2 "every step index a task passes
+  through has at least one row" decision (§7.8): `enterGate` writes its row on
+  entry, and an `awaiting_input` step keeps the row its agent attempt already
+  has. It stays **one row per round**. The park inserts it `running` at the
+  round's `iteration`; a re-park at a round that already has an open row writes
+  nothing; and the merge admission for that round **adopts** that row — same
+  id, same `attempt`, same `started_at` — instead of inserting a second one, so
+  "which repeat of this step's rows is this" and the retry budget it scopes are
+  untouched. Nothing killable is journaled on it, because §12.4 kills what a
+  `running` row recorded and there is no process behind a park, and no lane
+  counts are frozen into it, because nothing rewrites the row until the merge:
+  what the lanes are doing is the `children` rollup §13.2 serves on the task
+  itself. A `fan_out` row is for that reason the one `running` row a `queued`
+  task may legitimately hold, and §11's admission guard and the doctor's
+  unreconciled report both skip it. A daemon restart finalizes an open park row
+  `interrupted` like any other owner's (§12.4) and the next merge admission,
+  finding none open, creates a fresh one — the `awaiting_gate` precedent.
 
 - **A lane that settles without finishing** blocks the step with
   `lane_failed`, and **nothing of that round** is merged. *Clarified
@@ -3760,6 +3855,19 @@ Two consequences are handled rather than assumed away:
   stdin, so it costs a slot exactly like a running one):
   - **global** `max_parallel_tasks` (config file, default 3),
   - **per-project** `max_parallel_tasks` (project setting, default unlimited).
+
+  *Amended 2026-09-05 (issue #324).* **The daemon publishes both counts**, so
+  no client re-derives what a slot is. `GET /v1/info` carries `slots` — `used`,
+  plus `lanes` and `awaiting_input` to explain it — and every project row
+  carries `slots_used` (§13.2). Both read the same slot-holding states the
+  admission counters read, over **every** task row, fan-out lanes included
+  (§7.6). A client cannot compute this figure: a task list excludes descendants
+  by default (§13.2, task 014 decision 13), so a running lane is a held slot
+  with no row to count, and `awaiting_input` holds one without being the
+  literal state `running`. The TUI counted `state == "running"` over its
+  root-only list and so read `0/3` with every slot taken — a number that
+  answers "why is nothing starting" wrongly is worse than no number, and a
+  count a client cannot compute is one it must be served.
 - A `queued` task is admitted when both caps have headroom. Admission order:
   `priority` DESC, then `created_at` ASC (FIFO within a priority).
 - One task runs at most one step process at a time. *Amended 2026-08-17
@@ -3808,6 +3916,17 @@ Two consequences are handled rather than assumed away:
   the process, why it is logged once rather than every tick, and why
   `GET /v1/doctor` reports the same finding (§17).
 
+  *Narrowed 2026-09-05 (issue #322).* A `running` row whose `step_type` is
+  `fan_out` does not count for this guard. Since that issue the park that
+  spawns a round opens the round's row and the merge admission that ends the
+  round finalizes it (§7.6), so a parent passing through `queued` between the
+  two holds a row that is *this* round's rather than an unfinalized previous
+  attempt — counting it would have every fan-out refuse its own merge
+  admission. Nothing this guard was defending is given up: a crash during a
+  merge leaves a row of that type too, and the merge admission that follows
+  adopts it and re-runs the merge, which is the reconciliation the guard would
+  otherwise wait for a human to perform.
+
 *Added 2026-09-02 (task 081).* A `fan_out` step running `schedule: eager`
 (§7.6) is woken by a lane settling rather than by its whole subtree settling,
 so it takes a slot more often than a barrier one — once per direct lane
@@ -3815,9 +3934,11 @@ settling, at worst. The churn is bounded by the step's **direct** lane count
 and not by the size of the tree below it: the watermark counts direct children,
 so a depth-2 descendant settling does not move a root's number. Each such wake
 either does work or parks again immediately, releasing the slot; a parent that
-finds nothing to do writes no `step_runs` row. The deadlock-freedom argument in
-§7.6 is untouched — the parent still releases its slot before its children need
-one — and `barrier` remains the default, so no existing workflow pays this.
+finds nothing to do writes no *new* `step_runs` row (§7.6, narrowed 2026-09-05
+by issue #322: the round's row is opened once, by the park that spawned it).
+The deadlock-freedom argument in §7.6 is untouched — the parent still releases
+its slot before its children need one — and `barrier` remains the default, so
+no existing workflow pays this.
 
 *Added 2026-08-29 (task 057).* §13.4's `task_wait` **does not change what a slot
 means.** A step blocked in a wait keeps its slot, because its agent process is
@@ -4806,6 +4927,14 @@ waiting states are excluded deliberately: a `running` row is *correct* under
 `awaiting_input`, where a live process waits for an answer (§7.4), and under
 `awaiting_gate`, whose manual row its actor writes open before exiting (§6).
 
+*Narrowed 2026-09-05 (issue #322).* Both surfaces exclude one **step type** as
+well as those states: a `running` row on a `fan_out` step. §7.6's park opens
+the round's row and the merge admission finalizes it, so a parent woken between
+the two is `queued` holding this round's row, which is normal operation rather
+than the contradiction above. The exclusion is by `step_type`, so it costs
+nothing: a crash mid-merge leaves a `fan_out` row too, and the merge admission
+that follows adopts it and re-runs the merge on it.
+
 *Amended 2026-08-17 (task 014).* A `fan_out` join interrupted mid-merge is
 recovered the same way any step is — the attempt is `interrupted` and re-runs
 — with one extra move: if a merge is still in progress in the worktree, it is
@@ -5001,6 +5130,17 @@ GET    /v1/info                         daemon version, uptime, agent availabili
                                         on every debounced refresh, and a COUNT(*) over a
                                         multi-million-row events table on the daemon's single
                                         SQLite connection is not that. Nothing here is cached
+                                        *Added 2026-09-05 (issue #324):* a `slots` object —
+                                        { used, lanes, awaiting_input } — the §11 count of tasks
+                                        holding a concurrency slot right now, beside the
+                                        `max_parallel_tasks` it is measured against. `used` is
+                                        what a "used / cap" header renders; `lanes` and
+                                        `awaiting_input` are subsets of it that explain a
+                                        numerator not matching the rows a client is showing.
+                                        One indexed COUNT over `tasks`, which the scheduler
+                                        already runs on every admission pass — admissible by the
+                                        same cheapness rule, and unlike the events count it is
+                                        over a human-sized table
 GET    /v1/config                       effective global config
                                         *Amended 2026-08-30 (task 060, issue #244):* it is no
                                         longer read-only, and no longer a subset. Every key in
@@ -5127,7 +5267,12 @@ POST   /v1/maintenance/gc               { force?, dry_run? } → the same body, 
                                         a locked file is reported per path and the rest of the
                                         run continues
 
-GET    /v1/projects                     list
+GET    /v1/projects                     list. *Amended 2026-09-05 (issue #324):* every project
+                                        row carries `slots_used` — how many of that project's
+                                        tasks hold a slot right now (§11), lanes included, which
+                                        is the numerator the per-project `max_parallel_tasks` is
+                                        applied against. One GROUP BY for the whole list; a
+                                        project holding none reads 0, never absent
 POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
 GET    /v1/projects/{id}
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
@@ -5613,6 +5758,25 @@ GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         `status_message` too, denormalized from the task's
                                         *newest* step run the way `step_name` and `cost_usd`
                                         are, so a board never fetches step rows for it)
+                                        (issue #323, 2026-09-05: each also carries what the
+                                        attempt was **given** and the resolution behind it —
+                                        `rendered_prompt`, `rendered_run`, `rendered_check`,
+                                        `rendered_if`, `rendered_for_each`,
+                                        `input_truncated`, `agent_source`, `model_source`,
+                                        `effort_source`, `permission_mode`, `timeout_ms`,
+                                        `check_timeout_ms`, `shell`, `work_dir` (§5.4, §14).
+                                        The rendered fields are the **full recorded bytes**,
+                                        deliberately unlike `prompt_override`/`run_override`,
+                                        which this DTO reports as booleans: those flag a
+                                        human's edit for a timeline, these are the record a
+                                        details pane reads. Null means nothing was recorded —
+                                        an attempt from before the record existed, and every
+                                        field the step type has no input for — while an empty
+                                        string is a render that produced nothing, and a client
+                                        must say the two differently. `rendered_if` is display
+                                        only (§7.7) and `rendered_for_each` is a JSON array.
+                                        `GET /v1/tasks` does **not** carry any of them: they
+                                        are per-attempt evidence, not a board column)
 POST   /v1/tasks/{id}/steps/{step_id}/status
                                         { message } → { message }, the value as stored
                                         (added 2026-08-26, task 036). Records what the
@@ -6232,6 +6396,55 @@ CREATE TABLE step_runs (
   status_message      TEXT,                   -- NULL = the step said nothing
   prompt_override     TEXT,                   -- edit+retry: the prompt a human supplied for this attempt (§6)
   run_override        TEXT,                   -- edit+retry: the command a human supplied for this attempt (§6)
+  -- What this attempt was *given*, and the resolution behind it (§5.4, issue
+  -- #323, migration 0027). The two columns above hold only the text a human
+  -- typed at edit+retry; these hold the §8.4 render as the adapter or the shell
+  -- received it — for the prompt, *after* the `<previous-attempt-failure>`
+  -- block is appended (§7.2), because that is the half a re-render can never
+  -- reproduce.
+  --
+  -- Recorded rather than re-derived on read, and the difference is not
+  -- cosmetic: `config.yaml` hot-reloads (§12.3) so a timeout or a shell default
+  -- can move under a row that already ran, and a task's agent/model/effort
+  -- overrides are patchable (§6) so re-resolving later can name a level that
+  -- had nothing to do with this attempt.
+  --
+  -- All of it is **display-only**, `rendered_if` included: a guard is
+  -- re-evaluated every time it is reached and is never sticky (§7.7, task 015
+  -- decision 10), and nothing in the engine reads any of these back to decide
+  -- anything. `rendered_if` records what the guard rendered *to*, beside the
+  -- raw template `result_summary` carries.
+  --
+  -- Written once, at render, and never updated: the input is known before the
+  -- process starts and must already be on the row while the attempt is
+  -- `running` and after §12.4 recovery finalizes it `interrupted`, which is
+  -- exactly the attempt a human opens it for. The writer is therefore a narrow
+  -- additive one, and the actor's own row update does not carry these columns —
+  -- a stale struct would erase them.
+  --
+  -- NULL on a rendered column means no input was recorded: every row written
+  -- before the migration, and every field the step type has no input for. An
+  -- empty string is distinct and meaningful — a render that produced nothing.
+  -- "" and 0 on the resolution columns read the same "not recorded",
+  -- `loop_total`'s precedent, so a task in flight over the upgrade renders as it
+  -- did. Each rendered field is bounded at 64 KiB on a rune boundary and
+  -- `input_truncated` says a cut happened; nothing prunes this table (§17) and
+  -- the database ships whole in `vincent daemon backup`, so the ceiling is the
+  -- record's cost control rather than a display concern.
+  rendered_prompt     TEXT,                   -- NULL = none recorded
+  rendered_run        TEXT,                   -- NULL = none recorded
+  rendered_check      TEXT,                   -- NULL = none recorded
+  rendered_if         TEXT,                   -- NULL = none recorded; display only (§7.7)
+  rendered_for_each   TEXT,                   -- NULL = none recorded; JSON array of the resolved items
+  input_truncated     INTEGER NOT NULL DEFAULT 0, -- 1 = a recorded field lost bytes to the ceiling
+  agent_source        TEXT,                   -- which §8.6 level supplied it: step|task|workflow|adapter
+  model_source        TEXT,
+  effort_source       TEXT,
+  permission_mode     TEXT,                   -- full-auto | restricted (§16)
+  timeout_ms          INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
+  check_timeout_ms    INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
+  shell               TEXT,                   -- the shell a command step resolved to (§8.3)
+  work_dir            TEXT,                   -- the directory the process ran in
   transcript_path     TEXT,
   input_tokens        INTEGER,
   output_tokens       INTEGER,
@@ -6422,7 +6635,15 @@ stream for the live tail.
    human for 35 of its 40 minutes must not read as "5m" on the board that is trying to
    flag it. Cost-so-far sums every attempt, retries included (§17). Filter by
    project/state; sort respects scheduler order for queued tasks. Header shows daemon status, agent
-   availability, running/cap counts, and a needs-attention count. Tasks waiting on
+   availability, running/cap counts, and a needs-attention count. *Amended
+   2026-09-05 (issue #324): the running count is the daemon's `slots.used`
+   (§11, §13.2) — every task holding a slot, `awaiting_input` and fan-out lanes
+   included — not a walk of the listed rows, which can see neither. It grows
+   the clauses that explain it when they are non-zero, `3/6 running · 2 lanes ·
+   1 on input`, dropping each at zero so an ordinary board is unchanged and
+   shedding them last-first on a narrow panel. The needs-attention count is
+   untouched: a task on a question is counted in both, being at once a slot
+   holder and a person's problem.* Tasks waiting on
    a human (`awaiting_input`, `awaiting_gate`, `blocked`) are pinned to the top
    with a distinct badge, and the TUI rings the terminal bell when a task enters
    `awaiting_input` — most terminals flash/badge the window even unfocused
@@ -6584,6 +6805,15 @@ stream for the live tail.
 	   top of the timeline. The Output tab's `←`/`→` are unchanged and still
 	   reach every attempt: a fold is a fact about the timeline pane, not about
 	   the task.
+	   *Amended 2026-09-05 (issue #322):* a `fan_out` step whose lanes are
+	   running is **on** this timeline — §7.6's park opens the round's row — and
+	   its `running` row is annotated with what its subtree is doing, since the
+	   step itself executes none of the work. The annotation is the `children`
+	   rollup §13.2 serves on the task (`2 blocked`, `3/5 done`), rendered live
+	   in the same words the board's `awaiting_children (2 blocked)` uses, never
+	   a count frozen into the row at spawn. The round is named beside it only
+	   when no round tier above the row already names it. Everything else on the
+	   row is unchanged, and no other step type is annotated.
    **Diff** renders the task's grouped git diff. Each owns the whole task body;
    `tab`/`shift+tab` and `[`/`]` walk them, `1`–`4` select directly, and `esc`
    returns to the board. The attempt selection persists across tabs.*
@@ -6622,6 +6852,45 @@ stream for the live tail.
    and the Pull Request tab is not. Neither writes to **GitHub**; task 068
    decision 1 settled that merge, close, re-run and comment will, and 068.4 is
    where they land and where decision record row 11 is rewritten.*
+   *Amended 2026-09-05 (issue #323): a **Step Details** tab, selected by `6`,
+   which **supersedes task 068.3's placement** above — it is inserted ahead of
+   Pull Request rather than appended after it, so Pull Request answers to `7`.
+   What 068.3 was protecting survives whole: the digits bind to tabs and not to
+   positions, and Step Details is unconditional, so no tab's number moves when
+   the pull-request tab is absent — `6` is Step Details either way, and `7` does
+   nothing when nothing is linked, exactly as `6` did before it. The conditional
+   tab stays **last** on the strip, so the strip's shape and the cycle are
+   unchanged. What is genuinely paid is that `6` changes meaning once, for a
+   reader with a linked pull request who had learned the old number; that cost
+   was accepted deliberately, and it is why this is written as a supersession
+   rather than a restatement.
+   The tab answers "what was **this attempt** actually given", which no client
+   could answer at all: it renders the selected attempt's recorded input and
+   resolution (§5.4) in four groups — **Input** (the rendered prompt or script,
+   the rendered `check:`, the result summary, with the appended
+   `<previous-attempt-failure>` block marked as daemon-authored and the 64 KiB
+   cut said out loud when the row carries the marker), **Resolution**
+   (agent/model/effort each with the §8.6 level that supplied it, permission
+   mode, both timeouts, the resolved shell, the working directory, and the §7.9
+   `resolved_from` include chain read from the snapshot), **Control flow** (what
+   the `if:` rendered to, the iteration and total, this iteration's `for_each`
+   item and the resolved list, and the task's own fan-out lane id) and
+   **Outcome** (tokens, cost, active duration, human wait, both exit codes,
+   failure and skip reason, the edit+retry badge, the transcript path).
+   A nil recorded field renders as *not recorded* rather than as an empty body:
+   drawing a pre-migration attempt as though it had been handed nothing is the
+   one thing this tab must not say, and an empty render is said differently.
+   The layout is the Task Details inspector's — a sidebar against an
+   independently scrolled content pane — but the sidebar lists **attempts**, and
+   the selection is the workspace's shared attempt cursor and not a second one
+   (task 049 decision 4): arriving from Output or Diff lands on the attempt
+   already being read, `←`/`→` still move it, and `↑`/`↓` move it here too while
+   `pgup`/`pgdn` scroll the facts. The tab is about the **open task's own**
+   attempts; a lane's inputs are read by opening the lane, which `l` and `U`
+   already make a short trip. Task Details' workflow-snapshot section, which
+   renders each step's *un-rendered* `prompt`/`run`/`instructions`, stays exactly
+   as it is — the two are the template and the substitution, and seeing both is
+   the point.*
    *Amended 2026-08-26 (task 036): the attempt line gains two
    fields.* The step's own **status message** (§5.4) renders last on the line,
    in its own style and behind a glyph, so it reads as a quotation from the step
@@ -6759,6 +7028,17 @@ stream for the live tail.
      parent's own section — branch, linked pull request and its state, from one
      project listing. Lane rows carry **no checks**: checks stay one call for
      one task, and `l` opens the lane, whose own tab has them.
+
+   *Amended 2026-09-05 (task 089, issue #330).* The **Output** tab's border
+   title carries the view 9 in-progress indicator while the attempt it is
+   showing is still live — beside the tab strip, the level and the follow state,
+   which is where this workspace already keeps its live state and the one spot
+   visible at every scroll position. It draws on Output only, never on Diff, and
+   the gate is that the attempt is **live** rather than that its step is an
+   `agent` step: a long `command` step's pane is silent for exactly the same
+   reason and for exactly as long. A workspace whose displayed attempt has
+   finished arms no repaint.
+
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
@@ -6825,6 +7105,11 @@ stream for the live tail.
    terminal the project list remains as a rail while the selected repository's
    configuration, execution defaults, current workload, or add/edit form uses
    the focused surface (task 020, added 2026-08-20).
+   *Amended 2026-09-05 (issue #324): the `running / cap` column and the rail's
+   workload line render the project row's own `slots_used` (§13.2), so the
+   numerator is counted the way the scheduler applies that cap — lanes and
+   `awaiting_input` included — rather than from the root-only task list the
+   view also holds.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry
@@ -7056,6 +7341,20 @@ stream for the live tail.
    left to remove, or — after a handoff — the task owns it, and the daemon's
    own refusal (§13.2) says the same thing from the other side.
 
+   *Amended 2026-09-05 (task 089, issue #330).* A `running` row's state cell
+   carries the view 9 in-progress indicator's moving frame **beside** the
+   `running` label, never instead of it: the cell is a fixed-width column
+   rendered through this board's shared state vocabulary, and swapping one
+   state's word for a glyph would break that vocabulary for that state alone.
+   The repaint it drives is also what makes the **last-activity cell advance**
+   while a chat is running — that cell already rendered `now - updated_at`, and
+   `updated_at` is written only on a state change, so for a running chat it was
+   already time-since-the-turn-started and was simply never redrawn. No column,
+   DTO or endpoint changes. `idle`, `awaiting_input`, `archived` and
+   `handed_off` rows do not animate, `awaiting_input` for view 9's reason — it
+   is waiting on a human, not working, and this header already badges it — and a
+   board with nothing running arms no repaint.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -7137,6 +7436,29 @@ stream for the live tail.
    composer that grew is a body that shrank — and the footer still carries one
    element per *rendered* line, the border's two rows included.
 
+   *Amended 2026-09-05 (task 089, issue #330).* A running turn carries an
+   **in-progress indicator** — one moving glyph and an elapsed clock,
+   `⠋ working… 14s` — for the **whole** time it is in `running`, not only until
+   its first chunk arrives. It sits in the footer, above the composer and beside
+   the note line, and not inline at the end of the turn's body: the body
+   scrolls, and a reader who has scrolled up is exactly the reader who needs to
+   be told that waiting is still the right thing to do. The frame advances every
+   120 ms; the clock is derived from the client's own clock on each render and
+   is spelled in this section's one duration vocabulary (`14s`, `2m03s`,
+   `1h04m`). The elapsed half is load-bearing on its own: a number that advances
+   is proof of life in a screenshot or a scrollback, where an animation is not.
+   It is gone the moment the turn reaches `done`, `failed`, `interrupted` or
+   `awaiting_input` — an `awaiting_input` turn is waiting on the human, not
+   working, and the header already says `waiting on you` — and a chat with no
+   running turn arms **no** repaint at all.
+
+   This does **not** contradict the "never a spinner" rule four paragraphs
+   above, and the two are never in force for the same turn. That rule is about a
+   send the daemon **refused**: a `409 chat_cap_reached` produces no turn, and a
+   client must not draw a pending anything for work that will never happen. This
+   indicator draws only for a turn the daemon is holding in `running` — state
+   the daemon does have and has told the client about.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -7146,7 +7468,12 @@ task 051, 2026-08-29, added the Workflow tab). *Amended 2026-08-31 (task
 068.3): six on a task whose pull request is linked, five on one whose is not.
 The Pull Request tab is conditional, so the strip's length is a property of the
 task rather than a constant of the view, and the tab cycle walks the strip as it
-stands rather than a fixed count.* Views 3–7 are
+stands rather than a fixed count.*
+*Amended 2026-09-05 (issue #323): **seven** on a task whose pull request is
+linked, six on one whose is not — Step Details is unconditional and takes `6`,
+and the conditional tab stays last and takes `7`. Everything the sentence above
+says about the strip's length being a property of the task, and about the cycle
+walking the strip as it stands, is unchanged.* Views 3–7 are
 full-screen takeovers reached from the command palette (view 7 added
 2026-08-29 by task 052.6).
 

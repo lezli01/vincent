@@ -9,9 +9,108 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Added
+
+- **An in-progress indicator, for as long as the work is actually running.**
+  A moving braille frame and an elapsed clock — `⠋ working… 14s` — now say that
+  an agent is working, on all four surfaces that used to go silent while it did:
+  the chat workspace, the chats board, the task workspace's output pane and
+  `vincent chat send`.
+
+  It is shown for the **whole** time a turn or an attempt is in `running`, not
+  only until the first chunk arrives. That is the part that matters: at the
+  `quiet` level the output pane drops tool calls and their results, so a turn
+  busy running tools for minutes used to render nothing new the whole time, and
+  a running chat turn that had produced no records yet rendered as literally
+  blank space under your own message. The elapsed clock is load-bearing beside
+  the animation — a number that advances is proof of life in a screenshot or in
+  scrollback, and it answers "how long has this been going" without a second
+  affordance.
+
+  In the **chat workspace** it sits above the composer, so it is there at every
+  scroll position, including after you have scrolled up and paused follow. It
+  disappears the moment the turn reaches `done`, `failed`, `interrupted` or
+  `awaiting_input` — a turn waiting on you is not working, and the header
+  already says so. On the **chats board** the frame appears beside a running
+  row's `running` label, and that row's "last activity" cell now advances
+  instead of standing still. In the **task workspace** it rides in the output
+  pane's border title while the attempt on screen is live — for a `command`
+  step as much as an `agent` one, since both are silent for the same reason.
+
+  A screen with nothing running repaints no more often than it did before: the
+  animation is armed only while something is actually running, and stops when it
+  ends.
+
+- **`vincent chat send` no longer waits in silence**, and prints exactly the
+  same bytes as before when you are not watching it. The indicator goes to
+  **stderr** only — the agent's answer is stdout and only stdout — and it is
+  suppressed entirely under `--json` and whenever stderr is not a terminal, so a
+  piped or redirected send is byte-for-byte what it always was. The line is
+  erased before anything else is written, so no spinner residue can land in
+  front of the answer or an error.
+
 ## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
 ### Added
+
+- **A Step Details tab, `6` in the task workspace, showing what each attempt was
+  actually *given*.** Until now a step's rendered input was recorded nowhere: the
+  prompt an `agent` step received after `{{ .Task.Description }}`,
+  `{{ .Steps.plan.Result }}` and the rest of the context were bound existed only
+  inside the agent process, because the claude adapter passes it on **stdin** and
+  so not even the `debug: true` argv note in the transcript carried it. When a
+  step misbehaved you could read what it *did* and see the workflow's template,
+  but not the substitution in between — which is exactly where a bad render hides.
+
+  Each attempt now records the bytes it was handed and the resolution behind them,
+  and the tab reads them back in four groups. **Input** — the rendered prompt or
+  shell script and the rendered `check:` command, with the
+  `<previous-attempt-failure>` block a retry carries marked as vincent's own
+  addition rather than the workflow's. **Resolution** — agent, model and effort
+  each with the level that supplied it (`step`, `task`, `workflow`, `adapter`),
+  the permission mode, both timeouts, the resolved shell, the working directory
+  and the `include` chain the step came from; the permission mode, timeout and
+  shell had been visible only under `debug: true`. **Control flow** — what an
+  `if:` guard *rendered to*, so a `skipped` row says more than "by condition", the
+  loop iteration and total, this iteration's `for_each` item and the whole
+  resolved list. **Outcome** — tokens, cost, active duration, human wait, both
+  exit codes, failure and skip reason, the edit+retry badge and the transcript
+  path.
+
+  These are recorded at the moment the engine renders them, not re-derived when
+  you open the tab, which is the difference between a record and a guess:
+  `config.yaml` hot-reloads and a task's agent/model/effort overrides are
+  patchable, so asking again later can name a timeout or a level that had nothing
+  to do with the attempt you are reading. The record is on the row before the
+  process starts, so it is there while the attempt is still `running` and it
+  survives a crash — the attempt finalized as `interrupted` is the one you most
+  want it for. It is also **display-only**: an `if:` guard is still re-evaluated
+  every time it is reached, and nothing reads the recorded value back to decide
+  anything.
+
+  The tab's sidebar lists attempts and shares the workspace's attempt cursor, so
+  arriving from Output or Diff lands on the attempt you were already reading and
+  `←`/`→` keep moving it; `↑`/`↓` move it here too and `pgup`/`pgdn` scroll the
+  facts. Task Details' workflow snapshot, which shows the *un-rendered* template,
+  is untouched — the two together are the template and the substitution.
+
+  **The Pull Request tab moves from `6` to `7`.** It is still conditional and
+  still last on the strip, so it still costs nothing when there is no linked pull
+  request: `6` is Step Details whether or not that tab is there, and `7` does
+  nothing when nothing is linked, exactly as `6` did before.
+
+  Two limits are worth knowing. Each recorded field is capped at **64 KiB**, cut
+  on a rune boundary, and the tab says on screen when a record was cut rather than
+  quietly showing a prefix. And attempts that ran before this release recorded
+  nothing, so the tab reads `not recorded (this attempt predates the record)`
+  rather than drawing an empty prompt as though the step had been handed nothing.
+
+  A rendered prompt is the substituted text, so a secret interpolated into one is
+  now in the database as well as in the transcript, and `vincent daemon backup`
+  copies both. [Security model](docs/security-model.md) says so where it lists
+  what is out of scope.
 
 - **A `quiet` level, below `compact`, for reading a chat as a conversation.**
   The verbosity cycle `v` walks in the task workspace's output pane and
@@ -931,6 +1030,44 @@ list with the user-facing context a commit subject cannot carry.
   filesystem and the shell, and that is all it claims to bound.
 
 ### Fixed
+
+- **The board header said `1/6 running` while every slot was taken.** The
+  header's numerator, the projects view's `running / cap` column and the quit
+  reminder each counted `state == "running"` over the task list the client
+  holds — which is roots only, by design. So a fan-out lane, an ordinary task
+  admitted under the same cap, was a held slot with no row to count, and a task
+  parked on a question was subtracted from nothing despite its agent process
+  being alive. With six lanes running under two parked parents the header read
+  `0/6`, a new task sat in `queued`, and the one number that answers "why is
+  nothing starting" said there were six free slots.
+
+  The daemon serves the count now, from the same query the scheduler admits
+  against: `GET /v1/info` carries `slots` and every project row carries
+  `slots_used`, so a client renders the figure instead of re-deriving a
+  definition it has no rows to apply. The header explains itself when the
+  numerator cannot match what is on screen — `3/6 running · 2 lanes · 1 on
+  input` — dropping each clause at zero, so an ordinary board reads exactly as
+  it did, and shedding them on a narrow terminal. A task on a question counts in
+  both the slot count and the needs-attention badge, which is what it is. The
+  header now refreshes on task events rather than only on connect, so the number
+  is live while a fan-out fills the pool.
+
+- **A running `fan_out` step was missing from the Steps & Attempts timeline.**
+  While its lanes worked, the parent task carried no step run for the fan-out
+  at all, so the last row on the timeline was the step *before* it and a task
+  busy fanning work out looked exactly like one that had stalled — while the
+  header on the same screen read `awaiting_children · step 4/7`, pointing at a
+  step the timeline underneath could not draw. The row now appears when the
+  lanes are spawned and stays for as long as they run, in `vincent task show`
+  and `GET /v1/tasks/{id}/steps` as well as the TUI, and it is annotated in the
+  workspace with what the subtree is doing — `2 blocked`, `3/5 done` — in the
+  same words the board already uses beside `awaiting_children`.
+
+  It is still one row per round: the fan-out opens it when it spawns, and the
+  merge that ends the round finishes that same row rather than adding a second
+  one, so nothing about rounds, retries or the join changes. `vincent doctor`
+  does not report such a parent as unreconciled, and admission does not refuse
+  it.
 
 - **Editing a `prompt:` or a `run:` in the workflow editor destroyed it.** The
   row opened in a single-line text field, which collapses newlines by design;

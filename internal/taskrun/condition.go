@@ -17,16 +17,19 @@ import (
 // of those by construction (decision 7).
 
 // evaluateGuard renders a step's `if:` against the §8.4 context and returns
-// its verdict. The context is assembled fresh on every call: a verdict is
-// never cached and never persisted (decision 10), so a human `retry` after
-// fixing a workflow re-asks the question rather than replaying an answer
-// computed against facts that have since changed.
-func (r *Runner) evaluateGuard(ctx context.Context, env *stepEnv) (bool, error) {
+// its verdict along with what it rendered to. The context is assembled fresh
+// on every call: a verdict is never cached and never persisted (decision 10),
+// so a human `retry` after fixing a workflow re-asks the question rather than
+// replaying an answer computed against facts that have since changed.
+//
+// The rendered string travels to the row beside the verdict (issue #323) and
+// is display only — see recordDecisionRow.
+func (r *Runner) evaluateGuard(ctx context.Context, env *stepEnv) (bool, string, error) {
 	rc, err := r.renderContext(ctx, env, r.nextAttempt(ctx, env), stepOutcome{})
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	return workflow.Evaluate("if", env.step.If, rc)
+	return workflow.EvaluateRendered("if", env.step.If, rc)
 }
 
 // nextAttempt is the attempt number a guard renders `.Step.Attempt` as: the
@@ -44,19 +47,30 @@ func (r *Runner) nextAttempt(ctx context.Context, env *stepEnv) int {
 
 // recordGuardOutcome writes the one row a guard decision produces. Every
 // caller is terminal for the step: it skipped, it stopped, or it passed.
+//
+// rendered is what evaluateGuard's `if:` rendered to — recorded beside the
+// raw template, which is what summary keeps carrying.
 func (r *Runner) recordGuardOutcome(
-	ctx context.Context, env *stepEnv, state store.StepRunState, skipReason, failureReason string,
+	ctx context.Context, env *stepEnv, state store.StepRunState,
+	skipReason, failureReason, rendered string,
 ) {
-	r.recordDecisionRow(ctx, env, state, skipReason, failureReason, env.step.If)
+	r.recordDecisionRow(ctx, env, state, skipReason, failureReason, env.step.If, &rendered)
 }
 
 // recordDecisionRow writes a row for a step that reached a verdict without
 // running a process. summary is what the detail view shows in place of output:
 // the guard itself for a guarded step, a sentence for a fan-out that selected
 // no lanes.
+//
+// rendered is what the guard rendered to, or nil for a row no guard produced.
+// It is **display only** (issue #323): task 015 decision 10 refuses a
+// persisted verdict consulted later, and nothing in this engine reads the
+// column back — `retry` and §12.4 recovery both re-enter evaluateGuard and
+// re-render the guard against current facts. What is stored is the value a
+// human needs to see next to the raw template, not an answer.
 func (r *Runner) recordDecisionRow(
 	ctx context.Context, env *stepEnv, state store.StepRunState,
-	skipReason, failureReason, summary string,
+	skipReason, failureReason, summary string, rendered *string,
 ) {
 	finished := time.Now()
 	run := &store.StepRun{
@@ -70,14 +84,19 @@ func (r *Runner) recordDecisionRow(
 		// `break` and `condition` verdict ahead of the iteration it belongs
 		// to, and hide a `stopped` row from the derivation that resumes the
 		// loop.
-		Iteration:     env.iteration(),
-		LoopItem:      env.loopItem(),
-		LoopTotal:     env.loopTotal(),
-		State:         state,
-		SkipReason:    skipReason,
-		FailureReason: failureReason,
-		ResultSummary: truncate(summary, resultSummaryLimit),
-		FinishedAt:    &finished,
+		Iteration: env.iteration(),
+		LoopItem:  env.loopItem(),
+		LoopTotal: env.loopTotal(),
+		// Both written at insert and never updated, the rule loop_total
+		// already follows: they are what *this* verdict saw (§7.8, issue
+		// #323).
+		RenderedIf:      rendered,
+		RenderedForEach: env.loopForEach(),
+		State:           state,
+		SkipReason:      skipReason,
+		FailureReason:   failureReason,
+		ResultSummary:   truncate(summary, resultSummaryLimit),
+		FinishedAt:      &finished,
 	}
 	if err := r.deps.Store.CreateStepRun(r.persistCtx(), run); err != nil {
 		env.log.Error("record guard outcome", "state", state, "error", err)

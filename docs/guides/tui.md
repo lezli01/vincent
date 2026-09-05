@@ -60,6 +60,15 @@ One row per task: id, project, title, state, current step `k/n` with its name,
 elapsed, and cost so far. The header shows daemon status, agent availability,
 running-versus-cap counts, and how many tasks need a human.
 
+The running count is the daemon's own figure: every task holding a concurrency
+slot — `awaiting_input` as well as `running`, fan-out lanes as well as the root
+tasks the board lists — which is the number the scheduler admits against, so a
+full pool reads as full. Because that can exceed what is on screen, the header
+explains itself when it has to: `3/6 running · 2 lanes · 1 on input`, with each
+clause dropped when it is zero and shed on a terminal too narrow for it. A task
+on a question is counted in both the slot count and the needs-attention badge,
+being at once a slot holder and something waiting on you.
+
 Three behaviors matter:
 
 - **Tasks waiting on a human are pinned to the top** with a distinct badge —
@@ -289,7 +298,36 @@ unlinking lives there and on the Pull Request tab.
 **Output** gives the selected attempt's live tail or historical transcript the
 entire view. Its selector names the attempt and its position in the task; use
 `←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-**Pull Request** is the sixth tab, and the only one that is sometimes not
+While the attempt on screen is still running, the pane's title carries the same
+in-progress indicator the [chat workspace](#chat-workspace) draws — a turning
+glyph and an elapsed clock, `⠋ working… 14s` — beside the level and the follow
+state, so an attempt that is thinking rather than printing is told apart from a
+screen that has stopped repainting. It is on Output only, never on Diff, and it
+follows the attempt being *live* rather than its step being an `agent` step: a
+long `command` step's pane goes quiet for exactly the same reason.
+
+**Step Details** answers the question the other tabs cannot: what this attempt
+was actually *given*. Task Details shows the workflow's template; this shows the
+substitution — the rendered prompt an agent step handed its CLI, the rendered
+script a command step handed its shell, the rendered `check:` command. On a retry
+the block vincent appends about the previous failure is marked as vincent's, so
+you can tell it from what the workflow wrote. Beneath the input come the
+resolution (agent, model and effort each with the level that supplied it — step,
+task, workflow or adapter — the permission mode, both timeouts, the shell, the
+working directory and the `include` chain the step came from), the control flow
+(what an `if:` guard rendered to, the loop iteration and total, this iteration's
+`for_each` item and the whole resolved list) and the outcome (tokens, cost,
+durations, exit codes, reasons, the transcript path).
+
+These are the values the attempt ran with, recorded when it ran — not recomputed
+when you open the tab, which would quietly disagree once you edited `config.yaml`
+or patched the task's agent. The sidebar lists attempts and shares the selection
+with Output and Diff, so arriving here lands on the attempt you were reading.
+Two things it says out loud rather than hiding: a record cut at its 64 KiB
+ceiling, and an attempt from before vincent recorded any of this, which reads
+`not recorded` instead of showing an empty prompt.
+
+**Pull Request** is the last tab, and the only one that is sometimes not
 there: it appears when the task has a pull request linked and `github.enabled`
 is on. It carries the pull request's facts and one row per check on its head
 commit — name, state, and the check's own page — read live from the daemon on
@@ -336,6 +374,16 @@ A multi-round `fan_out` (§7.6) gets the same tier under a different word: its
 rounds read `round 0`, `round 1`, … — 0-based, because that is the number the
 transcript file and the log line use — and the same keys open and close them.
 
+A `fan_out` step is on the timeline **while its lanes run**, not only once they
+have merged: the row opens `running` when the round is spawned and the merge
+that ends the round finishes that same row. Since the step itself executes none
+of the work, its running row carries what the subtree is doing beside the state
+— `2 blocked`, `3 at a gate`, `3/5 done`, the same words the board puts beside
+`awaiting_children` — read live from the task rather than frozen in when the
+lanes were spawned. The round is named on the row (`round 0 · 2 blocked`) only
+when the timeline is not already drawing `round N` tiers above it. No other
+step type is annotated.
+
 The board's and the header's step column say the same thing more briefly: a
 task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it is
 on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the
@@ -358,7 +406,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
 | `1`–`5` | Steps & Attempts / Task Details / Output / Diff / Workflow |
-| `6` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
+| `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
+| `pgup`/`pgdn` | On Step Details, scroll the facts |
 | `enter` | From Steps & Attempts, open the selected attempt in Output — or open the folded iteration/round tier the cursor is on |
 | `space` | On Steps & Attempts, open or close the iteration/round tier the cursor is in |
 | `←`/`→` | On Steps & Attempts, close / open that tier |
@@ -917,6 +968,10 @@ current tasks fill the main pane; `a` or `enter` puts the existing add/edit form
 in that same pane. This keeps the project you were looking at visible while you
 change its configuration.
 
+The `running / cap` column counts slots the way the board header does — lanes
+and tasks on a question included — so the numerator is the one the per-project
+cap is actually applied against.
+
 ![The Projects view: seven registered repositories with their running counts and
 caps on the left, and the selected project's path, branch convention, execution
 defaults and current workload on the right](../assets/tui-projects.png)
@@ -1265,6 +1320,14 @@ last-activity cell shows *when* the chat ended rather than a duration that keeps
 counting; and `a` on such a row declines with a note instead of asking to remove
 a worktree that is already gone, or that a handoff gave to a task.
 
+A `running` row moves. Its state cell carries a turning glyph **beside** the
+`running` label rather than instead of it — the cell is a fixed-width column in
+the same state vocabulary every other row uses — and its last-activity cell
+counts up while the turn runs instead of standing still. Nothing else animates:
+an `awaiting_input` chat is waiting on you rather than working, and the header
+already badges it. A board with no running chat repaints no more often than it
+did before.
+
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes
 project, title, agent, model, effort and base branch; `ctrl+s` creates and drops
@@ -1327,6 +1390,19 @@ The composer sits inside a titled `message` box, so the field you type into does
 not read as one more row of the conversation. The border comes out of the pane's
 height rather than being added on top of it: the screen is the same height it
 always was, and the hint line is still the last row of it.
+
+**While a turn runs, an in-progress indicator sits just above that box** — a
+turning glyph and an elapsed clock, `⠋ working… 14s` — for the whole time the
+turn is in `running`, not only until its first chunk arrives. That is the point
+of it: at `quiet` a turn that spends minutes running tools renders no new line
+in the conversation at all, and this is the only thing on the screen that moves.
+It is above the composer rather than inline at the end of the turn, because the
+conversation scrolls and a reader who has scrolled up — follow paused, `⏸` in
+the header — is exactly the reader who needs telling that waiting is still the
+right thing to do. It is gone the moment the turn reaches `done`, `failed`,
+`interrupted` or `awaiting_input`; a turn waiting on you is not working, and the
+header already says `waiting on you`. A chat with no running turn causes no
+periodic repaint.
 
 | Key | Does |
 |---|---|

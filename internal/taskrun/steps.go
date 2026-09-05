@@ -31,13 +31,31 @@ func (r *Runner) runAgentStep(
 	}
 	prompt = workflow.AppendFailureBlock(prompt, rc.Step.Attempt, rc.LastFailure)
 
+	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
+	permission := resolvePermission(env.wf, env.step)
+	// What this attempt was *given*, recorded before anything is spawned
+	// (issue #323). The bytes are the ones the adapter receives: the §8.4
+	// render plus the daemon's appended `<previous-attempt-failure>` block,
+	// which is the half a re-render can never reproduce — it draws on the
+	// previous attempt's row, and that row is exactly what a human is trying
+	// to explain when they ask what the agent was told.
+	//
+	// The permission mode, timeout and working directory ride along on the
+	// same call: until now they existed only in the `debug: true` transcript
+	// note below, which is to say on 1% of runs.
+	r.recordInput(env, run, store.StepRunInput{
+		Prompt:         &prompt,
+		PermissionMode: string(permission),
+		TimeoutMS:      timeout.Milliseconds(),
+		WorkDir:        env.task.WorktreePath,
+	})
+
 	adapter, ok := r.deps.Agents.Get(sel.Agent)
 	if !ok {
 		tr.Note("error", map[string]any{"error": "agent " + sel.Agent + " is not registered"})
 		return stepOutcome{state: store.StepFailed, reason: ReasonAgentUnavailable}
 	}
 
-	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
 	inputTimeout := resolveInputTimeout(env.step, env.wf.Defaults, r.deps.Config())
 	onInput := resolveInputPolicy(env.step, env.wf.Defaults)
 
@@ -78,7 +96,7 @@ func (r *Runner) runAgentStep(
 		WorkDir:        env.task.WorktreePath,
 		Model:          sel.Model,
 		Effort:         sel.Effort,
-		PermissionMode: resolvePermission(env.wf, env.step),
+		PermissionMode: permission,
 		OnInput:        onInput,
 		// Always explicit, even when the policy inherits everything (T4.23).
 		// Passing nil would hand the adapter the ambient environment again,
@@ -127,7 +145,7 @@ func (r *Runner) runAgentStep(
 			"agent":           sel.Agent,
 			"model":           sel.Model,
 			"effort":          sel.Effort,
-			"permission_mode": string(resolvePermission(env.wf, env.step)),
+			"permission_mode": string(permission),
 			"on_input":        string(onInput),
 			"workdir":         env.task.WorktreePath,
 			"argv":            redactMCPToken(handle.Argv(), mcpSrv),
@@ -419,6 +437,14 @@ func (r *Runner) runCommandStep(
 		return stepOutcome{state: store.StepFailed, reason: ReasonTemplateError, result: err.Error()}
 	}
 	timeout := resolveTimeout(env.step, env.wf.Defaults, r.deps.Config())
+	// The script as the shell receives it, not the template (issue #323).
+	// The shell itself is recorded further in, by runShellCommand: it is
+	// platform-resolved (§8.3) and not known yet.
+	r.recordInput(env, run, store.StepRunInput{
+		Run:       &script,
+		TimeoutMS: timeout.Milliseconds(),
+		WorkDir:   env.task.WorktreePath,
+	})
 	return r.runShellCommand(ctx, env, run, tr, shellCommand{
 		phase:    "run",
 		script:   script,
@@ -439,13 +465,20 @@ func (r *Runner) runCheck(
 		tr.Note("error", map[string]any{"error": err.Error()})
 		return stepOutcome{state: store.StepFailed, reason: ReasonTemplateError, result: err.Error()}
 	}
+	checkTimeout := resolveCheckTimeout(env.step, r.deps.Config())
+	// Lands on the row the body's script already wrote, later in the same
+	// attempt — which is what RecordStepRunInput being additive is for.
+	r.recordInput(env, run, store.StepRunInput{
+		Check:          &script,
+		CheckTimeoutMS: checkTimeout.Milliseconds(),
+	})
 	checkOutcome := r.runShellCommand(ctx, env, run, tr, shellCommand{
 		phase:    "check",
 		script:   script,
 		shellPin: env.step.Shell,
 		env:      commandEnv(r.stepBaseEnv(env.task.ID), rc, env.step.Env),
 		workDir:  env.task.WorktreePath,
-		timeout:  resolveCheckTimeout(env.step, r.deps.Config()),
+		timeout:  checkTimeout,
 	})
 	outcome.checkExitCode = checkOutcome.exitCode
 	if checkOutcome.state == store.StepSucceeded {
@@ -457,6 +490,23 @@ func (r *Runner) runCheck(
 	outcome.reason = checkFailureReason(checkOutcome.reason)
 	outcome.output = checkOutcome.output
 	return outcome
+}
+
+// recordInput records what one attempt was handed, at the moment the engine
+// rendered or resolved it (issue #323).
+//
+// Through persistCtx, not the step's context: a task cancelled mid-render
+// must still record what it was given, which is the attempt whose input a
+// human most wants to read. A failure here is logged and swallowed — the
+// record is context about the run, never the run itself, and failing a step
+// because its provenance would not persist would be the tail wagging the dog.
+func (r *Runner) recordInput(env *stepEnv, run *store.StepRun, in store.StepRunInput) {
+	if run == nil || run.ID == 0 {
+		return
+	}
+	if err := r.deps.Store.RecordStepRunInput(r.persistCtx(), run.ID, in); err != nil {
+		env.log.Warn("record step input", "run_id", run.ID, "error", err)
+	}
 }
 
 // checkFailureReason keeps interruption and timeout distinguishable while
@@ -507,6 +557,10 @@ func (r *Runner) runShellCommand(
 		Name string
 		Path string
 	}{Name: shellName, Path: argv[0]}
+	// The resolved shell, recorded from the same name the note carries
+	// (issue #323). One row, one shell: a check reuses the step's `shell:`
+	// pin, so whichever phase reaches here first records the same answer.
+	r.recordInput(env, run, store.StepRunInput{Shell: sh.Name})
 	tr.Note("command_started", map[string]any{
 		"phase": sc.phase, "shell": sh.Name, "command": sc.script, "cwd": sc.workDir,
 	})

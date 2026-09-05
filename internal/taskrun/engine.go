@@ -578,10 +578,10 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 		// runAttempt (§7.7). A verdict is computed fresh here and nowhere
 		// else (decision 10).
 		if env.step.Guarded() || env.step.Type == workflow.StepCondition {
-			pass, err := r.evaluateGuard(ctx, env)
+			pass, rendered, err := r.evaluateGuard(ctx, env)
 			switch {
 			case err != nil:
-				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError)
+				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError, rendered)
 				r.fail(task, ReasonConditionError, env.log, "evaluate step guard", err)
 				return
 			case env.step.Type == workflow.StepCondition && !pass:
@@ -590,20 +590,20 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				// staying put, so completion runs the same path every other
 				// finished task runs and no client reads a done task as
 				// mid-run.
-				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
+				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
 				w.persist(ctx, len(w.steps), env.log)
 				env.log.Info("workflow stopped early by a condition step")
 				w.finish()
 				return
 			case env.step.Type == workflow.StepCondition:
-				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
+				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
 				w.persist(ctx, pos+1, env.log)
 				continue
 			case !pass:
 				// Skip and carry on: the step did not run, the workflow did
 				// not stop, and the row says which of the two kinds of skip
 				// this was (decision 9).
-				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "")
+				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "", rendered)
 				w.persist(ctx, pos+1, env.log)
 				env.log.Info("step skipped by its guard")
 				continue
@@ -964,6 +964,26 @@ func (r *Runner) previousFailure(ctx context.Context, env *stepEnv, lastAttempt 
 // persist. previous carries the last failed attempt, which feeds
 // `.LastFailure` and the §8.4 failure block.
 func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, previous stepOutcome) stepOutcome {
+	// A `fan_out` step's row is opened by the park that spawned this round and
+	// finalized by the merge admission that ends it — one round, one row
+	// (§7.6, task 080 decision 3). This attempt therefore continues the open
+	// row rather than starting a second one, and it continues it under the
+	// number the park gave it: §12.2 names a transcript after (iteration,
+	// attempt), so a fresh number here would name a file the row does not
+	// point at, and the human retry after a `merge_conflict` block would take
+	// that number next and truncate it.
+	adopt := false
+	if env.step.Type == workflow.StepFanOut {
+		open, oErr := r.deps.Store.OpenStepRun(ctx, env.ref())
+		if oErr != nil {
+			env.log.Error("look up the parked fan-out row", "error", oErr)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
+		if open != nil {
+			adopt, attempt = true, open.Attempt
+		}
+	}
+
 	rc, err := r.renderContext(ctx, env, attempt, previous)
 	if err != nil {
 		env.log.Error("assemble template context", "error", err)
@@ -979,12 +999,24 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		Iteration: env.iteration(),
 		LoopItem:  env.loopItem(),
 		LoopTotal: env.loopTotal(),
-		State:     store.StepRunning,
+		// The enclosing loop's resolved list, written at insert beside the
+		// item this iteration drew from it and never updated — LoopTotal's
+		// rule, for the same reason (issue #323).
+		RenderedForEach: env.loopForEach(),
+		State:           store.StepRunning,
 	}
 	var sel agent.Selection
 	if env.step.Type == workflow.StepAgent {
-		sel = resolveSelection(env.step, env.wf.Defaults, env.task)
+		var src agent.Sources
+		sel, src = resolveSelection(env.step, env.wf.Defaults, env.task)
 		run.Agent, run.Model, run.Effort = sel.Agent, sel.Model, sel.Effort
+		// Which §8.6 level supplied each of those, recorded rather than
+		// re-resolved on read: `config.yaml` hot-reloads (§12.3) and a task's
+		// overrides are patchable, so asking the resolver later can name a
+		// level that had nothing to do with this attempt.
+		run.AgentSource = string(src.Agent)
+		run.ModelSource = string(src.Model)
+		run.EffortSource = string(src.Effort)
 	}
 
 	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, env.iteration(), attempt, subStepIDOf(env))
@@ -1010,16 +1042,31 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	// insert drains it in the same transaction — it marks the attempt the
 	// human edited, not the automatic retries that may follow, and a crash
 	// cannot clear it without recording it.
-	create := r.deps.Store.CreateStepRunTakingOverride
-	if env.step.ID == RepairStepID {
-		// A repair is not the attempt the human edited (task 025): draining
-		// their override onto it would record the edit against a row that is
-		// not the step, and take it away from the retry that is.
-		create = r.deps.Store.CreateStepRun
+	if adopt {
+		// The same drain, onto the row the park opened: a join is exactly a
+		// step a human retries after editing. A repair never reaches here —
+		// its rows sit under a reserved step id (task 025), which no park
+		// shares, so the carve-out below still owns that case alone.
+		taken, aErr := r.deps.Store.AdoptOpenStepRun(r.persistCtx(), run)
+		if aErr != nil {
+			env.log.Error("adopt the parked fan-out row", "error", aErr)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
+		adopt = taken
 	}
-	if err := create(r.persistCtx(), run); err != nil {
-		env.log.Error("create step run", "error", err)
-		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+	if !adopt {
+		create := r.deps.Store.CreateStepRunTakingOverride
+		if env.step.ID == RepairStepID {
+			// A repair is not the attempt the human edited (task 025):
+			// draining their override onto it would record the edit against a
+			// row that is not the step, and take it away from the retry that
+			// is.
+			create = r.deps.Store.CreateStepRun
+		}
+		if err := create(r.persistCtx(), run); err != nil {
+			env.log.Error("create step run", "error", err)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
 	}
 	tr.Note("step_started", map[string]any{
 		"task_id": env.task.ID, "step_id": env.step.ID, "attempt": attempt,

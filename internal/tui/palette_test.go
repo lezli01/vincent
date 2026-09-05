@@ -28,7 +28,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 	contexts := []bindingContext{
 		ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
 		ctxNewTask, ctxProjects, ctxWorkflows, ctxWorkflowGraph, ctxWorkflowEditor,
-		ctxTaskWorkflow, ctxTaskPull,
+		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull,
 		ctxDaemon, ctxPullRequests,
 		ctxChats, ctxChat, ctxNewChat,
 	}

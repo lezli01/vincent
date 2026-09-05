@@ -158,9 +158,10 @@ func (p *projectsView) loadCmd() tea.Cmd {
 		if err != nil {
 			return projectsLoadedMsg{err: err}
 		}
-		// The running counts come from the task list, and the global cap
-		// from info; neither failing is a reason to hide the projects, so
-		// only the project fetch can fail the load.
+		// The slot counts ride on the project rows themselves. The task
+		// list feeds the workload panel and the global cap comes from
+		// info; neither failing is a reason to hide the projects, so only
+		// the project fetch can fail the load.
 		tasks, taskErr := client.ListTasks(ctx, apiclient.ListTasksOptions{})
 		if taskErr != nil {
 			tasks = nil
@@ -459,27 +460,22 @@ func (p *projectsView) restoreSelection(rows []apiclient.Project) {
 	p.tbl.SetCursor(0)
 }
 
-// runningIn counts the tasks holding a slot in one project.
-func (p *projectsView) runningIn(id int64) int {
-	n := 0
-	for _, t := range p.tasks {
-		if t.ProjectID == id && t.State == stateRunning {
-			n++
-		}
-	}
-	return n
-}
-
 // capCell renders the cap the way the scheduler actually applies it. A
 // project with no cap of its own is not capped at the global figure — it
 // competes for the whole pool — so the two read differently.
+//
+// The numerator is the daemon's own figure (`slots_used`, §11), never a walk
+// of p.tasks: the cap counts every task in a slot-holding state —
+// `awaiting_input` as well as `running`, lanes as well as roots
+// (store.CountSlotHoldersByProject) — while /v1/tasks omits fan-out lanes by
+// default (task 014 decision 13, §13.2). Counting here undercounted the cap
+// by exactly the tasks holding it up (issue #324).
 func (p *projectsView) capCell(pr apiclient.Project) string {
-	running := p.runningIn(pr.ID)
 	if pr.MaxParallelTasks != nil {
-		return fmt.Sprintf("%d / %d", running, *pr.MaxParallelTasks)
+		return fmt.Sprintf("%d / %d", pr.SlotsUsed, *pr.MaxParallelTasks)
 	}
 	if p.infoOK {
-		return fmt.Sprintf("%d / — (global %d)", running, p.globalCap)
+		return fmt.Sprintf("%d / — (global %d)", pr.SlotsUsed, p.globalCap)
 	}
-	return fmt.Sprintf("%d / —", running)
+	return fmt.Sprintf("%d / —", pr.SlotsUsed)
 }

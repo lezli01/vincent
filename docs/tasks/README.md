@@ -101,6 +101,8 @@ the living engineering specification records implementation contracts.
 | [085](085-chat-workspace-ux.md) | A fourth output level, `quiet`, below `compact`; the chat's user turn as a right-aligned bubble; the composer inside a titled border | ✅ done (1/1) |
 | [086](086-editor-and-graph-misreport.md) | Make the workflow editor's value column a schema-keyed table with a coverage test, carry `lane:`/`max_lanes:` through to the client, and draw a fan-out derived from a lane template | ✅ done (2/2) |
 | [087](087-editor-cannot-write.md) | Give the workflow editor a multi-line pane, descents into every block, `a`/`d`/`K`/`J` structural edits and pickers for the closed sets | ✅ done (4/4) |
+| [088](088-step-details-tab.md) | Record what each attempt was *given* — the rendered prompt, script, `check:`, `if:` and `for_each` list, plus the §8.6 provenance, the permission mode, the timeouts, the shell and the working directory — and read it back on a Step Details tab bound to `6`, moving Pull Request to `7` | ✅ done (3/3) |
+| [089](089-in-progress-indicator.md) | One animated in-progress indicator — a braille frame and an elapsed clock — for the chat workspace, the chats board, the task workspace's output pane and `vincent chat send` | ✅ done (1/1) |
 
 ## How to add and update a task document
 

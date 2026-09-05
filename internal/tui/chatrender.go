@@ -239,6 +239,23 @@ func (v *chatView) footerLines(width int) []string {
 		}
 		out = append(out, " "+style.Render(v.note))
 	}
+	// The in-progress indicator (task 089), here and not inline at the end of
+	// the running turn's body: the body scrolls, and a reader who has scrolled
+	// up — follow off, `⏸` in the header — is exactly the reader who needs to
+	// be told that waiting is still the right thing to do. The footer is drawn
+	// at every scroll position and it is next to where they type.
+	//
+	// It also survives the bodyDirty gate, which is what makes it useful at
+	// levelQuiet: a turn that spends minutes running tools renders no new body
+	// lines at all, and the frame here is the only thing that moves.
+	//
+	// This is not the "never a spinner" case §15 rules out. That rule is about
+	// a send the daemon *refused* — a 409 chat_cap_reached, a turn that will
+	// never exist and must not be drawn as pending. This draws only for a turn
+	// the daemon has in `running`, so the two never apply to the same turn.
+	if turn := v.runningTurn(); turn != nil {
+		out = append(out, " "+styleDim.Render(ProgressLabel(v.frame, v.now().Sub(turn.StartedAt))))
+	}
 	// One element per rendered line, not one per widget (issue #299): the
 	// composer is SetHeight(3) and bubbles' viewport pads its View to that
 	// height, and the border around it adds two more, so a joined string would
