@@ -713,6 +713,14 @@ Watch the children with `vincent task ls --include-children`, or press `L` on
 the parent in the TUI. They are hidden from the board by default; the parent's
 `awaiting_children (2 blocked)` summary is how you learn one of them needs you.
 
+**When lanes block.** A blocked lane never settles, so the join stays open and
+the parent stays parked. Fix what they failed on, then retry the **parent** —
+`r` in the TUI, `vincent task retry <parent>`, `POST /v1/tasks/{id}/retry`:
+one call re-admits every blocked lane under it, at any depth for a nested
+fan-out, and the parent stays where it is until they finish. A lane you
+**cancelled** is not re-admitted by anything; that one still fails the join with
+`lane_failed`.
+
 **When every lane is guarded off**, the step chooses nothing and simply
 advances. A fan-out whose conditions all said "not this time" decided
 correctly.

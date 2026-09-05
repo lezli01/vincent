@@ -720,7 +720,7 @@ selected on the board it acts on all of them; see
 |---|---|---|
 | `a` | Approve the gate | `awaiting_gate` |
 | `x` | Reject the gate | `awaiting_gate` |
-| `r` | Retry the blocked step | `blocked` |
+| `r` | Retry the blocked step, or cascade the retry to every blocked lane under a parked fan-out parent | `blocked`, `awaiting_children` |
 | `R` | Repair with an agent — a one-off run in this task's worktree | `blocked` |
 | `E` | Edit the step's prompt or command in `$EDITOR`, then retry | `blocked` |
 | `s` | Skip the current step | `blocked`, `awaiting_gate` |

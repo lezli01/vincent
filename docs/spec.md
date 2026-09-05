@@ -800,7 +800,7 @@ times before it is archived, and each is a **round** with its own rows (§5.4).
 | `running` | A step process is executing (or about to) | **yes** |
 | `awaiting_gate` | Paused at a `manual` step, waiting for approval | no |
 | `awaiting_input` | The running agent emitted a structured input request (§7.4); its live process is idle, waiting for the answer | **yes** |
-| `awaiting_children` | A `fan_out` step's lanes are running as child tasks (§7.6, *added 2026-08-17, task 014*); the parent owns no process. Cancel is the only human action — approve/reject/skip would be meaningless, which is why this is not a reuse of `awaiting_gate` | no |
+| `awaiting_children` | A `fan_out` step's lanes are running as child tasks (§7.6, *added 2026-08-17, task 014*); the parent owns no process. Cancel and retry are the only human actions — approve/reject/skip would be meaningless, which is why this is not a reuse of `awaiting_gate`. *Amended 2026-09-05 (task 090, issue #328): `retry` from here is the cascade to every blocked descendant, and writes nothing to the parent's own row* | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human decision | no |
 | `paused` | Engineer-requested soft pause (takes effect at the next step boundary) | no |
 | `done` | All steps succeeded; worktree/branch retained for inspection | no |
@@ -814,8 +814,8 @@ times before it is archived, and each is a **round** with its own rows (§5.4).
 | `cancel` (abort) | queued, running, awaiting_input, awaiting_gate, awaiting_children, blocked, paused | Kills any running process (graceful term, then kill after 10 s; `taskkill /T /F` on Windows); → `aborted`. *Amended 2026-08-17 (task 014): from `awaiting_children` it cascades to every unsettled descendant, whose branches and worktrees survive.* |
 | `pause` | queued, running | `running`: finishes the current step, then holds; → `paused`. The request is persisted, so it survives a daemon crash; every other human action clears it |
 | `resume` | paused | → `queued` |
-| `retry` | blocked | Re-runs the failed step (fresh attempt, retry counter reset); → `queued` |
-| `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun |
+| `retry` | blocked, awaiting_children | Re-runs the failed step (fresh attempt, retry counter reset); → `queued`. *Amended 2026-09-05 (task 090, issue #328): from `awaiting_children` it is the **cascade** — every `blocked` descendant at any depth is re-admitted in one call, and the parked parent's own row is not written at all: no transition, no `task.state_changed` whose from and to are equal, and no `retry_cursor_at` stamp, because nothing was retried on the parent and stamping the cursor would hand the join a fresh §7.2 budget nobody asked for. A `blocked` parent takes both: its own `blocked → queued`, then the same cascade over anything blocked beneath it. The count is reported as `retried_descendants` (§13.2). This amends [task 014 decision 22](tasks/014-workflow-fan-out.md) in scope, not in substance — an `aborted` lane is still fixed by hand before the parent is retried, because nothing here re-admits an aborted task* |
+| `edit + retry` | blocked | Overrides the step's prompt/command **in this task's snapshot only**, then retries; the override is recorded on the StepRun. *Amended 2026-09-05 (task 090): every override is a `400` from `awaiting_children` — a parked parent's cursor is a `fan_out` step, which carries no prompt or command to rewrite, and `branch_override` would rename the branch every live lane holds as its `base_branch`* |
 | `repair` | blocked | *Added 2026-08-24 (task 025).* Runs one ad-hoc agent, prompted by the operator, in the task's existing worktree and branch (§7.2, §8.6, §13.2); → `queued`, and back to `blocked` at the same step with the same reason when it exits. It decides nothing about the blocked step and does not consume its retry budget |
 | `skip` | blocked, awaiting_gate | Marks the step `skipped`, advances to the next step; → `queued` |
 | `answer` | awaiting_input | Delivers the answer to the pending input request into the live agent session (§7.4); → `running` (step clock resumes) |
@@ -1401,7 +1401,12 @@ does not finish until every lane is merged.
   done" and block `lane_failed` on work about to run perfectly well, which
   `retry` cannot clear because the lanes are still not done. A `blocked`, `awaiting_gate`
   or `paused` lane holds the join open until a human resolves it; the §13.2
-  `children` rollup is what makes that visible.
+  `children` rollup is what makes that visible. *Amended 2026-09-05 (task 090,
+  issue #328): for a `blocked` lane that resolution is one
+  `POST /v1/tasks/{id}/retry` on the **parent** — it re-admits every blocked
+  descendant at any depth and leaves the parent parked, and the tree converges
+  from there whatever order the scheduler wakes it in, because this guard is
+  exactly what parks it again while a re-admitted lane is unsettled.*
 
   *Amended 2026-09-02 (task 081).* Under `schedule: eager` an unsettled lane is
   the ordinary case, not a lost transition, so that guard is barrier-only and a
@@ -5673,11 +5678,19 @@ POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
 POST   /v1/tasks/{id}/retry            { prompt_override?, run_override?, branch_override? }
-                                        (blocked only). branch_override renames the task's
-                                        branch before re-admission — the recovery path for a
-                                        branch_exists block (§10, task 001); it is validated
-                                        and collision-checked exactly as creation is, and
-                                        unlike the other two it does not touch the snapshot
+                                        (blocked, awaiting_children). branch_override renames
+                                        the task's branch before re-admission — the recovery
+                                        path for a branch_exists block (§10, task 001); it is
+                                        validated and collision-checked exactly as creation is,
+                                        and unlike the other two it does not touch the
+                                        snapshot. *Added 2026-09-05 (task 090, issue #328):*
+                                        from awaiting_children the call cascades to every
+                                        blocked descendant instead and writes nothing to the
+                                        parked parent, which comes back still
+                                        awaiting_children; all three overrides are a 400 from
+                                        that state. The response is the ordinary task object
+                                        plus retried_descendants, always present and 0 when
+                                        nothing was cascaded
 POST   /v1/tasks/{id}/repair           { prompt, agent?, model?, effort? }
                                         (blocked only; added 2026-08-24, task 025). Runs one
                                         ad-hoc agent in the task's existing worktree and

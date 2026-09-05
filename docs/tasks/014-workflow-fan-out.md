@@ -485,6 +485,15 @@ decision 21 just refused.
 spawn path and a "which child is the current attempt at lane X" question that
 `lane_id` cannot answer without becoming versioned.
 
+*Amended in scope 2026-09-05 by
+[090](090-cascading-fan-out-retry.md) (issue #328).* The remedy above is still
+the truth for an **`aborted`** lane, and the beat still stands — nothing
+re-admits an aborted task. What 090 adds is the case this decision did not
+consider: a merely **`blocked`** lane, which never reaches `mergeSet` at all
+because the join parks rather than failing on it. `retry` is now legal from
+`awaiting_children` and cascades to every blocked descendant, so the parent's
+retry is what fixes those children instead of following them.
+
 ### 23. A child's title is `{parent title} — {lane id}`, and its branch is named the ordinary way
 
 *2026-08-17.* Nothing about child branch naming is special-cased: a child is an

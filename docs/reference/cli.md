@@ -757,8 +757,9 @@ vincent task retry <id> [--branch NAME] [--prompt TEXT | --prompt-file FILE]
                         [--run CMD | --run-file FILE] [--json]
 ```
 
-Re-runs the step the task blocked on. Valid from `blocked`. With no flags it is
-a plain retry; the flags change what gets re-run, and each one is a different
+Re-runs the step the task blocked on. Valid from `blocked`, and from
+`awaiting_children`, where it means something else — see below. With no flags it
+is a plain retry; the flags change what gets re-run, and each one is a different
 kind of recovery:
 
 | Flag | What it does |
@@ -776,6 +777,22 @@ The check failed because the fixture path is wrong on Windows.
 Use filepath.Join rather than a slash-separated literal.
 EOF
 ```
+
+On a fan-out parent parked in `awaiting_children` the same command **cascades**:
+the parent has no step of its own to re-run, so one call re-admits every blocked
+lane beneath it, at any depth, and the parent stays parked while they run. Fix
+the cause first — each lane's step re-runs exactly as it was — then:
+
+```console
+$ vincent task retry 42
+task 42 is now awaiting_children
+  2 blocked descendants re-admitted
+```
+
+All three flags are refused from that state: a `fan_out` step carries no prompt
+or command to edit, and `--branch` would rename the branch every live lane holds
+as its base. Edit the blocked lane itself instead. With `--json` the count is
+`retried_descendants` beside the task's own fields.
 
 ### `vincent task repair`
 

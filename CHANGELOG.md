@@ -51,6 +51,26 @@ list with the user-facing context a commit subject cannot carry.
   erased before anything else is written, so no spinner residue can land in
   front of the answer or an error.
 
+### Fixed
+
+- **A fan-out whose lanes blocked is no longer a dead end.** A blocked lane
+  never settles, so the join stayed open and the parent sat in
+  `awaiting_children` — a state that offered exactly one human action, `cancel`,
+  which throws the run away. `retry` on the parent was refused with a `409`, and
+  the only way out was to retry each lane by hand, once per lane and once per
+  level of a nested fan-out. Now one `retry` on the **parent** re-admits every
+  blocked descendant beneath it at any depth: `r` in the TUI,
+  `vincent task retry <id>`, or `POST /v1/tasks/{id}/retry`, which answers with
+  `retried_descendants` — the number of lanes it woke — and both clients say how
+  many. The parent itself is not touched: it stays parked, keeps its retry
+  cursor, and the join closes on its own once the lanes finish, so fixing the
+  cause once and retrying at the root is now the whole recovery. A lane you
+  **cancelled** is still yours to deal with — nothing re-admits an aborted task,
+  and that join still fails with `lane_failed`. The three override flags
+  (`--prompt`, `--run`, `--branch`) are refused on a parked parent with a `400`,
+  and the TUI stops offering `E` there: a `fan_out` step has no text to edit, so
+  the edit belongs on the blocked lane.
+
 ## [0.8.0](https://github.com/lezli01/vincent/compare/v0.7.0...v0.8.0) (2026-09-04)
 
 ### Added

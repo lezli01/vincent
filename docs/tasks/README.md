@@ -103,6 +103,7 @@ the living engineering specification records implementation contracts.
 | [087](087-editor-cannot-write.md) | Give the workflow editor a multi-line pane, descents into every block, `a`/`d`/`K`/`J` structural edits and pickers for the closed sets | ✅ done (4/4) |
 | [088](088-step-details-tab.md) | Record what each attempt was *given* — the rendered prompt, script, `check:`, `if:` and `for_each` list, plus the §8.6 provenance, the permission mode, the timeouts, the shell and the working directory — and read it back on a Step Details tab bound to `6`, moving Pull Request to `7` | ✅ done (3/3) |
 | [089](089-in-progress-indicator.md) | One animated in-progress indicator — a braille frame and an elapsed clock — for the chat workspace, the chats board, the task workspace's output pane and `vincent chat send` | ✅ done (1/1) |
+| [090](090-cascading-fan-out-retry.md) | One `retry` on a fan-out parent parked in `awaiting_children` re-admits every blocked descendant, without writing the parent's own row | ✅ done (5/5) |
 
 ## How to add and update a task document
 

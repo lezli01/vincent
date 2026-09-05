@@ -1311,7 +1311,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/cancel` | most states | |
 | `/pause` | queued, running | |
 | `/resume` | paused | |
-| `/retry` | blocked | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request |
+| `/retry` | blocked, awaiting_children | `{ prompt_override?, run_override?, branch_override? }` — `branch_override` renames the branch before re-admission, which is how a `branch_exists` block is recovered. **`409`** on a task created from a pull request: renaming its branch would detach it from that pull request. From `awaiting_children` it means the cascade below, and all three overrides are a **`400`** |
 | `/repair` | blocked | `{ prompt, agent?, model?, effort? }` — runs one ad-hoc agent in the task's existing worktree, then returns the task to `blocked` at the same step with the same reason |
 | `/skip` | blocked, awaiting_gate | |
 | `/approve` | awaiting_gate | |
@@ -1322,6 +1322,25 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
+
+`/retry` on a `fan_out` parent parked in `awaiting_children` is a **cascade**:
+the parent has no step of its own to re-run, so the one call re-admits every
+`blocked` descendant beneath it, at any depth, and the parent's own row is not
+written — it comes back still `awaiting_children`, and the join closes on its
+own once the lanes finish. The response is the ordinary task object with one
+extra field:
+
+```json
+{ "id": 42, "state": "awaiting_children", "retried_descendants": 2 }
+```
+
+`retried_descendants` is always present — `0` for an ordinary blocked retry
+with nothing blocked under it — so a client never has to tell "no cascade" from
+"an old daemon". It is a count and not a list of ids: re-fetch
+`GET /v1/tasks?parent_id={id}` if you need them. A `blocked` parent does both,
+its own retry and then the cascade. A descendant that is `awaiting_gate`,
+`paused` or itself parked is left alone; an `aborted` lane is not re-admitted
+by anything, and is still fixed and retried by hand.
 
 `/repair` runs one throwaway agent against a blocked task's worktree — the
 escape hatch for a block that `retry` cannot clear because the worktree itself
