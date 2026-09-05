@@ -715,7 +715,11 @@ func newTaskRetryCmd() *cobra.Command {
 			"--prompt and --run are edit+retry: the text replaces that step's prompt or\n" +
 			"command in this task's workflow snapshot, and in no other task's. --branch\n" +
 			"renames the task's branch before the retry re-admits it, which is how a\n" +
-			"branch_exists block is cleared without losing the task or its transcripts.",
+			"branch_exists block is cleared without losing the task or its transcripts.\n" +
+			"On a fan-out parent parked in awaiting_children it cascades instead: every\n" +
+			"blocked descendant is re-admitted in one call and the parent stays parked,\n" +
+			"and the three override flags are refused, since a fan_out step carries no\n" +
+			"text to edit.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := taskID(args[0])
@@ -730,12 +734,37 @@ func newTaskRetryCmd() *cobra.Command {
 				return err
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				t, err := c.Retry(ctx, id, ov)
+				t, retried, err := c.Retry(ctx, id, ov)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
 				}
-				return printTaskAction(cmd, t)
+				if retried == 0 {
+					// The ordinary retry: nothing happened that the task's own
+					// state does not already say.
+					return printTaskAction(cmd, t)
+				}
+				if wantJSON(cmd) {
+					// The daemon's own shape: the task's fields at the top
+					// level beside the count, so a script reads the cascade
+					// here rather than only from the human line.
+					return emitJSON(cmd.OutOrStdout(), struct {
+						apiclient.Task
+						RetriedDescendants int `json:"retried_descendants,omitempty"`
+					}{Task: t, RetriedDescendants: retried})
+				}
+				out := cmd.OutOrStdout()
+				if _, err := fmt.Fprintf(out, "task %d is now %s\n", t.ID, t.State); err != nil {
+					return err
+				}
+				// A cascade leaves the parent where it was, so the lanes it
+				// re-admitted are the only part of it worth printing.
+				noun := "descendants"
+				if retried == 1 {
+					noun = "descendant"
+				}
+				_, err = fmt.Fprintf(out, "  %d blocked %s re-admitted\n", retried, noun)
+				return err
 			})
 		},
 	}

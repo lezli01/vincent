@@ -232,8 +232,11 @@ func (d *detail) retryCmd(override apiclient.Override) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
-		task, err := client.Retry(ctx, id, override)
-		return actionResultMsg{taskID: id, action: apiclient.ActionRetry, task: task, err: err}
+		task, retried, err := client.Retry(ctx, id, override)
+		return actionResultMsg{
+			taskID: id, action: apiclient.ActionRetry,
+			task: task, retried: retried, err: err,
+		}
 	}
 }
 

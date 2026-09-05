@@ -169,7 +169,14 @@ func TestEditRetryPicksRunForCommandSteps(t *testing.T) {
 }
 
 // TestEditRetryUnavailableOnAGate: a manual step has no prompt and no
-// command, so the key does nothing and says why.
+// command, so `E` is not offered and does not act.
+//
+// It is silent about it. The bar never advertised the key here — its hint has
+// always been gated on there being text to edit — and task 088 gave the key
+// itself the same check, because the other step with nothing to edit is the
+// `fan_out` a parked parent sits on, where the daemon answers an override
+// with a 400. An unadvertised key that does nothing is what every other one
+// in the view does.
 func TestEditRetryUnavailableOnAGate(t *testing.T) {
 	rec := &retryRecorder{}
 	d := editorDetail(t, rec.client(t), "whatever", nil)
@@ -181,8 +188,8 @@ func TestEditRetryUnavailableOnAGate(t *testing.T) {
 	if len(rec.calls) != 0 {
 		t.Fatalf("a gate was edit+retried: %v", rec.calls)
 	}
-	if !strings.Contains(d.actions.status, "gate") {
-		t.Errorf("status = %q, want it to name the reason", d.actions.status)
+	if d.actions.status != "" {
+		t.Errorf("status = %q, want the key to stay silent", d.actions.status)
 	}
 	if strings.Contains(strings.Join(d.detailHints(), " "), "edit+retry") {
 		t.Error("the bar offers edit+retry on a step with nothing to edit")

@@ -27,7 +27,12 @@ type actionResultMsg struct {
 	// it. It rides the result rather than an event because `archived` is
 	// terminal and this is the one place a human is waiting for the answer.
 	branch apiclient.BranchOutcome
-	err    error
+	// retried is how many blocked descendants a retry on a parked fan_out
+	// parent re-admitted (task 088). Like branch it is a consequence the
+	// task's own row does not show — the parent comes back unchanged, still
+	// `awaiting_children` — and no other action sets it.
+	retried int
+	err     error
 }
 
 // actionKeys binds §15's keys to the actions they can mean. `p` is pause or
@@ -210,41 +215,48 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 	}
 	a.setStatus(action+"…", false)
 	return func() tea.Msg {
-		task, branch, err := callActionWithTimeout(client, id, action, force)
-		return actionResultMsg{taskID: id, action: action, task: task, branch: branch, err: err}
+		task, branch, retried, err := callActionWithTimeout(client, id, action, force)
+		return actionResultMsg{
+			taskID: id, action: action, task: task,
+			branch: branch, retried: retried, err: err,
+		}
 	}
 }
 
 // callAction is the one place a §6 action becomes an HTTP call, shared by the
 // single-task path and the bulk one so the two cannot drift into meaning
 // different things by the same key.
-func callAction(ctx context.Context, client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, error) {
+func callAction(ctx context.Context, client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, int, error) {
 	switch action {
 	case apiclient.ActionCancel:
 		task, err := client.Cancel(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionPause:
 		task, err := client.Pause(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionResume:
 		task, err := client.Resume(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionRetry:
-		task, err := client.Retry(ctx, id, apiclient.Override{})
-		return task, apiclient.BranchOutcome{}, err
+		// From a parked fan_out parent this is the cascade (task 088); the
+		// key is the same one, because available_actions is what says the
+		// action is on offer and the daemon is what decides it means.
+		task, retried, err := client.Retry(ctx, id, apiclient.Override{})
+		return task, apiclient.BranchOutcome{}, retried, err
 	case apiclient.ActionSkip:
 		task, err := client.Skip(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionApprove:
 		task, err := client.Approve(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionReject:
 		task, err := client.Reject(ctx, id)
-		return task, apiclient.BranchOutcome{}, err
+		return task, apiclient.BranchOutcome{}, 0, err
 	case apiclient.ActionArchive:
-		return client.Archive(ctx, id, force)
+		task, branch, err := client.Archive(ctx, id, force)
+		return task, branch, 0, err
 	default:
-		return apiclient.Task{}, apiclient.BranchOutcome{}, fmt.Errorf("unknown action %q", action)
+		return apiclient.Task{}, apiclient.BranchOutcome{}, 0, fmt.Errorf("unknown action %q", action)
 	}
 }
 
@@ -254,6 +266,12 @@ func callAction(ctx context.Context, client *apiclient.Client, id int64, action 
 func (a *actionBar) applyResult(msg actionResultMsg) {
 	if msg.err == nil {
 		status := msg.action + " · now " + msg.task.State
+		// A cascade leaves the parent exactly where it was, so "now
+		// awaiting_children" is all the task row can say about it; the lanes
+		// it re-admitted are the part a human acted for (task 088).
+		if msg.retried > 0 {
+			status += " · " + plural(msg.retried, "lane", "lanes") + " re-admitted"
+		}
 		// The branch is the one consequence of an archive that is invisible
 		// afterwards — the task row no longer names a worktree to go look in —
 		// so it is said here or nowhere (§10, task 008).

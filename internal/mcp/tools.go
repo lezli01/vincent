@@ -153,7 +153,7 @@ var routes = []Route{
 	{http.MethodPost, "/v1/tasks/{id}/cancel", "task_cancel", "Cancel a task (§6). Kills its live agent process if it has one."},
 	{http.MethodPost, "/v1/tasks/{id}/pause", "task_pause", "Request a pause at the next step boundary (§6)."},
 	{http.MethodPost, "/v1/tasks/{id}/resume", "task_resume", "Resume a paused task (§6)."},
-	{http.MethodPost, "/v1/tasks/{id}/retry", "task_retry", "Retry a blocked task's failed step (§6)."},
+	{http.MethodPost, "/v1/tasks/{id}/retry", "task_retry", "Retry a blocked task's failed step, or cascade a retry to every blocked descendant of a fan-out parent parked in awaiting_children (§6). Body: {prompt_override|run_override|branch_override}, none of which a parked parent accepts."},
 	{http.MethodPost, "/v1/tasks/{id}/repair", "task_repair", "Re-run a blocked task's step with a repair prompt (§6). Body: {prompt}."},
 	{http.MethodPost, "/v1/tasks/{id}/skip", "task_skip", "Skip a blocked task's failed step and continue (§6)."},
 	{http.MethodPost, "/v1/tasks/{id}/approve", "task_approve", "Approve a task waiting at a human gate (§7.3)."},

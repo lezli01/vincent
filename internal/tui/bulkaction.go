@@ -38,6 +38,10 @@ type bulkResultMsg struct {
 	// branches counts archives that deleted the task's branch (§10, task 008)
 	// — the one consequence of an archive that is invisible afterwards.
 	branches int
+	// lanes counts the blocked descendants a cascading retry re-admitted
+	// across the whole batch (task 088), for the same reason: a parked parent
+	// comes back in the state it went in, so its row says nothing about it.
+	lanes int
 }
 
 type bulkFailure struct {
@@ -66,13 +70,14 @@ func (a *actionBar) dispatchBulk(client *apiclient.Client, ids []int64, action s
 	return func() tea.Msg {
 		msg := bulkResultMsg{action: action, force: force, total: len(ids)}
 		for _, id := range ids {
-			_, branch, err := callActionWithTimeout(client, id, action, force)
+			_, branch, retried, err := callActionWithTimeout(client, id, action, force)
 			switch {
 			case err == nil:
 				msg.done = append(msg.done, id)
 				if branch.Result == apiclient.BranchDeleted {
 					msg.branches++
 				}
+				msg.lanes += retried
 			case isDirtyWorktree(action, err):
 				msg.dirty = append(msg.dirty, id)
 			default:
@@ -83,7 +88,7 @@ func (a *actionBar) dispatchBulk(client *apiclient.Client, ids []int64, action s
 	}
 }
 
-func callActionWithTimeout(client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, error) {
+func callActionWithTimeout(client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 	defer cancel()
 	return callAction(ctx, client, id, action, force)
@@ -110,6 +115,9 @@ func bulkSummary(msg bulkResultMsg) string {
 	parts := []string{fmt.Sprintf("%s · %d of %d", msg.action, len(msg.done), msg.total)}
 	if msg.branches > 0 {
 		parts = append(parts, fmt.Sprintf("%s deleted", plural(msg.branches, "branch", "branches")))
+	}
+	if msg.lanes > 0 {
+		parts = append(parts, plural(msg.lanes, "lane", "lanes")+" re-admitted")
 	}
 	if n := len(msg.dirty); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d need force", n))
