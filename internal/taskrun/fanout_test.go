@@ -125,14 +125,73 @@ func TestFanOutSpawnsLanesAndMerges(t *testing.T) {
 		}
 	}
 	// And the join is visible as a step, not an invisible git operation.
+	//
+	// Exactly one row, because one round is one row (task 080 decision 3):
+	// the park that spawned the lanes opened it and the merge admission that
+	// ended the round adopted it, keeping its id and its attempt number
+	// (issue #322). Two rows here would mean the merge inserted beside the
+	// park instead of adopting.
 	var sawJoin bool
+	var buildRows []store.StepRun
 	for _, run := range h.stepRuns(t, task.ID) {
-		if run.StepID == "build" && run.State == store.StepSucceeded {
+		if run.StepID != "build" {
+			continue
+		}
+		buildRows = append(buildRows, run)
+		if run.State == store.StepSucceeded {
 			sawJoin = true
 		}
 	}
 	if !sawJoin {
 		t.Error("the fan_out step recorded no successful step run")
+	}
+	if len(buildRows) != 1 {
+		t.Errorf("the fan_out step has %d rows for one round, want 1: %+v", len(buildRows), buildRows)
+	} else if buildRows[0].Attempt != 1 || buildRows[0].Iteration != 0 {
+		t.Errorf("the merge row is attempt %d of iteration %d, want attempt 1 of iteration 0 — "+
+			"the park's number is the one §12.2 named the transcript after",
+			buildRows[0].Attempt, buildRows[0].Iteration)
+	}
+}
+
+// TestFanOutReParkWritesNoSecondRow: a round's row is opened once and once
+// only. An eager parent is woken once per lane settling (§7.6, task 081) and
+// re-parks whenever it finds nothing to merge; a row per wake would spend the
+// merge's retry budget on admissions that did no work, because every attempt
+// count is scoped by `stepEnv.ref()` and the merge runs with `MaxRetries = 0`.
+// A park that finds the round already open therefore writes nothing — and a
+// park for the *next* round writes its own row, because iteration is the round
+// (task 080 decision 3).
+func TestFanOutReParkWritesNoSecondRow(t *testing.T) {
+	h := newEngineHarness(t)
+	ctx := t.Context()
+
+	snapshot := fanOutSnapshot([2]string{"api", "api.txt"}, [2]string{"docs", "docs.txt"})
+	parent := h.createTask(t, snapshot)
+	env := h.firstStepEnv(t, parent, snapshot)
+
+	for range 3 {
+		h.runner.openRoundRow(ctx, env, 0)
+	}
+	h.runner.openRoundRow(ctx, env, 1)
+
+	var rounds []int
+	for _, run := range h.stepRuns(t, parent.ID) {
+		if run.StepID != "build" {
+			continue
+		}
+		if run.State != store.StepRunning || run.Attempt != 1 {
+			t.Errorf("round %d row is %s attempt %d, want a running attempt 1",
+				run.Iteration, run.State, run.Attempt)
+		}
+		if run.PID != nil || run.ContainerID != nil || run.ResultSummary != "" {
+			t.Errorf("the park row journaled something it must not: pid=%v container=%v summary=%q",
+				run.PID, run.ContainerID, run.ResultSummary)
+		}
+		rounds = append(rounds, run.Iteration)
+	}
+	if len(rounds) != 2 || rounds[0] != 0 || rounds[1] != 1 {
+		t.Errorf("fan_out rows at iterations %v, want one per round: [0 1]", rounds)
 	}
 }
 

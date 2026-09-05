@@ -69,27 +69,117 @@ func (s *Store) CreateStepRun(ctx context.Context, r *StepRun) error {
 // human's override without recording it (phase 2 decision).
 func (s *Store) CreateStepRunTakingOverride(ctx context.Context, r *StepRun) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		var raw sql.NullString
-		if err := tx.QueryRowContext(ctx,
-			`SELECT pending_override_json FROM tasks WHERE id = ?`, r.TaskID).Scan(&raw); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("task %d: %w", r.TaskID, ErrNotFound)
-			}
-			return fmt.Errorf("read pending override: %w", err)
-		}
-		if raw.Valid && raw.String != "" {
-			var ov Override
-			if err := json.Unmarshal([]byte(raw.String), &ov); err != nil {
-				return fmt.Errorf("pending_override_json: %w", err)
-			}
-			r.PromptOverride, r.RunOverride = ov.Prompt, ov.Run
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE tasks SET pending_override_json = NULL WHERE id = ?`, r.TaskID); err != nil {
-				return fmt.Errorf("clear pending override: %w", err)
-			}
+		if err := drainPendingOverride(ctx, tx, r); err != nil {
+			return err
 		}
 		return createStepRun(ctx, tx, r)
 	})
+}
+
+// OpenStepRun returns the still-`running` row at one position, or nil when
+// that position has none.
+//
+// It exists for the `fan_out` step's two-admission shape (§7.6, issue #322):
+// the park that spawns a round opens the round's row and the merge admission
+// that ends the round finalizes that same row, so both halves have to be able
+// to ask whether the round is already open. The park writes nothing when it
+// is — a re-park must spend no retry budget (task 081) — and the merge adopts
+// it rather than inserting a second one (task 080 decision 3).
+//
+// The position is the whole of ref, iteration included, because iteration is
+// the round.
+func (s *Store) OpenStepRun(ctx context.Context, ref StepRef) (*StepRun, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+		WHERE task_id = ? AND step_index = ? AND step_id = ? AND iteration = ? AND state = ?
+		ORDER BY attempt DESC, id DESC LIMIT 1`,
+		ref.TaskID, ref.StepIndex, ref.StepID, ref.Iteration, string(StepRunning))
+	r, err := scanStepRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open step run: %w", err)
+	}
+	return r, nil
+}
+
+// AdoptOpenStepRun hands the still-open row at r's position to the attempt
+// starting now instead of inserting a second one, and reports whether there
+// was such a row. False leaves r untouched, and the caller inserts as usual.
+//
+// One round of a `fan_out` step is one row (task 080 decision 3): the park
+// opens it so the step is on the timeline while its lanes run, and the merge
+// admission for that round adopts it here. The row keeps its id, its attempt
+// number and its `started_at` — the step started when the fan-out began, not
+// when its last lane settled, and the attempt number the park chose is the one
+// §12.2 named that attempt's transcript after. It takes the columns the
+// attempt owns: the transcript path and the agent selection.
+//
+// The pending edit+retry override is drained onto it in the same transaction
+// as the write, for the reason CreateStepRunTakingOverride gives — a join is
+// exactly a step a human retries after editing, and a crash must not clear
+// their override without recording it (phase 2 decision).
+//
+// Nothing killable is written here. §12.4 recovery kills what a `running` row
+// journaled, and there is no process behind a park.
+func (s *Store) AdoptOpenStepRun(ctx context.Context, r *StepRun) (bool, error) {
+	adopted := false
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `SELECT `+stepRunColumns+` FROM step_runs
+			WHERE task_id = ? AND step_index = ? AND step_id = ? AND iteration = ? AND state = ?
+			ORDER BY attempt DESC, id DESC LIMIT 1`,
+			r.TaskID, r.StepIndex, r.StepID, r.Iteration, string(StepRunning))
+		open, err := scanStepRun(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("adopt step run: %w", err)
+		}
+		if err := drainPendingOverride(ctx, tx, r); err != nil {
+			return err
+		}
+		r.ID, r.Attempt, r.StartedAt = open.ID, open.Attempt, open.StartedAt
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE step_runs SET step_type = ?, agent = ?, model = ?, effort = ?,
+				prompt_override = ?, run_override = ?, transcript_path = ?
+			WHERE id = ?`,
+			r.StepType, nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
+			nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
+			r.ID); err != nil {
+			return fmt.Errorf("adopt step run %d: %w", r.ID, err)
+		}
+		adopted = true
+		return nil
+	})
+	return adopted, err
+}
+
+// drainPendingOverride moves the task's pending edit+retry override onto r and
+// clears it. It is called inside the transaction that writes r's row, so the
+// drain and the row it lands on commit together.
+func drainPendingOverride(ctx context.Context, tx *sql.Tx, r *StepRun) error {
+	var raw sql.NullString
+	if err := tx.QueryRowContext(ctx,
+		`SELECT pending_override_json FROM tasks WHERE id = ?`, r.TaskID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("task %d: %w", r.TaskID, ErrNotFound)
+		}
+		return fmt.Errorf("read pending override: %w", err)
+	}
+	if !raw.Valid || raw.String == "" {
+		return nil
+	}
+	var ov Override
+	if err := json.Unmarshal([]byte(raw.String), &ov); err != nil {
+		return fmt.Errorf("pending_override_json: %w", err)
+	}
+	r.PromptOverride, r.RunOverride = ov.Prompt, ov.Run
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tasks SET pending_override_json = NULL WHERE id = ?`, r.TaskID); err != nil {
+		return fmt.Errorf("clear pending override: %w", err)
+	}
+	return nil
 }
 
 // execer is the subset of *sql.DB and *sql.Tx the insert needs.

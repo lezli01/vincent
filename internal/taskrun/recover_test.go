@@ -16,6 +16,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver for the injection connection
@@ -359,6 +360,64 @@ func TestRecoverInterruptsAwaitingInputTogetherWithItsRun(t *testing.T) {
 // filter default that hides lanes from the board must not hide them here
 // (task 014, §7.6). The parent is left alone: `awaiting_children` re-queues
 // through ChildrenSettled, not through Interrupt.
+// TestRecoverInterruptsTheFanOutParkRow: a parent parked in
+// `awaiting_children` owns the `running` row its park opened (§7.6, issue
+// #322). No Interrupt transition re-queues that state — the scheduler wakes
+// the parent when its subtree settles — so the row falls to the sweep that
+// finalizes the leftovers of every other owner, exactly like `awaiting_gate`'s
+// manual row. Nothing is killed: a park journals no pid and no container id,
+// because there is no process behind it.
+//
+// After the sweep the round has no open row, so the next merge admission
+// inserts a fresh one rather than adopting. That is the gate's precedent and
+// costs the round one extra row on the timeline.
+func TestRecoverInterruptsTheFanOutParkRow(t *testing.T) {
+	st, projectID := recoverStore(t)
+	ctx := context.Background()
+	parent := recoverTask(t, st, projectID, store.TaskAwaitingChildren)
+	run := &store.StepRun{
+		TaskID: parent.ID, StepIndex: 0, StepID: "build", StepType: workflow.StepFanOut,
+		Attempt: 1, Iteration: 0, State: store.StepRunning,
+	}
+	if err := st.CreateStepRun(ctx, run); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+
+	requeued, err := Recover(ctx, st, discardLog())
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if requeued != 0 {
+		t.Errorf("Recover re-queued %d tasks; a parked parent is woken by its children", requeued)
+	}
+	got, err := st.GetTask(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.State != store.TaskAwaitingChildren {
+		t.Errorf("parent state = %s, want %s — recovery moves no parked parent",
+			got.State, store.TaskAwaitingChildren)
+	}
+	after, err := st.GetStepRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetStepRun: %v", err)
+	}
+	if after.State != store.StepInterrupted {
+		t.Errorf("park row state = %s, want %s", after.State, store.StepInterrupted)
+	}
+	if after.PID != nil || after.ContainerID != nil {
+		t.Errorf("park row journaled something killable: pid=%v container=%v", after.PID, after.ContainerID)
+	}
+	ref := store.StepRef{TaskID: parent.ID, StepIndex: 0, StepID: "build", Iteration: 0}
+	open, err := st.OpenStepRun(ctx, ref)
+	if err != nil {
+		t.Fatalf("OpenStepRun: %v", err)
+	}
+	if open != nil {
+		t.Errorf("round 0 still has an open row (%d) after recovery", open.ID)
+	}
+}
+
 func TestRecoverReconcilesFanOutLanes(t *testing.T) {
 	st, projectID := recoverStore(t)
 	ctx := context.Background()

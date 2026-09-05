@@ -964,6 +964,26 @@ func (r *Runner) previousFailure(ctx context.Context, env *stepEnv, lastAttempt 
 // persist. previous carries the last failed attempt, which feeds
 // `.LastFailure` and the §8.4 failure block.
 func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, previous stepOutcome) stepOutcome {
+	// A `fan_out` step's row is opened by the park that spawned this round and
+	// finalized by the merge admission that ends it — one round, one row
+	// (§7.6, task 080 decision 3). This attempt therefore continues the open
+	// row rather than starting a second one, and it continues it under the
+	// number the park gave it: §12.2 names a transcript after (iteration,
+	// attempt), so a fresh number here would name a file the row does not
+	// point at, and the human retry after a `merge_conflict` block would take
+	// that number next and truncate it.
+	adopt := false
+	if env.step.Type == workflow.StepFanOut {
+		open, oErr := r.deps.Store.OpenStepRun(ctx, env.ref())
+		if oErr != nil {
+			env.log.Error("look up the parked fan-out row", "error", oErr)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
+		if open != nil {
+			adopt, attempt = true, open.Attempt
+		}
+	}
+
 	rc, err := r.renderContext(ctx, env, attempt, previous)
 	if err != nil {
 		env.log.Error("assemble template context", "error", err)
@@ -1022,16 +1042,31 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	// insert drains it in the same transaction — it marks the attempt the
 	// human edited, not the automatic retries that may follow, and a crash
 	// cannot clear it without recording it.
-	create := r.deps.Store.CreateStepRunTakingOverride
-	if env.step.ID == RepairStepID {
-		// A repair is not the attempt the human edited (task 025): draining
-		// their override onto it would record the edit against a row that is
-		// not the step, and take it away from the retry that is.
-		create = r.deps.Store.CreateStepRun
+	if adopt {
+		// The same drain, onto the row the park opened: a join is exactly a
+		// step a human retries after editing. A repair never reaches here —
+		// its rows sit under a reserved step id (task 025), which no park
+		// shares, so the carve-out below still owns that case alone.
+		taken, aErr := r.deps.Store.AdoptOpenStepRun(r.persistCtx(), run)
+		if aErr != nil {
+			env.log.Error("adopt the parked fan-out row", "error", aErr)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
+		adopt = taken
 	}
-	if err := create(r.persistCtx(), run); err != nil {
-		env.log.Error("create step run", "error", err)
-		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+	if !adopt {
+		create := r.deps.Store.CreateStepRunTakingOverride
+		if env.step.ID == RepairStepID {
+			// A repair is not the attempt the human edited (task 025):
+			// draining their override onto it would record the edit against a
+			// row that is not the step, and take it away from the retry that
+			// is.
+			create = r.deps.Store.CreateStepRun
+		}
+		if err := create(r.persistCtx(), run); err != nil {
+			env.log.Error("create step run", "error", err)
+			return stepOutcome{state: store.StepFailed, reason: ReasonInternalError}
+		}
 	}
 	tr.Note("step_started", map[string]any{
 		"task_id": env.task.ID, "step_id": env.step.ID, "attempt": attempt,
