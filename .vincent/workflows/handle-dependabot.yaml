@@ -1,0 +1,1116 @@
+# handle-dependabot — take one dependabot pull request from "opened" to
+# "merged", or to a legible refusal.
+#
+# ## One task per pull request, created from the pull request
+#
+# This workflow is only correct on a task created with `--github-pull`:
+#
+#     vincent github prs --state open          # find the numbers
+#     vincent task add --project N --github-pull 412 --workflow handle-dependabot
+#
+# That flag is the whole mechanism. A task created that way runs **on the pull
+# request's own head branch** rather than on `vincent/{id}-{slug}` (§13.5), with
+# an upstream, so the worktree already contains dependabot's bump and anything
+# committed here lands on the pull request. Everything below assumes it, and
+# `preflight` refuses the task rather than doing something surprising when it
+# does not hold.
+#
+# It is deliberately **not** a sweep over every open dependabot pull request. A
+# `fan_out` lane's worktree is cut from the *parent's* branch (§7.6), so lanes
+# cannot each check out a different pull request head — the one thing a sweep
+# would need. Each bump also wants its own review and its own merge decision.
+# Five open bumps are five tasks, and the board is the place they belong.
+#
+# ## What it costs
+#
+# The ordinary run — a patch bump that compiles — spends **zero agent
+# sessions**. Two guarded agent steps exist for the two cases a command cannot
+# decide, and both are bounded:
+#
+#   assess   at most 2 sessions, and only for a major (or unparseable) bump
+#   repair   at most 3 sessions, and only when the build actually breaks
+#
+# so **5** is the ceiling before a human retries anything, and 0 is the median.
+#
+# ## What it deliberately does not do
+#
+# When CI goes red on a commit whose build, tests and three-platform lint were
+# all green here, this workflow blocks and a person looks. It does not open a
+# second repair loop against CI the way `github-resolve-issue`'s tail does:
+# that loop exists there because the branch is being rebased and force-pushed
+# under changing bases, which is not what happens to a bump that already passed
+# locally. A flake, an infrastructure outage and a genuinely platform-specific
+# break want different answers, and none of them is another agent session.
+#
+# `wait-checks` and `checks-required` below are the same pattern
+# `github-resolve-issue.yaml` uses, and are inline rather than an `include`
+# for two reasons: there they live inside a `loop` body, which is not a shape
+# that can be factored out into a workflow of its own, and factoring them would
+# mean editing those files, which is not this file's job.
+#
+# ## Scratch
+#
+# State between steps goes in `git rev-parse --git-path vincent-deps` — inside
+# this worktree's own git directory, which is per-worktree, writable, and
+# invisible to `git status`. That is what lets the commit step below use a plain
+# `git add -A` and lets the dirty probe tell the truth, with no ignore rule, no
+# exclude pathspec and no cleanup step to forget.
+
+name: handle-dependabot
+description: Verify a dependabot pull request on its own branch, repair what the bump broke, wait for the required checks, then merge it once you approve.
+
+# `sh`, `awk`, `sed`, `jq` and `gh`, and a `$(...)`-heavy shell throughout.
+platforms: [posix]
+
+fields:
+  - name: pull
+    label: Pull request
+    description: >-
+      The dependabot pull request number. Filled automatically by
+      `vincent task add --github-pull N`, which is also what puts this task on
+      that pull request's head branch — the only branch this workflow is
+      correct on. A command step reads the environment rather than the template
+      context, so this declared field is the only way a `run:` body learns the
+      number.
+    type: integer
+    required: true
+
+  - name: on_red
+    label: When the bump breaks the build
+    description: >-
+      repair = let an agent fix what the new version broke and push the fix to
+      dependabot's branch. That is an authorization, not just a budget: up to
+      three unattended agent sessions write code, and once anything is pushed
+      to a dependabot branch, dependabot stops rebasing that pull request by
+      itself and a later `@dependabot rebase` would force-push the repairs
+      away. report = run the checks, stop on the first red one and leave the
+      pull request untouched for a human. No agent, nothing pushed.
+    type: enum
+    required: true
+    values: [repair, report]
+    default: repair
+
+  - name: merge
+    label: Merge the pull request
+    description: >-
+      gate = once every required check is green, ask for approval and then
+      merge with a merge commit. never = stop after the checks and leave the
+      pull request open, which is how you sweep a batch of bumps for damage
+      without landing any of them. There is no unattended value: merging is the
+      one irreversible thing here and a person authorizes it, matching the rest
+      of this registry.
+    type: enum
+    required: true
+    values: [gate, never]
+    default: gate
+
+defaults:
+  agent: claude
+  timeout: 20m
+  # Zero, and opted into per step, which is the inverse of the usual default
+  # and is what this workflow's step list deserves: almost every command below
+  # either refuses (where a second identical run reaches the same answer a
+  # minute later) or touches GitHub and the branch (where a blind replay is the
+  # hazard). `assess` is the one step that asks for a retry, and asks for it
+  # explicitly. Nothing carries `retry_backoff` because nothing here has a
+  # retry a wait could help: the one that exists sees its own failed check.
+  max_retries: 0
+  # Nobody is watching. The only human checkpoint is `gate`, and an agent
+  # parking the task in `awaiting_input` would add a second one that no one is
+  # waiting at — and hold a concurrency slot until the input timeout expires.
+  on_input: deny
+
+steps:
+  - id: preflight
+    name: Check the tools and the pull request
+    type: command
+    shell: sh
+    timeout: 5m
+    # Nine ways this refuses, all of them `nonzero_exit`, all of them cheap and
+    # all of them before a single test compiles. The status message is what
+    # says which: "not a dependabot pull request" and "gh is not authenticated"
+    # are entirely different things for a person to go and do, and the exit
+    # code alone cannot tell them apart.
+    #
+    # It also writes every value the rest of the file reads, so nothing
+    # downstream asks GitHub the same question twice.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "checking the tools and the pull request"
+      for tool in gh git go jq awk sed; do
+        command -v "$tool" >/dev/null 2>&1 || { say "$tool is not installed"; echo "$tool is required" >&2; exit 1; }
+      done
+      gh auth status >/dev/null 2>&1 || { say "gh is not authenticated"; echo "gh is not authenticated" >&2; exit 1; }
+
+      # A repair commits on this branch, and git refuses that without an
+      # identity. Failing now beats failing after an agent has spent a session.
+      git config user.email >/dev/null 2>&1 || { say "git user.email is not set"; echo "git user.email is not set" >&2; exit 1; }
+      git config user.name >/dev/null 2>&1 || { say "git user.name is not set"; echo "git user.name is not set" >&2; exit 1; }
+
+      scratch=$(git rev-parse --git-path vincent-deps)
+      rm -rf "$scratch"
+      mkdir -p "$scratch"
+      echo "$scratch" > "$scratch/path"
+
+      say "reading pull request #{{index .Task.Fields "pull"}}"
+      gh pr view {{index .Task.Fields "pull"}} \
+        --json number,state,isDraft,isCrossRepository,author,title,body,url,headRefName,headRefOid,baseRefName \
+        > "$scratch/pr.json"
+
+      slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+      printf '%s\n' "$slug" > "$scratch/slug"
+      jq -r .url         "$scratch/pr.json" > "$scratch/url"
+      jq -r .headRefOid  "$scratch/pr.json" > "$scratch/head"
+      jq -r .title       "$scratch/pr.json" > "$scratch/title"
+
+      state=$(jq -r .state "$scratch/pr.json")
+      [ "$state" = OPEN ] || { say "pull request is $state, not open"; echo "pull request #{{index .Task.Fields "pull"}} is $state, not open. nothing to handle." >&2; exit 1; }
+
+      # The whole merge policy at the bottom of this file — green checks plus
+      # one approval — is calibrated to a bot-generated dependency bump. Running
+      # it against a human's pull request would be applying a review standard
+      # nobody agreed to, so this is a refusal rather than a warning.
+      author=$(jq -r .author.login "$scratch/pr.json")
+      case "$author" in
+        dependabot|dependabot\[bot\]|dependabot-preview|dependabot-preview\[bot\]) ;;
+        *) say "#{{index .Task.Fields "pull"}} is by $author, not dependabot"; echo "pull request #{{index .Task.Fields "pull"}} was opened by '$author', not dependabot." >&2
+           echo "this workflow's merge policy assumes a bot-generated dependency bump; use a review workflow instead." >&2
+           exit 1 ;;
+      esac
+
+      # A fork's head is fetched into a branch with no upstream (§13.5), so a
+      # repair would build, commit and then fail at the push having spent a
+      # session. dependabot pushes to the repository itself, so a cross-repo
+      # pull request here is a sign the task is not what it looks like.
+      if [ "$(jq -r .isCrossRepository "$scratch/pr.json")" = true ]; then
+        say "#{{index .Task.Fields "pull"}} is from a fork: cannot push back"
+        echo "pull request #{{index .Task.Fields "pull"}} comes from a fork; this task's branch has no upstream and a repair could not be pushed." >&2
+        exit 1
+      fi
+
+      # The task must actually be sitting on the pull request's branch. This is
+      # what separates a task created with --github-pull from one created by
+      # hand with --field pull=N, which would test and merge unrelated things.
+      head_ref=$(jq -r .headRefName "$scratch/pr.json")
+      if [ "$head_ref" != "{{.Task.BranchName}}" ]; then
+        say "this task is not on #{{index .Task.Fields "pull"}}'s branch"
+        echo "this task is on '{{.Task.BranchName}}' but pull request #{{index .Task.Fields "pull"}} is on '$head_ref'." >&2
+        echo "create the task with: vincent task add --project <id> --github-pull {{index .Task.Fields "pull"}} --workflow handle-dependabot" >&2
+        exit 1
+      fi
+
+      # dependabot force-pushes its branches when it rebases them. A worktree
+      # cut before that is testing a tree GitHub no longer has, and every
+      # verdict below would be about the wrong commit. Refusing beats resetting:
+      # re-creating the task is one command, and it re-reads the title, the body
+      # and the head together.
+      local_head=$(git rev-parse HEAD)
+      remote_head=$(cat "$scratch/head")
+      if [ "$local_head" != "$remote_head" ]; then
+        say "dependabot force-pushed since this task was created"
+        echo "this worktree is at $local_head but pull request #{{index .Task.Fields "pull"}} is at $remote_head." >&2
+        echo "dependabot rebased the branch after this task was created. archive this task and create a new one." >&2
+        exit 1
+      fi
+
+      if [ "$(jq -r .isDraft "$scratch/pr.json")" = true ]; then
+        say "#{{index .Task.Fields "pull"}} is a draft"
+        echo "pull request #{{index .Task.Fields "pull"}} is a draft; mark it ready before handling it." >&2
+        exit 1
+      fi
+
+      # --github-pull prefills the title, the description and the declared
+      # fields, and puts the task on the pull request's head branch — but it
+      # does *not* set the task's base branch, which stays the project's default
+      # (internal/api/github.go, applyPullPrefill). For a bump onto the default
+      # branch the two coincide, which is why this is easy to miss; for a bump
+      # onto a release branch they do not, and then every reader below is wrong
+      # about a different thing: the diffs the prompts quote, and — the one that
+      # matters — which branch's protection rules `checks-required` reads. That
+      # is a merge gated on the wrong branch's CI, so it is a refusal.
+      base_ref=$(jq -r .baseRefName "$scratch/pr.json")
+      if [ "$base_ref" != "{{.Task.BaseBranch}}" ]; then
+        say "#{{index .Task.Fields "pull"}} targets $base_ref, not {{.Task.BaseBranch}}"
+        echo "pull request #{{index .Task.Fields "pull"}} targets '$base_ref' but this task's base branch is '{{.Task.BaseBranch}}'." >&2
+        echo "--github-pull does not set the base branch, so pass it explicitly:" >&2
+        echo "  vincent task add --project <id> --github-pull {{index .Task.Fields "pull"}} --base-branch $base_ref --workflow handle-dependabot" >&2
+        exit 1
+      fi
+
+      # stdout, because this is what the gate and the report quote back.
+      echo "pull request: $(cat "$scratch/url")"
+      echo "title:        $(cat "$scratch/title")"
+      echo "author:       $author"
+      echo "branch:       $head_ref -> $base_ref"
+      echo "head:         $remote_head"
+      echo "files:"
+      git diff --name-only "{{.Task.BaseBranch}}...HEAD" | sed 's/^/  /'
+      say "#{{index .Task.Fields "pull"}} checks out: $(cat "$scratch/title")"
+
+  - id: risk
+    name: Classify the bump
+    type: command
+    shell: sh
+    timeout: 2m
+    # The exit code is the verdict, so it has to survive as data rather than
+    # block the task (§7.2). A "failed" row here is the ordinary major-bump
+    # path, not an error.
+    allow_failure: true
+    # Exit 0 is "a patch or minor bump of a released major": semver says that
+    # cannot break a caller, and the compiler and the suite are enough to prove
+    # it. Exit 1 is everything else, and everything else includes the cases this
+    # cannot read at all — a grouped update ("bump the go-deps group with 3
+    # updates") carries no versions in its title. Failing towards the expensive
+    # answer is the only safe direction: the cost of a wrong 1 is one agent
+    # session, and the cost of a wrong 0 is a silent breaking change merged on a
+    # green build.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      title=$(cat "$scratch/title")
+
+      # dependabot's title is `<prefix>(deps): bump <thing> from <a> to <b>`.
+      # Read out of the title rather than out of go.mod: the same parse serves
+      # a gomod bump and a github-actions bump, and this repository's
+      # .github/dependabot.yml configures both.
+      pair=$(printf '%s\n' "$title" | sed -n 's/.* from \([^ ][^ ]*\) to \([^ ][^ ]*\)$/\1 \2/p')
+      if [ -z "$pair" ]; then
+        say "cannot read a version pair from the title: assessing"
+        echo "no 'from X to Y' in the title; treating as a major bump:" >&2
+        printf '%s\n' "$title" >&2
+        exit 1
+      fi
+
+      module=$(printf '%s\n' "$title" | sed -n 's/.*bump \([^ ][^ ]*\) from .*/\1/p')
+      old=$(printf '%s\n' "$pair" | awk '{print $1}' | sed 's/^v//')
+      new=$(printf '%s\n' "$pair" | awk '{print $2}' | sed 's/^v//')
+      om=$(printf '%s\n' "$old" | cut -d. -f1)
+      nm=$(printf '%s\n' "$new" | cut -d. -f1)
+      on=$(printf '%s\n' "$old" | cut -d. -f2)
+      nn=$(printf '%s\n' "$new" | cut -d. -f2)
+
+      echo "$module $old -> $new"
+
+      if [ "$om" != "$nm" ]; then
+        say "major bump: $module $old -> $new"
+        echo "major version change $old -> $new" >&2
+        exit 1
+      fi
+
+      # Semver exempts 0.x from its compatibility promise, so a 0.4 -> 0.5 is a
+      # major bump wearing a minor's clothes and gets the same treatment — with
+      # one carve-out that this repository's go.mod makes worth having.
+      #
+      # golang.org/x/* is permanently 0.x by convention rather than by
+      # instability: those modules are maintained by the Go team under the same
+      # compatibility posture as the standard library, and their minor tag moves
+      # roughly monthly. This repository depends directly on golang.org/x/sys
+      # and golang.org/x/mod, so without this carve-out the rule above would
+      # spend an agent session on a routine x/sys bump most months and find
+      # nothing. Anything else pre-1.0 — charmbracelet/colorprofile and
+      # charmbracelet/x/ansi here — genuinely does break on a minor, and keeps
+      # the escalation.
+      case "$module" in
+        golang.org/x/*)
+          say "$module $old -> $new: pre-1.0 by convention, not assessing"
+          echo "pre-1.0 minor change $old -> $new, exempted: golang.org/x/* is 0.x by convention" >&2
+          exit 0 ;;
+      esac
+
+      if [ "$om" = 0 ] && [ "$on" != "$nn" ]; then
+        say "pre-1.0 minor bump: $module $old -> $new"
+        echo "pre-1.0 minor change $old -> $new; 0.x carries no compatibility promise" >&2
+        exit 1
+      fi
+
+      say "$module $old -> $new is patch/minor"
+      echo "patch or minor bump within major $om; the compiler and the suite are the check" >&2
+
+  - id: assess
+    name: Assess a breaking bump against this repository
+    type: agent
+    # It needs an agent because whether this bump's release notes describe a
+    # change that matters *to this repository* cannot be decided by a command:
+    # it is unstructured prose on one side and the code's actual use of the
+    # dependency on the other, and the answer that matters is the one the
+    # compiler will not give — a call that still compiles and now means
+    # something else. A patch bump has no such question, which is what `risk`
+    # is for: this step does not run at all on the ordinary path.
+    if: '{{ ne (index .Steps "risk").ExitCode 0 }}'
+    # The one retry in this file. A second session is worth having because it
+    # sees the first one's failed check and because the step has no external
+    # effect to replay — its whole deliverable is one untracked file.
+    max_retries: 1
+    timeout: 30m
+    # An assessment that wrote nothing has not been performed, and one that
+    # edited the repository has exceeded its brief — this step reads, and
+    # `repair` is the step allowed to write. Both are checked, because a prompt
+    # saying "do not change code" is not verification.
+    #
+    # `git status --porcelain` rather than `git diff`: `git diff` sees neither
+    # staged changes nor a new untracked file, so an agent that added a source
+    # file would pass a check meant to prove it touched nothing. Empty output
+    # here covers all three, and it is exact because the scratch directory lives
+    # in the git directory rather than in the worktree.
+    check: 'test -s "$(git rev-parse --git-path vincent-deps)/assessment.md" && test -z "$(git status --porcelain)"'
+    prompt: |
+      You are on the head branch of dependabot pull request
+      #{{index .Task.Fields "pull"}} in this repository's worktree. The bump is
+      already committed here; your job is to judge it, not to change it.
+
+      {{ (index .Steps "preflight").Result }}
+
+      A previous step decided this is not a routine patch bump:
+
+      {{ (index .Steps "risk").Result }}
+
+      ## Your deliverable
+
+      One file, written to the path that
+
+          git rev-parse --git-path vincent-deps
+
+      prints, named `assessment.md`. Nothing else. Do not edit, add or delete
+      any file in the repository, do not commit, and do not push — a check
+      after this step verifies the tracked tree is untouched and will fail your
+      attempt if it is not.
+
+      Keep it under roughly 40 lines and write it for someone deciding whether
+      to merge, in this order:
+
+      1. **Verdict** — one line, one of `safe`, `needs care` or `do not merge`,
+         and the single reason.
+      2. **What changed** — the breaking changes in the new version that are
+         real for this repository, each with the file and symbol here that
+         touches it. Cite where you read it.
+      3. **What the compiler will not catch** — behaviour that changed under an
+         unchanged signature: defaults, error values, ordering, timezone or
+         encoding handling, retry semantics. This section is the reason this
+         step exists; if it is genuinely empty, say so in one line.
+      4. **What to watch after merging**, if anything.
+
+      ## How to find out
+
+      - The pull request body is dependabot's own copy of the release notes and
+        changelog. Read it first:
+        `gh pr view {{index .Task.Fields "pull"}} --json body --jq .body`
+      - `git diff {{.Task.BaseBranch}}...HEAD` is the bump itself.
+      - Then read this repository. Find every place the bumped dependency is
+        actually used and check those call sites against what changed. A
+        breaking change in a package nobody here imports is not a finding, and
+        saying so plainly is a good assessment.
+      - Prefer the upstream changelog or release page over your recollection of
+        the library. If you cannot reach it, say which claims are unverified.
+
+      Do not speculate to fill a section. "No behavioural change I can find
+      affects this repository" is a useful answer and an honest one; a list of
+      hypothetical risks is neither.
+
+      ## While you work
+
+      Before each significant phase, run:
+
+        vincent status "<one short line about what you are doing now>"
+
+      Keep it under ten words. If something fails or you get stuck, set it to
+      what is actually wrong — "cannot reach the upstream changelog", not
+      "working on it". It is free, it is what someone watching the board sees,
+      and the last line you set stays on the finished attempt.
+
+  - id: verify
+    name: Build, test and lint the bump
+    type: loop
+    # One clean probe and at most three repairs. `max_retries` was never this:
+    # a retry re-runs the same step on its own failure, and converging on a
+    # broken bump needs three different steps — probe, decide, repair — with the
+    # decision in the middle.
+    count: 3
+    # `defaults.timeout` bounds the whole loop (§7.8), not a pass, and one pass
+    # is a full suite plus a three-platform lint plus an agent session. This is
+    # a ceiling, not an expectation: the ordinary run breaks out on the first
+    # probe.
+    timeout: 3h
+    steps:
+      - id: build
+        name: Build, test and lint
+        type: command
+        shell: sh
+        timeout: 40m
+        # `repair` reads this exit code and this output, so a red run has to
+        # advance rather than block (§7.2).
+        allow_failure: true
+        # `exec 2>&1` on the first line because this body is nothing but
+        # diagnostics and the next step's prompt quotes `.Result`, which is
+        # stdout alone. go, mage and golangci-lint all write their findings to
+        # stderr, so without this the repair prompt renders empty.
+        #
+        # `set -e` bounds what that prompt receives as much as it bounds the
+        # run: the first failing phase is the last thing printed, so the tail
+        # `.Result` keeps is the failure rather than four hundred lines of the
+        # phases after it.
+        run: |
+          exec 2>&1
+          set -e
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+          say "pass {{.Loop.Index}}: go build ./..."
+          go run mage.go build
+
+          say "pass {{.Loop.Index}}: go test ./..."
+          go run mage.go test
+
+          # The three-platform lint, not the host one. CLAUDE.md: golangci-lint
+          # cross-*builds* under GOOS and then cannot run, so the linter is
+          # built once for the host and run three times with GOOS set. A host-
+          # only lint is blind to every build-tagged file, and a dependency
+          # bump is exactly when a finding appears in the one file this host
+          # does not compile.
+          LINT=$(go tool -n golangci-lint)
+          for os in linux darwin windows; do
+            say "pass {{.Loop.Index}}: lint GOOS=$os"
+            GOOS=$os "$LINT" run ./...
+          done
+
+          say "pass {{.Loop.Index}}: build, tests and lint all green"
+
+      - id: green
+        name: Stop once it is green
+        type: break
+        if: '{{ eq (index .Steps "build").ExitCode 0 }}'
+
+      - id: report-red
+        name: Stop without repairing
+        type: command
+        shell: sh
+        timeout: 1m
+        # The `on_red: report` path, and the only step here meant to block the
+        # task rather than feed the next one — so no `allow_failure`. It runs
+        # only after `green` did not fire, which is what makes the bare field
+        # guard enough.
+        #
+        # It says why and points at the row that has the output; it does not
+        # re-print it. Rendering a failed build's text into a shell script is
+        # how a compiler diagnostic containing a quote becomes a syntax error
+        # in the step that was supposed to report it.
+        if: '{{ eq (index .Task.Fields "on_red") "report" }}'
+        run: |
+          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+          say "bump is red and on_red=report: leaving #{{index .Task.Fields "pull"}} alone"
+          echo "the bump does not build, test or lint cleanly. see the 'build' step above for the failure." >&2
+          echo "this task ran with on_red=report, so nothing was repaired, committed or pushed and" >&2
+          echo "pull request #{{index .Task.Fields "pull"}} is exactly as dependabot left it." >&2
+          exit 1
+
+      - id: repair
+        name: Repair what the bump broke
+        type: agent
+        # It needs an agent because adapting this repository's code to a changed
+        # dependency API is a change made from intent: which of several call
+        # sites is the right seam, and whether the new version wants a different
+        # shape rather than a mechanical rename, is not something a command
+        # decides. Everything around it is deterministic and stays that way —
+        # the probe, the decision to run at all, the commit and the push are all
+        # command steps.
+        #
+        # Guarded on the field rather than reached by luck: with
+        # `on_red: report` the step before this one has already ended the run.
+        if: '{{ eq (index .Task.Fields "on_red") "repair" }}'
+        timeout: 45m
+        # Zero on purpose. The next iteration's `build` is a better second
+        # attempt than a retry is: it re-probes first, so a repair that half
+        # worked hands the next session a shorter, truer failure instead of the
+        # same one.
+        max_retries: 0
+        prompt: |
+          You are on the head branch of dependabot pull request
+          #{{index .Task.Fields "pull"}}. dependabot bumped a dependency and
+          this repository no longer builds, tests or lints cleanly. Fix this
+          repository so that it does. This is pass {{.Loop.Index}} of at most 3.
+
+          {{ (index .Steps "preflight").Result }}
+
+          ## What is red
+
+          {{ (index .Steps "build").Result }}
+
+          ## The rules
+
+          - **Adapt this repository to the new version. Do not undo the bump.**
+            Reverting or pinning back the version in go.mod, go.sum or a
+            workflow file defeats the entire pull request. If the new version
+            genuinely cannot be adopted, change nothing, say so in your final
+            message with the specific reason, and stop.
+          - Make the smallest change that does the job and follow the
+            conventions already in the code around you.
+          - Do not weaken, skip, disable or delete a test to get green, and do
+            not change a test's expectations unless the test itself is what the
+            new version made wrong — if it is, say which and why.
+          - `//nolint` is not a fix. A new lint finding is either a real problem
+            in the code or a rule the project should discuss; silencing it here
+            is neither.
+          - Do not commit and do not push. A later step commits and pushes, and
+            it will not run if you leave the tree in a state the checks reject.
+          - Write nothing outside this repository except under the path
+            `git rev-parse --git-path vincent-deps` prints.
+
+          ## What green means here
+
+          The exact commands a later step re-runs, in this order:
+
+              go run mage.go build
+              go run mage.go test
+              LINT=$(go tool -n golangci-lint)
+              for os in linux darwin windows; do GOOS=$os "$LINT" run ./...; done
+
+          The lint runs three times because `golangci-lint` cross-*builds*
+          under `GOOS` and then cannot run — so a finding in a `_windows.go` or
+          `_darwin.go` file is invisible to a host-only lint, and a dependency
+          bump is exactly when one appears.
+
+          ## While you work
+
+          Before each significant phase, run:
+
+            vincent status "<one short line about what you are doing now>"
+
+          Keep it under ten words. If something fails or you get stuck, set it
+          to what is actually wrong — "3 tests red in internal/store", not
+          "working on it". It is free, it is what someone watching the board
+          sees, and the last line you set stays on the finished attempt.
+
+  # Outside the loop on purpose. The loop succeeding only means it stopped; this
+  # is what makes it mean it worked — and in particular it is what proves a
+  # repair made on the final iteration, which no further probe inside the loop
+  # would have seen.
+  #
+  # Guarded, so the ordinary run does not pay for it twice: when the loop broke
+  # out green, `build`'s latest iteration exited 0 and there is nothing left to
+  # prove. Inside a loop a repeated id resolves to its latest iteration, which
+  # is what makes that guard readable from out here.
+  - id: verify-final
+    name: Prove the repaired tree
+    type: command
+    shell: sh
+    timeout: 40m
+    if: '{{ ne (index .Steps "build").ExitCode 0 }}'
+    run: |
+      exec 2>&1
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      say "proving the repaired tree: build"
+      go run mage.go build
+      say "proving the repaired tree: tests"
+      go run mage.go test
+      LINT=$(go tool -n golangci-lint)
+      for os in linux darwin windows; do
+        say "proving the repaired tree: lint GOOS=$os"
+        GOOS=$os "$LINT" run ./...
+      done
+      say "the repaired tree is green"
+
+  - id: dirty
+    name: Did anything change
+    type: command
+    shell: sh
+    timeout: 2m
+    # The scratch lives in the git directory, so `git status` here is the whole
+    # truth and needs no exclude pathspec: non-empty means a repair wrote
+    # something.
+    #
+    # The exit code is the answer, so it has to survive as data rather than
+    # block the task (§7.2) — and it is inverted on purpose. Exit 1 means "there
+    # are repairs", which is the case `commit` and `push` are guarded on, and a
+    # guard can only read a nonzero exit from a step that was allowed to fail.
+    # A `failed` row here is this workflow reporting work, not a fault.
+    allow_failure: true
+    run: |
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      changed=$(git status --porcelain)
+      if [ -z "$changed" ]; then
+        say "no repairs to commit"
+        echo "the worktree is clean; the bump needed no repair" >&2
+        exit 0
+      fi
+      printf '%s\n' "$changed"
+      say "committing repairs to #{{index .Task.Fields "pull"}}"
+      exit 1
+
+  - id: commit
+    name: Commit the repairs
+    type: command
+    shell: sh
+    timeout: 5m
+    if: '{{ ne (index .Steps "dirty").ExitCode 0 }}'
+    # A git operation is not agent work, so the agent above was told not to
+    # commit and this does it. Conventional Commits, `fix` because that is what
+    # adapting to a breaking bump is (CLAUDE.md), and no co-author trailer.
+    #
+    # `git add -A` is safe precisely because the scratch is in the git
+    # directory: there is nothing in this worktree the agent did not put there.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      git add -A
+      git commit -m "fix: adapt to the dependency bump in #{{index .Task.Fields "pull"}}"
+      say "committed $(git rev-parse --short HEAD)"
+      git log --format='%h %s' -1
+
+  - id: push
+    name: Push the repairs to the pull request
+    type: command
+    shell: sh
+    timeout: 10m
+    if: '{{ ne (index .Steps "dirty").ExitCode 0 }}'
+    # The first external effect, and it is authorized at task creation by
+    # `on_red: repair` rather than by a gate here — that field's description
+    # says in as many words that choosing it means agent commits pushed to
+    # dependabot's branch. A gate in front of this one would ask the same
+    # question twice and park an unwatched task to do it.
+    #
+    # A plain push, never `--force`: it can only fast-forward, so if dependabot
+    # rebased the branch while the suite was running this fails and changes
+    # nothing on the remote. That is the right outcome — the repairs were made
+    # against a tree GitHub no longer has.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      say "pushing to {{.Task.BranchName}}"
+      # Quoted: a git ref name may legally contain <, >, |, &, ( and ) — only
+      # space, ~, ^, :, ?, * and [ are forbidden — so an unquoted refspec here
+      # is a shell metacharacter away from meaning something else. A dependabot
+      # branch never contains one; the quotes are what keep that a fact about
+      # dependabot rather than a thing this step relies on.
+      git push origin "HEAD:{{.Task.BranchName}}"
+      say "pushed $(git rev-parse --short HEAD) to #{{index .Task.Fields "pull"}}"
+
+  - id: pr-head
+    name: Re-read the pull request head
+    type: command
+    shell: sh
+    timeout: 5m
+    # Everything below grades a *commit*, by sha, and this is where that sha is
+    # settled: the push above moved it, and dependabot may have moved it too.
+    # Re-reading once here is what keeps the wait, the merge and the
+    # postcondition all talking about the same commit.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+
+      head=$(gh pr view {{index .Task.Fields "pull"}} --json headRefOid --jq .headRefOid)
+      printf '%s\n' "$head" > "$scratch/head"
+      local_head=$(git rev-parse HEAD)
+
+      echo "pull request head: $head"
+      echo "worktree head:     $local_head"
+
+      # Not a race this workflow can win by retrying: if they differ, somebody
+      # or something pushed to the branch and the tree that was just verified is
+      # not the tree GitHub would merge.
+      if [ "$head" != "$local_head" ]; then
+        say "#{{index .Task.Fields "pull"}} moved to $(printf '%s' "$head" | cut -c1-7): not merging"
+        echo "the pull request head is $head but this task verified $local_head." >&2
+        echo "something pushed to {{.Task.BranchName}}. nothing was merged." >&2
+        exit 1
+      fi
+      say "verified $(printf '%s' "$head" | cut -c1-7) is the pull request head"
+
+  - id: checks-required
+    name: Resolve the required checks
+    type: command
+    shell: sh
+    timeout: 5m
+    # The expected set, by name, read before any polling starts. Without a set
+    # to grade against, "every required check is green" and "no check has been
+    # created yet" are the same sentence — a rollup only ever contains the
+    # checks that already exist. This is what makes an absence legible.
+    #
+    # Classic branch protection first, rulesets second; a repository using
+    # either answers the same question. Both reads are read-only.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      slug=$(cat "$scratch/slug")
+
+      say "reading the required checks on {{.Task.BaseBranch}}"
+      : > "$scratch/required"
+
+      # The exit status decides whether an answer is kept, never the file's
+      # size: `gh api` prints GitHub's error body to *stdout*, so an
+      # unprotected branch would otherwise be handed a required check named
+      # `{"message":"Branch not found"...}` and wait an hour for it to report.
+      if gh api "repos/$slug/branches/{{.Task.BaseBranch}}/protection/required_status_checks" \
+        --jq '.contexts[]' > "$scratch/protection" 2>/dev/null; then
+        cp "$scratch/protection" "$scratch/required"
+      fi
+
+      if [ ! -s "$scratch/required" ]; then
+        if gh api "repos/$slug/rules/branches/{{.Task.BaseBranch}}" \
+          --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' \
+          > "$scratch/rules" 2>/dev/null; then
+          cp "$scratch/rules" "$scratch/required"
+        fi
+      fi
+
+      if [ ! -s "$scratch/required" ]; then
+        say "{{.Task.BaseBranch}} has no required checks this token can read"
+        echo "no required status checks are configured on {{.Task.BaseBranch}}, or this token cannot read them." >&2
+        echo "this workflow waits for a named set of checks on the commit it verified; with no such set," >&2
+        echo "'all required checks passed' would only mean 'nothing has reported yet', and the merge would" >&2
+        echo "race the CI that is supposed to gate it. protect the branch, or merge this bump by hand." >&2
+        exit 1
+      fi
+
+      echo "required checks on {{.Task.BaseBranch}} ($slug):"
+      cat "$scratch/required"
+      say "$(wc -l < "$scratch/required" | tr -d ' ') required check(s) to wait for"
+
+  - id: wait-checks
+    name: Wait for the required checks
+    type: command
+    shell: sh
+    # The step's own bound; the poll budget inside is what produces a sentence
+    # instead of a bare `timeout` block reason.
+    timeout: 90m
+    # No `allow_failure`, and that is the scope decision this file makes
+    # explicitly: a required check that goes red on a bump whose build, suite
+    # and three-platform lint were all green locally is not something another
+    # agent session answers. It blocks, and a person looks at the job.
+    #
+    # Not `gh pr checks`. That resolves the pull request's head at query time
+    # and reports the rollup it finds there, so it answers about whatever commit
+    # is newest rather than about the commit this task verified. This asks the
+    # **commit** — by sha — for its check runs and its commit statuses, and
+    # grades what comes back against the expected set. A required context with
+    # no row yet is *pending*, which is the whole point: an absence can never be
+    # read as a pass.
+    #
+    # Both kinds are collected because either can satisfy a required context:
+    # Actions jobs arrive as check runs, third-party integrations as commit
+    # statuses.
+    #
+    # The head is re-asserted every poll, so a dependabot rebase landing during
+    # the wait ends it rather than being merged by it.
+    #
+    # Budgeted in seconds waited rather than in polls, because the polls are not
+    # evenly spaced: the pending interval starts at 15s and doubles to a 60s
+    # ceiling, which reaches the hour in about 60 calls while still answering a
+    # fast run quickly. Transient API failures get their own longer ramp and
+    # five in a row are tolerated, so one 502 does not throw away forty minutes
+    # of waiting; the error interval resets the moment a poll answers.
+    #
+    # This is the step the status message exists for — it can hold a task for an
+    # hour with a `running` row and no other output — so it reports the live
+    # tally out of the same file the verdict is graded from, once per pending
+    # poll. The board and the exit code cannot disagree.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      url=$(cat "$scratch/url")
+      slug=$(cat "$scratch/slug")
+      head=$(cat "$scratch/head")
+      short=$(printf '%s' "$head" | cut -c1-7)
+      nreq=$(wc -l < "$scratch/required" | tr -d ' ')
+      echo "waiting for the required checks on $head"
+      echo "($url)"
+      say "waiting for $nreq required check(s) on $short"
+
+      budget=3600
+      waited=0
+      nap=15
+      enap=30
+      errors=0
+      while :; do
+        set +e
+        oid=$(gh pr view "$url" --json headRefOid --jq .headRefOid 2>"$scratch/api-err")
+        rc_head=$?
+        gh api --paginate "repos/$slug/commits/$head/check-runs" \
+          --jq '.check_runs[] | [.name, (if .status != "completed" then "PENDING" else (.conclusion // "PENDING" | ascii_upcase) end)] | @tsv' \
+          > "$scratch/seen.tsv" 2>>"$scratch/api-err"
+        rc_runs=$?
+        gh api "repos/$slug/commits/$head/status" \
+          --jq '.statuses[] | [.context, (.state | ascii_upcase)] | @tsv' \
+          >> "$scratch/seen.tsv" 2>>"$scratch/api-err"
+        rc_status=$?
+        set -e
+
+        # Before the transient-error gate, not after it: a head that answered
+        # and disagrees is a definite answer, and the calls that fail *because*
+        # the branch moved would otherwise be retried five times as blips.
+        if [ "$rc_head" -eq 0 ] && [ "$oid" != "$head" ]; then
+          say "#{{index .Task.Fields "pull"}} moved during the wait: not merging"
+          echo "the pull request head moved to $oid while waiting for checks on $head." >&2
+          echo "dependabot rebased the branch, or somebody pushed to it. nothing was merged." >&2
+          exit 1
+        fi
+
+        if [ "$rc_head" -ne 0 ] || [ "$rc_runs" -ne 0 ] || [ "$rc_status" -ne 0 ]; then
+          errors=$((errors + 1))
+          if [ "$errors" -gt 5 ]; then
+            say "the GitHub API failed six times in a row: not merging"
+            echo "the GitHub API failed six times in a row while waiting for checks; not merging:" >&2
+            cat "$scratch/api-err" >&2
+            exit 1
+          fi
+          if [ "$waited" -ge "$budget" ]; then
+            say "an hour up with the GitHub API failing: not merging"
+            echo "required checks on $head unresolved after an hour (last poll failed); not merging:" >&2
+            cat "$scratch/api-err" >&2
+            exit 1
+          fi
+          sleep "$enap"
+          waited=$((waited + enap))
+          if [ "$enap" -lt 120 ]; then
+            enap=$((enap * 2))
+            if [ "$enap" -gt 120 ]; then enap=120; fi
+          fi
+          continue
+        fi
+        errors=0
+        enap=30
+
+        # Grades every expected context and prints the verdict on line 1.
+        # SKIPPED and NEUTRAL count as passes because branch protection counts
+        # them as passes; anything that is neither a pass nor a recognised
+        # in-flight state is a failure, so a state this does not know about
+        # stops the run instead of being waited out.
+        awk -F '\t' '
+          NR == FNR { req[++n] = $1; next }
+          { seen[$1] = seen[$1] " " $2 }
+          END {
+            verdict = "pass"
+            for (i = 1; i <= n; i++) {
+              c = req[i]
+              if (!(c in seen)) {
+                rows = rows "  pending  " c "  (not reported yet)\n"
+                if (verdict != "fail") verdict = "pending"
+                continue
+              }
+              m = split(seen[c], st, " ")
+              worst = "pass"
+              for (j = 1; j <= m; j++) {
+                s = st[j]
+                if (s == "SUCCESS" || s == "SKIPPED" || s == "NEUTRAL") continue
+                if (s == "PENDING" || s == "EXPECTED" || s == "QUEUED" || s == "IN_PROGRESS" || s == "WAITING" || s == "REQUESTED") {
+                  if (worst != "fail") worst = "pending"
+                  continue
+                }
+                worst = "fail"
+              }
+              rows = rows "  " worst "  " c " " seen[c] "\n"
+              if (worst == "fail") verdict = "fail"
+              else if (worst == "pending" && verdict != "fail") verdict = "pending"
+            }
+            printf "%s\n%s", verdict, rows
+          }
+        ' "$scratch/required" "$scratch/seen.tsv" > "$scratch/checks"
+
+        verdict=$(head -n 1 "$scratch/checks")
+        case "$verdict" in
+          pass)
+            sed -n '2,$p' "$scratch/checks"
+            echo "--- every required check passed on $head ---"
+            say "all $nreq required check(s) green on $short"
+            break
+            ;;
+          fail)
+            # Name the contexts, not the count: "ci (windows-latest) FAILURE" is
+            # actionable from the board, "a required check failed" sends someone
+            # to the transcript to find out which. `NR > 1` skips the verdict
+            # word on line 1; dropping the marker field and keeping the rest is
+            # what survives a context name containing spaces, which every matrix
+            # job's does. Over-long lists truncate at 256 bytes (§5.4).
+            say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' "$scratch/checks")"
+            echo "a required check did not pass on $head; not merging:" >&2
+            sed -n '2,$p' "$scratch/checks" >&2
+            exit 1
+            ;;
+        esac
+
+        if [ "$waited" -ge "$budget" ]; then
+          say "still pending after an hour on $short: not merging"
+          echo "required checks on $head still pending after an hour; not merging:" >&2
+          sed -n '2,$p' "$scratch/checks" >&2
+          exit 1
+        fi
+
+        # The live tally, refreshed on every pending poll. `NR > 1` again: line
+        # 1 is the verdict, which is `pending` every time execution reaches
+        # here, and counting it would report one context fewer as green.
+        pend=$(awk 'NR > 1 && $1 == "pending"' "$scratch/checks" | wc -l | tr -d ' ')
+        say "$((nreq - pend))/$nreq required checks green on $short, $((waited / 60))m waited"
+
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 60 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 60 ]; then nap=60; fi
+        fi
+      done
+
+  - id: report
+    name: Summarize the bump
+    type: command
+    shell: sh
+    timeout: 5m
+    # Runs in both dispositions, and before the `merge == never` condition ends
+    # the run, so a sweep still finishes with one row that says what it found.
+    # The assessment is printed here rather than only in the gate because a
+    # `never` run has no gate to read it in.
+    run: |
+      set -e
+      scratch=$(git rev-parse --git-path vincent-deps)
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+
+      echo "pull request: $(cat "$scratch/url")"
+      echo "title:        $(cat "$scratch/title")"
+      echo "verified:     $(cat "$scratch/head")"
+      echo "checks:       every required check green"
+      echo "repairs:      {{ if ne (index .Steps "dirty").ExitCode 0 }}committed and pushed by this task{{ else }}none needed{{ end }}"
+      echo
+
+      if [ -s "$scratch/assessment.md" ]; then
+        echo "--- assessment of a non-routine bump ---"
+        cat "$scratch/assessment.md"
+      else
+        echo "no assessment was needed: the bump is a patch or minor change within a released major."
+      fi
+      say "#{{index .Task.Fields "pull"}} is green on $(cut -c1-7 "$scratch/head")"
+
+  - id: shipping
+    name: Stop here unless this task is to merge
+    type: condition
+    # `merge: never` ends the run cleanly and the task is `done` — which is the
+    # honest outcome for a sweep, and better than asking a person to reject a
+    # gate and leaving a blocked task on the board to explain later.
+    if: '{{ eq (index .Task.Fields "merge") "gate" }}'
+
+  - id: gate
+    name: Approve the merge
+    type: manual
+    # The one human decision in this file, immediately before the one
+    # irreversible thing it does. Everything above it is reversible: a branch
+    # that was verified, and at most some commits added to a bot's pull request.
+    instructions: |
+      Merge dependabot pull request #{{index .Task.Fields "pull"}}?
+
+      {{ (index .Steps "report").Result }}
+
+      Approving merges it into {{.Task.BaseBranch}} with a **merge commit** —
+      the repository disables squash and rebase merges, because a branch's
+      history becomes {{.Task.BaseBranch}}'s history — at the exact commit whose
+      checks were verified above, and at no other. GitHub refuses the merge if
+      the head has moved since. That is the whole of what approval authorizes:
+      no further build, no further agent, no force-push.
+
+      Before you approve, read the parts a green build cannot tell you:
+
+      - the assessment above, if there is one — in particular its "what the
+        compiler will not catch" section, which is the class of breakage that
+        reaches production on a green CI run;
+      - the pull request's own release notes, for anything about deprecations,
+        default changes or a minimum-version bump this repository would inherit;
+      {{ if ne (index .Steps "dirty").ExitCode 0 }}- **the commits this task pushed to dependabot's branch.** The bump did not
+        build as dependabot left it, and an agent changed this repository's code
+        to adapt. `git log {{.Task.BaseBranch}}..{{.Task.BranchName}}` and the
+        pull request's Files changed tab are that work. It has not been reviewed
+        by anyone yet;
+      {{ end }}- whether this dependency is one a bad version of should be pinned rather
+        than merged on a Friday.
+
+      Rejecting blocks this task and changes nothing that is not already done.
+      The pull request stays open{{ if ne (index .Steps "dirty").ExitCode 0 }}, with this task's repair commits on it{{ end }}, and merging or
+      closing it by hand afterwards is unaffected.
+
+  - id: merge-pr
+    name: Merge the pull request
+    type: command
+    shell: sh
+    timeout: 10m
+    # The one irreversible step, and the reason `defaults.max_retries` is 0. A
+    # retried merge is a merge attempted against a state this workflow no longer
+    # knows; `merged` below reads the real answer back instead of assuming one.
+    #
+    # `--merge` is this repository's rule rather than a preference: squash and
+    # rebase merges are disabled because a branch's history becomes master's
+    # history (CLAUDE.md). No `--delete-branch`: GitHub deletes the remote
+    # branch itself, and gh's flag would also delete the local branch this
+    # worktree is sitting on.
+    #
+    # `--match-head-commit` closes the last gap. Between the final poll and this
+    # call a push can still land; GitHub refuses the merge if the head is not
+    # the commit whose checks were graded, which is a server-side guarantee
+    # rather than a race this workflow has to win.
+    #
+    # The status is set before the call and never after it. `gh pr merge`
+    # exiting 0 is the API accepting the merge, not GitHub having recorded it,
+    # so a message here claiming success would be a claim this step is not
+    # entitled to make. What survives on a failure — "merging <sha>" — is
+    # exactly the sentence someone needs before going to look.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+
+      say "merging $(cut -c1-7 "$scratch/head") into {{.Task.BaseBranch}}"
+      gh pr merge "$(cat "$scratch/url")" \
+        --merge \
+        --match-head-commit "$(cat "$scratch/head")"
+
+  - id: merged
+    name: Ask GitHub whether the merge landed
+    type: command
+    shell: sh
+    timeout: 5m
+    # The read-only postcondition, and the only step entitled to say the merge
+    # happened. It is a separate step because `gh pr merge` exiting 0 and GitHub
+    # having recorded the merge are different facts, and for a second or two
+    # after the call the pull request can still read OPEN — so this waits a
+    # short while for a definite state rather than reading once and guessing.
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      scratch=$(git rev-parse --git-path vincent-deps)
+      url=$(cat "$scratch/url")
+      head=$(cat "$scratch/head")
+      short=$(printf '%s' "$head" | cut -c1-7)
+
+      nap=2
+      waited=0
+      while :; do
+        # A failed read is "no answer yet", never a state.
+        if ! gh pr view "$url" --json state,mergedAt,mergeCommit,headRefOid,url \
+          > "$scratch/merged.json" 2>/dev/null; then
+          printf '%s\n' '{"state":"","mergedAt":null,"mergeCommit":null,"headRefOid":"","url":""}' \
+            > "$scratch/merged.json"
+        fi
+        state=$(jq -r .state "$scratch/merged.json")
+        if [ "$state" = MERGED ] || [ "$state" = CLOSED ]; then break; fi
+        if [ "$waited" -ge 60 ]; then break; fi
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 10 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 10 ]; then nap=10; fi
+        fi
+      done
+
+      jq -r '"state:   \(.state)\nmerged:  \(.mergedAt)\nhead:    \(.headRefOid)\ncommit:  \(.mergeCommit.oid)\npr:      \(.url)"' \
+        "$scratch/merged.json"
+
+      oid=$(jq -r .headRefOid "$scratch/merged.json")
+      if [ "$state" = MERGED ] && [ "$oid" = "$head" ]; then
+        say "merged #{{index .Task.Fields "pull"}} at $short"
+        exit 0
+      fi
+
+      say "#{{index .Task.Fields "pull"}} is ${state:-unreadable}, not merged at $short"
+      echo "the merge was requested but the pull request is ${state:-unreadable} at $oid, not merged at $head." >&2
+      echo "look at the pull request before retrying anything: the merge call may have landed and lost its response." >&2
+      exit 1
