@@ -242,6 +242,41 @@ type StepRun struct {
 	PromptOverride bool `json:"prompt_override"`
 	RunOverride    bool `json:"run_override"`
 
+	// The rendered input this attempt was handed (§5.4, issue #323): the §8.4
+	// render as the adapter or the shell received it, and the full recorded
+	// bytes rather than the flags above. nil means nothing was recorded — an
+	// attempt from before the record existed, and every field the step type
+	// has no input for — while a non-nil empty string is a render that
+	// produced nothing, which a client must say differently.
+	//
+	// RenderedIf is display only: a guard is re-evaluated every time it is
+	// reached and is never sticky (§7.7), so this is what it rendered to on
+	// this attempt, not a decision anything reads back. RenderedForEach is a
+	// JSON array of the resolved items.
+	RenderedPrompt  *string `json:"rendered_prompt"`
+	RenderedRun     *string `json:"rendered_run"`
+	RenderedCheck   *string `json:"rendered_check"`
+	RenderedIf      *string `json:"rendered_if"`
+	RenderedForEach *string `json:"rendered_for_each"`
+	// InputTruncated says a recorded field lost bytes to the store's size
+	// ceiling, so what came back is a prefix of what the step got.
+	InputTruncated bool `json:"input_truncated"`
+
+	// The run-time resolution behind this attempt: which level supplied the
+	// agent, model and effort (§8.6), and the limits and shell it ran under.
+	// nil / 0 mean not recorded. These are the row's own values and not a
+	// re-resolution — config hot-reloads and task overrides are patchable, so
+	// they can disagree with what a client would compute now, and the row is
+	// the one that is right about what ran.
+	AgentSource    *string `json:"agent_source"`
+	ModelSource    *string `json:"model_source"`
+	EffortSource   *string `json:"effort_source"`
+	PermissionMode *string `json:"permission_mode"`
+	TimeoutMS      int64   `json:"timeout_ms"`
+	CheckTimeoutMS int64   `json:"check_timeout_ms"`
+	Shell          *string `json:"shell"`
+	WorkDir        *string `json:"work_dir"`
+
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 }

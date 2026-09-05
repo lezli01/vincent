@@ -578,10 +578,10 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 		// runAttempt (§7.7). A verdict is computed fresh here and nowhere
 		// else (decision 10).
 		if env.step.Guarded() || env.step.Type == workflow.StepCondition {
-			pass, err := r.evaluateGuard(ctx, env)
+			pass, rendered, err := r.evaluateGuard(ctx, env)
 			switch {
 			case err != nil:
-				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError)
+				r.recordGuardOutcome(ctx, env, store.StepFailed, "", ReasonConditionError, rendered)
 				r.fail(task, ReasonConditionError, env.log, "evaluate step guard", err)
 				return
 			case env.step.Type == workflow.StepCondition && !pass:
@@ -590,20 +590,20 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				// staying put, so completion runs the same path every other
 				// finished task runs and no client reads a done task as
 				// mid-run.
-				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "")
+				r.recordGuardOutcome(ctx, env, store.StepStopped, "", "", rendered)
 				w.persist(ctx, len(w.steps), env.log)
 				env.log.Info("workflow stopped early by a condition step")
 				w.finish()
 				return
 			case env.step.Type == workflow.StepCondition:
-				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "")
+				r.recordGuardOutcome(ctx, env, store.StepSucceeded, "", "", rendered)
 				w.persist(ctx, pos+1, env.log)
 				continue
 			case !pass:
 				// Skip and carry on: the step did not run, the workflow did
 				// not stop, and the row says which of the two kinds of skip
 				// this was (decision 9).
-				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "")
+				r.recordGuardOutcome(ctx, env, store.StepSkipped, store.SkipReasonCondition, "", rendered)
 				w.persist(ctx, pos+1, env.log)
 				env.log.Info("step skipped by its guard")
 				continue
@@ -979,12 +979,24 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		Iteration: env.iteration(),
 		LoopItem:  env.loopItem(),
 		LoopTotal: env.loopTotal(),
-		State:     store.StepRunning,
+		// The enclosing loop's resolved list, written at insert beside the
+		// item this iteration drew from it and never updated — LoopTotal's
+		// rule, for the same reason (issue #323).
+		RenderedForEach: env.loopForEach(),
+		State:           store.StepRunning,
 	}
 	var sel agent.Selection
 	if env.step.Type == workflow.StepAgent {
-		sel = resolveSelection(env.step, env.wf.Defaults, env.task)
+		var src agent.Sources
+		sel, src = resolveSelection(env.step, env.wf.Defaults, env.task)
 		run.Agent, run.Model, run.Effort = sel.Agent, sel.Model, sel.Effort
+		// Which §8.6 level supplied each of those, recorded rather than
+		// re-resolved on read: `config.yaml` hot-reloads (§12.3) and a task's
+		// overrides are patchable, so asking the resolver later can name a
+		// level that had nothing to do with this attempt.
+		run.AgentSource = string(src.Agent)
+		run.ModelSource = string(src.Model)
+		run.EffortSource = string(src.Effort)
 	}
 
 	tr, err := openTranscript(r.deps.DataDir, env.task.ID, env.index, env.iteration(), attempt, subStepIDOf(env))

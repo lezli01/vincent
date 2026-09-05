@@ -52,6 +52,13 @@ const (
 	// snapshot, and because `tab` belongs to the workspace's tab cycle here
 	// rather than to the graph's source-order walk (decision 5).
 	ctxTaskWorkflow bindingContext = "task workflow"
+	// ctxTaskStepDetails is the task workspace's Step Details tab (issue
+	// #323): what one attempt was handed, and the §8.6 resolution behind it.
+	// Its own context rather than more rows on ctxTaskDetails for the reason
+	// ctxTaskPull gives — the tab has its own navigation. ↑/↓ walks attempts
+	// here, where on Task Details it walks the document's sections, and one
+	// row could only describe one of the two.
+	ctxTaskStepDetails bindingContext = "task step details"
 	// ctxTaskPull is the task workspace's Pull Request tab (task 068). Its
 	// own context rather than more rows on ctxTaskDetails because the tab
 	// only exists for a task with a linked pull request, and a footer that
@@ -214,7 +221,7 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 
 	// Task details.
-	{key: "tab", label: "move between Steps & Attempts, Task Details, Output and Diff (shift+tab goes back; 1–4 jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
+	{key: "tab", label: "move between the task's views (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab views", priority: 1},
 	{key: "]", label: "move to the next task view ([ goes back)", scope: scopePanel, context: ctxTaskDetails, hint: "[/] views", priority: 2},
 	{key: "down", label: "select a task-detail section (↑/↓); pgup/pgdn scrolls that section", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ sections", priority: 3},
 	// The pull-request section's two keys (task 052.6, decision 2). Both only
@@ -369,12 +376,18 @@ var bindings = []binding{
 	// that can point at a lane the failure does not blame.
 	{key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4},
 
+	// The task workspace's Step Details tab (issue #323). Unconditional, so
+	// `6` always means it — which is what lets the pull-request tab keep
+	// costing nothing when it is absent even though it no longer owns `6`.
+	{key: "6", label: "what this attempt was handed: its rendered prompt or command, the resolution behind it, and what it produced", scope: scopePanel, context: ctxTaskStepDetails, hint: "6 step details", priority: 1},
+	{key: "down", label: "select an attempt (↑/↓ or ←/→, which move it everywhere else too); pgup/pgdn scrolls the facts", scope: scopePanel, context: ctxTaskStepDetails, hint: "↑/↓ attempts", priority: 2},
+
 	// The task workspace's Pull Request tab (task 068). The tab is on the
 	// strip only when this task has a live link and the integration is
-	// usable, which is why `6` is registered here and nowhere else: on a task
+	// usable, which is why `7` is registered here and nowhere else: on a task
 	// with no pull request the key does nothing, and a row promising
 	// otherwise would be the lie the availability filter exists to prevent.
-	{key: "6", label: "this task's pull request, with a live row per check on its head commit", scope: scopePanel, context: ctxTaskPull, hint: "6 pull request", priority: 1, github: true},
+	{key: "7", label: "this task's pull request, with a live row per check on its head commit", scope: scopePanel, context: ctxTaskPull, hint: "7 pull request", priority: 1, github: true},
 	{key: "down", label: "select a check (↑/↓ or j/k)", scope: scopePanel, context: ctxTaskPull, hint: "↑/↓ checks", priority: 2, github: true},
 	{key: "c", label: "open the selected check's own page in a browser", scope: scopePanel, context: ctxTaskPull, hint: "c open check", priority: 3, github: true},
 	{key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true},
@@ -465,7 +478,8 @@ var bindings = []binding{
 // management takeover.
 func isHomeContext(ctx bindingContext) bool {
 	switch ctx {
-	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow, ctxTaskPull:
+	case ctxTasks, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff, ctxTaskWorkflow,
+		ctxTaskStepDetails, ctxTaskPull:
 		return true
 	default:
 		return false

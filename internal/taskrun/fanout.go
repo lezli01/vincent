@@ -115,7 +115,7 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 
 	selected, err := r.selectLanes(ctx, env)
 	if err != nil {
-		r.recordDecisionRow(ctx, env, store.StepFailed, "", ReasonConditionError, "")
+		r.recordDecisionRow(ctx, env, store.StepFailed, "", ReasonConditionError, "", nil)
 		r.fail(env.task, ReasonConditionError, env.log, "evaluate lane guard", err)
 		return stepOutcome{}, true
 	}
@@ -130,7 +130,7 @@ func (r *Runner) runFanOut(ctx context.Context, env *stepEnv) (outcome stepOutco
 		// lanes, spawn none and park again — a loop with no exit.
 		env.log.Info("fan-out selected no lanes; nothing to spawn")
 		r.recordDecisionRow(ctx, env, store.StepSucceeded, "", "",
-			"no lane was selected: every lane's `if:` was false, or the derived list was empty")
+			"no lane was selected: every lane's `if:` was false, or the derived list was empty", nil)
 		return stepOutcome{state: store.StepSucceeded}, false
 	}
 

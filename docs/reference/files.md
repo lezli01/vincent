@@ -189,8 +189,11 @@ Deleting a project deletes its task rows, and retention walks rows — so those
 directories are reached by no retention pass, ever, and are reclaimed by
 [`vincent gc`](cli.md#vincent-gc) instead.
 
-They contain the rendered prompt and everything the agent did. **Read one before
-pasting it into an issue.**
+They contain everything the agent did. The **rendered prompt or command** an
+attempt was handed is recorded on the attempt's own row in the database instead —
+the claude adapter passes the prompt on stdin, so no transcript ever carried it —
+and the task workspace's Step Details tab is what reads it back. Both hold
+whatever was substituted into them. **Read one before pasting it into an issue.**
 
 ## Overriding the locations
 

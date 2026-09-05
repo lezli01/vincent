@@ -13,6 +13,63 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A Step Details tab, `6` in the task workspace, showing what each attempt was
+  actually *given*.** Until now a step's rendered input was recorded nowhere: the
+  prompt an `agent` step received after `{{ .Task.Description }}`,
+  `{{ .Steps.plan.Result }}` and the rest of the context were bound existed only
+  inside the agent process, because the claude adapter passes it on **stdin** and
+  so not even the `debug: true` argv note in the transcript carried it. When a
+  step misbehaved you could read what it *did* and see the workflow's template,
+  but not the substitution in between — which is exactly where a bad render hides.
+
+  Each attempt now records the bytes it was handed and the resolution behind them,
+  and the tab reads them back in four groups. **Input** — the rendered prompt or
+  shell script and the rendered `check:` command, with the
+  `<previous-attempt-failure>` block a retry carries marked as vincent's own
+  addition rather than the workflow's. **Resolution** — agent, model and effort
+  each with the level that supplied it (`step`, `task`, `workflow`, `adapter`),
+  the permission mode, both timeouts, the resolved shell, the working directory
+  and the `include` chain the step came from; the permission mode, timeout and
+  shell had been visible only under `debug: true`. **Control flow** — what an
+  `if:` guard *rendered to*, so a `skipped` row says more than "by condition", the
+  loop iteration and total, this iteration's `for_each` item and the whole
+  resolved list. **Outcome** — tokens, cost, active duration, human wait, both
+  exit codes, failure and skip reason, the edit+retry badge and the transcript
+  path.
+
+  These are recorded at the moment the engine renders them, not re-derived when
+  you open the tab, which is the difference between a record and a guess:
+  `config.yaml` hot-reloads and a task's agent/model/effort overrides are
+  patchable, so asking again later can name a timeout or a level that had nothing
+  to do with the attempt you are reading. The record is on the row before the
+  process starts, so it is there while the attempt is still `running` and it
+  survives a crash — the attempt finalized as `interrupted` is the one you most
+  want it for. It is also **display-only**: an `if:` guard is still re-evaluated
+  every time it is reached, and nothing reads the recorded value back to decide
+  anything.
+
+  The tab's sidebar lists attempts and shares the workspace's attempt cursor, so
+  arriving from Output or Diff lands on the attempt you were already reading and
+  `←`/`→` keep moving it; `↑`/`↓` move it here too and `pgup`/`pgdn` scroll the
+  facts. Task Details' workflow snapshot, which shows the *un-rendered* template,
+  is untouched — the two together are the template and the substitution.
+
+  **The Pull Request tab moves from `6` to `7`.** It is still conditional and
+  still last on the strip, so it still costs nothing when there is no linked pull
+  request: `6` is Step Details whether or not that tab is there, and `7` does
+  nothing when nothing is linked, exactly as `6` did before.
+
+  Two limits are worth knowing. Each recorded field is capped at **64 KiB**, cut
+  on a rune boundary, and the tab says on screen when a record was cut rather than
+  quietly showing a prefix. And attempts that ran before this release recorded
+  nothing, so the tab reads `not recorded (this attempt predates the record)`
+  rather than drawing an empty prompt as though the step had been handed nothing.
+
+  A rendered prompt is the substituted text, so a secret interpolated into one is
+  now in the database as well as in the transcript, and `vincent daemon backup`
+  copies both. [Security model](docs/security-model.md) says so where it lists
+  what is out of scope.
+
 - **A `quiet` level, below `compact`, for reading a chat as a conversation.**
   The verbosity cycle `v` walks in the task workspace's output pane and
   `ctrl+r` walks in the chat workspace is four levels now —

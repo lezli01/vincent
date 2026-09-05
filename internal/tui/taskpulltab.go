@@ -17,11 +17,12 @@ import (
 
 // The task workspace's Pull Request tab (task 068, spec §15 view 2).
 //
-// It is the sixth tab and it is **conditional**: present only when this task
-// has a live link and the integration is usable. Appending it after Workflow
-// is what keeps 1–5 meaning what task 049 and task 051 taught them to mean,
-// and being last is what makes its absence cost nothing — no other tab's
-// number moves when it is not there.
+// It is the last tab and it is **conditional**: present only when this task
+// has a live link and the integration is usable. It is reached by `7` since
+// issue #323 put Step Details in front of it (see taskViewTab); staying last
+// on the strip is what keeps its absence costing nothing — no other tab's
+// number moves when it is not there, because the digits bind to tabs rather
+// than to positions.
 //
 // The check rows are fetched, never stored. A check result that is a minute
 // old reads exactly like a current one while being wrong, which is the same
@@ -76,7 +77,10 @@ func (t *taskView) pullTabAvailable() bool {
 // is no longer fixed: `cycleTab` used to be modulo taskTabCount, which lands
 // on a tab that is not there the moment one of them is conditional.
 func (t *taskView) tabs() []taskViewTab {
-	tabs := []taskViewTab{taskTabSteps, taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	tabs := []taskViewTab{
+		taskTabSteps, taskTabDetails, taskTabOutput, taskTabDiff, taskTabWorkflow,
+		taskTabStepDetails,
+	}
 	if t.pullTabAvailable() {
 		tabs = append(tabs, taskTabPull)
 	}

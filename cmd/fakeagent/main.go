@@ -22,7 +22,21 @@
 //	                      policy) | usage-limit | unauthenticated (task 003) |
 //	                      set-status (runs the real `vincent status` command
 //	                      from inside the step — task 036) |
+//	                      echo-prompt (appends the prompt it was handed,
+//	                      verbatim, to FAKEAGENT_PROMPT_FILE — issue #323) |
 //	                      sleep (internal: silent child)
+//	FAKEAGENT_PROMPT_FILE echo-prompt: file each invocation appends its prompt
+//	                      to, one JSON string per line. JSON rather than the
+//	                      raw bytes because a prompt spans lines and the point
+//	                      of the scenario is that a test can compare what the
+//	                      CLI received byte for byte
+//	FAKEAGENT_PROMPT_FAIL_FIRST
+//	                      echo-prompt: "1" makes the *first* invocation exit
+//	                      nonzero, so the step retries and the file ends up
+//	                      holding both prompts — the retry's being the one
+//	                      carrying the daemon's failure block. Like the
+//	                      usage-limit marker the state is the fake CLI's own,
+//	                      counted from the file it just wrote
 //	FAKEAGENT_REPORT_ENV  comma-separated variable names for report-env
 //	FAKEAGENT_VINCENT_BIN set-status: path to the vincent binary to invoke.
 //	                      A fake agent has no other way to find one
@@ -120,6 +134,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -312,6 +327,17 @@ func main() {
 		}
 		emitText(strings.Join(reported, " "))
 		emitSuccessResult([]byte(strings.Join(reported, " ")), 1, 1)
+	case "echo-prompt":
+		// What the adapter actually handed this process, written where a test
+		// can read it back exactly (issue #323). It goes to a file rather
+		// than into the stream because the transcript is capped, chunked and
+		// tagged — a record of the prompt, where this has to *be* it.
+		if echoPrompt(prompt) == 1 && os.Getenv("FAKEAGENT_PROMPT_FAIL_FIRST") == "1" {
+			emitText("failing on purpose so there is a retry to compare against")
+			emitSuccessResult(prompt, 100, 42)
+			os.Exit(3)
+		}
+		claudeSuccess(prompt)
 	case "set-status":
 		// A step that reports on itself (task 036). It runs the real
 		// `vincent status` command rather than emitting a marker the daemon
@@ -361,6 +387,54 @@ func main() {
 	default: // success
 		claudeSuccess(prompt)
 	}
+}
+
+// echoPrompt appends one invocation's prompt to FAKEAGENT_PROMPT_FILE as a
+// JSON string on its own line and reports which invocation this was, 1-based.
+// A test comparing retried attempts can then tell them apart and compare
+// either byte for byte. It reports 0 when no file was named, which is every
+// caller that did not ask.
+//
+// O_APPEND with one Write call: the retries of one step are sequential, but a
+// `parallel` group's are not, and a torn line would read as a prompt the
+// adapter never sent.
+func echoPrompt(prompt []byte) int {
+	path := os.Getenv("FAKEAGENT_PROMPT_FILE")
+	if path == "" {
+		return 0
+	}
+	line, err := json.Marshal(string(prompt))
+	count := 0
+	if err == nil {
+		var f *os.File
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, err = f.Write(append(line, '\n'))
+			err = errors.Join(err, f.Close())
+		}
+	}
+	if err == nil {
+		var written []byte
+		if written, err = os.ReadFile(path); err == nil {
+			count = len(splitLines(string(written)))
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fakeagent: echo prompt:", err)
+		os.Exit(1)
+	}
+	return count
+}
+
+// splitLines is the non-empty lines of s, however the platform ended them.
+func splitLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // claudeSuccess is the `success` scenario's body, shared with the scenarios
