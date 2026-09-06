@@ -66,13 +66,19 @@
 #
 # ## Why the diff is three-dot
 #
-# The parent workflow runs its fan-out with `schedule: eager`, so the parent
-# branch — this task's `BaseBranch` — **moves while this lane is running** as
-# unrelated siblings merge into it. `git diff A..HEAD` is a direct comparison of
-# two trees, so it would report those siblings' work as this lane's, and report
-# this lane as having deleted anything they added. `git diff A...HEAD` compares
-# against the merge base, which is the parent branch as it stood when this
-# worktree was cut — which is exactly "what this lane did".
+# `git diff A..HEAD` is a direct comparison of two trees, so if the parent
+# branch — this task's `BaseBranch` — moves while this lane is running, it
+# reports the siblings' work as this lane's and reports this lane as having
+# deleted anything they added. `git diff A...HEAD` compares against the merge
+# base, which is the parent branch as it stood when this worktree was cut —
+# which is exactly "what this lane did", whether or not `A` has moved since.
+#
+# Under `github-resolve-issue-dag`'s `schedule: barrier` it does not move: a
+# round is merged only after every lane in it has settled, so nothing lands on
+# the parent branch while this one runs and the two forms agree. Three-dot is
+# kept anyway. It is the form that stays correct if this file is ever the lane
+# body of an eager fan-out, and an ownership clause that can report another
+# lane's files as this lane's stray paths is one nobody would trust.
 #
 # `git rev-list --count A..HEAD` is left two-dot deliberately: for rev-list that
 # is "commits in HEAD and not in A", which is still this lane's own commits
@@ -342,8 +348,9 @@ steps:
     # would have to guess which file it left behind.
     #
     # Three-dot on the diff and two-dot on the rev-list, deliberately: see the
-    # header. Under `schedule: eager` the base branch moves while this lane
-    # runs.
+    # header. The parent's `schedule: barrier` holds the base branch still
+    # while this lane runs; three-dot is what keeps the ownership clause honest
+    # if it ever does move.
     check: >
       test -z "$(git ls-files .vincent-issue)" &&
       git diff --quiet &&

@@ -11,10 +11,11 @@
 # in **one 45-minute agent session** on one branch. This file asks a planner to
 # cut the agreed brief into **work units and the edges between them**, then
 # hands that graph to a `fan_out` (§7.6) whose lanes are real child tasks with
-# their own worktrees and branches, merged back into this task's branch as they
-# finish. Units with no edge between them run at the same time; a unit that
-# genuinely cannot start until another's code exists declares `needs:` and is
-# cut from a branch that already contains it.
+# their own worktrees and branches, merged back into this task's branch a
+# **round at a time**. Units with no edge between them run at the same time; a
+# unit that genuinely cannot start until another's code exists declares
+# `needs:` and is cut from a branch that already contains it, once the round
+# that carried it has merged.
 #
 # **This is a wall-clock trade, not a cost saving.** Four lanes do not cost a
 # quarter of one session each; they cost four sessions, plus a planner, plus an
@@ -151,23 +152,37 @@
 # with a worktree and an agent session; rejecting it costs one planner run. The
 # gate renders the graph inline, so the thing being approved is on the screen.
 #
-# ## `schedule: eager`, and what it costs
+# ## `schedule: barrier`, and what it costs
 #
-# `build` declares `schedule: eager` (§7.6). A lane is merged and its dependents
-# spawned as soon as **its own** `needs` are done, rather than waiting for its
-# whole barrier round. Wall-clock is the entire point of this file, and a
-# barrier makes every round as slow as its slowest lane.
+# `build` declares `schedule: barrier` (§7.6) — the default, written out rather
+# than left absent, because which of the two trades a fan-out takes is a
+# decision and a reader who finds no `schedule:` cannot tell a decision from an
+# omission. The graph is walked in **rounds**: every lane of a round is spawned
+# together, the step parks until all of them have settled, the round is merged,
+# and only then is the next round spawned from the branch that now contains it.
+# A lane needing only one predecessor still waits for its whole round.
 #
-# The price is stated where the feature states it: **a lane's starting tree
-# becomes timing-dependent.** Whether an unrelated sibling had merged by the
-# time a lane was cut is a stopwatch question, so re-running this task can give
-# a lane a different tree and a different result, and the branch's merge
-# topology varies between runs even when the delivered tree does not. A workflow
-# trading reproducibility for throughput should say so in the file, and this is
-# that sentence.
+# What that buys is **reproducibility**. A lane always starts from "everything
+# in the rounds before it, and nothing else" — the same tree on every re-run,
+# whatever order the siblings happened to finish in. So a re-run of this task
+# is comparable to the run before it, a failed lane is judged on its own work
+# rather than on a stopwatch, and the branch's merge topology is the graph's
+# rather than the scheduler's.
 #
-# Note that a plan whose units declare no `needs` at all is one round either
-# way, and `schedule: eager` on it is redundant rather than wrong.
+# What it costs is wall-clock, and the cost is exactly what the planner is told
+# to minimise: **a round is as slow as its slowest lane**, so an edge does not
+# only delay its own dependent, it delays everything sharing that dependent's
+# round. That is why `needs` is described as expensive to the planner and asked
+# about again at the plan gate, and why both are told to prefer a wide graph to
+# a deep one. `schedule: eager` is the other trade — merge each lane as soon as
+# its own `needs` land — and is the faster of the two on a deep graph, at the
+# cost of a timing-dependent starting tree. This file is deliberately not
+# taking it.
+#
+# Note that a plan whose units declare no `needs` at all is one round under
+# either schedule — §7.6 runs a flat lane list as a barrier whatever the field
+# says — so on such a plan this declaration is a statement of intent rather
+# than a change of behaviour.
 #
 # ## Why `integrate` is an agent and not a check
 #
@@ -887,7 +902,7 @@ steps:
       A unit is a piece of the change that one agent can deliver on its own
       branch, in one session, and prove with one command. Each becomes a real
       child task with its own worktree, and their branches are merged back into
-      this one as they finish.
+      this one a round at a time.
 
       **Split only where it buys wall-clock.** Two units that are each ten
       minutes of work are worse than one unit of twenty: you pay two sessions,
@@ -913,8 +928,16 @@ steps:
          and it is not for avoiding conflicts; rule 1 is for that. A chain of
          four is a sequential workflow with extra steps.
 
-      A unit that needs another is cut from a branch that already contains it,
-      so it can call what that unit wrote.
+         The graph runs in **rounds**, and a round is as slow as its slowest
+         lane: everything with no unmet dependency starts together, and nothing
+         in the next round starts until the last lane of this one is done. So
+         an edge does not only delay the unit that declared it — it delays
+         every unit that ends up in the same round as that one. **Prefer a wide
+         graph to a deep one.** Two rounds of three beat three rounds of two.
+
+      A unit that needs another is cut from a branch that already contains it —
+      the round carrying that unit has merged before this one is spawned — so
+      it can call what that unit wrote.
 
       ## Things no unit may own
 
@@ -1043,7 +1066,7 @@ steps:
 
       n=$(jq -s 'length' .vincent-issue/units.jsonl)
       roots=$(jq -s '[.[] | select((.needs | length) == 0)] | length' .vincent-issue/units.jsonl)
-      say "$n unit(s), $roots can start at once"
+      say "$n unit(s), $roots in the first round"
       jq -c '.' .vincent-issue/units.jsonl
 
   - id: plan-gate
@@ -1060,7 +1083,8 @@ steps:
       Task #{{.Task.ID}} has cut the agreed change into work units. Approving
       this spawns one **child task** per unit — each with its own worktree,
       branch and agent session — and merges their branches back into
-      {{.Task.BranchName}} as they finish.
+      {{.Task.BranchName}} a round at a time: a round's lanes run together, and
+      the next round is cut from the branch once that one has merged.
 
       The graph:
 
@@ -1080,8 +1104,11 @@ steps:
         path will collide at the join. The lane checks catch a lane that
         strays outside its own expression; nothing catches two expressions
         that were written overlapping.
-      - **Is `needs` minimal?** Every edge is wall-clock. A chain through all
-        the units is the sequential workflow with extra steps and extra cost.
+      - **Is `needs` minimal, and is the graph wide rather than deep?** The
+        lanes run in rounds and a round is as slow as its slowest lane, so
+        every edge costs a whole round rather than just its own dependent. A
+        chain through all the units is the sequential workflow with extra steps
+        and extra cost.
       - **Does each `brief` stand alone?** A lane sees its own brief, the
         issue, and the code. It does not see `brief.md` and it does not see the
         other units. An interface two units share has to be spelled out in both.
@@ -1099,21 +1126,29 @@ steps:
     # for a plan that reached here some other way — an edited snapshot, a
     # retried step.
     max_lanes: 6
-    # Wall-clock is the entire point of this file. A lane is merged and its
-    # dependents spawned as soon as *its own* `needs` are done, rather than
-    # waiting for its whole barrier round to settle (§7.6).
+    # Written out rather than left absent — §7.6 defaults an empty field to
+    # exactly this — because which of the two trades a fan-out takes is a
+    # decision, and a reader who finds no `schedule:` cannot tell a decision
+    # from an omission.
     #
-    # The price is stated plainly because a file that trades reproducibility
-    # for throughput should say so: **a lane's starting tree becomes
-    # timing-dependent**. Whether an unrelated sibling had merged by the time a
-    # lane was cut is a stopwatch question, so re-running this task can give a
-    # lane a different tree and a different result, and the branch's merge
-    # topology varies between runs even when the delivered tree does not.
-    # `barrier` is the reproducible default; this file is not using it.
+    # The graph is walked in rounds: a round's lanes are spawned together, the
+    # step parks until every one of them has settled, the round is merged, and
+    # the next round is spawned from the branch that now contains it. So **a
+    # lane's starting tree is "the rounds before it, and nothing else"** — the
+    # same tree on every re-run, whatever order the siblings finished in. That
+    # is what makes a re-run comparable to the run before it and a failed lane
+    # judgeable on its own work rather than on a stopwatch.
     #
-    # A plan whose units declare no `needs` at all is one round either way, and
-    # this is redundant rather than wrong on such a plan.
-    schedule: eager
+    # The price is wall-clock: a round is as slow as its slowest lane, so an
+    # edge delays the dependent's whole round and not just the dependent. Both
+    # the planner and the plan gate are told to keep `needs` minimal and the
+    # graph wide for this reason. `schedule: eager` is the other trade — merge
+    # each lane as soon as its own `needs` land — and is faster on a deep
+    # graph, at the cost of a timing-dependent starting tree.
+    #
+    # A plan whose units declare no `needs` at all is one round either way: a
+    # flat lane list runs as a barrier whatever this field says.
+    schedule: barrier
     # The lane list is `plan-emit`'s stdout, one JSON object per line. `.Item`
     # in the template below is that object — the one place a template value is
     # not plain text, because a node of a graph carries an identity *and* its
