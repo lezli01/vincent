@@ -79,3 +79,35 @@ func sortIssues(issues []Issue) {
 func normalizeState(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
+
+// normalizeLogin folds either leg's spelling of an account onto one string,
+// and the two legs disagree about exactly one kind of account: a bot. REST
+// reports the login GitHub actually stores — `dependabot[bot]` — while `gh`
+// rewrites a bot to `app/dependabot`, a spelling that exists nowhere in
+// GitHub's own data and is not a login anyone can type. Left alone, Author
+// means two different strings for the same pull request depending on which
+// leg answered, and anything matching on it is correct against one leg and
+// silently wrong against the other: the `handle-dependabot-all` sweep
+// reported "0 of 0" against two open dependabot bumps because the gh leg
+// answered (issue #345).
+//
+// REST's spelling wins because it is GitHub's: it is what the API returns and
+// what a webhook payload carries, so it is the one a person can check against
+// something other than vincent. A login cannot contain `/`, so the prefix is
+// unambiguous and needs no is-bot flag to disambiguate it — which matters
+// because only `gh` reports one.
+//
+// Both legs run it. Normalizing on the leg that is already canonical is a
+// no-op, and one shared call is what keeps the next divergence from having
+// to be found twice.
+func normalizeLogin(s string) string {
+	s = strings.TrimSpace(s)
+	rest, ok := strings.CutPrefix(s, "app/")
+	if !ok || rest == "" {
+		return s
+	}
+	if strings.HasSuffix(rest, "[bot]") {
+		return rest
+	}
+	return rest + "[bot]"
+}
