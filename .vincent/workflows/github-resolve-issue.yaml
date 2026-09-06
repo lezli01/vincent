@@ -1220,7 +1220,16 @@ steps:
         # YAML comment, outside the `run:` scalar, so the braces below are not
         # rendered here — a template action in a comment *inside* the body
         # would be.)
+        # `exec 2>&1` on the first line because `repair`'s prompt quotes this
+        # step's `.Result`, which is stdout alone (§8.4). golangci-lint writes
+        # its findings there, but `go run mage.go testrace` does not write a
+        # *compile* failure there: `go test` prints test failures on stdout and
+        # sends the build error behind `FAIL ... [build failed]` to stderr. A
+        # GOOS-tagged file that stopped compiling is the commonest thing this
+        # loop exists to repair, and without this the repair session is handed
+        # the word FAIL and no reason.
         run: |
+          exec 2>&1
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
           pass="pass {{.Loop.Index}}/4"
@@ -1609,7 +1618,15 @@ steps:
         # `exit 1` after the guard rather than the rebase's own code: the `if:`
         # below reads `ne … 0`, so any non-zero is equivalent, and the fetch
         # path keeps `set -e`'s code by construction.
+        # `exec 2>&1` on the first line because `resolve`'s prompt quotes this
+        # step's `.Result`, which is stdout alone (§8.4). git splits this one:
+        # `CONFLICT (content): ...` is on stdout, but `error: could not apply`
+        # and every `hint:` line are on stderr — and `git fetch` writes
+        # *everything* there. So the failed-fetch case the prompt explicitly
+        # asks the agent to tell apart from a conflict reached it as an empty
+        # block, which is the one reading that makes the agent invent a fix.
         run: |
+          exec 2>&1
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
@@ -2025,6 +2042,13 @@ steps:
                 # job's does. Over-long lists are truncated at 256 bytes rather
                 # than refused (§5.4).
                 say "red on $short: $(awk 'NR > 1 && $1 == "fail" { $1 = ""; sub(/^ +/, ""); printf "%s; ", $0 }' .vincent-issue/checks.txt)"
+                # `repair-checks` quotes this step's `.Result`, which is
+                # stdout alone (§8.4), and this table is the whole of what that
+                # prompt is given to work from — on this path it was written to
+                # stderr only, so the session opened on two header lines and no
+                # table. The stderr copy below stays: it is the human's, in the
+                # step summary, next to the prose that explains it.
+                sed -n '2,$p' .vincent-issue/checks.txt
                 echo "a required check did not pass on $head; not merging:" >&2
                 sed -n '2,$p' .vincent-issue/checks.txt >&2
                 exit 1
