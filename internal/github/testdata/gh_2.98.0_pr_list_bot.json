@@ -1,0 +1,121 @@
+[
+  {
+    "author": {
+      "is_bot": true,
+      "login": "app/dependabot"
+    },
+    "baseRefName": "master",
+    "body": "Bumps [sigstore/cosign-installer](https://github.com/sigstore/cosign-installer) from 3.9.1 to 4.1.2.\n<details>\n<summary>Release notes</summary>\n<p><em>Sourced from <a href=\"https://github.com/sigstore/cosign-installer/releases\">sigstore/cosign-installer's releases</a>.</em></p>\n<blockquote>\n<h2>v4.1.2</h2>\n<h2>What's Changed</h2>\n<ul>\n<li>Bump cosign to 3.0.6 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/232\">sigstore/cosign-installer#232</a></li>\n</ul>\n<h2>v4.1.1</h2>\n<h2>What's Changed</h2>\n<ul>\n<li>chore: update default cosign-release to v3.0.5 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/223\">sigstore/cosign-installer#223</a></li>\n</ul>\n<p><strong>Full Changelog</strong>: <a href=\"https://github.com/sigstore/cosign-installer/compare/v4.1.0...v4.1.1\">https://github.com/sigstore/cosign-installer/compare/v4.1.0...v4.1.1</a></p>\n<h2>v4.1.0</h2>\n<h2>What's Changed</h2>\n<p>We recommend updating as soon as possible as this includes bug fixes for Cosign. We also recommend removing <code>with: cosign-release</code> and strongly discourage using <code>cosign-release</code> unless you have a specific reason to use an older version of Cosign.</p>\n<ul>\n<li>Bump cosign to 3.0.5 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/220\">sigstore/cosign-installer#220</a></li>\n<li>fix: add retry to curl downloads for transient network failures in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/210\">sigstore/cosign-installer#210</a></li>\n</ul>\n<p><strong>Full Changelog</strong>: <a href=\"https://github.com/sigstore/cosign-installer/compare/v4.0.0...v4.1.0\">https://github.com/sigstore/cosign-installer/compare/v4.0.0...v4.1.0</a></p>\n<h2>v4.0.0</h2>\n<h2>What's Changed?</h2>\n<p><strong>Note:</strong> You must upgrade to cosign-installer v4 if you want to install <a href=\"https://blog.sigstore.dev/cosign-3-0-available/\">Cosign v3+</a>. You may still install Cosign v2.x with cosign-installer v4.</p>\n<p>In version v3+, using <code>cosign sign-blob</code> requires adding the <code>--bundle</code> flag which may require you to update your signing command.</p>\n<ul>\n<li>Add support for Cosign v3 releases (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/201\">#201</a>)</li>\n</ul>\n<h2>v3.10.1</h2>\n<h2>What's Changed?</h2>\n<p><strong>Note:</strong> cosign-installer v3.x cannot be used to install <a href=\"https://blog.sigstore.dev/cosign-3-0-available/\">Cosign v3.x</a>. You must upgrade to cosign-installer v4 in order to use Cosign v3.</p>\n<p><strong>Note:</strong> This is planned to be the final release of Cosign v2, though we will cut new releases for any critical security or bug fixes. We recommend transitioning to <a href=\"https://blog.sigstore.dev/cosign-3-0-available/\">Cosign v3</a>.</p>\n<ul>\n<li>Bump default Cosign to v2.6.1 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/203\">#203</a>)</li>\n</ul>\n<h2>v3.10.0</h2>\n<h2>What's Changed</h2>\n<ul>\n<li>Bump default Cosign to v2.6.0 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/200\">sigstore/cosign-installer#200</a></li>\n</ul>\n<p><strong>Full Changelog</strong>: <a href=\"https://github.com/sigstore/cosign-installer/compare/v3.9.2...v3.10.0\">https://github.com/sigstore/cosign-installer/compare/v3.9.2...v3.10.0</a></p>\n<h2>v3.9.2</h2>\n<h2>What's Changed</h2>\n<ul>\n<li>not fail fast and setup permissions in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/195\">sigstore/cosign-installer#195</a></li>\n<li>drop old unsupported versions &lt;v2.0.0 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/192\">sigstore/cosign-installer#192</a></li>\n<li>Update default to v2.5.3 in <a href=\"https://redirect.github.com/sigstore/cosign-installer/pull/196\">sigstore/cosign-installer#196</a></li>\n</ul>\n<!-- raw HTML omitted -->\n</blockquote>\n<p>... (truncated)</p>\n</details>\n<details>\n<summary>Commits</summary>\n<ul>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/6f9f17788090df1f26f669e9d70d6ae9567deba6\"><code>6f9f177</code></a> Bump cosign to 3.0.6 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/232\">#232</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/b5e753ae2d39589c7b38850b463739151fc67f07\"><code>b5e753a</code></a> Bump actions/github-script from 8.0.0 to 9.0.0 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/230\">#230</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/115e4ce455e573aa6e9ba51e8d040ddd5c1378af\"><code>115e4ce</code></a> Bump actions/setup-go from 6.3.0 to 6.4.0 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/226\">#226</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003\"><code>cad07c2</code></a> chore: update default cosign-release to v3.0.5 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/223\">#223</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/ba7bc0a3fef59531c69a25acd34668d6d3fe6f22\"><code>ba7bc0a</code></a> fix: add retry to curl downloads for transient network failures (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/210\">#210</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/5a292e1504fdf08d68831aa1d265e92aee5701f9\"><code>5a292e1</code></a> Bump cosign to 3.0.5 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/220\">#220</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/351ea76151ae2dbbf52374c9dd639f4981de944f\"><code>351ea76</code></a> Bump actions/checkout from 6.0.1 to 6.0.2 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/217\">#217</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/c17565ff322a3403de48978f18d9ee0cfa7c2cd5\"><code>c17565f</code></a> test with go 1.26 too (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/221\">#221</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/a6fdd19182ff7fb86ae39a9329ba29eb602cbabb\"><code>a6fdd19</code></a> Bump actions/setup-go from 6.1.0 to 6.3.0 (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/218\">#218</a>)</li>\n<li><a href=\"https://github.com/sigstore/cosign-installer/commit/430b6a704fe0c92f1b1261d84376a900f38d90ff\"><code>430b6a7</code></a> docs: fix registry from gcr.io to ghcr.io (<a href=\"https://redirect.github.com/sigstore/cosign-installer/issues/213\">#213</a>)</li>\n<li>Additional commits viewable in <a href=\"https://github.com/sigstore/cosign-installer/compare/398d4b0eeef1380460a10c8013a76f728fb906ac...6f9f17788090df1f26f669e9d70d6ae9567deba6\">compare view</a></li>\n</ul>\n</details>\n<br />\n",
+    "createdAt": "2026-08-20T19:15:01Z",
+    "headRefName": "dependabot/github_actions/sigstore/cosign-installer-4.1.2",
+    "headRefOid": "fa24fe2e47208b2652db205c00dfe41187672790",
+    "headRepository": {
+      "id": "R_kgDOTTMFiQ",
+      "name": "vincent",
+      "nameWithOwner": "lezli01/vincent"
+    },
+    "headRepositoryOwner": {
+      "id": "MDQ6VXNlcjY1Mzg5NjM=",
+      "login": "lezli01"
+    },
+    "isDraft": false,
+    "mergedAt": null,
+    "number": 156,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:47:41Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369947664/job/99418515410",
+        "name": "plain-language",
+        "startedAt": "2026-08-31T07:47:41Z",
+        "status": "COMPLETED",
+        "workflowName": "PR title"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:47:41Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369948395/job/99418517653",
+        "name": "plain-language",
+        "startedAt": "2026-08-31T07:47:42Z",
+        "status": "COMPLETED",
+        "workflowName": "PR title"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:47:53Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418518963",
+        "name": "packaging-config",
+        "startedAt": "2026-08-31T07:47:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:53:27Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519155",
+        "name": "ci (ubuntu-latest)",
+        "startedAt": "2026-08-31T07:47:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:55:43Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519261",
+        "name": "ci (macos-latest)",
+        "startedAt": "2026-08-31T07:49:05Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T08:03:11Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519187",
+        "name": "ci (windows-latest)",
+        "startedAt": "2026-08-31T07:47:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:50:51Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519156",
+        "name": "gates (ubuntu-latest)",
+        "startedAt": "2026-08-31T07:47:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:51:14Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519212",
+        "name": "gates (macos-latest)",
+        "startedAt": "2026-08-31T07:47:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-31T07:53:35Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/lezli01/vincent/actions/runs/33369949273/job/99418519219",
+        "name": "gates (windows-latest)",
+        "startedAt": "2026-08-31T07:47:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      }
+    ],
+    "title": "ci: bump sigstore/cosign-installer from 3.9.1 to 4.1.2",
+    "updatedAt": "2026-08-31T07:47:38Z",
+    "url": "https://github.com/lezli01/vincent/pull/156"
+  }
+]

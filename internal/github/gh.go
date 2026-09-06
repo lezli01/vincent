@@ -53,7 +53,7 @@ func (g ghIssue) normalize(repo Repo, now time.Time) Issue {
 		Body:      g.Body,
 		URL:       g.URL,
 		State:     normalizeState(g.State),
-		Author:    g.Author.Login,
+		Author:    normalizeLogin(g.Author.Login),
 		CreatedAt: g.CreatedAt,
 		UpdatedAt: g.UpdatedAt,
 		FetchedAt: now,
@@ -66,7 +66,7 @@ func (g ghIssue) normalize(repo Repo, now time.Time) Issue {
 	// The first assignee only. §8.1.2 field values are single strings, and a
 	// joined list under a field named `assignee` would read as one login.
 	if len(g.Assignees) > 0 {
-		issue.Assignee = g.Assignees[0].Login
+		issue.Assignee = normalizeLogin(g.Assignees[0].Login)
 	}
 	if g.Milestone != nil {
 		issue.Milestone, issue.MilestoneNumber = g.Milestone.Title, g.Milestone.Number
@@ -315,7 +315,7 @@ func (g ghPull) normalize(repo Repo, now time.Time) PullRequest {
 		HeadSHA:    g.HeadOid,
 		HeadRepo:   joinRepo(g.HeadRepoOwner.Login, g.HeadRepo.Name),
 		BaseBranch: g.Base,
-		Author:     g.Author.Login,
+		Author:     normalizeLogin(g.Author.Login),
 		CreatedAt:  g.CreatedAt,
 		UpdatedAt:  g.UpdatedAt,
 		FetchedAt:  now,

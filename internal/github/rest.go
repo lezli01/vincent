@@ -68,7 +68,7 @@ func (r restIssue) normalize(repo Repo, now time.Time) Issue {
 		Body:      r.Body,
 		URL:       r.HTMLURL,
 		State:     normalizeState(r.State),
-		Author:    r.User.Login,
+		Author:    normalizeLogin(r.User.Login),
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 		FetchedAt: now,
@@ -79,7 +79,7 @@ func (r restIssue) normalize(repo Repo, now time.Time) Issue {
 		}
 	}
 	if len(r.Assignees) > 0 {
-		issue.Assignee = r.Assignees[0].Login
+		issue.Assignee = normalizeLogin(r.Assignees[0].Login)
 	}
 	if r.Milestone != nil {
 		issue.Milestone, issue.MilestoneNumber = r.Milestone.Title, r.Milestone.Number
@@ -251,7 +251,7 @@ func (r restPull) normalize(repo Repo, now time.Time) PullRequest {
 		HeadBranch: r.Head.Ref,
 		HeadSHA:    r.Head.SHA,
 		BaseBranch: r.Base.Ref,
-		Author:     r.User.Login,
+		Author:     normalizeLogin(r.User.Login),
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  r.UpdatedAt,
 		FetchedAt:  now,

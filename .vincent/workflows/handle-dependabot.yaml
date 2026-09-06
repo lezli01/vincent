@@ -172,8 +172,16 @@ steps:
       # one approval — is calibrated to a bot-generated dependency bump. Running
       # it against a human's pull request would be applying a review standard
       # nobody agreed to, so this is a refusal rather than a warning.
+      #
+      # `gh` rewrites a bot's login to `app/dependabot`: its own spelling,
+      # which exists nowhere in GitHub's data, where the account is
+      # `dependabot[bot]`. This step reads `gh` directly rather than through
+      # vincent's listing — which folds both legs onto the REST spelling — so
+      # the prefix arrives here unfolded and the match is against the login
+      # with it stripped. `$author` keeps the raw value, because the refusal
+      # below should quote what was actually seen.
       author=$(jq -r .author.login "$scratch/pr.json")
-      case "$author" in
+      case "${author#app/}" in
         dependabot|dependabot\[bot\]|dependabot-preview|dependabot-preview\[bot\]) ;;
         *) say "#{{index .Task.Fields "pull"}} is by $author, not dependabot"; echo "pull request #{{index .Task.Fields "pull"}} was opened by '$author', not dependabot." >&2
            echo "this workflow's merge policy assumes a bot-generated dependency bump; use a review workflow instead." >&2

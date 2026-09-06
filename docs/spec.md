@@ -5334,6 +5334,21 @@ GET    /v1/projects/{id}/github/pulls   *Added 2026-08-29 (task 052).* The proje
                                         call naming only the number produce the same task. The
                                         default stays open-only: closed and merged are now a
                                         choice a human makes, not a listing everyone pays for
+                                        *Amended 2026-09-06 (issue #345):* `author` is
+                                        **normalized to GitHub's own spelling**, here and on the
+                                        issues listing above, where it also covers `assignee`.
+                                        The two legs agreed about every account except a bot:
+                                        `gh` rewrites one to `app/dependabot`, a spelling that
+                                        exists nowhere in GitHub's data, where the account is
+                                        `dependabot[bot]`. Both legs now fold onto the REST
+                                        form, so this field cannot mean two things depending on
+                                        which leg answered. It belongs in the same sentence as
+                                        "it fetches, normalizes, sorts and returns": a client
+                                        matching on `author` was correct against one leg and
+                                        silently wrong against the other, and silently is the
+                                        operative word — an unmatched author is not an error,
+                                        it is a dependabot sweep reporting "0 of 0" against two
+                                        open bumps and finishing done
 GET    /v1/tasks/{id}/github/pull       *Added 2026-08-29 (task 052).* This task's pull request:
                                         the stored link plus the **live** pull request, fetched
                                         by number. Always **200**, whatever GitHub says — a

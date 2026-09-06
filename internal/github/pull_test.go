@@ -286,3 +286,58 @@ func TestPullLinkStates(t *testing.T) {
 		t.Error("a suppression forgot which pull request was refused")
 	}
 }
+
+// TestPullLegsAgreeOnBotAuthor is the same claim as
+// TestPullLegsAgreeOnListing, aimed at the one account type where the two
+// legs really did disagree. The fixtures are one captured dependabot bump,
+// read both ways: `gh` calls its author `app/dependabot`, the REST API calls
+// it `dependabot[bot]`, and normalizeLogin is what makes those the same row.
+//
+// The regression it holds is not abstract. `handle-dependabot-all` selects
+// pull requests with a jq filter over this field; the gh leg answered, no
+// author started with "dependabot", and the sweep reported "0 of 0" against
+// two open bumps and finished done.
+func TestPullLegsAgreeOnBotAuthor(t *testing.T) {
+	gh, err := parseGHPullList(readFixture(t, "gh_2.98.0_pr_list_bot.json"), vincentRepo, fixedNow)
+	if err != nil {
+		t.Fatalf("parse gh listing: %v", err)
+	}
+	rest, err := parseRESTPullList(readFixture(t, "rest_pulls_bot.json"), vincentRepo, fixedNow)
+	if err != nil {
+		t.Fatalf("parse rest listing: %v", err)
+	}
+	if len(gh) != 1 || len(rest) != 1 {
+		t.Fatalf("fixtures hold %d gh and %d rest rows, want 1 each", len(gh), len(rest))
+	}
+	if !reflect.DeepEqual(gh[0], rest[0]) {
+		t.Fatalf("the two legs disagree about a bot-authored pull request:\n gh   = %+v\n rest = %+v", gh[0], rest[0])
+	}
+	if gh[0].Author != "dependabot[bot]" {
+		t.Errorf("author = %q, want the REST spelling %q", gh[0].Author, "dependabot[bot]")
+	}
+}
+
+// TestNormalizeLogin pins the folding itself. The `app/` prefix is `gh`'s
+// alone and a login can never contain `/`, so nothing a human owns is
+// touched.
+func TestNormalizeLogin(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"app/dependabot", "dependabot[bot]"},
+		{"app/github-actions", "github-actions[bot]"},
+		{"dependabot[bot]", "dependabot[bot]"},
+		{"octocat", "octocat"},
+		{"  octocat  ", "octocat"},
+		{"", ""},
+		// Never doubled: a leg that has already folded stays folded.
+		{"app/dependabot[bot]", "dependabot[bot]"},
+		// Not a bot marker, so not rewritten — `app` is a real login and
+		// `apples` is not a prefix match.
+		{"app", "app"},
+		{"apples", "apples"},
+		{"app/", "app/"},
+	} {
+		if got := normalizeLogin(tc.in); got != tc.want {
+			t.Errorf("normalizeLogin(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
