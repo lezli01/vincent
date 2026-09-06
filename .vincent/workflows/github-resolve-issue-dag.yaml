@@ -1241,10 +1241,22 @@ steps:
         # unmerged, no marker left behind. `git diff` feeds `grep -E` without
         # `-q` on purpose (CLAUDE.md): an early-exiting consumer would kill the
         # producer with SIGPIPE and fail the check *because* it matched.
+        #
+        # "The packages it staged" includes two shapes the first spelling of
+        # this pipeline missed (#341): a Go file at the repository root, which
+        # has no `/` to strip and so needs the second `sed` address that emits
+        # `.` — `mage.go` and `magefile.go` live there — and a pure deletion,
+        # which `--diff-filter=ACMR` dropped even though removing a file is
+        # the edit most likely to break the siblings that stayed. `D` cannot
+        # simply be appended: the directory of a deleted file may be gone, or
+        # hold no Go file any more, and `go build` on such a path fails. So
+        # the list is filtered against what is on disk after the resolution,
+        # which turns a package the resolution emptied back into no argument
+        # at all rather than into a false failure.
         check: >
           test -z "$(git ls-files -u)" &&
           { markers=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+(<<<<<<<|>>>>>>>)' || true); test -z "$markers" || { echo 'conflict markers survived the resolution:' >&2; echo "$markers" >&2; false; }; } &&
-          { dirs=$(git diff --cached --name-only --diff-filter=ACMR | sed -n 's#^\(.*\)/[^/]*\.go$#./\1#p' | sort -u); test -z "$dirs" || { go build $dirs && go vet $dirs; }; }
+          { dirs=$(git diff --cached --name-only --diff-filter=ACMRD | sed -n -e 's#^\(.*\)/[^/]*\.go$#\1#p' -e 's#^[^/]*\.go$#.#p' | sort -u | while read -r p; do ls "$p"/*.go >/dev/null 2>&1 && printf './%s\n' "$p"; done); test -z "$dirs" || { go build $dirs && go vet $dirs; }; }
         check_timeout: 10m
 
   - id: integrate
