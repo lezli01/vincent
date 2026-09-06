@@ -266,7 +266,15 @@ steps:
     # answer is the only safe direction: the cost of a wrong 1 is one agent
     # session, and the cost of a wrong 0 is a silent breaking change merged on a
     # green build.
+    # `exec 2>&1` on the first line because `assess`'s prompt quotes this
+    # step's `.Result`, which is stdout alone (§8.4). The module line below is
+    # the only thing this body puts there; every *reason* — the major change,
+    # the pre-1.0 minor, the unreadable title — is an `>&2` echo. On the
+    # grouped-update path it exits before the module line is reached at all, so
+    # "a previous step decided this is not a routine patch bump:" was followed
+    # by nothing.
     run: |
+      exec 2>&1
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       scratch=$(git rev-parse --git-path vincent-deps)

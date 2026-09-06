@@ -775,7 +775,15 @@ steps:
         # anything new — the loop is the iteration, not the retry budget.
         allow_failure: true
         max_retries: 0
+        # `exec 2>&1` on the first line because `repair`'s prompt quotes
+        # this step's `.Result`, which is stdout alone (§8.4), and every leg
+        # here reports its failure on stderr: `go build` writes compile errors
+        # there exclusively, and `go test` sends the build error behind its
+        # `FAIL ... [build failed]` line there too. Without it the `==` headers
+        # below arrive labelling nothing, which is the whole input the repair
+        # session gets.
         run: |
+          exec 2>&1
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
           rc=0
 
