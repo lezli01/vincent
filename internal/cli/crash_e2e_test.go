@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestCrashRecoveryE2E(t *testing.T) {
 
 	// Daemon #1: the agent hangs until killed, so the crash lands mid-step.
 	first := startDaemonProcess(t, dataDir, cfgDir, "hang")
-	c := waitDaemonAPI(t, dataDir)
+	c := waitDaemonAPI(t, dataDir, first)
 
 	var project struct {
 		ID int64 `json:"id"`
@@ -53,14 +54,14 @@ func TestCrashRecoveryE2E(t *testing.T) {
 	pid := waitJournaledPID(t, c, task.ID)
 
 	// Hard kill: SIGKILL / TerminateProcess. No goodbye, no cleanup.
-	if err := first.Process.Kill(); err != nil {
+	if err := first.cmd.Process.Kill(); err != nil {
 		t.Fatalf("kill daemon: %v", err)
 	}
-	_ = first.Wait()
+	<-first.exited
 
 	// Daemon #2: recovery runs before it serves; the re-run must succeed.
 	second := startDaemonProcess(t, dataDir, cfgDir, "success")
-	c2 := waitDaemonAPI(t, dataDir)
+	c2 := waitDaemonAPI(t, dataDir, second)
 
 	// The journaled process is gone, whichever mechanism reaped it.
 	gone := time.Now().Add(15 * time.Second)
@@ -124,10 +125,34 @@ func TestCrashRecoveryE2E(t *testing.T) {
 	waitExit(t, second)
 }
 
+// daemonProc is a spawned daemon child plus the one goroutine that owns its
+// exec.Cmd.Wait. Wait may be called exactly once, and these tests need the
+// child's fate from several places at once — a kill that waits for the exit,
+// a startup poll that has to notice a corpse, a cleanup that reaps whatever
+// is left — so the reaper is centralized here and nothing else calls Wait.
+type daemonProc struct {
+	cmd    *exec.Cmd
+	exited chan struct{} // closed once the child has been reaped
+	err    error         // Wait's result; read only after exited is closed
+}
+
+// status describes the child for a failure message.
+func (p *daemonProc) status() string {
+	select {
+	case <-p.exited:
+		if p.err != nil {
+			return "child exited: " + p.err.Error()
+		}
+		return "child exited: status 0"
+	default:
+		return fmt.Sprintf("child still running (pid %d)", p.cmd.Process.Pid)
+	}
+}
+
 // startDaemonProcess runs `vincent daemon` (foreground) as a real child
 // process with the fake agent's scenario in its environment, so a
 // Process.Kill is a genuine daemon crash.
-func startDaemonProcess(t *testing.T, dataDir, cfgDir, scenario string) *exec.Cmd {
+func startDaemonProcess(t *testing.T, dataDir, cfgDir, scenario string) *daemonProc {
 	t.Helper()
 	cmd := exec.Command(vincentBin, "daemon")
 	cmd.Env = append(hermeticEnv(),
@@ -138,27 +163,28 @@ func startDaemonProcess(t *testing.T, dataDir, cfgDir, scenario string) *exec.Cm
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
+	p := &daemonProc{cmd: cmd, exited: make(chan struct{})}
+	go func() {
+		p.err = cmd.Wait()
+		close(p.exited)
+	}()
 	t.Cleanup(func() {
-		if cmd.ProcessState == nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-		}
+		_ = cmd.Process.Kill()
+		<-p.exited
 	})
-	return cmd
+	return p
 }
 
 // daemonExitTimeout bounds a graceful shutdown in the e2e tests: §12.4's 15 s
 // process grace plus the HTTP drain has to fit inside it.
 const daemonExitTimeout = 30 * time.Second
 
-func waitExit(t *testing.T, cmd *exec.Cmd) {
+func waitExit(t *testing.T, p *daemonProc) {
 	t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
 	select {
-	case <-done:
+	case <-p.exited:
 	case <-time.After(daemonExitTimeout):
-		_ = cmd.Process.Kill()
+		_ = p.cmd.Process.Kill()
 		t.Fatalf("daemon did not exit within %s", daemonExitTimeout)
 	}
 }
@@ -169,13 +195,44 @@ type apiClient struct {
 	token string
 }
 
+// daemonAPIBudget is how long waitDaemonAPI gives a freshly spawned daemon to
+// serve its API. It is not a claim about the daemon's startup cost: it is wall
+// clock on a shared runner, and the load it competes with varies by platform
+// and by build. `go test -race ./...` reaches internal/cli after internal/api
+// and internal/taskrun have run in the same job, and on Windows the fixed 30 s
+// this replaced turned out to be roughly the observed cost rather than a
+// margin (issue #340). So scale it, and take the multipliers from the build
+// rather than guessing at run time.
+//
+// This is a test-harness budget only. `daemon start`'s own startTimeout is a
+// phase 1 decision about the user-facing command and is deliberately untouched.
+func daemonAPIBudget() time.Duration {
+	budget := 30 * time.Second
+	if raceEnabled {
+		budget *= 2
+	}
+	if runtime.GOOS == "windows" {
+		budget *= 2
+	}
+	return budget
+}
+
 // waitDaemonAPI polls until the (re)started daemon serves its API and
 // returns a client for it. A stale daemon.json from a crashed predecessor
 // fails the health check and keeps the poll going.
-func waitDaemonAPI(t *testing.T, dataDir string) *apiClient {
+//
+// A daemon that died during startup will never become healthy, so the poll
+// watches the child as well and gives up the moment it exits — otherwise a
+// broken daemon costs the whole (now larger) budget on every run. Either way
+// the failure carries the evidence: the budget actually spent, the child's
+// fate, and the tail of daemon.log, which is where the daemon writes its
+// reason. `daemon start` attaches the same log tail to its own timeout.
+func waitDaemonAPI(t *testing.T, dataDir string, p *daemonProc) *apiClient {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
+	budget := daemonAPIBudget()
+	start := time.Now()
+	deadline := start.Add(budget)
+	for {
 		ri, err := daemon.ReadRuntimeInfo(dataDir)
 		if err == nil {
 			if _, err := daemon.CheckHealth(t.Context(), ri.Port); err == nil {
@@ -186,9 +243,19 @@ func waitDaemonAPI(t *testing.T, dataDir string) *apiClient {
 				return &apiClient{base: fmt.Sprintf("http://127.0.0.1:%d", ri.Port), token: token}
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-p.exited:
+			t.Fatalf("daemon exited after %s without serving its API (%s)\n--- daemon.log tail ---\n%s",
+				time.Since(start).Round(time.Millisecond), p.status(), daemon.LogTail(dataDir, 20))
+		default:
+		}
+		if !time.Now().Before(deadline) {
+			break
+		}
+		time.Sleep(pollInterval)
 	}
-	t.Fatal("daemon did not become healthy within 30s")
+	t.Fatalf("daemon did not become healthy within %s (%s)\n--- daemon.log tail ---\n%s",
+		budget, p.status(), daemon.LogTail(dataDir, 20))
 	return nil
 }
 

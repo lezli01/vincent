@@ -59,7 +59,7 @@ func TestBackupRestoreRoundTripE2E(t *testing.T) {
 	// Generation one: a task that finishes, with usage the result event
 	// reports, so the restored database has costs to compare.
 	first := startDaemonProcess(t, dataDir, cfgDir, "big-usage")
-	c1 := waitDaemonAPI(t, dataDir)
+	c1 := waitDaemonAPI(t, dataDir, first)
 	if out, code := runVincent(t, dataDir, cfgDir, "project", "add", repo); code != 0 {
 		t.Fatalf("project add: code %d, out %q", code, out)
 	}
@@ -70,7 +70,7 @@ func TestBackupRestoreRoundTripE2E(t *testing.T) {
 
 	// Generation two: a task that is still running when the archive is taken.
 	second := startDaemonProcess(t, dataDir, cfgDir, "hang")
-	c2 := waitDaemonAPI(t, dataDir)
+	c2 := waitDaemonAPI(t, dataDir, second)
 	runningID := addTask(t, dataDir, cfgDir, "still running at backup time")
 	waitJournaledPID(t, c2, runningID)
 
@@ -125,8 +125,7 @@ func TestBackupRestoreRoundTripE2E(t *testing.T) {
 
 	// Generation three, on the restored installation.
 	third := startDaemonProcess(t, newData, newCfg, "success")
-	c3 := waitDaemonAPI(t, newData)
-	t.Cleanup(func() { _ = third.Process.Kill() })
+	c3 := waitDaemonAPI(t, newData, third)
 
 	var restored []e2eTask
 	c3.get(t, "/v1/tasks?archived=all", &restored)

@@ -64,6 +64,6 @@ func TestWaitDaemonAPIOnADoomedDaemon(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfgDir, config.FileName), []byte(bad), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	startDaemonProcess(t, dataDir, cfgDir, "success")
-	waitDaemonAPI(t, dataDir)
+	p := startDaemonProcess(t, dataDir, cfgDir, "success")
+	waitDaemonAPI(t, dataDir, p)
 }
