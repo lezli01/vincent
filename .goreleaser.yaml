@@ -119,10 +119,11 @@ homebrew_casks:
     # An rc tag must not move the cask users install; goreleaser's `auto`
     # skips the push whenever the release is a prerelease.
     skip_upload: auto
-    url:
-      # Lets `brew audit` accept a homepage whose domain differs from the
-      # download host.
-      verified: github.com/lezli01/vincent/
+    # No `url.verified` here: Homebrew removed the stanza (Homebrew/brew#23280)
+    # and now verifies the download host by default, so goreleaser stopped
+    # writing it in v2.18.1 and `goreleaser check` fails on it. It used to be
+    # what let `brew audit` accept a homepage whose domain differs from the
+    # download host; that is the default behaviour now. Do not add it back.
     commit_author:
       name: goreleaser
       email: goreleaser@users.noreply.github.com
