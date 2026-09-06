@@ -42,15 +42,27 @@
 # An `env:` mapping would be the other way, and it is not available: `env:` is a
 # command-step field (§8.5), and the step that needs these is an agent.
 #
-# ## Why the check is not the test suite
+# ## Why the check is not the test suite, and not `go build ./...` either
 #
 # On the bug path the parent branch carries a **committed, failing** regression
 # test from the moment the fan-out starts until the unit that fixes it merges.
 # `go run mage.go test` is therefore red by construction inside a lane, and a
 # lane check that ran it would fail every lane for a reason that has nothing to
-# do with the lane. The bar here is `go build ./...` plus the unit's own scoped
-# `check` command; the suite is the parent's `integrate` step's bar, after the
-# join, and the cross-platform legs are `verify`'s after that.
+# do with the lane.
+#
+# `go build ./...` is red by construction in a lane too, and for the same
+# structural reason: a unit that changes a signature and a unit that updates its
+# call sites are different units — the second `needs` the first, so it lands
+# *after* it — and between the two commits the repository does not compile. The
+# lane that changed the signature cannot fix that: the call site is in another
+# unit's `files` expression, and touching it fails the ownership clause below.
+# A whole-repo build as the lane's bar is therefore a deadlock, not a gate: the
+# lane can neither pass it nor repair it, and its only exit is `blocked`.
+#
+# The bar here is the unit's own scoped `check` command, which the planner
+# writes and which compiles and tests what the unit actually changed. The
+# whole-repo build and the suite are the parent's `integrate` step's bar, after
+# every unit has merged, and the cross-platform legs are `verify`'s after that.
 #
 # ## Why the diff is three-dot
 #
@@ -275,7 +287,13 @@ steps:
       ## The bar
 
       `.vincent-issue/unit-check.sh` is the command the plan says proves this
-      unit. Run it. It has to pass, along with `go build ./...`.
+      unit. Run it. It has to pass, and it is the whole bar.
+
+      **Do not run `go build ./...` as your bar either.** Another unit may own
+      the call sites of an interface you changed, and it lands after you — so
+      the repository legitimately does not compile between your commit and
+      theirs. Build and vet what you own; the whole-repo build runs once, after
+      every unit has merged.
 
       **Do not run the whole test suite as your bar.** If this is a bug fix, a
       failing regression test is committed on this branch on purpose and stays
@@ -332,7 +350,6 @@ steps:
       git diff --cached --quiet &&
       test "$(git rev-list --count {{.Task.BaseBranch}}..HEAD)" -gt 0 &&
       { stray=$(git diff --name-only {{.Task.BaseBranch}}...HEAD | grep -vEf .vincent-issue/unit-files.re || true); test -z "$stray" || { echo 'this unit committed paths the plan did not give it:' >&2; echo "$stray" >&2; echo 'owned paths (ERE):' >&2; cat .vincent-issue/unit-files.re >&2; false; }; } &&
-      go build ./... &&
       sh .vincent-issue/unit-check.sh
     check_timeout: 15m
 
