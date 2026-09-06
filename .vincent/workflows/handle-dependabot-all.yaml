@@ -236,8 +236,16 @@ steps:
       # drops the row rather than guessing a base to pass to --base-branch.
       # Guessing there is exactly the mistake handle-dependabot's preflight
       # refuses a task for: a merge gated on the wrong branch's CI.
-      jq '[ .[]
-            | select(.author != null and (.author | ascii_downcase | startswith("dependabot")))
+      #
+      # `by_dependabot` strips a leading `app/` before matching. That prefix is
+      # `gh`'s own spelling of a bot login — GitHub's data says
+      # `dependabot[bot]` — and the daemon now folds both legs onto the REST
+      # spelling, so this only has to hold against an older daemon. It is kept
+      # because the failure mode is silent: an unmatched author is not an
+      # error, it is a sweep that reports "0 of 0" and finishes done.
+      jq 'def by_dependabot: (.author // "") | ascii_downcase | ltrimstr("app/") | startswith("dependabot");
+          [ .[]
+            | select(by_dependabot)
             | select(.draft == false)
             | select(.task_id == null)
             | select((.head_repo // .repo) == .repo)
@@ -250,7 +258,8 @@ steps:
       printf '%s\n' "$planned" > "$scratch/planned"
 
       total=$(jq 'length' "$scratch/prs.json")
-      bots=$(jq '[ .[] | select(.author != null and (.author | ascii_downcase | startswith("dependabot"))) ] | length' "$scratch/prs.json")
+      bots=$(jq 'def by_dependabot: (.author // "") | ascii_downcase | ltrimstr("app/") | startswith("dependabot");
+                 [ .[] | select(by_dependabot) ] | length' "$scratch/prs.json")
 
       echo "open pull requests: $total (newest {{index .Task.Fields "limit"}})"
       echo "by dependabot:      $bots"
