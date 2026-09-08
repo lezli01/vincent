@@ -204,7 +204,7 @@ func TestConfigEditorSaysListenNeedsARestart(t *testing.T) {
 }
 
 // usage_limit_auto_continue is a chooser, not a free-text box: the daemon
-// takes exactly three values (task 003) and a typo in a fourth is a refusal
+// takes exactly three values (task 091) and a typo in a fourth is a refusal
 // no one should have to discover by hitting enter. The vocabulary is spelled
 // in this package, so what needs proving is that it is still the one the
 // daemon accepts — which only the real handler can say.

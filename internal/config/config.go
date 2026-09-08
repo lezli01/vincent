@@ -234,7 +234,7 @@ type Config struct {
 	// carry, and a second retry-ish concept beside §7.2's.
 	UsageLimitRecheckInterval Duration `yaml:"usage_limit_recheck_interval"`
 	// UsageLimitAutoContinue decides what a recognized usage-limit stop does
-	// (task 003, §11). `always` — the default — holds the task: it returns to
+	// (task 091, over task 003's hold; §7.2, §11). `always` — the default — holds the task: it returns to
 	// the queue with `usage_limit`, waits out the reset and consumes no retry,
 	// which is what every version before this key did, so no existing
 	// installation changes. `reported_only` holds only when the CLI actually
@@ -327,7 +327,7 @@ type Config struct {
 	TUI TUI `yaml:"tui"`
 }
 
-// The modes UsageLimitAutoContinue takes (task 003). A tri-state string
+// The modes UsageLimitAutoContinue takes (task 091). A tri-state string
 // rather than a bool because the middle value is the interesting one: hold
 // when the agent named a reset, block when the wait would be a guess.
 const (

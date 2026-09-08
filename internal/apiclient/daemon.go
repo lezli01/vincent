@@ -151,7 +151,7 @@ type Config struct {
 	UsageLimitRecheck string `json:"usage_limit_recheck_interval"`
 	// UsageLimitAutoContinue is what a recognized quota stop does: hold and
 	// re-queue ("always"), hold only when the CLI named a reset time
-	// ("reported_only"), or block the task ("never") — §11, task 003.
+	// ("reported_only"), or block the task ("never") — §7.2, §11, task 091.
 	UsageLimitAutoContinue string            `json:"usage_limit_auto_continue"`
 	LogLevel               string            `json:"log_level"`
 	Debug                  bool              `json:"debug"`

@@ -1530,7 +1530,7 @@ YAML
 }
 
 # ---------------------------------------------------------------------------
-# Scenario 13 — usage_limit_auto_continue (task 003, §12.3): the switch that
+# Scenario 13 — usage_limit_auto_continue (task 091, §12.3): the switch that
 # turns the automatic wait off. Two daemons, because both halves of the truth
 # table need their own fake-CLI environment and FAKEAGENT_* is read at daemon
 # start (PR G decision): `never` against a CLI that named no reset must block,

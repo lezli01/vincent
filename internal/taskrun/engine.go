@@ -98,9 +98,15 @@ const (
 	// ReasonUsageLimit is an agent run the CLI stopped because the account's
 	// usage quota is spent (task 003, §7.2, §18). It is the one reason in this
 	// vocabulary that is *not* a failure: the attempt is recorded
-	// `interrupted`, consumes no retry, and the task returns to `queued` with
-	// an admission hold until the window is plausibly back. It therefore
-	// appears as a `queued_reason`, never as a `block_reason`.
+	// `interrupted` and consumes no retry, whatever happens to the task next.
+	//
+	// What happens next is `usage_limit_auto_continue` (§12.3, task 091). In
+	// the default mode the task returns to `queued` with an admission hold
+	// until the window is plausibly back, and this appears as a
+	// `queued_reason`; in the modes that do not wait the task blocks at the
+	// step it is on and this appears as a `block_reason`. It is the same
+	// condition either way, which is why one reason names both rather than
+	// splitting the vocabulary this package and internal/worktree share.
 	ReasonUsageLimit = "usage_limit"
 	// ReasonAgentUnauthenticated is a run the CLI refused because it is not
 	// logged in (task 003, §18). An ordinary failure under §7.2's budget —
@@ -150,9 +156,10 @@ const (
 	// wall.
 	ReasonLoopLimit = "loop_limit"
 	// ReasonRetryBackoff is a step whose next attempt is paced by
-	// `retry_backoff` (§7.2, task 028). Like usage_limit it is a
-	// `queued_reason` and never a `block_reason` — it names why a task is
-	// waiting, not why it stopped.
+	// `retry_backoff` (§7.2, task 028). Like a usage_limit *hold* it names why
+	// a task is waiting rather than why it stopped, and unlike usage_limit it
+	// is only ever that: it is a `queued_reason` and never a `block_reason`,
+	// in every configuration.
 	//
 	// Unlike usage_limit it is *not* the attempt's failure reason: the
 	// attempt keeps whatever it actually failed with, its row stays `failed`,
@@ -1312,7 +1319,8 @@ func (r *Runner) interrupt(task *store.Task, log *slog.Logger) {
 }
 
 // usageLimitStop turns a recognized quota stop into the two facts every
-// caller needs: the effective reset, and whether to wait it out.
+// caller needs: the effective reset, and whether to wait it out (task 091,
+// over task 003's unconditional hold).
 //
 // The reset is what the CLI named, or `now + usage_limit_recheck_interval`
 // when it named nothing. Either way the observation is recorded before this

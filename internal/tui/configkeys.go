@@ -101,7 +101,7 @@ func (k configKey) def() string { return k.read(defaultClientConfig()) }
 var (
 	boolChoices     = []string{"false", "true"}
 	logLevelChoices = []string{"debug", "info", "warn", "error"}
-	// The three modes usage_limit_auto_continue takes (task 003), spelled here
+	// The three modes usage_limit_auto_continue takes (task 091), spelled here
 	// rather than imported from config the way every other vocabulary in this
 	// file is: the TUI reads its configuration from the API, not from disk.
 	usageLimitAutoContinueChoices = []string{"always", "reported_only", "never"}

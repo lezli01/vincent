@@ -300,7 +300,7 @@ func TestConfigPatchCoversEveryServedKey(t *testing.T) {
 }
 
 // usage_limit_auto_continue reaches a client only if it is on all three of
-// the served DTO, the response builder and the patch apply (task 003). A field
+// the served DTO, the response builder and the patch apply (task 091). A field
 // wired to two of the three still answers a GET and silently discards the
 // PATCH, so the round trip is asserted end to end rather than per field.
 func TestConfigPatchRoundTripsUsageLimitAutoContinue(t *testing.T) {

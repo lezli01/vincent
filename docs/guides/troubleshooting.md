@@ -569,7 +569,7 @@ The block reason names what happened:
 | `agent_error` | The agent's own event stream reported an error |
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
 | `agent_unauthenticated` | The agent CLI is installed but not logged in (see below) |
-| `usage_limit` | The agent's usage quota for the window is spent — **not** a failure; the task waits and re-runs itself (see below) |
+| `usage_limit` | The agent's usage quota for the window is spent — **not** a failure. By default the task waits and re-runs itself; with [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue) turned down it blocks here instead (see below) |
 | `retry_backoff` | Not a block reason: it is what a task shows while a step's [`retry_backoff`](../reference/workflow-schema.md#step-fields) paces the next attempt (see below). The failure itself keeps its own reason |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |
@@ -593,10 +593,10 @@ The block reason names what happened:
 the agent claimed was done. Read the step's transcript, then `E` to edit the
 prompt and retry with better instructions.
 
-### `usage_limit` — do nothing
+### `usage_limit` — do nothing, unless you asked to be told
 
 The agent CLI stopped because your account's usage quota for the current window
-is spent. Vincent treats this as a wait, not a failure:
+is spent. By default vincent treats this as a wait, not a failure:
 
 - the attempt is recorded `interrupted` and consumes **no** retry;
 - the task goes back to `queued` and **gives up its concurrency slot**, so other
@@ -612,6 +612,21 @@ know your plan's window, set that knob to match it.
 
 If you would rather not wait, cancel the task, or pause and resume it to try
 again immediately — any human action drops the wait.
+
+**If it is blocked here instead of waiting**, someone turned
+[`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+down from its default. `never` blocks every quota stop; `reported_only` blocks
+the ones where the CLI named no reset time and vincent would have been guessing
+at the window. Nothing is lost: the attempt is still `interrupted`, no retry was
+consumed, and the task is still on the step it stopped at — press `r` once the
+window reopens and the step re-runs with a full budget. The board's agent badge
+still names the window, so you can see what you are waiting for.
+
+The reason to turn it down: vincent recognizes a spent quota from the CLI's
+*wording*, and a stop it recognized wrongly would otherwise re-queue itself and
+spend money on the next attempt with nobody watching. If you have seen a task
+that keeps re-running against a quota that is plainly not spent, that is the
+switch.
 
 **The daemon remembers which adapter it was.** A human action drops the task's
 own wait, but the observation is per adapter and outlives it: the board header
@@ -646,7 +661,7 @@ The difference is the cost, and it is the thing to read the row for:
 | The attempt | `interrupted` | `failed`, with the reason it actually failed with |
 | Retry budget | untouched | one spent |
 | What ends the wait | the quota window reopening | the configured duration elapsing |
-| If it keeps happening | it waits again, indefinitely | the budget runs out and the task **blocks** with the step's own reason |
+| If it keeps happening | it waits again, indefinitely — unless `usage_limit_auto_continue` says to block | the budget runs out and the task **blocks** with the step's own reason |
 
 So a task that keeps reappearing on `retry_backoff` is a task on its way to
 being blocked — the transcripts of the attempts already made are what say why.

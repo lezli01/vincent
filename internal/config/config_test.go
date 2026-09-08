@@ -230,7 +230,7 @@ func TestTaskCostCapDefaultsOff(t *testing.T) {
 	}
 }
 
-// TestUsageLimitAutoContinueDefaultsToAlways pins the default task 003's hold
+// TestUsageLimitAutoContinueDefaultsToAlways pins the default task 091's key
 // rests on: a recognized usage-limit stop re-queues the task and waits, which
 // is what every version before this key did. An installation that never names
 // the key must keep it, whether the file is missing entirely or merely silent.

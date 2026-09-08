@@ -84,12 +84,13 @@ Two reasons produce that wait, and they are worth telling apart:
 
 | `queued_reason` | What it means |
 |---|---|
-| `usage_limit` | The agent's usage quota for the window is spent. The attempt is recorded `interrupted` and costs **no** retry; the wait ends at the reset the CLI named, or after [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) when it named none |
+| `usage_limit` | The agent's usage quota for the window is spent. The attempt is recorded `interrupted` and costs **no** retry; the wait ends at the reset the CLI named, or after [`usage_limit_recheck_interval`](configuration.md#usage_limit_recheck_interval) when it named none. Whether there is a wait at all is [`usage_limit_auto_continue`](configuration.md#usage_limit_auto_continue) — under `never`, and under `reported_only` when the CLI named no reset, the task blocks instead |
 | `retry_backoff` | The step failed and its next attempt is being paced by [`retry_backoff`](workflow-schema.md#step-fields). The attempt is recorded `failed` with its own reason and **does** consume a retry; the wait is the configured duration. When the budget runs out the task blocks with the step's own reason, with no wait first |
 
-Both are `queued_reason` values only. Neither is ever a `block_reason`, and
-`retry_backoff` is never a step's failure reason either — the step's row keeps
-whatever actually failed.
+`retry_backoff` is a `queued_reason` only, and is never a step's failure reason
+either — the step's row keeps whatever actually failed. `usage_limit` is a
+`queued_reason` in the default mode and a `block_reason` in the modes that do
+not wait; it names the same condition either way.
 
 **`awaiting_children` holds no slot, and offers `cancel` and `retry`.** A fan-out
 parent waiting on its lanes owns no process, so keeping a slot would starve
@@ -275,7 +276,7 @@ same thing wherever it originated.
 | `agent_error` | The agent's event stream reported an error |
 | `agent_unavailable` | The adapter's CLI could not be resolved or started |
 | `agent_unauthenticated` | The agent CLI is installed but not logged in. Retries as usual, then blocks — log in and retry |
-| `usage_limit` | The agent's usage quota for the window is spent. **Not a failure:** no retry is consumed, and the task waits `queued` until the window reopens |
+| `usage_limit` | The agent's usage quota for the window is spent. **Not a failure:** no retry is consumed. In the default mode the task waits `queued` until the window reopens and this is never a `block_reason`; under [`usage_limit_auto_continue`](configuration.md#usage_limit_auto_continue) `never`, and under `reported_only` when the CLI named no reset, it blocks instead — at the step it was on, cursor unmoved, attempt still `interrupted`, so a `retry` once the window reopens re-runs the step with a full budget |
 | `retry_backoff` | Not a failure reason at all, and never appears on a step run — it is the `queued_reason` of a task waiting out a step's [`retry_backoff`](workflow-schema.md#step-fields) between two attempts. The attempt that triggered it keeps its own reason |
 | `timeout` | The attempt exceeded its `timeout` and was killed |
 | `input_timeout` | A mid-run question went unanswered past `input_timeout` |

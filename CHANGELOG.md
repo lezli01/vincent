@@ -13,6 +13,39 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **`usage_limit_auto_continue` — a switch over the automatic usage-limit
+  wait.** When an agent CLI reports that the account's quota for the window is
+  spent, vincent parks the task and re-runs the step by itself. That is still
+  the default and nothing changes for anyone who leaves it alone. The new
+  top-level key in `config.yaml` decides whether it happens at all:
+
+  | value | a recognized quota stop … |
+  |---|---|
+  | `always` (default) | waits the window out and re-runs the step unattended, exactly as before |
+  | `reported_only` | waits when the CLI actually named a reset time; **blocks** when the wait would be the [`usage_limit_recheck_interval`](docs/reference/configuration.md#usage_limit_recheck_interval) estimate |
+  | `never` | always blocks |
+
+  Blocking costs nothing: the task stops at the step it was on with
+  `block_reason: usage_limit`, the attempt is still recorded `interrupted`, and
+  **no retry is consumed** — press `r` once the window reopens and the step
+  re-runs with a full budget.
+
+  The reason to turn it down is that a quota wall is recognized from the CLI's
+  *wording*, and a stop recognized wrongly re-queues itself and spends money on
+  the next attempt with nobody watching. `never` stops that at the first
+  occurrence; `reported_only` blocks exactly the stops where vincent was
+  guessing at the window and keeps unattended recovery for the ones where the
+  CLI said when it reopens.
+
+  Editable everywhere the daemon's configuration is: `GET`/`PATCH /v1/config`,
+  `vincent config get|set usage_limit_auto_continue`, and the daemon view's
+  config editor as a three-way chooser. Read at the moment of the stop, so a
+  hot reload reaches the next one without a restart; a task **already** waiting
+  keeps its wait and meets the new mode at the next stop. The spent window still
+  reaches `GET /v1/agents` and the board's agent badge in every mode, so the
+  board can always say why a task stopped. Only claude recognizes a spent quota
+  at all, so the key is inert on codex and cursor.
+
 - **An in-progress indicator, for as long as the work is actually running.**
   A moving braille frame and an elapsed clock — `⠋ working… 14s` — now say that
   an agent is working, on all four surfaces that used to go silent while it did:

@@ -97,7 +97,7 @@ func TestConfigCarriesTheSettingsInEffect(t *testing.T) {
 	}
 	// The §11 pair travels together: a client that can show the recheck
 	// interval and not the mode it applies under describes half a policy
-	// (task 003).
+	// (task 091, over task 003).
 	if cfg.UsageLimitRecheck != cfgDefault.UsageLimitRecheckInterval.String() {
 		t.Errorf("UsageLimitRecheck = %q, want %q",
 			cfg.UsageLimitRecheck, cfgDefault.UsageLimitRecheckInterval.String())

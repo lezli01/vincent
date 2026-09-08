@@ -453,9 +453,10 @@ func (n *newTask) agentSummary() string {
 // would run on is out of quota until a stated time (task 026).
 //
 // It **warns and nothing more**: the form still submits, the daemon still
-// admits, and the task will park on the same `usage_limit` hold task 003
-// already handles. That is task 003's recorded decision 4 (no pre-flight
-// refusal) unchanged — the point here is that the user finds out before
+// admits, and the task meets the same `usage_limit` stop task 003 already
+// handles — parking on its hold, or blocking on it where
+// `usage_limit_auto_continue` says not to wait (task 091). That is task 003's
+// recorded decision 4 (no pre-flight refusal) unchanged — the point here is that the user finds out before
 // queueing a batch rather than by watching it park.
 //
 // A window that has already reset says nothing: this row is a decision aid,
