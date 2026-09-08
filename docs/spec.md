@@ -917,6 +917,26 @@ stdout/stderr are captured to the step transcript.
   between attempts a walled step would otherwise spend its whole budget in
   seconds. `usage_limit` is therefore a `queued_reason`, never a `block_reason`.
   Recovery needs no human: the scheduler re-admits the task when the hold expires.
+
+  *Amended 2026-09-08 (task 091).* The wait now has an off switch, so the two
+  sentences above hold only in the default mode.
+  `usage_limit_auto_continue` (§12.3) selects what a recognized quota stop
+  does: `always` — the default, and everything described above — holds and
+  re-queues; `reported_only` holds only when the CLI actually named a reset
+  time and **blocks** when the wait would be the
+  `usage_limit_recheck_interval` estimate; `never` always blocks. Where it
+  blocks, the task stops at the step it is on with `block_reason:
+  usage_limit` and waits for a human retry. `usage_limit` is therefore a
+  `queued_reason` *or* a `block_reason` depending on the mode — it names the
+  same condition either way, which is why no second reason was minted for it
+  and why the vocabulary `internal/taskrun` and `internal/worktree` share
+  stays single. Everything else in this bullet is unchanged in every mode:
+  the attempt is still recorded `interrupted`, it still consumes **no**
+  retry, the cursor does not advance, and the observation still reaches
+  §14's per-adapter record so the board can say why the task stopped. The
+  block is taken in the *interrupted* arm of the engine's outcome switch,
+  above the failed arm, so the `allow_failure` bullet below never reaches
+  it: an account out of quota is not a result a workflow may branch on.
 - **`retry_backoff` paces the retries.** *Added 2026-08-25 (task 028).* A step
   may carry `retry_backoff`, a duration, settable per step and in
   `defaults:`. Its default is **zero**, which is an immediate retry — every
@@ -3912,7 +3932,12 @@ Two consequences are handled rather than assumed away:
   §7.2's: `usage_limit`, and — *added 2026-08-25 (task 028)* — `retry_backoff`,
   the wait between two attempts of a step that asked for one. The pair of
   columns is generic, which is why the second producer cost no migration, no
-  second branch in this walk and no client change. The walk applies the three checks **in this order**:
+  second branch in this walk and no client change. *Amended 2026-09-08 (task
+  091):* `usage_limit` is a producer only in the modes that hold — under
+  `usage_limit_auto_continue: never`, and under `reported_only` when the CLI
+  named no reset, a quota stop blocks the task (§7.2) and writes no hold at
+  all. `retry_backoff` is unconditional. Either way this walk is unchanged: a
+  stop that produced no hold never reaches it. The walk applies the three checks **in this order**:
   1. **pause** — a pending pause parks the task, held or not. This runs first
      because a human asked for `paused`, and a task showing `queued` until a hold
      expired would be the same lie the cap check already avoids. It is also why
@@ -4402,6 +4427,7 @@ transcript_retention_days: 90   # transcripts of *archived* tasks older than thi
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
 max_task_cost_usd: 0            # per-task spend ceiling (§17, §18); 0 = no cap
 usage_limit_recheck_interval: 15m  # how long a quota-held task waits when the CLI named no reset (§11)
+usage_limit_auto_continue: always  # what a quota stop does: always | reported_only | never (§7.2)
 parallel:
   max_parallel: 4            # sub-steps of one `parallel` group at once (§7.5); the §11 caps do not see these
 log_level: info
@@ -4599,6 +4625,41 @@ resolved configuration at the moment of the wait, so it carries no per-task
 state either, and it is §7.2's concept rather than a second one beside it. It
 has no key in this file for the same reason `max_retries` has none: retry
 policy is a workflow's business, and `defaults:` here is timeouts.
+
+**`usage_limit_auto_continue` (task 091, added 2026-09-08).** Whether a
+recognized quota stop is waited out or handed to a human. One of three values,
+default `always`:
+
+| value | a recognized quota stop … |
+|---|---|
+| `always` | holds and re-queues the task, exactly as §7.2 describes. The behaviour of every version before this key, so no existing installation changes |
+| `reported_only` | holds when the adapter parsed a reset the CLI actually named; **blocks** when the wait would be the `usage_limit_recheck_interval` estimate |
+| `never` | blocks |
+
+Blocking means `blocked` with `block_reason: usage_limit` at the step the task
+is on, cursor unmoved, attempt still `interrupted`, **no** retry consumed — the
+shape `cost_limit` takes. A human retry re-runs the step with a full budget.
+
+It exists because the classification can be wrong. An adapter recognizes a
+quota wall by wording (§9.1), and a stop the daemon merely guessed at re-queues
+unattended and spends money on the next attempt; `never` stops that at the
+first occurrence, and `reported_only` stops exactly the guessed class while
+keeping the unattended recovery the feature was built for. A tri-state rather
+than a boolean for that middle value alone. Overloading
+`usage_limit_recheck_interval: 0` was rejected — zero is already invalid
+because it re-admits on the next tick, and one key would then mean both "how
+long" and "whether".
+
+The mode is read at the moment of the stop, the way the interval beside it is,
+so a hot reload reaches the next quota stop rather than the next daemon
+restart. A hold **already in flight is not converted**: the task keeps it, is
+re-admitted once, and meets the new mode at the next stop. The per-adapter
+observation (§14) is recorded in every mode, estimate included, so the board
+never disagrees with itself about a spent window — which means
+`usage_limit_recheck_interval` keeps a meaning in every mode: it is the
+estimate, even where it times no wait. Claude-only in effect, since it is the
+only adapter that recognizes the wording at all (§9.1); inert on codex and
+cursor.
 
 **`max_task_cost_usd` (task 033, added 2026-08-26).** A ceiling, in US dollars,
 on what **one task** may spend — the §17 rollup of `cost_usd` over every attempt
@@ -8792,7 +8853,7 @@ else.
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
 | Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget |
-| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall |
+| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest |
 | Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |

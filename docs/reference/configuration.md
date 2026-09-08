@@ -111,6 +111,17 @@ max_task_cost_usd: 0
 # the queue and holds no slot while it waits.
 usage_limit_recheck_interval: 15m
 
+# What a recognized usage-limit stop does: always | reported_only | never.
+# always holds the task — it returns to the queue, waits out the reset and
+# consumes no retry — and is today's behaviour, so leaving this alone changes
+# nothing. reported_only holds only when the CLI actually named a reset time,
+# and blocks when the wait would be the estimate above — the case where
+# vincent is guessing. never always blocks.
+#
+# Only claude reports a spent quota at all; codex and cursor recognize no such
+# wording, so this key is inert on them.
+usage_limit_auto_continue: always
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 
@@ -655,6 +666,52 @@ of the step's retry budget. See
 Must be positive. There is no exponential backoff; if you know your plan's
 window, set this to match it. Hot-reloaded, so a change applies to the next
 task that hits a limit.
+
+Whether the wait happens at all is
+[`usage_limit_auto_continue`](#usage_limit_auto_continue) below. This value
+keeps its meaning in every mode — it is the estimate vincent falls back to when
+the CLI named nothing — even where it no longer times a wait.
+
+### `usage_limit_auto_continue`
+
+```yaml
+usage_limit_auto_continue: always
+```
+
+Whether a recognized usage-limit stop is waited out or handed to you. One of
+three values:
+
+| value | a recognized quota stop … |
+|---|---|
+| `always` (default) | waits: the task returns to the queue, holds no slot, and is tried again when the window reopens |
+| `reported_only` | waits when the CLI actually named a reset time; **blocks** when the wait would be the [`usage_limit_recheck_interval`](#usage_limit_recheck_interval) estimate |
+| `never` | always blocks |
+
+`always` is what every version before this key did, so leaving it alone changes
+nothing.
+
+When it blocks, the task goes `blocked` with `block_reason: usage_limit` at the
+step it was on. The attempt is still recorded `interrupted`, still consumes
+**none** of the step's retry budget, and the step is not advanced past — press
+`retry` once the window reopens and it re-runs with a full budget. See
+[Task lifecycle](task-lifecycle.md#block-reasons).
+
+Turn it down when you would rather be told than waited for. vincent recognizes
+a spent quota by the CLI's wording, and a stop it recognized *wrongly* would
+otherwise re-queue itself and spend money on the next attempt, unattended.
+`never` stops that at the first occurrence. `reported_only` is the middle
+ground: it blocks exactly the stops where vincent is guessing at the window,
+and keeps the unattended recovery for the ones where the CLI said when it
+reopens.
+
+The mode is read at the moment of the stop, so a hot reload reaches the next
+one without a restart. A task **already waiting** keeps its wait: it is tried
+once more, and meets the new mode at the next stop. The spent window still
+reaches [`GET /v1/agents`](api.md) and the board's agent badge in every mode —
+that is how you see why a task just blocked.
+
+Only claude recognizes a spent quota at all, so this key is inert on codex and
+cursor. See [Agents](../guides/agents.md).
 
 ### `parallel`
 

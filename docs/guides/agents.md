@@ -84,14 +84,16 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)
   can only stop a task that ran on claude.
 - **Recognizes a spent usage quota and a logged-out CLI** in the output of a run
-  that failed. A quota stop becomes `usage_limit` — no retry consumed, the task
-  waits and re-runs itself — and a logged-out CLI becomes
+  that failed. A quota stop becomes `usage_limit` — no retry consumed, and by
+  default the task waits and re-runs itself, though
+  [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+  can make it block for you instead — and a logged-out CLI becomes
   `agent_unauthenticated`, which blocks with the fix named. Codex and cursor do
   neither: their wordings have not been captured from a real run (doing so means
   burning a real quota window), and vincent will not guess at one, because a
   wrong guess parks a genuinely failed task in a wait it never leaves. On those
   two, both conditions still read as `agent_error` or `nonzero_exit`. See
-  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told).
 - **Reports its remaining quota, but only by pushing.** There is no usage
   subcommand to poll; what Claude Code has is a status line, which it hands both
   usage windows on every render.
@@ -445,7 +447,11 @@ reported reading is rendered from. A reading wins where there is one, so:
 
 The warning is advisory. The form still submits, admission is unchanged, and a
 task queued against a spent window simply parks on the ordinary
-[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing). The next
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) — or blocks
+there, if
+[`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+says not to wait. Since only claude recognizes a quota stop at all, that key is
+inert on the other two, exactly as the table above says. The next
 successful step on that adapter retires the **observation** — and only the
 observation, since a step completing proves the wall vincent watched has come
 down and proves nothing about a percentage a vendor reported — so an estimate is

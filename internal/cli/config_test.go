@@ -61,7 +61,7 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		Listen: "127.0.0.1:0", MaxParallelTasks: 3, BranchTemplate: "vincent/{{.ID}}",
 		Defaults:                apiclient.ConfigDefaults{AgentTimeout: "1h0m0s", CommandTimeout: "15m0s", InputTimeout: "24h0m0s"},
 		TranscriptRetentionDays: 90, TranscriptMaxBytes: 512 << 20, MaxTaskCostUSD: 2.5,
-		UsageLimitRecheck: "15m0s", LogLevel: "info",
+		UsageLimitRecheck: "15m0s", UsageLimitAutoContinue: "always", LogLevel: "info",
 		Environment: apiclient.ConfigEnvironment{
 			Inherit: apiclient.ConfigInherit{Mode: "list", Names: []string{"PATH", "HOME"}},
 			Unset:   []string{"MSYSTEM"},

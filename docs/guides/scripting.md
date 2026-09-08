@@ -22,8 +22,10 @@ That loop is the answer to the failure this guide exists for. An agent
 credential expires, every task that reaches an agent step fails its retry budget
 and blocks on `agent_unauthenticated`, and no amount of waiting helps: someone
 has to fix the login and then move each task. (`usage_limit` is deliberately
-*not* this case — it is a queued reason, never a block reason, and the scheduler
-re-admits on its own.)
+*not* this case by default — it is a queued reason and the scheduler re-admits
+on its own. It reaches a loop like this one only where
+[`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+says not to wait, and then it is a block reason like any other.)
 
 The same loop with a different verb does the other batches — archiving a day's
 finished work, or running one more command in each of several finished tasks'

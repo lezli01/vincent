@@ -157,6 +157,10 @@ retry. Every attempt also keeps a durable JSONL transcript.
 When Claude Code reports a usage limit, vincent treats it as a temporary wait
 instead of a failure: the task returns to the queue without consuming a retry or
 slot, shows its next admission time, and starts again when the window reopens.
+`usage_limit_auto_continue` decides whether that happens unattended — wait
+always, wait only when the CLI actually named a reset time, or stop and tell
+you. Stopping costs nothing: the attempt still consumes no retry, so a retry
+once the window reopens starts with a full budget.
 
 A step that fails on something transient can borrow the same wait. Give it
 `retry_backoff: 30s` and its retry is paced rather than immediate: the task

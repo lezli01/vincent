@@ -88,6 +88,17 @@ max_task_cost_usd: 0
 # the queue and holds no slot while it waits.
 usage_limit_recheck_interval: 15m
 
+# What a recognized usage-limit stop does: always | reported_only | never.
+# always holds the task — it returns to the queue, waits out the reset and
+# consumes no retry — and is today's behaviour, so leaving this alone changes
+# nothing. reported_only holds only when the CLI actually named a reset time,
+# and blocks when the wait would be the estimate above — the case where
+# vincent is guessing. never always blocks.
+#
+# Only claude reports a spent quota at all; codex and cursor recognize no such
+# wording, so this key is inert on them.
+usage_limit_auto_continue: always
+
 # Daemon log verbosity: debug | info | warn | error.
 log_level: info
 

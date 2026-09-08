@@ -95,4 +95,15 @@ func TestConfigCarriesTheSettingsInEffect(t *testing.T) {
 	if cfg.MCP.MaxTasks != cfgDefault.MCP.MaxTasks || cfg.FanOut.MaxDepth != cfgDefault.FanOut.MaxDepth {
 		t.Errorf("the sections the endpoint used to omit did not arrive: %+v", cfg)
 	}
+	// The §11 pair travels together: a client that can show the recheck
+	// interval and not the mode it applies under describes half a policy
+	// (task 091, over task 003).
+	if cfg.UsageLimitRecheck != cfgDefault.UsageLimitRecheckInterval.String() {
+		t.Errorf("UsageLimitRecheck = %q, want %q",
+			cfg.UsageLimitRecheck, cfgDefault.UsageLimitRecheckInterval.String())
+	}
+	if cfg.UsageLimitAutoContinue != cfgDefault.UsageLimitAutoContinue {
+		t.Errorf("UsageLimitAutoContinue = %q, want %q",
+			cfg.UsageLimitAutoContinue, cfgDefault.UsageLimitAutoContinue)
+	}
 }

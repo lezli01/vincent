@@ -91,7 +91,12 @@ agents:
 		TranscriptMaxBytes:         32 << 20,
 		MaxTaskCostUSD:             12.5,
 		UsageLimitRecheckInterval:  Duration(2 * time.Minute),
-		LogLevel:                   "warn",
+		// And the same for `usage_limit_auto_continue`: the file names it
+		// nowhere, so task 003's hold-and-requeue survives a config that
+		// overrides everything else, which is what "no installation changes"
+		// has to mean for it to be true.
+		UsageLimitAutoContinue: UsageLimitAlways,
+		LogLevel:               "warn",
 		// The file omits `environment:`, so the §12.3 default survives an
 		// otherwise fully-overriding config — which is the property that
 		// keeps T4.23 invisible to anyone who does not ask for it.
@@ -225,6 +230,60 @@ func TestTaskCostCapDefaultsOff(t *testing.T) {
 	}
 }
 
+// TestUsageLimitAutoContinueDefaultsToAlways pins the default task 091's key
+// rests on: a recognized usage-limit stop re-queues the task and waits, which
+// is what every version before this key did. An installation that never names
+// the key must keep it, whether the file is missing entirely or merely silent.
+func TestUsageLimitAutoContinueDefaultsToAlways(t *testing.T) {
+	if got := Default().UsageLimitAutoContinue; got != UsageLimitAlways {
+		t.Errorf("usage_limit_auto_continue default = %q, want %q", got, UsageLimitAlways)
+	}
+	// A config.yaml that says something else entirely still leaves it alone.
+	cfg, err := Load(writeConfig(t, "max_parallel_tasks: 5\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.UsageLimitAutoContinue != UsageLimitAlways {
+		t.Errorf("omitted key loaded as %q, want %q", cfg.UsageLimitAutoContinue, UsageLimitAlways)
+	}
+}
+
+// TestUsageLimitAutoContinueModes walks the tri-state: each accepted value
+// survives the round trip through a file, and a fourth is refused with a
+// message naming all three — the operator has to be told what to write.
+func TestUsageLimitAutoContinueModes(t *testing.T) {
+	for _, want := range []string{UsageLimitAlways, UsageLimitReportedOnly, UsageLimitNever} {
+		cfg, err := Load(writeConfig(t, "usage_limit_auto_continue: "+want+"\n"))
+		if err != nil {
+			t.Fatalf("Load(%q): %v", want, err)
+		}
+		if cfg.UsageLimitAutoContinue != want {
+			t.Errorf("Load(%q) = %q, want %q", want, cfg.UsageLimitAutoContinue, want)
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate(%q): %v", want, err)
+		}
+	}
+
+	_, err := Load(writeConfig(t, "usage_limit_auto_continue: sometimes\n"))
+	if err == nil {
+		t.Fatal("Load accepted usage_limit_auto_continue: sometimes")
+	}
+	for _, mode := range []string{UsageLimitAlways, UsageLimitReportedOnly, UsageLimitNever} {
+		if !strings.Contains(err.Error(), mode) {
+			t.Errorf("error %q does not name the accepted value %q", err, mode)
+		}
+	}
+
+	// Validate on its own says the same thing: the API's config editor reaches
+	// it without going through Load.
+	cfg := Default()
+	cfg.UsageLimitAutoContinue = "sometimes"
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate accepted mode \"sometimes\"")
+	}
+}
+
 // TestBoardGroupingDefault pins §15's default: a board is read project by
 // project, and within a project by what each task is doing.
 func TestBoardGroupingDefault(t *testing.T) {
@@ -279,11 +338,15 @@ func TestLoadRejectsInvalid(t *testing.T) {
 		// is the respawn loop the hold exists to stop (task 003).
 		"zero recheck interval":     "usage_limit_recheck_interval: 0s\n",
 		"negative recheck interval": "usage_limit_recheck_interval: -1m\n",
-		"not yaml":                  "{{{\n",
-		"wrong type for integer":    "max_parallel_tasks: many\n",
-		"unknown grouping level":    "tui:\n  board:\n    group_by: [project, agent]\n",
-		"repeated grouping level":   "tui:\n  board:\n    group_by: [project, project]\n",
-		"grouping is not a list":    "tui:\n  board:\n    group_by: project\n",
+		// A mode nobody implements must not be read as `always`: the operator
+		// asked for something and would otherwise get the opposite.
+		"unknown usage limit mode":        "usage_limit_auto_continue: sometimes\n",
+		"usage limit mode as a yaml bool": "usage_limit_auto_continue: true\n",
+		"not yaml":                        "{{{\n",
+		"wrong type for integer":          "max_parallel_tasks: many\n",
+		"unknown grouping level":          "tui:\n  board:\n    group_by: [project, agent]\n",
+		"repeated grouping level":         "tui:\n  board:\n    group_by: [project, project]\n",
+		"grouping is not a list":          "tui:\n  board:\n    group_by: project\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -159,6 +159,7 @@ func TestConfigPatchRejectionLeavesTheFileByteIdentical(t *testing.T) {
 		{"a host that is not loopback", `{"listen":"0.0.0.0:0"}`},
 		{"a cap below one", `{"max_parallel_tasks":0}`},
 		{"an unknown log level", `{"log_level":"chatty"}`},
+		{"a usage limit mode that is not one", `{"usage_limit_auto_continue":"sometimes"}`},
 		{"a duration that will not parse", `{"defaults":{"agent_timeout":"soon"}}`},
 		{"a branch template that does not compile", `{"branch_template":"vincent/{{.ID"}`},
 		{"a notify state that is not one", `{"notify":{"on":["exploded"]}}`},
@@ -295,6 +296,44 @@ func TestConfigPatchCoversEveryServedKey(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Errorf("GET /v1/config serves keys PATCH cannot change: %v", missing)
+	}
+}
+
+// usage_limit_auto_continue reaches a client only if it is on all three of
+// the served DTO, the response builder and the patch apply (task 091). A field
+// wired to two of the three still answers a GET and silently discards the
+// PATCH, so the round trip is asserted end to end rather than per field.
+func TestConfigPatchRoundTripsUsageLimitAutoContinue(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"usage_limit_auto_continue"`) {
+		t.Fatalf("GET /v1/config does not serve the key at all: %s", getBody)
+	}
+	var served configResponse
+	if err := json.Unmarshal(getBody, &served); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if served.UsageLimitAutoContinue != config.UsageLimitAlways {
+		t.Errorf("served default = %q, want %q", served.UsageLimitAutoContinue, config.UsageLimitAlways)
+	}
+	for _, want := range []string{config.UsageLimitReportedOnly, config.UsageLimitNever, config.UsageLimitAlways} {
+		resp, body := h.patch(t, `{"usage_limit_auto_continue":"`+want+`"}`)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch %q: status = %d, want 200 (body %s)", want, resp.StatusCode, body)
+		}
+		var answered configResponse
+		if err := json.Unmarshal(body, &answered); err != nil {
+			t.Fatalf("parse patch response: %v", err)
+		}
+		if answered.UsageLimitAutoContinue != want {
+			t.Errorf("the patch response says %q, want %q", answered.UsageLimitAutoContinue, want)
+		}
+		if got := h.cur.Load().UsageLimitAutoContinue; got != want {
+			t.Errorf("the applied config says %q, want %q", got, want)
+		}
+		if !strings.Contains(string(h.bytes(t)), "usage_limit_auto_continue: "+want) {
+			t.Errorf("config.yaml does not carry %q:\n%s", want, h.bytes(t))
+		}
 	}
 }
 

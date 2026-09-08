@@ -214,6 +214,8 @@ func configFields() map[string]configField {
 		},
 		"usage_limit_recheck_interval": str(func(c apiclient.Config) string { return c.UsageLimitRecheck },
 			func(v *string) apiclient.ConfigPatch { return apiclient.ConfigPatch{UsageLimitRecheck: v} }),
+		"usage_limit_auto_continue": str(func(c apiclient.Config) string { return c.UsageLimitAutoContinue },
+			func(v *string) apiclient.ConfigPatch { return apiclient.ConfigPatch{UsageLimitAutoContinue: v} }),
 		"log_level": str(func(c apiclient.Config) string { return c.LogLevel },
 			func(v *string) apiclient.ConfigPatch { return apiclient.ConfigPatch{LogLevel: v} }),
 		"debug": boolField(func(c apiclient.Config) bool { return c.Debug },
