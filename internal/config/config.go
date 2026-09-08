@@ -233,7 +233,30 @@ type Config struct {
 	// no exponential backoff: that is per-task state the row would have to
 	// carry, and a second retry-ish concept beside §7.2's.
 	UsageLimitRecheckInterval Duration `yaml:"usage_limit_recheck_interval"`
-	LogLevel                  string   `yaml:"log_level"`
+	// UsageLimitAutoContinue decides what a recognized usage-limit stop does
+	// (task 003, §11). `always` — the default — holds the task: it returns to
+	// the queue with `usage_limit`, waits out the reset and consumes no retry,
+	// which is what every version before this key did, so no existing
+	// installation changes. `reported_only` holds only when the CLI actually
+	// named a reset time, and blocks when the wait would be the
+	// UsageLimitRecheckInterval estimate — the case where vincent is guessing
+	// rather than repeating what the agent said. `never` always blocks, for an
+	// operator who would rather see a misclassified stop than wait on it.
+	//
+	// The mode is read at the moment of the stop, not when the task was
+	// admitted, so a hot reload (§12.3) reaches the next quota stop without a
+	// restart.
+	//
+	// UsageLimitRecheckInterval keeps a meaning in every mode: it is the
+	// estimate — the wait vincent guesses at when the CLI named no reset time.
+	// Under `reported_only` that guess is exactly what separates a hold from a
+	// block; under `never` it times no wait at all.
+	//
+	// Claude-only in effect. FailureUsageLimit is produced by exactly one
+	// adapter (internal/agent/claude); codex and cursor recognize no quota
+	// wording (task 003 decision 2), so this key is inert on them.
+	UsageLimitAutoContinue string `yaml:"usage_limit_auto_continue"`
+	LogLevel               string `yaml:"log_level"`
 	// Debug records, in every step's transcript, the exact conditions the
 	// step ran under: the resolved agent/model/effort, the permission mode,
 	// the working directory, and the full argv of the process spawned.
@@ -303,6 +326,15 @@ type Config struct {
 	// and a second `vincent doctor` line for one setting.
 	TUI TUI `yaml:"tui"`
 }
+
+// The modes UsageLimitAutoContinue takes (task 003). A tri-state string
+// rather than a bool because the middle value is the interesting one: hold
+// when the agent named a reset, block when the wait would be a guess.
+const (
+	UsageLimitAlways       = "always"
+	UsageLimitReportedOnly = "reported_only"
+	UsageLimitNever        = "never"
+)
 
 // GitHub configures the GitHub integration (spec §12.3 — task 035, task 069).
 //
@@ -654,6 +686,7 @@ func Default() Config {
 		TranscriptRetentionDays:   90,
 		TranscriptMaxBytes:        512 << 20, // 512MB (§12.3)
 		UsageLimitRecheckInterval: Duration(15 * time.Minute),
+		UsageLimitAutoContinue:    UsageLimitAlways,
 		LogLevel:                  "info",
 		// Inherit everything: exactly what the daemon did before the policy
 		// existed, so nothing changes for anyone who does not ask.
@@ -792,6 +825,14 @@ func (c Config) validate() error {
 	// to stop (task 003).
 	if c.UsageLimitRecheckInterval <= 0 {
 		return fmt.Errorf("usage_limit_recheck_interval must be positive, got %s", c.UsageLimitRecheckInterval)
+	}
+	// An enum, checked the way log_level's is: an unrecognized mode is a typo,
+	// and quietly reading it as `always` would leave a switch the operator
+	// believes they turned off still holding their tasks.
+	switch c.UsageLimitAutoContinue {
+	case UsageLimitAlways, UsageLimitReportedOnly, UsageLimitNever:
+	default:
+		return fmt.Errorf("usage_limit_auto_continue must be one of always, reported_only, never; got %q", c.UsageLimitAutoContinue)
 	}
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
