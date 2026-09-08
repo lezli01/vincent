@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -656,8 +657,25 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			// A quota stop is interruption-shaped — no retry consumed, the
 			// slot released — but it must not be re-admitted immediately, or
 			// the task simply walks back into the same wall (task 003).
+			// `usage_limit_auto_continue` decides between waiting the window
+			// out and stopping for a human; the observation is recorded
+			// either way.
+			//
+			// Both outcomes are taken *here*, in the interrupted arm, above
+			// the failed arm's `allow_failure`: an account running out of
+			// quota is not a result a workflow may branch on, so the block
+			// this takes is deliberately out of that flag's reach. The
+			// attempt row stays `interrupted` and no retry is consumed —
+			// the shape the cost cap takes (task 033) — so the timeline
+			// still says what the step did while block_reason says why
+			// nothing further was tried.
 			if outcome.reason == ReasonUsageLimit {
-				r.holdForUsageLimit(task, outcome.agentName, outcome.retryAfter, env.log)
+				until, hold := r.usageLimitStop(outcome.agentName, outcome.retryAfter, env.log)
+				if !hold {
+					r.fail(task, ReasonUsageLimit, env.log, "agent usage limit reached", nil)
+					return
+				}
+				r.holdForUsageLimit(task, until, outcome.retryAfter, env.log)
 				return
 			}
 			r.interrupt(task, log)
@@ -1293,30 +1311,67 @@ func (r *Runner) interrupt(task *store.Task, log *slog.Logger) {
 	}
 }
 
+// usageLimitStop turns a recognized quota stop into the two facts every
+// caller needs: the effective reset, and whether to wait it out.
+//
+// The reset is what the CLI named, or `now + usage_limit_recheck_interval`
+// when it named nothing. Either way the observation is recorded before this
+// returns, in *every* mode — recordUsageLimit is what puts the board badge
+// and the `agent.quota_changed` event in front of the operator (task 026),
+// and that is how someone learns why a task just blocked. A config key that
+// changed whether the window was recorded would let the board disagree with
+// itself.
+//
+// The mode is read at the stop rather than cached, exactly as the interval
+// beside it is, so a config hot-reload (§12.3) reaches the next stop rather
+// than the next daemon restart. A hold already in flight is not revisited:
+// the task it belongs to is re-admitted once and meets the new mode at the
+// next stop.
+func (r *Runner) usageLimitStop(
+	agentName string, retryAfter *time.Time, log *slog.Logger,
+) (until time.Time, hold bool) {
+	cfg := r.deps.Config()
+	until = r.now().Add(cfg.UsageLimitRecheckInterval.Std()).UTC()
+	if retryAfter != nil {
+		until = retryAfter.UTC()
+	}
+	// Recorded per adapter so the fact outlives this task's stop (task 026),
+	// and before any transition, because the transition is what clears
+	// `admit_not_before`'s only other copy on the next move out of `queued`.
+	r.recordUsageLimit(agentName, until, retryAfter != nil, log)
+	switch cfg.UsageLimitAutoContinue {
+	case config.UsageLimitNever:
+		hold = false
+	case config.UsageLimitReportedOnly:
+		// Wait out a window the CLI put a time on; stop for a human when the
+		// reset above is this daemon's own estimate.
+		hold = retryAfter != nil
+	default: // config.UsageLimitAlways, and the validated default.
+		hold = true
+	}
+	return until, hold
+}
+
 // holdForUsageLimit re-queues a task whose agent reported a spent usage quota
 // (task 003, §11). It is `interrupt` plus an admission hold: the same
 // running → queued transition, the same "consumes no retry" (the attempt is
 // already recorded `interrupted` by finishStepRun, so the timeline shows it
 // and the budget does not), and the slot is released by leaving `running`.
 //
+// It is one of the two branches a quota stop can take, and the one
+// `usage_limit_auto_continue` selects when it says to continue. usageLimitStop
+// above computes `until` and makes that choice, so this only ever writes a
+// hold it was told to write; the other branch blocks the task at the step it
+// is on with `block_reason: usage_limit`, which is the caller's `fail` and
+// not this.
+//
 // Nothing sleeps here. The actor ends with the admission per the phase 2
 // decision, and the scheduler picks the task up within a tick of the hold
 // expiring — a sleeping actor would hold the slot for a whole quota window,
 // which with max_parallel_tasks slots held that way means nothing runs at all.
 func (r *Runner) holdForUsageLimit(
-	task *store.Task, agentName string, retryAfter *time.Time, log *slog.Logger,
+	task *store.Task, until time.Time, retryAfter *time.Time, log *slog.Logger,
 ) {
-	// The interval is read now rather than cached, so a config hot-reload
-	// (§12.3) reaches the next hold rather than the next daemon restart.
-	until := r.now().Add(r.deps.Config().UsageLimitRecheckInterval.Std()).UTC()
-	if retryAfter != nil {
-		until = retryAfter.UTC()
-	}
-	// The same effective reset the hold acts on, recorded per adapter so it
-	// outlives this task's hold (task 026). It is written before the
-	// transition because the transition is what clears `admit_not_before`'s
-	// only other copy on the next move out of `queued`.
-	r.recordUsageLimit(agentName, until, retryAfter != nil, log)
 	reason := ReasonUsageLimit
 	ch := store.TaskChange{
 		AdmitNotBefore: &until,

@@ -134,13 +134,31 @@ func (r *Runner) runRepair(
 	}
 	outcome := r.runStepWithRetries(ctx, env)
 	if outcome.state == store.StepInterrupted {
+		if outcome.reason == ReasonUsageLimit {
+			until, hold := r.usageLimitStop(outcome.agentName, outcome.retryAfter, log)
+			if hold {
+				// Waiting the window out: the request is deliberately left
+				// undrained, so the next admission runs the repair again
+				// rather than turning it into a plain retry (task 003
+				// decision 1).
+				r.holdForUsageLimit(task, until, outcome.retryAfter, log)
+				return
+			}
+			// `usage_limit_auto_continue` says not to wait. There is nothing
+			// to wait for and nothing to re-run unasked, so the repair ends
+			// the way every finished repair ends: back at `blocked` with the
+			// reason the task was blocked with, request drained. Same
+			// reasoning as the cost cap below — the reason the task was
+			// blocked with says more than the reason the repair ran into,
+			// and this path ends `blocked` whatever the run did.
+			log.Warn("repair stopped on an agent usage limit; returning the task to blocked",
+				"reason", req.BlockReason)
+			r.finishRepair(task, req, log)
+			return
+		}
 		// Crash, shutdown or cancel. The request is *not* drained, so the
 		// next admission runs a repair again rather than silently turning it
 		// into a plain retry of the blocked step (§12.4, task 025).
-		if outcome.reason == ReasonUsageLimit {
-			r.holdForUsageLimit(task, outcome.agentName, outcome.retryAfter, log)
-			return
-		}
 		r.interrupt(task, log)
 		return
 	}
