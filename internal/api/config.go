@@ -56,20 +56,24 @@ type configResponse struct {
 	// MaxTaskCostUSD is the per-task spend ceiling; 0 is no cap (task 033).
 	// Served for the same reason every other key is: the TUI reads no
 	// configuration from disk (§15).
-	MaxTaskCostUSD    float64            `json:"max_task_cost_usd"`
-	UsageLimitRecheck string             `json:"usage_limit_recheck_interval"`
-	LogLevel          string             `json:"log_level"`
-	Debug             bool               `json:"debug"`
-	Environment       configEnvironment  `json:"environment"`
-	Agents            configAgents       `json:"agents"`
-	Parallel          configParallel     `json:"parallel"`
-	FanOut            configFanOut       `json:"fan_out"`
-	Loop              configLoop         `json:"loop"`
-	Include           configInclude      `json:"include"`
-	MCP               configMCP          `json:"mcp"`
-	GitHub            configGitHub       `json:"github"`
-	Update            configUpdateStatus `json:"update"`
-	Notify            configNotify       `json:"notify"`
+	MaxTaskCostUSD    float64 `json:"max_task_cost_usd"`
+	UsageLimitRecheck string  `json:"usage_limit_recheck_interval"`
+	// UsageLimitAutoContinue is what a recognized quota stop does: hold and
+	// re-queue the task ("always"), hold only when the CLI named a reset time
+	// ("reported_only"), or block it outright ("never") — task 003.
+	UsageLimitAutoContinue string             `json:"usage_limit_auto_continue"`
+	LogLevel               string             `json:"log_level"`
+	Debug                  bool               `json:"debug"`
+	Environment            configEnvironment  `json:"environment"`
+	Agents                 configAgents       `json:"agents"`
+	Parallel               configParallel     `json:"parallel"`
+	FanOut                 configFanOut       `json:"fan_out"`
+	Loop                   configLoop         `json:"loop"`
+	Include                configInclude      `json:"include"`
+	MCP                    configMCP          `json:"mcp"`
+	GitHub                 configGitHub       `json:"github"`
+	Update                 configUpdateStatus `json:"update"`
+	Notify                 configNotify       `json:"notify"`
 	// Container is §16's container execution mode (task 061). Served like
 	// every other key: `image: ""` — the default — is what says the steps run
 	// on the host, and a client that could not see it could not tell a
@@ -240,6 +244,7 @@ func configBody(cfg config.Config) configResponse {
 		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
 		MaxTaskCostUSD:              cfg.MaxTaskCostUSD,
 		UsageLimitRecheck:           cfg.UsageLimitRecheckInterval.String(),
+		UsageLimitAutoContinue:      cfg.UsageLimitAutoContinue,
 		LogLevel:                    cfg.LogLevel,
 		Debug:                       cfg.Debug,
 		Environment: configEnvironment{
@@ -351,6 +356,7 @@ type configPatch struct {
 	TranscriptMaxBytes          *int64             `json:"transcript_max_bytes"`
 	MaxTaskCostUSD              *float64           `json:"max_task_cost_usd"`
 	UsageLimitRecheck           *string            `json:"usage_limit_recheck_interval"`
+	UsageLimitAutoContinue      *string            `json:"usage_limit_auto_continue"`
 	LogLevel                    *string            `json:"log_level"`
 	Debug                       *bool              `json:"debug"`
 	Environment                 *environmentPatch  `json:"environment"`
@@ -483,6 +489,7 @@ func (p configPatch) sets() []config.Set {
 		add("max_task_cost_usd", ftoa(*p.MaxTaskCostUSD))
 	}
 	addIfString(add, "usage_limit_recheck_interval", p.UsageLimitRecheck)
+	addIfString(add, "usage_limit_auto_continue", p.UsageLimitAutoContinue)
 	addIfString(add, "log_level", p.LogLevel)
 	addIfBool(add, "debug", p.Debug)
 	if e := p.Environment; e != nil {

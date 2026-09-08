@@ -101,8 +101,12 @@ func (k configKey) def() string { return k.read(defaultClientConfig()) }
 var (
 	boolChoices     = []string{"false", "true"}
 	logLevelChoices = []string{"debug", "info", "warn", "error"}
-	groupByChoices  = []string{"project", "workflow"}
-	inheritChoices  = []string{"all", "none"}
+	// The three modes usage_limit_auto_continue takes (task 003), spelled here
+	// rather than imported from config the way every other vocabulary in this
+	// file is: the TUI reads its configuration from the API, not from disk.
+	usageLimitAutoContinueChoices = []string{"always", "reported_only", "never"}
+	groupByChoices                = []string{"project", "workflow"}
+	inheritChoices                = []string{"all", "none"}
 )
 
 // configKeys is the editable table, in the order config.yaml carries the keys
@@ -211,6 +215,15 @@ func configKeys() []configKey {
 			"how long a quota-held task waits when the CLI named no reset time",
 			func(c apiclient.Config) string { return c.UsageLimitRecheck },
 			func(s string) apiclient.ConfigPatch { return apiclient.ConfigPatch{UsageLimitRecheck: &s} }),
+		{
+			path: "usage_limit_auto_continue", label: "usage limit auto continue",
+			kind: kindEnum, choices: usageLimitAutoContinueChoices,
+			help: "what a recognized quota stop does: hold always, only when a reset time was reported, or never",
+			read: func(c apiclient.Config) string { return c.UsageLimitAutoContinue },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				return apiclient.ConfigPatch{UsageLimitAutoContinue: &s}, nil
+			},
+		},
 		{
 			path: "log_level", label: "log level", kind: kindEnum, choices: logLevelChoices,
 			help:  "daemon log verbosity",
@@ -539,6 +552,7 @@ func defaultClientConfig() apiclient.Config {
 		TranscriptMaxBytes:          d.TranscriptMaxBytes.Bytes(),
 		MaxTaskCostUSD:              d.MaxTaskCostUSD,
 		UsageLimitRecheck:           d.UsageLimitRecheckInterval.String(),
+		UsageLimitAutoContinue:      d.UsageLimitAutoContinue,
 		LogLevel:                    d.LogLevel,
 		Debug:                       d.Debug,
 		Environment: apiclient.ConfigEnvironment{

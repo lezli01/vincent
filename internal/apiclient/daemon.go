@@ -148,19 +148,23 @@ type Config struct {
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
 	// UsageLimitRecheck is how long a quota-held task waits before the
 	// scheduler tries again, when the agent CLI reported no reset time (§11).
-	UsageLimitRecheck string            `json:"usage_limit_recheck_interval"`
-	LogLevel          string            `json:"log_level"`
-	Debug             bool              `json:"debug"`
-	Environment       ConfigEnvironment `json:"environment"`
-	Agents            ConfigAgents      `json:"agents"`
-	Parallel          ConfigParallel    `json:"parallel"`
-	FanOut            ConfigFanOut      `json:"fan_out"`
-	Loop              ConfigLoop        `json:"loop"`
-	Include           ConfigInclude     `json:"include"`
-	MCP               ConfigMCP         `json:"mcp"`
-	GitHub            ConfigGitHub      `json:"github"`
-	Update            ConfigUpdate      `json:"update"`
-	Notify            ConfigNotify      `json:"notify"`
+	UsageLimitRecheck string `json:"usage_limit_recheck_interval"`
+	// UsageLimitAutoContinue is what a recognized quota stop does: hold and
+	// re-queue ("always"), hold only when the CLI named a reset time
+	// ("reported_only"), or block the task ("never") — §11, task 003.
+	UsageLimitAutoContinue string            `json:"usage_limit_auto_continue"`
+	LogLevel               string            `json:"log_level"`
+	Debug                  bool              `json:"debug"`
+	Environment            ConfigEnvironment `json:"environment"`
+	Agents                 ConfigAgents      `json:"agents"`
+	Parallel               ConfigParallel    `json:"parallel"`
+	FanOut                 ConfigFanOut      `json:"fan_out"`
+	Loop                   ConfigLoop        `json:"loop"`
+	Include                ConfigInclude     `json:"include"`
+	MCP                    ConfigMCP         `json:"mcp"`
+	GitHub                 ConfigGitHub      `json:"github"`
+	Update                 ConfigUpdate      `json:"update"`
+	Notify                 ConfigNotify      `json:"notify"`
 	// Container is §16's container execution mode (task 061). Image empty is
 	// the default and means the steps run on this host.
 	Container ConfigContainer `json:"container"`
@@ -365,6 +369,7 @@ type ConfigPatch struct {
 	TranscriptMaxBytes          *int64                  `json:"transcript_max_bytes,omitempty"`
 	MaxTaskCostUSD              *float64                `json:"max_task_cost_usd,omitempty"`
 	UsageLimitRecheck           *string                 `json:"usage_limit_recheck_interval,omitempty"`
+	UsageLimitAutoContinue      *string                 `json:"usage_limit_auto_continue,omitempty"`
 	LogLevel                    *string                 `json:"log_level,omitempty"`
 	Debug                       *bool                   `json:"debug,omitempty"`
 	Environment                 *ConfigEnvironmentPatch `json:"environment,omitempty"`

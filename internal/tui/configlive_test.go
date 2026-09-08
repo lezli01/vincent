@@ -202,3 +202,70 @@ func TestConfigEditorSaysListenNeedsARestart(t *testing.T) {
 		t.Errorf("the listen editor does not say it needs a restart:\n%s", out)
 	}
 }
+
+// usage_limit_auto_continue is a chooser, not a free-text box: the daemon
+// takes exactly three values (task 003) and a typo in a fourth is a refusal
+// no one should have to discover by hitting enter. The vocabulary is spelled
+// in this package, so what needs proving is that it is still the one the
+// daemon accepts — which only the real handler can say.
+func TestConfigEditorOffersTheThreeUsageLimitModes(t *testing.T) {
+	h := newConfigLive(t)
+	h.open(t, "usage_limit_auto_continue")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	want := []string{"always", "reported_only", "never"}
+	if got := strings.Join(h.view.form.key.choices, " "); got != strings.Join(want, " ") {
+		t.Errorf("choices = %q, want %q", got, strings.Join(want, " "))
+	}
+	if h.view.form.key.kind != kindEnum {
+		t.Errorf("kind = %v, want a chooser", h.view.form.key.kind)
+	}
+	// Every one of them is a value the daemon takes, and each lands in the
+	// file under the wire name.
+	for _, mode := range want {
+		h := newConfigLive(t)
+		h.open(t, "usage_limit_auto_continue")
+		for h.view.form.value() != mode {
+			h.press(t, "right")
+		}
+		h.press(t, "enter")
+		if h.view.form != nil {
+			t.Fatalf("%s: the editor stayed open after a save: %+v", mode, h.view.form)
+		}
+		if h.view.config.UsageLimitAutoContinue != mode {
+			t.Errorf("%s: the block did not adopt it: %q", mode, h.view.config.UsageLimitAutoContinue)
+		}
+		if !strings.Contains(h.file(t), "usage_limit_auto_continue: "+mode) {
+			t.Errorf("%s: config.yaml was not written:\n%s", mode, h.file(t))
+		}
+	}
+}
+
+// The write half of the key: a table entry wired to the wrong ConfigPatch
+// field edits some other key, which the round trip above cannot see because
+// the daemon would answer 200 either way.
+func TestConfigKeyUsageLimitAutoContinuePatchesItsOwnField(t *testing.T) {
+	var key configKey
+	for _, k := range configKeys() {
+		if k.path == "usage_limit_auto_continue" {
+			key = k
+		}
+	}
+	if key.path == "" {
+		t.Fatal("the config key table does not carry usage_limit_auto_continue")
+	}
+	if got := key.read(apiclient.Config{UsageLimitAutoContinue: "never"}); got != "never" {
+		t.Errorf("read = %q, want never", got)
+	}
+	patch, err := key.write("reported_only")
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if patch.UsageLimitAutoContinue == nil || *patch.UsageLimitAutoContinue != "reported_only" {
+		t.Errorf("the patch does not carry the value: %+v", patch)
+	}
+	if patch.UsageLimitRecheck != nil || patch.LogLevel != nil {
+		t.Errorf("the patch edits a neighbouring key too: %+v", patch)
+	}
+}
