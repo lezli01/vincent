@@ -20,6 +20,8 @@
 //	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
 //	                      variables as its result — the §12.3 environment
 //	                      policy) | usage-limit | unauthenticated (task 003) |
+//	                      limit-prose (succeeds while quoting every
+//	                      usage-limit wording in its result text) |
 //	                      set-status (runs the real `vincent status` command
 //	                      from inside the step — task 036) |
 //	                      echo-prompt (appends the prompt it was handed,
@@ -378,6 +380,21 @@ func main() {
 			os.Exit(1) // the real CLI exits nonzero here; the reason must still win
 		}
 		claudeSuccess(prompt)
+	case "limit-prose":
+		// A run that *succeeds* while writing about quota stops: every
+		// wording an adapter matches appears in its result text, and none
+		// of them is a report about this run. It is the shape a step that
+		// documents this machinery produces, and a classifier that reads
+		// the result text without asking whether the run failed turns it
+		// into a wall that never clears.
+		emitText("drafting an issue about how vincent handles quota stops")
+		emit(map[string]any{
+			"type": "result", "subtype": "success", "is_error": false,
+			"result": "the wordings vincent matches are `" + usageLimitMessage() +
+				"`, `5-hour limit reached` and `weekly limit reached`",
+			"total_cost_usd": 0.0123,
+			"usage":          map[string]int64{"input_tokens": 11, "output_tokens": 22},
+		})
 	case "unauthenticated":
 		emit(map[string]any{
 			"type": "result", "subtype": "error_during_execution", "is_error": true,

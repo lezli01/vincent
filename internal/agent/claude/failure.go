@@ -71,7 +71,22 @@ var resetEpochRe = regexp.MustCompile(`limit reached\|(\d{9,11})`)
 // The order matters only for a message that somehow says both: a quota stop is
 // the recoverable one, so it wins and the task waits rather than blocking on a
 // human who has nothing to do.
+//
+// A run that finished cleanly is never classified, whatever its text says
+// (*added 2026-09-08*). The markers are substrings and one of the streams they
+// are matched against is `ResultText` — the agent's own prose — so a step that
+// merely *discusses* a quota stop matches. That is not hypothetical: an agent
+// asked to file an issue about usage limits quoted this file's marker list
+// back in its final message, and every attempt of that succeeded step was
+// recorded `interrupted` with reason `usage_limit` and re-queued behind a
+// fresh hold, forever, at full agent cost per round. classifyResume has always
+// required IsError for the same reason; this is that rule applied to the pair
+// above it. A genuine quota stop is an error — the CLI exits nonzero and its
+// terminal result carries `is_error` — so nothing recognized is lost.
 func classify(res agent.RunResult, stderr string) *agent.Failure {
+	if !res.IsError && res.ExitCode == 0 {
+		return nil
+	}
 	text := strings.ToLower(strings.Join([]string{res.ErrorMessage, res.ResultText, stderr}, "\n"))
 	switch {
 	case containsAny(text, usageLimitMarkers):
