@@ -16,11 +16,13 @@
 # (scenario 10), and that a step carrying `retry_backoff` paces its retry
 # through the same admission hold — releasing its slot and recovering
 # unattended (scenario 11), and that a step can report its own status message
-# — visible on the running row and on the finished one (scenario 12).
+# — visible on the running row and on the finished one (scenario 12), and that
+# `usage_limit_auto_continue` decides whether a recognized quota stop waits the
+# window out or blocks for a human (scenario 13).
 # Runs against the committed fakeagent so CI never calls a real
 # API; run manually with VINCENT_GATE_AGENT=claude to exercise the real CLI
 # (scenario 1 only — killing a paid run and 8× cap spend prove nothing extra).
-# VINCENT_GATE_SCENARIO=1..12 runs a single scenario for debugging.
+# VINCENT_GATE_SCENARIO=1..13 runs a single scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
 # FAKEAGENT_SCENARIO is read from the daemon's environment, so it can only
@@ -1527,6 +1529,168 @@ YAML
   echo "=== scenario 12 PASS (task $task_id narrated itself, live and terminal)"
 }
 
+# ---------------------------------------------------------------------------
+# Scenario 13 — usage_limit_auto_continue (task 003, §12.3): the switch that
+# turns the automatic wait off. Two daemons, because both halves of the truth
+# table need their own fake-CLI environment and FAKEAGENT_* is read at daemon
+# start (PR G decision): `never` against a CLI that named no reset must block,
+# and `reported_only` against one that did must still hold.
+# ---------------------------------------------------------------------------
+scenario13() {
+  echo "=== scenario 13: usage_limit_auto_continue — never blocks, reported_only still holds"
+  scenario_dirs s13
+
+  export FAKEAGENT_SCENARIO=usage-limit
+  # Explicit, because scenario 5 exports both and `all` runs it first: this
+  # leg is the one where the CLI names no reset and the estimate decides.
+  unset FAKEAGENT_USAGE_LIMIT_RESET FAKEAGENT_USAGE_LIMIT_MARKER
+
+  # Long, deliberately: nothing here waits for a window, so the interval only
+  # feeds the estimate that reaches /v1/agents — and a 10 s estimate would
+  # have elapsed by the time the assertions below read `spent`.
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+usage_limit_recheck_interval: 30m
+usage_limit_auto_continue: never
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  # max_retries: 1 — the opposite of scenario 5's 0, and for the opposite
+  # reason. A block is the expected outcome here, so the budget is what tells
+  # the two apart: a quota stop miscounted as a failure would retry first and
+  # arrive with two failed rows.
+  cat > "$CONFIG_DIR/workflows/m2-quota-off.yaml" <<EOF
+name: m2-quota-off
+description: M2 gate — one agent step against a quota-exhausted CLI, auto-continue off.
+defaults:
+  agent: claude
+  max_retries: 1
+steps:
+  - id: work
+    type: agent
+    prompt: "Do the work for {{.Task.Title}}"
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s13/repo" proj walled
+  make_repo "$repo"
+  proj="$(register_project "$repo")"
+  walled="$(api POST /tasks "{\"project_id\":$proj,\"workflow\":\"m2-quota-off\",\"title\":\"Quota walled, no waiting\"}" | jq -r .id)"
+
+  echo "== the quota stop blocks the task instead of parking it on a hold"
+  local task="" ok=0
+  for _ in $(seq 1 90); do
+    task="$(api GET "/tasks/$walled")"
+    [[ "$(jq -r .state <<<"$task")" == "blocked" ]] && { ok=1; break; }
+    [[ "$(jq -r .state <<<"$task")" == "done" ]] \
+      && { jq . <<<"$task" >&2; fail "task $walled finished; the fake CLI was meant to be walled"; }
+    [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] \
+      && { jq . <<<"$task" >&2; fail "task $walled was held on the window; usage_limit_auto_continue is never"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $walled never blocked"; }
+
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "usage_limit" ]] \
+    || fail "block_reason = $(jq -r '.block_reason // "null"' <<<"$task"), want usage_limit: $task"
+  [[ "$(jq -r '.admit_not_before // "null"' <<<"$task")" == "null" ]] \
+    || fail "a blocked task kept an admission hold: $task"
+  [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "null" ]] \
+    || fail "a blocked task kept a queued_reason: $task"
+  # The cursor stays at the step it is on, which is what lets a retry re-run
+  # it once the window reopens.
+  [[ "$(jq -r .current_step <<<"$task")" == "0" ]] \
+    || fail "current_step = $(jq -r .current_step <<<"$task"), want 0 — a block does not advance it"
+
+  echo "== the attempt is still recorded interrupted and still spent no retry"
+  local steps
+  steps="$(api GET "/tasks/$walled/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
+  [[ "$(jq -r '.[0].state' <<<"$steps")" == "interrupted" ]] \
+    || fail "attempt state is $(jq -r '.[0].state' <<<"$steps"), want interrupted: $steps"
+  [[ "$(jq -r '.[0].failure_reason' <<<"$steps")" == "usage_limit" ]] \
+    || fail "attempt reason is $(jq -r '.[0].failure_reason' <<<"$steps"), want usage_limit"
+
+  echo "== the spent window still reaches /v1/agents (decision 2)"
+  local quota
+  quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+  [[ "$quota" != "null" && -n "$quota" ]] \
+    || fail "GET /v1/agents carries no quota block for a task that blocked on one"
+  [[ "$(jq -r .source <<<"$quota")" == "observed" ]] \
+    || fail "quota.source = $(jq -r .source <<<"$quota"), want observed: $quota"
+  [[ "$(jq -r .spent <<<"$quota")" == "true" ]] \
+    || fail "quota.spent is false; the board would not say why the task blocked: $quota"
+  # This leg sets no FAKEAGENT_USAGE_LIMIT_RESET, so the reset is the
+  # interval's estimate and must not claim the CLI stated it.
+  [[ "$(jq -r .resets_at_reported <<<"$quota")" == "false" ]] \
+    || fail "quota.resets_at_reported is true for a reset the CLI never named: $quota"
+
+  "$VINCENT" daemon stop
+
+  echo "== reported_only: a reset the CLI named is still waited out"
+  scenario_dirs s13b
+  # Read at daemon start, which is why this leg gets a daemon of its own.
+  export FAKEAGENT_USAGE_LIMIT_RESET=1800
+
+  cat > "$CONFIG_DIR/config.yaml" <<EOF
+usage_limit_recheck_interval: 30m
+usage_limit_auto_continue: reported_only
+agents:
+  claude:
+    path: "$(hostpath "$FAKEAGENT")"
+EOF
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/m2-quota-off.yaml" <<EOF
+name: m2-quota-off
+description: M2 gate — one agent step against a quota-exhausted CLI, auto-continue off.
+defaults:
+  agent: claude
+  max_retries: 1
+steps:
+  - id: work
+    type: agent
+    prompt: "Do the work for {{.Task.Title}}"
+EOF
+
+  daemon_up
+
+  local repo2="$TMP/s13b/repo" proj2 held
+  make_repo "$repo2"
+  proj2="$(register_project "$repo2")"
+  held="$(api POST /tasks "{\"project_id\":$proj2,\"workflow\":\"m2-quota-off\",\"title\":\"Quota walled, reset reported\"}" | jq -r .id)"
+
+  task="" ok=0
+  for _ in $(seq 1 90); do
+    task="$(api GET "/tasks/$held")"
+    [[ "$(jq -r '.queued_reason // "null"' <<<"$task")" == "usage_limit" ]] && { ok=1; break; }
+    [[ "$(jq -r .state <<<"$task")" == "blocked" ]] \
+      && { jq . <<<"$task" >&2; fail "task $held blocked on a reset the CLI named; reported_only must wait it out"; }
+    sleep 1
+  done
+  (( ok )) || { jq . <<<"$task" >&2; fail "task $held never picked up queued_reason=usage_limit"; }
+  [[ "$(jq -r .state <<<"$task")" == "queued" ]] || fail "held task is $(jq -r .state <<<"$task"), want queued"
+  [[ "$(jq -r '.admit_not_before // "null"' <<<"$task")" != "null" ]] \
+    || fail "held task carries no admit_not_before: $task"
+  [[ "$(jq -r '.block_reason // "null"' <<<"$task")" == "null" ]] \
+    || fail "a quota-held task must not carry a block_reason: $task"
+  # The 30 m interval is still configured, so `true` here is the CLI's own
+  # 1800 s winning — which is the whole distinction reported_only draws.
+  quota="$(api GET /agents | jq -c '.agents[] | select(.name == "claude") | .quota')"
+  [[ "$(jq -r .resets_at_reported <<<"$quota")" == "true" ]] \
+    || fail "quota.resets_at_reported is false for a reset the CLI named: $quota"
+
+  steps="$(api GET "/tasks/$held/steps")"
+  [[ "$(jq 'length' <<<"$steps")" == "1" ]] || fail "attempts = $(jq 'length' <<<"$steps"), want 1: $steps"
+  [[ "$(jq -r '.[0].state' <<<"$steps")" == "interrupted" ]] \
+    || fail "attempt state is $(jq -r '.[0].state' <<<"$steps"), want interrupted: $steps"
+
+  unset FAKEAGENT_SCENARIO FAKEAGENT_USAGE_LIMIT_RESET
+  "$VINCENT" daemon stop
+  echo "=== scenario 13 PASS (task $walled blocked on the wall, task $held still waits it out)"
+}
+
 WHICH="${VINCENT_GATE_SCENARIO:-all}"
 if (( REAL_AGENT )); then
   echo "== real-agent mode: scenario 1 only (PR G decision)"
@@ -1545,8 +1709,9 @@ case "$WHICH" in
   10) scenario10 ;;
   11) scenario11 ;;
   12) scenario12 ;;
+  13) scenario13 ;;
   all) scenario1; scenario2; scenario3; scenario4; scenario5; scenario6; scenario7; scenario8
-     scenario9; scenario10; scenario11; scenario12 ;;
+     scenario9; scenario10; scenario11; scenario12; scenario13 ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $WHICH" ;;
 esac
 
