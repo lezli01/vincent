@@ -82,7 +82,7 @@ Three behaviors matter:
   `queued → 14:20`, the time vincent will try it again, on its own. It holds no
   slot and needs nothing from you; the detail header names the reason in full
   (`queued · usage limit → 14:20`, `queued · retry backoff → 14:20`). See
-  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing) and
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) and
   [`retry_backoff`](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason).
 - **The header badges the agent, not just the task.** An adapter vincent has
   watched run out reads `claude ⏳14:20` in place of `claude ✓`, and stays that
@@ -950,9 +950,12 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 
 The agent row warns when the adapter the task would run on is out of quota —
 `· usage limit until 14:20`, from the same quota the board header badges.
-It **warns and nothing else**: the form submits, and the task waits its turn on
-the ordinary [`usage_limit` hold](troubleshooting.md#usage_limit--do-nothing) if
-the window is still shut when it is admitted.
+It **warns and nothing else**: the form submits, and the task meets the ordinary
+[`usage_limit` stop](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) if
+the window is still shut when it is admitted — waiting it out, or blocking
+there where
+[`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+says not to wait.
 
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text. They are windowed and filterable — you

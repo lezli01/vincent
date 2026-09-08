@@ -1995,7 +1995,9 @@ What follows from that:
 Three more bounds worth knowing when a run behaves oddly:
 `transcript_max_bytes` (512MB per attempt, then `transcript_limit`);
 `usage_limit`, which is not a failure — the task waits `queued` until the
-agent's quota window reopens, consuming no retry; and
+agent's quota window reopens, consuming no retry, unless
+[`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+says to block for you instead; and
 [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd), off by
 default, which blocks a task with `cost_limit` once its spend across every
 attempt passes a ceiling you set. That last one counts **one task**, so each

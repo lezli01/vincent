@@ -93,7 +93,7 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   burning a real quota window), and vincent will not guess at one, because a
   wrong guess parks a genuinely failed task in a wait it never leaves. On those
   two, both conditions still read as `agent_error` or `nonzero_exit`. See
-  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing).
+  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told).
 - **Reports its remaining quota, but only by pushing.** There is no usage
   subcommand to poll; what Claude Code has is a status line, which it hands both
   usage windows on every render.
@@ -447,7 +447,7 @@ reported reading is rendered from. A reading wins where there is one, so:
 
 The warning is advisory. The form still submits, admission is unchanged, and a
 task queued against a spent window simply parks on the ordinary
-[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing) — or blocks
+[`usage_limit` wait](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) — or blocks
 there, if
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
 says not to wait. Since only claude recognizes a quota stop at all, that key is
