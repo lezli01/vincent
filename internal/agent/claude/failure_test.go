@@ -82,6 +82,27 @@ func TestClassify(t *testing.T) {
 			name: "a successful run is not classified",
 			res:  agent.RunResult{ResultText: "done"},
 		},
+		{
+			// The incident the IsError guard exists for: a step that
+			// succeeded while writing *about* quota stops. Classifying it
+			// interrupts a step that finished its work and re-queues the
+			// task behind a hold, which the next attempt earns again.
+			name: "a successful run quoting every marker is not classified",
+			res: agent.RunResult{ResultText: "the wordings are `usage limit reached`, " +
+				"`5-hour limit reached` and `weekly limit reached`"},
+		},
+		{
+			name:   "a successful run whose stderr quotes a marker is not classified",
+			res:    agent.RunResult{ResultText: "done"},
+			stderr: "failure.go:32:\t\"usage limit reached\",",
+		},
+		{
+			// The guard is about the run's verdict, not its exit code: a
+			// terminal error event with exit 0 is still a failed run.
+			name: "an error result with exit 0 is still classified",
+			res:  agent.RunResult{IsError: true, ResultText: "Claude AI usage limit reached"},
+			want: agent.FailureUsageLimit,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -173,9 +194,11 @@ func TestWaitClassifiesUnauthenticated(t *testing.T) {
 }
 
 // TestWaitLeavesOrdinaryFailuresUnclassified is the regression: the adapter
-// must not start labelling runs it has no evidence about.
+// must not start labelling runs it has no evidence about. `limit-prose` is the
+// sharp end of that — a run that succeeded while quoting every wording the
+// classifier matches, which is what a step documenting this machinery writes.
 func TestWaitLeavesOrdinaryFailuresUnclassified(t *testing.T) {
-	for _, scenario := range []string{"success", "error-event", "nonzero-exit"} {
+	for _, scenario := range []string{"success", "error-event", "nonzero-exit", "limit-prose"} {
 		t.Run(scenario, func(t *testing.T) {
 			h := startRun(t, scenario)
 			drain(t, h)
