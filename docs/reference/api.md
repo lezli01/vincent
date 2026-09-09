@@ -1095,13 +1095,77 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
+| `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything |
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, priority?, agent?, model?, effort?, github_issue?, github_pull? }` — `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
+| `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
+
+### Permanent delete
+
+`DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` remove an **archived** row
+for good: the row, its step attempts (or its turns) and its transcript
+directory under `{data_dir}/transcripts/`. They are the only routes that delete
+a task or chat row — [retention](files.md#transcripts) removes transcript
+*files* and never a row.
+
+Delete is **not** a §6 action. It never appears in `available_actions`, the
+state check is the handler's own rather than the FSM's, and neither route is an
+[MCP tool](#the-mcp-endpoint). The precedent is `DELETE /v1/projects/{id}`,
+which is likewise no action.
+
+`?archived_before=` and `?archived_since=` on `GET /v1/tasks` and
+`GET /v1/chats` are RFC3339 instants that bound the listing to what was
+archived in a window; anything unparseable is `400 validation_failed`. An
+archived-only listing comes back **newest-archived first** rather than by id —
+recency is the only order an archive has, which is why there is no `sort=`
+parameter. Tasks measure the bound over `archived_at`; chats measure it over
+`updated_at`, which for a terminal chat is when it ended.
+
+There is no bulk delete and there is not going to be one. A sweep is one
+`DELETE` per row.
+
+```sh
+curl -sS -X DELETE "http://127.0.0.1:PORT/v1/tasks/7?delete_branch=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{ "deleted": true,
+  "branch": { "name": "vincent/7-add-login", "result": "has_commits" } }
+```
+
+`branch` carries archive's vocabulary unchanged — `deleted`, `has_commits`,
+`not_ours`, `unknown`, `error` — and is omitted entirely when the branch step
+did not run. `delete_branch=true` does **not** weaken §10's standing rule: a
+branch carrying any commit past its base is kept and reported `has_commits`
+whatever was asked for. The remote branch is never touched; that leg belongs to
+`delete_remote_branch_on_archive` and to archive alone.
+
+Every refusal is a `409` in the standard envelope, with `details.reason` naming
+what is holding on:
+
+| `details.reason` | Meaning |
+|---|---|
+| `not_archived` | The row is still live. Delete applies to archived rows only |
+| `has_lanes` | An archived fan-out parent whose lane rows still exist. Delete the lanes first |
+| `handoff_target` | A `handed_off` chat points at this task and would be left pointing at nothing |
+| `handed_off` | The chat was handed off to a task, which owns its worktree and branch. Delete that task |
+
+An unknown id is `404`.
+
+Two things a delete deliberately does **not** do. It does not purge the row's
+`events`: their `id` is the `Last-Event-ID` cursor every subscriber is holding,
+and one archived row going is not a project's whole history going. And it does
+not clear `created_by_task_id` on a task this one created by refusing — that
+column nulls itself, and `mcp.max_depth`'s walk simply stops one link early.
+
+A client resuming `/v1/events` from a cursor older than a delete will see events
+for an id that now `404`s. That is the same thing a project delete does to a
+stale cursor, and it is survivable: re-fetch, and drop what is gone.
 
 ### The task's workflow
 
@@ -1543,8 +1607,8 @@ separate family from tasks: they never appear in `GET /v1/tasks` or on the
 board, and tasks never appear here.
 
 ```
-GET    /v1/chats?project_id=&state=&archived=
-                                      newest first; state may repeat
+GET    /v1/chats?project_id=&state=&archived=&archived_before=&archived_since=
+                &limit=&offset=       newest first; state may repeat
 POST   /v1/chats                      create, with a worktree and a branch
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
 POST   /v1/chats/{id}/send            start a turn
@@ -1552,6 +1616,8 @@ POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
 POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
+DELETE /v1/chats/{id}                 permanent delete of an archived chat
+                                      — see Permanent delete
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
@@ -1852,6 +1918,7 @@ task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off
+task.deleted            chat.deleted
 project.*               workflow.registry_changed
 agent.quota_changed     daemon.shutting_down
 ```
@@ -1862,6 +1929,12 @@ they need.
 - **A connection without `Last-Event-ID` starts live at the next committed
   event.** The stream never replays history unasked: catch-up is a REST snapshot
   first, then the stream.
+- `task.deleted` and `chat.deleted` carry `{ id, title }` and announce a
+  [permanent delete](#permanent-delete). They exist even though there is no
+  `task.archived` type, and for the reason there is not one: an archive *is*
+  `task.state_changed` with `to: archived`, but a delete has no state to change
+  to, so without a type no other client would ever learn the row is gone. The
+  event outlives the row it records.
 - There is no separate `task.archived` or `task.awaiting_input` type. Both are
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the
@@ -1953,6 +2026,8 @@ Every route on this page is a tool, with these exceptions:
 | `POST /v1/daemon/stop` | An agent must not stop the daemon supervising it |
 | `POST /v1/daemon/backup` | Destructive admin |
 | `DELETE /v1/projects/{id}` | Destructive admin |
+| `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
+| `DELETE /v1/chats/{id}` | Same |
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |

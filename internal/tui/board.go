@@ -33,22 +33,33 @@ const (
 )
 
 // Board messages.
+//
+// Every one of them carries `archived`, and every board drops the ones that do
+// not match its own mode (task 092). Two instances of this model are alive at
+// once — the live board and the archived one — and the root broadcasts
+// background messages to every view, so an untagged fetch response lands on
+// both: the archived listing would paint the live board, and each board's
+// `seq` guard would silently discard the other's newer answer. A tick is worse
+// than wrong — both boards re-arm on every tick they see, so an untagged one
+// doubles the timer population on every beat.
 type (
 	// boardRefreshMsg fires when the debounce window closes.
-	boardRefreshMsg struct{}
+	boardRefreshMsg struct{ archived bool }
 	// boardLoadedMsg carries a completed task fetch. seq orders concurrent
 	// fetches: commands run on their own goroutines, so an older response
 	// can land after a newer one and must not clobber it (zero = untracked,
 	// for tests that build the message directly).
 	boardLoadedMsg struct {
-		seq   uint64
-		tasks []apiclient.Task
-		err   error
+		archived bool
+		seq      uint64
+		tasks    []apiclient.Task
+		err      error
 	}
 	// boardInfoMsg carries the daemon info the header renders. thenLoad is
 	// set on the fetch a closing debounce window issues, and is what makes
 	// the task list follow it rather than race it (boardRefreshMsg).
 	boardInfoMsg struct {
+		archived bool
 		info     apiclient.Info
 		err      error
 		thenLoad bool
@@ -58,12 +69,16 @@ type (
 	// the task table's grouping comes from — and, since issue #316, how deep
 	// an expanded fan-out is allowed to nest (§7.6 `fan_out.max_depth`).
 	boardConfigMsg struct {
+		archived  bool
 		board     apiclient.ConfigBoard
 		laneDepth int
 		err       error
 	}
 	// boardTickMsg drives the elapsed column.
-	boardTickMsg time.Time
+	boardTickMsg struct {
+		archived bool
+		at       time.Time
+	}
 	// selectTaskMsg asks the root to select a task on the board and open its
 	// full-screen workspace. State is the board snapshot hint used to subscribe
 	// to a running task before the authoritative detail fetch lands.
@@ -133,6 +148,20 @@ type board struct {
 	configGroup grouping
 	groupPinned bool
 
+	// archived puts the board in its archived mode (§15 view 10, task 092):
+	// it lists `archived` rows newest-archived first, in pages and inside a
+	// date window, and it offers the one thing only an archive offers — a
+	// permanent delete. Everything else about the board is unchanged, which
+	// is the point of a mode rather than a second model (decision 5).
+	archived bool
+	archivedPager
+	// delPrompt is the delete confirmation, and delNote is what the sweep
+	// reported. They are the board's own rather than the action bar's,
+	// because delete is not a §6 action (task 092).
+	delPrompt  *rowDeletePrompt
+	delNote    string
+	delNoteBad bool
+
 	// actions drives §15's action keys against the row under the cursor.
 	// The shell shares one instance between board and detail — a pending
 	// confirmation is the same question wherever the eye lands — and the
@@ -177,6 +206,14 @@ func newBoard() *board {
 	return b
 }
 
+// newArchivedBoard is the same model in archived mode (§15 view 10, task 092).
+func newArchivedBoard() *board {
+	b := newBoard()
+	b.archived = true
+	b.filter.SetPlaceholder("filter by id, title, project or state")
+	return b
+}
+
 // applyStyles sets the table styling. Selection is a background, not a
 // foreground: renderRow wraps the whole row in the Selected style and
 // lipgloss does not rewrite the per-cell colour sequences nested inside it,
@@ -202,7 +239,23 @@ func ringBell() {
 	_, _ = os.Stdout.WriteString("\a")
 }
 
-func (b *board) title() string { return "Board" }
+func (b *board) title() string {
+	if b.archived {
+		return "Archived"
+	}
+	return "Board"
+}
+
+// bindingContext names the surface for the registry. The archived board is its
+// own context because it has keys the live one does not and lacks the §6
+// action keys entirely — an archived task offers no `available_actions`, which
+// is what gates them.
+func (b *board) bindingContext() bindingContext {
+	if b.archived {
+		return ctxArchived
+	}
+	return ctxTasks
+}
 
 // setDataDir hands the board the resolved data dir and reads the fold set out
 // of it (task 054 decision 1). It is called again on every reconnect, which
@@ -223,13 +276,15 @@ func (b *board) setClient(c *apiclient.Client) tea.Cmd {
 	cmds := []tea.Cmd{b.loadCmd(), b.infoCmd(), b.configCmd()}
 	if !b.ticking {
 		b.ticking = true
-		cmds = append(cmds, tickCmd())
+		cmds = append(cmds, tickCmd(b.archived))
 	}
 	return tea.Batch(cmds...)
 }
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(elapsedTick, func(t time.Time) tea.Msg { return boardTickMsg(t) })
+func tickCmd(archived bool) tea.Cmd {
+	return tea.Tick(elapsedTick, func(t time.Time) tea.Msg {
+		return boardTickMsg{archived: archived, at: t}
+	})
 }
 
 // loadCmd refetches the board: its own task list, plus one lane fetch per
@@ -257,11 +312,31 @@ func (b *board) tasksCmd() tea.Cmd {
 	}
 	b.loadSeq++
 	seq := b.loadSeq
+	archived := b.archived
+	opts := b.listOptions()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{})
-		return boardLoadedMsg{seq: seq, tasks: tasks, err: err}
+		tasks, err := client.ListTasks(ctx, opts)
+		return boardLoadedMsg{archived: archived, seq: seq, tasks: tasks, err: err}
+	}
+}
+
+// listOptions is what the board asks GET /v1/tasks for. It is a method rather
+// than three lines inside tasksCmd so a test can assert the request the daemon
+// would see, which is the only place the two modes actually differ.
+func (b *board) listOptions() apiclient.ListTasksOptions {
+	if !b.archived {
+		return apiclient.ListTasksOptions{}
+	}
+	// Archived-only, paged, and inside the date window `d` is on. The daemon
+	// orders an archived-only listing newest-archived first, so the pages walk
+	// backwards through history in the order it happened.
+	return apiclient.ListTasksOptions{
+		Archived:      apiclient.ArchivedOnly,
+		Limit:         archivedPageSize,
+		Offset:        b.page * archivedPageSize,
+		ArchivedSince: b.activeWindow().since(b.now()),
 	}
 }
 
@@ -278,11 +353,12 @@ func (b *board) infoFetch(thenLoad bool) tea.Cmd {
 	if client == nil {
 		return nil
 	}
+	archived := b.archived
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		info, err := client.Info(ctx)
-		return boardInfoMsg{info: info, err: err, thenLoad: thenLoad}
+		return boardInfoMsg{archived: archived, info: info, err: err, thenLoad: thenLoad}
 	}
 }
 
@@ -292,6 +368,7 @@ func (b *board) infoFetch(thenLoad bool) tea.Cmd {
 // no event for it (§13.3), so there is nothing to subscribe to.
 func (b *board) configCmd() tea.Cmd {
 	client := b.client
+	archived := b.archived
 	if client == nil {
 		return nil
 	}
@@ -299,7 +376,10 @@ func (b *board) configCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		cfg, err := client.Config(ctx)
-		return boardConfigMsg{board: cfg.TUI.Board, laneDepth: cfg.FanOut.MaxDepth, err: err}
+		return boardConfigMsg{
+			archived: archived, board: cfg.TUI.Board,
+			laneDepth: cfg.FanOut.MaxDepth, err: err,
+		}
 	}
 }
 
@@ -323,10 +403,16 @@ func (b *board) scheduleRefresh() tea.Cmd {
 		return nil
 	}
 	b.refreshPending = true
-	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return boardRefreshMsg{} })
+	archived := b.archived
+	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg {
+		return boardRefreshMsg{archived: archived}
+	})
 }
 
 func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
+	if !b.addressed(msg) {
+		return b, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = msg.Width, msg.Height
@@ -366,7 +452,7 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 	case boardTickMsg:
 		// Render-only: the elapsed column advances without asking the daemon
 		// anything.
-		return b, tickCmd()
+		return b, tickCmd(b.archived)
 	case noteMsg:
 		return b, b.updateNote(msg.note)
 	case actionResultMsg:
@@ -382,10 +468,41 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		b.marks = b.marks.drop(msg.done...)
 		b.refreshPending = false
 		return b, b.loadCmd()
+	case deleteResultMsg:
+		b.delNote, b.delNoteBad = msg.summary(), msg.bad()
+		// What the daemon deleted leaves the selection; what it refused stays
+		// marked, so acting on the named holder and retrying needs no
+		// re-selection (task 011's shape).
+		b.marks = b.marks.drop(msg.done...)
+		b.refreshPending = false
+		return b, b.loadCmd()
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	}
 	return b, nil
+}
+
+// addressed reports whether a broadcast message belongs to this board. The
+// root hands every background message to every view, and there are two boards
+// (task 092): each takes only the messages stamped with its own mode. Anything
+// that is not one of the board's own message types is for everyone.
+func (b *board) addressed(msg tea.Msg) bool {
+	switch m := msg.(type) {
+	case boardLoadedMsg:
+		return m.archived == b.archived
+	case boardInfoMsg:
+		return m.archived == b.archived
+	case boardConfigMsg:
+		return m.archived == b.archived
+	case boardRefreshMsg:
+		return m.archived == b.archived
+	case boardTickMsg:
+		return m.archived == b.archived
+	case boardLanesMsg:
+		return m.archived == b.archived
+	default:
+		return true
+	}
 }
 
 // target is what the action bar acts on: the row under the cursor, carrying
@@ -552,10 +669,39 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return b, cmd
 	}
 
+	// The delete confirmation owns the keyboard until it is answered — it
+	// cannot be walked past, and no key but its three answers reaches the
+	// board while it is up.
+	if b.delPrompt != nil {
+		return b, b.answerDelete(msg.String())
+	}
+
 	// A confirmation owns the keyboard until it is answered.
 	if b.actions.capturing() {
 		cmd, _ := b.actions.handleKey(msg.String(), b.client, b.target())
 		return b, cmd
+	}
+
+	if b.archived {
+		switch msg.String() {
+		case "D":
+			b.askDelete()
+			return b, nil
+		case "d":
+			b.cycleWindow()
+			b.delNote = ""
+			return b, b.loadCmd()
+		case ">":
+			if b.nextPage(len(b.tasks)) {
+				return b, b.loadCmd()
+			}
+			return b, nil
+		case "<":
+			if b.prevPage() {
+				return b, b.loadCmd()
+			}
+			return b, nil
+		}
 	}
 
 	switch msg.String() {
@@ -1275,7 +1421,7 @@ func (b *board) headerLine() string {
 
 	var tail []string
 	if attention > 0 {
-		tail = append(tail, styleWarn.Render(
+		tail = append(tail, styleAsk.Render(
 			fmt.Sprintf("%s %d need attention", attentionBadge, attention)))
 	} else {
 		tail = append(tail, styleDim.Render("0 need attention"))
@@ -1309,14 +1455,14 @@ func (b *board) agentsSummary() string {
 		case a.NotAuthenticated():
 			// Present but unable to run a step (§9.5) — the board's one-glance
 			// summary must not read as healthy.
-			parts = append(parts, styleWarn.Render(a.Name+" ⚠"))
+			parts = append(parts, styleAsk.Render(a.Name+" ⚠"))
 		case a.QuotaSpent(now):
 			// Installed, authenticated, and out of quota until a stated time
 			// (task 026). It ranks below the other two because it is
 			// temporary and self-clearing, and it ranks above ✓ because a
 			// tick here is the answer to "why is nothing running" being wrong.
 			// Admission is untouched: this warns, it does not withhold.
-			parts = append(parts, styleWarn.Render(a.Name+" "+quotaBadge(a.Quota, now)))
+			parts = append(parts, styleAsk.Render(a.Name+" "+quotaBadge(a.Quota, now)))
 		default:
 			parts = append(parts, styleOK.Render(a.Name+" ✓"))
 		}
@@ -1331,7 +1477,65 @@ func (b *board) agentsSummary() string {
 // It is lines rather than a line because the filter is a wrapping field
 // (issue #299): a long filter grows the row it is typed on, and the two line
 // budgets below have to count what it actually drew.
+// askDelete opens the confirmation over the marked rows, or the row under the
+// cursor when nothing is marked — the same target rule every §6 key on this
+// board follows.
+func (b *board) askDelete() {
+	ids := slices.Clone([]int64(b.marks))
+	if len(ids) == 0 {
+		id, ok := b.selected()
+		if !ok {
+			return
+		}
+		ids = []int64{id}
+	}
+	b.delPrompt = &rowDeletePrompt{ids: ids}
+	b.delNote = ""
+}
+
+// answerDelete resolves the confirmation. Anything that is not one of the
+// three answers is ignored rather than dismissing the prompt: a permanent
+// delete must not be cancelled *or* confirmed by a stray key.
+func (b *board) answerDelete(key string) tea.Cmd {
+	p := b.delPrompt
+	switch key {
+	case "y", "b":
+		b.delPrompt = nil
+		b.delNote, b.delNoteBad = "deleting…", false
+		return dispatchDelete(b.client, p.ids, key == "b", false)
+	case "n", "esc":
+		b.delPrompt = nil
+		b.delNote, b.delNoteBad = "", false
+	}
+	return nil
+}
+
 func (b *board) statusLines() []string {
+	if b.archived {
+		if line := b.archivedStatus(); line != "" {
+			return append([]string{line}, b.liveStatusLines()...)
+		}
+	}
+	return b.liveStatusLines()
+}
+
+// archivedStatus is the archived board's own line: the confirmation while one
+// is up, then the sweep's report, then the window and page it is showing.
+func (b *board) archivedStatus() string {
+	switch {
+	case b.delPrompt != nil:
+		return styleAsk.Render(" " + b.delPrompt.question())
+	case b.delNote != "":
+		if b.delNoteBad {
+			return styleBad.Render(" " + b.delNote)
+		}
+		return " " + b.delNote
+	default:
+		return styleDim.Render(" archived · " + b.label())
+	}
+}
+
+func (b *board) liveStatusLines() []string {
 	switch {
 	case b.filtering:
 		b.filter.SetWidth(max(b.width-1, 10))

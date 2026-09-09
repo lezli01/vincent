@@ -26,6 +26,12 @@ const (
 	// because that is the shape of the thing, not because chats are tasks.
 	viewChats
 	viewChat
+	// The two archived boards (§15 view 10, task 092). Each routes to the
+	// board model it mirrors, constructed in archived mode: the archive needs
+	// grouping, folding, `/` and the bulk selection, and a second copy of all
+	// four would drift on the first change to any of them (decision 5).
+	viewArchived
+	viewArchivedChats
 	viewCount
 )
 
@@ -130,8 +136,10 @@ func newViews(ctx context.Context) [viewCount]panel {
 		// reached only when at least one project's §13.2 probe says yes: it
 		// is the *nav row* that is withheld, not the screen, so nothing here
 		// has to know the answer before the probes land.
-		viewPullRequests: newPullRequestsView(),
-		viewChats:        newChatsView(),
-		viewChat:         newChatView(level, raw),
+		viewPullRequests:  newPullRequestsView(),
+		viewChats:         newChatsView(),
+		viewChat:          newChatView(level, raw),
+		viewArchived:      newArchivedBoard(),
+		viewArchivedChats: newArchivedChatsView(),
 	}
 }

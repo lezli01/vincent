@@ -27,12 +27,14 @@ import (
 
 // Chats board messages.
 type (
-	chatsRefreshMsg struct{}
+	chatsRefreshMsg struct{ archived bool }
 	// chatsLoadedMsg is one whole board: every chat, plus the project names
 	// the headings read from.
 	chatsLoadedMsg struct {
-		chats []apiclient.Chat
-		names map[int64]string
+		// archived tags the board instance this answer belongs to (task 092).
+		archived bool
+		chats    []apiclient.Chat
+		names    map[int64]string
 		// projectsListed reports that the load reached the project
 		// registry, so an empty names map means "none registered" rather
 		// than "not asked yet" or "the listing failed".
@@ -54,7 +56,10 @@ type (
 	// already renders now - UpdatedAt, and UpdatedAt is only written on a
 	// state change, so for a running chat it is time-since-the-turn-started
 	// and was simply never redrawn.
-	chatsTickMsg time.Time
+	chatsTickMsg struct {
+		archived bool
+		at       time.Time
+	}
 )
 
 // archivePrompt is the inline confirmation an archive takes. force is set on
@@ -97,6 +102,15 @@ type chatsView struct {
 	// is the server's default — terminal chats hidden — and `s` cycles it.
 	scope apiclient.ArchivedScope
 
+	// archived puts the board in archived mode (§15 view 10, task 092): the
+	// terminal chats only, in pages and inside a date window, with a
+	// permanent delete. `s` is untouched on the live board — it is still the
+	// way a reader peeks at history from there — and absent here, where the
+	// scope is what the screen is.
+	archived bool
+	archivedPager
+	delPrompt *rowDeletePrompt
+
 	// create is the new-chat form, a layer over this board rather than a
 	// seventh view: it is opened from here, it returns here, and it has no
 	// meaning anywhere else. `n` on the chats board makes a chat; `n`
@@ -124,7 +138,21 @@ func newChatsView() *chatsView {
 	return &chatsView{now: time.Now, filter: fi, names: map[int64]string{}}
 }
 
-func (v *chatsView) title() string { return "Chats" }
+// newArchivedChatsView is the same model in archived mode (§15 view 10, task
+// 092). The scope is fixed rather than cycled: a board whose whole purpose is
+// the archive has nothing to say about the live listing.
+func newArchivedChatsView() *chatsView {
+	v := newChatsView()
+	v.archived, v.scope = true, apiclient.ArchivedOnly
+	return v
+}
+
+func (v *chatsView) title() string {
+	if v.archived {
+		return "Archived Chats"
+	}
+	return "Chats"
+}
 
 func (v *chatsView) setClient(c *apiclient.Client) tea.Cmd {
 	v.client = c
@@ -160,6 +188,9 @@ func (v *chatsView) paste(text string) tea.Cmd {
 func (v *chatsView) bindingContext() bindingContext {
 	if v.create != nil {
 		return ctxNewChat
+	}
+	if v.archived {
+		return ctxArchivedChats
 	}
 	return ctxChats
 }
@@ -203,10 +234,34 @@ func (v *chatsView) armTick() tea.Cmd {
 		return nil
 	}
 	v.ticking = true
-	return tea.Tick(SpinnerTick, func(t time.Time) tea.Msg { return chatsTickMsg(t) })
+	archived := v.archived
+	return tea.Tick(SpinnerTick, func(t time.Time) tea.Msg {
+		return chatsTickMsg{archived: archived, at: t}
+	})
+}
+
+// addressed reports whether a broadcast message belongs to this board. Two
+// chats boards are alive at once — the live one and the archived one (task
+// 092) — and the root hands every background message to every view, so each
+// takes only the messages stamped with its own mode. An untagged tick would be
+// worse than an untagged fetch: both boards re-arm on every tick they see.
+func (v *chatsView) addressed(msg tea.Msg) bool {
+	switch m := msg.(type) {
+	case chatsLoadedMsg:
+		return m.archived == v.archived
+	case chatsRefreshMsg:
+		return m.archived == v.archived
+	case chatsTickMsg:
+		return m.archived == v.archived
+	default:
+		return true
+	}
 }
 
 func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
+	if !v.addressed(msg) {
+		return v, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
@@ -273,14 +328,15 @@ func (v *chatsView) loadCmd() tea.Cmd {
 	if client == nil {
 		return nil
 	}
-	scope := v.scope
+	opts := v.listOptions()
+	archived := v.archived
 	v.loading = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		chats, err := client.ListChats(ctx, 0, scope)
+		chats, err := client.ListChats(ctx, opts)
 		if err != nil {
-			return chatsLoadedMsg{err: err}
+			return chatsLoadedMsg{archived: archived, err: err}
 		}
 		names := map[int64]string{}
 		listed := false
@@ -292,8 +348,23 @@ func (v *chatsView) loadCmd() tea.Cmd {
 				names[p.ID] = p.Name
 			}
 		}
-		return chatsLoadedMsg{chats: chats, names: names, projectsListed: listed}
+		return chatsLoadedMsg{archived: archived, chats: chats, names: names, projectsListed: listed}
 	}
+}
+
+// listOptions is what the board asks GET /v1/chats for — a method for the
+// reason board.listOptions is one.
+func (v *chatsView) listOptions() apiclient.ListChatsOptions {
+	opts := apiclient.ListChatsOptions{Archived: v.scope}
+	if v.archived {
+		// Paged and date-bounded, the task board's archived mode exactly. The
+		// daemon measures the bounds over `updated_at`, which for a terminal
+		// chat is when it ended (task 074 decision 6).
+		opts.Limit = archivedPageSize
+		opts.Offset = v.page * archivedPageSize
+		opts.ArchivedSince = v.activeWindow().since(v.now())
+	}
+	return opts
 }
 
 func (v *chatsView) applyLoaded(msg chatsLoadedMsg) {
@@ -448,10 +519,40 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if v.confirm != nil {
 		return v, v.updateConfirm(msg)
 	}
+	// The delete confirmation owns the keyboard until it is answered.
+	if v.delPrompt != nil {
+		return v, v.answerDelete(msg.String())
+	}
 	if v.filtering {
 		return v, v.updateFilter(msg)
 	}
 	v.note = ""
+	if v.archived {
+		switch msg.String() {
+		case "D":
+			v.askDelete()
+			return v, nil
+		case "d":
+			v.cycleWindow()
+			return v, v.loadCmd()
+		case ">":
+			if v.nextPage(len(v.chats)) {
+				return v, v.loadCmd()
+			}
+			return v, nil
+		case "<":
+			if v.prevPage() {
+				return v, v.loadCmd()
+			}
+			return v, nil
+		case "a", "n", "s":
+			// Archive, new chat and the scope cycle have no meaning here: the
+			// rows are already terminal, this board makes nothing, and the
+			// scope is what the screen is. Swallowed rather than left to fall
+			// through to the live board's handler below.
+			return v, nil
+		}
+	}
 	switch msg.String() {
 	case "esc":
 		if v.filter.Value() != "" {
@@ -512,6 +613,40 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.loadCmd()
 	}
 	return v, nil
+}
+
+// askDelete opens the confirmation over the chat under the cursor. The chats
+// board has no bulk selection, so it is always one row — which is also why the
+// prompt names the chat rather than a count.
+func (v *chatsView) askDelete() {
+	c, ok := v.current()
+	if !ok {
+		return
+	}
+	if chatstate.State(c.State) == chatstate.HandedOff {
+		// The daemon refuses this too (409). Saying so here is what stops the
+		// question being asked at all — the same shape `a` takes above.
+		v.note, v.noteBad = "this chat was handed off to a task, which owns its worktree and branch; delete that task", true
+		return
+	}
+	v.delPrompt = &rowDeletePrompt{ids: []int64{c.ID}, chats: true}
+}
+
+// answerDelete resolves the confirmation. Anything that is not one of the
+// three answers is ignored rather than dismissing it: a permanent delete must
+// not be cancelled *or* confirmed by a stray key.
+func (v *chatsView) answerDelete(key string) tea.Cmd {
+	p := v.delPrompt
+	switch key {
+	case "y", "b":
+		v.delPrompt = nil
+		v.note, v.noteBad = "deleting…", false
+		return dispatchDelete(v.client, p.ids, key == "b", true)
+	case "n", "esc":
+		v.delPrompt = nil
+		v.note, v.noteBad = "", false
+	}
+	return nil
 }
 
 // chatScopes is the cycle `s` walks (issue #298): the default listing, then

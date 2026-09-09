@@ -184,7 +184,7 @@ func TestChatsBoardArmsTickOnlyWhileRunning(t *testing.T) {
 		t.Fatalf("a running chat armed no tick (cmd=%v ticking=%v)", cmd != nil, v.ticking)
 	}
 	v.chats[0].State = "idle"
-	if _, cmd := v.update(chatsTickMsg(v.now())); cmd != nil || v.ticking {
+	if _, cmd := v.update(chatsTickMsg{at: v.now()}); cmd != nil || v.ticking {
 		t.Fatalf("a tick after the last running chat stopped armed another (cmd=%v)", cmd != nil)
 	}
 

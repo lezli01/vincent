@@ -1315,6 +1315,9 @@ task-only.
 | `s` | Cycle the listing between live, archived and handed-off, and all |
 | `r` | Reload the board |
 
+`s` is a peek at history from the live board; the [Archived](#archived) screen
+is where history is paged, windowed and deleted.
+
 Archived and handed-off chats are **off this board by default**, the way
 archived tasks are off the task board. `s` cycles the listing — live, then the
 terminal ones, then both — and the header names the listing whenever it is not
@@ -1468,6 +1471,41 @@ conversation and send again.
 A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
 held by a conversation nobody came back to.
+
+### Archived
+
+Two screens, one for tasks and one for chats, reached from the command palette
+(`:`). They are the boards you already know, in a second mode: the same
+grouping, the same folding, the same `/` filter and the same `space`/`V`
+selection, listing what is archived instead of what is live. There is no key of
+its own for either — the palette is how you get there, which is the pattern
+every takeover but new task follows.
+
+`enter` opens the row's workspace. It is **read-only for free**: an archived
+task offers no `available_actions`, and every action key is gated on those, so
+there is nothing to withhold and no flag saying so.
+
+| Key | Does |
+|---|---|
+| `D` | Delete permanently — asks first |
+| `d` | Cycle the window: last 7 days → last 30 days → all time |
+| `<` / `>` | Turn the page (a hundred rows at a time) |
+| `enter` | Open the row's workspace, read-only |
+| `/` | Filter, exactly as on the live board |
+| `space` / `V` | Select rows for the delete |
+
+The confirmation takes three answers: `y` deletes the row, its step attempts (or
+its turns) and its transcripts; `b` does that **and** deletes its branch; `n`
+does nothing. No other key answers it — a permanent delete is not something a
+stray press should be able to confirm or cancel. And the extra answer cannot
+destroy anything `y` would have kept: a branch carrying commits past its base is
+reported and kept whichever you pressed.
+
+Rows are listed **newest-archived first**, which is the only order an archive
+has. A selection deletes one row at a time and reports what happened — how many
+went, how many branches with them, and how many the daemon refused. A refusal
+names what is holding on: a fan-out parent still has its lanes, or a handed-off
+chat still points at the task. Delete those first and try again.
 
 ### Daemon
 

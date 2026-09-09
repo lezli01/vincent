@@ -1189,6 +1189,11 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 			"archived must be one of: false, true, all")
 		return
 	}
+	before, since, ok := parseArchivedBounds(w, r)
+	if !ok {
+		return
+	}
+	filter.ArchivedBefore, filter.ArchivedSince = before, since
 	ctx := r.Context()
 	tasks, err := s.deps.Store.ListTasks(ctx, filter)
 	if err != nil {

@@ -189,6 +189,14 @@ Deleting a project deletes its task rows, and retention walks rows — so those
 directories are reached by no retention pass, ever, and are reclaimed by
 [`vincent gc`](cli.md#vincent-gc) instead.
 
+[`vincent task delete`](cli.md#vincent-task-delete) and
+[`vincent chat delete`](cli.md#vincent-chat-delete) are the third way. They
+remove an archived row *and* its transcript directory, in that order: the row
+goes first, so a failed unlink cannot resurrect something already reported gone
+— and `vincent gc` treats a transcript directory with no row as its own, which
+is what closes that gap. They are the only thing in vincent that deletes a task
+or a chat row; the retention pass removes files and never a row.
+
 They contain everything the agent did. The **rendered prompt or command** an
 attempt was handed is recorded on the attempt's own row in the database instead —
 the claude adapter passes the prompt on stdin, so no transcript ever carried it —

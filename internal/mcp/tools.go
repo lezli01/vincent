@@ -73,6 +73,13 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/agents/{name}/quota"},
 	{Method: http.MethodPost, Path: "/v1/daemon/backup"},
 	{Method: http.MethodDelete, Path: "/v1/projects/{id}"},
+	// The two permanent deletes (task 092), on the same line as the project
+	// delete above and for the same reason: §13.4's surface is the route
+	// table minus destructive admin, and a row a human archived is history
+	// nobody else may discard. Archive stays a tool — it is reversible in the
+	// sense that matters, the row and its transcripts survive it.
+	{Method: http.MethodDelete, Path: "/v1/tasks/{id}"},
+	{Method: http.MethodDelete, Path: "/v1/chats/{id}"},
 	{Method: http.MethodPost, Path: "/v1/maintenance/gc"},
 	{Method: http.MethodPost, Path: "/v1/doctor/fix"},
 	// The chat family (task 063 decision 2). An agent must not be able to

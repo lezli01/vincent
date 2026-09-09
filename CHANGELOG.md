@@ -13,6 +13,31 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Archived boards, and a permanent delete.** Archiving a task or a chat kept
+  every row it ever wrote, and nothing in vincent could reach that history or
+  discard any of it — retention removes transcript *files* and never a row. Two
+  new screens, reached from the command palette (`:`), are where it is read
+  back: **Archived tasks** and **Archived chats**, the boards you already know
+  in a second mode. Same grouping, same folding, same `/` filter, same
+  `space`/`V` selection, listing what is archived instead of what is live,
+  newest-archived first, a hundred rows at a time, inside a date window `d`
+  cycles (7 days / 30 days / all). `enter` opens the row's full workspace, which
+  is read-only for free — an archived task offers no actions.
+
+  `D` deletes permanently: the row, its step attempts (or its turns) and its
+  transcripts, with `b` on the confirmation also deleting the branch. It is
+  `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` over the API, and
+  `vincent task delete` / `vincent chat delete` (aliased `rm`) from a shell,
+  which take `--branch`, `--json` and `--before 30d` to sweep the archive by
+  age. **A branch carrying commits past its base is never deleted**, whichever
+  way it was asked — vincent's standing rule, unchanged — and the remote branch
+  is never touched. A delete refuses rather than cascading, naming the row that
+  is holding on: a live row, a fan-out parent whose lanes still exist, a chat
+  handed off to a task, or a task such a chat points at. Neither route is an MCP
+  tool, so an agent cannot discard history a human archived. `GET /v1/tasks` and
+  `GET /v1/chats` grew `archived_before` and `archived_since`, and
+  `GET /v1/chats` grew `limit` and `offset`.
+
 - **`usage_limit_auto_continue` — a switch over the automatic usage-limit
   wait.** When an agent CLI reports that the account's quota for the window is
   spent, vincent parks the task and re-runs the step by itself. That is still

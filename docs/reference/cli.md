@@ -838,6 +838,44 @@ Error: worktree_dirty: worktree ~/.local/share/vincent/worktrees/7 has local cha
 The first line is the daemon's, printed as it stands; the second is the
 command's own.
 
+### `vincent task delete`
+
+```sh
+vincent task delete <id>... [--branch] [--json]
+vincent task delete --before <date|duration> [--branch] [--json]
+```
+
+Aliased as `vincent task rm`. Permanently deletes an **archived** task: the
+row, its step attempts and its transcript directory. This is the only thing in
+vincent that removes a task row — [retention](files.md#transcripts) removes
+transcript *files* and never a row.
+
+It does not prompt. The command tree exists for scripting, and the daemon's
+refusals are the confirmation story:
+
+| Refusal | `details.reason` |
+| --- | --- |
+| The task is not archived | `not_archived` |
+| It is a fan-out parent whose lanes still exist — delete those first | `has_lanes` |
+| A handed-off chat points at it — that chat would be left pointing at nothing | `handoff_target` |
+
+Each is exit 1 carrying the daemon's own wording, which names the row that is
+holding on. An unknown id is exit 1 with a 404.
+
+`--branch` additionally deletes the task's local branch. [§10's standing
+rule](../security-model.md) is unchanged by asking: a branch carrying **any**
+commit past its base is kept and reported `has_commits`. The remote branch is
+never touched — that leg belongs to
+[`delete_remote_branch_on_archive`](configuration.md#delete_remote_branch_on_archive)
+and to archive alone.
+
+`--before` sweeps instead of naming ids: every task archived before a date
+(`2026-01-31`, or a full RFC3339 instant) or a duration back from now (`30d`,
+`12h`). It is one `DELETE` per row, sequentially — there is no bulk endpoint —
+and it does not stop at the first refusal. `--json` emits one entry per row
+with `deleted`, `branch` and, on a refusal, `reason`. Exit is 1 if any row was
+refused or failed.
+
 ### `vincent task answer`
 
 ```sh
@@ -1189,6 +1227,25 @@ vincent chat archive CHAT_ID [--force] [--json]
 Removes the chat's worktree and, under `delete_empty_branch_on_archive`, an
 empty branch with it — the same archive a task gets. A worktree with local
 changes is refused; `--force` is the way past it.
+
+### `vincent chat delete`
+
+```sh
+vincent chat delete CHAT_ID... [--branch] [--json]
+vincent chat delete --before <date|duration> [--branch] [--json]
+```
+
+Aliased as `vincent chat rm`. `vincent task delete` for a chat: permanently
+deletes an **archived** chat — the row, its turns and its transcript directory.
+
+A `handed_off` chat is refused (`details.reason: "handed_off"`). The task it
+was handed to owns the worktree and the branch, so that task is what to delete;
+a `--before` sweep skips handed-off rows rather than collecting a refusal it
+can see coming.
+
+`--before` measures from when the chat *ended*, which for a terminal chat is
+its `updated_at` — chats have no `archived_at` column, because the transition
+into a terminal state is the last write the row takes.
 
 ### `vincent chat handoff`
 

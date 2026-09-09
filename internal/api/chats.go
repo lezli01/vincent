@@ -227,6 +227,26 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 			"archived must be one of: false, true, all")
 		return
 	}
+	// The same paging and the same date bounds GET /v1/tasks takes, spelled
+	// the same way (§13.2, task 092): one vocabulary covers both entities.
+	// The chat bounds are measured over `updated_at`, which is when a
+	// terminal chat ended (task 074 decision 6, task 079 decision 2).
+	for name, dst := range map[string]*int{"limit": &f.Limit, "offset": &f.Offset} {
+		if v := r.URL.Query().Get(name); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed,
+					fmt.Sprintf("%s must be a non-negative integer", name))
+				return
+			}
+			*dst = n
+		}
+	}
+	before, since, ok := parseArchivedBounds(w, r)
+	if !ok {
+		return
+	}
+	f.ArchivedBefore, f.ArchivedSince = before, since
 	chats, err := s.deps.Store.ListChats(r.Context(), f)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())

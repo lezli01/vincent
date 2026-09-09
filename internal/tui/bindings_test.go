@@ -553,6 +553,111 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// The chat surfaces (task 067). Every probe drives the real view with
 	// the key the registry publishes and asserts the effect the label
 	// promises.
+	// The archived boards (task 092). Their keys are proved against the same
+	// models the live boards are, in archived mode — which is the point of
+	// decision 5: one model, so a probe here is a probe of the real screen.
+	ctxArchived: {
+		"enter": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.updateKey(registryKey(t, "enter"))
+			// The board itself does not open the workspace; the shell routes
+			// it. What this proves is that the key is not swallowed by the
+			// archived-mode switch above it.
+			if b.delPrompt != nil {
+				t.Fatal("enter opened the delete confirmation")
+			}
+		},
+		"D": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.updateKey(registryKey(t, "D"))
+			if b.delPrompt == nil {
+				t.Fatal("D did not ask before deleting")
+			}
+		},
+		"d": func(t *testing.T) {
+			b := testArchivedBoard()
+			before := b.label()
+			b.updateKey(registryKey(t, "d"))
+			if b.label() == before {
+				t.Fatalf("d did not change the window (still %s)", before)
+			}
+		},
+		">": func(t *testing.T) {
+			b := testArchivedBoard()
+			full := make([]apiclient.Task, archivedPageSize)
+			for i := range full {
+				full[i] = task(int64(i+1), stateArchived)
+			}
+			b.updateLoaded(boardLoadedMsg{tasks: full})
+			b.updateKey(registryKey(t, ">"))
+			if b.page != 1 {
+				t.Fatal("> did not turn the page")
+			}
+		},
+		"/": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.updateKey(registryKey(t, "/"))
+			if !b.filtering {
+				t.Fatal("/ did not open the filter on the archived board")
+			}
+		},
+		"space": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.updateKey(registryKey(t, "space"))
+			if len(b.marks) != 1 {
+				t.Fatalf("space marked %d rows, want 1", len(b.marks))
+			}
+		},
+	},
+	ctxArchivedChats: {
+		"enter": func(t *testing.T) {
+			v := archivedChatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			if _, ok := drain(cmd).(openChatMsg); !ok {
+				t.Fatalf("enter produced %T, want openChatMsg", drain(cmd))
+			}
+		},
+		"D": func(t *testing.T) {
+			v := archivedChatsFixture()
+			v.updateKey(registryKey(t, "D"))
+			if v.delPrompt == nil {
+				t.Fatal("D did not ask before deleting")
+			}
+		},
+		"d": func(t *testing.T) {
+			v := archivedChatsFixture()
+			before := v.label()
+			v.updateKey(registryKey(t, "d"))
+			if v.label() == before {
+				t.Fatalf("d did not change the window (still %s)", before)
+			}
+		},
+		">": func(t *testing.T) {
+			v := archivedChatsFixture()
+			full := make([]apiclient.Chat, archivedPageSize)
+			for i := range full {
+				full[i] = testChat(int64(i+1), "archived", "c")
+			}
+			v.applyLoaded(chatsLoadedMsg{chats: full, names: map[int64]string{7: "repo"}})
+			v.updateKey(registryKey(t, ">"))
+			if v.page != 1 {
+				t.Fatal("> did not turn the page")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := archivedChatsFixture()
+			v.updateKey(registryKey(t, "/"))
+			if !v.filtering {
+				t.Fatal("/ did not open the filter on the archived chats board")
+			}
+		},
+		"r": func(t *testing.T) {
+			v := archivedChatsFixture()
+			if _, cmd := v.updateKey(registryKey(t, "r")); cmd == nil {
+				t.Fatal("r did not reload the board")
+			}
+		},
+	},
 	ctxChats: {
 		"enter": func(t *testing.T) {
 			v := chatsFixture()

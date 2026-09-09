@@ -471,6 +471,10 @@ func (m *root) activeContext() bindingContext {
 		return ctxDaemon
 	case viewPullRequests:
 		return ctxPullRequests
+	case viewArchived:
+		return ctxArchived
+	case viewArchivedChats:
+		return ctxArchivedChats
 	case viewChats:
 		return m.views[viewChats].(*chatsView).bindingContext()
 	case viewChat:

@@ -133,6 +133,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 27 | GitHub pull requests | **Daemon-side, and read-only until task 069**, like row 26 and through the same gate and credential. *Amended 2026-08-31 (task 068): the read side grows a live **check rollup** for a linked pull request's head commit — `GET /v1/tasks/{id}/github/pull/checks`, one normalized row per check run and per legacy commit status from either leg, never stored — and unlink gains a second home on the task workspace's Pull Request tab (§15 view 2). Task 068 decision 1 settled that merge, close, re-run and comment are written from the TUI only, human-triggered, and 068.4 is the sub-task that lands them and rewrites row 11.* A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29). *Narrowed 2026-08-30 (task 064):* the read-only posture holds in full — no write method, no `POST`, no mutating `gh` subcommand — and a task may now be created **from** a pull request and run on its head branch. That adds a flag to the same envelope (`branch`, `fork`) rather than a snapshot: nothing renderable is stored, so "a pointer, never a snapshot" is unchanged, and there is still no `.Pull` template variable. The consequences live in §10 (a second worktree creation mode, and archive never touching a branch vincent did not cut) and in §5.3's branch-name chain, which gains `pull` above the per-task literal. The listing above is narrowed the same way: it still **defaults** to open, but `?state=` (§13.2) makes a closed or merged pull request reachable, because acting on a merged one and redoing a reverted one are exactly what creating a task from one is for *Amended 2026-08-31 (task 069, issue #273):* the read-only posture gains **exactly one write path** — pull-request creation, from a human. `internal/github.CreatePull` is the only method here that writes, on both legs (`gh pr create`, `POST /repos/{owner}/{name}/pulls`); nothing updates, comments on, closes or merges anything, and `github.enabled` is the only gate on it (§12.3, decision 2: the consent is the keypress and the editable popup in front of it, not a second config key nobody would turn on). Every *other* half of this row is unchanged and load-bearing: the link is still a pointer and never a snapshot, the listing is still pure, the reconciler still never overwrites a human link, and the compare URL is still built by string construction with no request made — it is now the **fallback**, opened when there is no write credential or the create call fails, and the branch behind it has been pushed, so it is no longer a dead page. A create writes the link immediately as `source: human`, which is why the reconciler's poll interval does not make a just-created pull request read as unlinked |
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29) |
 | 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15) |
+| 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 
 ## 4. Architecture
 
@@ -572,6 +573,7 @@ talking to can edit files and make commits without colliding with any task.
 | `branch`, `base_branch`, `base_sha`, `worktree_path` | §10, exactly a task's |
 | `session_id` | **the agent CLI's own conversation id** — the whole of §7.3's chat-only amendment. Empty before the first turn finishes |
 | `pending_input` | the §7.4 request being awaited; non-null exactly in `awaiting_input` |
+| *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing |
 | `handoff_task_id` | *Added 2026-09-01 (task 074, issue #288):* the task this chat's worktree and branch were handed to. The **one authoritative foreign key** between the two records; a task's `source_chat_id` (§13.2) is this column read backwards, one indexed query per list, never a second stored copy. Non-null exactly in `handed_off` |
 
 A **ChatTurn** is one exchange: the human's message and the agent run it
@@ -824,6 +826,16 @@ times before it is archived, and each is a **round** with its own rows (§5.4).
 | `set priority` | queued, paused | Reorders scheduler admission |
 | `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived` |
 | `follow_up` | done, aborted | *Added 2026-08-25 (task 027).* Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch (§7.2, §8.3, §8.6, §13.2); → `queued`, and back to the state it came from when the run ends. Repeatable; it decides nothing about the task's verdict and spends none of the workflow's retry budgets |
+
+**Amended 2026-09-09 (task 092, issue #350): permanent delete is deliberately
+not in this table.** `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2)
+are not §6 actions: delete is not a state transition, `taskstate` has no opinion
+on it, and it must **never** appear in `available_actions` — which is what gates
+every action key in §15. Its refusals are the handler's own check on the row's
+state, not the FSM's 409, and its precedent is `DELETE /v1/projects/{id}`, which
+is likewise no action. One consequence is load-bearing rather than incidental:
+the workspace an archived row opens in §15 is read-only **for free**, because an
+archived task offers no actions, not because a flag says so.
 
 **Amended 2026-08-24 (issue #127): an action that loses a race re-applies itself
 once, when the state it lost to still allows it.** Every action in this table is
@@ -3761,6 +3773,20 @@ Two consequences are handled rather than assumed away:
   dirty-worktree confirmation), then `git -C {project.path} worktree prune`. A branch
   that carries **any commit past its base** is never deleted by vincent.
 
+  *Amended 2026-09-09 (task 092, issue #350).* Task 008's exception below widens
+  from "at archive time" to "**at archive time and at permanent delete**", and
+  gains nothing else. `DELETE /v1/tasks/{id}?delete_branch=true` and
+  `DELETE /v1/chats/{id}?delete_branch=true` (§13.2) reuse the same judgement
+  verbatim — the same `base_sha`-or-`base_branch` fork point, the same
+  `-D`-only-with-a-recorded-`base_sha` rule, the same outcome vocabulary
+  (`deleted` / `has_commits` / `not_ours` / `unknown` / `error`) — so the
+  standing rule above is untouched: a branch carrying any commit past its base
+  is reported `has_commits` and **kept**, whatever the human answered. The
+  remote leg is **not offered** on a delete at all;
+  `delete_remote_branch_on_archive` stays honoured only by
+  `POST /v1/tasks/{id}/archive`, because deleting a branch on a forge other
+  people share is unrecoverable and a delete has no second chance to reconsider.
+
   *Amended 2026-08-16 (task 008).* This bullet used to read "the branch is **never**
   deleted by vincent". It has exactly one exception now: a branch with **no commits
   past the base recorded on its task** is deleted at archive time. A workflow that
@@ -5498,7 +5524,19 @@ GET    /v1/workflows?project_id=        merged registry view: built-in + global 
                                         task 019, added 2026-08-19). Whether those names resolve
                                         is not answered here: it depends on the project's
                                         resolved view and becomes a 400 at task creation
-GET    /v1/chats                        *Added 2026-08-30 (task 063).* Chats, newest first.
+GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
+                                        limit, offset, archived_before and archived_since —
+                                        GET /v1/tasks' parameters, spelled the same way, because
+                                        issue #298 already settled that one vocabulary covers
+                                        both entities. The chat bounds are measured over
+                                        **`updated_at`, with no new column**: a terminal
+                                        transition is the last write a chat row takes, so
+                                        `updated_at` already *is* when it ended (task 074
+                                        decision 6, task 079 decision 2), which is what
+                                        TerminalChatIDsBefore has measured retention off since.
+                                        A terminal-only listing is ordered
+                                        `updated_at DESC, id DESC`, the mirror of the task side
+                                        *Added 2026-08-30 (task 063).* Chats, newest first.
        ?project_id=&state=              `state` may repeat. Chats appear here and nowhere else:
        &archived=                       never in GET /v1/tasks and never on the board.
                                         *Amended 2026-09-01 (issue #298):*
@@ -5519,6 +5557,14 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         cannot resume is refused `400 agent_cannot_resume`
                                         (§9.3, §9.7): vincent will not replay the log as prompt
                                         context in its place
+DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
+                                        delete of an **archived** chat: the row, its chat_turns
+                                        (through the schema's cascade) and its
+                                        `transcripts/chat-{id}` directory. `DELETE /v1/tasks/{id}`
+                                        minus the fan-out clause, with one refusal of its own —
+                                        `handed_off` (409): the task named by `handoff_task_id`
+                                        owns the worktree and branch (§5.5, task 074 decision 5),
+                                        and a deleted row cannot say that; delete the task instead
 GET    /v1/chats/{id}                   { chat, turns[] } — the whole conversation, oldest turn
                                         first, each with its accounting (§5.5)
 POST   /v1/chats/{id}/send              { message } → 202 with the new turn. `409` outside
@@ -5660,7 +5706,20 @@ POST   /v1/resolve                      { workflow, project_id?, agent?, model?,
                                         since it shipped. No client re-implements the
                                         precedence.
 
-GET    /v1/tasks?project_id=&state=&archived=&limit=&offset=&parent_id=&include_children=
+GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=
+                &parent_id=&include_children=
+                                        *Amended 2026-09-09 (task 092, issue #350).*
+                                        archived_before and archived_since are RFC3339 instants
+                                        over `archived_at`; anything unparseable is a 400
+                                        validation_failed. They narrow to the archive on their
+                                        own — `archived_at` is NULL on every live row and NULL
+                                        fails both comparisons. An **archived-only** listing is
+                                        ordered `archived_at DESC, id DESC` rather than
+                                        `id DESC`: recency is the only order an archive has, and
+                                        a task created last week and archived this morning must
+                                        not sort below one archived a year ago. There is
+                                        deliberately no `sort=` parameter — there is one right
+                                        answer per listing
                                         list rows additionally carry the §15 board fields:
                                         project_name, step_total, step_name, and cost_usd /
                                         input_tokens / output_tokens rolled up across every
@@ -5764,6 +5823,31 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         wrote
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only);
                                         emits task.priority_changed and re-runs admission
+DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
+                                        delete of an **archived** task: the row, its step_runs
+                                        and its `{data_dir}/transcripts/{id}` directory.
+                                        `?delete_branch=true` or `{ delete_branch }` also applies
+                                        §10's empty-branch judgement to its branch — never to a
+                                        branch with commits, and never to a remote.
+                                        200 { deleted: true, branch? }, branch carrying archive's
+                                        own shape and vocabulary. It is **not a §6 action**:
+                                        taskstate has no opinion on it, it never appears in
+                                        `available_actions`, and the state check is this
+                                        handler's own — the precedent is DELETE /v1/projects/{id},
+                                        which is likewise no action. Four refusals, each a 409
+                                        naming the row that is holding on in `details.reason`:
+                                        `not_archived`, `has_lanes` (an archived fan-out parent
+                                        whose lanes still exist — `parent_task_id` has no
+                                        ON DELETE clause, so without this it is a driver error
+                                        rather than a refusal), `handoff_target` (a `handed_off`
+                                        chat points at it and would be left pointing at nothing,
+                                        `chats.handoff_task_id` being ON DELETE SET NULL).
+                                        404 on an unknown id. `created_by_task_id` and the
+                                        idempotency rows clear themselves and need no refusal.
+                                        The `events` rows are **not** purged: their id is the
+                                        Last-Event-ID cursor (§13.3). There is no bulk delete and
+                                        there is not going to be one (task 011) — a sweep is one
+                                        DELETE per row
 POST   /v1/tasks/{id}/cancel
 POST   /v1/tasks/{id}/pause
 POST   /v1/tasks/{id}/resume
@@ -6009,7 +6093,23 @@ Two kinds of streams:
    `task.created`, `task.state_changed`, `task.priority_changed`, `task.step_advanced`,
    `task.status_changed`, `task.children_changed`, `project.*`,
    `workflow.registry_changed`, `agent.quota_changed`,
-   `task.github_pull_changed`, `daemon.shutting_down`.
+   `task.github_pull_changed`, `task.deleted`, `chat.deleted`,
+   `daemon.shutting_down`.
+   *Added 2026-09-09 (task 092, issue #350): `task.deleted` and `chat.deleted` —
+   payload `{id, title}` — announce a permanent delete (§13.2). PR D's ruling
+   that an archive needs no type of its own does **not** cover them: that type
+   was redundant with `task.state_changed`, and a delete has no state to change
+   to, so without a type no other client ever learns the row is gone. The event
+   outlives the row it records, exactly as `project.deleted` does — the events
+   table has no foreign keys. The historical rows behind the delete are
+   deliberately **not** purged: their id is the Last-Event-ID cursor every
+   subscriber is holding, and one archived row going is not a project's whole
+   history going. A client resuming from a cursor older than a delete will see
+   events for an id that now 404s, which is survivable and is what a project
+   delete has always done to a stale cursor. `task.deleted` carries no
+   `task_id` column — it is a foreign key, and the point of the event is that
+   the task is gone — so it reaches `GET /v1/events` and not the per-task
+   stream, and a chat's events never carried a chat_id column at all.*
    *Amended 2026-08-29 (task 052, issue #231): `task.github_pull_changed` —
    payload `{repo, number, source, suppressed}`, empty when the link was
    cleared — announces that a task's pull-request link changed, because the
@@ -6231,6 +6331,8 @@ is excluded too, on the same kind of line:
     POST   /v1/chats/{id}/answer
     POST   /v1/chats/{id}/cancel
     POST   /v1/chats/{id}/archive
+    DELETE /v1/tasks/{id}
+    DELETE /v1/chats/{id}
     POST   /v1/chats/{id}/handoff
 
 *(The last line added 2026-09-01, task 074, issue #288.)*
@@ -7562,6 +7664,33 @@ stream for the live tail.
    indicator draws only for a turn the daemon is holding in `running` — state
    the daemon does have and has told the client about.
 
+10. **Archived boards.** *Added 2026-09-09 (task 092, issue #350).* Two
+   screens — archived tasks and archived chats — reached from the command
+   palette with **no key of their own**: task 049 retired `1..6` and the point
+   was to stop adding memorized keys, so these get two `nav` palette rows, the
+   way chats did (task 067). `s` is skip and `A` is archive; neither was ever
+   free.
+
+   Each is the board it mirrors **in a second mode**, not a second model: the
+   same grouping, folding, `/` filter and `space`/`V` selection, listing what is
+   archived instead of what is live. What the mode adds is the three things only
+   an archive has — `d` cycles a date window (7 days / 30 days / all, resolved
+   client-side into §13.2's `archived_since`), `<`/`>` turn pages of a hundred
+   rows, and `D` deletes permanently. `D` is a `scopePanel` binding on these two
+   contexts and nowhere else, because delete is not a §6 action (§6) and every
+   action key is gated on `available_actions`.
+
+   The confirmation takes **three** answers: `y` deletes the row and its
+   transcripts, `b` deletes its branch as well, `n` does nothing, and no other
+   key answers it. The third answer cannot destroy anything `y` would have kept
+   — §10's rule keeps a branch carrying commits whichever was pressed. A
+   selection deletes one row at a time and reports done / refused, the shape
+   bulk archive already has (task 011): there is no bulk endpoint.
+
+   `enter` opens the row's existing workspace, which is **read-only for free**:
+   an archived task offers no `available_actions`, so there is nothing to
+   withhold and no flag saying so.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -8863,7 +8992,7 @@ else.
 | A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
 | A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
 | An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |
-| Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). DB rows are never deleted; retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
+| Transcript of an archived task past retention | Deleted by the pruner at daemon start and every 24 h (§17). The **pruner** never deletes DB rows — a human's `DELETE /v1/tasks/{id}` does, and takes the transcript directory with it (§13.2, task 092, amended 2026-09-09); retention is measured from `archived_at`, so a long-running task archived yesterday is one day old. `transcript_retention_days: 0` disables pruning entirely |
 | Base branch doesn't exist | Task creation fails fast |
 | Branch already exists (or a ref hierarchy conflict blocks the name) | Rejected at creation with `400` where the name is known then; otherwise the task blocks with `branch_exists` at admission, which stays the authority. Never reused, never auto-renamed. Recover with `retry { branch_override }` (§10, task 001) |
 | A pull request's head cannot be fetched | *Added 2026-08-30 (task 064).* A task created from a pull request runs on that pull request's head branch, so the fetch has nothing to fall back to. The task blocks with `pull_fetch_failed` at admission — deliberately unlike §10's base fetch, which is silent because a local base is always a valid answer |

@@ -150,6 +150,22 @@ type ChatFilter struct {
 	// decision 5) — because both are equally done with, whatever the
 	// parameter's name says. An explicit States always wins.
 	Archived ArchivedFilter
+	// ArchivedBefore and ArchivedSince bound when the chat ended, measured
+	// over `updated_at` and with no new column (task 092). Task 074 decision
+	// 6 and task 079 decision 2 both recorded that a terminal transition is
+	// the last write a chat row takes, so `updated_at` already *is* when it
+	// ended, and TerminalChatIDsBefore has measured retention off it since.
+	// Zero means no bound.
+	//
+	// Unlike the task side these do not narrow to terminal rows on their own —
+	// every chat has an `updated_at` — so a caller that wants the archived
+	// board's meaning sets Archived as well, which is what the API does.
+	ArchivedBefore time.Time
+	ArchivedSince  time.Time
+	// Limit and Offset page the listing, the way TaskFilter's fields of the
+	// same name do. 0 = unlimited.
+	Limit  int
+	Offset int
 }
 
 // ListChats returns chats newest first, which is the order a conversation
@@ -157,6 +173,7 @@ type ChatFilter struct {
 func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 	q := `SELECT ` + chatColumns + ` FROM chats WHERE 1=1`
 	var args []any
+	archivedOnly := f.Archived == ArchivedOnly && len(f.States) == 0
 	if f.ProjectID != nil {
 		q += ` AND project_id = ?`
 		args = append(args, *f.ProjectID)
@@ -182,7 +199,30 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 		case ArchivedAll:
 		}
 	}
-	q += ` ORDER BY id DESC`
+	if !f.ArchivedBefore.IsZero() {
+		q += ` AND updated_at < ?`
+		args = append(args, formatTime(f.ArchivedBefore))
+	}
+	if !f.ArchivedSince.IsZero() {
+		q += ` AND updated_at >= ?`
+		args = append(args, formatTime(f.ArchivedSince))
+	}
+	// A terminal-only listing is newest-*ended* first, the chat mirror of the
+	// task side's `archived_at DESC` (task 092): `id DESC` would sort by when
+	// the conversation started, and an archive is read by when it ended.
+	if archivedOnly {
+		q += ` ORDER BY updated_at DESC, id DESC`
+	} else {
+		q += ` ORDER BY id DESC`
+	}
+	if f.Limit > 0 || f.Offset > 0 {
+		limit := f.Limit
+		if limit == 0 {
+			limit = -1 // SQLite: negative LIMIT means unlimited
+		}
+		q += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, f.Offset)
+	}
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list chats: %w", err)

@@ -192,3 +192,13 @@ jobs:
       - name: M14 gate (chats end to end)
         shell: bash
         run: ./scripts/m14-gate.sh
+
+      # M15: archived listings and the permanent delete (task 092, issue #350;
+      # §10, §13.2, §13.3). The matrix matters here because the delete reaches
+      # the filesystem and git on the host: a transcript directory has to be
+      # gone on all three, and §10's "a branch with commits is kept" is a
+      # `git rev-list` answer read back through the platform's own line
+      # endings.
+      - name: M15 gate (archived boards and delete)
+        shell: bash
+        run: ./scripts/m15-gate.sh

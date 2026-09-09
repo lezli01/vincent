@@ -45,6 +45,8 @@ const laneDepthDefault = 3
 // can land after a newer one and must not clobber it (zero = untracked, for
 // tests that build the message directly).
 type boardLanesMsg struct {
+	// archived tags the board instance this answer belongs to (task 092).
+	archived bool
 	seq      uint64
 	parentID int64
 	lanes    []apiclient.Task
@@ -209,11 +211,12 @@ func (b *board) laneCmd(parentID int64) tea.Cmd {
 		return nil
 	}
 	seq := b.lanes.next(parentID)
+	archived := b.archived
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		lanes, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: parentID})
-		return boardLanesMsg{seq: seq, parentID: parentID, lanes: lanes, err: err}
+		return boardLanesMsg{archived: archived, seq: seq, parentID: parentID, lanes: lanes, err: err}
 	}
 }
 
