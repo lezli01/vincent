@@ -43,8 +43,8 @@ workspace has five full-view tabs — **Steps & Attempts**, **Task Details**,
 whole terminal. `tab` advances through them, `shift+tab` goes back, and `1`–`5`
 jump directly. `esc` returns to the board.
 
-New task, projects, workflows, daemon, and — for GitHub projects — pull
-requests are full-screen takeovers too. `esc`
+New task, projects, workflows, chats, the two archived boards, daemon, and —
+for GitHub projects — pull requests are full-screen takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
 **never quits**.
 
@@ -1495,11 +1495,12 @@ there is nothing to withhold and no flag saying so.
 | `space` / `V` | Select rows for the delete |
 
 The confirmation takes three answers: `y` deletes the row, its step attempts (or
-its turns) and its transcripts; `b` does that **and** deletes its branch; `n`
-does nothing. No other key answers it — a permanent delete is not something a
-stray press should be able to confirm or cancel. And the extra answer cannot
-destroy anything `y` would have kept: a branch carrying commits past its base is
-reported and kept whichever you pressed.
+its turns) and its transcripts; `b` does that **and** deletes its branch; `n` —
+or `esc`, which closes a layer everywhere — does nothing. No other key answers
+it: a permanent delete is not something a stray press should be able to confirm
+or cancel. And the extra answer cannot destroy anything `y` would have kept: a
+branch carrying commits past its base is reported and kept whichever you
+pressed.
 
 Rows are listed **newest-archived first**, which is the only order an archive
 has. A selection deletes one row at a time and reports what happened — how many

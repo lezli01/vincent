@@ -66,7 +66,7 @@ task's existing worktree, and returns it to the state it came from. See
 | `paused` | You asked it to hold; takes effect at the next step boundary | no |
 | `done` | Every step succeeded. Worktree and branch retained for inspection. `follow_up` runs more work in them; `archive` tears them down | no |
 | `aborted` | You cancelled, or rejected terminally. Worktree and branch retained, and open to `follow_up` on the same terms as `done` | no |
-| `archived` | Terminal. Worktree removed, record kept. The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
+| `archived` | Terminal. Worktree removed, record kept — until a human discards it with [`vincent task delete`](cli.md#vincent-task-delete), which is not an action on this page's list and is the only thing that removes the row. The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
 
 Three of these are worth dwelling on.
 

@@ -863,8 +863,9 @@ Each is exit 1 carrying the daemon's own wording, which names the row that is
 holding on. An unknown id is exit 1 with a 404.
 
 `--branch` additionally deletes the task's local branch. [§10's standing
-rule](../security-model.md) is unchanged by asking: a branch carrying **any**
-commit past its base is kept and reported `has_commits`. The remote branch is
+rule](configuration.md#delete_empty_branch_on_archive) is unchanged by asking: a
+branch carrying **any** commit past its base is kept and reported
+`has_commits`. The remote branch is
 never touched — that leg belongs to
 [`delete_remote_branch_on_archive`](configuration.md#delete_remote_branch_on_archive)
 and to archive alone.
@@ -873,8 +874,8 @@ and to archive alone.
 (`2026-01-31`, or a full RFC3339 instant) or a duration back from now (`30d`,
 `12h`). It is one `DELETE` per row, sequentially — there is no bulk endpoint —
 and it does not stop at the first refusal. `--json` emits one entry per row
-with `deleted`, `branch` and, on a refusal, `reason`. Exit is 1 if any row was
-refused or failed.
+with `id`, `deleted`, `branch` and, on a refusal, `reason` and `error`. Exit is
+1 if any row was refused or failed.
 
 ### `vincent task answer`
 

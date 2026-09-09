@@ -38,12 +38,14 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, and the read-only `health`, `info`, `config_get`,
 `agent_list`, `doctor`, `orphan_list`.
 
-Ten routes are deliberately **not** tools:
+Twelve routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
 - `POST /v1/agents/{name}/quota`
 - `POST /v1/daemon/backup`
 - `DELETE /v1/projects/{id}`
+- `DELETE /v1/tasks/{id}`
+- `DELETE /v1/chats/{id}`
 - `POST /v1/maintenance/gc`
 - `POST /v1/doctor/fix`
 - `PATCH /v1/config`
@@ -52,7 +54,11 @@ Ten routes are deliberately **not** tools:
 - `POST /v1/tasks/{id}/github/pull/create`
 
 An agent should not be able to stop, garbage-collect or reconfigure the daemon
-that is supervising it. Those stay CLI-and-curl only. The configuration one is
+that is supervising it. Those stay CLI-and-curl only. The two
+[permanent deletes](../reference/api.md#permanent-delete) are on the project
+delete's line: a row a human archived is history nobody else may discard.
+`task_archive` stays an ordinary tool, because the row and its transcripts
+survive an archive. The configuration one is
 the sharpest of them: a patch can change the argv the daemon spawns
 (`notify.command`, `agents.*.path`), what its children inherit (`environment`),
 and whether steps are wired to MCP at all (`mcp.wire_steps` — a step could
