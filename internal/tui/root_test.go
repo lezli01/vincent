@@ -344,7 +344,7 @@ func TestBackgroundMessagesReachTheirOwnView(t *testing.T) {
 
 	// The elapsed ticker survives a takeover for the same reason: an
 	// unre-armed tea.Tick never comes back.
-	if _, cmd = m.Update(boardTickMsg(testNow)); cmd == nil {
+	if _, cmd = m.Update(boardTickMsg{at: testNow}); cmd == nil {
 		t.Fatal("the elapsed ticker died while a takeover was on screen")
 	}
 }

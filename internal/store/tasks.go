@@ -318,8 +318,15 @@ type TaskFilter struct {
 	ProjectID int64     // 0 = all projects
 	State     TaskState // "" = all states
 	Archived  ArchivedFilter
-	Limit     int // 0 = unlimited
-	Offset    int
+	// ArchivedBefore and ArchivedSince bound `archived_at`, the column the
+	// terminal transition writes (§13.2, task 092). Zero means no bound.
+	// They are the archived board's date presets and the sweep's cutoff, and
+	// they narrow to archived rows on their own: `archived_at` is NULL on
+	// everything else, and NULL fails both comparisons.
+	ArchivedBefore time.Time
+	ArchivedSince  time.Time
+	Limit          int // 0 = unlimited
+	Offset         int
 	// Children decides whether fan-out lanes appear (task 014 decision 13).
 	// The zero value is ChildrenExclude: a list is the work someone asked
 	// for, and a 64-task tree would bury it.
@@ -363,6 +370,7 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	}
 	// An explicit State always wins: asking for state=archived and getting
 	// nothing back because the default excludes archives would be absurd.
+	archivedOnly := f.State == TaskArchived
 	if f.State == "" {
 		switch f.Archived {
 		case ArchivedExclude:
@@ -371,8 +379,17 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 		case ArchivedOnly:
 			where = append(where, "state = ?")
 			args = append(args, string(TaskArchived))
+			archivedOnly = true
 		case ArchivedAll:
 		}
+	}
+	if !f.ArchivedBefore.IsZero() {
+		where = append(where, "archived_at IS NOT NULL AND archived_at < ?")
+		args = append(args, formatTime(f.ArchivedBefore))
+	}
+	if !f.ArchivedSince.IsZero() {
+		where = append(where, "archived_at IS NOT NULL AND archived_at >= ?")
+		args = append(args, formatTime(f.ArchivedSince))
 	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -380,9 +397,19 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]Task, error) {
 	// Lanes of one parent read in merge order — the order the join will
 	// merge them, which is what someone drilling into a fan-out is looking
 	// at. Everything else is newest first.
-	if f.ParentID != 0 {
+	//
+	// An archived-only listing is newest-*archived* first: recency is the only
+	// order an archive has, and `id DESC` would put a task created last week
+	// and archived this morning below one created a year ago and archived a
+	// year ago. That is also why no `sort=` parameter exists — there is one
+	// right answer per listing (task 092). `id DESC` breaks the tie so paging
+	// is stable across pages when a batch shares a timestamp.
+	switch {
+	case f.ParentID != 0:
 		q += " ORDER BY lane_order ASC, id ASC"
-	} else {
+	case archivedOnly:
+		q += " ORDER BY archived_at DESC, id DESC"
+	default:
 		q += " ORDER BY id DESC"
 	}
 	if f.Limit > 0 || f.Offset > 0 {

@@ -252,6 +252,79 @@ func TestHumanActionCommands(t *testing.T) {
 		}
 	})
 
+	// Permanent delete (task 092). It follows the archive subtest because it
+	// needs a row that reached `archived`, and it asserts the thing the
+	// command was designed around: it does not prompt, so a 409 is exit 1
+	// carrying the daemon's own wording (task 048).
+	t.Run("delete an archived task, and refuse a live one", func(t *testing.T) {
+		id := addActionTask(t, dataDir, cfgDir, "deletable", "--workflow", "blocky")
+		waitForState(t, dataDir, cfgDir, id, "blocked")
+
+		// Blocked is not archived, and the refusal names the state rather
+		// than asking anything.
+		out, code := runVincent(t, dataDir, cfgDir, "task", "delete", id)
+		if code != 1 {
+			t.Fatalf("delete a blocked task: code %d, want 1 (out %q)", code, out)
+		}
+		if !strings.Contains(out, "only an archived task can be deleted") {
+			t.Errorf("the refusal is not the daemon's own wording: %q", out)
+		}
+
+		if _, code := runVincent(t, dataDir, cfgDir, "task", "cancel", id); code != 0 {
+			t.Fatalf("cancel: code %d", code)
+		}
+		waitForState(t, dataDir, cfgDir, id, "aborted")
+		if out, code := runVincent(t, dataDir, cfgDir, "task", "archive", id); code != 0 {
+			t.Fatalf("archive: code %d, out %q", code, out)
+		}
+
+		// --json emits one entry per row, so a script can tell a deletion
+		// from a refusal without parsing prose.
+		out, code = runVincent(t, dataDir, cfgDir, "task", "delete", id, "--branch", "--json")
+		if code != 0 {
+			t.Fatalf("task delete --json: code %d, out %q", code, out)
+		}
+		var reports []struct {
+			ID      int64  `json:"id"`
+			Deleted bool   `json:"deleted"`
+			Reason  string `json:"reason"`
+		}
+		if err := json.Unmarshal([]byte(out), &reports); err != nil {
+			t.Fatalf("delete --json is not a list: %v (%q)", err, out)
+		}
+		if len(reports) != 1 || !reports[0].Deleted || strconv.FormatInt(reports[0].ID, 10) != id {
+			t.Fatalf("delete --json reported %+v", reports)
+		}
+
+		// The row is gone for good: a second delete is a 404, not a no-op.
+		if out, code := runVincent(t, dataDir, cfgDir, "task", "delete", id); code != 1 {
+			t.Errorf("deleting a deleted task: code %d, want 1 (out %q)", code, out)
+		}
+
+		// A sweep with nothing in range still succeeds and says so — an empty
+		// sweep is not a failure.
+		out, code = runVincent(t, dataDir, cfgDir, "task", "delete", "--before", "3650d")
+		if code != 0 {
+			t.Fatalf("task delete --before: code %d, out %q", code, out)
+		}
+		if !strings.Contains(out, "No archived tasks to delete.") {
+			t.Errorf("an empty sweep does not say so: %q", out)
+		}
+
+		// The two argument shapes that are not a command: neither ids nor
+		// --before, and both at once.
+		if _, code := runVincent(t, dataDir, cfgDir, "task", "delete"); code == 0 {
+			t.Error("task delete with no ids and no --before succeeded")
+		}
+		if _, code := runVincent(t, dataDir, cfgDir, "task", "delete", "1", "--before", "30d"); code == 0 {
+			t.Error("task delete with both ids and --before succeeded")
+		}
+		// The chat half of the command tree exists and refuses an unknown id.
+		if out, code := runVincent(t, dataDir, cfgDir, "chat", "rm", "999999"); code != 1 {
+			t.Errorf("chat rm on an unknown id: code %d, want 1 (out %q)", code, out)
+		}
+	})
+
 	t.Run("answer refuses a task that is not waiting for input", func(t *testing.T) {
 		id := addActionTask(t, dataDir, cfgDir, "not asking", "--workflow", "blocky")
 		waitForState(t, dataDir, cfgDir, id, "blocked")

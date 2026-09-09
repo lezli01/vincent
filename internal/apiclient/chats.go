@@ -75,26 +75,60 @@ func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, 
 	return &out, nil
 }
 
+// ListChatsOptions narrows GET /v1/chats. It is the shape ListTasksOptions
+// has, with the same parameter names on the wire (§13.2, task 092): issue #298
+// settled that one vocabulary covers both entities, and the archived board
+// pages and date-bounds chats exactly as it does tasks.
+//
+// It replaced two bare arguments. A third and a fourth would have been two
+// more call sites to touch for every parameter after them.
+type ListChatsOptions struct {
+	ProjectID int64
+	// Archived selects how terminal chats are treated, and reuses ListTasks'
+	// ArchivedScope because the wire parameter is the same one (§13.2,
+	// amended 2026-09-01). The zero value — ArchivedExclude — leaves the
+	// parameter off and takes the server's default, which is to hide both
+	// `archived` and `handed_off`.
+	Archived ArchivedScope
+	Limit    int
+	Offset   int
+	// ArchivedBefore and ArchivedSince bound when the chat ended. The daemon
+	// measures them over `updated_at`, which for a terminal chat *is* when it
+	// ended (task 074 decision 6, task 079 decision 2).
+	ArchivedBefore time.Time
+	ArchivedSince  time.Time
+}
+
+func (o ListChatsOptions) query() string {
+	q := url.Values{}
+	if o.ProjectID > 0 {
+		q.Set("project_id", strconv.FormatInt(o.ProjectID, 10))
+	}
+	if o.Archived != ArchivedExclude {
+		q.Set("archived", string(o.Archived))
+	}
+	if o.Limit > 0 {
+		q.Set("limit", strconv.Itoa(o.Limit))
+	}
+	if o.Offset > 0 {
+		q.Set("offset", strconv.Itoa(o.Offset))
+	}
+	if !o.ArchivedBefore.IsZero() {
+		q.Set("archived_before", o.ArchivedBefore.UTC().Format(time.RFC3339))
+	}
+	if !o.ArchivedSince.IsZero() {
+		q.Set("archived_since", o.ArchivedSince.UTC().Format(time.RFC3339))
+	}
+	if len(q) == 0 {
+		return ""
+	}
+	return "?" + q.Encode()
+}
+
 // ListChats fetches chats, optionally narrowed to one project. Tasks never
 // appear here, and chats never appear in ListTasks.
-//
-// archived selects how terminal chats are treated, and reuses ListTasks'
-// ArchivedScope because the wire parameter is the same one (§13.2, amended
-// 2026-09-01). The zero value — ArchivedExclude — leaves the parameter off and
-// takes the server's default, which is to hide both `archived` and
-// `handed_off`.
-func (c *Client) ListChats(ctx context.Context, projectID int64, archived ArchivedScope) ([]Chat, error) {
-	q := url.Values{}
-	if projectID > 0 {
-		q.Set("project_id", strconv.FormatInt(projectID, 10))
-	}
-	if archived != ArchivedExclude {
-		q.Set("archived", string(archived))
-	}
-	path := "/v1/chats"
-	if len(q) > 0 {
-		path += "?" + q.Encode()
-	}
+func (c *Client) ListChats(ctx context.Context, opts ListChatsOptions) ([]Chat, error) {
+	path := "/v1/chats" + opts.query()
 	var out struct {
 		Chats []Chat `json:"chats"`
 	}

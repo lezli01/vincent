@@ -157,6 +157,11 @@ type ListTasksOptions struct {
 	ParentID int64
 	// IncludeChildren asks for the flat everything, lanes included.
 	IncludeChildren bool
+	// ArchivedBefore and ArchivedSince bound `archived_at` (§13.2, task 092),
+	// which is what the archived board's date presets and the sweep's cutoff
+	// become on the wire. Zero means no bound.
+	ArchivedBefore time.Time
+	ArchivedSince  time.Time
 }
 
 func (o ListTasksOptions) query() string {
@@ -181,6 +186,12 @@ func (o ListTasksOptions) query() string {
 	}
 	if o.Offset > 0 {
 		q.Set("offset", strconv.Itoa(o.Offset))
+	}
+	if !o.ArchivedBefore.IsZero() {
+		q.Set("archived_before", o.ArchivedBefore.UTC().Format(time.RFC3339))
+	}
+	if !o.ArchivedSince.IsZero() {
+		q.Set("archived_since", o.ArchivedSince.UTC().Format(time.RFC3339))
 	}
 	if len(q) == 0 {
 		return ""

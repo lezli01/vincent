@@ -117,6 +117,12 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// reporting its own adapter at 99% would paint every board and status
 		// line in the installation with a wall that does not exist.
 		{http.MethodPost, "/v1/agents/{name}/quota"},
+		// Task 092: the two permanent deletes, on the project delete's line.
+		// §13.4's surface is the route table minus destructive admin, and a
+		// row a human archived is history nobody else may discard. Archive
+		// stays a tool — the row and its transcripts survive it.
+		{http.MethodDelete, "/v1/tasks/{id}"},
+		{http.MethodDelete, "/v1/chats/{id}"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

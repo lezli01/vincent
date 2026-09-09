@@ -73,11 +73,18 @@ const (
 	// The chat surfaces (task 067). Three contexts for two views: the
 	// new-chat form is a layer over the chats board with its own keyboard,
 	// which is exactly what a bindingContext names.
-	ctxChats   bindingContext = "chats"
-	ctxChat    bindingContext = "chat"
-	ctxNewChat bindingContext = "new chat"
-	ctxDaemon  bindingContext = "daemon"
-	ctxForm    bindingContext = "answer form"
+	//
+	// The two archived boards (§15 view 10, task 092). Their own contexts
+	// rather than more ctxTasks/ctxChats rows: they carry keys the live
+	// boards do not (delete, the date window, the pages) and none of the §6
+	// action keys, which an archived row offers none of anyway.
+	ctxArchived      bindingContext = "archived tasks"
+	ctxArchivedChats bindingContext = "archived chats"
+	ctxChats         bindingContext = "chats"
+	ctxChat          bindingContext = "chat"
+	ctxNewChat       bindingContext = "new chat"
+	ctxDaemon        bindingContext = "daemon"
+	ctxForm          bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -171,6 +178,12 @@ var bindings = []binding{
 	// but new task follows. `n` is not shared: on the chats board it makes a
 	// chat, everywhere else it still makes a task.
 	{label: "chats — conversations with an agent, each in its own worktree", scope: scopeGlobal, nav: true, navTarget: viewChats},
+	// The two archived boards get palette rows and no keys, for the reason
+	// task 049 retired 1..6 and task 067 gave chats a row: retiring memorized
+	// keys without substituting new ones is the point. `s` is skip and `A` is
+	// archive, and neither was ever going to be free.
+	{label: "archived tasks — history, with a permanent delete", scope: scopeGlobal, nav: true, navTarget: viewArchived},
+	{label: "archived chats — ended conversations, with a permanent delete", scope: scopeGlobal, nav: true, navTarget: viewArchivedChats},
 
 	// Task actions, gated on available_actions. `p` appears twice because
 	// pause and resume are distinct actions behind one key; the palette
@@ -268,6 +281,27 @@ var bindings = []binding{
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
 	{key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5},
 	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+
+	// Archived tasks (§15 view 10, task 092). The board's own keys — ↑/↓,
+	// enter, /, g, space, V and the fold keys — work here unchanged and are
+	// listed under ctxTasks; these are the three the mode adds. There is no
+	// §6 action key: an archived task offers no `available_actions`, which is
+	// what makes the workspace `enter` opens read-only for free.
+	{key: "enter", label: "open the archived task's workspace — read-only, because an archived task offers no actions", scope: scopePanel, context: ctxArchived, hint: "enter open", priority: 1},
+	{key: "D", label: "delete permanently (asks first — the row, its step attempts and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchived, hint: "D delete", priority: 2},
+	{key: "d", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "d window", priority: 3},
+	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
+	{key: "/", label: "filter by id, title, project or state", scope: scopePanel, context: ctxArchived, priority: 5},
+	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
+
+	// Archived chats. The same three keys, on the same reasoning: a chat that
+	// ended is history, and this is the only place it can be discarded.
+	{key: "enter", label: "open the archived chat's workspace — read-only, the conversation as it ended", scope: scopePanel, context: ctxArchivedChats, hint: "enter open", priority: 1},
+	{key: "D", label: "delete permanently (asks first — the row, its turns and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchivedChats, hint: "D delete", priority: 2},
+	{key: "d", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchivedChats, hint: "d window", priority: 3},
+	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchivedChats, hint: "</> page", priority: 4},
+	{key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5},
+	{key: "r", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6},
 
 	// Chats board.
 	{key: "enter", label: "open the chat's workspace", scope: scopePanel, context: ctxChats, hint: "enter open", priority: 1},

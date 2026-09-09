@@ -568,7 +568,10 @@ archive time. `0` disables pruning. The pruner runs at daemon start and on a
 24-hour ticker, which is what makes retention work on a daemon that survives
 reboots rather than only on the restarts it no longer has.
 
-Task and step rows are **never** deleted — only the transcript files.
+The **pruner** deletes no rows — only the transcript files. Task and step rows
+go when a human asks for it, and only then:
+[`vincent task delete`](cli.md#vincent-task-delete) on an archived task, or
+removing the project.
 
 This covers [chats](cli.md#vincent-chat) too: an **ended** chat's turn
 transcripts under `{data_dir}/transcripts/chat-{chat_id}/` are pruned on the
@@ -577,7 +580,8 @@ endings count — `archived` and [`handed_off`](cli.md#vincent-chat-handoff) —
 a handed-off chat's transcripts are its own rather than the worktree's, so
 pruning them never reaches the task that inherited it. A chat that has not ended
 keeps its transcripts however old it is, exactly as a task does. Chat and turn
-rows are never deleted either.
+rows are the same: the pruner never touches them, and
+[`vincent chat delete`](cli.md#vincent-chat-delete) is what removes one.
 
 That same pass also drops
 [idempotency keys](api.md#transport-and-auth) older than a fixed 24 hours. This

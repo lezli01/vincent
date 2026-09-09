@@ -105,6 +105,7 @@ the living engineering specification records implementation contracts.
 | [089](089-in-progress-indicator.md) | One animated in-progress indicator — a braille frame and an elapsed clock — for the chat workspace, the chats board, the task workspace's output pane and `vincent chat send` | ✅ done (1/1) |
 | [090](090-cascading-fan-out-retry.md) | One `retry` on a fan-out parent parked in `awaiting_children` re-admits every blocked descendant, without writing the parent's own row | ✅ done (5/5) |
 | [091](091-usage-limit-auto-continue.md) | `usage_limit_auto_continue`: whether a recognized quota stop waits the window out or blocks for a human | ✅ done (5/5) |
+| [092](092-archived-boards-and-delete.md) | Archived boards for tasks and chats, with a permanent delete of an archived row | ✅ done (7/7) |
 
 ## How to add and update a task document
 

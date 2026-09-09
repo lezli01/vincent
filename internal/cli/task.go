@@ -26,7 +26,7 @@ func newTaskCmd() *cobra.Command {
 	cmd.AddCommand(newTaskAddCmd(), newTaskLsCmd(), newTaskShowCmd(), newTaskCancelCmd(),
 		newTaskFollowUpCmd(), newTaskTranscriptCmd(), newTaskPauseCmd(), newTaskResumeCmd(),
 		newTaskSkipCmd(), newTaskApproveCmd(), newTaskRejectCmd(), newTaskRetryCmd(),
-		newTaskRepairCmd(), newTaskArchiveCmd(), newTaskAnswerCmd())
+		newTaskRepairCmd(), newTaskArchiveCmd(), newTaskAnswerCmd(), newTaskDeleteCmd())
 	return cmd
 }
 

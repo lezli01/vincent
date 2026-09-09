@@ -287,6 +287,12 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/tasks", s.handleTaskCreate)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}", s.handleTaskGet)
 	rt.handle(http.MethodPatch, "/v1/tasks/{id}", s.handleTaskPatch)
+	// Permanent delete of an archived row (§13.2, task 092). Not a §6 action
+	// and never in `available_actions`; the state check is the handler's own,
+	// exactly as DELETE /v1/projects/{id} is. Neither DELETE is an MCP tool
+	// (§13.4) — they join the destructive-admin exclusion the project delete
+	// is already on.
+	rt.handle(http.MethodDelete, "/v1/tasks/{id}", s.handleTaskDelete)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/cancel", s.handleTaskCancel)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/pause", s.handleTaskPause)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/resume", s.handleTaskResume)
@@ -313,6 +319,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)
+	rt.handle(http.MethodDelete, "/v1/chats/{id}", s.handleChatDelete)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/send", s.handleChatSend)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/answer", s.handleChatAnswer)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/cancel", s.handleChatCancel)

@@ -149,6 +149,19 @@ every other one — approve, reject, retry, repair, skip, pause, resume, answer,
 archive — is a subcommand now too, so a board full of blocked tasks can be
 cleared from a shell loop.
 
+Archiving keeps the history. **Archived boards** — one for tasks, one for chats,
+both reached from the command palette — are where it is read back: the live
+boards you already know, listing what is archived instead of what is running,
+newest-archived first, in pages and inside a date window. Opening a row from
+there opens its full workspace, read-only because an archived task offers no
+actions rather than because a flag says so. It is also the one place anything is
+**permanently deleted**: `D` (or `vincent task delete` / `vincent chat delete`)
+removes the row, its attempts and its transcripts for good, optionally with its
+branch — never a branch carrying commits past its base, which stays vincent's
+standing rule wherever it is asked. A delete refuses rather than cascading:
+a fan-out parent whose lanes still exist, or a task a handed-off chat points
+at, is named as what is holding on.
+
 Every state transition is persisted before execution. If the daemon dies
 mid-step, restart recovery finalizes the interrupted attempt, verifies and
 stops orphan processes, and reruns the step without charging it as a failed

@@ -39,7 +39,7 @@ func newChatCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatArchiveCmd(),
-		newChatHandoffCmd())
+		newChatHandoffCmd(), newChatDeleteCmd())
 	return cmd
 }
 
@@ -262,7 +262,9 @@ func newChatListCmd() *cobra.Command {
 				if archived {
 					scope = apiclient.ArchivedAll
 				}
-				chats, err := c.ListChats(ctx, projectID, scope)
+				chats, err := c.ListChats(ctx, apiclient.ListChatsOptions{
+					ProjectID: projectID, Archived: scope,
+				})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
