@@ -755,6 +755,7 @@ this task's worktree, on this task's branch.
 | `↑` / `↓` | Move between the prompt and the agent / model / effort rows |
 | `enter` | Open the row under the cursor — the prompt field, or that row's picker |
 | `e` | Write the prompt in `$EDITOR` instead |
+| `t` | In an open agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the repair |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without repairing — the draft is discarded |
@@ -789,6 +790,7 @@ the commit a reviewer asked for, drop the stray file the agent left.
 | `↑` / `↓` | Move between the run form, what to run, and the agent / model / effort rows |
 | `enter` | Open the row under the cursor — the run-form list, the text field, or that row's picker |
 | `e` | Write the prompt or command in `$EDITOR` instead |
+| `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
 | `esc` | Close without running anything — the draft is discarded |
@@ -922,7 +924,7 @@ the issue on GitHub afterwards does not change what a later step sees; the
 snapshot is what [`.Issue`](../reference/workflow-schema.md#template-context)
 renders from.
 
-**The same row shows a pull request** when you arrived here with `c` from the
+**The same row shows a pull request** when you arrived here with `a` from the
 [pull-requests screen](#pull-requests) — the number, the title, the head branch,
 and, for a fork, that nothing can be pushed back to it. A pull request is never
 *picked* from inside the form: a task runs on the pull request's head branch, so
@@ -946,6 +948,7 @@ branch name, priority and agent — above the create action](../assets/tui-new-t
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker |
+| `t` | In an open list, type a value it does not offer |
 | `a` / `d` | In Fields, add or remove a custom row (declared rows cannot be removed) |
 | `e` | Edit the description in `$EDITOR` |
 | `+` / `-` | Nudge the priority (higher runs first) |
@@ -1033,7 +1036,7 @@ with a named reason rather than guessed at in advance.
 removed this link, and the reconciler will not re-apply it on its next tick.
 The confirmation says so.
 
-`c` opens the New task form seeded with the row — the screen makes
+`a` opens the New task form seeded with the row — the screen makes
 no GitHub call of its own and computes no prefill; it hands the form a project
 and a number, and the daemon fills in the rest. It is refused on a row a task
 already claims, saying which task, because two tasks cannot hold one branch, and
@@ -1114,6 +1117,7 @@ Inside the form:
 |---|---|
 | `↑` / `↓` | Move between rows |
 | `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `t` | In an open list, type a value it does not offer |
 | `a` | Add a step, lane or declared field after the one under the cursor |
 | `d` | Remove the step, lane or declared field under the cursor — asks first |
 | `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |

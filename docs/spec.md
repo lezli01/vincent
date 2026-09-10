@@ -7730,8 +7730,10 @@ and 2 have: view 8 is a keyless nav row in the palette, `enter` on a row opens
 view 9, `esc` returns. The chats board keeps `n` for itself — on it, `n` starts
 a chat; everywhere else it still opens the new-task form.
 
-*Amended 2026-08-30 (task 064).* View 7 gains two keys. **`c`** opens the
-new-task form seeded with the selected pull request: the daemon computes the
+*Amended 2026-08-30 (task 064).* View 7 gains two keys. **`a`** opens the
+new-task form seeded with the selected pull request *(amended 2026-09-10, task
+093, issue #353: it was `c`, which is cancel everywhere else — creating is `a`
+per §15's key vocabulary)*: the daemon computes the
 prefill and the form previews it in editable rows, so the TUI still makes no
 GitHub call of its own (task 035 decision 2). The created task runs on the pull
 request's head branch, which is the one row of that form the human cannot
