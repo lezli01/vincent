@@ -3660,10 +3660,10 @@ all three by construction:
 |---|---|
 | `absent` | no copy on this machine |
 | `current` | the installed version is the shipped one |
-| `older` | the installed copy predates this binary's |
+| `older` | the installed copy predates this binary's — including a copy that carries no `metadata.version` at all, which is every copy installed before the marker existed |
 | `newer` | the installed copy is ahead of it — a downgraded binary, never "up to date" |
 | `differs` | the versions are unequal and at least one is not semver, so no direction is claimed and both are printed |
-| `unreadable` | a copy exists and its `SKILL.md` could not be read or parsed |
+| `unreadable` | a copy exists and its `SKILL.md` could not be read or parsed. A manifest that reads and simply has no version is `older`, not this |
 
 Comparison uses `golang.org/x/mod/semver`. Where either side does not parse the
 row says `differs` and prints both versions; it never guesses a direction.

@@ -104,6 +104,14 @@ carried no version marker of any kind.
    cannot answer "older". `newer` is its own state, not folded into `current`: a
    downgraded binary must not report an up-to-date skill.
 
+   *Settled in the diff:* a copy that reads perfectly and carries **no**
+   `metadata.version` is `older`, not `unreadable`. It is every copy installed
+   before this change shipped, and the marker's absence is itself the
+   direction. It was `unreadable` until the command was run against a real
+   machine, where it made the one state every existing user would see the one
+   state that sounds like a fault. `unreadable` now means only what it says: a
+   `SKILL.md` that could not be read or parsed.
+
 8. **The TUI surface is a daemon-view offer, on task 082's pattern**
    (2026-09-10) — not a firstrun-style blocking notice. A line under the
    adapters, a takeover showing the exact command, and a decline persisted in

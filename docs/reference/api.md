@@ -433,7 +433,10 @@ daemon running.
 - **`skills[]` is one row per published skill**, never one per agent. The
   `skills` CLI keeps a single copy in a global store, `~/.agents/skills/`, and
   links it into each agent's directory, so a per-agent version would be the same
-  string on every row. `state` is one of `absent`, `current`, `older`, `newer`,
+  string on every row. `installed_version` is absent for a copy that carries no
+  `metadata.version` — every copy installed before that marker existed — and
+  such a copy is `older`, not `unreadable`. `state` is one of `absent`,
+  `current`, `older`, `newer`,
   `differs` (unequal and at least one side is not semver, so no direction is
   claimed) and `unreadable`. `links[]` is what is on disk and can name agents
   vincent does not drive. Nothing here ever reaches `problems[]` — see

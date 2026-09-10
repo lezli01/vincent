@@ -25,7 +25,9 @@ list with the user-facing context a commit subject cannot carry.
   the same rows: the version this binary ships, the version on disk, and which
   agents it is linked into — `not installed`, `installed and current`, `out of
   date` with both versions named, or `newer than this build` when you have
-  downgraded. `vincent skills install` runs the install for the agents vincent
+  downgraded. A copy installed before this release carries no version marker at
+  all, so it reads `out of date: installed unversioned` — reinstalling is what
+  makes the row exact. `vincent skills install` runs the install for the agents vincent
   found on this machine. The TUI's daemon view offers it under `S`, shows the
   exact `npx` command before running anything, and remembers a "not now".
 

@@ -1131,10 +1131,10 @@ copy on disk, and the agents it is linked into.
 |---|---|
 | `not installed` | No copy on this machine |
 | `installed and current` | The installed version is the shipped one |
-| `out of date` | The installed copy predates this binary's; both versions are named |
+| `out of date` | The installed copy predates this binary's; both versions are named. A copy carrying no `metadata.version` — every copy installed before that marker existed — reads `installed unversioned` |
 | `newer than this build` | The installed copy is ahead — a downgraded binary, not an up-to-date skill |
 | `differs` | The versions are unequal and at least one is not semver, so no direction is claimed |
-| `unreadable` | A copy exists and its `SKILL.md` could not be read |
+| `unreadable` | A copy exists and its `SKILL.md` could not be read or parsed at all |
 
 `skills add … -g` keeps **one** copy in a global store, `~/.agents/skills/`, and
 links it into each agent's directory — so there is one row per skill, not one
