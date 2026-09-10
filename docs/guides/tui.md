@@ -1648,7 +1648,9 @@ enough for, in priority order, and then tells you what is left: a dim **`+N`**
 after the action keys counts the keys this surface has that the line is not
 showing — the ones that did not fit, the ones with no short form, and, on a
 narrow terminal, whatever the `…` truncation took. Click it, or press `:`, and
-the palette lists them. No `+N` means the line is showing everything.
+the palette lists them. No `+N` means nothing is left over. The popups and
+forms never carry one at all — the palette does not list their keys, so it has
+nothing to point them at, and `?` is what shows those.
 
 Global bindings — active whenever the focused surface is not capturing text:
 
