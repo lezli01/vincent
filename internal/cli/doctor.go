@@ -223,6 +223,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{"AGENTS", doctorAgentRows(rep.Agents)},
 		{"GITHUB", doctorGitHubRows(rep.GitHub)},
 		{"CONTAINER", doctorContainerRows(rep.Container)},
+		{"SKILLS", doctorSkillRows(rep.Skills)},
 		{"UPDATE", doctorUpdateRows(rep.Update)},
 		{"STORAGE", doctorStorageRows(rep.Storage)},
 		{"TASKS", doctorTaskRows(rep.Tasks)},
@@ -535,6 +536,43 @@ func doctorContainerRows(c apiclient.DoctorContainer) [][]string {
 			", but the task is blocked before a worktree is created"})
 	default:
 		rows = append(rows, []string{"steps", "run on this host (container.image is unset)"})
+	}
+	return rows
+}
+
+// doctorSkillRows renders the published-skill group (§9.8, task 095).
+//
+// One row per skill and not one per agent per skill: `skills add` keeps a
+// single copy in a global store and links it into each agent's directory, so
+// a per-agent version column would be the same string three times (decision
+// 3). The agents column is what is on disk — it can name agents vincent does
+// not drive, and it can disagree with `npx skills list -g`, which reports the
+// selection that CLI remembers rather than the links it left.
+//
+// It follows the GitHub and container rows' rule: nothing here is a Problem
+// and none of it changes the exit code (decision 5). A missing skill costs a
+// user help in their own agent session; it breaks no vincent run, because the
+// built-in workflows carry the skill's text in their own prompts.
+func doctorSkillRows(skills []apiclient.DoctorSkill) [][]string {
+	if len(skills) == 0 {
+		return [][]string{{"skills", "none published by this build"}}
+	}
+	rows := make([][]string, 0, len(skills)+1)
+	missing := false
+	for _, s := range skills {
+		state := skillStateWord(s)
+		if agents := s.Agents(); len(agents) > 0 {
+			state += "  ·  linked into " + strings.Join(agents, ", ")
+		} else {
+			state += "  ·  linked into nothing"
+		}
+		if s.State != apiclient.SkillCurrent {
+			missing = true
+		}
+		rows = append(rows, []string{s.Name, state})
+	}
+	if missing {
+		rows = append(rows, []string{"install", "run: vincent skills install"})
 	}
 	return rows
 }

@@ -14,10 +14,27 @@
 // and re-indent the text rather than assuming anything about its shape.
 package skills
 
-import _ "embed"
+import "embed"
 
 // VincentWorkflows is `skills/vincent-workflows/SKILL.md` verbatim, YAML
 // front matter included. Callers that want only the instructions strip it.
 //
 //go:embed vincent-workflows/SKILL.md
 var VincentWorkflows string
+
+// FS is every published skill's `SKILL.md`, keyed by its path inside this
+// directory (`vincent-workflows/SKILL.md`). It is the *set* of what this
+// repository publishes, which is why nothing enumerates the names in Go: a
+// second directory under `skills/` is picked up by the glob, and every
+// surface that reports installation state — `vincent doctor`, `vincent
+// skills`, the daemon view — reports it with no code change (task 095
+// decision 10).
+//
+// Only `SKILL.md` is embedded, not `references/`, `LICENSE.txt` or
+// `agents/openai.yaml`. Installation shells out to the `skills` CLI, which
+// fetches the whole published directory from git; what the binary needs from
+// the tree is the front matter — the name, the description and
+// `metadata.version` it compares an installed copy against.
+//
+//go:embed */SKILL.md
+var FS embed.FS

@@ -35,8 +35,24 @@ The portable [vincent Workflows skill](../../skills/vincent-workflows/SKILL.md)
 helps supporting coding agents design and validate these files:
 
 ```sh
+vincent skills install
+```
+
+That shells out to `npx skills add lezli01/vincent --skill vincent-workflows
+--agent claude-code,codex,cursor --yes --global`, which is the published command
+with the interactive agent picker answered. `--agent` narrows the selection to
+some of `claude`, `codex`, `cursor`; the TUI's `S` offer answers it with the
+adapters vincent actually detected instead. Running it by hand works too:
+
+```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g
 ```
+
+`vincent skills ls` reports whether the skill is installed, whether it is the
+version this binary ships, and which agents it is linked into; `vincent doctor`
+shows the same rows, and the TUI's daemon view offers the install under `S`.
+Detection is a filesystem read — it works with no daemon and with no node
+installed. Only the install needs `npx`.
 
 It asks only for decisions that change the workflow, including possible human
 gates and interaction needs. It prefers deterministic command steps and native

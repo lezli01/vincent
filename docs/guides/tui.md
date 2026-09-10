@@ -1553,6 +1553,7 @@ the editor says so before you apply it.
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
+| `S` | Install the agent skills vincent publishes — the exact command is shown first |
 
 And inside the editor:
 
@@ -1588,6 +1589,22 @@ you the exact JSON first. Whatever status line you had is run by vincent and
 printed unchanged, pressing `i` again puts the file back the way it was, and
 declining is remembered so the offer does not come back. See
 [`vincent statusline`](../reference/cli.md#vincent-statusline).
+
+A line under the adapters says how many of the
+[skills vincent publishes](../reference/cli.md#vincent-skills) are not installed
+for your agents, and `S` opens the offer: what is on this machine, and the exact
+`npx skills add` command each install runs, spelled out before anything happens.
+`enter` runs it, `n` is a "not now" that is remembered in `{data_dir}/tui.json`
+so the line stops advertising itself, and `esc` closes without installing
+anything. Once everything is current the line still says so — that is where `S`
+stays discoverable, the same way the status-line line works.
+
+Two things differ from `i`. vincent does not write these files itself: it runs
+`npx skills add`, which needs node on `PATH` and, on its first run, the network
+to download the package — so the install happens off the event loop and the
+screen says what is running rather than freezing. And the state the line reports
+comes off the same `vincent doctor` report this view already fetches, so the TUI
+still holds no state the daemon does not; only the "not now" is local.
 
 The row also trails with what vincent knows about the build itself: `untested`
 and the builds the adapter was judged against, `incompatible version` for a

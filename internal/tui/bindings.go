@@ -134,7 +134,13 @@ const (
 	ctxChat          bindingContext = "chat"
 	ctxNewChat       bindingContext = "new chat"
 	ctxDaemon        bindingContext = "daemon"
-	ctxForm          bindingContext = "answer form"
+	// ctxSkills is the daemon view's published-skill offer (§9.8, task 095).
+	// Its own context rather than more ctxDaemon rows for the reason the
+	// config editor's keys are their own: while it is open it owns the
+	// keyboard, and `n` means "not now" in here and nothing at all out
+	// there.
+	ctxSkills bindingContext = "agent skills"
+	ctxForm   bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -596,6 +602,18 @@ var bindings = []binding{
 	// shows the exact JSON before anything happens, and the same key takes it
 	// back out again.
 	{key: "i", label: "make vincent claude's status line, or remove it — the exact JSON is shown first", scope: scopePanel, context: ctxDaemon, hint: "i status line", priority: 6},
+	// Task 095. `S` and not `i`: both keys lead to a write outside vincent's
+	// own directories, but they are two different operations on two
+	// different targets, and clause 1 of the vocabulary lets a key be shared
+	// only when it means the same one. `s` was unavailable — it is the
+	// vocabulary's "cycle a listing's scope" — and `S` carries no term.
+	{key: "S", label: "install the agent skills vincent publishes — the exact command is shown first", scope: scopePanel, context: ctxDaemon, hint: "S skills", priority: 7},
+
+	// The §9.8 offer: it owns the keyboard while it is open and prints its
+	// own key line, so these are here to keep ? complete.
+	{key: "enter", label: "run the install (one npx per skill; the first needs network)", scope: scopePanel, context: ctxSkills, noPalette: true},
+	{key: "n", label: "not now — remembered, and S brings it back", scope: scopePanel, context: ctxSkills, noPalette: true},
+	{key: "esc", label: "close without installing anything", scope: scopePanel, context: ctxSkills, noPalette: true},
 
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.

@@ -17,6 +17,7 @@ localhost API.
 - [`vincent status`](#vincent-status)
 - [`vincent statusline`](#vincent-statusline)
 - [`vincent update`](#vincent-update)
+- [`vincent skills`](#vincent-skills)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent github`](#vincent-github)
@@ -77,7 +78,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Ten groups:
+One report answering "why is nothing running?". Eleven groups:
 
 | Group | Rows |
 |---|---|
@@ -88,6 +89,7 @@ One report answering "why is nothing running?". Ten groups:
 | Agents | per adapter: found, path, version, `logged_in`, whether the build is one vincent has been tested against, and whether the adapter can restrict on this OS |
 | GitHub | whether [`github.enabled`](configuration.md#github) is on, whether `gh` is installed and logged in, whether a token variable is set, and whether issues are readable |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
+| Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
 | Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -118,6 +120,11 @@ containerization is off by default, so a machine with no runtime — or a Window
 daemon, which cannot host one — runs every step on the host exactly as it always
 has. The runtime is probed **even when `container.image` is unset**, because
 "would this work if I turned it on" is the question the group exists to answer.
+So do the **Skills** rows: a missing, stale or unreadable skill costs you help
+in your own agent session and stops no vincent run, because the built-in
+`create-workflow` and `update-workflows` workflows carry the skill's text in
+their own prompts. The group ends with `run: vincent skills install` when
+anything is not current.
 
 An adapter row also ends with what vincent knows about the build itself:
 `untested version` and the builds it was judged against, `incompatible version`
@@ -152,8 +159,9 @@ retention window: rows are kept indefinitely, and `--fix` is the only thing that
 touches the file at all.
 
 **Without a daemon** the report is still printed in full — paths, whether the
-config parses, adapter detection, the log tail, disk free and the worktree
-count — and the database and task rows read `unknown — daemon not running`.
+config parses, adapter detection, published-skill state, the log tail, disk free
+and the worktree count — and the database and task rows read
+`unknown — daemon not running`.
 They are not read from a second process: only the daemon opens the database. The
 byte figures, the row counts and the span are unknown together, for that reason
 and no other.
@@ -1105,6 +1113,69 @@ vincent update --check --json
   "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0"
 }
 ```
+
+## `vincent skills`
+
+vincent publishes agent skills — `skills/vincent-workflows/` today — so an agent
+you talk to **directly**, outside a vincent run, knows how to author a vincent
+workflow. Runs inside vincent do not need them: the built-in `create-workflow`
+and `update-workflows` workflows carry the same text in their own prompts.
+
+Neither subcommand talks to the daemon, so **neither can exit 2**. Detection is
+a filesystem read and works on a machine with no node installed; only `install`
+shells out.
+
+### `vincent skills ls`
+
+```sh
+vincent skills ls [--json]
+```
+
+Aliased as `vincent skills list`. One row per published skill: the version this
+binary ships, the state of the copy on disk, and the agents it is linked into.
+
+| State | Meaning |
+|---|---|
+| `not installed` | No copy on this machine |
+| `installed and current` | The installed version is the shipped one |
+| `out of date` | The installed copy predates this binary's; both versions are named. A copy carrying no `metadata.version` — every copy installed before that marker existed — reads `installed unversioned` |
+| `newer than this build` | The installed copy is ahead — a downgraded binary, not an up-to-date skill |
+| `differs` | The versions are unequal and at least one is not semver, so no direction is claimed |
+| `unreadable` | A copy exists and its `SKILL.md` could not be read or parsed at all |
+
+`skills add … -g` keeps **one** copy in a global store, `~/.agents/skills/`, and
+links it into each agent's directory — so there is one row per skill, not one
+per agent, and one version rather than three.
+
+The agents column is what is on disk. It can name agents vincent does not drive
+(one store serves Cline, Copilot, Zed and the rest), and it can disagree with
+`npx skills list -g`, whose agent column is that CLI's remembered *selection*
+rather than the links it left behind.
+
+### `vincent skills install`
+
+```sh
+vincent skills install [NAME...] [--agent NAME]... [--json]
+```
+
+Installs the named skills, or — with no name — every published skill that is not
+already current. It runs, once per skill:
+
+```sh
+npx skills add lezli01/vincent --skill NAME --agent claude-code,codex,cursor --yes --global
+```
+
+That is the published command with the interactive agent picker answered.
+`--agent` narrows the selection to some of `claude`, `codex`, `cursor`; the
+default is all of them. Note the `skills` CLI's slug for claude is
+`claude-code`.
+
+It needs `npx` on `PATH` and, on a first run, network — the package is
+downloaded before anything happens. Without `npx` it exits **1** with a message
+naming the dependency and printing the line to run once node is installed;
+`vincent skills ls` is unaffected either way.
+
+Exit `0` everything asked for is installed · `1` an install failed.
 
 ## `vincent chat`
 

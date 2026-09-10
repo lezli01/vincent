@@ -40,6 +40,11 @@ func (d *daemonView) render(width, height int) string {
 		// preview competing with four other blocks is not on screen.
 		return strings.Join(d.statusLine.render(d.width), "\n")
 	}
+	if d.skills != nil {
+		// And so is the §9.8 offer, for the same reason: the command it runs
+		// leaves vincent's own directories, so it goes on screen alone.
+		return strings.Join(d.skills.render(d.width), "\n")
+	}
 	var out []string
 	out = append(out, d.identityLines()...)
 	out = append(out, "")
@@ -414,7 +419,43 @@ func (d *daemonView) adapterLines() []string {
 	if line, ok := d.statusLineLine(); ok {
 		out = append(out, line)
 	}
+	if line, ok := d.skillsLine(); ok {
+		out = append(out, line)
+	}
 	return out
+}
+
+// skillsLine is the daemon view's half of the §9.8 offer (task 095). It sits
+// beside the status-line line and follows the same three rules: the fact
+// comes from a reading rather than an assumption — here, the doctor report
+// this view already fetches — the offer stays quiet once it has been
+// declined, and the state is still stated once everything is installed, so
+// `S` is discoverable at all.
+func (d *daemonView) skillsLine() (string, bool) {
+	skills := d.reportedSkills()
+	if len(skills) == 0 {
+		return "", false
+	}
+	missing := 0
+	for _, s := range skills {
+		if s.State != apiclient.SkillCurrent {
+			missing++
+		}
+	}
+	if missing == 0 {
+		return "   " + styleDim.Render("agent skills installed and current  ") +
+			styleKey.Render("S") + styleDim.Render(" to review them"), true
+	}
+	if d.skillsDeclined {
+		return "", false
+	}
+	word := "skill"
+	if missing > 1 {
+		word = "skills"
+	}
+	return "   " + styleDim.Render(fmt.Sprintf(
+		"%d workflow-authoring %s not installed for your agents  ", missing, word)) +
+		styleKey.Render("S") + styleDim.Render(" to see what installs them"), true
 }
 
 // statusLineLine is the daemon view's half of the §16 status-line offer

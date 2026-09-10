@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lezli01/vincent/internal/doctor"
+	"github.com/lezli01/vincent/internal/skill"
 )
 
 // The doctor wire types below are **aliases**, not copies (task 005
@@ -42,6 +43,9 @@ type DoctorGitHub = doctor.GitHub
 
 // DoctorContainer is the report's container-execution row (§16, task 061).
 type DoctorContainer = doctor.Container
+
+// DoctorSkill is one published skill's installation state (§9.8, task 095).
+type DoctorSkill = doctor.Skill
 
 // DoctorUpdate is the report's release-check row (task 055).
 type DoctorUpdate = doctor.Update
@@ -119,3 +123,13 @@ func (c *Client) DoctorFix(ctx context.Context, force bool) (*DoctorFixResult, e
 	}
 	return &res, nil
 }
+
+// Published-skill states a DoctorSkill.State carries (§9.8, task 095).
+const (
+	SkillAbsent     = skill.StateAbsent
+	SkillCurrent    = skill.StateCurrent
+	SkillOlder      = skill.StateOlder
+	SkillNewer      = skill.StateNewer
+	SkillDiffers    = skill.StateDiffers
+	SkillUnreadable = skill.StateUnreadable
+)

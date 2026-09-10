@@ -299,7 +299,7 @@ to pass.
 
 ## What vincent writes outside its own directories
 
-Three things, and they are recorded here rather than discovered:
+Four things, and they are recorded here rather than discovered:
 
 **A cursor step passes `--model`, and cursor persists that selection to
 `~/.cursor/cli-config.json`.** Vincent always passes one (defaulting to `auto`)
@@ -333,6 +333,23 @@ property that makes the cursor case above tolerable is held here deliberately:
 The route it posts to, `POST /v1/agents/{name}/quota`, is
 [not an MCP tool](guides/mcp.md): an agent must not be able to forge a
 daemon-level fact about the host it runs on.
+
+**[`vincent skills install`](reference/cli.md#vincent-skills) — and the daemon
+view's `S` — runs `npx skills add`, which writes into your global skills store
+(`~/.agents/skills/`) and links the result into each agent's own directory.**
+Vincent does not write those files itself; it shells out to the published CLI,
+which is why the whole install layout stays that tool's business rather than
+something vincent reimplements. It holds the same properties as `i` above: it
+happens only when you run the command or press that key, never on daemon start
+and never as a side effect of a task; the **exact `npx` command is printed
+before anything runs**; and it needs `npx` on your `PATH`, whose absence is a
+message rather than a silent no-op.
+
+Detecting whether a skill is installed writes nothing at all and runs no
+subprocess — it reads `SKILL.md` out of those directories, which are a public
+CLI's documented install locations holding a file this repository published.
+That is deliberately not the same act as reading another tool's private state
+for credentials — the `~/.claude/.credentials.json` read refused above.
 
 **[`vincent update`](reference/cli.md#vincent-update) replaces the vincent
 binary**, which is by definition outside vincent's own directories. It happens

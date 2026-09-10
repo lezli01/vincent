@@ -1792,6 +1792,46 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("the status-line flow does not own the keyboard")
 			}
 		},
+		"S": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.updateKey(registryKey(t, "S"))
+			if d.skills == nil {
+				t.Fatal("S did not open the published-skill flow")
+			}
+			if !d.capturesInput() {
+				t.Fatal("the skills flow does not own the keyboard")
+			}
+		},
+	},
+
+	ctxSkills: {
+		"enter": func(t *testing.T) {
+			d := openSkillsFlow(t)
+			d.updateKey(registryKey(t, "enter"))
+			// With nothing missing, enter closes rather than shelling out —
+			// a probe must not spawn npx.
+			if d.skills != nil {
+				t.Fatal("enter did not act on the skills flow")
+			}
+		},
+		"n": func(t *testing.T) {
+			d := openSkillsFlow(t)
+			d.skills.names = []string{"vincent-workflows"}
+			d.updateKey(registryKey(t, "n"))
+			if d.skills != nil {
+				t.Fatal("n did not close the skills flow")
+			}
+			if !readSkillsDecline(d.dataDir) {
+				t.Fatal("n did not remember the decline")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := openSkillsFlow(t)
+			d.updateKey(registryKey(t, "esc"))
+			if d.skills != nil {
+				t.Fatal("esc did not close the skills flow")
+			}
+		},
 	},
 
 	ctxConfigEdit: {

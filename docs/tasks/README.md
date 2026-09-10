@@ -108,6 +108,7 @@ the living engineering specification records implementation contracts.
 | [092](092-archived-boards-and-delete.md) | Archived boards for tasks and chats, with a permanent delete of an archived row | ✅ done (7/7) |
 | [093](093-tui-key-vocabulary.md) | A key vocabulary for the TUI, one operation to one key, enforced by the binding registry | ✅ done (6/6) |
 | [094](094-footer-width-and-hidden-keys.md) | The footer fills its width, and a `+N` says how many keys it is hiding | ✅ done (5/5) |
+| [095](095-published-skill-installation.md) | Report whether vincent's published skills are installed, and install them | ✅ done (10/10) |
 
 ## How to add and update a task document
 
