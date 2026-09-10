@@ -217,13 +217,13 @@ func skillRowLine(s apiclient.DoctorSkill) string {
 		state = styleWarn.Render("not installed") + styleDim.Render("  ships "+s.Shipped)
 	case apiclient.SkillOlder:
 		state = styleWarn.Render("out of date") +
-			styleDim.Render("  installed "+s.Installed+", ships "+s.Shipped)
+			styleDim.Render("  installed "+s.InstalledLabel()+", ships "+s.Shipped)
 	case apiclient.SkillNewer:
 		state = styleWarn.Render("newer than this build") +
-			styleDim.Render("  installed "+s.Installed+", ships "+s.Shipped)
+			styleDim.Render("  installed "+s.InstalledLabel()+", ships "+s.Shipped)
 	case apiclient.SkillDiffers:
 		state = styleWarn.Render("differs") +
-			styleDim.Render("  installed "+s.Installed+", ships "+s.Shipped)
+			styleDim.Render("  installed "+s.InstalledLabel()+", ships "+s.Shipped)
 	default:
 		state = styleBad.Render(s.State) + styleDim.Render("  "+s.Message)
 	}

@@ -175,11 +175,11 @@ func skillStateWord(s skill.Status) string {
 	case skill.StateAbsent:
 		return "not installed"
 	case skill.StateOlder:
-		return "out of date: installed " + s.Installed + ", ships " + s.Shipped
+		return "out of date: installed " + s.InstalledLabel() + ", ships " + s.Shipped
 	case skill.StateNewer:
-		return "installed " + s.Installed + " is newer than the " + s.Shipped + " this binary ships"
+		return "installed " + s.InstalledLabel() + " is newer than the " + s.Shipped + " this binary ships"
 	case skill.StateDiffers:
-		return "differs: installed " + dash(s.Installed) + ", ships " + dash(s.Shipped)
+		return "differs: installed " + s.InstalledLabel() + ", ships " + dash(s.Shipped)
 	default:
 		return s.State + ": " + s.Message
 	}

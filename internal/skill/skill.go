@@ -107,6 +107,20 @@ type Status struct {
 	Message string `json:"message,omitempty"`
 }
 
+// InstalledLabel is Installed for display, naming the copy that carries no
+// `metadata.version` rather than rendering it as an empty string. An installed
+// copy is never nameless in a row.
+func (s Status) InstalledLabel() string {
+	switch {
+	case s.Installed != "":
+		return s.Installed
+	case s.State == StateAbsent:
+		return ""
+	default:
+		return "unversioned"
+	}
+}
+
 // Linked reports whether any agent on this machine holds the skill.
 func (s Status) Linked() bool { return len(s.Links) > 0 }
 
@@ -291,6 +305,14 @@ func detectOne(home string, roots []string, p Published) Status {
 		st.State = StateUnreadable
 		st.Message = readErr.Error()
 		return st
+	case installed == "":
+		// A copy that reads fine and carries no `metadata.version` is not
+		// unreadable — it is a copy from before the marker existed, which is
+		// every copy installed before task 095 shipped. That is a direction
+		// this can claim rather than a comparison it cannot make.
+		st.State = StateOlder
+		st.Message = "the installed copy carries no metadata.version, so it predates the marker"
+		return st
 	}
 	st.Installed = installed
 	st.State, st.Message = compare(p.Version, installed)
@@ -301,6 +323,12 @@ func detectOne(home string, roots []string, p Published) Status {
 // one copy and every link points at it — but a link is consulted when the
 // store is missing, because an agent directory holding a real `--copy` is
 // still an installed skill and reporting it as absent would be false.
+//
+// Three answers, and the caller renders a different state for each. found is
+// false when nothing is on disk. A non-nil readErr is a copy whose SKILL.md
+// could not be read or parsed. An empty version with a nil error is the third:
+// a manifest that reads perfectly and carries no `metadata.version`, which is
+// every copy installed before that marker existed — a fact, not a failure.
 func installedVersion(storePath string, links []Link) (version string, found bool, readErr error) {
 	paths := make([]string, 0, 1+len(links))
 	if _, err := os.Stat(storePath); err == nil {
@@ -313,6 +341,7 @@ func installedVersion(storePath string, links []Link) (version string, found boo
 		return "", false, nil
 	}
 	var first error
+	unversioned := false
 	for _, p := range paths {
 		// G304: the path is a documented install location under the user's own
 		// home, and the file read out of it is one this repository published.
@@ -331,12 +360,15 @@ func installedVersion(storePath string, links []Link) (version string, found boo
 			continue
 		}
 		if fm.Version == "" {
-			if first == nil {
-				first = errors.New(filepath.Join(p, manifest) + ": no metadata.version")
-			}
+			// Keep looking: another copy may carry one, and a version is a
+			// better answer than the absence of one.
+			unversioned = true
 			continue
 		}
 		return fm.Version, true, nil
+	}
+	if unversioned {
+		return "", true, nil
 	}
 	return "", true, first
 }

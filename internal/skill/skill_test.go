@@ -176,9 +176,37 @@ func TestDetect(t *testing.T) {
 			state: StateDiffers, version: "wednesday",
 		},
 		{
-			title: "store present with no readable manifest",
+			title: "store present with no manifest at all",
 			seed:  func(t *testing.T, h string) { installAt(t, h, ".agents", name, "") },
 			state: StateUnreadable,
+		},
+		{
+			// Every copy installed before the marker existed. A manifest that
+			// reads perfectly and carries no version is not unreadable — it
+			// predates versioning, which is a direction the row can claim.
+			title: "store present with a manifest carrying no version",
+			seed: func(t *testing.T, h string) {
+				dir := installAt(t, h, ".agents", name, "")
+				if err := os.WriteFile(filepath.Join(dir, "SKILL.md"),
+					[]byte("---\nname: "+name+"\ndescription: old\n---\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			state: StateOlder,
+		},
+		{
+			// A versioned copy anywhere beats an unversioned one: a version is
+			// a better answer than the absence of one.
+			title: "store unversioned, an agent holds a versioned copy",
+			seed: func(t *testing.T, h string) {
+				dir := installAt(t, h, ".agents", name, "")
+				if err := os.WriteFile(filepath.Join(dir, "SKILL.md"),
+					[]byte("---\nname: "+name+"\n---\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				installAt(t, h, ".claude", name, "1.2.0")
+			},
+			state: StateCurrent, version: "1.2.0", agents: []string{"claude"},
 		},
 		{
 			title: "linked as a real copy",
@@ -233,6 +261,9 @@ func TestDetect(t *testing.T) {
 			}
 			if agents := strings.Join(row.Agents(), ","); agents != strings.Join(tc.agents, ",") {
 				t.Errorf("agents = %q, want %q", agents, strings.Join(tc.agents, ","))
+			}
+			if row.State != StateAbsent && row.InstalledLabel() == "" {
+				t.Error("an installed copy rendered as a nameless version")
 			}
 			if row.StorePath != filepath.Join(home, ".agents", "skills", name) {
 				t.Errorf("store path = %q", row.StorePath)
